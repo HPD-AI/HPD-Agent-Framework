@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.KernelMemory;
 using OllamaSharp;
+using HPD_Agent.MemoryRAG;
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -44,6 +45,11 @@ public class AgentBuilder
     // Memory CAG configuration fields
     private AgentCagOptions? _memoryCagOptions;
     private AgentMemoryCagManager? _memoryCagManager;  // track externally provided manager
+
+    // RAG configuration fields
+    private AgentMemoryBuilder? _agentMemoryBuilder;
+    private RetrievalStrategy _ragStrategy = RetrievalStrategy.Push; // Default to Push
+    private RAGConfiguration _ragConfiguration = new();
 
     /// <summary>
     /// Sets the system instructions/persona for the agent
@@ -450,6 +456,16 @@ public class AgentBuilder
             _systemInstructions,
             _promptFilters,
             _scopedFilterManager, selector);
+
+        // Inject memory builder if it has been configured
+        if (_agentMemoryBuilder != null)
+        {
+            agent.SetMemoryBuilder(_agentMemoryBuilder);
+        }
+
+        // Attach RAG components based on the selected strategy
+        AttachRAGComponents(agent);
+
         // Attach audio capability if configured
         var audioCapability = CreateAudioCapability(agent);
         if (audioCapability != null)
@@ -548,6 +564,38 @@ public class AgentBuilder
     {
         // Simple heuristic to detect analyzer context
         return System.Diagnostics.Debugger.IsAttached == false;
+    }
+    
+    #endregion
+
+    #region RAG Helper Methods
+    
+    /// <summary>
+    /// Attach RAG components based on the configured strategy
+    /// </summary>
+    private void AttachRAGComponents(Agent agent)
+    {
+        // A helper function to create the capability on demand
+        RAGMemoryCapability CreateRAGCapability(Agent agentInstance) => new RAGMemoryCapability(agentInstance, _ragConfiguration);
+
+        RAGMemoryCapability? ragCapability = null;
+
+        // Push or Hybrid strategy requires the RAGMemoryCapability
+        if (_ragStrategy == RetrievalStrategy.Push || _ragStrategy == RetrievalStrategy.Hybrid)
+        {
+            ragCapability = CreateRAGCapability(agent);
+            agent.AddCapability("RAG", ragCapability);
+        }
+        
+        // Pull or Hybrid strategy requires the RAGPlugin
+        if (_ragStrategy == RetrievalStrategy.Pull || _ragStrategy == RetrievalStrategy.Hybrid)
+        {
+            // If the capability wasn't created for Push, create it now for the plugin
+            ragCapability ??= CreateRAGCapability(agent);
+            
+            var ragPlugin = new RAGPlugin(ragCapability);
+            WithPlugin(ragPlugin); // WithPlugin is an existing method in AgentBuilder
+        }
     }
     
     #endregion
@@ -793,6 +841,34 @@ public class AgentBuilder
         // register plugin
         var plugin = new AgentMemoryCagPlugin(_memoryCagManager, _agentName, _logger?.CreateLogger<AgentMemoryCagPlugin>());
         WithPlugin(plugin);
+        return this;
+    }
+
+    /// <summary>
+    /// Configure RAG memory for the agent
+    /// </summary>
+    public AgentBuilder WithMemory(Action<AgentMemoryBuilder> configure)
+    {
+        _agentMemoryBuilder ??= new AgentMemoryBuilder(_agentName);
+        configure(_agentMemoryBuilder);
+        return this;
+    }
+
+    /// <summary>
+    /// Set the RAG retrieval strategy (Push, Pull, or Hybrid)
+    /// </summary>
+    public AgentBuilder WithRAGStrategy(RetrievalStrategy strategy)
+    {
+        _ragStrategy = strategy;
+        return this;
+    }
+
+    /// <summary>
+    /// Configure RAG settings
+    /// </summary>
+    public AgentBuilder WithRAGConfiguration(Action<RAGConfiguration> configure)
+    {
+        configure(_ragConfiguration);
         return this;
     }
 }

@@ -1,5 +1,7 @@
 ﻿using Microsoft.Extensions.AI;
 using System.Threading.Channels;
+using Microsoft.KernelMemory;
+using HPD_Agent.MemoryRAG;
 
 /// <summary>
 /// Agent implementation that supports both traditional chat and AGUI streaming protocols
@@ -17,6 +19,9 @@ public class Agent : IChatClient, IAGUIAgent
     private readonly ContextualFunctionSelector? _contextualSelector;
     private readonly Dictionary<string, object> _capabilities = new();
     private readonly List<IPromptFilter> _promptFilters;
+    // Memory management
+    private IKernelMemory? _memory;
+    private AgentMemoryBuilder? _memoryBuilder;
     // Metadata Tracking
     public bool LastOperationHadFunctionCalls { get; private set; }
     public List<string> LastOperationFunctionCalls { get; private set; } = new();
@@ -137,6 +142,37 @@ public class Agent : IChatClient, IAGUIAgent
 
     #endregion
 
+    #region Memory Management
+
+    /// <summary>
+    /// Gets or creates the memory instance for this agent
+    /// </summary>
+    /// <returns>The kernel memory instance</returns>
+    public IKernelMemory GetOrCreateMemory()
+    {
+        if (_memory != null) return _memory;
+        
+        if (_memoryBuilder == null)
+        {
+            // Create default memory builder if none provided
+            _memoryBuilder = new AgentMemoryBuilder(_name);
+        }
+        
+        return _memory ??= _memoryBuilder.Build();
+    }
+    
+    /// <summary>
+    /// Sets the memory builder for this agent
+    /// </summary>
+    /// <param name="builder">The memory builder to use</param>
+    public void SetMemoryBuilder(AgentMemoryBuilder builder)
+    {
+        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
+        _memory = null; // Clear existing memory to force rebuild with new builder
+    }
+
+    #endregion
+
     #region IChatClient Implementation
 
     /// <inheritdoc />
@@ -147,6 +183,9 @@ public class Agent : IChatClient, IAGUIAgent
     {
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
+        
+        // Apply RAG strategy if the capability is available
+        effectiveMessages = await ApplyRAGStrategy(effectiveMessages, effectiveOptions, cancellationToken);
         
         // Apply contextual function filtering if configured
         effectiveOptions = await ApplyContextualFiltering(effectiveMessages, effectiveOptions, cancellationToken);
@@ -173,6 +212,9 @@ public class Agent : IChatClient, IAGUIAgent
     {
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
+        
+        // Apply RAG strategy if the capability is available
+        effectiveMessages = await ApplyRAGStrategy(effectiveMessages, effectiveOptions, cancellationToken);
         
         // Apply contextual function filtering if configured
         effectiveOptions = await ApplyContextualFiltering(effectiveMessages, effectiveOptions, cancellationToken);
@@ -429,6 +471,37 @@ public class Agent : IChatClient, IAGUIAgent
             ModelId = options.ModelId,
             AdditionalProperties = options.AdditionalProperties
         };
+    }
+
+    /// <summary>
+    /// Applies the RAG strategy by invoking the RAGMemoryCapability if it's available.
+    /// </summary>
+    private async Task<IEnumerable<ChatMessage>> ApplyRAGStrategy(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        // Check if the RAG capability is attached to this agent
+        var ragCapability = GetCapability<RAGMemoryCapability>("RAG");
+        if (ragCapability == null)
+        {
+            return messages; // RAG is not configured for this agent, continue normally.
+        }
+
+        // Try to get the RAGContext that was assembled by the Conversation
+        RAGContext? ragContext = null;
+        if (options?.AdditionalProperties?.TryGetValue("RAGContext", out var contextObj) == true)
+        {
+            ragContext = contextObj as RAGContext;
+        }
+
+        if (ragContext == null)
+        {
+            return messages; // No context was provided, so nothing to do.
+        }
+
+        // Use the capability to apply the retrieval strategy (this is the "Push" part)
+        return await ragCapability.ApplyRetrievalStrategyAsync(messages, ragContext, cancellationToken);
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Threading.Tasks;
+using Microsoft.KernelMemory;
 
 /// <summary>
 /// Represents a project containing conversations and scoped memories.
@@ -34,6 +35,10 @@ public class Project
     /// <summary>The agent instance for this project with memory capability</summary>
     public Agent? Agent { get; private set; }
 
+    // Memory management
+    private IKernelMemory? _memory;
+    private ProjectMemoryBuilder? _memoryBuilder;
+
     /// <summary>Constructor initializes project, memory and document managers.</summary>
     public Project(string name, string? storageDirectory = null)
     {
@@ -57,6 +62,33 @@ public class Project
     public void SetAgent(Agent agent)
     {
         Agent = agent;
+    }
+
+    /// <summary>
+    /// Gets or creates the memory instance for this project
+    /// </summary>
+    /// <returns>The kernel memory instance</returns>
+    public IKernelMemory GetOrCreateMemory()
+    {
+        if (_memory != null) return _memory;
+        
+        if (_memoryBuilder == null)
+        {
+            // Create default memory builder if none provided
+            _memoryBuilder = new ProjectMemoryBuilder(Id);
+        }
+        
+        return _memory ??= _memoryBuilder.Build();
+    }
+    
+    /// <summary>
+    /// Sets the memory builder for this project
+    /// </summary>
+    /// <param name="builder">The memory builder to use</param>
+    public void SetMemoryBuilder(ProjectMemoryBuilder builder)
+    {
+        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
+        _memory = null; // Clear existing memory to force rebuild with new builder
     }
 
     /// <summary>Creates a conversation using the project's agent</summary>

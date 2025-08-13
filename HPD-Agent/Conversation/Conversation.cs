@@ -2,6 +2,8 @@ using Microsoft.Extensions.AI;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Runtime.CompilerServices;
+using Microsoft.KernelMemory;
+using HPD_Agent.MemoryRAG;
 
 /// <summary>
 /// Clean conversation management built on Microsoft.Extensions.AI
@@ -24,6 +26,9 @@ public class Conversation
     private readonly List<Agent> _agents;
     // Conversation filter list
     private readonly List<IConversationFilter> _conversationFilters = new();
+    // Memory management
+    private IKernelMemory? _memory;
+    private ConversationMemoryBuilder? _memoryBuilder;
 
     public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
     public IReadOnlyDictionary<string, object> Metadata => _metadata.AsReadOnly();
@@ -78,6 +83,33 @@ public class Conversation
     }
 
     /// <summary>
+    /// Gets or creates the memory instance for this conversation
+    /// </summary>
+    /// <returns>The kernel memory instance</returns>
+    public IKernelMemory GetOrCreateMemory()
+    {
+        if (_memory != null) return _memory;
+        
+        if (_memoryBuilder == null)
+        {
+            // Create default memory builder if none provided
+            _memoryBuilder = new ConversationMemoryBuilder(Id);
+        }
+        
+        return _memory ??= _memoryBuilder.Build();
+    }
+    
+    /// <summary>
+    /// Sets the memory builder for this conversation
+    /// </summary>
+    /// <param name="builder">The memory builder to use</param>
+    public void SetMemoryBuilder(ConversationMemoryBuilder builder)
+    {
+        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
+        _memory = null; // Clear existing memory to force rebuild with new builder
+    }
+
+    /// <summary>
     /// Send a message using the default agent or specified agent
     /// </summary>
     public async Task<ChatResponse> SendAsync(
@@ -90,6 +122,16 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
+        // CONTEXT ASSEMBLY: Gather all available memory handles
+        var ragContext = AssembleRAGContext(options);
+        
+        // Inject RAG context for agent capabilities
+        if (ragContext != null)
+        {
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["RAGContext"] = ragContext;
+        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
@@ -126,6 +168,16 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
+        // CONTEXT ASSEMBLY: Gather all available memory handles
+        var ragContext = AssembleRAGContext(options);
+        
+        // Inject RAG context for agent capabilities
+        if (ragContext != null)
+        {
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["RAGContext"] = ragContext;
+        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
@@ -200,6 +252,68 @@ public class Conversation
             pipeline = ctx => filter.InvokeAsync(ctx, next);
         }
         await pipeline(context);
+    }
+
+    /// <summary>
+    /// Assembles RAG context from all available memory sources
+    /// </summary>
+    private RAGContext? AssembleRAGContext(ChatOptions? options)
+    {
+        var agentMemories = new Dictionary<string, IKernelMemory?>();
+        IKernelMemory? conversationMemory = null;
+        IKernelMemory? projectMemory = null;
+
+        // Gather agent memories
+        foreach (var agent in _agents)
+        {
+            try
+            {
+                agentMemories[agent.Name] = agent.GetOrCreateMemory();
+            }
+            catch
+            {
+                // Agent may not have memory configured - continue
+                agentMemories[agent.Name] = null;
+            }
+        }
+
+        // Gather conversation memory
+        try
+        {
+            conversationMemory = this.GetOrCreateMemory();
+        }
+        catch
+        {
+            // Conversation may not have memory configured
+        }
+
+        // Gather project memory
+        if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
+        {
+            try
+            {
+                projectMemory = project.GetOrCreateMemory();
+            }
+            catch
+            {
+                // Project may not have memory configured
+            }
+        }
+
+        // Only create context if at least one memory source is available
+        if (!agentMemories.Values.Any(m => m != null) && conversationMemory == null && projectMemory == null)
+            return null;
+
+        // Use default configuration for now
+        var config = new RAGConfiguration();
+        
+        return new RAGContext
+        {
+            AgentMemories = agentMemories,
+            ConversationMemory = conversationMemory,
+            ProjectMemory = projectMemory,
+            Configuration = config
+        };
     }
 
 }
