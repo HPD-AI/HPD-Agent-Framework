@@ -1,5 +1,4 @@
-namespace HPD_Agent.MemoryRAG
-{
+
     /// <summary>
     /// Defines how documents uploaded to a conversation should be handled
     /// </summary>
@@ -17,4 +16,4 @@ namespace HPD_Agent.MemoryRAG
         /// </summary>
         DirectInjection
     }
-}
+
