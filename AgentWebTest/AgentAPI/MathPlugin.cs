@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 
 /// <summary>
@@ -37,37 +38,47 @@ public class MathPluginMetadataContext : IPluginMetadataContext
 
 public class MathPlugin
 {
-    [AIFunction, Description("Adds two numbers and returns the sum.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [AIDescription("Adds two numbers and returns the sum.")]
     public long Add(
-        [Description("First addend.")] long a,
-        [Description("Second addend.")] long b)
+        [AIDescription("First addend.")] long a,
+        [AIDescription("Second addend.")] long b)
         => a + b;
 
-    [AIFunction, Description("Multiplies two numbers and returns the product.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [AIDescription("Multiplies two numbers and returns the product.")]
     public long Multiply(
-        [Description("First factor.")] long a,
-        [Description("Second factor.")] long b)
+        [AIDescription("First factor.")] long a,
+        [AIDescription("Second factor.")] long b)
         => a * b;
 
-    [AIFunction, ConditionalFunction<MathPluginMetadataContext>("AllowNegative == false"), Description("Returns the absolute value. Only available if negatives are not allowed.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [ConditionalFunction("AllowNegative == false")]
+    [AIDescription("Returns the absolute value. Only available if negatives are not allowed.")]
     public long Abs(
-        [Description("Input value.")] long value)
+        [AIDescription("Input value.")] long value)
         => Math.Abs(value);
 
-    [AIFunction, ConditionalFunction<MathPluginMetadataContext>("MaxValue > 1000"), Description("Squares a number. Only available if maxValue > 1000.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [ConditionalFunction("MaxValue > 1000")]
+    [AIDescription("Squares a number. Only available if maxValue > 1000.")]
     public long Square(
-        [Description("Input value.")] long value)
+        [AIDescription("Input value.")] long value)
         => value * value;
 
-    [AIFunction, ConditionalFunction<MathPluginMetadataContext>("AllowNegative == true"), Description("Subtracts b from a. Only available if negatives are allowed.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [ConditionalFunction("AllowNegative == true")]
+    [AIDescription("Subtracts b from a. Only available if negatives are allowed.")]
     public long Subtract(
-        [Description("Minuend.")] long a,
-        [Description("Subtrahend.")] long b)
+        [AIDescription("Minuend.")] long a,
+        [AIDescription("Subtrahend.")] long b)
         => a - b;
 
-    [AIFunction, ConditionalFunction<MathPluginMetadataContext>("MaxValue < 500"), Description("Returns the minimum of two numbers. Only available if maxValue < 500.")]
+    [AIFunction<MathPluginMetadataContext>]
+    [ConditionalFunction("MaxValue < 500")]
+    [AIDescription("Returns the minimum of two numbers. Only available if maxValue < 500.")]
     public long Min(
-        [Description("First value.")] long a,
-        [Description("Second value.")] long b)
+        [AIDescription("First value.")] long a,
+        [AIDescription("Second value.")] long b)
         => Math.Min(a, b);
 }

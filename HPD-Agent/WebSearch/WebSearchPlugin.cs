@@ -23,12 +23,12 @@ public class WebSearchPlugin
     
     // === Multi-Provider Functions (include provider parameter) ===
     
-    [AIFunction]
-    [Description("Search the web using {context.DefaultProvider}")]
+    [AIFunction<WebSearchContext>]
+    [AIDescription("Search the web using {context.DefaultProvider}")]
     public async Task<string> WebSearch(
-        [Description("Search query")] string query,
-        [Description("Number of results to return")] int count = 5,
-        [Description("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("Search query")] string query,
+        [AIDescription("Number of results to return")] int count = 5,
+        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Search query cannot be empty", nameof(query));
@@ -37,13 +37,13 @@ public class WebSearchPlugin
         return !result.IsSuccess ? $"Search failed: {result.ErrorMessage}" : FormatSearchResults(result);
     }
     
-    [AIFunction]
-    [ConditionalFunction<WebSearchContext>("HasTavilyProvider || HasBraveProvider || HasBingProvider")]
-    [Description("Search for recent news from the last {timeRange}")]
+    [AIFunction<WebSearchContext>]
+    [ConditionalFunction("HasTavilyProvider || HasBraveProvider || HasBingProvider")]
+    [AIDescription("Search for recent news from the last {timeRange}")]
     public async Task<string> NewsSearch(
-        [Description("News search query")] string query,
-        [Description("Time range: day, week, month")] string timeRange = "week",
-        [Description("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("News search query")] string query,
+        [AIDescription("Time range: day, week, month")] string timeRange = "week",
+        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("News query cannot be empty", nameof(query));
@@ -53,13 +53,13 @@ public class WebSearchPlugin
     }
     
     
-    [AIFunction]
-    [ConditionalFunction<WebSearchContext>("HasBraveProvider || HasBingProvider")]
-    [Description("Search for videos using video-capable providers")]
+    [AIFunction<WebSearchContext>]
+    [ConditionalFunction("HasBraveProvider || HasBingProvider")]
+    [AIDescription("Search for videos using video-capable providers")]
     public async Task<string> VideoSearch(
-        [Description("Video search query")] string query,
-        [Description("Number of videos to return")] int count = 5,
-        [Description("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("Video search query")] string query,
+        [AIDescription("Number of videos to return")] int count = 5,
+        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Video query cannot be empty", nameof(query));
@@ -72,12 +72,12 @@ public class WebSearchPlugin
     // === Single-Provider Functions (no provider parameter) ===
     
     
-    [AIFunction]
-    [ConditionalFunction<WebSearchContext>("HasTavilyProvider")]
-    [Description("Get AI-generated answers with cited sources using Tavily's advanced AI")]
+    [AIFunction<WebSearchContext>]
+    [ConditionalFunction("HasTavilyProvider")]
+    [AIDescription("Get AI-generated answers with cited sources using Tavily's advanced AI")]
     public async Task<string> AnswerSearch(
-        [Description("Question to answer")] string query,
-        [Description("Use advanced AI answers for more detailed responses")] bool useAdvanced = true)
+        [AIDescription("Question to answer")] string query,
+        [AIDescription("Use advanced AI answers for more detailed responses")] bool useAdvanced = true)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Question cannot be empty", nameof(query));
         var connector = _context.GetConnector("tavily");
@@ -86,12 +86,12 @@ public class WebSearchPlugin
     }
     
     
-    [AIFunction]
-    [ConditionalFunction<WebSearchContext>("HasBingProvider")]
-    [Description("Search for shopping deals and product prices using Bing Shopping")]
+    [AIFunction<WebSearchContext>]
+    [ConditionalFunction("HasBingProvider")]
+    [AIDescription("Search for shopping deals and product prices using Bing Shopping")]
     public async Task<string> ShoppingSearch(
-        [Description("Product search query")] string query,
-        [Description("Number of results to return")] int count = 5)
+        [AIDescription("Product search query")] string query,
+        [AIDescription("Number of results to return")] int count = 5)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Product query cannot be empty", nameof(query));
         var connector = _context.GetConnector("bing");
@@ -100,12 +100,12 @@ public class WebSearchPlugin
     }
     
     
-    [AIFunction]
-    [ConditionalFunction<WebSearchContext>("HasBraveProvider || HasBingProvider")]
-    [Description("Enhanced multi-provider search with advanced capabilities")]
+    [AIFunction<WebSearchContext>]
+    [ConditionalFunction("HasBraveProvider || HasBingProvider")]
+    [AIDescription("Enhanced multi-provider search with advanced capabilities")]
     public async Task<string> EnhancedSearch(
-        [Description("Search query")] string query,
-        [Description("Number of results to return")] int count = 10)
+        [AIDescription("Search query")] string query,
+        [AIDescription("Number of results to return")] int count = 10)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Search query cannot be empty", nameof(query));
         

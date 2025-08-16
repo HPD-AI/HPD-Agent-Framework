@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 /// <summary>
 /// Information about a plugin discovered during source generation.
@@ -11,7 +13,11 @@ internal class PluginInfo
     public string Description { get; set; } = string.Empty;
     public string Namespace { get; set; } = string.Empty;
     public List<FunctionInfo> Functions { get; set; } = new();
-    public bool HasContextAwareMetadata => Description.Contains("{context.");
+    
+    /// <summary>
+    /// Whether any functions have conditional logic requiring context resolution
+    /// </summary>
+    public bool RequiresContext => Functions.Any(f => f.RequiresContext);
 }
 
 /// <summary>
@@ -25,33 +31,52 @@ internal class FunctionInfo
     public List<ParameterInfo> Parameters { get; set; } = new();
     public string ReturnType { get; set; } = string.Empty;
     public bool IsAsync { get; set; }
-    public bool RequiresContext { get; set; }
     public List<string> RequiredPermissions { get; set; } = new();
-    public bool HasContextAwareMetadata => Description.Contains("{context.");
     
     /// <summary>
-    /// V2 property-based conditional expression (null if not conditional)
+    /// Context type name from [AIFunction&lt;TContext&gt;] (null for non-generic)
     /// </summary>
-    public string? ConditionalExpressionV2 { get; set; }
+    public string? ContextTypeName { get; set; }
     
     /// <summary>
-    /// Type name of the context for V2 conditional expressions
+    /// Conditional expression for function visibility (null if always visible)
     /// </summary>
-    public string? ConditionalContextTypeName { get; set; }
+    public string? ConditionalExpression { get; set; }
     
     /// <summary>
-    /// Whether this function has a conditional inclusion requirement
+    /// Whether this function uses the generic AIFunction&lt;TContext&gt; attribute
     /// </summary>
-    public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpressionV2);
+    public bool HasTypedContext => !string.IsNullOrEmpty(ContextTypeName);
+    
+    /// <summary>
+    /// Whether this function requires context for conditions or dynamic descriptions
+    /// </summary>
+    public bool RequiresContext => HasTypedContext && (IsConditional || HasDynamicDescription || HasConditionalParameters);
+    
+    /// <summary>
+    /// Whether this function has conditional inclusion logic
+    /// </summary>
+    public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpression);
+    
+    /// <summary>
+    /// Whether this function has dynamic description templates
+    /// </summary>
+    public bool HasDynamicDescription => Description.Contains("{context.");
+    
+    /// <summary>
+    /// Whether this function has any conditional parameters
+    /// </summary>
+    public bool HasConditionalParameters => Parameters.Any(p => p.IsConditional);
 
+    /// <summary>
+    /// Validation data for later processing
+    /// </summary>
+    public ValidationData? ValidationData { get; set; }
+
+    /// <summary>
+    /// Effective function name (custom or method name)
+    /// </summary>
     public string FunctionName => CustomName ?? Name;
-
-    /// <summary>
-    /// Gets a dictionary of parameter descriptions for this function.
-    /// </summary>
-    public Dictionary<string, string> ParameterDescriptions => Parameters?.Count > 0
-        ? Parameters.ToDictionary(p => p.Name, p => p.Description ?? string.Empty)
-        : new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -64,4 +89,29 @@ internal class ParameterInfo
     public string Description { get; set; } = string.Empty;
     public bool HasDefaultValue { get; set; }
     public string? DefaultValue { get; set; }
+    
+    /// <summary>
+    /// Conditional expression for parameter visibility (null if always visible)
+    /// </summary>
+    public string? ConditionalExpression { get; set; }
+    
+    /// <summary>
+    /// Whether this parameter has conditional visibility
+    /// </summary>
+    public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpression);
+    
+    /// <summary>
+    /// Whether this parameter has dynamic description templates
+    /// </summary>
+    public bool HasDynamicDescription => Description.Contains("{context.");
+}
+
+/// <summary>
+/// Validation data for functions that need validation after source generation.
+/// </summary>
+internal class ValidationData
+{
+    public MethodDeclarationSyntax Method { get; set; } = null!;
+    public SemanticModel SemanticModel { get; set; } = null!;
+    public bool NeedsValidation { get; set; }
 }
