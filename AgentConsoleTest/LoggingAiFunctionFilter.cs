@@ -23,6 +23,7 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
         // Post-invocation logging
         var result = context.Result;
         Console.WriteLine($"[LOG][POST] Conversation: {conversationId} Function: {functionName} Result: {FormatResult(result)}");
+        Console.WriteLine(new string('-', 50));
     }
 
     private string FormatArgs(object? args)

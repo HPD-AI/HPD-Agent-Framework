@@ -303,6 +303,7 @@ static Agent? CreateChatAgent(Project project)
             .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
             .WithName("InteractiveChatAgent")
             .WithInstructions(@"You are an expert AI math assistant. Always be clear, concise, and helpful. Provide code examples when possible. Answer as if you are mentoring a developer.")
+            .WithMaxFunctionCalls(6) // Enable multi-turn function calling with up to 15 calls
             .WithFilter(new LoggingAiFunctionFilter())
             .WithPlugin<MathPlugin>(new MathPluginMetadataContext())
             .WithPlugin(webSearchPlugin, webSearchContext)

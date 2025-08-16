@@ -22,20 +22,24 @@ public class Agent : IChatClient, IAGUIAgent
     // Memory management
     private IKernelMemory? _memory;
     private AgentMemoryBuilder? _memoryBuilder;
+    // Function calling configuration
+    private readonly int _maxFunctionCalls;
     // Metadata Tracking
     public bool LastOperationHadFunctionCalls { get; private set; }
     public List<string> LastOperationFunctionCalls { get; private set; } = new();
+    public int LastOperationFunctionCallCount { get; private set; }
 
     /// <summary>
     /// Initializes a new Agent instance
     /// </summary>
-    public Agent(IChatClient baseClient, string name, ChatOptions? defaultOptions = null, string? systemInstructions = null, IEnumerable<IAiFunctionFilter>? AIFunctionFilters = null)
+    public Agent(IChatClient baseClient, string name, ChatOptions? defaultOptions = null, string? systemInstructions = null, IEnumerable<IAiFunctionFilter>? AIFunctionFilters = null, int maxFunctionCalls = 10)
     {
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = name ?? throw new ArgumentNullException(nameof(name));
         _defaultOptions = defaultOptions;
         _systemInstructions = systemInstructions;
         _aiFunctionFilters = AIFunctionFilters?.ToList() ?? new List<IAiFunctionFilter>();
+        _maxFunctionCalls = maxFunctionCalls;
         _eventConverter = new AGUIEventConverter();
         _promptFilters = new List<IPromptFilter>();
     }
@@ -43,7 +47,7 @@ public class Agent : IChatClient, IAGUIAgent
     /// <summary>
     /// Initializes a new Agent instance with scoped filter manager
     /// </summary>
-    public Agent(IChatClient baseClient, string name, ChatOptions? defaultOptions, string? systemInstructions, ScopedFilterManager scopedFilterManager)
+    public Agent(IChatClient baseClient, string name, ChatOptions? defaultOptions, string? systemInstructions, ScopedFilterManager scopedFilterManager, int maxFunctionCalls = 10)
     {
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = name ?? throw new ArgumentNullException(nameof(name));
@@ -51,6 +55,7 @@ public class Agent : IChatClient, IAGUIAgent
         _systemInstructions = systemInstructions;
         _scopedFilterManager = scopedFilterManager ?? throw new ArgumentNullException(nameof(scopedFilterManager));
         _aiFunctionFilters = new List<IAiFunctionFilter>(); // Will use scoped filters instead
+        _maxFunctionCalls = maxFunctionCalls;
         _eventConverter = new AGUIEventConverter();
         _promptFilters = new List<IPromptFilter>();
     }
@@ -65,7 +70,8 @@ public class Agent : IChatClient, IAGUIAgent
         string? systemInstructions,
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
-        ContextualFunctionSelector? contextualSelector)
+        ContextualFunctionSelector? contextualSelector,
+        int maxFunctionCalls = 10)
     {
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = name ?? throw new ArgumentNullException(nameof(name));
@@ -75,6 +81,7 @@ public class Agent : IChatClient, IAGUIAgent
         _aiFunctionFilters = new List<IAiFunctionFilter>(); // Will use scoped filters instead
         _promptFilters = promptFilters?.ToList() ?? new List<IPromptFilter>();
         _contextualSelector = contextualSelector;
+        _maxFunctionCalls = maxFunctionCalls;
         _eventConverter = new AGUIEventConverter();
     }
 
@@ -97,6 +104,11 @@ public class Agent : IChatClient, IAGUIAgent
     /// AIFuncton filters applied to tool calls in conversations
     /// </summary>
     public IReadOnlyList<IAiFunctionFilter> AIFunctionFilters => _aiFunctionFilters;
+
+    /// <summary>
+    /// Maximum number of function calls allowed in a single conversation turn
+    /// </summary>
+    public int MaxFunctionCalls => _maxFunctionCalls;
 
     /// <summary>
     /// Scoped filter manager for applying filters based on function/plugin scope
@@ -242,7 +254,9 @@ public class Agent : IChatClient, IAGUIAgent
     }
 
     /// <summary>
-    /// Process response with AIFuncton filters when function calls are present
+    /// Process response with AIFunction filters when function calls are present
+    /// Supports multi-turn function calling by continuing until the LLM provides a final answer
+    /// Based on Microsoft.Extensions.AI.FunctionInvokingChatClient pattern
     /// </summary>
     private async Task<ChatResponse> ProcessResponseWithFilters(
         ChatResponse response, 
@@ -250,27 +264,167 @@ public class Agent : IChatClient, IAGUIAgent
         ChatOptions? options, 
         CancellationToken cancellationToken)
     {
-    // Reset tracking at start
-    LastOperationHadFunctionCalls = false;
-    LastOperationFunctionCalls.Clear();
-    var messagesList = messages.ToList();
-        var responseCopy = response;
+        // Copy the original messages to avoid multiple enumeration
+        List<ChatMessage> originalMessages = [.. messages];
+        var currentMessages = originalMessages.AsEnumerable();
         
-        // Check if response contains function calls
-        var lastMessage = response.Messages.LastOrDefault();
-        if (lastMessage == null) return response;
+        List<ChatMessage>? augmentedHistory = null; // the actual history of messages sent on turns other than the first
+        ChatResponse? currentResponse = response; // the response from the inner client
+        List<ChatMessage>? responseMessages = null; // tracked list of messages, across multiple turns, to be used for the final response
+        List<FunctionCallContent>? functionCallContents = null; // function call contents that need responding to in the current turn
         
-        var functionCalls = lastMessage.Contents.OfType<FunctionCallContent>().ToList();
-    if (!functionCalls.Any()) return response;
-    // Add tracking
-    LastOperationHadFunctionCalls = true;
-    LastOperationFunctionCalls.AddRange(functionCalls.Select(fc => fc.Name));
-        
+        // Reset tracking at start of entire operation
+        LastOperationHadFunctionCalls = false;
+        LastOperationFunctionCalls.Clear();
+        LastOperationFunctionCallCount = 0;
+
+        for (int iteration = 0; iteration < _maxFunctionCalls; iteration++)
+        {
+            functionCallContents?.Clear();
+
+            // Any function call work to do? If yes, ensure we're tracking that work in functionCallContents.
+            bool requiresFunctionInvocation =
+                (options?.Tools is { Count: > 0 }) &&
+                CopyFunctionCalls(currentResponse.Messages, ref functionCallContents);
+
+            // In a common case where we make a request and there's no function calling work required,
+            // fast path out by just returning the original response.
+            if (iteration == 0 && !requiresFunctionInvocation)
+            {
+                return currentResponse;
+            }
+
+            // Track aggregate details from the response, including all of the response messages
+            (responseMessages ??= []).AddRange(currentResponse.Messages);
+
+            // If there are no tools to call, or for any other reason we should stop, we're done.
+            // Break out of the loop and allow the handling at the end to configure the response
+            // with aggregated data from previous requests.
+            if (!requiresFunctionInvocation)
+            {
+                break;
+            }
+
+            // Mark that we had function calls
+            LastOperationHadFunctionCalls = true;
+            LastOperationFunctionCalls.AddRange(functionCallContents!.Select(fc => fc.Name));
+            LastOperationFunctionCallCount = iteration + 1;
+
+            // Prepare the history for the next iteration.
+            PrepareHistoryForNextIteration(originalMessages, ref currentMessages, ref augmentedHistory, currentResponse, responseMessages);
+
+            // Add the responses from the function calls into the augmented history and also into the tracked
+            // list of response messages.
+            var addedMessages = await ProcessFunctionCallsAsync(augmentedHistory ?? currentMessages.ToList(), options, functionCallContents!, cancellationToken);
+            // Add the tool results into the history for the NEXT turn so the model sees them.
+            (augmentedHistory ?? (List<ChatMessage>)currentMessages).AddRange(addedMessages);
+            responseMessages.AddRange(addedMessages);
+
+            // Call the LLM again with the updated history
+            // For the next turn, create a new set of options to avoid forcing the model to call a tool again.
+            // This prevents an infinite loop where the model keeps invoking functions.
+            var nextTurnOptions = options == null
+                ? new ChatOptions()
+                : new ChatOptions
+                {
+                    Tools = options.Tools,
+                    // Explicitly reset ToolMode to null (defaults to 'Auto') so the model is free to answer.
+                    ToolMode = AutoChatToolMode.Auto,
+                    AllowMultipleToolCalls = options.AllowMultipleToolCalls,
+                    MaxOutputTokens = options.MaxOutputTokens,
+                    Temperature = options.Temperature,
+                    TopP = options.TopP,
+                    FrequencyPenalty = options.FrequencyPenalty,
+                    PresencePenalty = options.PresencePenalty,
+                    ResponseFormat = options.ResponseFormat,
+                    Seed = options.Seed,
+                    StopSequences = options.StopSequences,
+                    ModelId = options.ModelId,
+                    AdditionalProperties = options.AdditionalProperties
+                };
+
+            currentResponse = await _baseClient.GetResponseAsync(currentMessages, nextTurnOptions, cancellationToken);
+        }
+
+        // Configure the final response with aggregated data
+        if (responseMessages != null)
+        {
+            currentResponse.Messages = responseMessages;
+        }
+
+        return currentResponse;
+    }
+
+    /// <summary>
+    /// Prepares the various chat message lists after a response from the inner client and before invoking functions
+    /// </summary>
+    private static void PrepareHistoryForNextIteration(
+        IEnumerable<ChatMessage> originalMessages,
+        ref IEnumerable<ChatMessage> currentMessages,
+        ref List<ChatMessage>? augmentedHistory,
+        ChatResponse response,
+        List<ChatMessage> allTurnsResponseMessages)
+    {
+        // We're going to need to augment the history with function result contents.
+        // That means we need a separate list to store the augmented history.
+        augmentedHistory ??= originalMessages.ToList();
+
+        // Now add the most recent response messages.
+        augmentedHistory.AddRange(response.Messages);
+
+        // Use the augmented history as the new set of messages to send.
+        currentMessages = augmentedHistory;
+    }
+
+    /// <summary>
+    /// Copies any FunctionCallContent from messages to functionCalls
+    /// </summary>
+    private static bool CopyFunctionCalls(
+        IList<ChatMessage> messages, ref List<FunctionCallContent>? functionCalls)
+    {
+        bool any = false;
+        int count = messages.Count;
+        for (int i = 0; i < count; i++)
+        {
+            any |= CopyFunctionCalls(messages[i].Contents, ref functionCalls);
+        }
+
+        return any;
+    }
+
+    /// <summary>
+    /// Copies any FunctionCallContent from content to functionCalls
+    /// </summary>
+    private static bool CopyFunctionCalls(
+        IList<AIContent> content, ref List<FunctionCallContent>? functionCalls)
+    {
+        bool any = false;
+        int count = content.Count;
+        for (int i = 0; i < count; i++)
+        {
+            if (content[i] is FunctionCallContent functionCall)
+            {
+                (functionCalls ??= []).Add(functionCall);
+                any = true;
+            }
+        }
+
+        return any;
+    }
+
+    /// <summary>
+    /// Processes the function calls and returns the messages to add to the conversation
+    /// </summary>
+    private async Task<IList<ChatMessage>> ProcessFunctionCallsAsync(
+        List<ChatMessage> messages, 
+        ChatOptions? options, 
+        List<FunctionCallContent> functionCallContents, 
+        CancellationToken cancellationToken)
+    {
+        var resultMessages = new List<ChatMessage>();
+
         // Process each function call through the filter pipeline
-        var modifiedMessages = messagesList.ToList();
-        modifiedMessages.AddRange(response.Messages); // Add the assistant's response with function calls
-        
-        foreach (var functionCall in functionCalls)
+        foreach (var functionCall in functionCallContents)
         {
             var toolCallRequest = new ToolCallRequest
             {
@@ -280,7 +434,7 @@ public class Agent : IChatClient, IAGUIAgent
             
             // Create a temporary conversation for the filter context
             var tempConversation = new Conversation();
-            foreach (var msg in modifiedMessages)
+            foreach (var msg in messages)
             {
                 tempConversation.AddMessage(msg);
             }
@@ -331,21 +485,13 @@ public class Agent : IChatClient, IAGUIAgent
             
             await pipeline(context);
             
-            // Add function result to messages
-            // Create function result content using CallId and pipeline result
+            // Add function result to the result messages
             var functionResult = new FunctionResultContent(functionCall.CallId, context.Result);
-            // Wrap in AIContent list for ChatMessage
             var functionMessage = new ChatMessage(ChatRole.Tool, new AIContent[] { functionResult });
-            modifiedMessages.Add(functionMessage);
+            resultMessages.Add(functionMessage);
         }
-        
-        // If we added function results, get a new response from the assistant
-        if (modifiedMessages.Count > messagesList.Count + response.Messages.Count())
-        {
-            return await _baseClient.GetResponseAsync(modifiedMessages, options, cancellationToken);
-        }
-        
-        return response;
+
+        return resultMessages;
     }
 
     /// <summary>

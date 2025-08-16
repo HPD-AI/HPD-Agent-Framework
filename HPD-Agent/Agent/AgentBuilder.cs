@@ -34,6 +34,9 @@ public class AgentBuilder
     private readonly BuilderScopeContext _scopeContext = new();
     private ContextualFunctionConfig? _contextualConfig;
     private readonly List<IPromptFilter> _promptFilters = new();
+    
+    // Function calling configuration
+    private int _maxFunctionCalls = 10; // Default to 10
 
     // Audio capability fields
     private ISpeechToTextClient? _sttClient;
@@ -244,6 +247,19 @@ public class AgentBuilder
         {
             foreach (var f in filters) _promptFilters.Add(f);
         }
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the maximum number of function calls allowed in a single conversation turn
+    /// </summary>
+    /// <param name="maxFunctionCalls">Maximum number of function calls (default: 10)</param>
+    public AgentBuilder WithMaxFunctionCalls(int maxFunctionCalls)
+    {
+        if (maxFunctionCalls <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxFunctionCalls), "Maximum function calls must be greater than 0");
+        
+        _maxFunctionCalls = maxFunctionCalls;
         return this;
     }
     
@@ -540,7 +556,9 @@ public class AgentBuilder
             mergedOptions,
             _systemInstructions,
             _promptFilters,
-            _scopedFilterManager, selector);
+            _scopedFilterManager, 
+            selector,
+            _maxFunctionCalls);
 
         // Inject memory builder if it has been configured
         if (_agentMemoryBuilder != null)
