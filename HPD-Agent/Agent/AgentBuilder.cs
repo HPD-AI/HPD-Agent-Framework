@@ -70,9 +70,9 @@ public class AgentBuilder
     }
     
     /// <summary>
-    /// Adds orchestration filters that apply to all tool calls in conversations
+    /// Adds Function Invocation filters that apply to all tool calls in conversations
     /// </summary>
-    public AgentBuilder WithOrchestrationFilters(params IAiFunctionFilter[] filters)
+    public AgentBuilder WithFunctionInvokationFilters(params IAiFunctionFilter[] filters)
     {
         if (filters != null)
         {
@@ -85,9 +85,9 @@ public class AgentBuilder
     }
     
     /// <summary>
-    /// Adds an orchestration filter by type (will be instantiated)
+    /// Adds an Function Invocation filter by type (will be instantiated)
     /// </summary>
-    public AgentBuilder WithOrchestrationFilter<T>() where T : IAiFunctionFilter, new()
+    public AgentBuilder WithFunctionInvocationFilter<T>() where T : IAiFunctionFilter, new()
     {
         var filter = new T();
         _scopedFilterManager.AddFilter(filter, _scopeContext.CurrentScope, _scopeContext.CurrentTarget);
@@ -95,7 +95,7 @@ public class AgentBuilder
     }
     
     /// <summary>
-    /// Adds an orchestration filter instance
+    /// Adds an function filter instance
     /// </summary>
     public AgentBuilder WithFilter(IAiFunctionFilter filter)
     {
@@ -549,7 +549,7 @@ public class AgentBuilder
         }
 
         // DO NOT wrap with FunctionInvokingChatClient - we handle function calls manually in Agent
-        // This allows our orchestration filters to work properly
+        // This allows our Function Invocation filters to work properly
         var agent = new Agent(
             _baseClient,
             _agentName,
