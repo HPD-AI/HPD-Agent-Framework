@@ -8,16 +8,16 @@ using System.Threading.Tasks;
 /// <summary>
 /// Prompt filter that injects project documents into system context
 /// </summary>
-public class ProjectCagInjectionFilter : IPromptFilter
+public class ProjectInjectedMemoryFilter : IPromptFilter
 {
     private readonly ProjectCagOptions _options;
-    private readonly ILogger<ProjectCagInjectionFilter>? _logger;
+    private readonly ILogger<ProjectInjectedMemoryFilter>? _logger;
     private string? _cachedDocumentContext;
     private DateTime _lastCacheTime = DateTime.MinValue;
     private readonly TimeSpan _cacheValidTime = TimeSpan.FromMinutes(2);
     private readonly object _cacheLock = new object();
 
-    public ProjectCagInjectionFilter(ProjectCagOptions options, ILogger<ProjectCagInjectionFilter>? logger = null)
+    public ProjectInjectedMemoryFilter(ProjectCagOptions options, ILogger<ProjectInjectedMemoryFilter>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;

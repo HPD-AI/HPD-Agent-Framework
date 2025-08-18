@@ -3,8 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace HPD_Agent.MemoryCAG
-{
+
 /// <summary>
 /// Static helper for processing conversation document uploads
 /// </summary>
@@ -127,5 +126,4 @@ public static class ConversationDocumentHelper
             
         return $"Failed to process {errors.Length} document(s):\n" + string.Join("\n", errors);
     }
-}
 }

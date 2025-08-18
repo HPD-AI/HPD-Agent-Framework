@@ -2,3 +2,7 @@
 /Reference
 bin/
 obj/
+appsettings.json
+appsettings.*.json
+**/appsettings.json
+**/appsettings.*.json

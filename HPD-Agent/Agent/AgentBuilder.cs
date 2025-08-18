@@ -46,9 +46,9 @@ public class AgentBuilder
     private IServiceProvider? _serviceProvider;
     private ILoggerFactory? _logger;
 
-    // Memory CAG configuration fields
-    private AgentCagOptions? _memoryCagOptions;
-    private AgentMemoryCagManager? _memoryCagManager;  // track externally provided manager
+    // Memory Injected Memory configuration fields (formerly CAG)
+    private AgentInjectedMemoryOptions? _memoryInjectedOptions;
+    private AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
 
     // RAG configuration fields
     private AgentMemoryBuilder? _agentMemoryBuilder;
@@ -456,10 +456,10 @@ public class AgentBuilder
         if (_baseClient == null)
             throw new InvalidOperationException("Base client must be provided using WithBaseClient() or WithProvider()");
 
-        // Register Memory CAG prompt filter if configured
-        if (_memoryCagOptions != null && _memoryCagManager != null)
+        // Register Memory Injected Memory prompt filter if configured
+        if (_memoryInjectedOptions != null && _memoryInjectedManager != null)
         {
-            var memoryFilter = new AgentMemoryCagInjectionFilter(_memoryCagOptions, _logger?.CreateLogger<AgentMemoryCagInjectionFilter>());
+            var memoryFilter = new AgentInjectedMemoryFilter(_memoryInjectedOptions, _logger?.CreateLogger<AgentInjectedMemoryFilter>());
             _promptFilters.Add(memoryFilter);
         }
 
@@ -903,53 +903,18 @@ public class AgentBuilder
     }
 #pragma warning restore RS1035
 
-    /// <summary>Enable Memory CAG capability using an existing manager and default options or configure callback</summary>
-    public AgentBuilder WithMemoryCagCapability(AgentMemoryCagManager manager, Action<AgentCagOptions>? configure = null)
-    {
-        _memoryCagManager = manager ?? throw new ArgumentNullException(nameof(manager));
-        _memoryCagOptions = new AgentCagOptions();
-        configure?.Invoke(_memoryCagOptions);
-        // register plugin for this manager
-        var plugin = new AgentMemoryCagPlugin(manager, _agentName, _logger?.CreateLogger<AgentMemoryCagPlugin>());
-        WithPlugin(plugin);
-        return this;
-    }
+    // Public properties for extension methods
+    /// <summary>
+    /// Gets the agent name for use in extension methods
+    /// </summary>
+    public string AgentName => _agentName;
 
-    /// <summary>Enable Memory CAG capability using an existing manager and provided options</summary>
-    public AgentBuilder WithMemoryCagCapability(AgentMemoryCagManager manager, AgentCagOptions options)
+    /// <summary>
+    /// Internal method to set memory builder (used by extension methods)
+    /// </summary>
+    internal AgentBuilder SetMemoryBuilder(AgentMemoryBuilder builder)
     {
-        _memoryCagManager = manager ?? throw new ArgumentNullException(nameof(manager));
-        _memoryCagOptions = options ?? throw new ArgumentNullException(nameof(options));
-        // register plugin for this manager
-        var plugin = new AgentMemoryCagPlugin(manager, _agentName, _logger?.CreateLogger<AgentMemoryCagPlugin>());
-        WithPlugin(plugin);
-        return this;
-    }
-
-    /// <summary>Enable Memory CAG capability with default options</summary>
-    public AgentBuilder WithMemoryCagCapability(Action<AgentCagOptions>? configure = null)
-    {
-        _memoryCagOptions = new AgentCagOptions();
-        configure?.Invoke(_memoryCagOptions);
-        // create manager from configured options
-        _memoryCagManager = new AgentMemoryCagManager(_memoryCagOptions.StorageDirectory, _logger?.CreateLogger<AgentMemoryCagManager>());
-        _memoryCagManager.SetContext(_agentName);
-        // register plugin for this manager
-        var plugin = new AgentMemoryCagPlugin(_memoryCagManager, _agentName, _logger?.CreateLogger<AgentMemoryCagPlugin>());
-        WithPlugin(plugin);
-        return this;
-    }
-
-    /// <summary>Enable Memory CAG capability with provided options</summary>
-    public AgentBuilder WithMemoryCagCapability(AgentCagOptions options)
-    {
-        _memoryCagOptions = options ?? throw new ArgumentNullException(nameof(options));
-        // create manager from options
-        _memoryCagManager = new AgentMemoryCagManager(_memoryCagOptions.StorageDirectory, _logger?.CreateLogger<AgentMemoryCagManager>());
-        _memoryCagManager.SetContext(_agentName);
-        // register plugin
-        var plugin = new AgentMemoryCagPlugin(_memoryCagManager, _agentName, _logger?.CreateLogger<AgentMemoryCagPlugin>());
-        WithPlugin(plugin);
+        _agentMemoryBuilder = builder;
         return this;
     }
 

@@ -29,7 +29,7 @@ public class Project
     public List<Conversation> Conversations { get; } = new();
 
     /// <summary>Scoped memory manager for this project.</summary>
-    public AgentMemoryCagManager AgentMemoryCagManager { get; }
+    public AgentInjectedMemoryManager AgentInjectedMemoryManager { get; }
 
     /// <summary>Document manager for this project</summary>
     public ProjectDocumentManager DocumentManager { get; }
@@ -37,22 +37,49 @@ public class Project
     /// <summary>The agent instance for this project with memory capability</summary>
     public Agent? Agent { get; private set; }
 
+    // Static factory methods for progressive disclosure
+
+    /// <summary>
+    /// Creates a new project with default memory handling (FullTextInjection).
+    /// This is the simple, recommended approach for most use cases.
+    /// </summary>
+    public static Project Create(string name, string? storageDirectory = null)
+    {
+        var project = new Project(name, storageDirectory);
+        project._documentStrategy = ProjectDocumentHandling.FullTextInjection;
+        return project;
+    }
+
+    /// <summary>
+    /// Creates a new project with advanced Indexed Retrieval capabilities.
+    /// Use this when you need semantic search across project documents.
+    /// </summary>
+    public static Project CreateWithIndexedRetrieval(string name, Action<ProjectMemoryBuilder> configure, string? storageDirectory = null)
+    {
+        var project = new Project(name, storageDirectory);
+        project._documentStrategy = ProjectDocumentHandling.IndexedRetrieval;
+        var builder = new ProjectMemoryBuilder(project.Id);
+        configure(builder);
+        project.SetMemoryBuilder(builder);
+        return project;
+    }
+
     // Memory management
     private IKernelMemory? _memory;
     private ProjectMemoryBuilder? _memoryBuilder;
-    private ProjectDocumentStrategy _documentStrategy = ProjectDocumentStrategy.DirectInjection; // Default to DirectInjection for CAG-only scenarios
+    private ProjectDocumentHandling _documentStrategy = ProjectDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
 
-    /// <summary>Constructor initializes project, memory and document managers.</summary>
-    public Project(string name, string? storageDirectory = null)
+    /// <summary>Private constructor - use static factory methods Create() or CreateWithIndexedRetrieval() instead.</summary>
+    private Project(string name, string? storageDirectory = null)
     {
         Id = Guid.NewGuid().ToString("N");
         Name = name;
         CreatedAt = DateTime.UtcNow;
         LastActivity = CreatedAt;
 
-        var directory = storageDirectory ?? "./cag-storage";
-        AgentMemoryCagManager = new AgentMemoryCagManager(directory);
-        AgentMemoryCagManager.SetContext(Id);
+        var directory = storageDirectory ?? "./injected-memory-storage";
+        AgentInjectedMemoryManager = new AgentInjectedMemoryManager(directory);
+        AgentInjectedMemoryManager.SetContext(Id);
 
         // Initialize document manager with same directory structure
         var textExtractor = new TextExtractionUtility();
@@ -74,7 +101,7 @@ public class Project
     /// <returns>The kernel memory instance, or null if not configured</returns>
     public IKernelMemory? GetOrCreateMemory()
     {
-        if (_documentStrategy == ProjectDocumentStrategy.DirectInjection)
+        if (_documentStrategy == ProjectDocumentHandling.FullTextInjection)
         {
             return null; // No RAG memory needed for DirectInjection
         }
@@ -130,6 +157,33 @@ public class Project
         return conv;
     }
 
+    /// <summary>
+    /// Creates a new conversation with default memory handling (FullTextInjection).
+    /// </summary>
+    public Conversation CreateConversation(IEnumerable<Agent> agents)
+    {
+        var conv = new Conversation(this, agents, ConversationDocumentHandling.FullTextInjection);
+        Conversations.Add(conv);
+        UpdateActivity();
+        return conv;
+    }
+
+    /// <summary>
+    /// Creates a new conversation with advanced Indexed Retrieval for this session.
+    /// </summary>
+    public Conversation CreateConversationWithIndexedRetrieval(
+        IEnumerable<Agent> agents,
+        Action<ConversationMemoryBuilder> configure)
+    {
+        var conv = new Conversation(this, agents, ConversationDocumentHandling.IndexedRetrieval);
+        var builder = new ConversationMemoryBuilder(conv.Id);
+        configure(builder);
+        conv.SetMemoryBuilder(builder);
+        Conversations.Add(conv);
+        UpdateActivity();
+        return conv;
+    }
+
     /// <summary>Update last activity timestamp.</summary>
     public void UpdateActivity() => LastActivity = DateTime.UtcNow;
 
@@ -165,16 +219,16 @@ public class Project
     {
         switch (_documentStrategy)
         {
-            case ProjectDocumentStrategy.RAG:
+            case ProjectDocumentHandling.IndexedRetrieval:
                 var memory = GetOrCreateMemory();
                 if (memory != null)
                 {
                     await memory.ImportDocumentAsync(filePath, tags: new() { { "project", this.Id } }, cancellationToken: cancellationToken);
                 }
-                // We still use DocumentManager to track metadata, even in RAG mode
+                // We still use DocumentManager to track metadata, even in IndexedRetrieval mode
                 return await DocumentManager.UploadDocumentAsync(filePath, description, cancellationToken);
 
-            case ProjectDocumentStrategy.DirectInjection:
+            case ProjectDocumentHandling.FullTextInjection:
                 // Use the existing ProjectDocumentManager to handle the upload and storage for injection
                 return await DocumentManager.UploadDocumentAsync(filePath, description, cancellationToken);
             
@@ -194,16 +248,16 @@ public class Project
     {
         switch (_documentStrategy)
         {
-            case ProjectDocumentStrategy.RAG:
+            case ProjectDocumentHandling.IndexedRetrieval:
                 var memory = GetOrCreateMemory();
                 if (memory != null)
                 {
                     await memory.ImportWebPageAsync(url, tags: new() { { "project", this.Id } }, cancellationToken: cancellationToken);
                 }
-                // We still use DocumentManager to track metadata, even in RAG mode
+                // We still use DocumentManager to track metadata, even in IndexedRetrieval mode
                 return await DocumentManager.UploadDocumentFromUrlAsync(url, description, cancellationToken);
 
-            case ProjectDocumentStrategy.DirectInjection:
+            case ProjectDocumentHandling.FullTextInjection:
                 // Use the existing ProjectDocumentManager to handle the upload and storage for injection
                 return await DocumentManager.UploadDocumentFromUrlAsync(url, description, cancellationToken);
             
@@ -211,5 +265,109 @@ public class Project
                 throw new InvalidOperationException($"Invalid document strategy configured for the project: {_documentStrategy}");
         }
     }
+    
+    #region Project Helpers (Phase 2 Implementation)
+    
+    /// <summary>
+    /// PHASE 2: Gets a summary of the project's activity.
+    /// Absorbs project-related functionality from helper classes.
+    /// </summary>
+    /// <returns>Project activity summary</returns>
+    public async Task<ProjectSummary> GetSummaryAsync()
+    {
+        var totalMessages = Conversations.Sum(c => c.Messages.Count);
+        var activeConversations = Conversations.Count(c => c.Messages.Any());
+        var documents = await DocumentManager.GetDocumentsAsync();
+        
+        return new ProjectSummary
+        {
+            Id = Id,
+            Name = Name,
+            Description = Description,
+            ConversationCount = Conversations.Count,
+            ActiveConversationCount = activeConversations,
+            TotalMessages = totalMessages,
+            DocumentCount = documents.Count,
+            CreatedAt = CreatedAt,
+            LastActivity = LastActivity
+        };
+    }
+    
+    /// <summary>
+    /// PHASE 2: Gets the most recent conversation in this project.
+    /// Convenience method for common project navigation patterns.
+    /// </summary>
+    /// <returns>Most recent conversation or null if none exist</returns>
+    public Conversation? GetMostRecentConversation()
+    {
+        return Conversations.OrderByDescending(c => c.LastActivity).FirstOrDefault();
+    }
+    
+    /// <summary>
+    /// PHASE 2: Creates a new conversation within this project.
+    /// Convenience method that handles project-aware conversation setup.
+    /// </summary>
+    /// <param name="agents">Agents to include in the conversation</param>
+    /// <param name="documentHandling">How documents should be handled in this conversation</param>
+    /// <param name="filters">Optional AI function filters</param>
+    /// <returns>New conversation instance</returns>
+    public Conversation CreateConversation(
+        IEnumerable<Agent> agents, 
+        ConversationDocumentHandling documentHandling = ConversationDocumentHandling.FullTextInjection,
+        IEnumerable<IAiFunctionFilter>? filters = null)
+    {
+        var conversation = new Conversation(this, agents, documentHandling, filters);
+        Conversations.Add(conversation);
+        UpdateLastActivity();
+        return conversation;
+    }
+    
+    /// <summary>
+    /// PHASE 2: Searches conversations in this project by text content.
+    /// Simple text-based search across conversation messages.
+    /// </summary>
+    /// <param name="searchTerm">Term to search for</param>
+    /// <param name="maxResults">Maximum number of results to return (default 10)</param>
+    /// <returns>Conversations containing the search term</returns>
+    public IEnumerable<Conversation> SearchConversations(string searchTerm, int maxResults = 10)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+            return Enumerable.Empty<Conversation>();
+            
+        var results = Conversations
+            .Where(c => c.Messages.Any(m => 
+                m.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true))
+            .OrderByDescending(c => c.LastActivity)
+            .Take(maxResults);
+            
+        return results;
+    }
+    
+    /// <summary>
+    /// PHASE 2: Updates the last activity timestamp.
+    /// Internal method called when project content changes.
+    /// </summary>
+    private void UpdateLastActivity()
+    {
+        LastActivity = DateTime.UtcNow;
+    }
+    
+    #endregion
+}
+
+/// <summary>
+/// PHASE 2: Project summary information for dashboard and overview scenarios.
+/// </summary>
+public class ProjectSummary
+{
+    public required string Id { get; set; }
+    public required string Name { get; set; }
+    public required string Description { get; set; }
+    public int ConversationCount { get; set; }
+    public int ActiveConversationCount { get; set; }
+    public int TotalMessages { get; set; }
+    public int DocumentCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime LastActivity { get; set; }
 }
 

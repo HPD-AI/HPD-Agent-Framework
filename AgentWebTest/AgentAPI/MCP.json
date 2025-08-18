@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "name": "context7",
+      "command": "npx",
+      "arguments": ["-y", "@upstash/context7-mcp"],
+      "description": "Up-to-date library documentation and code examples from Context7",
+      "enabled": true,
+      "timeout": 30000,
+      "retryAttempts": 3,
+      "environment": {
+        "NODE_ENV": "production"
+      }
+    }
+  ]
+}

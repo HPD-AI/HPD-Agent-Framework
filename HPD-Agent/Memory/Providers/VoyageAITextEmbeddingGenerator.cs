@@ -43,11 +43,14 @@ public class VoyageAITextEmbeddingGenerator : ITextEmbeddingGenerator
     public async Task<Embedding> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
     {
         var preview = string.IsNullOrEmpty(text) ? "" : text[..Math.Min(50, text.Length)];
+        Console.WriteLine($"[VoyageAI] Generating embedding for text: {preview}");
         _logger.LogInformation("Generating embedding for text: {Preview}", preview);
         var apiKeyPreview = _config.ApiKey?.Length > 8 ? _config.ApiKey.Substring(0, 8) + "***" : (_config.ApiKey != null ? "***" : "Not Set");
+        Console.WriteLine($"[VoyageAI] Config: ModelName={_config.ModelName}, Endpoint={_config.Endpoint}, ApiKey={apiKeyPreview}");
         _logger.LogInformation("VoyageAI config: ModelName={ModelName}, Endpoint={Endpoint}, ApiKey={ApiKey}", _config.ModelName, _config.Endpoint, apiKeyPreview);
         var payload = BuildPayload(text);
         var payloadJson = JsonSerializer.Serialize(payload, MemoryRagJsonContext.Default.DictionaryStringObject);
+        Console.WriteLine($"[VoyageAI] Payload: {payloadJson}");
         var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         var request = new HttpRequestMessage(HttpMethod.Post, _config.Endpoint)
         {
@@ -57,26 +60,44 @@ public class VoyageAITextEmbeddingGenerator : ITextEmbeddingGenerator
         try
         {
             var response = await _httpClient.SendAsync(request, cancellationToken);
+            Console.WriteLine($"[VoyageAI] HTTP Status: {response.StatusCode}");
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
+                Console.WriteLine($"[VoyageAI] Error: {response.StatusCode}, {json}");
                 _logger.LogError("VoyageAI error: {StatusCode}, {Error}", response.StatusCode, json);
                 throw new HttpRequestException($"VoyageAI failed: {response.StatusCode}");
             }
+            Console.WriteLine($"[VoyageAI] Response body: {json}");
             _logger.LogDebug("VoyageAI response body: {Body}", json);
             using (var doc = JsonDocument.Parse(json))
             {
                 var result = JsonSerializer.Deserialize(doc, MemoryRagJsonContext.Default.VoyageAIResponse)!;
                 if (result?.data == null || result.data.Count == 0)
                 {
+                    Console.WriteLine("[VoyageAI] API returned an invalid response format");
                     _logger.LogError("VoyageAI API returned an invalid response format");
                     throw new InvalidOperationException("VoyageAI API returned an invalid response format");
+                }
+                var emb = result.data.First().embedding;
+                if (emb is JsonElement elem && elem.ValueKind == JsonValueKind.Array)
+                {
+                    Console.WriteLine($"[VoyageAI] Embedding generated, length: {elem.GetArrayLength()}");
+                }
+                else if (emb is float[] arr)
+                {
+                    Console.WriteLine($"[VoyageAI] Embedding generated, length: {arr.Length}");
+                }
+                else
+                {
+                    Console.WriteLine($"[VoyageAI] Embedding generated, unknown type: {emb?.GetType().Name ?? "null"}");
                 }
                 return new Embedding(ConvertToFloatArray(result.data.First().embedding));
             }
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[VoyageAI] EXCEPTION in GenerateEmbeddingAsync: {ex.Message}");
             _logger.LogError(ex, "EXCEPTION in GenerateEmbeddingAsync: {Message}", ex.Message);
             throw;
         }
@@ -86,11 +107,14 @@ public class VoyageAITextEmbeddingGenerator : ITextEmbeddingGenerator
     {
         if (texts.Count > 1000)
             throw new ArgumentException("VoyageAI supports a maximum of 1000 texts per request");
+        Console.WriteLine($"[VoyageAI] Generating embeddings for {texts.Count} texts");
         _logger.LogInformation("Generating embeddings for {Count} texts", texts.Count);
         var apiKeyPreview = _config.ApiKey?.Length > 8 ? _config.ApiKey.Substring(0, 8) + "***" : (_config.ApiKey != null ? "***" : "Not Set");
+        Console.WriteLine($"[VoyageAI] Config: ModelName={_config.ModelName}, Endpoint={_config.Endpoint}, ApiKey={apiKeyPreview}");
         _logger.LogInformation("VoyageAI config: ModelName={ModelName}, Endpoint={Endpoint}, ApiKey={ApiKey}", _config.ModelName, _config.Endpoint, apiKeyPreview);
         var payload = BuildPayload(texts);
         var payloadJson = JsonSerializer.Serialize(payload, MemoryRagJsonContext.Default.DictionaryStringObject);
+        Console.WriteLine($"[VoyageAI] Payload: {payloadJson}");
         var content = new StringContent(payloadJson, Encoding.UTF8, "application/json");
         var request = new HttpRequestMessage(HttpMethod.Post, _config.Endpoint)
         {
@@ -100,27 +124,33 @@ public class VoyageAITextEmbeddingGenerator : ITextEmbeddingGenerator
         try
         {
             var response = await _httpClient.SendAsync(request, cancellationToken);
+            Console.WriteLine($"[VoyageAI] HTTP Status: {response.StatusCode}");
             _logger.LogInformation("Received HTTP response: {StatusCode}", response.StatusCode);
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
+                Console.WriteLine($"[VoyageAI] Error: {response.StatusCode}, {json}");
                 _logger.LogError("VoyageAI error: {StatusCode}, {Error}", response.StatusCode, json);
                 throw new HttpRequestException($"VoyageAI failed: {response.StatusCode}");
             }
+            Console.WriteLine($"[VoyageAI] Response body: {json}");
             _logger.LogDebug("VoyageAI response body: {Body}", json);
             using (var doc = JsonDocument.Parse(json))
             {
                 var result = JsonSerializer.Deserialize(doc, MemoryRagJsonContext.Default.VoyageAIResponse)!;
                 if (result?.data == null)
                 {
+                    Console.WriteLine("[VoyageAI] API returned an invalid response format for batch request");
                     _logger.LogError("VoyageAI API returned an invalid response format for batch request");
                     throw new InvalidOperationException("VoyageAI API returned an invalid response format");
                 }
+                Console.WriteLine($"[VoyageAI] Embeddings generated, count: {result.data.Count}");
                 return result.data.Select(d => new Embedding(ConvertToFloatArray(d.embedding))).ToList();
             }
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[VoyageAI] EXCEPTION in GenerateEmbeddingsAsync: {ex.Message}");
             _logger.LogError(ex, "EXCEPTION in GenerateEmbeddingsAsync: {Message}", ex.Message);
             throw;
         }

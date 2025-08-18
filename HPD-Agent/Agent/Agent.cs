@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.AI;
 using System.Threading.Channels;
 using Microsoft.KernelMemory;
-using HPD_Agent.MemoryRAG;
 
 /// <summary>
 /// Agent implementation that supports both traditional chat and AGUI streaming protocols
@@ -235,21 +234,64 @@ public class Agent : IChatClient, IAGUIAgent
         // Apply prompt filters (including Memory CAG)
         effectiveMessages = await ApplyPromptFilters(effectiveMessages, effectiveOptions, cancellationToken);
         
-        // For streaming, we need to collect the full response first to apply filters
-        // This is a limitation of the current filter design
-        var fullResponse = await _baseClient.GetResponseAsync(effectiveMessages, effectiveOptions, cancellationToken);
+        // Check if we need to apply AIFunction filters - if so, we need to fall back to non-streaming
+        bool needsFilterProcessing = (_aiFunctionFilters.Any() || _scopedFilterManager != null) && 
+                                   effectiveOptions?.Tools?.Any() == true;
         
-        // Apply AIFuncton filters if there are any function calls
-        if ((_aiFunctionFilters.Any() || _scopedFilterManager != null))
+        if (needsFilterProcessing)
         {
+            // For function calling, we need to collect the full response first to apply filters
+            // This is a limitation of the current filter design
+            var fullResponse = await _baseClient.GetResponseAsync(effectiveMessages, effectiveOptions, cancellationToken);
             fullResponse = await ProcessResponseWithFilters(fullResponse, effectiveMessages, effectiveOptions, cancellationToken);
+            
+            // Convert the full response back to streaming format with proper text content
+            // Extract text content from the response and create updates
+            var textContent = string.Empty;
+            var lastMessage = fullResponse.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+            if (lastMessage != null)
+            {
+                foreach (var content in lastMessage.Contents)
+                {
+                    if (content is TextContent textContentItem)
+                    {
+                        textContent += textContentItem.Text;
+                    }
+                }
+            }
+            
+            // Create streaming updates that simulate real streaming with proper text content
+            if (!string.IsNullOrEmpty(textContent))
+            {
+                // Split text into chunks to simulate streaming
+                const int chunkSize = 10; // Characters per chunk
+                for (int i = 0; i < textContent.Length; i += chunkSize)
+                {
+                    var chunk = textContent.Substring(i, Math.Min(chunkSize, textContent.Length - i));
+                    yield return new ChatResponseUpdate
+                    {
+                        Contents = [new TextContent(chunk)]
+                    };
+                    
+                    // Small delay to simulate real streaming
+                    await Task.Delay(50, cancellationToken);
+                }
+            }
+            
+            // Emit the final update to indicate completion
+            yield return new ChatResponseUpdate
+            {
+                Contents = [],
+                FinishReason = fullResponse.FinishReason
+            };
         }
-        
-        // Convert the full response back to streaming format
-        // Emit each update from the combined response
-        foreach (var update in fullResponse.ToChatResponseUpdates())
+        else
         {
-            yield return update;
+            // Use real streaming when no function calling filters are needed
+            await foreach (var update in _baseClient.GetStreamingResponseAsync(effectiveMessages, effectiveOptions, cancellationToken))
+            {
+                yield return update;
+            }
         }
     }
 
@@ -583,6 +625,142 @@ public class Agent : IChatClient, IAGUIAgent
         }
     }
 
+    /// <summary>
+    /// Executes the agent using the AG-UI RunAsync pattern and streams the SSE results 
+    /// directly to a given stream. This encapsulates the AG-UI channel logic and provides
+    /// proper error handling for web streaming scenarios.
+    /// </summary>
+    public async Task StreamAGUIResponseAsync(
+        RunAgentInput input, 
+        Stream responseStream, 
+        CancellationToken cancellationToken = default)
+    {
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<BaseEvent>();
+        
+        try
+        {
+            var agentTask = RunAsync(input, channel.Writer, cancellationToken);
+
+            await foreach (var sseEvent in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                var json = EventSerialization.SerializeEvent(sseEvent);
+                var sseString = $"data: {json}\n\n";
+                var bytes = System.Text.Encoding.UTF8.GetBytes(sseString);
+                await responseStream.WriteAsync(bytes, cancellationToken);
+                await responseStream.FlushAsync(cancellationToken);
+
+                if (sseEvent is RunFinishedEvent) break;
+            }
+
+            await agentTask;
+        }
+        catch (Exception ex)
+        {
+            // Send error as SSE event before rethrowing
+            var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
+            var errorJson = EventSerialization.SerializeEvent(errorEvent);
+            var errorSse = $"data: {errorJson}\n\n";
+            var errorBytes = System.Text.Encoding.UTF8.GetBytes(errorSse);
+            
+            try
+            {
+                await responseStream.WriteAsync(errorBytes, cancellationToken);
+                await responseStream.FlushAsync(cancellationToken);
+            }
+            catch
+            {
+                // Ignore write errors during error handling
+            }
+            
+            throw;
+        }
+        finally
+        {
+            // Only complete the channel if it's not already closed
+            // The RunAsync method may have already completed it
+            try
+            {
+                channel.Writer.Complete();
+            }
+            catch (InvalidOperationException)
+            {
+                // Channel already closed - this is expected
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes the agent and streams the AG-UI events directly to a WebSocket connection.
+    /// This encapsulates the WebSocket protocol logic and provides proper error handling.
+    /// </summary>
+    public async Task StreamToWebSocketAsync(
+        RunAgentInput input, 
+        System.Net.WebSockets.WebSocket webSocket, 
+        CancellationToken cancellationToken)
+    {
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<BaseEvent>();
+        
+        try
+        {
+            var agentTask = RunAsync(input, channel.Writer, cancellationToken);
+
+            await foreach (var aguiEvent in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                if (webSocket.State != System.Net.WebSockets.WebSocketState.Open) break;
+
+                var json = EventSerialization.SerializeEvent(aguiEvent);
+                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+
+                await webSocket.SendAsync(
+                    new ArraySegment<byte>(bytes), 
+                    System.Net.WebSockets.WebSocketMessageType.Text, 
+                    true, 
+                    cancellationToken);
+
+                if (aguiEvent is RunFinishedEvent) break;
+            }
+
+            await agentTask;
+        }
+        catch (Exception ex)
+        {
+            // Send error as WebSocket message before closing
+            if (webSocket.State == System.Net.WebSockets.WebSocketState.Open)
+            {
+                var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
+                var errorJson = EventSerialization.SerializeEvent(errorEvent);
+                var errorBytes = System.Text.Encoding.UTF8.GetBytes(errorJson);
+                
+                try
+                {
+                    await webSocket.SendAsync(
+                        new ArraySegment<byte>(errorBytes),
+                        System.Net.WebSockets.WebSocketMessageType.Text,
+                        true,
+                        cancellationToken);
+                }
+                catch
+                {
+                    // Ignore write errors during error handling
+                }
+            }
+            
+            throw;
+        }
+        finally
+        {
+            // Only complete the channel if it's not already closed
+            try
+            {
+                channel.Writer.Complete();
+            }
+            catch (InvalidOperationException)
+            {
+                // Channel already closed - this is expected
+            }
+        }
+    }
+
     #endregion
 
     #region Helper Methods
@@ -644,13 +822,6 @@ public class Agent : IChatClient, IAGUIAgent
             return await ragCapability.ApplyRetrievalStrategyAsync(messages, scopedContext, cancellationToken);
         }
 
-        // Fallback to legacy RAGContext for backward compatibility
-        if (options?.AdditionalProperties?.TryGetValue("RAGContext", out var legacyContextObj) == true &&
-            legacyContextObj is RAGContext legacyContext)
-        {
-            // LEGACY PATTERN: Use pre-assembled context (may cause context leakage in multi-agent scenarios)
-            return await ragCapability.ApplyRetrievalStrategyAsync(messages, legacyContext, cancellationToken);
-        }
 
         return messages; // No context was provided, so nothing to do.
     }
@@ -787,5 +958,51 @@ public class Agent : IChatClient, IAGUIAgent
         return await pipeline(context);
     }
 
+    #endregion
+
+    #region AGUI Event Conversion & Streaming (Complete Integration)
+    
+    /// <summary>
+    /// Converts ChatResponseUpdate to AG-UI events using simple defaults.
+    /// This absorbs the AGUIEventConverter functionality into the Agent class.
+    /// </summary>
+    /// <param name="update">The chat response update to convert</param>
+    /// <param name="messageId">Optional message ID (auto-generated if not provided)</param>
+    /// <returns>Collection of AG-UI events ready for streaming</returns>
+    public IEnumerable<BaseEvent> ConvertToAGUIEvents(ChatResponseUpdate update, string messageId = "")
+    {
+        if (string.IsNullOrEmpty(messageId))
+            messageId = Guid.NewGuid().ToString();
+            
+        return _eventConverter.ConvertToAGUIEvents(update, messageId);
+    }
+    
+    /// <summary>
+    /// Converts ChatResponseUpdate to AG-UI events with advanced options.
+    /// Provides escape hatch for power users who need full control.
+    /// </summary>
+    /// <param name="update">The chat response update to convert</param>
+    /// <param name="messageId">Message ID for the events</param>
+    /// <param name="emitBackendToolCalls">Whether to emit backend tool call events</param>
+    /// <returns>Collection of AG-UI events with customized behavior</returns>
+    public IEnumerable<BaseEvent> ConvertToAGUIEvents(
+        ChatResponseUpdate update, 
+        string messageId, 
+        bool emitBackendToolCalls = false)
+    {
+        return _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls);
+    }
+    
+    /// <summary>
+    /// <summary>
+    /// PHASE 2: Serializes any AG-UI event to JSON using the correct polymorphic serialization.
+    /// Implements the functionality previously in EventHelpers.SerializeEvent.
+    /// </summary>
+    /// <param name="aguiEvent">The AG-UI event to serialize</param>
+    /// <returns>JSON string with proper polymorphic serialization</returns>
+    public string SerializeEvent(BaseEvent aguiEvent)
+    {
+        return EventSerialization.SerializeEvent(aguiEvent);
+    }
     #endregion
 }

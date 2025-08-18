@@ -1,5 +1,4 @@
-namespace HPD_Agent.MemoryCAG
-{
+
     /// <summary>
     /// Represents the result of processing a document upload for conversation injection
     /// </summary>
@@ -31,5 +30,4 @@ namespace HPD_Agent.MemoryCAG
     
     /// <summary>Decoder used for extraction</summary>
     public string? DecoderUsed { get; set; }
-}
 }

@@ -15,7 +15,6 @@ public class ProjectMemoryConfig
     public TextGenerationProvider? TextGenerationProvider { get; set; }
     public string? TextGenerationModel { get; set; }
     public string IndexPrefix { get; set; } = "project";
-    public ProjectAccessPattern AccessPattern { get; set; } = ProjectAccessPattern.Collaborative;
     public int MaxDocumentSizeMB { get; set; } = 100;
     public string[] AllowedFileTypes { get; set; } = new[] { "pdf", "docx", "txt", "md", "html" };
 

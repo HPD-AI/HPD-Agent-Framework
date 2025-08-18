@@ -3,15 +3,15 @@ using System.ComponentModel; // For [Description]
 using System.Threading.Tasks;
 
 /// <summary>
-/// HPD-Agent AI plugin for Memory CAG management
+/// HPD-Agent AI plugin for Injected Memory management
 /// </summary>
-public class AgentMemoryCagPlugin
+public class AgentInjectedMemoryPlugin
 {
-    private readonly AgentMemoryCagManager _manager;
+    private readonly AgentInjectedMemoryManager _manager;
     private readonly string _agentName;
-    private readonly ILogger<AgentMemoryCagPlugin>? _logger;
+    private readonly ILogger<AgentInjectedMemoryPlugin>? _logger;
 
-    public AgentMemoryCagPlugin(AgentMemoryCagManager manager, string agentName, ILogger<AgentMemoryCagPlugin>? logger = null)
+    public AgentInjectedMemoryPlugin(AgentInjectedMemoryManager manager, string agentName, ILogger<AgentInjectedMemoryPlugin>? logger = null)
     {
         _manager = manager;
         _agentName = agentName;

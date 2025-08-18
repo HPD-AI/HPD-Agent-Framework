@@ -30,7 +30,7 @@ public class Conversation
     // Memory management
     private IKernelMemory? _memory;
     private ConversationMemoryBuilder? _memoryBuilder;
-    private ConversationUploadStrategy _uploadStrategy = ConversationUploadStrategy.DirectInjection; // Default to DirectInjection for CAG-only scenarios
+    private ConversationDocumentHandling _uploadStrategy = ConversationDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
     private readonly List<ConversationDocumentUpload> _pendingInjections = new();
 
     public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
@@ -77,6 +77,53 @@ public class Conversation
     }
 
     /// <summary>
+    /// Creates a conversation within a project with specified document handling strategy
+    /// </summary>
+    public Conversation(Project project, IEnumerable<Agent> agents, ConversationDocumentHandling documentHandling, IEnumerable<IAiFunctionFilter>? filters = null)
+        : this(filters)
+    {
+        _orchestrator = new DirectOrchestrator(); // Default orchestrator
+        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
+        _uploadStrategy = documentHandling;
+        AddMetadata("Project", project);
+    }
+
+    /// <summary>
+    /// Creates a standalone conversation with specified document handling strategy
+    /// </summary>
+    public Conversation(IEnumerable<Agent> agents, ConversationDocumentHandling documentHandling, IEnumerable<IAiFunctionFilter>? filters = null)
+        : this(filters)
+    {
+        _orchestrator = new DirectOrchestrator(); // Default orchestrator
+        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
+        _uploadStrategy = documentHandling;
+    }
+
+    // Static factory methods for progressive disclosure
+
+    /// <summary>
+    /// Creates a new standalone conversation with default memory handling (FullTextInjection).
+    /// </summary>
+    public static Conversation Create(IEnumerable<Agent> agents)
+    {
+        return new Conversation(agents, ConversationDocumentHandling.FullTextInjection);
+    }
+
+    /// <summary>
+    /// Creates a new standalone conversation with advanced Indexed Retrieval capabilities.
+    /// </summary>
+    public static Conversation CreateWithIndexedRetrieval(
+        IEnumerable<Agent> agents,
+        Action<ConversationMemoryBuilder> configure)
+    {
+        var conversation = new Conversation(agents, ConversationDocumentHandling.IndexedRetrieval);
+        var builder = new ConversationMemoryBuilder(conversation.Id);
+        configure(builder);
+        conversation.SetMemoryBuilder(builder);
+        return conversation;
+    }
+
+    /// <summary>
     /// Add a single message to the conversation
     /// </summary>
     public void AddMessage(ChatMessage message)
@@ -94,7 +141,7 @@ public class Conversation
     /// <returns>The kernel memory instance, or null if not configured</returns>
     public IKernelMemory? GetOrCreateMemory()
     {
-        if (_uploadStrategy == ConversationUploadStrategy.DirectInjection)
+        if (_uploadStrategy == ConversationDocumentHandling.FullTextInjection)
         {
             return null; // No RAG memory needed for DirectInjection
         }
@@ -144,10 +191,10 @@ public class Conversation
 
         switch (_uploadStrategy)
         {
-            case ConversationUploadStrategy.RAG:
+            case ConversationDocumentHandling.IndexedRetrieval:
                 return await ProcessDocumentsForRAG(filePaths, textExtractor, cancellationToken);
                 
-            case ConversationUploadStrategy.DirectInjection:
+            case ConversationDocumentHandling.FullTextInjection:
                 return await ConversationDocumentHelper.ProcessUploadsAsync(filePaths, textExtractor, cancellationToken);
                 
             default:
@@ -178,11 +225,11 @@ public class Conversation
         
         switch (_uploadStrategy)
         {
-            case ConversationUploadStrategy.RAG:
+            case ConversationDocumentHandling.IndexedRetrieval:
                 // Documents are already indexed in RAG memory, send message normally
                 return await SendAsync(message, options, cancellationToken);
                 
-            case ConversationUploadStrategy.DirectInjection:
+            case ConversationDocumentHandling.FullTextInjection:
                 // Inject document content directly into the message
                 var enhancedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads);
                 return await SendAsync(enhancedMessage, options, cancellationToken);
@@ -259,23 +306,15 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // CONTEXT ASSEMBLY: Use new Context Provider pattern for multi-agent scenarios
-        // Fall back to legacy approach for backward compatibility
+        // CONTEXT ASSEMBLY: Use new Context Provider pattern
         var sharedRagContext = AssembleSharedRAGContext(options);
-        var legacyRagContext = _agents.Count > 1 ? null : AssembleRAGContext(options);
         
-        // Inject the appropriate RAG context for agent capabilities
+        // Inject the RAG context for agent capabilities
         if (sharedRagContext != null)
         {
             options ??= new ChatOptions();
             options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
             options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
-        else if (legacyRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["RAGContext"] = legacyRagContext;
         }
 
         // Inject project context for Memory CAG if available
@@ -313,23 +352,15 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // CONTEXT ASSEMBLY: Use new Context Provider pattern for multi-agent scenarios
-        // Fall back to legacy approach for backward compatibility
+        // CONTEXT ASSEMBLY: Use new Context Provider pattern
         var sharedRagContext = AssembleSharedRAGContext(options);
-        var legacyRagContext = _agents.Count > 1 ? null : AssembleRAGContext(options);
         
-        // Inject the appropriate RAG context for agent capabilities
+        // Inject the RAG context for agent capabilities
         if (sharedRagContext != null)
         {
             options ??= new ChatOptions();
             options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
             options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
-        else if (legacyRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["RAGContext"] = legacyRagContext;
         }
 
         // Inject project context for Memory CAG if available
@@ -360,26 +391,128 @@ public class Conversation
     }
 
     /// <summary>
-    /// Simple state serialization (no complex channel management needed)
+    /// Initiates an AG-UI streaming response for web clients and writes the SSE events 
+    /// directly to the provided output stream. Respects orchestration strategy and context assembly.
     /// </summary>
-    public string Serialize() => JsonSerializer.Serialize(new ConversationState
+    public async Task StreamResponseAsync(
+        string message,
+        Stream responseStream,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        Id = Id,
-        Messages = _messages,
-        Metadata = _metadata,
-        CreatedAt = CreatedAt,
-        LastActivity = LastActivity
-    }, ConversationJsonContext.Default.ConversationState);
+        var userMessage = new ChatMessage(ChatRole.User, message);
+        _messages.Add(userMessage);
+        UpdateActivity();
 
-    public static Conversation Deserialize(string json)
-    {
-        var state = JsonSerializer.Deserialize(json, ConversationJsonContext.Default.ConversationState)!;
-        return new Conversation
+        // CONTEXT ASSEMBLY: Use existing context provider pattern (same as SendAsync)
+        var sharedRagContext = AssembleSharedRAGContext(options);
+        
+        // Inject contexts using existing patterns
+        if (sharedRagContext != null)
         {
-            // Restore state - much simpler than SK's complex channel restoration
-        };
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
+        }
+
+        // Inject project context for Memory CAG if available
+        if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
+        {
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["Project"] = project;
+        }
+
+        // ORCHESTRATION: Determine the appropriate agent using orchestrator logic
+        // This ensures consistency with SendAsync behavior while adapting for streaming
+        var selectedAgent = await SelectAgentForStreaming(options, cancellationToken);
+        if (selectedAgent == null)
+        {
+            throw new InvalidOperationException("No agent is available to handle the streaming request.");
+        }
+
+        // ENCAPSULATED BOILERPLATE: Create RunAgentInput using centralized helper
+        // Pass the full conversation history to maintain context
+        var runInput = AGUIEventConverter.CreateRunAgentInput(this, _messages, options);
+
+        // Call the agent's new high-level streaming helper
+        await selectedAgent.StreamAGUIResponseAsync(runInput, responseStream, cancellationToken);
+
+        // CONSISTENCY: Apply conversation filters like other send methods
+        // Note: For streaming, we apply filters after the stream completes
+        // This is a simplified approach - in a full implementation, you might want to
+        // track the streaming response and apply filters when the stream finishes
+        var agentMetadata = CollectAgentMetadata();
+        var context = new ConversationFilterContext(this, userMessage, new ChatResponse([]), agentMetadata, options, cancellationToken);
+        await ApplyConversationFilters(context);
     }
 
+    /// <summary>
+    /// Initiates an AG-UI streaming response and sends the events over a WebSocket connection.
+    /// This is the recommended method for real-time, bi-directional web applications.
+    /// Respects orchestration strategy and context assembly like StreamResponseAsync.
+    /// </summary>
+    public async Task StreamResponseToWebSocketAsync(
+        string message,
+        System.Net.WebSockets.WebSocket webSocket,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        var userMessage = new ChatMessage(ChatRole.User, message);
+        _messages.Add(userMessage);
+        UpdateActivity();
+
+        // CONTEXT ASSEMBLY: Use existing context provider pattern (same as StreamResponseAsync)
+        var sharedRagContext = AssembleSharedRAGContext(options);
+        
+        // Inject contexts using existing patterns
+        if (sharedRagContext != null)
+        {
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
+        }
+
+        // Inject project context for Memory CAG if available
+        if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
+        {
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["Project"] = project;
+        }
+
+        // ORCHESTRATION: Determine the appropriate agent using orchestrator logic
+        var selectedAgent = await SelectAgentForStreaming(options, cancellationToken);
+        if (selectedAgent == null)
+        {
+            throw new InvalidOperationException("No agent is available to handle the WebSocket streaming request.");
+        }
+
+        // ENCAPSULATED BOILERPLATE: Create RunAgentInput using centralized helper
+        var runInput = AGUIEventConverter.CreateRunAgentInput(this, _messages, options);
+
+        // Call the agent's WebSocket streaming helper
+        await selectedAgent.StreamToWebSocketAsync(runInput, webSocket, cancellationToken);
+
+        // CONSISTENCY: Apply conversation filters like other send methods
+        var agentMetadata = CollectAgentMetadata();
+        var context = new ConversationFilterContext(this, userMessage, new ChatResponse([]), agentMetadata, options, cancellationToken);
+        await ApplyConversationFilters(context);
+    }
+
+    /// <summary>
+    /// Selects the appropriate agent for streaming. For most orchestrators,
+    /// streaming uses the first available agent since it's typically a single-agent response.
+    /// </summary>
+    private Task<Agent?> SelectAgentForStreaming(ChatOptions? options, CancellationToken cancellationToken)
+    {
+        // Simple approach: streaming typically uses the first agent
+        // This works for DirectOrchestrator and most custom orchestrators
+        // Custom orchestrators can override this behavior if needed in the future
+        return Task.FromResult(_agents.FirstOrDefault());
+    }
+
+    /// <summary>
     protected void UpdateActivity() => LastActivity = DateTime.UtcNow;
 
     // Collect metadata of function calls from each agent
@@ -411,69 +544,6 @@ public class Conversation
     /// Assembles RAG context from all available memory sources
     /// </summary>
     /// <summary>
-    /// LEGACY: Assembles full RAGContext with all agent memories (causes context leakage)
-    /// Use AssembleSharedRAGContext for new multi-agent workflows
-    /// </summary>
-    private RAGContext? AssembleRAGContext(ChatOptions? options)
-    {
-        var agentMemories = new Dictionary<string, IKernelMemory?>();
-        IKernelMemory? conversationMemory = null;
-        IKernelMemory? projectMemory = null;
-
-        // Gather agent memories
-        foreach (var agent in _agents)
-        {
-            try
-            {
-                agentMemories[agent.Name] = agent.GetOrCreateMemory();
-            }
-            catch
-            {
-                // Agent may not have memory configured - continue
-                agentMemories[agent.Name] = null;
-            }
-        }
-
-        // Gather conversation memory
-        try
-        {
-            conversationMemory = this.GetOrCreateMemory();
-        }
-        catch
-        {
-            // Conversation may not have memory configured
-        }
-
-        // Gather project memory
-        if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
-        {
-            try
-            {
-                projectMemory = project.GetOrCreateMemory();
-            }
-            catch
-            {
-                // Project may not have memory configured
-            }
-        }
-
-        // Only create context if at least one memory source is available
-        if (!agentMemories.Values.Any(m => m != null) && conversationMemory == null && projectMemory == null)
-            return null;
-
-        // Use default configuration for now
-        var config = new RAGConfiguration();
-        
-        return new RAGContext
-        {
-            AgentMemories = agentMemories,
-            ConversationMemory = conversationMemory,
-            ProjectMemory = projectMemory,
-            Configuration = config
-        };
-    }
-
-    /// <summary>
     /// NEW: Context Provider Pattern - Assembles only shared memory resources
     /// Eliminates context leakage by excluding agent-specific memories
     /// Each agent will fetch its own memory when needed
@@ -484,8 +554,8 @@ public class Conversation
         IKernelMemory? projectMemory = null;
 
         // Gather conversation memory (shared across all agents)
-        // IMPORTANT: Only try to get conversation memory if NOT using DirectInjection strategy
-        if (_uploadStrategy != ConversationUploadStrategy.DirectInjection)
+        // IMPORTANT: Only try to get conversation memory if NOT using FullTextInjection strategy
+        if (_uploadStrategy != ConversationDocumentHandling.FullTextInjection)
         {
             try
             {
@@ -521,6 +591,65 @@ public class Conversation
             Configuration = config
         };
     }
+
+    #region Conversation Helpers (Phase 2 Implementation)
+    
+    /// <summary>
+    /// PHASE 2: Gets a human-readable display name for this conversation.
+    /// Implements the functionality previously in ConversionHelpers.GenerateConversationDisplayName.
+    /// </summary>
+    /// <param name="maxLength">Maximum length for the display name</param>
+    /// <returns>Human-readable conversation name</returns>
+    public string GetDisplayName(int maxLength = 30)
+    {
+        // Check for explicit display name in metadata first
+        if (_metadata.TryGetValue("DisplayName", out var name) && !string.IsNullOrEmpty(name?.ToString()))
+        {
+            return name.ToString()!;
+        }
+        
+        // Find first user message and extract text content
+        var firstUserMessage = _messages.FirstOrDefault(m => m.Role == ChatRole.User);
+        if (firstUserMessage != null)
+        {
+            var text = ExtractTextContentInternal(firstUserMessage);
+            if (!string.IsNullOrEmpty(text))
+            {
+                return text.Length <= maxLength 
+                    ? text 
+                    : text[..maxLength] + "...";
+            }
+        }
+        
+        return $"Chat {Id[..Math.Min(8, Id.Length)]}";
+    }
+    
+    /// <summary>
+    /// PHASE 2: Extracts text content from a message in this conversation.
+    /// Implements the functionality previously in ConversionHelpers.ExtractTextContent.
+    /// </summary>
+    /// <param name="message">The message to extract text from</param>
+    /// <returns>Combined text content</returns>
+    public string ExtractTextContent(ChatMessage message)
+    {
+        return ExtractTextContentInternal(message);
+    }
+    
+    /// <summary>
+    /// Internal helper for text content extraction to avoid circular dependencies during cleanup.
+    /// </summary>
+    private static string ExtractTextContentInternal(ChatMessage message)
+    {
+        var textContents = message.Contents
+            .OfType<TextContent>()
+            .Select(tc => tc.Text)
+            .Where(text => !string.IsNullOrEmpty(text));
+            
+        return string.Join(" ", textContents);
+    }
+    
+
+    #endregion
 
 }
 

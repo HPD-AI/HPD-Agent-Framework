@@ -1,55 +1,412 @@
-<!-- Updated +page.svelte -->
+<!-- ✨ CLEAN FRONTEND: Updated +page.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte';
     import ProjectSelector from '../lib/project/ProjectSelector.svelte';
     import ConversationSidebar from '../lib/project/ConversationSidebar.svelte';
     import * as aguiClient from '@ag-ui/client';
-    const { HttpAgent, EventType } = aguiClient;
+    const { EventType } = aguiClient;
     
-    // Define types locally since we can't import them as named exports
-    interface AGUIEvent {
-        type: string;
-        timestamp?: string;
-        delta?: string;  // AGUI uses 'delta' for content chunks
-        content?: string; // Fallback property
-        message?: string; // For error events
-        error?: string;   // Alternative error property
-        [key: string]: any;
+    // ✨ CLEAN API CLIENT
+    class AgentAPI {
+        baseUrl: string;
+        constructor(baseUrl = 'http://localhost:5135') {
+            this.baseUrl = baseUrl;
+        }
+        
+        async createProject(name: string, description = '') {
+            const response = await fetch(`${this.baseUrl}/projects`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description })
+            });
+            if (!response.ok) throw new Error(`Failed to create project: ${response.statusText}`);
+            return response.json();
+        }
+        
+        async getProjects() {
+            const response = await fetch(`${this.baseUrl}/projects`);
+            if (!response.ok) throw new Error(`Failed to get projects: ${response.statusText}`);
+            return response.json();
+        }
+        
+        async createConversation(projectId: string, name = '') {
+            const response = await fetch(`${this.baseUrl}/projects/${projectId}/conversations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (!response.ok) throw new Error(`Failed to create conversation: ${response.statusText}`);
+            return response.json();
+        }
+        
+        async getConversation(projectId: string, conversationId: string) {
+            const response = await fetch(`${this.baseUrl}/projects/${projectId}/conversations/${conversationId}`);
+            if (!response.ok) throw new Error(`Failed to get conversation: ${response.statusText}`);
+            return response.json();
+        }
+        
+        async sendMessage(projectId: string, conversationId: string, message: string) {
+            const response = await fetch(`${this.baseUrl}/agent/projects/${projectId}/conversations/${conversationId}/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
+            });
+            if (!response.ok) throw new Error(`Failed to send message: ${response.statusText}`);
+            return response.json();
+        }
+        
+        streamChat(projectId: string, conversationId: string, message: string) {
+            return fetch(`${this.baseUrl}/agent/projects/${projectId}/conversations/${conversationId}/stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    threadId: conversationId,
+                    messages: [{ content: message }]
+                })
+            });
+        }
+        
+        async transcribeAudio(projectId: string, conversationId: string, audioBlob: Blob) {
+            const response = await fetch(`${this.baseUrl}/agent/projects/${projectId}/conversations/${conversationId}/stt`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'audio/webm' },
+                body: audioBlob
+            });
+            if (!response.ok) throw new Error(`Failed to transcribe audio: ${response.statusText}`);
+            return response.json();
+        }
     }
     
-    // Application state
-    let currentProjectId: string | null = null;
-    let currentConversationId: string | null = null;
-    
-    // Chat state
-    let messages: Array<{role: 'user' | 'assistant', content: string, thinking?: string}> = [];
-    let currentMessage = '';
-    let isLoading = false;
-    let streamingMessage = '';
-    let currentThinking = '';
-    
-    // Audio recording state
-    let isRecording = false;
-    let mediaRecorder: MediaRecorder;
-    let recordedChunks: Blob[] = [];
-    let audioURL = '';
-    
-    const API_BASE = 'http://localhost:5135';
-    
-    // Load saved project/conversation from localStorage
-    onMount(() => {
-        if (typeof localStorage !== 'undefined') {
-            currentProjectId = localStorage.getItem('currentProjectId');
-            currentConversationId = localStorage.getItem('currentConversationId');
-            
-            // If we have both, load the conversation messages
-            if (currentProjectId && currentConversationId) {
-                loadConversationMessages();
+    // ✨ CLEAN AUDIO RECORDER
+    class AudioRecorder {
+        private mediaRecorder?: MediaRecorder;
+        private chunks: Blob[] = [];
+        public isRecording = false;
+        
+        async startRecording(): Promise<void> {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                this.chunks = [];
+                this.mediaRecorder = new MediaRecorder(stream);
+                
+                this.mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) this.chunks.push(e.data);
+                };
+                
+                this.mediaRecorder.start();
+                this.isRecording = true;
+            } catch (error) {
+                console.error('Failed to start recording:', error);
+                throw new Error('Microphone access denied');
             }
         }
+        
+        async stopRecording(): Promise<Blob> {
+            return new Promise((resolve, reject) => {
+                if (!this.mediaRecorder) {
+                    reject(new Error('No recording in progress'));
+                    return;
+                }
+                
+                this.mediaRecorder.onstop = () => {
+                    const blob = new Blob(this.chunks, { type: 'audio/webm' });
+                    this.isRecording = false;
+                    resolve(blob);
+                };
+                
+                this.mediaRecorder.stop();
+                this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            });
+        }
+        
+        async recordAndTranscribe(api: AgentAPI, projectId: string, conversationId: string): Promise<string> {
+            const audioBlob = await this.stopRecording();
+            const result = await api.transcribeAudio(projectId, conversationId, audioBlob);
+            return result.transcript || '';
+        }
+    }
+    
+    // ✨ CLEAN CHAT MANAGER
+    interface ChatMessage {
+        role: 'user' | 'assistant';
+        content: string;
+        thinking?: string;
+        timestamp: Date;
+    }
+    
+    // ✨ REACTIVE STATE VARIABLES (outside class for Svelte reactivity)
+    let messages: ChatMessage[] = [];
+    let isLoading = false;
+    let streamingContent = '';
+    let currentThinking = '';
+    
+    class ChatManager {
+        addMessage(message: Omit<ChatMessage, 'timestamp'>) {
+            messages = [...messages, {
+                ...message,
+                timestamp: new Date()
+            }];
+        }
+        
+        updateLastMessage(content?: string, thinking?: string) {
+            if (messages.length === 0) {
+                console.warn('⚠️ No messages to update');
+                return;
+            }
+            
+            const lastMessage = { ...messages[messages.length - 1] };
+            console.log('📝 Updating last message. Current:', lastMessage);
+            
+            if (content !== undefined) {
+                lastMessage.content = content;
+                console.log('📝 Updated content to:', content);
+            }
+            if (thinking !== undefined) {
+                lastMessage.thinking = thinking;
+                console.log('💭 Updated thinking to:', thinking);
+            }
+            
+            messages = [...messages.slice(0, -1), lastMessage];
+            console.log('📝 Messages array updated, length:', messages.length);
+        }
+        
+        loadMessages(apiMessages: any[]) {
+            messages = apiMessages.map(msg => ({
+                role: msg.role,
+                content: msg.content,
+                timestamp: new Date(msg.timestamp || Date.now())
+            }));
+        }
+        
+        setLoading(loading: boolean) {
+            isLoading = loading;
+        }
+        
+        setStreamingContent(content: string) {
+            streamingContent = content;
+        }
+        
+        setCurrentThinking(thinking: string) {
+            currentThinking = thinking;
+        }
+        
+        async sendMessage(content: string, api: AgentAPI, projectId: string, conversationId: string) {
+            console.log('📤 Sending message:', content);
+            this.addMessage({ role: 'user', content });
+            this.setLoading(true);
+            this.setStreamingContent('');
+            this.setCurrentThinking('');
+            
+            // Reset streaming content variable
+            streamingContent = '';
+            currentThinking = '';
+            
+            // Add placeholder for assistant response
+            this.addMessage({ role: 'assistant', content: '', thinking: '' });
+            console.log('📝 Added placeholder assistant message');
+            
+            try {
+                await this.streamResponse(content, api, projectId, conversationId);
+            } catch (error) {
+                console.error('❌ Error in sendMessage:', error);
+                this.updateLastMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            } finally {
+                this.setLoading(false);
+                console.log('✅ Message sending completed');
+            }
+        }
+        
+        private async streamResponse(userMessage: string, api: AgentAPI, projectId: string, conversationId: string) {
+            console.log('🚀 Starting stream response for message:', userMessage);
+            const response = await api.streamChat(projectId, conversationId, userMessage);
+            
+            if (!response.ok) {
+                console.error('❌ Stream response not ok:', response.status, response.statusText);
+                throw new Error(`Stream failed: ${response.statusText}`);
+            }
+            
+            console.log('✅ Stream response ok, starting to read...');
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('No response body reader');
+            
+            const decoder = new TextDecoder();
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    console.log('✅ Stream finished');
+                    break;
+                }
+                
+                const chunk = decoder.decode(value, { stream: true });
+                console.log('📦 Raw chunk received:', chunk);
+                const lines = chunk.split('\n');
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataContent = line.substring(6);
+                        console.log('📋 Processing data line:', dataContent);
+                        try {
+                            const data = JSON.parse(dataContent);
+                            this.handleStreamEvent(data);
+                        } catch (e) {
+                            console.error('❌ Error parsing event data:', e, 'Raw data:', dataContent);
+                        }
+                    } else if (line.trim()) {
+                        console.log('📋 Non-data line:', line);
+                    }
+                }
+            }
+        }
+        
+        private handleStreamEvent(event: any) {
+            console.log('🎯 Stream event received:', event);
+            
+            switch (event.type) {
+                case 'text_message_content':
+                case 'TEXT_MESSAGE_CONTENT':
+                case EventType.TEXT_MESSAGE_CONTENT:
+                    console.log('📝 Text content event:', event);
+                    if (event.delta) {
+                        console.log('📝 Text content delta:', event.delta);
+                        streamingContent += event.delta;
+                        // Clear thinking status when we receive actual content
+                        currentThinking = '';
+                        this.updateLastMessage(streamingContent);
+                        console.log('📝 Updated streaming content:', streamingContent);
+                    } else if (event.content) {
+                        // Handle alternative content property
+                        console.log('📝 Text content (alternative):', event.content);
+                        streamingContent += event.content;
+                        // Clear thinking status when we receive actual content
+                        currentThinking = '';
+                        this.updateLastMessage(streamingContent);
+                    } else {
+                        console.warn('⚠️ Text content event missing delta/content:', event);
+                    }
+                    break;
+                    
+                case 'thinking_text_message_content':
+                case 'THINKING_TEXT_MESSAGE_CONTENT':
+                case EventType.THINKING_TEXT_MESSAGE_CONTENT:
+                    console.log('💭 Thinking event:', event);
+                    if (event.delta) {
+                        console.log('💭 Thinking delta:', event.delta);
+                        currentThinking = event.delta;
+                        this.updateLastMessage(undefined, currentThinking);
+                    } else if (event.content) {
+                        console.log('💭 Thinking content (alternative):', event.content);
+                        currentThinking = event.content;
+                        this.updateLastMessage(undefined, currentThinking);
+                    }
+                    break;
+                    
+                case 'text_message_start':
+                case 'TEXT_MESSAGE_START':
+                case EventType.TEXT_MESSAGE_START:
+                    console.log('🚀 Text message start');
+                    this.setStreamingContent('');
+                    streamingContent = '';
+                    break;
+                    
+                case 'text_message_end':
+                case 'TEXT_MESSAGE_END':
+                case EventType.TEXT_MESSAGE_END:
+                    console.log('🏁 Text message end');
+                    // Finalize the message
+                    this.updateLastMessage(streamingContent);
+                    break;
+                    
+                case 'run_error':
+                case 'RUN_ERROR':
+                case EventType.RUN_ERROR:
+                    console.log('❌ Run error:', event);
+                    this.updateLastMessage(`Error: ${event.error || event.message || 'Unknown error'}`);
+                    this.setLoading(false);
+                    break;
+                    
+                case 'run_finished':
+                case 'RUN_FINISHED':
+                case EventType.RUN_FINISHED:
+                    console.log('✅ Run finished');
+                    this.setLoading(false);
+                    break;
+                    
+                // ✨ TOOL CALL EVENTS
+                case 'tool_call_start':
+                case 'TOOL_CALL_START':
+                case EventType.TOOL_CALL_START:
+                    console.log('🔧 Tool call started:', event.toolCallName);
+                    if (event.toolCallName) {
+                        currentThinking = `Using ${event.toolCallName}...`;
+                        this.updateLastMessage(streamingContent, currentThinking);
+                    }
+                    break;
+                    
+                case 'tool_call_args':
+                case 'TOOL_CALL_ARGS':
+                case EventType.TOOL_CALL_ARGS:
+                    console.log('⚙️ Tool call args:', event.delta);
+                    // Don't add tool arguments to the final content
+                    // Just update thinking status
+                    if (event.delta) {
+                        try {
+                            const args = JSON.parse(event.delta);
+                            const argDisplay = Object.entries(args)
+                                .map(([key, value]) => `${key}=${value}`)
+                                .join(', ');
+                            currentThinking = `Calculating with ${argDisplay}...`;
+                            this.updateLastMessage(streamingContent, currentThinking);
+                        } catch {
+                            currentThinking = `Processing tool arguments...`;
+                            this.updateLastMessage(streamingContent, currentThinking);
+                        }
+                    }
+                    break;
+                    
+                case 'tool_call_end':
+                case 'TOOL_CALL_END':
+                case EventType.TOOL_CALL_END:
+                    console.log('✅ Tool call completed');
+                    currentThinking = `Tool completed, getting result...`;
+                    this.updateLastMessage(streamingContent, currentThinking);
+                    break;
+                    
+                default:
+                    console.log('❓ Unknown event type:', event.type, event);
+                    // Only fall back to delta extraction for truly unknown events
+                    // Don't extract deltas from tool events we should ignore
+                    if (!event.type?.includes('tool_call') && event.delta) {
+                        console.log('📝 Fallback: Found delta in unknown event:', event.delta);
+                        streamingContent += event.delta;
+                        this.updateLastMessage(streamingContent);
+                    } else if (!event.type?.includes('tool_call') && event.content) {
+                        console.log('📝 Fallback: Found content in unknown event:', event.content);
+                        streamingContent += event.content;
+                        this.updateLastMessage(streamingContent);
+                    }
+                    break;
+            }
+        }
+    }
+    
+    // ✨ APPLICATION STATE
+    let currentProjectId: string | null = null;
+    let currentConversationId: string | null = null;
+    let currentMessage = '';
+    let audioURL = '';
+    
+    // ✨ CLEAN INSTANCES
+    const api = new AgentAPI();
+    const chatManager = new ChatManager();
+    const audioRecorder = new AudioRecorder();
+    
+    // ✨ LIFECYCLE
+    onMount(() => {
+        loadSavedState();
     });
     
-    // Save to localStorage when changed
+    // ✨ REACTIVE UPDATES
     $: if (typeof localStorage !== 'undefined') {
         if (currentProjectId) {
             localStorage.setItem('currentProjectId', currentProjectId);
@@ -66,39 +423,44 @@
         }
     }
     
-    // Load conversation messages when conversation changes
     $: if (currentProjectId && currentConversationId) {
         loadConversationMessages();
+    }
+    
+    // ✨ HELPER FUNCTIONS
+    function loadSavedState() {
+        if (typeof localStorage !== 'undefined') {
+            currentProjectId = localStorage.getItem('currentProjectId');
+            currentConversationId = localStorage.getItem('currentConversationId');
+        }
     }
     
     async function loadConversationMessages() {
         if (!currentProjectId || !currentConversationId) return;
         
         try {
-            const response = await fetch(`${API_BASE}/projects/${currentProjectId}/conversations/${currentConversationId}`);
-            if (response.ok) {
-                const conversation = await response.json();
-                messages = conversation.messages.map((msg: any) => ({
-                    role: msg.role,
-                    content: msg.content,
-                    thinking: undefined
-                }));
-            }
+            console.log('Loading conversation messages for:', currentProjectId, currentConversationId);
+            const conversation = await api.getConversation(currentProjectId, currentConversationId);
+            console.log('Received conversation:', conversation);
+            console.log('Messages from API:', conversation.messages);
+            chatManager.loadMessages(conversation.messages || []);
+            console.log('ChatManager messages after load:', messages);
         } catch (error) {
             console.error('Error loading conversation messages:', error);
         }
     }
     
+    // ✨ EVENT HANDLERS
     function handleProjectSelected(event: CustomEvent<string>) {
         currentProjectId = event.detail;
-        currentConversationId = null; // Reset conversation when project changes
-        messages = []; // Clear messages
+        currentConversationId = null;
+        messages = [];
     }
     
     function handleConversationSelected(event: CustomEvent<string | null>) {
         currentConversationId = event.detail;
         if (event.detail === null) {
-            messages = []; // Clear messages if no conversation selected
+            messages = [];
         }
     }
     
@@ -111,177 +473,10 @@
     async function sendMessage() {
         if (!currentMessage.trim() || isLoading || !currentProjectId || !currentConversationId) return;
         
-        const userMessage = currentMessage.trim();
+        const message = currentMessage.trim();
         currentMessage = '';
-        isLoading = true;
         
-        // Add user message to chat
-        messages = [...messages, { role: 'user', content: userMessage }];
-        
-        try {
-            // Start streaming response with placeholder  
-            streamingMessage = '';
-            currentThinking = '';
-            messages = [...messages, { role: 'assistant', content: '', thinking: '' }];
-            
-            await useStreamingEvents(userMessage);
-            
-        } catch (error) {
-            console.error('Error sending message:', error);
-            messages[messages.length - 1] = { 
-                role: 'assistant', 
-                content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` 
-            };
-            messages = [...messages];
-        } finally {
-            isLoading = false;
-        }
-    }
-    
-    // Streaming for real-time AGUI events with project/conversation context
-    async function useStreamingEvents(userMessage: string) {
-        return new Promise<void>((resolve, reject) => {
-            fetch(`${API_BASE}/agent/projects/${currentProjectId}/conversations/${currentConversationId}/stream`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    threadId: currentConversationId,
-                    messages: [{ content: userMessage }]
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const reader = response.body?.getReader();
-                if (!reader) {
-                    throw new Error('No response body reader');
-                }
-                
-                const decoder = new TextDecoder();
-                
-                function processStream(): void {
-                    reader!.read().then(({ done, value }) => {
-                        if (done) {
-                            console.log('🏁 Stream completed');
-                            resolve();
-                            return;
-                        }
-                        
-                        const chunk = decoder.decode(value, { stream: true });
-                        console.log('📦 Raw chunk received:', chunk);
-                        
-                        const lines = chunk.split('\n');
-                        for (const line of lines) {
-                            if (line.startsWith('event: ')) {
-                                const eventType = line.substring(7);
-                                console.log('🎯 Event type:', eventType);
-                            } else if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.substring(6));
-                                    console.log('📡 AGUI Event Received:', JSON.stringify(data, null, 2));
-                                    handleAGUIEvent(data);
-                                } catch (e) {
-                                    console.error('Error parsing event data:', e);
-                                }
-                            }
-                        }
-                        
-                        processStream();
-                    }).catch(reject);
-                }
-                
-                processStream();
-            })
-            .catch(error => {
-                console.error('Streaming error:', error);
-                reject(error);
-            });
-            
-            setTimeout(() => {
-                console.log('⏰ Stream timeout');
-                resolve();
-            }, 30000);
-        });
-    }
-    
-    function handleAGUIEvent(event: AGUIEvent) {
-        console.log('🎯 Processing AGUI Event:', event.type, JSON.stringify(event, null, 2));
-        
-        switch (event.type) {
-            case 'text_message_content':
-            case EventType.TEXT_MESSAGE_CONTENT:
-                if (event.delta) {
-                    streamingMessage += event.delta;
-                    updateLastMessage();
-                    console.log('📝 Added text content:', event.delta);
-                } else if (event.content) {
-                    streamingMessage += event.content;
-                    updateLastMessage();
-                    console.log('📝 Added text content (via content):', event.content);
-                }
-                break;
-                
-            case 'thinking_text_message_content':
-            case EventType.THINKING_TEXT_MESSAGE_CONTENT:
-                if (event.delta) {
-                    currentThinking = event.delta;
-                    updateLastMessage();
-                    console.log('💭 Thinking:', event.delta);
-                } else if (event.content) {
-                    currentThinking = event.content;
-                    updateLastMessage();
-                    console.log('💭 Thinking (via content):', event.content);
-                }
-                break;
-                
-            case 'run_error':
-            case EventType.RUN_ERROR:
-                messages[messages.length - 1] = { 
-                    role: 'assistant', 
-                    content: `Error: ${event.error || event.message || 'Unknown error'}` 
-                };
-                messages = [...messages];
-                isLoading = false;
-                console.log('❌ Run error:', event);
-                break;
-                
-            case 'run_finished':
-            case EventType.RUN_FINISHED:
-                isLoading = false;
-                console.log('🏁 Run finished');
-                break;
-                
-            case 'run_started':
-                console.log('🚀 Run started');
-                break;
-                
-            case 'text_message_start':
-                console.log('📝 Text message started');
-                streamingMessage = '';
-                break;
-                
-            case 'text_message_end':
-                console.log('📝 Text message ended');
-                break;
-                
-            default:
-                console.log('❓ Unhandled AGUI event type:', event.type, event);
-        }
-    }
-    
-    function updateLastMessage() {
-        if (messages.length > 0) {
-            messages[messages.length - 1] = { 
-                role: 'assistant', 
-                content: streamingMessage,
-                thinking: currentThinking || undefined
-            };
-            messages = [...messages];
-        }
+        await chatManager.sendMessage(message, api, currentProjectId, currentConversationId);
     }
     
     function handleKeypress(event: KeyboardEvent) {
@@ -291,121 +486,35 @@
         }
     }
     
-    // Audio recording functions
-    async function startRecording() {
+    // ✨ AUDIO HANDLERS
+    async function toggleRecording() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            recordedChunks = [];
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                audioURL = URL.createObjectURL(blob);
-                console.log('Recorded audio blob:', blob);
-                processRecordedAudio(blob);
-            };
-            mediaRecorder.start();
-            isRecording = true;
-        } catch (err) {
-            console.error('Microphone access denied:', err);
+            if (audioRecorder.isRecording) {
+                const transcript = await audioRecorder.recordAndTranscribe(api, currentProjectId!, currentConversationId!);
+                currentMessage = transcript;
+                await sendMessage();
+            } else {
+                await audioRecorder.startRecording();
+            }
+        } catch (error) {
+            console.error('Audio recording error:', error);
         }
-    }
-    
-    function stopRecording() {
-        mediaRecorder?.stop();
-        isRecording = false;
     }
     
     async function recordDirectToAgent() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            recordedChunks = [];
-            
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = (event) => {
-                recordedChunks.push(event.data);
-            };
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-                console.log('Recorded audio blob for direct agent:', blob);
-                
-                audioURL = URL.createObjectURL(blob);
-                processAudioDirectToAgent(blob);
-            };
-            
-            mediaRecorder.start();
-            isRecording = true;
-        } catch (err) {
-            console.error('Microphone access denied:', err);
-        }
-    }
-    
-    async function processRecordedAudio(blob: Blob) {
         if (!currentProjectId || !currentConversationId) return;
         
-        isLoading = true;
         try {
-            const resp = await fetch(`${API_BASE}/agent/projects/${currentProjectId}/conversations/${currentConversationId}/stt`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'audio/webm' },
-                body: blob,
-                credentials: 'include'
-            });
-            
-            if (!resp.ok) {
-                const errorText = await resp.text();
-                console.error('STT server error:', resp.status, errorText);
-                throw new Error(`Server error ${resp.status}: ${errorText}`);
-            }
-            
-            const data = await resp.json();
-            const transcript: string = data.transcript || '';
-            
-            currentMessage = transcript;
-            await sendMessage();
-        } catch (err) {
-            console.error('STT error:', err);
-        } finally {
-            isLoading = false;
-        }
-    }
-    
-    async function processAudioDirectToAgent(blob: Blob) {
-        if (!currentProjectId || !currentConversationId) return;
-        
-        isLoading = true;
-        try {
-            const resp = await fetch(`${API_BASE}/agent/projects/${currentProjectId}/conversations/${currentConversationId}/stt`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'audio/webm' },
-                body: blob,
-                credentials: 'include'
-            });
-            
-            if (!resp.ok) {
-                const errorText = await resp.text();
-                console.error('STT server error:', resp.status, errorText);
-                throw new Error(`Server error ${resp.status}: ${errorText}`);
-            }
-            
-            const data = await resp.json();
-            const transcript: string = data.transcript || '';
-            
-            messages = [...messages, { role: 'user', content: transcript }];
-            
-            streamingMessage = '';
-            currentThinking = '';
-            messages = [...messages, { role: 'assistant', content: '', thinking: '' }];
-            await useStreamingEvents(transcript);
-        } catch (err) {
-            console.error('STT error:', err);
-        } finally {
-            isLoading = false;
+            await audioRecorder.startRecording();
+            const transcript = await audioRecorder.recordAndTranscribe(api, currentProjectId, currentConversationId);
+            await chatManager.sendMessage(transcript, api, currentProjectId, currentConversationId);
+        } catch (error) {
+            console.error('Direct recording error:', error);
         }
     }
 </script>
 
-<!-- Main Application Layout -->
+<!-- ✨ CLEAN LAYOUT -->
 <div class="h-screen flex">
     {#if !currentProjectId}
         <!-- Project Selection Screen -->
@@ -504,14 +613,19 @@
                                 disabled={isLoading}
                                 class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                             />
+                            
+                            <!-- Voice Recording Button -->
                             <button
-                                on:click={isRecording ? stopRecording : startRecording}
-                                aria-label={isRecording ? 'Stop recording' : 'Record for chat'}
+                                on:click={toggleRecording}
+                                aria-label={audioRecorder.isRecording ? 'Stop recording' : 'Record for chat'}
                                 class="p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                class:is-recording={isRecording}
+                                class:bg-red-100={audioRecorder.isRecording}
+                                class:hover:bg-red-200={audioRecorder.isRecording}
+                                class:bg-blue-100={!audioRecorder.isRecording}
+                                class:hover:bg-blue-200={!audioRecorder.isRecording}
                                 disabled={isLoading}
                             >
-                                {#if isRecording}
+                                {#if audioRecorder.isRecording}
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-600" fill="currentColor" viewBox="0 0 24 24">
                                         <rect x="6" y="6" width="12" height="12" />
                                     </svg>
@@ -521,16 +635,20 @@
                                     </svg>
                                 {/if}
                             </button>
+                            
+                            <!-- Direct to Agent Button -->
                             <button
                                 on:click={recordDirectToAgent}
                                 aria-label="Record direct to agent"
                                 class="p-2 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 bg-green-100 hover:bg-green-200"
-                                disabled={isLoading || isRecording}
+                                disabled={isLoading || audioRecorder.isRecording}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                             </button>
+                            
+                            <!-- Send Button -->
                             <button
                                 on:click={sendMessage}
                                 disabled={isLoading || !currentMessage.trim()}
@@ -552,13 +670,13 @@
     {/if}
 </div>
 
-<!-- Connection Status (only show when in chat) -->
+<!-- Connection Status -->
 {#if currentProjectId && currentConversationId}
     <div class="fixed bottom-4 right-4 bg-white rounded-lg shadow-md px-4 py-2 border border-gray-200">
         <div class="text-sm text-gray-600">
             Status: 
             <span class="font-medium text-green-600">
-                Ready (AGUI Events Enabled)
+                Ready (Clean Architecture)
             </span>
         </div>
         {#if isLoading}
@@ -567,7 +685,7 @@
             </div>
         {/if}
         <div class="text-xs text-gray-500 mt-1">
-            💡 DevTools Console shows real-time events
+            🎯 Powered by clean APIs
         </div>
     </div>
 {/if}

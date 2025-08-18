@@ -3,19 +3,19 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable RS1035, IL2026, IL3050 // Allow file IO and dynamic JSON code in CAG manager
 
 /// <summary>
-/// CRUD manager for Context-Aware Generation memories with project-scoped context support.
+/// CRUD manager for Injected Memory (formerly Context-Aware Generation) with project-scoped context support.
 /// </summary>
-public class AgentMemoryCagManager
+public class AgentInjectedMemoryManager
 {
     private readonly string _storageDirectory;
-    private readonly ILogger<AgentMemoryCagManager>? _logger;
+    private readonly ILogger<AgentInjectedMemoryManager>? _logger;
     private readonly List<Action> _invalidationCallbacks = new();
     private readonly object _fileLock = new();
 
     /// <summary>Current context (e.g., project id) appended to file name.</summary>
     public string? CurrentContext { get; private set; }
 
-    public AgentMemoryCagManager(string storageDirectory, ILogger<AgentMemoryCagManager>? logger = null)
+    public AgentInjectedMemoryManager(string storageDirectory, ILogger<AgentInjectedMemoryManager>? logger = null)
     {
         _storageDirectory = Path.GetFullPath(storageDirectory);
         Directory.CreateDirectory(_storageDirectory);
@@ -34,38 +34,38 @@ public class AgentMemoryCagManager
         _invalidationCallbacks.Add(invalidateCallback);
     }
 
-    public async Task<List<AgentCagMemory>> GetMemoriesAsync(string agentName, CancellationToken cancellationToken = default)
+    public async Task<List<AgentInjectedMemory>> GetMemoriesAsync(string agentName, CancellationToken cancellationToken = default)
     {
         var file = GetFilePath(agentName);
         if (!File.Exists(file))
         {
-            return new List<AgentCagMemory>();
+            return new List<AgentInjectedMemory>();
         }
         try
         {
             using var stream = File.OpenRead(file);
-            var memories = await JsonSerializer.DeserializeAsync<List<AgentCagMemory>>(stream, cancellationToken: cancellationToken)
-                ?? new List<AgentCagMemory>();
+            var memories = await JsonSerializer.DeserializeAsync<List<AgentInjectedMemory>>(stream, cancellationToken: cancellationToken)
+                ?? new List<AgentInjectedMemory>();
             return memories.OrderByDescending(m => m.LastAccessed).ToList();
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to read memories from {File}", file);
-            return new List<AgentCagMemory>();
+            return new List<AgentInjectedMemory>();
         }
     }
 
-    public async Task<AgentCagMemory?> GetMemoryAsync(string agentName, string memoryId, CancellationToken cancellationToken = default)
+    public async Task<AgentInjectedMemory?> GetMemoryAsync(string agentName, string memoryId, CancellationToken cancellationToken = default)
     {
         var memories = await GetMemoriesAsync(agentName, cancellationToken);
         return memories.FirstOrDefault(m => m.Id == memoryId);
     }
 
-    public async Task<AgentCagMemory> CreateMemoryAsync(string agentName, string title, string content, CancellationToken cancellationToken = default)
+    public async Task<AgentInjectedMemory> CreateMemoryAsync(string agentName, string title, string content, CancellationToken cancellationToken = default)
     {
         var memories = await GetMemoriesAsync(agentName, cancellationToken);
         var now = DateTime.UtcNow;
-        var memory = new AgentCagMemory
+        var memory = new AgentInjectedMemory
         {
             Id = Guid.NewGuid().ToString("N").Substring(0, 6),
             Title = title,
@@ -80,7 +80,7 @@ public class AgentMemoryCagManager
         return memory;
     }
 
-    public async Task<AgentCagMemory> UpdateMemoryAsync(string agentName, string memoryId, string title, string content, CancellationToken cancellationToken = default)
+    public async Task<AgentInjectedMemory> UpdateMemoryAsync(string agentName, string memoryId, string title, string content, CancellationToken cancellationToken = default)
     {
         var memories = await GetMemoriesAsync(agentName, cancellationToken);
         var memory = memories.First(m => m.Id == memoryId);
@@ -128,7 +128,7 @@ public class AgentMemoryCagManager
         return Path.Combine(_storageDirectory, fileName + ".json");
     }
 
-    private void SaveMemories(string agentName, List<AgentCagMemory> memories)
+    private void SaveMemories(string agentName, List<AgentInjectedMemory> memories)
     {
         var file = GetFilePath(agentName);
         lock (_fileLock)

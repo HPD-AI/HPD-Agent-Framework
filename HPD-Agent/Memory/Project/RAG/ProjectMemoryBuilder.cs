@@ -29,7 +29,7 @@ using HPD_Agent.MemoryRAG;
         private string? _remoteEndpoint;
         private string? _remoteApiKey;
         // Document strategy configuration
-        private ProjectDocumentStrategy _documentStrategy = ProjectDocumentStrategy.RAG; // Default to RAG
+        private ProjectDocumentHandling _documentStrategy = ProjectDocumentHandling.IndexedRetrieval; // Default to IndexedRetrieval
 
         public ProjectMemoryBuilder(string projectId)
         {
@@ -81,7 +81,7 @@ using HPD_Agent.MemoryRAG;
         /// </summary>
         /// <param name="strategy">The document handling strategy</param>
         /// <returns>The builder instance for method chaining</returns>
-        public ProjectMemoryBuilder WithDocumentStrategy(ProjectDocumentStrategy strategy)
+        public ProjectMemoryBuilder WithDocumentStrategy(ProjectDocumentHandling strategy)
         {
             _documentStrategy = strategy;
             return this;
@@ -90,7 +90,7 @@ using HPD_Agent.MemoryRAG;
         /// <summary>
         /// Internal property to be read by the Project class
         /// </summary>
-        internal ProjectDocumentStrategy DocumentStrategy => _documentStrategy;
+        internal ProjectDocumentHandling DocumentStrategy => _documentStrategy;
 
         /// <summary>
         /// Builds the configured IKernelMemory for RAG usage.
@@ -99,7 +99,7 @@ using HPD_Agent.MemoryRAG;
         public IKernelMemory? Build()
         {
             // Return null for DirectInjection strategy to optimize resource allocation
-            if (_documentStrategy == ProjectDocumentStrategy.DirectInjection)
+            if (_documentStrategy == ProjectDocumentHandling.FullTextInjection)
             {
                 return null;
             }

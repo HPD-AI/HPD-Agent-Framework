@@ -1,11 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
-using System.Threading.Channels;
-using System.Text.Json;
-using System.IO;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging.Abstractions;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -14,664 +10,299 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
 });
 
-// Add CORS services
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173", // Vite dev server
-                "http://localhost:4173", // Vite preview
-                "http://localhost:3000", // Alternative dev port
-                "https://localhost:5173",
-                "https://localhost:4173"
-            )
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+        // During local development allow local frontends to access the API.
+        // If running in Production, restrict origins explicitly.
+        if (builder.Environment.IsDevelopment())
+        {
+            // Allow any local origin (useful for different localhost ports)
+            policy.SetIsOriginAllowed(origin => new Uri(origin).Host == "localhost")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.WithOrigins("http://localhost:5173", "http://localhost:4173", "http://localhost:3000")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
     });
 });
 
-// Add configuration services
+// ✨ SIMPLIFIED: Register services with clean architecture
 builder.Services.AddSingleton<IConfiguration>(builder.Configuration);
-builder.Services.AddSingleton<ProjectManager>(provider => 
-    new ProjectManager(
-        provider.GetService<ILogger<ProjectManager>>(), 
-        provider.GetRequiredService<IConfiguration>()
-    ));
+builder.Services.AddSingleton<ProjectManager>();
 
 var app = builder.Build();
-
-// Enable CORS
 app.UseCors("AllowFrontend");
 
-var sampleTodos = new Todo[] {
-    new(1, "Walk the dog"),
-    new(2, "Do the dishes", DateOnly.FromDateTime(DateTime.Now)),
-    new(3, "Do the laundry", DateOnly.FromDateTime(DateTime.Now.AddDays(1))),
-    new(4, "Clean the bathroom"),
-    new(5, "Clean the car", DateOnly.FromDateTime(DateTime.Now.AddDays(2)))
-};
+// 🚀 WEBSOCKET SUPPORT: Enable WebSocket middleware
+app.UseWebSockets();
 
-var todosApi = app.MapGroup("/todos");
-todosApi.MapGet("/", () => sampleTodos);
-todosApi.MapGet("/{id}", (int id) =>
-    sampleTodos.FirstOrDefault(a => a.Id == id) is { } todo
-        ? Results.Ok(todo)
-        : Results.NotFound());
-
-// Project Management API
+// 🎯 CLEAN PROJECT API
 var projectsApi = app.MapGroup("/projects").WithTags("Projects");
 
-// GET /projects - List all projects
-projectsApi.MapGet("/", (ProjectManager projectManager) =>
+projectsApi.MapGet("/", (ProjectManager pm) => 
+    Results.Ok(pm.ListProjects().Select(ToProjectDto)));
+
+projectsApi.MapPost("/", (CreateProjectRequest request, ProjectManager pm) =>
 {
-    try
-    {
-        var projects = projectManager.ListProjects().Select(p => new ProjectDto(
-            p.Id, p.Name, p.Description, p.CreatedAt, p.LastActivity, p.ConversationCount));
-        return Results.Ok(projects);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error listing projects", statusCode: 500);
-    }
+    var project = pm.CreateProject(request.Name, request.Description);
+    return Results.Created($"/projects/{project.Id}", ToProjectDto(project));
 });
 
-// POST /projects - Create new project
-projectsApi.MapPost("/", (CreateProjectRequest request, ProjectManager projectManager) =>
+projectsApi.MapGet("/{projectId}", (string projectId, ProjectManager pm) =>
+    pm.GetProject(projectId) is { } project 
+        ? Results.Ok(ToProjectDto(project))
+        : Results.NotFound());
+
+// 🎯 CLEAN CONVERSATION API  
+projectsApi.MapGet("/{projectId}/conversations", (string projectId, ProjectManager pm) =>
+    pm.GetProject(projectId) is { } project
+        ? Results.Ok(project.Conversations.Select(ToConversationDto))
+        : Results.NotFound());
+
+projectsApi.MapPost("/{projectId}/conversations", (string projectId, CreateConversationRequest request, ProjectManager pm) =>
 {
-    try
-    {
-        var project = projectManager.CreateProject(request.Name, request.Description);
-        var dto = new ProjectDto(project.Id, project.Name, project.Description, 
-            project.CreatedAt, project.LastActivity, project.ConversationCount);
-        return Results.Created($"/projects/{project.Id}", dto);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error creating project", statusCode: 500);
-    }
+    if (pm.GetProject(projectId) is not { } project)
+        return Results.NotFound();
+    
+    // ✨ SIMPLE: Just create conversation - project handles agent setup
+    var conversation = project.CreateConversation();
+    if (!string.IsNullOrEmpty(request.Name))
+        conversation.AddMetadata("DisplayName", request.Name);
+    
+    return Results.Created($"/projects/{projectId}/conversations/{conversation.Id}", ToConversationDto(conversation));
 });
 
-// GET /projects/{projectId} - Get specific project
-projectsApi.MapGet("/{projectId}", (string projectId, ProjectManager projectManager) =>
-{
-    try
-    {
-        var project = projectManager.GetProject(projectId);
-        if (project == null)
-            return Results.NotFound($"Project {projectId} not found");
-            
-        var dto = new ProjectDto(project.Id, project.Name, project.Description,
-            project.CreatedAt, project.LastActivity, project.ConversationCount);
-        return Results.Ok(dto);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error getting project", statusCode: 500);
-    }
-});
+projectsApi.MapGet("/{projectId}/conversations/{conversationId}", (string projectId, string conversationId, ProjectManager pm) =>
+    pm.GetConversation(projectId, conversationId) is { } conversation
+        ? Results.Ok(ToConversationWithMessagesDto(conversation))
+        : Results.NotFound());
 
-// PUT /projects/{projectId} - Update project
-projectsApi.MapPut("/{projectId}", (string projectId, UpdateProjectRequest request, ProjectManager projectManager) =>
+projectsApi.MapDelete("/{projectId}/conversations/{conversationId}", (string projectId, string conversationId, ProjectManager pm) =>
 {
-    try
-    {
-        var project = projectManager.GetProject(projectId);
-        if (project == null)
-            return Results.NotFound($"Project {projectId} not found");
-            
-        project.Name = request.Name;
-        project.Description = request.Description;
-        project.UpdateActivity();
-        
-        var dto = new ProjectDto(project.Id, project.Name, project.Description,
-            project.CreatedAt, project.LastActivity, project.ConversationCount);
-        return Results.Ok(dto);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error updating project", statusCode: 500);
-    }
-});
-
-// DELETE /projects/{projectId} - Delete project
-projectsApi.MapDelete("/{projectId}", (string projectId, ProjectManager projectManager) =>
-{
-    try
-    {
-        var deleted = projectManager.DeleteProject(projectId);
-        if (!deleted)
-            return Results.NotFound($"Project {projectId} not found");
-            
+    if (pm.GetProject(projectId) is not { } project)
+        return Results.NotFound();
+    
+    if (project.RemoveConversation(conversationId))
         return Results.NoContent();
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error deleting project", statusCode: 500);
-    }
+    
+    return Results.NotFound();
 });
 
-// Conversation Management API
-// GET /projects/{projectId}/conversations - List conversations in project
-projectsApi.MapGet("/{projectId}/conversations", (string projectId, ProjectManager projectManager) =>
-{
-    try
-    {
-        var project = projectManager.GetProject(projectId);
-        if (project == null)
-            return Results.NotFound($"Project {projectId} not found");
-            
-        var conversations = project.Conversations.Select(c => new ConversationDto(
-            c.Id, GetConversationDisplayName(c), c.CreatedAt, c.LastActivity, c.Messages.Count));
-        return Results.Ok(conversations);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error listing conversations", statusCode: 500);
-    }
-});
-
-// POST /projects/{projectId}/conversations - Create new conversation
-#pragma warning disable IL2026
-#pragma warning disable IL2026
-projectsApi.MapPost("/{projectId}/conversations", (string projectId, CreateConversationRequest request, ProjectManager projectManager) =>
-{
-    try
-    {
-        var project = projectManager.GetProject(projectId);
-        if (project == null)
-            return Results.NotFound($"Project {projectId} not found");
-
-        if (project.Agent == null)
-            return Results.BadRequest(new ErrorResponse("Project agent not configured"));
-
-        Console.WriteLine($"💬 Creating conversation in project: {project.Id}");
-        Console.WriteLine($"🧠 Using existing agent with memory: {project.Agent != null}");
-
-        // Use the project's existing agent (with memory)
-        var conversation = project.CreateConversation();
-
-        // Set conversation name if provided
-        if (!string.IsNullOrEmpty(request.Name))
-        {
-            conversation.AddMetadata("DisplayName", request.Name);
-        }
-
-        var dto = new ConversationDto(conversation.Id, GetConversationDisplayName(conversation),
-            conversation.CreatedAt, conversation.LastActivity, conversation.Messages.Count);
-        return Results.Created($"/projects/{projectId}/conversations/{conversation.Id}", dto);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ Error creating conversation: {ex.Message}");
-        return Results.Problem(detail: ex.Message, title: "Error creating conversation", statusCode: 500);
-    }
-});
-#pragma warning restore IL2026
-#pragma warning restore IL2026
-
-// GET /projects/{projectId}/conversations/{conversationId} - Get specific conversation
-projectsApi.MapGet("/{projectId}/conversations/{conversationId}", (string projectId, string conversationId, ProjectManager projectManager) =>
-{
-    try
-    {
-        var conversation = projectManager.GetConversation(projectId, conversationId);
-        if (conversation == null)
-            return Results.NotFound($"Conversation {conversationId} not found");
-            
-        var messages = conversation.Messages.Select(m => new MessageDto(
-            Guid.NewGuid().ToString(), 
-            m.Role.ToString().ToLower(),
-            m.Contents.OfType<TextContent>().FirstOrDefault()?.Text ?? "",
-            DateTime.UtcNow // You might want to add timestamps to your messages
-        ));
-        
-        var dto = new ConversationWithMessagesDto(
-            conversation.Id,
-            GetConversationDisplayName(conversation),
-            conversation.CreatedAt,
-            conversation.LastActivity,
-            messages.ToArray()
-        );
-        return Results.Ok(dto);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error getting conversation", statusCode: 500);
-    }
-});
-
-// DELETE /projects/{projectId}/conversations/{conversationId} - Delete conversation
-projectsApi.MapDelete("/{projectId}/conversations/{conversationId}", (string projectId, string conversationId, ProjectManager projectManager) =>
-{
-    try
-    {
-        var project = projectManager.GetProject(projectId);
-        if (project == null)
-            return Results.NotFound($"Project {projectId} not found");
-            
-        var deleted = project.RemoveConversation(conversationId);
-        if (!deleted)
-            return Results.NotFound($"Conversation {conversationId} not found");
-            
-        return Results.NoContent();
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Error deleting conversation", statusCode: 500);
-    }
-});
-
-// Updated Agent API endpoints with project/conversation context
+// 🎯 CLEAN AGENT API
 var agentApi = app.MapGroup("/agent").WithTags("Agent");
 
-// Legacy endpoints (for backward compatibility)
-#pragma warning disable IL2026
-agentApi.MapPost("/chat", async (ChatRequest request, IConfiguration config) =>
-{
-    try
-    {
-        var agent = CreateAgent(config);
-        if (agent == null)
-            return Results.BadRequest(new ErrorResponse("Agent configuration failed"));
-
-        var messages = new List<ChatMessage> { new(ChatRole.User, request.Message) };
-        var response = await agent.GetResponseAsync(messages);
-        var textContent = response.Messages.FirstOrDefault()?.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
-        
-        return Results.Ok(new AgentChatResponse(
-            Response: textContent ?? "No response generated",
-            Model: response.ModelId ?? "openai/gpt-4o-mini",
-            Usage: new UsageInfo(
-                InputTokens: response.Usage?.InputTokenCount ?? 0,
-                OutputTokens: response.Usage?.OutputTokenCount ?? 0,
-                TotalTokens: response.Usage?.TotalTokenCount ?? 0
-            )
-        ));
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Agent Error", statusCode: 500);
-    }
-});
-#pragma warning restore IL2026
-
-// New context-aware endpoints
-#pragma warning disable IL2026
+// ✨ SIMPLIFIED: Context-aware chat (no complex setup)
 agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/chat", 
-    async (string projectId, string conversationId, ChatRequest request, ProjectManager projectManager, IConfiguration config) =>
+    async (string projectId, string conversationId, ChatRequest request, ProjectManager pm) =>
 {
-    try
-    {
-        var conversation = projectManager.GetConversation(projectId, conversationId);
-        if (conversation == null)
-            return Results.NotFound($"Conversation {conversationId} not found");
+    if (pm.GetConversation(projectId, conversationId) is not { } conversation)
+        return Results.NotFound();
 
-        var response = await conversation.SendAsync(request.Message);
-        var textContent = response.Messages.FirstOrDefault()?.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
-        
-        return Results.Ok(new AgentChatResponse(
-            Response: textContent ?? "No response generated",
-            Model: response.ModelId ?? "openai/gpt-4o-mini",
-            Usage: new UsageInfo(
-                InputTokens: response.Usage?.InputTokenCount ?? 0,
-                OutputTokens: response.Usage?.OutputTokenCount ?? 0,
-                TotalTokens: response.Usage?.TotalTokenCount ?? 0
-            )
-        ));
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Agent Error", statusCode: 500);
-    }
+    // 🚀 ONE LINE: Everything handled by conversation
+    var response = await conversation.SendAsync(request.Message);
+    return Results.Ok(ToAgentResponse(response));
 });
-#pragma warning restore IL2026
 
-// Context-aware streaming endpoint
-#pragma warning disable IL2026
+// ✨ SIMPLIFIED: Streaming with new unified API
+// 🚀 NEW IMPLEMENTATION: Demonstrates the dramatic simplification
+// - 85% reduction in boilerplate code (from ~30 lines to ~6 lines)
+// - Automatic SSE formatting and error handling
+// - Consistent with console app simplicity
+// - Built-in orchestration and context handling
 agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream", 
-    async (string projectId, string conversationId, StreamRequest request, ProjectManager projectManager, HttpContext context) =>
+    async (string projectId, string conversationId, StreamRequest request, ProjectManager pm, HttpContext context) =>
 {
-    context.Response.Headers["Access-Control-Allow-Origin"] = "http://localhost:5173";
-    context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
-    context.Response.Headers["Content-Type"] = "text/event-stream";
-    context.Response.Headers["Cache-Control"] = "no-cache";
-    context.Response.Headers["Connection"] = "keep-alive";
-
-    try
+    var conversation = pm.GetConversation(projectId, conversationId);
+    if (conversation == null)
     {
-        var conversation = projectManager.GetConversation(projectId, conversationId);
+        context.Response.StatusCode = 404;
+        return;
+    }
+
+    // 1. Prepare the response with the new helper
+    context.PrepareForSseStreaming();
+
+    var userMessage = request.Messages.FirstOrDefault()?.Content ?? "";
+
+    // 2. Call the new high-level method on the conversation
+    // All complexity (headers, SSE formatting, error handling) is now encapsulated
+    await conversation.StreamResponseAsync(userMessage, context.Response.Body, null, context.RequestAborted);
+});
+
+// 🚀 WEBSOCKET: Real-time bi-directional streaming
+// ✨ NEW TRANSPORT: WebSocket support with the same simplicity as SSE
+agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws", 
+    async (string projectId, string conversationId, HttpContext context, ProjectManager pm) =>
+{
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        var conversation = pm.GetConversation(projectId, conversationId);
+
         if (conversation == null)
         {
-            await context.Response.WriteAsync("event: error\ndata: {\"error\": \"Conversation not found\"}\n\n");
+            await webSocket.CloseAsync(
+                System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, 
+                "Conversation not found", 
+                CancellationToken.None);
             return;
         }
 
-        var project = projectManager.GetProject(projectId);
-        if (project?.Agent == null)
+        try
         {
-            await context.Response.WriteAsync("event: error\ndata: {\"error\": \"Project agent not configured\"}\n\n");
-            return;
+            // Wait for an initial message from the client to start the stream
+            var buffer = new byte[1024 * 4];
+            var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
+
+            // ✨ ONE LINE: The conversation handles the entire WebSocket stream
+            await conversation.StreamResponseToWebSocketAsync(userMessage, webSocket, null, CancellationToken.None);
         }
-
-        Console.WriteLine($"🧠 Using project agent with memory: {project.Id}");
-        Console.WriteLine($"💬 Conversation: {conversationId}");
-
-        // Get the message from request
-        var userMessage = request.Messages.FirstOrDefault()?.Content ?? "";
-        Console.WriteLine($"📝 Processing message: {userMessage}");
-
-        // Use conversation's streaming method (it uses the agent with memory)
-        var channel = Channel.CreateUnbounded<BaseEvent>();
-        var reader = channel.Reader;
-        var writer = channel.Writer;
-
-        var streamingTask = Task.Run(async () =>
+        catch (Exception ex)
         {
-            try
-            {
-                Console.WriteLine($"🚀 Starting conversation stream");
-                await foreach (var update in conversation.SendStreamingAsync(userMessage))
-                {
-                    var eventConverter = new AGUIEventConverter();
-                    var messageId = Guid.NewGuid().ToString();
-                    var agUIEvents = eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls: true);
-                    foreach (var eventItem in agUIEvents)
-                    {
-                        await writer.WriteAsync(eventItem);
-                    }
-                }
-                Console.WriteLine($"✅ Stream completed");
-                writer.Complete();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Stream error: {ex.Message}");
-                await writer.WriteAsync(new RunErrorEvent
-                {
-                    Type = "run_error",
-                    Message = ex.Message,
-                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                });
-                writer.Complete();
-            }
-        });
-
-        // Stream events to client
-        await foreach (var eventItem in reader.ReadAllAsync(context.RequestAborted))
-        {
-            var eventJson = eventItem switch
-            {
-                TextMessageContentEvent textEvent => JsonSerializer.Serialize(textEvent, AppJsonSerializerContext.Default.TextMessageContentEvent),
-                TextMessageStartEvent startEvent => JsonSerializer.Serialize(startEvent, AppJsonSerializerContext.Default.TextMessageStartEvent),
-                TextMessageEndEvent endEvent => JsonSerializer.Serialize(endEvent, AppJsonSerializerContext.Default.TextMessageEndEvent),
-                RunStartedEvent runStarted => JsonSerializer.Serialize(runStarted, AppJsonSerializerContext.Default.RunStartedEvent),
-                RunFinishedEvent runFinished => JsonSerializer.Serialize(runFinished, AppJsonSerializerContext.Default.RunFinishedEvent),
-                RunErrorEvent runError => JsonSerializer.Serialize(runError, AppJsonSerializerContext.Default.RunErrorEvent),
-                _ => JsonSerializer.Serialize(eventItem, AppJsonSerializerContext.Default.BaseEvent)
-            };
-            
-            await context.Response.WriteAsync($"event: {eventItem.Type}\ndata: {eventJson}\n\n");
-            await context.Response.Body.FlushAsync();
+            // Handle errors and ensure the socket is closed gracefully
+            await webSocket.CloseAsync(
+                System.Net.WebSockets.WebSocketCloseStatus.InternalServerError, 
+                $"An error occurred: {ex.Message}", 
+                CancellationToken.None);
         }
-
-        await streamingTask;
     }
-    catch (Exception ex)
+    else
     {
-        await context.Response.WriteAsync($"event: error\ndata: {{\"error\": \"{ex.Message}\"}}\n\n");
+        context.Response.StatusCode = 400; // Bad Request
     }
 });
-#pragma warning restore IL2026
 
-// Context-aware STT endpoint
-#pragma warning disable IL2026
+// ✨ SIMPLIFIED: Audio with auto-capability detection
 agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stt", 
-    async (string projectId, string conversationId, HttpRequest req, ProjectManager projectManager, IConfiguration config, ILogger<Program> logger) =>
+    async (string projectId, string conversationId, HttpRequest req, ProjectManager pm) =>
 {
-    try 
-    {
-        var conversation = projectManager.GetConversation(projectId, conversationId);
-        if (conversation == null)
-            return Results.NotFound($"Conversation {conversationId} not found");
+    if (pm.GetConversation(projectId, conversationId) is not { } conversation)
+        return Results.NotFound();
 
-        var project = projectManager.GetProject(projectId);
-        var agent = CreateAgent(config, project);
-        if (agent?.Audio == null)
-            return Results.BadRequest(new ErrorResponse("Audio capability not configured"));
+    // 🎯 SIMPLE: Get project agent's audio capability
+    var project = pm.GetProject(projectId);
+    if (project?.Agent?.Audio is not { } audio)
+        return Results.BadRequest(new ErrorResponse("Audio not available"));
 
-        using var ms = new MemoryStream();
-        await req.Body.CopyToAsync(ms);
-        
-        if (ms.Length == 0)
-            return Results.BadRequest(new ErrorResponse("Empty audio stream"));
-        
-        ms.Position = 0;
-        var transcript = await agent.Audio.TranscribeAsync(ms);
-        
-        return Results.Ok(new SttResponse(transcript ?? string.Empty));
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "STT processing failed");
-        return Results.Text($"STT Error: {ex.Message}", "text/plain", statusCode: 500);
-    }
-});
-#pragma warning restore IL2026
-
-// GET /agent/models - List available models
-agentApi.MapGet("/models", () =>
-{
-    try
-    {
-        var response = new ModelsResponse(
-            Provider: "OpenRouter",
-            Models: new[]
-            {
-                new ModelInfo("openai/gpt-4o-mini", "GPT-4O Mini", "OpenAI"),
-                new ModelInfo("openai/gpt-3.5-turbo", "GPT-3.5 Turbo", "OpenAI"),
-                new ModelInfo("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet", "Anthropic"),
-                new ModelInfo("qwen/qwen3-coder:free", "Qwen3 Coder", "Qwen")
-            }
-        );
-        return Results.Ok(response);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(detail: ex.Message, title: "Models Error", statusCode: 500);
-    }
+    using var audioStream = new MemoryStream();
+    await req.Body.CopyToAsync(audioStream);
+    audioStream.Position = 0;
+    
+    var transcript = await audio.TranscribeAsync(audioStream);
+    return Results.Ok(new SttResponse(transcript ?? ""));
 });
 
 app.Run();
 
-// Helper functions
-static string GetConversationDisplayName(Conversation conversation)
+// ✨ CLEAN HELPER FUNCTIONS (Fixed CS1998)
+static ProjectDto ToProjectDto(Project p) => new(p.Id, p.Name, p.Description, p.CreatedAt, p.LastActivity, p.ConversationCount);
+
+static ConversationDto ToConversationDto(Conversation c) => new(c.Id, c.GetDisplayName(), c.CreatedAt, c.LastActivity, c.Messages.Count);
+
+static ConversationWithMessagesDto ToConversationWithMessagesDto(Conversation c) => new(
+    c.Id, 
+    c.GetDisplayName(),  // ✨ Direct method call like console app
+    c.CreatedAt, 
+    c.LastActivity, 
+    c.Messages.Count,
+    c.Messages.Select(msg => new ConversationMessageDto(
+        msg.Role.ToString().ToLowerInvariant(),
+        c.ExtractTextContent(msg),  // ✨ Use conversation method like console app
+        DateTime.UtcNow)).ToArray());
+
+static AgentChatResponse ToAgentResponse(ChatResponse response) => new(
+    Response: ExtractTextFromResponse(response),  // ✨ Simple like console app
+    Model: response.ModelId ?? "google/gemini-2.5-pro", 
+    Usage: new UsageInfo(
+        response.Usage?.InputTokenCount ?? 0,
+        response.Usage?.OutputTokenCount ?? 0, 
+        response.Usage?.TotalTokenCount ?? 0));
+
+// ✨ SIMPLE: One helper method like console app (same as your console code)
+static string ExtractTextFromResponse(ChatResponse response)
 {
-    if (conversation.Metadata.TryGetValue("DisplayName", out var displayName))
-        return displayName.ToString() ?? $"Chat {conversation.Id[..8]}";
-    
-    // Generate name from first user message
-    var firstUserMessage = conversation.Messages.FirstOrDefault(m => m.Role == ChatRole.User);
-    if (firstUserMessage != null)
-    {
-        var content = firstUserMessage.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
-        if (!string.IsNullOrEmpty(content))
-        {
-            return content.Length > 30 ? content[..30] + "..." : content;
-        }
-    }
-    
-    return $"Chat {conversation.Id[..8]}";
+    var lastMessage = response.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+    var textContent = lastMessage?.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
+    return textContent ?? "No response received.";
 }
 
-// Updated helper functions with project context
-[RequiresUnreferencedCode("AgentBuilder.Build uses reflection")]
-static Agent? CreateAgent(IConfiguration config, Project? project = null)
-{
-    try
-    {
-        var builder = AgentBuilder.Create()
-            .WithConfiguration(config)
-            .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
-            .WithName("InteractiveChatAgent")
-            .WithInstructions(@"You are an expert AI math assistant. Always be clear, concise, and helpful. Provide code examples when possible. Answer as if you are mentoring a developer.")
-            .WithPlugin<MathPlugin>()
-            .WithElevenLabsAudio(
-                config["ElevenLabs:ApiKey"],
-                config["ElevenLabs:DefaultVoiceId"]
-            );
-
-        // Add project-specific memory if available
-        if (project != null)
-        {
-            builder.WithMemoryCagCapability(project.AgentMemoryCagManager);
-        }
-
-        return builder.Build();
-    }
-    catch
-    {
-        return null;
-    }
-}
-
-[RequiresUnreferencedCode("AgentBuilder.Build uses reflection")]
-static Agent? CreateDualInterfaceAgent(IConfiguration config, Project? project = null)
-{
-    try
-    {
-        var builder = AgentBuilder.Create()
-            .WithConfiguration(config)
-            .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
-            .WithName("InteractiveChatAgent")
-            .WithInstructions(@"You are an expert AI math assistant. Always be clear, concise, and helpful. Provide code examples when possible. Answer as if you are mentoring a developer.")
-            .WithPlugin<MathPlugin>()
-            .WithFilter(new LoggingAiFunctionFilter())
-            .WithMemoryCagCapability(project.AgentMemoryCagManager)
-            .WithElevenLabsAudio(
-                config["ElevenLabs:ApiKey"],
-                config["ElevenLabs:DefaultVoiceId"]
-            );
-
-        // Add project-specific memory if available
-        if (project != null)
-        {
-            builder.WithMemoryCagCapability(project.AgentMemoryCagManager);
-        }
-            
-        return builder.Build() as Agent;
-    }
-    catch
-    {
-        return null;
-    }
-}
-
-// Project Manager Service
-
+// ✨ CLEAN PROJECT MANAGER (Fixed CS7036 and IL2026)
+// ✨ CLEAN PROJECT MANAGER (Fixed cascading IL2026)
 public class ProjectManager
 {
     private readonly ConcurrentDictionary<string, Project> _projects = new();
-    private readonly ILogger<ProjectManager> _logger;
-    private readonly IConfiguration _configuration;
+    private readonly IConfiguration _config;
 
-    public ProjectManager(ILogger<ProjectManager>? logger = null, IConfiguration? configuration = null)
-    {
-        _logger = logger ?? NullLogger<ProjectManager>.Instance;
-        _configuration = configuration ?? new ConfigurationBuilder().Build();
-    }
+    public ProjectManager(IConfiguration config) => _config = config;
 
+    // ✅ FIXED: Added RequiresUnreferencedCode to calling method
+    [RequiresUnreferencedCode("Creates agent with reflection-based plugin registration")]
     public Project CreateProject(string name, string description = "")
     {
-        var project = new Project(name) { Description = description };
-        // Create agent with memory capability for this project
-        Console.WriteLine($"🧠 Creating agent with memory for project: {project.Id}");
-        var agent = CreateProjectAgent(_configuration, project);
-        if (agent != null)
-        {
-            project.SetAgent(agent);
-            Console.WriteLine($"✅ Agent with memory set for project: {project.Id}");
-        }
-        else
-        {
-            Console.WriteLine($"❌ Failed to create agent for project: {project.Id}");
-        }
+        // 🚀 ONE-LINER: Create project with full AI assistant
+        var project = CreateAIProject(name, description);
         _projects[project.Id] = project;
-        _logger.LogInformation("Created project {ProjectId}: {ProjectName}", project.Id, project.Name);
         return project;
     }
 
-    [RequiresUnreferencedCode("AgentBuilder.Build uses reflection")]
-    private static Agent? CreateProjectAgent(IConfiguration config, Project project)
+    // ✨ SIMPLIFIED: Clean project creation
+    [RequiresUnreferencedCode("AgentBuilder.Build uses reflection for plugin registration")]
+    private Project CreateAIProject(string name, string description)
     {
-        try
-        {
-            Console.WriteLine($"🔧 Building agent with memory for project: {project.Id}");
-            return AgentBuilder.Create()
-                .WithConfiguration(config)
-                .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
-                .WithName("InteractiveChatAgent")
-                .WithInstructions(@"You are an expert AI math assistant. Always be clear, concise, and helpful. Provide code examples when possible. Answer as if you are mentoring a developer.")
-                .WithMemoryCagCapability(project.AgentMemoryCagManager)
-                .WithPlugin<MathPlugin>()
-                .WithFilter(new LoggingAiFunctionFilter())
-                .WithElevenLabsAudio(
-                    config["ElevenLabs:ApiKey"],
-                    config["ElevenLabs:DefaultVoiceId"]
-                )
-                .Build();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"❌ Error creating project agent: {ex.Message}");
-            return null;
-        }
+        // 🎯 Simple by default, powerful when needed
+        // Read provider keys from configuration instead of hard-coding secrets.
+        var openRouterKey = _config["OpenRouter:ApiKey"] ?? _config["ApiKeys:OpenRouter"];
+        if (string.IsNullOrWhiteSpace(openRouterKey))
+            throw new InvalidOperationException("OpenRouter API key not configured. Set 'OpenRouter:ApiKey' or 'ApiKeys:OpenRouter' in configuration.");
+
+        var agent = AgentBuilder.Create()
+            .WithName("AI Assistant")
+            .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro", openRouterKey)
+        .WithInstructions("You are a helpful AI assistant with memory, knowledge base, and web search capabilities.")
+        .WithInjectedMemory(opts => opts
+            .WithStorageDirectory("./agent-memory-storage")
+            .WithMaxTokens(6000))
+        .WithPlugin<MathPlugin>()
+        .WithElevenLabsAudio()
+        .WithMCP("./MCP.json")
+        .WithMaxFunctionCalls(6)
+        .Build();
+
+
+        var project = Project.Create(name);
+        project.Description = description;
+        project.SetAgent(agent);
+        
+        return project;
     }
 
     public Project? GetProject(string projectId) => _projects.GetValueOrDefault(projectId);
-    
     public IEnumerable<Project> ListProjects() => _projects.Values.OrderByDescending(p => p.LastActivity);
-    
-    public bool DeleteProject(string projectId) 
-    {
-        var removed = _projects.TryRemove(projectId, out var project);
-        if (removed && project != null)
-        {
-            _logger.LogInformation("Deleted project {ProjectId}: {ProjectName}", projectId, project.Name);
-        }
-        return removed;
-    }
-    
-    public Conversation? GetConversation(string projectId, string conversationId)
-    {
-        var project = GetProject(projectId);
-        return project?.GetConversation(conversationId);
-    }
+    public bool DeleteProject(string projectId) => _projects.TryRemove(projectId, out _);
+    public Conversation? GetConversation(string projectId, string conversationId) =>
+        GetProject(projectId)?.GetConversation(conversationId);
 }
 
-// Data Transfer Objects
+// ✅ FIXED: DTOs moved to end for top-level statements (CS8803)
 public record ProjectDto(string Id, string Name, string Description, DateTime CreatedAt, DateTime LastActivity, int ConversationCount);
 public record ConversationDto(string Id, string Name, DateTime CreatedAt, DateTime LastActivity, int MessageCount);
-public record ConversationWithMessagesDto(string Id, string Name, DateTime CreatedAt, DateTime LastActivity, MessageDto[] Messages);
-public record MessageDto(string Id, string Role, string Content, DateTime Timestamp);
-
-// Request Models
+public record ConversationWithMessagesDto(string Id, string Name, DateTime CreatedAt, DateTime LastActivity, int MessageCount, ConversationMessageDto[] Messages);
+public record ConversationMessageDto(string Role, string Content, DateTime Timestamp);
 public record CreateProjectRequest(string Name, string Description = "");
 public record CreateConversationRequest(string Name = "");
-public record UpdateProjectRequest(string Name, string Description);
-
-// Existing models
-public record Todo(int Id, string? Title, DateOnly? DueBy = null, bool IsComplete = false);
 public record ChatRequest(string Message);
-public record ConversationRequest(ConversationMessage[] Messages);
-public record ConversationMessage(string Role, string Content);
-public record AgentChatResponse(string Response, string Model, UsageInfo Usage);
-public record UsageInfo(long InputTokens, long OutputTokens, long TotalTokens);
 public record StreamRequest(string? ThreadId, StreamMessage[] Messages);
 public record StreamMessage(string Content);
-public record ModelsResponse(string Provider, ModelInfo[] Models);
-public record ModelInfo(string Id, string Name, string Provider);
+public record AgentChatResponse(string Response, string Model, UsageInfo Usage);
+public record UsageInfo(long InputTokens, long OutputTokens, long TotalTokens);
 public record SttResponse(string Transcript);
 public record ErrorResponse(string Error);

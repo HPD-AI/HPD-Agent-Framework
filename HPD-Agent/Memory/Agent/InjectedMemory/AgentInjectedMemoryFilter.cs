@@ -4,18 +4,18 @@ using System.Text;
 
 
 /// <summary>
-/// Prompt filter that injects CAG memories into the system message.
+/// Prompt filter that injects memory content into the system message.
 /// </summary>
-public class AgentMemoryCagInjectionFilter : IPromptFilter
+public class AgentInjectedMemoryFilter : IPromptFilter
 {
-    private readonly AgentCagOptions _options;
-    private readonly ILogger<AgentMemoryCagInjectionFilter>? _logger;
+    private readonly AgentInjectedMemoryOptions _options;
+    private readonly ILogger<AgentInjectedMemoryFilter>? _logger;
     private string? _cachedMemoryContext;
     private DateTime _lastCacheTime = DateTime.MinValue;
     private readonly TimeSpan _cacheValidTime;
     private readonly object _cacheLock = new object();
 
-    public AgentMemoryCagInjectionFilter(AgentCagOptions options, ILogger<AgentMemoryCagInjectionFilter>? logger = null)
+    public AgentInjectedMemoryFilter(AgentInjectedMemoryOptions options, ILogger<AgentInjectedMemoryFilter>? logger = null)
     {
         _options = options;
         _logger = logger;
@@ -30,7 +30,7 @@ public class AgentMemoryCagInjectionFilter : IPromptFilter
         {
             var now = DateTime.UtcNow;
             string memoryTag = string.Empty;
-            var mgr = project.AgentMemoryCagManager;
+            var mgr = project.AgentInjectedMemoryManager;
             mgr.RegisterCacheInvalidationCallback(InvalidateCache);
             bool useCache;
             lock (_cacheLock)
@@ -68,7 +68,7 @@ public class AgentMemoryCagInjectionFilter : IPromptFilter
         }
     }
 
-    private string BuildMemoryTag(List<AgentCagMemory> memories)
+    private string BuildMemoryTag(List<AgentInjectedMemory> memories)
     {
         var sb = new StringBuilder();
         sb.AppendLine("[AGENT_MEMORY_START]");

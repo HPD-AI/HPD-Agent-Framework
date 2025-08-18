@@ -1,7 +1,7 @@
 /// <summary>
 /// Configuration options for Project CAG document injection
 /// </summary>
-public class ProjectCagOptions
+public class ProjectInjectedMemoryOptions
 {
     /// <summary>Maximum tokens allocated for project documents (default: 8000)</summary>
     public int MaxTokens { get; set; } = 8000;
@@ -13,21 +13,21 @@ public class ProjectCagOptions
     public string DocumentTagFormat { get; set; } = "[PROJECT_DOC[{0}]]{1}[/PROJECT_DOC]";
     
     /// <summary>Fluently set maximum token count</summary>
-    public ProjectCagOptions WithMaxTokens(int tokens)
+    public ProjectInjectedMemoryOptions WithMaxTokens(int tokens)
     {
         MaxTokens = tokens;
         return this;
     }
     
     /// <summary>Fluently set storage directory</summary>
-    public ProjectCagOptions WithStorageDirectory(string directory)
+    public ProjectInjectedMemoryOptions WithStorageDirectory(string directory)
     {
         StorageDirectory = directory;
         return this;
     }
     
     /// <summary>Fluently set document tag format</summary>
-    public ProjectCagOptions WithDocumentTagFormat(string format)
+    public ProjectInjectedMemoryOptions WithDocumentTagFormat(string format)
     {
         DocumentTagFormat = format;
         return this;

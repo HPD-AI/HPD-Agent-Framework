@@ -2,9 +2,9 @@ using System;
 
 
 /// <summary>
-/// Core memory model representing a single memory entry.
+/// Core memory model representing a single injected memory entry.
 /// </summary>
-public class AgentCagMemory
+public class AgentInjectedMemory
 {
     /// <summary>Unique memory identifier.</summary>
     public string Id { get; set; } = string.Empty;

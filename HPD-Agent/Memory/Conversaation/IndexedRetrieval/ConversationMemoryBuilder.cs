@@ -1,14 +1,7 @@
 using Microsoft.KernelMemory;
-using Microsoft.Extensions.Logging;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
 using Microsoft.KernelMemory.MemoryStorage;
 using Microsoft.KernelMemory.Search;
 using Microsoft.KernelMemory.Pipeline;
-using System.Linq;
-using HPD_Agent.MemoryRAG;
 
 
 
@@ -20,7 +13,7 @@ public class ConversationMemoryBuilder
     private readonly IKernelMemoryBuilder _kernelBuilder;
     private readonly string _conversationId;
     private readonly ConversationMemoryConfig _config;
-    private ConversationUploadStrategy _uploadStrategy = ConversationUploadStrategy.RAG; // Default to RAG
+    private ConversationDocumentHandling _uploadStrategy = ConversationDocumentHandling.IndexedRetrieval; // Default to IndexedRetrieval
 
     // Custom RAG extension points
     private IMemoryDb? _customMemoryDb;
@@ -40,7 +33,7 @@ public class ConversationMemoryBuilder
     }
 
     // Core configuration:
-    public ConversationMemoryBuilder WithUploadStrategy(ConversationUploadStrategy strategy)
+    public ConversationMemoryBuilder WithUploadStrategy(ConversationDocumentHandling strategy)
     {
         _uploadStrategy = strategy;
         return this;
@@ -49,7 +42,7 @@ public class ConversationMemoryBuilder
     /// <summary>
     /// Internal property to be read by the Conversation class
     /// </summary>
-    internal ConversationUploadStrategy UploadStrategy => _uploadStrategy;
+    internal ConversationDocumentHandling UploadStrategy => _uploadStrategy;
 
     public ConversationMemoryBuilder WithEmbeddingProvider(MemoryEmbeddingProvider provider, string? model = null)
     {
@@ -154,13 +147,13 @@ public class ConversationMemoryBuilder
 
     /// <summary>
     /// Build the configured IKernelMemory for RAG usage.
-    /// Returns null if the strategy is DirectInjection, as no memory instance is needed.
+    /// Returns null if the strategy is FullTextInjection, as no memory instance is needed.
     /// If custom handlers are configured, returns a CustomPipelineMemoryWrapper for enhanced runtime pipeline support.
     /// </summary>
     public IKernelMemory? Build()
     {
-        // If strategy is DirectInjection, no need to build the memory stack.
-        if (_uploadStrategy == ConversationUploadStrategy.DirectInjection)
+        // If strategy is FullTextInjection, no need to build the memory stack.
+        if (_uploadStrategy == ConversationDocumentHandling.FullTextInjection)
         {
             return null;
         }

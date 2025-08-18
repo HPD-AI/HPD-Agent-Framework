@@ -247,16 +247,31 @@ public class AGUIEventConverter
         var events = new List<BaseEvent>();
         
         // Convert text content to AGUI text message events
-        if (!string.IsNullOrEmpty(update.Text))
+        // Extract text from Contents if Text property is empty
+        string textContent = update.Text;
+        
+        if (string.IsNullOrEmpty(textContent) && update.Contents != null)
+        {
+            // Extract text from Contents
+            foreach (var content in update.Contents)
+            {
+                if (content is TextContent textContentItem)
+                {
+                    textContent += textContentItem.Text;
+                }
+            }
+        }
+        
+        if (!string.IsNullOrEmpty(textContent))
         {
             // DEBUG: Log what we're about to create
-            System.Diagnostics.Debug.WriteLine($"Creating TextMessageContent: messageId='{messageId}', text='{update.Text}'");
-            events.Add(EventHelpers.CreateTextMessageContent(messageId, update.Text));
+            System.Diagnostics.Debug.WriteLine($"Creating TextMessageContent: messageId='{messageId}', text='{textContent}'");
+            events.Add(EventSerialization.CreateTextMessageContent(messageId, textContent));
         }
         else
         {
             // DEBUG: Log when we skip creating content
-            System.Diagnostics.Debug.WriteLine($"Skipping TextMessageContent: messageId='{messageId}', text='{update.Text ?? "null"}'");
+            System.Diagnostics.Debug.WriteLine($"Skipping TextMessageContent: messageId='{messageId}', text='{textContent ?? "null"}'");
         }
         
         // Convert function calls to AGUI tool call events
@@ -332,7 +347,7 @@ public class AGUIEventConverter
         var events = new List<BaseEvent>();
         
         // Start the tool call
-        events.Add(EventHelpers.CreateToolCallStart(
+        events.Add(EventSerialization.CreateToolCallStart(
             functionCall.CallId, 
             functionCall.Name, 
             messageId));
@@ -347,11 +362,11 @@ public class AGUIEventConverter
             
             // AGUI expects arguments to be streamed as deltas
             // For simplicity, we'll send it as one delta, but could be chunked
-            events.Add(EventHelpers.CreateToolCallArgs(functionCall.CallId, argsJson));
+            events.Add(EventSerialization.CreateToolCallArgs(functionCall.CallId, argsJson));
         }
         
         // End the tool call
-        events.Add(EventHelpers.CreateToolCallEnd(functionCall.CallId));
+        events.Add(EventSerialization.CreateToolCallEnd(functionCall.CallId));
         
         return events;
     }
@@ -431,25 +446,105 @@ public class AGUIEventConverter
             _knownBackendToolCalls.TryRemove(callId, out _);
         }
     }
-    
+
+    /// <summary>
+    /// Creates a RunAgentInput from conversation state, encapsulating the complex mapping logic.
+    /// This centralizes the conversion between Conversation/ChatMessage format and AGUI format.
+    /// </summary>
+    public static RunAgentInput CreateRunAgentInput(
+        Conversation conversation, 
+        IReadOnlyList<ChatMessage> messages, 
+        ChatOptions? options)
+    {
+        return new RunAgentInput
+        {
+            ThreadId = conversation.Id,
+            RunId = Guid.NewGuid().ToString(),
+            Messages = messages.Select(ConvertChatMessageToBaseMessage).ToList(),
+            State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
+            Tools = ExtractToolsFromOptions(options), // TODO: Extract actual tools from agent/options
+            Context = ExtractContextFromOptions(options),
+            ForwardedProps = ExtractForwardedPropsFromOptions(options)
+        };
+    }
+
+    private static BaseMessage ConvertChatMessageToBaseMessage(ChatMessage message)
+    {
+        var content = ExtractTextContent(message) ?? "";
+        var role = message.Role.ToString().ToLowerInvariant();
+        var id = message.MessageId ?? Guid.NewGuid().ToString();
+
+        return role switch
+        {
+            "user" => new UserMessage { Id = id, Role = role, Content = content },
+            "assistant" => new AssistantMessage { Id = id, Role = role, Content = content },
+            "system" => new SystemMessage { Id = id, Role = role, Content = content },
+            "tool" => new ToolMessage { Id = id, Role = role, Content = content },
+            _ => new UserMessage { Id = id, Role = "user", Content = content }
+        };
+    }
+
+    private static string? ExtractTextContent(ChatMessage message)
+    {
+        // Handle different content types from Microsoft.Extensions.AI
+        var textContent = message.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
+        if (!string.IsNullOrEmpty(textContent))
+            return textContent;
+            
+        // Handle function call content
+        var functionCallContent = message.Contents.OfType<FunctionCallContent>().FirstOrDefault();
+        if (functionCallContent != null)
+        {
+            var args = functionCallContent.Arguments?.Select(kvp => $"{kvp.Key}={kvp.Value}") ?? Enumerable.Empty<string>();
+            return $"Function call: {functionCallContent.Name}({string.Join(", ", args)})";
+        }
+        
+        // Handle function result content
+        var functionResultContent = message.Contents.OfType<FunctionResultContent>().FirstOrDefault();
+        if (functionResultContent != null)
+        {
+            return functionResultContent.Result?.ToString() ?? "";
+        }
+        
+        return null;
+    }
+
+    private static IReadOnlyList<Tool> ExtractToolsFromOptions(ChatOptions? options)
+    {
+        // For now, return empty list. This can be enhanced later to extract AGUI tools from options
+        return new List<Tool>();
+    }
+
+    private static IReadOnlyList<Context> ExtractContextFromOptions(ChatOptions? options)
+    {
+        // For now, return empty list. This can be enhanced later to extract AGUI context from options
+        return new List<Context>();
+    }
+
+    private static JsonElement ExtractForwardedPropsFromOptions(ChatOptions? options)
+    {
+        // For now, return empty object. This can be enhanced later to extract forwarded props from options
+        return System.Text.Json.JsonDocument.Parse("{}").RootElement;
+    }
+
     /// <summary>
     /// Creates AGUI run lifecycle events
     /// </summary>
     public static class LifecycleEvents
     {
         public static RunStartedEvent CreateRunStarted(RunAgentInput input) => 
-            EventHelpers.CreateRunStarted(input.ThreadId, input.RunId);
+            EventSerialization.CreateRunStarted(input.ThreadId, input.RunId);
         
         public static RunFinishedEvent CreateRunFinished(RunAgentInput input) => 
-            EventHelpers.CreateRunFinished(input.ThreadId, input.RunId);
+            EventSerialization.CreateRunFinished(input.ThreadId, input.RunId);
         
         public static RunErrorEvent CreateRunError(RunAgentInput input, Exception ex) => 
-            EventHelpers.CreateRunError(ex.Message);
+            EventSerialization.CreateRunError(ex.Message);
         
         public static TextMessageStartEvent CreateTextMessageStart(string messageId = "") => 
-            EventHelpers.CreateTextMessageStart(messageId);
+            EventSerialization.CreateTextMessageStart(messageId);
         
         public static TextMessageEndEvent CreateTextMessageEnd(string messageId = "") => 
-            EventHelpers.CreateTextMessageEnd(messageId);
+            EventSerialization.CreateTextMessageEnd(messageId);
     }
 }
