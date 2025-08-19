@@ -1,7 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Threading.Tasks;
-using Microsoft.KernelMemory;
-using HPD_Agent.MemoryRAG;
 using System.Threading;
 
 /// <summary>
@@ -50,23 +48,8 @@ public class Project
         return project;
     }
 
-    /// <summary>
-    /// Creates a new project with advanced Indexed Retrieval capabilities.
-    /// Use this when you need semantic search across project documents.
-    /// </summary>
-    public static Project CreateWithIndexedRetrieval(string name, Action<ProjectMemoryBuilder> configure, string? storageDirectory = null)
-    {
-        var project = new Project(name, storageDirectory);
-        project._documentStrategy = ProjectDocumentHandling.IndexedRetrieval;
-        var builder = new ProjectMemoryBuilder(project.Id);
-        configure(builder);
-        project.SetMemoryBuilder(builder);
-        return project;
-    }
 
     // Memory management
-    private IKernelMemory? _memory;
-    private ProjectMemoryBuilder? _memoryBuilder;
     private ProjectDocumentHandling _documentStrategy = ProjectDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
 
     /// <summary>Private constructor - use static factory methods Create() or CreateWithIndexedRetrieval() instead.</summary>
@@ -94,45 +77,6 @@ public class Project
         Agent = agent;
     }
 
-    /// <summary>
-    /// Gets or creates the RAG memory instance for this project.
-    /// Returns null if no memory builder has been explicitly configured.
-    /// </summary>
-    /// <returns>The kernel memory instance, or null if not configured</returns>
-    public IKernelMemory? GetOrCreateMemory()
-    {
-        if (_documentStrategy == ProjectDocumentHandling.FullTextInjection)
-        {
-            return null; // No RAG memory needed for DirectInjection
-        }
-        
-        if (_memory != null) return _memory;
-        
-        // Only create memory if explicitly configured via SetMemoryBuilder
-        if (_memoryBuilder == null)
-        {
-            return null; // No memory builder configured - return null instead of creating default
-        }
-        
-        var builtMemory = _memoryBuilder.Build();
-        if (builtMemory == null)
-        {
-            throw new InvalidOperationException("Memory builder returned null. This should not happen with RAG strategy.");
-        }
-        
-        return _memory = builtMemory;
-    }
-    
-    /// <summary>
-    /// Sets the memory builder for this project
-    /// </summary>
-    /// <param name="builder">The memory builder to use</param>
-    public void SetMemoryBuilder(ProjectMemoryBuilder builder)
-    {
-        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
-        _documentStrategy = builder.DocumentStrategy; // Track the strategy
-        _memory = null; // Clear existing memory to force rebuild with new builder
-    }
 
     /// <summary>Creates a conversation using the project's agent</summary>
     public Conversation CreateConversation()
@@ -168,21 +112,6 @@ public class Project
         return conv;
     }
 
-    /// <summary>
-    /// Creates a new conversation with advanced Indexed Retrieval for this session.
-    /// </summary>
-    public Conversation CreateConversationWithIndexedRetrieval(
-        IEnumerable<Agent> agents,
-        Action<ConversationMemoryBuilder> configure)
-    {
-        var conv = new Conversation(this, agents, ConversationDocumentHandling.IndexedRetrieval);
-        var builder = new ConversationMemoryBuilder(conv.Id);
-        configure(builder);
-        conv.SetMemoryBuilder(builder);
-        Conversations.Add(conv);
-        UpdateActivity();
-        return conv;
-    }
 
     /// <summary>Update last activity timestamp.</summary>
     public void UpdateActivity() => LastActivity = DateTime.UtcNow;
@@ -219,15 +148,6 @@ public class Project
     {
         switch (_documentStrategy)
         {
-            case ProjectDocumentHandling.IndexedRetrieval:
-                var memory = GetOrCreateMemory();
-                if (memory != null)
-                {
-                    await memory.ImportDocumentAsync(filePath, tags: new() { { "project", this.Id } }, cancellationToken: cancellationToken);
-                }
-                // We still use DocumentManager to track metadata, even in IndexedRetrieval mode
-                return await DocumentManager.UploadDocumentAsync(filePath, description, cancellationToken);
-
             case ProjectDocumentHandling.FullTextInjection:
                 // Use the existing ProjectDocumentManager to handle the upload and storage for injection
                 return await DocumentManager.UploadDocumentAsync(filePath, description, cancellationToken);
@@ -248,15 +168,6 @@ public class Project
     {
         switch (_documentStrategy)
         {
-            case ProjectDocumentHandling.IndexedRetrieval:
-                var memory = GetOrCreateMemory();
-                if (memory != null)
-                {
-                    await memory.ImportWebPageAsync(url, tags: new() { { "project", this.Id } }, cancellationToken: cancellationToken);
-                }
-                // We still use DocumentManager to track metadata, even in IndexedRetrieval mode
-                return await DocumentManager.UploadDocumentFromUrlAsync(url, description, cancellationToken);
-
             case ProjectDocumentHandling.FullTextInjection:
                 // Use the existing ProjectDocumentManager to handle the upload and storage for injection
                 return await DocumentManager.UploadDocumentFromUrlAsync(url, description, cancellationToken);

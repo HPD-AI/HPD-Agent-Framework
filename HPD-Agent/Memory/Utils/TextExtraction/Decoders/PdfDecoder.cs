@@ -1,7 +1,5 @@
+/*
 using System.Text;
-using Microsoft.KernelMemory.DataFormats; // For FileContent
-using Microsoft.KernelMemory.DataFormats.Pdf;    // For PdfDecoder
-using Microsoft.KernelMemory.Text; // For LineTokenExtensions.AppendLineNix
 
 #pragma warning disable KMEXP00 // Possible null reference return.
 
@@ -32,3 +30,4 @@ public sealed class CustomPdfDecoder : ITextDecoder
     public void Dispose() { } 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+*/

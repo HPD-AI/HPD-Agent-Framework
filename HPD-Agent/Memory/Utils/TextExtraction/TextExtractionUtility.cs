@@ -358,66 +358,66 @@ public sealed class TextExtractionUtility : IAsyncDisposable
 
         foreach (var factory in decoderFactories)
         {
-            await using var decoder = factory();
-            _log.LogDebug("Considering decoder: '{DecoderDescription}' for '{InputName}'", decoder.Description, fileName);
-            
-            if (isUrl && !(decoder is CustomWebDecoder))
-            {
-                _log.LogDebug("Skipping non-web decoder '{DecoderDescription}' for URL '{Url}'.", decoder.Description, urlOrFilePath);
-                triedDecoderDescriptions.Add(decoder.Description + " (SkippedForUrl)");
-                decoderErrorMessages.Add("Skipped: Not the designated web page decoder.");
-                continue;
-            }
+            // await using var decoder = factory();
+            // _log.LogDebug("Considering decoder: '{DecoderDescription}' for '{InputName}'", decoder.Description, fileName);
+            //
+            // if (isUrl && !(decoder is CustomWebDecoder))
+            // {
+            //     _log.LogDebug("Skipping non-web decoder '{DecoderDescription}' for URL '{Url}'.", decoder.Description, urlOrFilePath);
+            //     triedDecoderDescriptions.Add(decoder.Description + " (SkippedForUrl)");
+            //     decoderErrorMessages.Add("Skipped: Not the designated web page decoder.");
+            //     continue;
+            // }
 
-            _log.LogInformation("Attempting to use decoder: '{DecoderDescription}' for '{InputName}'", decoder.Description, fileName);
-            try
-            {
-                string extracted = await decoder.ExtractTextAsync(urlOrFilePath, ct).ConfigureAwait(false);
-                
-                if (isUrl && fileSize == 0 && !string.IsNullOrEmpty(extracted))
-                {
-                    fileSize = Encoding.UTF8.GetByteCount(extracted);
-                }
-                
-                _log.LogInformation("{Type} '{Name}' ({FileSize} bytes): Successfully extracted text using decoder '{DecoderDescription}'.", 
-                    isUrl ? "URL" : "File", fileName, fileSize, decoder.Description);
-                    
-                return new TextExtractionResult 
-                { 
-                    Success = true, 
-                    FileName = fileName, 
-                    FilePath = urlOrFilePath, 
-                    MimeType = isUrl ? MimeTypes.WebPageUrl : GetMimeType(resolvedExtensionLookupKey, extracted), 
-                    FileSize = fileSize, 
-                    ExtractedText = extracted, 
-                    DecoderUsed = decoder.Description, 
-                    ProcessingTime = DateTime.UtcNow 
-                };
-            }
-            catch (InvalidDataException ide)
-            {
-                triedDecoderDescriptions.Add(decoder.Description + " (FormatMismatch)"); 
-                decoderErrorMessages.Add(ide.Message);
-            }
-            catch (NotSupportedException nse)
-            {
-                triedDecoderDescriptions.Add(decoder.Description + " (NotSupported)");
-                decoderErrorMessages.Add(nse.Message);
-                _log.LogDebug("Decoder '{DecoderDescription}' does not support this input type ('{FileName}'): {Message}", decoder.Description, fileName, nse.Message);
-            }
-            catch (NotImplementedException nie)
-            {
-                triedDecoderDescriptions.Add(decoder.Description + " (NotImplemented)");
-                decoderErrorMessages.Add(nie.Message);
-                _log.LogDebug("Decoder '{DecoderDescription}' is not yet implemented: {Message}", decoder.Description, nie.Message);
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "{Type} '{Name}': Decoder '{DecoderDescription}' failed unexpectedly.", 
-                    isUrl ? "URL" : "File", fileName, decoder.Description);
-                string errorsSoFar = decoderErrorMessages.Any() ? $"Previous errors: {string.Join("; ", decoderErrorMessages)}. " : "";
-                return Failure(fileName, urlOrFilePath, $"{errorsSoFar}Decoder '{decoder.Description}' failed: {ex.Message}. Tried: {string.Join(", ", triedDecoderDescriptions)}");
-            }
+            // _log.LogInformation("Attempting to use decoder: '{DecoderDescription}' for '{InputName}'", decoder.Description, fileName);
+            // try
+            // {
+            //     string extracted = await decoder.ExtractTextAsync(urlOrFilePath, ct).ConfigureAwait(false);
+            //
+            //     if (isUrl && fileSize == 0 && !string.IsNullOrEmpty(extracted))
+            //     {
+            //         fileSize = Encoding.UTF8.GetByteCount(extracted);
+            //     }
+            //
+            //     _log.LogInformation("{Type} '{Name}' ({FileSize} bytes): Successfully extracted text using decoder '{DecoderDescription}'.", 
+            //         isUrl ? "URL" : "File", fileName, fileSize, decoder.Description);
+            //
+            //     return new TextExtractionResult 
+            //     { 
+            //         Success = true, 
+            //         FileName = fileName, 
+            //         FilePath = urlOrFilePath, 
+            //         MimeType = isUrl ? MimeTypes.WebPageUrl : GetMimeType(resolvedExtensionLookupKey, extracted), 
+            //         FileSize = fileSize, 
+            //         ExtractedText = extracted, 
+            //         DecoderUsed = decoder.Description, 
+            //         ProcessingTime = DateTime.UtcNow 
+            //     };
+            // }
+            // catch (InvalidDataException ide)
+            // {
+            //     triedDecoderDescriptions.Add(decoder.Description + " (FormatMismatch)"); 
+            //     decoderErrorMessages.Add(ide.Message);
+            // }
+            // catch (NotSupportedException nse)
+            // {
+            //     triedDecoderDescriptions.Add(decoder.Description + " (NotSupported)");
+            //     decoderErrorMessages.Add(nse.Message);
+            //     _log.LogDebug("Decoder '{DecoderDescription}' does not support this input type ('{FileName}'): {Message}", decoder.Description, fileName, nse.Message);
+            // }
+            // catch (NotImplementedException nie)
+            // {
+            //     triedDecoderDescriptions.Add(decoder.Description + " (NotImplemented)");
+            //     decoderErrorMessages.Add(nie.Message);
+            //     _log.LogDebug("Decoder '{DecoderDescription}' is not yet implemented: {Message}", decoder.Description, nie.Message);
+            // }
+            // catch (Exception ex)
+            // {
+            //     _log.LogError(ex, "{Type} '{Name}': Decoder '{DecoderDescription}' failed unexpectedly.", 
+            //         isUrl ? "URL" : "File", fileName, decoder.Description);
+            //     string errorsSoFar = decoderErrorMessages.Any() ? $"Previous errors: {string.Join("; ", decoderErrorMessages)}. " : "";
+            //     return Failure(fileName, urlOrFilePath, $"{errorsSoFar}Decoder '{decoder.Description}' failed: {ex.Message}. Tried: {string.Join(", ", triedDecoderDescriptions)}");
+            // }
         }
         _log.LogWarning("{Type} '{Name}': All attempted decoders failed. Tried: {TriedDecoders}. Errors: {AllErrors}", 
             isUrl ? "URL" : "File", fileName, string.Join(", ", triedDecoderDescriptions), string.Join("; ", decoderErrorMessages));
@@ -477,26 +477,26 @@ public sealed class TextExtractionUtility : IAsyncDisposable
         _registry.RegisterDecoder<BomAwareDecoder>(allTextExtensions, plainTextMimeTypeArray, bomAwarePriority);
 
         const int specificBinaryPriority = 100;
-        _registry.RegisterDecoder<CustomMsWordDecoder>(officeDocExtensions, new[] { MimeTypes.MsWordX, MimeTypes.MsWord }, specificBinaryPriority);
-        _registry.RegisterDecoder<CustomMsPowerPointDecoder>(officePptExtensions, new[] { MimeTypes.MsPowerPointX, MimeTypes.MsPowerPoint }, specificBinaryPriority);
-        _registry.RegisterDecoder<CustomMsExcelDecoder>(officeXlsExtensions, new[] { MimeTypes.MsExcelX, MimeTypes.MsExcel }, specificBinaryPriority);
-        _registry.RegisterDecoder<CustomPdfDecoder>(pdfExtensions, new[] { MimeTypes.Pdf }, specificBinaryPriority);
-        _registry.RegisterDecoder<CustomImageDecoder>(imageExtensions, new[] {MimeTypes.ImageJpeg, MimeTypes.ImagePng, MimeTypes.ImageTiff}, specificBinaryPriority);
-        
-        _registry.RegisterDecoderFactory(
-            () => new CustomWebDecoder(_loggerFactory), 
-            typeof(CustomWebDecoder), 
-            htmlExtensions, 
-            htmlMimeTypeArray, 
-            specificBinaryPriority);
-        
-        var urlExtensions = new[] { ".html", ".htm", ".url" };
-        _registry.RegisterDecoderFactory(
-            () => new CustomWebDecoder(_loggerFactory), 
-            typeof(CustomWebDecoder), 
-            urlExtensions, 
-            urlMimeTypeArray, 
-            specificBinaryPriority);
+    // _registry.RegisterDecoder<CustomMsWordDecoder>(officeDocExtensions, new[] { MimeTypes.MsWordX, MimeTypes.MsWord }, specificBinaryPriority);
+    // _registry.RegisterDecoder<CustomMsPowerPointDecoder>(officePptExtensions, new[] { MimeTypes.MsPowerPointX, MimeTypes.MsPowerPoint }, specificBinaryPriority);
+    // _registry.RegisterDecoder<CustomMsExcelDecoder>(officeXlsExtensions, new[] { MimeTypes.MsExcelX, MimeTypes.MsExcel }, specificBinaryPriority);
+    // _registry.RegisterDecoder<CustomPdfDecoder>(pdfExtensions, new[] { MimeTypes.Pdf }, specificBinaryPriority);
+    // _registry.RegisterDecoder<CustomImageDecoder>(imageExtensions, new[] {MimeTypes.ImageJpeg, MimeTypes.ImagePng, MimeTypes.ImageTiff}, specificBinaryPriority);
+    //
+    // _registry.RegisterDecoderFactory(
+    //     () => new CustomWebDecoder(_loggerFactory), 
+    //     typeof(CustomWebDecoder), 
+    //     htmlExtensions, 
+    //     htmlMimeTypeArray, 
+    //     specificBinaryPriority);
+    //
+    // var urlExtensions = new[] { ".html", ".htm", ".url" };
+    // _registry.RegisterDecoderFactory(
+    //     () => new CustomWebDecoder(_loggerFactory), 
+    //     typeof(CustomWebDecoder), 
+    //     urlExtensions, 
+    //     urlMimeTypeArray, 
+    //     specificBinaryPriority);
 
         const int structuredTextPriority = 75;
         _registry.RegisterDecoder<JsonTextDecoder>(new[] { ".json", ".geojson" }, jsonMimeTypeArray, structuredTextPriority);

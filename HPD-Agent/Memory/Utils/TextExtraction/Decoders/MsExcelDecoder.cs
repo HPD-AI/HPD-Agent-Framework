@@ -1,14 +1,9 @@
+/*
 using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using UtfUnknown; // Required for AutoDetectEncodingDecoder
-using Microsoft.KernelMemory.DataFormats; // For FileContent
-using Microsoft.KernelMemory.DataFormats.Office; // For MsWordDecoder, etc.
-using Microsoft.KernelMemory.DataFormats.Pdf;    // For PdfDecoder
-using Microsoft.KernelMemory.DataFormats.Image;  // For ImageDecoder
-using Microsoft.KernelMemory.DataFormats.WebPages; // For IWebScraper
-using Microsoft.KernelMemory.Text; // For LineTokenExtensions.AppendLineNix
 
 #pragma warning disable KMEXP00 // Possible null reference return.
 
@@ -40,5 +35,5 @@ public sealed class CustomMsExcelDecoder : ITextDecoder
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-
+*/
 

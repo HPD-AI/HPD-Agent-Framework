@@ -6,10 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
-using Microsoft.KernelMemory;
 using OllamaSharp;
-using HPD_Agent.MemoryRAG;
-using HPD_Agent.MCP;
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -50,11 +47,6 @@ public class AgentBuilder
     private AgentInjectedMemoryOptions? _memoryInjectedOptions;
     private AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
 
-    // RAG configuration fields
-    private AgentMemoryBuilder? _agentMemoryBuilder;
-    private RetrievalStrategy _ragStrategy = RetrievalStrategy.Push; // Default to Push
-    private RAGConfiguration _ragConfiguration = new();
-
     // MCP configuration fields
     private MCPClientManager? _mcpClientManager;
     private string? _mcpManifestPath;
@@ -66,6 +58,17 @@ public class AgentBuilder
     public AgentBuilder WithInstructions(string instructions)
     {
         _systemInstructions = instructions;
+        return this;
+    }
+    
+    /// <summary>
+    /// Provides the service provider for resolving dependencies.
+    /// This is required if you use `UseRegisteredEmbeddingGenerator()` for contextual functions.
+    /// </summary>
+    public AgentBuilder WithServiceProvider(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+        _logger = serviceProvider.GetService<ILoggerFactory>();
         return this;
     }
     
@@ -203,11 +206,6 @@ public class AgentBuilder
     }
 
     #endregion
-    
-    // Future capability configurations will go here:
-    // - Memory system configuration
-    // - Permission system configuration
-    // - A2A delegation configuration
     
     /// <summary>
     /// Configures contextual function selection using vector similarity search
@@ -425,13 +423,6 @@ public class AgentBuilder
         return this;
     }
     
-    // Future capability methods:
-    // public DualInterfaceAgentBuilder WithAudioCapabilities(AudioConfiguration config) { ... }
-    // public DualInterfaceAgentBuilder WithMemorySystem(MemoryConfiguration config) { ... }
-    // public DualInterfaceAgentBuilder WithPermissions(PermissionConfiguration config) { ... }
-    // public DualInterfaceAgentBuilder WithContextualFunctionSelection(CfsConfiguration config) { ... }
-    // public DualInterfaceAgentBuilder WithA2ACommunication(A2AConfiguration config) { ... }
-    
     /// <summary>
     /// Builds the dual interface agent
     /// </summary>
@@ -474,7 +465,6 @@ public class AgentBuilder
         }
         
         // Register function-to-plugin mappings for scoped filters
-        // Register function-to-plugin mappings for scoped filters using same contexts
         RegisterFunctionPluginMappings(pluginFunctions);
         
         // Load MCP tools if configured
@@ -496,60 +486,25 @@ public class AgentBuilder
                     throw new InvalidOperationException("MCP client manager is configured but no manifest path or content provided");
                 }
                 
-                // Add MCP tools to plugin functions list for consistent handling
                 pluginFunctions.AddRange(mcpTools);
-                
-                var logger = _logger?.CreateLogger<AgentBuilder>();
-                logger?.LogInformation("Successfully integrated {Count} MCP tools into agent", mcpTools.Count);
+                _logger?.CreateLogger<AgentBuilder>().LogInformation("Successfully integrated {Count} MCP tools into agent", mcpTools.Count);
             }
             catch (Exception ex)
             {
-                var logger = _logger?.CreateLogger<AgentBuilder>();
-                logger?.LogError(ex, "Failed to load MCP tools: {Error}", ex.Message);
+                _logger?.CreateLogger<AgentBuilder>().LogError(ex, "Failed to load MCP tools: {Error}", ex.Message);
                 throw new InvalidOperationException("Failed to initialize MCP integration", ex);
             }
         }
         
         var mergedOptions = MergePluginFunctions(_defaultChatOptions, pluginFunctions);
 
-        // Create Memory RAG-based contextual function selector if configured
+        // Create and initialize the new contextual function selector if configured
         ContextualFunctionSelector? selector = null;
         if (_contextualConfig != null)
         {
-            // Build a simple kernel memory store (default in-memory)
-            var kernelBuilder = new KernelMemoryBuilder();
-            var functionMemory = kernelBuilder.Build<MemoryServerless>();
-
-            selector = new ContextualFunctionSelector(
-                functionMemory,
-                _contextualConfig,
-                pluginFunctions,
-                _logger?.CreateLogger<ContextualFunctionSelector>());
-
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await selector.InitializeAsync();
-
-                    var pluginRegistrations = _pluginManager.GetPluginRegistrations();
-                    foreach (var registration in pluginRegistrations)
-                    {
-                        foreach (var function in pluginFunctions.Where(f => f.Name.StartsWith(registration.PluginType.Name)))
-                        {
-                            selector.RegisterFunctionPlugin(function.Name, registration.PluginType.Name);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Warning: Failed to initialize contextual function selector: {ex.Message}");
-                }
-            });
+            selector = BuildContextualFunctionSelector(pluginFunctions);
         }
 
-        // DO NOT wrap with FunctionInvokingChatClient - we handle function calls manually in Agent
-        // This allows our Function Invocation filters to work properly
         var agent = new Agent(
             _baseClient,
             _agentName,
@@ -559,15 +514,6 @@ public class AgentBuilder
             _scopedFilterManager, 
             selector,
             _maxFunctionCalls);
-
-        // Inject memory builder if it has been configured
-        if (_agentMemoryBuilder != null)
-        {
-            agent.SetMemoryBuilder(_agentMemoryBuilder);
-        }
-
-        // Attach RAG components based on the selected strategy
-        AttachRAGComponents(agent);
 
         // Attach audio capability if configured
         var audioCapability = CreateAudioCapability(agent);
@@ -585,7 +531,88 @@ public class AgentBuilder
         return agent;
     }
     
-    #region Audio Helper Methods
+    #region Helper Methods
+
+    /// <summary>
+    /// Constructs and initializes the ContextualFunctionSelector based on the provided configuration.
+    /// </summary>
+    private ContextualFunctionSelector? BuildContextualFunctionSelector(List<AIFunction> allFunctions)
+    {
+        if (_contextualConfig == null) return null;
+
+        // 1. Get the Embedding Generator
+        IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator;
+        if (_contextualConfig.UseRegisteredGenerator)
+        {
+            if (_serviceProvider == null)
+                throw new InvalidOperationException("A service provider must be registered with WithServiceProvider() to use a registered embedding generator.");
+            
+            embeddingGenerator = _serviceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>() 
+                ?? throw new InvalidOperationException("No IEmbeddingGenerator registered in the service provider.");
+        }
+        else if (_contextualConfig.EmbeddingGeneratorFactory != null)
+        {
+            // This part is more complex if middleware is involved. For now, we'll assume a direct factory.
+            // A full implementation would use EmbeddingGeneratorBuilder here.
+            embeddingGenerator = _contextualConfig.EmbeddingGeneratorFactory(_serviceProvider!);
+        }
+        else
+        {
+            throw new InvalidOperationException("No embedding generator configured for contextual functions. Use WithEmbeddingGenerator() or UseRegisteredEmbeddingGenerator().");
+        }
+
+        // 2. Create the Vector Store
+        IVectorStore vectorStore;
+        switch (_contextualConfig.VectorStoreType)
+        {
+            case VectorStoreType.InMemory:
+                vectorStore = new InMemoryVectorStore(_contextualConfig.InMemoryConfig 
+                    ?? new InMemoryVectorStoreConfig());
+                break;
+            // Add cases for Qdrant, AzureAISearch etc. here in the future
+            case VectorStoreType.Qdrant:
+            case VectorStoreType.AzureAISearch:
+            case VectorStoreType.Chroma:
+            case VectorStoreType.PostgreSQL:
+            default:
+                throw new NotSupportedException($"Vector store type '{_contextualConfig.VectorStoreType}' is not yet supported.");
+        }
+
+        // 3. Create and Initialize the Selector
+        var selector = new ContextualFunctionSelector(
+            embeddingGenerator,
+            vectorStore,
+            _contextualConfig,
+            _logger?.CreateLogger<ContextualFunctionSelector>());
+
+        try
+        {
+            // Initialize synchronously for the build process
+            selector.InitializeAsync(allFunctions).GetAwaiter().GetResult();
+
+            // Register plugin names for metadata
+            var pluginRegistrations = _pluginManager.GetPluginRegistrations();
+            foreach (var registration in pluginRegistrations)
+            {
+                // This logic needs refinement to accurately map function to plugin
+                // For now, we assume a naming convention or similar mapping
+                var functionsForPlugin = allFunctions
+                    .Where(f => f.Name.Contains(registration.PluginType.Name, StringComparison.OrdinalIgnoreCase));
+
+                foreach (var function in functionsForPlugin)
+                {
+                    selector.RegisterFunctionPlugin(function.Name, registration.PluginType.Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.CreateLogger<AgentBuilder>().LogWarning(ex, "Failed to initialize contextual function selector. It will be disabled.");
+            return null;
+        }
+
+        return selector;
+    }
     
     /// <summary>Create audio capability during build</summary>
     private AudioCapability? CreateAudioCapability(Agent agent)
@@ -674,40 +701,6 @@ public class AgentBuilder
         // Simple heuristic to detect analyzer context
         return System.Diagnostics.Debugger.IsAttached == false;
     }
-    
-    #endregion
-
-    #region RAG Helper Methods
-    
-    /// <summary>
-    /// Attach RAG components based on the configured strategy
-    /// </summary>
-    private void AttachRAGComponents(Agent agent)
-    {
-        // A helper function to create the capability on demand
-        RAGMemoryCapability CreateRAGCapability(Agent agentInstance) => new RAGMemoryCapability(agentInstance, _ragConfiguration);
-
-        RAGMemoryCapability? ragCapability = null;
-
-        // Push or Hybrid strategy requires the RAGMemoryCapability
-        if (_ragStrategy == RetrievalStrategy.Push || _ragStrategy == RetrievalStrategy.Hybrid)
-        {
-            ragCapability = CreateRAGCapability(agent);
-            agent.AddCapability("RAG", ragCapability);
-        }
-        
-        // Pull or Hybrid strategy requires the RAGPlugin
-        if (_ragStrategy == RetrievalStrategy.Pull || _ragStrategy == RetrievalStrategy.Hybrid)
-        {
-            // If the capability wasn't created for Push, create it now for the plugin
-            ragCapability ??= CreateRAGCapability(agent);
-            
-            var ragPlugin = new RAGPlugin(ragCapability);
-            WithPlugin(ragPlugin); // WithPlugin is an existing method in AgentBuilder
-        }
-    }
-    
-    #endregion
     
     /// <summary>
     /// Registers function-to-plugin mappings for scoped filter support
@@ -842,56 +835,9 @@ public class AgentBuilder
     }
     
     /// <summary>
-    /// Provider integration examples:
-    /// 
-    /// OpenRouter with API key from configuration:
-    ///   // appsettings.json: { "OpenRouter": { "ApiKey": "your-key" } }
-    ///   var config = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
-    ///   var agent = DualInterfaceAgentBuilder.Create()
-    ///       .WithConfiguration(config)
-    ///       .WithProvider(ChatProvider.OpenRouter, "anthropic/claude-3.5-sonnet")
-    ///       .Build();
-    /// 
-    /// OpenRouter with environment variable:
-    ///   // Set environment variable: OPENROUTER_API_KEY=your-key
-    ///   var agent = DualInterfaceAgentBuilder.Create()
-    ///       .WithProvider(ChatProvider.OpenRouter, "anthropic/claude-3.5-sonnet")
-    ///       .Build();
-    /// 
-    /// OpenRouter with explicit API key:
-    ///   var agent = DualInterfaceAgentBuilder.Create()
-    ///       .WithProvider(ChatProvider.OpenRouter, "anthropic/claude-3.5-sonnet", "your-api-key")
-    ///       .Build();
-    /// 
-    /// Configuration priority (highest to lowest):
-    /// 1. Explicit API key parameter
-    /// 2. Configuration (appsettings.json): "OpenRouter:ApiKey"
-    /// 3. Environment variable: "OPENROUTER_API_KEY" 
-    /// 4. Generic environment variable: "OPENROUTER_API_KEY"
-    /// 
-    /// Other providers (requires appropriate NuGet packages):
-    /// 
-    /// OpenAI:
-    ///   Install-Package Microsoft.Extensions.AI.OpenAI
-    ///   var client = new OpenAIClient("api-key").AsChatClient("gpt-4");
-    /// 
-    /// Azure OpenAI:
-    ///   Install-Package Microsoft.Extensions.AI.AzureAIInference  
-    ///   var client = new AzureOpenAIClient(endpoint, credential).AsChatClient("gpt-4");
-    /// 
-    /// For other providers, use WithBaseClient():
-    ///   var agent = DualInterfaceAgentBuilder.Create()
-    ///       .WithBaseClient(client)
-    ///       .WithName("MyAgent")
-    ///       .Build();
-    /// </summary>
-    
-    /// <summary>
     /// Creates a new builder instance
     /// </summary>
     public static AgentBuilder Create() => new();
-    
-    
     
     /// <summary>
     /// Helper method to get environment variables (isolated to avoid analyzer warnings)
@@ -910,39 +856,9 @@ public class AgentBuilder
     public string AgentName => _agentName;
 
     /// <summary>
-    /// Internal method to set memory builder (used by extension methods)
+    /// Internal access to configuration for extension methods
     /// </summary>
-    internal AgentBuilder SetMemoryBuilder(AgentMemoryBuilder builder)
-    {
-        _agentMemoryBuilder = builder;
-        return this;
-    }
+    internal IConfiguration? Configuration => _configuration;
 
-    /// <summary>
-    /// Configure RAG memory for the agent
-    /// </summary>
-    public AgentBuilder WithMemory(Action<AgentMemoryBuilder> configure)
-    {
-        _agentMemoryBuilder ??= new AgentMemoryBuilder(_agentName);
-        configure(_agentMemoryBuilder);
-        return this;
-    }
-
-    /// <summary>
-    /// Set the RAG retrieval strategy (Push, Pull, or Hybrid)
-    /// </summary>
-    public AgentBuilder WithRAGStrategy(RetrievalStrategy strategy)
-    {
-        _ragStrategy = strategy;
-        return this;
-    }
-
-    /// <summary>
-    /// Configure RAG settings
-    /// </summary>
-    public AgentBuilder WithRAGConfiguration(Action<RAGConfiguration> configure)
-    {
-        configure(_ragConfiguration);
-        return this;
-    }
+    #endregion
 }

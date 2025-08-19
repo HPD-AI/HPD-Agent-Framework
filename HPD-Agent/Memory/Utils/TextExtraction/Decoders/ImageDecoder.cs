@@ -1,10 +1,7 @@
 using System.Text;
-using Microsoft.KernelMemory.DataFormats; // For FileContent
-using Microsoft.KernelMemory.DataFormats.Image;  // For ImageDecoder
-using Microsoft.KernelMemory.Text; // For LineTokenExtensions.AppendLineNix
 
-#pragma warning disable KMEXP00 // Possible null reference return.
 
+/*
 public sealed class CustomImageDecoder : ITextDecoder
 {
     public string Description => "Image (OCR) Decoder (via Kernel Memory)";
@@ -40,3 +37,5 @@ public sealed class CustomImageDecoder : ITextDecoder
     public void Dispose() { }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+
+*/

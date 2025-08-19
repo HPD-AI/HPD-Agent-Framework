@@ -10,14 +10,14 @@ using System.Threading.Tasks;
 /// </summary>
 public class ProjectInjectedMemoryFilter : IPromptFilter
 {
-    private readonly ProjectCagOptions _options;
+    private readonly ProjectInjectedMemoryOptions _options;
     private readonly ILogger<ProjectInjectedMemoryFilter>? _logger;
     private string? _cachedDocumentContext;
     private DateTime _lastCacheTime = DateTime.MinValue;
     private readonly TimeSpan _cacheValidTime = TimeSpan.FromMinutes(2);
     private readonly object _cacheLock = new object();
 
-    public ProjectInjectedMemoryFilter(ProjectCagOptions options, ILogger<ProjectInjectedMemoryFilter>? logger = null)
+    public ProjectInjectedMemoryFilter(ProjectInjectedMemoryOptions options, ILogger<ProjectInjectedMemoryFilter>? logger = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
@@ -33,7 +33,7 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
             string documentTag = string.Empty;
             var mgr = project.DocumentManager;
             mgr.RegisterCacheInvalidationCallback(InvalidateCache);
-            
+
             bool useCache;
             lock (_cacheLock)
             {
@@ -47,25 +47,25 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
                     useCache = false;
                 }
             }
-            
+
             if (!useCache)
             {
                 var documents = await mgr.GetDocumentsAsync();
                 documentTag = BuildDocumentTag(documents);
-                
+
                 lock (_cacheLock)
                 {
                     _cachedDocumentContext = documentTag;
                     _lastCacheTime = now;
                 }
             }
-            
+
             if (!string.IsNullOrEmpty(documentTag))
             {
                 context.Messages = InjectDocuments(context.Messages, documentTag);
             }
         }
-        
+
         return await next(context);
     }
 
@@ -92,7 +92,7 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
             }
         }
         tag += "\n[PROJECT_DOCUMENTS_END]";
-        
+
         return tag;
     }
 

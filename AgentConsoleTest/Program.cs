@@ -45,15 +45,6 @@ static (Project, Conversation, Agent) CreateAIAssistant(IConfiguration config)
         .WithInjectedMemory(opts => opts
             .WithStorageDirectory("./agent-memory-storage")
             .WithMaxTokens(6000))
-        .WithKnowledgeBase(kb => kb
-            .WithEmbeddingProvider(MemoryEmbeddingProvider.VoyageAI, "voyage-3.5-lite")
-            .WithStorageOptimization(AgentStorageType.SimpleVectorDb)
-            .WithDocuments("/Users/ewoofcoding/Documents/Specs/AgentConsoleTest/file4-KM-Readme.pdf")
-            .WithTextContent(new Dictionary<string, string>
-            {
-                {"policies", "Our company policies include data privacy, security protocols, and ethical AI usage guidelines."},
-                {"procedures", "Standard procedures include proper documentation, code review processes, and testing protocols."}
-            }))
         .WithPlugin<MathPlugin>()
         .WithPlugin(webSearchPlugin)  // ✨ Fixed: Use instance instead of generic
         .WithElevenLabsAudio()

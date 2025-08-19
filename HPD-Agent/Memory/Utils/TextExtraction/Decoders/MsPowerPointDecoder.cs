@@ -1,8 +1,6 @@
-using System.Text;
-using Microsoft.KernelMemory.DataFormats; // For FileContent
-using Microsoft.KernelMemory.DataFormats.Office; // For MsWordDecoder, etc.
-using Microsoft.KernelMemory.Text; // For LineTokenExtensions.AppendLineNix
 
+/*
+using System.Text;
 
 #pragma warning disable KMEXP00 // Possible null reference return.
 public sealed class CustomMsPowerPointDecoder : ITextDecoder
@@ -32,3 +30,4 @@ public sealed class CustomMsPowerPointDecoder : ITextDecoder
     public void Dispose() { } 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+*/

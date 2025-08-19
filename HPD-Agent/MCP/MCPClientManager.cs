@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using System.Text.Json;
 
-namespace HPD_Agent.MCP;
 
 /// <summary>
 /// Manages lifecycle of MCP clients and tool loading

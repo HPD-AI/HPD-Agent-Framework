@@ -2,9 +2,6 @@ using Microsoft.Extensions.AI;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Runtime.CompilerServices;
-using Microsoft.KernelMemory;
-using HPD_Agent.MemoryRAG;
-using HPD_Agent.MemoryCAG;
 
 /// <summary>
 /// Clean conversation management built on Microsoft.Extensions.AI
@@ -28,8 +25,6 @@ public class Conversation
     // Conversation filter list
     private readonly List<IConversationFilter> _conversationFilters = new();
     // Memory management
-    private IKernelMemory? _memory;
-    private ConversationMemoryBuilder? _memoryBuilder;
     private ConversationDocumentHandling _uploadStrategy = ConversationDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
     private readonly List<ConversationDocumentUpload> _pendingInjections = new();
 
@@ -108,21 +103,6 @@ public class Conversation
     {
         return new Conversation(agents, ConversationDocumentHandling.FullTextInjection);
     }
-
-    /// <summary>
-    /// Creates a new standalone conversation with advanced Indexed Retrieval capabilities.
-    /// </summary>
-    public static Conversation CreateWithIndexedRetrieval(
-        IEnumerable<Agent> agents,
-        Action<ConversationMemoryBuilder> configure)
-    {
-        var conversation = new Conversation(agents, ConversationDocumentHandling.IndexedRetrieval);
-        var builder = new ConversationMemoryBuilder(conversation.Id);
-        configure(builder);
-        conversation.SetMemoryBuilder(builder);
-        return conversation;
-    }
-
     /// <summary>
     /// Add a single message to the conversation
     /// </summary>
@@ -132,47 +112,6 @@ public class Conversation
         UpdateActivity();
     }
 
-    /// <summary>
-    /// Gets or creates the memory instance for this conversation
-    /// <summary>
-    /// Gets or creates the RAG memory instance for this conversation.
-    /// Returns null if no memory builder has been explicitly configured.
-    /// </summary>
-    /// <returns>The kernel memory instance, or null if not configured</returns>
-    public IKernelMemory? GetOrCreateMemory()
-    {
-        if (_uploadStrategy == ConversationDocumentHandling.FullTextInjection)
-        {
-            return null; // No RAG memory needed for DirectInjection
-        }
-        
-        if (_memory != null) return _memory;
-        
-        // Only create memory if explicitly configured via SetMemoryBuilder
-        if (_memoryBuilder == null)
-        {
-            return null; // No memory builder configured - return null instead of creating default
-        }
-        
-        var builtMemory = _memoryBuilder.Build();
-        if (builtMemory == null)
-        {
-            throw new InvalidOperationException("Memory builder returned null. This should not happen with RAG strategy.");
-        }
-        
-        return _memory = builtMemory;
-    }
-    
-    /// <summary>
-    /// Sets the memory builder for this conversation
-    /// </summary>
-    /// <param name="builder">The memory builder to use</param>
-    public void SetMemoryBuilder(ConversationMemoryBuilder builder)
-    {
-        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
-        _uploadStrategy = builder.UploadStrategy; // Track the strategy
-        _memory = null; // Clear existing memory to force rebuild with new builder
-    }
 
     /// <summary>
     /// Upload and process documents for this conversation based on the configured upload strategy
@@ -191,8 +130,6 @@ public class Conversation
 
         switch (_uploadStrategy)
         {
-            case ConversationDocumentHandling.IndexedRetrieval:
-                return await ProcessDocumentsForRAG(filePaths, textExtractor, cancellationToken);
                 
             case ConversationDocumentHandling.FullTextInjection:
                 return await ConversationDocumentHelper.ProcessUploadsAsync(filePaths, textExtractor, cancellationToken);
@@ -239,59 +176,7 @@ public class Conversation
         }
     }
 
-    private async Task<ConversationDocumentUpload[]> ProcessDocumentsForRAG(
-        string[] filePaths,
-        TextExtractionUtility textExtractor,
-        CancellationToken cancellationToken)
-    {
-        var memory = GetOrCreateMemory();
-        if (memory == null)
-        {
-            // Fallback to direct injection if no RAG memory available
-            return await ConversationDocumentHelper.ProcessUploadsAsync(filePaths, textExtractor, cancellationToken);
-        }
 
-        var results = new List<ConversationDocumentUpload>();
-        
-        foreach (var filePath in filePaths)
-        {
-            try
-            {
-                // Import document into RAG memory
-                var documentId = await memory.ImportDocumentAsync(filePath, cancellationToken: cancellationToken);
-                
-                // Create success result
-                var fileInfo = new System.IO.FileInfo(filePath);
-                results.Add(new ConversationDocumentUpload
-                {
-                    FileName = fileInfo.Name,
-                    ExtractedText = $"Document indexed for retrieval (ID: {documentId})",
-                    MimeType = "application/octet-stream", // Could be enhanced to detect actual MIME type
-                    FileSize = fileInfo.Exists ? fileInfo.Length : 0,
-                    ProcessedAt = DateTime.UtcNow,
-                    Success = true,
-                    DecoderUsed = "RAG_INDEXER"
-                });
-            }
-            catch (Exception ex)
-            {
-                // Create error result
-                results.Add(new ConversationDocumentUpload
-                {
-                    FileName = System.IO.Path.GetFileName(filePath),
-                    ExtractedText = string.Empty,
-                    MimeType = string.Empty,
-                    FileSize = 0,
-                    ProcessedAt = DateTime.UtcNow,
-                    Success = false,
-                    ErrorMessage = $"RAG indexing failed: {ex.Message}",
-                    DecoderUsed = null
-                });
-            }
-        }
-        
-        return results.ToArray();
-    }
 
     /// <summary>
     /// Send a message using the default agent or specified agent
@@ -305,17 +190,7 @@ public class Conversation
         var userMessage = new ChatMessage(ChatRole.User, message);
         _messages.Add(userMessage);
         UpdateActivity();
-
-        // CONTEXT ASSEMBLY: Use new Context Provider pattern
-        var sharedRagContext = AssembleSharedRAGContext(options);
         
-        // Inject the RAG context for agent capabilities
-        if (sharedRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
@@ -352,16 +227,6 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // CONTEXT ASSEMBLY: Use new Context Provider pattern
-        var sharedRagContext = AssembleSharedRAGContext(options);
-        
-        // Inject the RAG context for agent capabilities
-        if (sharedRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var projectObj) && projectObj is Project project)
@@ -403,17 +268,6 @@ public class Conversation
         var userMessage = new ChatMessage(ChatRole.User, message);
         _messages.Add(userMessage);
         UpdateActivity();
-
-        // CONTEXT ASSEMBLY: Use existing context provider pattern (same as SendAsync)
-        var sharedRagContext = AssembleSharedRAGContext(options);
-        
-        // Inject contexts using existing patterns
-        if (sharedRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
@@ -462,16 +316,6 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // CONTEXT ASSEMBLY: Use existing context provider pattern (same as StreamResponseAsync)
-        var sharedRagContext = AssembleSharedRAGContext(options);
-        
-        // Inject contexts using existing patterns
-        if (sharedRagContext != null)
-        {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["SharedRAGContext"] = sharedRagContext;
-        }
 
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
@@ -540,57 +384,7 @@ public class Conversation
         await pipeline(context);
     }
 
-    /// <summary>
-    /// Assembles RAG context from all available memory sources
-    /// </summary>
-    /// <summary>
-    /// NEW: Context Provider Pattern - Assembles only shared memory resources
-    /// Eliminates context leakage by excluding agent-specific memories
-    /// Each agent will fetch its own memory when needed
-    /// </summary>
-    private SharedRAGContext? AssembleSharedRAGContext(ChatOptions? options)
-    {
-        IKernelMemory? conversationMemory = null;
-        IKernelMemory? projectMemory = null;
-
-        // Gather conversation memory (shared across all agents)
-        // IMPORTANT: Only try to get conversation memory if NOT using FullTextInjection strategy
-        if (_uploadStrategy != ConversationDocumentHandling.FullTextInjection)
-        {
-            try
-            {
-                conversationMemory = this.GetOrCreateMemory();
-            }
-            catch
-            {
-                // Conversation may not have memory configured or builder returned null
-            }
-        }
-
-        // Gather project memory (shared across all conversations in project)
-        if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
-        {
-            try
-            {
-                projectMemory = project.GetOrCreateMemory();
-            }
-            catch
-            {
-                // Project may not have memory configured
-            }
-        }
-
-        // Create context even if both shared memories are null - agents may still have their own memories
-        // This ensures that the new Context Provider pattern is always used for multi-agent scenarios
-        var config = new RAGConfiguration();
-        
-        return new SharedRAGContext
-        {
-            ConversationMemory = conversationMemory,  // null is OK
-            ProjectMemory = projectMemory,            // null is OK
-            Configuration = config
-        };
-    }
+    
 
     #region Conversation Helpers (Phase 2 Implementation)
     

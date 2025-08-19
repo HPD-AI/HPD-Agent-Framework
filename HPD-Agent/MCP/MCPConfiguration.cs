@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.MCP;
 
 /// <summary>
 /// Root configuration object for MCP manifest files

@@ -1,6 +1,5 @@
 ﻿using Microsoft.Extensions.AI;
 using System.Threading.Channels;
-using Microsoft.KernelMemory;
 
 /// <summary>
 /// Agent implementation that supports both traditional chat and AGUI streaming protocols
@@ -19,8 +18,7 @@ public class Agent : IChatClient, IAGUIAgent
     private readonly Dictionary<string, object> _capabilities = new();
     private readonly List<IPromptFilter> _promptFilters;
     // Memory management
-    private IKernelMemory? _memory;
-    private AgentMemoryBuilder? _memoryBuilder;
+
     // Function calling configuration
     private readonly int _maxFunctionCalls;
     // Metadata Tracking
@@ -153,38 +151,6 @@ public class Agent : IChatClient, IAGUIAgent
 
     #endregion
 
-    #region Memory Management
-
-    /// <summary>
-    /// Gets or creates the memory instance for this agent.
-    /// Returns null if no memory builder has been explicitly configured.
-    /// </summary>
-    /// <returns>The kernel memory instance, or null if not configured</returns>
-    public IKernelMemory? GetOrCreateMemory()
-    {
-        if (_memory != null) return _memory;
-        
-        // Only create memory if explicitly configured via SetMemoryBuilder
-        if (_memoryBuilder == null)
-        {
-            return null; // No memory builder configured - return null instead of creating default
-        }
-        
-        return _memory ??= _memoryBuilder.Build();
-    }
-    
-    /// <summary>
-    /// Sets the memory builder for this agent
-    /// </summary>
-    /// <param name="builder">The memory builder to use</param>
-    public void SetMemoryBuilder(AgentMemoryBuilder builder)
-    {
-        _memoryBuilder = builder ?? throw new ArgumentNullException(nameof(builder));
-        _memory = null; // Clear existing memory to force rebuild with new builder
-    }
-
-    #endregion
-
     #region IChatClient Implementation
 
     /// <inheritdoc />
@@ -195,9 +161,6 @@ public class Agent : IChatClient, IAGUIAgent
     {
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
-        
-        // Apply RAG strategy if the capability is available
-        effectiveMessages = await ApplyRAGStrategy(effectiveMessages, effectiveOptions, cancellationToken);
         
         // Apply contextual function filtering if configured
         effectiveOptions = await ApplyContextualFiltering(effectiveMessages, effectiveOptions, cancellationToken);
@@ -224,9 +187,6 @@ public class Agent : IChatClient, IAGUIAgent
     {
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
-        
-        // Apply RAG strategy if the capability is available
-        effectiveMessages = await ApplyRAGStrategy(effectiveMessages, effectiveOptions, cancellationToken);
         
         // Apply contextual function filtering if configured
         effectiveOptions = await ApplyContextualFiltering(effectiveMessages, effectiveOptions, cancellationToken);
@@ -798,63 +758,6 @@ public class Agent : IChatClient, IAGUIAgent
         };
     }
 
-    /// <summary>
-    /// Applies the RAG strategy by invoking the RAGMemoryCapability if it's available.
-    /// </summary>
-    private async Task<IEnumerable<ChatMessage>> ApplyRAGStrategy(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        CancellationToken cancellationToken)
-    {
-        // Check if the RAG capability is attached to this agent
-        var ragCapability = GetCapability<RAGMemoryCapability>("RAG");
-        if (ragCapability == null)
-        {
-            return messages; // RAG is not configured for this agent, continue normally.
-        }
-
-        // Try to get the SharedRAGContext first (new Context Provider pattern)
-        if (options?.AdditionalProperties?.TryGetValue("SharedRAGContext", out var sharedContextObj) == true &&
-            sharedContextObj is SharedRAGContext sharedContext)
-        {
-            // NEW PATTERN: Agent assembles its own scoped context using shared resources
-            var scopedContext = AssembleScopedRAGContext(sharedContext);
-            return await ragCapability.ApplyRetrievalStrategyAsync(messages, scopedContext, cancellationToken);
-        }
-
-
-        return messages; // No context was provided, so nothing to do.
-    }
-
-    /// <summary>
-    /// NEW: Agent assembles its own scoped RAG context by combining its memory with shared resources
-    /// This eliminates context leakage by ensuring agents only see their own specialized memory
-    /// </summary>
-    private RAGContext AssembleScopedRAGContext(SharedRAGContext sharedContext)
-    {
-        // Create agent-specific memories dictionary with ONLY this agent's memory
-        var agentMemories = new Dictionary<string, IKernelMemory?>();
-        
-        try
-        {
-            // Each agent fetches ONLY its own memory - no cross-contamination
-            agentMemories[this.Name] = this.GetOrCreateMemory();
-        }
-        catch
-        {
-            // Agent may not have memory configured
-            agentMemories[this.Name] = null;
-        }
-
-        // Combine agent's memory with shared resources from the conversation
-        return new RAGContext
-        {
-            AgentMemories = agentMemories, // SCOPED: Only this agent's memory
-            ConversationMemory = sharedContext.ConversationMemory, // SHARED: From conversation
-            ProjectMemory = sharedContext.ProjectMemory, // SHARED: From project (if any)
-            Configuration = sharedContext.Configuration
-        };
-    }
 
     /// <summary>
     /// Prepends system instructions to the message list if configured

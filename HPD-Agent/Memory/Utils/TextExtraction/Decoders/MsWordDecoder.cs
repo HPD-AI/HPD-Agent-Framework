@@ -1,7 +1,6 @@
-using Microsoft.KernelMemory.DataFormats.Office;
-using Microsoft.KernelMemory.DataFormats;
+/*
 using System.Text;
-using Microsoft.KernelMemory.Text;
+
 
 #pragma warning disable KMEXP00 // Non-nullable field is uninitialized. Consider declaring as nullable.
 
@@ -32,3 +31,5 @@ public sealed class CustomMsWordDecoder : ITextDecoder
     public void Dispose() { }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
+
+*/
