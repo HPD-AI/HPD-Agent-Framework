@@ -257,6 +257,35 @@ public class AgentBuilder
         _maxFunctionCalls = maxFunctionCalls;
         return this;
     }
+
+    /// <summary>
+    /// Wraps the base chat client with OpenTelemetry middleware to enable standardized telemetry.
+    /// This should be called after the base client has been configured via WithProvider() or WithBaseClient().
+    /// </summary>
+    /// <param name="sourceName">An optional source name for the telemetry data. Defaults to "Experimental.Microsoft.Extensions.AI".</param>
+    /// <param name="configure">An optional callback to configure the OpenTelemetryChatClient instance.</param>
+    public AgentBuilder WithOpenTelemetry(string? sourceName = null, Action<OpenTelemetryChatClient>? configure = null)
+    {
+        // This method must be called after a base client is available.
+        if (_baseClient == null)
+        {
+            throw new InvalidOperationException("WithOpenTelemetry() must be called after WithProvider() or WithBaseClient().");
+        }
+
+        // The AgentBuilder needs access to an ILoggerFactory to pass to the telemetry client.
+        // We can get this from the IServiceProvider if one was provided.
+        var loggerFactory = _serviceProvider?.GetService<ILoggerFactory>();
+
+        // Use the AsBuilder() and UseOpenTelemetry() extension methods from Microsoft.Extensions.AI
+        // to wrap the current _baseClient in the telemetry middleware.
+        var builder = new ChatClientBuilder(_baseClient);
+        builder.UseOpenTelemetry(loggerFactory, sourceName, configure);
+        
+        // Replace the existing base client with the newly built pipeline that includes telemetry.
+        _baseClient = builder.Build(_serviceProvider);
+
+        return this;
+    }
     
     /// <summary>
     /// Configures the agent to use a specific provider with model name
