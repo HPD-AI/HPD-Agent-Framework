@@ -596,58 +596,13 @@ public class Agent : IChatClient, IAGUIAgent
         Stream responseStream, 
         CancellationToken cancellationToken = default)
     {
-        var channel = System.Threading.Channels.Channel.CreateUnbounded<BaseEvent>();
-        
-        try
-        {
-            var agentTask = RunAsync(input, channel.Writer, cancellationToken);
-
-            await foreach (var sseEvent in channel.Reader.ReadAllAsync(cancellationToken))
-            {
-                var json = EventSerialization.SerializeEvent(sseEvent);
-                var sseString = $"data: {json}\n\n";
-                var bytes = System.Text.Encoding.UTF8.GetBytes(sseString);
-                await responseStream.WriteAsync(bytes, cancellationToken);
-                await responseStream.FlushAsync(cancellationToken);
-
-                if (sseEvent is RunFinishedEvent) break;
-            }
-
-            await agentTask;
-        }
-        catch (Exception ex)
-        {
-            // Send error as SSE event before rethrowing
-            var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
-            var errorJson = EventSerialization.SerializeEvent(errorEvent);
-            var errorSse = $"data: {errorJson}\n\n";
-            var errorBytes = System.Text.Encoding.UTF8.GetBytes(errorSse);
-            
-            try
-            {
-                await responseStream.WriteAsync(errorBytes, cancellationToken);
-                await responseStream.FlushAsync(cancellationToken);
-            }
-            catch
-            {
-                // Ignore write errors during error handling
-            }
-            
-            throw;
-        }
-        finally
-        {
-            // Only complete the channel if it's not already closed
-            // The RunAsync method may have already completed it
-            try
-            {
-                channel.Writer.Complete();
-            }
-            catch (InvalidOperationException)
-            {
-                // Channel already closed - this is expected
-            }
-        }
+        // This method now calls the new overload, passing its OWN stream as the source.
+        var selfGeneratedStream = this.GetStreamingResponseAsync(
+            _eventConverter.ConvertToExtensionsAI(input),
+            _eventConverter.ConvertToExtensionsAIChatOptions(input, _defaultOptions),
+            cancellationToken
+        );
+        await StreamAGUIResponseAsync(input, selfGeneratedStream, responseStream, cancellationToken);
     }
 
     /// <summary>
@@ -659,66 +614,93 @@ public class Agent : IChatClient, IAGUIAgent
         System.Net.WebSockets.WebSocket webSocket, 
         CancellationToken cancellationToken)
     {
-        var channel = System.Threading.Channels.Channel.CreateUnbounded<BaseEvent>();
-        
+        // This method now calls the new overload, passing its OWN stream as the source.
+        var selfGeneratedStream = this.GetStreamingResponseAsync(
+            _eventConverter.ConvertToExtensionsAI(input),
+            _eventConverter.ConvertToExtensionsAIChatOptions(input, _defaultOptions),
+            cancellationToken
+        );
+        await StreamToWebSocketAsync(input, selfGeneratedStream, webSocket, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes the agent using orchestrated streaming and emits SSE results directly to a stream.
+    /// This version accepts an external, orchestrated stream instead of generating its own.
+    /// </summary>
+    public async Task StreamAGUIResponseAsync(
+        RunAgentInput input,
+        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
+        Stream responseStream,
+        CancellationToken cancellationToken = default)
+    {
+        await using var writer = new StreamWriter(responseStream, leaveOpen: true);
         try
         {
-            var agentTask = RunAsync(input, channel.Writer, cancellationToken);
+            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateRunStarted(input))}\n\n");
+            var messageId = Guid.NewGuid().ToString();
+            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateTextMessageStart(messageId))}\n\n");
 
-            await foreach (var aguiEvent in channel.Reader.ReadAllAsync(cancellationToken))
+            await foreach (var update in orchestratedStream.WithCancellation(cancellationToken))
             {
-                if (webSocket.State != System.Net.WebSockets.WebSocketState.Open) break;
-
-                var json = EventSerialization.SerializeEvent(aguiEvent);
-                var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-
-                await webSocket.SendAsync(
-                    new ArraySegment<byte>(bytes), 
-                    System.Net.WebSockets.WebSocketMessageType.Text, 
-                    true, 
-                    cancellationToken);
-
-                if (aguiEvent is RunFinishedEvent) break;
+                var aguiEvents = _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls: true);
+                foreach (var aguiEvent in aguiEvents)
+                {
+                    await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(aguiEvent)}\n\n");
+                    await writer.FlushAsync();
+                }
             }
 
-            await agentTask;
+            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateTextMessageEnd(messageId))}\n\n");
+            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateRunFinished(input))}\n\n");
         }
         catch (Exception ex)
         {
-            // Send error as WebSocket message before closing
-            if (webSocket.State == System.Net.WebSockets.WebSocketState.Open)
-            {
-                var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
-                var errorJson = EventSerialization.SerializeEvent(errorEvent);
-                var errorBytes = System.Text.Encoding.UTF8.GetBytes(errorJson);
-                
-                try
-                {
-                    await webSocket.SendAsync(
-                        new ArraySegment<byte>(errorBytes),
-                        System.Net.WebSockets.WebSocketMessageType.Text,
-                        true,
-                        cancellationToken);
-                }
-                catch
-                {
-                    // Ignore write errors during error handling
-                }
-            }
-            
+            var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
+            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(errorEvent)}\n\n");
             throw;
         }
-        finally
+    }
+
+    /// <summary>
+    /// Executes the agent using orchestrated streaming and emits events directly to a WebSocket.
+    /// This version accepts an external, orchestrated stream instead of generating its own.
+    /// </summary>
+    public async Task StreamToWebSocketAsync(
+        RunAgentInput input,
+        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
+        System.Net.WebSockets.WebSocket webSocket,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            // Only complete the channel if it's not already closed
-            try
+            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunStarted(input));
+            var messageId = Guid.NewGuid().ToString();
+            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateTextMessageStart(messageId));
+
+            await foreach (var update in orchestratedStream.WithCancellation(cancellationToken))
             {
-                channel.Writer.Complete();
+                var aguiEvents = _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls: true);
+                foreach (var aguiEvent in aguiEvents)
+                {
+                    await SendSocketMessage(aguiEvent);
+                }
             }
-            catch (InvalidOperationException)
-            {
-                // Channel already closed - this is expected
-            }
+
+            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateTextMessageEnd(messageId));
+            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunFinished(input));
+        }
+        catch (Exception ex)
+        {
+            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex));
+            throw;
+        }
+
+        async Task SendSocketMessage(BaseEvent evt)
+        {
+            if (webSocket.State != System.Net.WebSockets.WebSocketState.Open) return;
+            var json = EventSerialization.SerializeEvent(evt);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            await webSocket.SendAsync(new ArraySegment<byte>(bytes), System.Net.WebSockets.WebSocketMessageType.Text, true, cancellationToken);
         }
     }
 

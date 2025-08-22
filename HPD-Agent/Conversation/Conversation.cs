@@ -201,7 +201,7 @@ public class Conversation
         }
         
     // Delegate response generation to orchestrator
-    var finalResponse = await _orchestrator.OrchestrateAsync(_messages, _agents, options, cancellationToken);
+    var finalResponse = await _orchestrator.OrchestrateAsync(_messages, _agents, this.Id, options, cancellationToken);
 
     // ✅ COMMIT response to history FIRST
     _messages.AddMessages(finalResponse);
@@ -236,23 +236,32 @@ public class Conversation
             options.AdditionalProperties["Project"] = project;
         }
         
-        // Delegate streaming via orchestrator (fallback to non-streaming then convert)
-        var finalResponse = await _orchestrator.OrchestrateAsync(_messages, _agents, options, cancellationToken);
+        // ✅ FIXED: Call the streaming orchestrator directly
+        var streamingResponse = _orchestrator.OrchestrateStreamingAsync(_messages, _agents, this.Id, options, cancellationToken);
 
-        // Stream the response to caller
-        foreach (var update in finalResponse.ToChatResponseUpdates())
+        var responseUpdates = new List<ChatResponseUpdate>();
+        
+        // Stream the response to caller and collect updates
+        await foreach (var update in streamingResponse.WithCancellation(cancellationToken))
         {
+            responseUpdates.Add(update);
             yield return update;
         }
+        
+        // Construct final response from all updates
+        var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
 
         // ✅ COMMIT response to history FIRST
-        _messages.AddMessages(finalResponse);
-        UpdateActivity();
+        if (finalResponse != null)
+        {
+            _messages.AddMessages(finalResponse);
+            UpdateActivity();
 
-        // ✅ THEN run filters on the completed turn
-        var agentMetadata = CollectAgentMetadata();
-        var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
-        await ApplyConversationFilters(context);
+            // ✅ THEN run filters on the completed turn
+            var agentMetadata = CollectAgentMetadata();
+            var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
+            await ApplyConversationFilters(context);
+        }
     }
 
     /// <summary>
@@ -269,7 +278,6 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
         {
             options ??= new ChatOptions();
@@ -277,25 +285,20 @@ public class Conversation
             options.AdditionalProperties["Project"] = project;
         }
 
-        // ORCHESTRATION: Determine the appropriate agent using orchestrator logic
-        // This ensures consistency with SendAsync behavior while adapting for streaming
-        var selectedAgent = await SelectAgentForStreaming(options, cancellationToken);
-        if (selectedAgent == null)
+        var primaryAgent = _agents.FirstOrDefault();
+        if (primaryAgent == null)
         {
             throw new InvalidOperationException("No agent is available to handle the streaming request.");
         }
 
-        // ENCAPSULATED BOILERPLATE: Create RunAgentInput using centralized helper
-        // Pass the full conversation history to maintain context
         var runInput = AGUIEventConverter.CreateRunAgentInput(this, _messages, options);
+        // Call the orchestrator to get the fully orchestrated stream.
+        var orchestratedStream = _orchestrator.OrchestrateStreamingAsync(_messages, _agents, this.Id, options, cancellationToken);
 
-        // Call the agent's new high-level streaming helper
-        await selectedAgent.StreamAGUIResponseAsync(runInput, responseStream, cancellationToken);
+        // Pass the orchestrated stream to the agent's NEW overload.
+        await primaryAgent.StreamAGUIResponseAsync(runInput, orchestratedStream, responseStream, cancellationToken);
 
-        // CONSISTENCY: Apply conversation filters like other send methods
-        // Note: For streaming, we apply filters after the stream completes
-        // This is a simplified approach - in a full implementation, you might want to
-        // track the streaming response and apply filters when the stream finishes
+        // (Post-turn filter logic remains the same)
         var agentMetadata = CollectAgentMetadata();
         var context = new ConversationFilterContext(this, userMessage, new ChatResponse([]), agentMetadata, options, cancellationToken);
         await ApplyConversationFilters(context);
@@ -316,8 +319,6 @@ public class Conversation
         _messages.Add(userMessage);
         UpdateActivity();
 
-
-        // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
         {
             options ??= new ChatOptions();
@@ -325,36 +326,25 @@ public class Conversation
             options.AdditionalProperties["Project"] = project;
         }
 
-        // ORCHESTRATION: Determine the appropriate agent using orchestrator logic
-        var selectedAgent = await SelectAgentForStreaming(options, cancellationToken);
-        if (selectedAgent == null)
+        var primaryAgent = _agents.FirstOrDefault();
+        if (primaryAgent == null)
         {
             throw new InvalidOperationException("No agent is available to handle the WebSocket streaming request.");
         }
 
-        // ENCAPSULATED BOILERPLATE: Create RunAgentInput using centralized helper
         var runInput = AGUIEventConverter.CreateRunAgentInput(this, _messages, options);
+        // Call the orchestrator to get the fully orchestrated stream.
+        var orchestratedStream = _orchestrator.OrchestrateStreamingAsync(_messages, _agents, this.Id, options, cancellationToken);
 
-        // Call the agent's WebSocket streaming helper
-        await selectedAgent.StreamToWebSocketAsync(runInput, webSocket, cancellationToken);
+        // Pass the orchestrated stream to the agent's NEW overload.
+        await primaryAgent.StreamToWebSocketAsync(runInput, orchestratedStream, webSocket, cancellationToken);
 
-        // CONSISTENCY: Apply conversation filters like other send methods
+        // (Post-turn filter logic remains the same)
         var agentMetadata = CollectAgentMetadata();
         var context = new ConversationFilterContext(this, userMessage, new ChatResponse([]), agentMetadata, options, cancellationToken);
         await ApplyConversationFilters(context);
     }
 
-    /// <summary>
-    /// Selects the appropriate agent for streaming. For most orchestrators,
-    /// streaming uses the first available agent since it's typically a single-agent response.
-    /// </summary>
-    private Task<Agent?> SelectAgentForStreaming(ChatOptions? options, CancellationToken cancellationToken)
-    {
-        // Simple approach: streaming typically uses the first agent
-        // This works for DirectOrchestrator and most custom orchestrators
-        // Custom orchestrators can override this behavior if needed in the future
-        return Task.FromResult(_agents.FirstOrDefault());
-    }
 
     /// <summary>
     protected void UpdateActivity() => LastActivity = DateTime.UtcNow;
@@ -440,6 +430,49 @@ public class Conversation
             .Where(text => !string.IsNullOrEmpty(text));
             
         return string.Join(" ", textContents);
+    }
+    
+    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates)
+    {
+        // Collect all content from the updates
+        var allContents = new List<AIContent>();
+        ChatFinishReason? finishReason = null;
+        string? modelId = null;
+        string? responseId = null;
+        DateTimeOffset? createdAt = null;
+        
+        foreach (var update in updates)
+        {
+            if (update.Contents != null)
+            {
+                allContents.AddRange(update.Contents);
+            }
+            
+            if (update.FinishReason != null)
+                finishReason = update.FinishReason;
+                
+            if (update.ModelId != null)
+                modelId = update.ModelId;
+                
+            if (update.ResponseId != null)
+                responseId = update.ResponseId;
+                
+            if (update.CreatedAt != null)
+                createdAt = update.CreatedAt;
+        }
+        
+        // Create a ChatMessage from the collected content
+        var chatMessage = new ChatMessage(ChatRole.Assistant, allContents)
+        {
+            MessageId = responseId
+        };
+        
+        return new ChatResponse(chatMessage)
+        {
+            FinishReason = finishReason,
+            ModelId = modelId,
+            CreatedAt = createdAt
+        };
     }
     
 
