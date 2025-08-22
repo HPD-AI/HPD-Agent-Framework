@@ -208,7 +208,7 @@ public class Conversation
     UpdateActivity();
 
     // ✅ THEN run filters on the completed turn
-    var agentMetadata = CollectAgentMetadata();
+    var agentMetadata = CollectAgentMetadata(finalResponse);
     var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
     await ApplyConversationFilters(context);
 
@@ -258,7 +258,7 @@ public class Conversation
             UpdateActivity();
 
             // ✅ THEN run filters on the completed turn
-            var agentMetadata = CollectAgentMetadata();
+            var agentMetadata = CollectAgentMetadata(finalResponse);
             var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
             await ApplyConversationFilters(context);
         }
@@ -349,14 +349,21 @@ public class Conversation
     /// <summary>
     protected void UpdateActivity() => LastActivity = DateTime.UtcNow;
 
-    // Collect metadata of function calls from each agent
-    private Dictionary<string, List<string>> CollectAgentMetadata()
+    // Collect metadata of function calls from response
+    private Dictionary<string, List<string>> CollectAgentMetadata(ChatResponse? response = null)
     {
         var metadata = new Dictionary<string, List<string>>();
-        foreach (var agent in _agents.Where(a => a.LastOperationHadFunctionCalls))
+        
+        // If response is provided and contains operation metadata, use it
+        if (response?.GetOperationHadFunctionCalls() == true)
         {
-            metadata[agent.Name] = new List<string>(agent.LastOperationFunctionCalls);
+            var primaryAgent = _agents.FirstOrDefault();
+            if (primaryAgent != null)
+            {
+                metadata[primaryAgent.Name] = response.GetOperationFunctionCalls().ToList();
+            }
         }
+        
         return metadata;
     }
 

@@ -2,6 +2,49 @@
 using System.Threading.Channels;
 
 /// <summary>
+/// Metadata about function call operations for thread-safe per-call tracking
+/// </summary>
+public class OperationMetadata
+{
+    public bool HadFunctionCalls { get; set; }
+    public List<string> FunctionCalls { get; set; } = new();
+    public int FunctionCallCount { get; set; }
+}
+
+/// <summary>
+/// Extension methods for accessing Agent operation metadata from ChatResponse
+/// </summary>
+public static class ChatResponseExtensions
+{
+    /// <summary>
+    /// Gets whether the operation had function calls
+    /// </summary>
+    public static bool GetOperationHadFunctionCalls(this ChatResponse response)
+    {
+        return response.AdditionalProperties?.TryGetValue(Agent.OperationHadFunctionCallsKey, out var value) == true 
+            && value is bool hadCalls && hadCalls;
+    }
+
+    /// <summary>
+    /// Gets the list of function calls made during the operation
+    /// </summary>
+    public static string[] GetOperationFunctionCalls(this ChatResponse response)
+    {
+        return response.AdditionalProperties?.TryGetValue(Agent.OperationFunctionCallsKey, out var value) == true 
+            && value is string[] calls ? calls : Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// Gets the number of function call iterations during the operation
+    /// </summary>
+    public static int GetOperationFunctionCallCount(this ChatResponse response)
+    {
+        return response.AdditionalProperties?.TryGetValue(Agent.OperationFunctionCallCountKey, out var value) == true 
+            && value is int count ? count : 0;
+    }
+}
+
+/// <summary>
 /// Agent implementation that supports both traditional chat and AGUI streaming protocols
 /// Now properly applies AIFuncton filters to all chat methods
 /// </summary>
@@ -23,10 +66,10 @@ public class Agent : IChatClient, IAGUIAgent
 
     // Function calling configuration
     private readonly int _maxFunctionCalls;
-    // Metadata Tracking
-    public bool LastOperationHadFunctionCalls { get; private set; }
-    public List<string> LastOperationFunctionCalls { get; private set; } = new();
-    public int LastOperationFunctionCallCount { get; private set; }
+    // Operation metadata keys for ChatResponse.AdditionalProperties
+    public static readonly string OperationHadFunctionCallsKey = "Agent.OperationHadFunctionCalls";
+    public static readonly string OperationFunctionCallsKey = "Agent.OperationFunctionCalls";
+    public static readonly string OperationFunctionCallCountKey = "Agent.OperationFunctionCallCount";
 
     /// <summary>
     /// Initializes a new Agent instance
@@ -198,56 +241,17 @@ public class Agent : IChatClient, IAGUIAgent
         // Apply prompt filters (including Memory CAG)
         effectiveMessages = await ApplyPromptFilters(effectiveMessages, effectiveOptions, cancellationToken);
         
-        // Check if we need to apply AIFunction filters - if so, we need to fall back to non-streaming
+        // Check if we need to apply AIFunction filters for interleaved streaming
         bool needsFilterProcessing = (_aiFunctionFilters.Any() || _scopedFilterManager != null) && 
                                    effectiveOptions?.Tools?.Any() == true;
         
         if (needsFilterProcessing)
         {
-            // For function calling, we need to collect the full response first to apply filters
-            // This is a limitation of the current filter design
-            var fullResponse = await _baseClient.GetResponseAsync(effectiveMessages, effectiveOptions, cancellationToken);
-            fullResponse = await ProcessResponseWithFilters(fullResponse, effectiveMessages, effectiveOptions, cancellationToken);
-            
-            // Convert the full response back to streaming format with proper text content
-            // Extract text content from the response and create updates
-            var textContent = string.Empty;
-            var lastMessage = fullResponse.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
-            if (lastMessage != null)
+            // Use true interleaved streaming: stream text, pause for tools, continue
+            await foreach (var update in GetInterleavedStreamingResponseAsync(effectiveMessages, effectiveOptions, cancellationToken))
             {
-                foreach (var content in lastMessage.Contents)
-                {
-                    if (content is TextContent textContentItem)
-                    {
-                        textContent += textContentItem.Text;
-                    }
-                }
+                yield return update;
             }
-            
-            // Create streaming updates that simulate real streaming with proper text content
-            if (!string.IsNullOrEmpty(textContent))
-            {
-                // Split text into chunks to simulate streaming
-                const int chunkSize = 10; // Characters per chunk
-                for (int i = 0; i < textContent.Length; i += chunkSize)
-                {
-                    var chunk = textContent.Substring(i, Math.Min(chunkSize, textContent.Length - i));
-                    yield return new ChatResponseUpdate
-                    {
-                        Contents = [new TextContent(chunk)]
-                    };
-                    
-                    // Small delay to simulate real streaming
-                    await Task.Delay(50, cancellationToken);
-                }
-            }
-            
-            // Emit the final update to indicate completion
-            yield return new ChatResponseUpdate
-            {
-                Contents = [],
-                FinishReason = fullResponse.FinishReason
-            };
         }
         else
         {
@@ -257,6 +261,140 @@ public class Agent : IChatClient, IAGUIAgent
                 yield return update;
             }
         }
+    }
+
+    /// <summary>
+    /// Provides true interleaved streaming that emits text immediately and pauses for tool execution
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> GetInterleavedStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages, 
+        ChatOptions? options, 
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var currentMessages = messages.ToList();
+        var operationMetadata = new OperationMetadata();
+        
+        for (int iteration = 0; iteration < _maxFunctionCalls; iteration++)
+        {
+            var completedFunctionCalls = new List<FunctionCallContent>();
+            var hasStreamedContent = false;
+            var streamFinished = false;
+            
+            // Stream the response and immediately process function calls as they appear
+            await foreach (var update in _baseClient.GetStreamingResponseAsync(currentMessages, options, cancellationToken))
+            {
+                if (update.Contents != null)
+                {
+                    var textContent = new List<AIContent>();
+                    var functionCalls = new List<FunctionCallContent>();
+                    
+                    // Separate text content from function calls
+                    foreach (var content in update.Contents)
+                    {
+                        if (content is FunctionCallContent funcCall)
+                        {
+                            functionCalls.Add(funcCall);
+                        }
+                        else
+                        {
+                            textContent.Add(content);
+                        }
+                    }
+                    
+                    // Emit text content immediately
+                    if (textContent.Any())
+                    {
+                        yield return new ChatResponseUpdate
+                        {
+                            Contents = textContent,
+                            AdditionalProperties = update.AdditionalProperties
+                        };
+                        hasStreamedContent = true;
+                    }
+                    
+                    // Process function calls immediately when they appear
+                    if (functionCalls.Any())
+                    {
+                        // Track function call metadata
+                        operationMetadata.HadFunctionCalls = true;
+                        operationMetadata.FunctionCalls.AddRange(functionCalls.Select(fc => fc.Name));
+                        operationMetadata.FunctionCallCount = iteration + 1;
+                        
+                        // Execute function calls immediately
+                        var functionCallMessages = await ProcessFunctionCallsAsync(currentMessages, options, functionCalls, cancellationToken);
+                        
+                        // Emit function call results immediately
+                        foreach (var funcMessage in functionCallMessages)
+                        {
+                            foreach (var content in funcMessage.Contents)
+                            {
+                                yield return new ChatResponseUpdate
+                                {
+                                    Contents = [content]
+                                };
+                            }
+                        }
+                        
+                        // Add function results to message history for continuation
+                        currentMessages.AddRange(functionCallMessages);
+                        completedFunctionCalls.AddRange(functionCalls);
+                    }
+                }
+                
+                // Check if stream finished (finish reason present)
+                if (update.FinishReason != null)
+                {
+                    streamFinished = true;
+                    
+                    // Emit finish reason
+                    yield return new ChatResponseUpdate
+                    {
+                        Contents = [],
+                        FinishReason = update.FinishReason,
+                        AdditionalProperties = update.AdditionalProperties
+                    };
+                }
+            }
+            
+            // If no function calls were made, or stream finished naturally, we're done
+            if (!completedFunctionCalls.Any() || streamFinished)
+            {
+                break;
+            }
+            
+            // If we had function calls, continue with next iteration
+            // Update options for next turn (allow model to not call tools)
+            options = options == null
+                ? new ChatOptions()
+                : new ChatOptions
+                {
+                    Tools = options.Tools,
+                    ToolMode = AutoChatToolMode.Auto, // Allow model to choose
+                    AllowMultipleToolCalls = options.AllowMultipleToolCalls,
+                    MaxOutputTokens = options.MaxOutputTokens,
+                    Temperature = options.Temperature,
+                    TopP = options.TopP,
+                    FrequencyPenalty = options.FrequencyPenalty,
+                    PresencePenalty = options.PresencePenalty,
+                    ResponseFormat = options.ResponseFormat,
+                    Seed = options.Seed,
+                    StopSequences = options.StopSequences,
+                    ModelId = options.ModelId,
+                    AdditionalProperties = options.AdditionalProperties
+                };
+        }
+        
+        // Emit final update with operation metadata
+        yield return new ChatResponseUpdate
+        {
+            Contents = [],
+            AdditionalProperties = new AdditionalPropertiesDictionary
+            {
+                [OperationHadFunctionCallsKey] = operationMetadata.HadFunctionCalls,
+                [OperationFunctionCallsKey] = operationMetadata.FunctionCalls.ToArray(),
+                [OperationFunctionCallCountKey] = operationMetadata.FunctionCallCount
+            }
+        };
     }
 
     /// <summary>
@@ -279,10 +417,8 @@ public class Agent : IChatClient, IAGUIAgent
         List<ChatMessage>? responseMessages = null; // tracked list of messages, across multiple turns, to be used for the final response
         List<FunctionCallContent>? functionCallContents = null; // function call contents that need responding to in the current turn
         
-        // Reset tracking at start of entire operation
-        LastOperationHadFunctionCalls = false;
-        LastOperationFunctionCalls.Clear();
-        LastOperationFunctionCallCount = 0;
+        // Initialize operation metadata
+        var operationMetadata = new OperationMetadata();
 
         for (int iteration = 0; iteration < _maxFunctionCalls; iteration++)
         {
@@ -311,10 +447,10 @@ public class Agent : IChatClient, IAGUIAgent
                 break;
             }
 
-            // Mark that we had function calls
-            LastOperationHadFunctionCalls = true;
-            LastOperationFunctionCalls.AddRange(functionCallContents!.Select(fc => fc.Name));
-            LastOperationFunctionCallCount = iteration + 1;
+            // Track function call metadata
+            operationMetadata.HadFunctionCalls = true;
+            operationMetadata.FunctionCalls.AddRange(functionCallContents!.Select(fc => fc.Name));
+            operationMetadata.FunctionCallCount = iteration + 1;
 
             // Prepare the history for the next iteration.
             PrepareHistoryForNextIteration(originalMessages, ref currentMessages, ref augmentedHistory, currentResponse, responseMessages);
@@ -357,6 +493,12 @@ public class Agent : IChatClient, IAGUIAgent
         {
             currentResponse.Messages = responseMessages;
         }
+
+        // Add operation metadata to response
+        currentResponse.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+        currentResponse.AdditionalProperties[OperationHadFunctionCallsKey] = operationMetadata.HadFunctionCalls;
+        currentResponse.AdditionalProperties[OperationFunctionCallsKey] = operationMetadata.FunctionCalls.ToArray();
+        currentResponse.AdditionalProperties[OperationFunctionCallCountKey] = operationMetadata.FunctionCallCount;
 
         return currentResponse;
     }
