@@ -14,53 +14,61 @@ using OllamaSharp;
 /// </summary>
 public class AgentBuilder
 {
+    // The new central configuration object
+    private readonly AgentConfig _config;
+
+    // Fields that are NOT part of the serializable config remain
     private IChatClient? _baseClient;
-    private string _agentName = "HPD-Agent";
-    private ChatOptions? _defaultChatOptions;
-    private string? _providerApiKey;
-    private ChatProvider? _provider;
-    private string? _modelName;
     private IConfiguration? _configuration;
     private readonly PluginManager _pluginManager = new();
     private IPluginMetadataContext? _defaultContext;
     // store individual plugin contexts
     private readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
-    private string? _systemInstructions;
     private readonly List<IAiFunctionFilter> _globalFilters = new();
     private readonly ScopedFilterManager _scopedFilterManager = new();
     private readonly BuilderScopeContext _scopeContext = new();
     private readonly List<IPromptFilter> _promptFilters = new();
     private IAiFunctionFilter? _permissionFilter; // Dedicated permission filter
-    
-    // Function calling configuration
-    private int _maxFunctionCalls = 10; // Default to 10
 
-    // Audio capability fields
+    // Audio capability fields (runtime only)
     private ISpeechToTextClient? _sttClient;
     private ITextToSpeechClient? _ttsClient;
-    private AudioCapabilityOptions? _audioOptions;
     private readonly Dictionary<Type, object> _providerConfigs = new();
     private IServiceProvider? _serviceProvider;
     private ILoggerFactory? _logger;
 
-    // Memory Injected Memory configuration fields (formerly CAG)
-    private AgentInjectedMemoryOptions? _memoryInjectedOptions;
+    // Memory Injected Memory runtime fields
     private AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
 
-    // MCP configuration fields
+    // MCP runtime fields
     private MCPClientManager? _mcpClientManager;
-    private string? _mcpManifestPath;
-    private string? _mcpManifestContent;
 
     // Permission system integration
     private ContinuationPermissionManager? _continuationPermissionManager;
+
+    /// <summary>
+    /// Creates a new builder with a default configuration.
+    /// </summary>
+    public AgentBuilder()
+    {
+        _config = new AgentConfig();
+    }
+
+    /// <summary>
+    /// Creates a new builder from a pre-existing configuration object.
+    /// </summary>
+    /// <param name="config">The configuration to use.</param>
+    public AgentBuilder(AgentConfig config)
+    {
+        _config = config ?? throw new ArgumentNullException(nameof(config));
+    }
 
     /// <summary>
     /// Sets the system instructions/persona for the agent
     /// </summary>
     public AgentBuilder WithInstructions(string instructions)
     {
-        _systemInstructions = instructions;
+        _config.SystemInstructions = instructions ?? throw new ArgumentNullException(nameof(instructions));
         return this;
     }
     
@@ -136,8 +144,10 @@ public class AgentBuilder
     /// <summary>Configure audio capability options</summary>
     public AgentBuilder WithAudioOptions(Action<AudioCapabilityOptions> configure)
     {
-        _audioOptions ??= new AudioCapabilityOptions();
-        configure(_audioOptions);
+        if (_config.Audio == null)
+            _config.Audio = new AudioConfig();
+        _config.Audio.Options ??= new AudioCapabilityOptions();
+        configure(_config.Audio.Options);
         return this;
     }
 
@@ -164,6 +174,11 @@ public class AgentBuilder
             config.ApiKey = apiKey;
         if (!string.IsNullOrEmpty(voiceId))
             config.DefaultVoiceId = voiceId;
+        
+        // Store in config
+        if (_config.Audio == null)
+            _config.Audio = new AudioConfig();
+        _config.Audio.ElevenLabs = config;
         
         return WithElevenLabsSpeechToText(config)
                .WithElevenLabsTextToSpeech(config, voiceId);
@@ -208,6 +223,11 @@ public class AgentBuilder
             Region = region,
             DefaultVoice = voice ?? "en-US-AriaNeural"
         };
+        
+        // Store in config
+        if (_config.Audio == null)
+            _config.Audio = new AudioConfig();
+        _config.Audio.AzureSpeech = config;
         
         return WithAzureSpeechToText(config)
                .WithAzureTextToSpeech(config);
@@ -254,7 +274,7 @@ public class AgentBuilder
         if (maxFunctionCalls <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxFunctionCalls), "Maximum function calls must be greater than 0");
         
-        _maxFunctionCalls = maxFunctionCalls;
+        _config.MaxFunctionCalls = maxFunctionCalls;
         return this;
     }
 
@@ -295,9 +315,12 @@ public class AgentBuilder
     /// <param name="apiKey">API key for the provider (optional - will fallback to configuration/environment)</param>
     public AgentBuilder WithProvider(ChatProvider provider, string modelName, string? apiKey = null)
     {
-        _provider = provider;
-        _modelName = modelName ?? throw new ArgumentNullException(nameof(modelName));
-        _providerApiKey = apiKey; // Can be null - will be resolved later
+        _config.Provider = new ProviderConfig
+        {
+            Provider = provider,
+            ModelName = modelName ?? throw new ArgumentNullException(nameof(modelName)),
+            ApiKey = apiKey
+        };
         return this;
     }
     
@@ -325,7 +348,7 @@ public class AgentBuilder
     /// </summary>
     public AgentBuilder WithName(string name)
     {
-        _agentName = name ?? throw new ArgumentNullException(nameof(name));
+        _config.Name = name ?? throw new ArgumentNullException(nameof(name));
         return this;
     }
     
@@ -334,7 +357,9 @@ public class AgentBuilder
     /// </summary>
     public AgentBuilder WithDefaultOptions(ChatOptions options)
     {
-        _defaultChatOptions = options;
+        if (_config.Provider == null)
+            _config.Provider = new ProviderConfig();
+        _config.Provider.DefaultChatOptions = options;
         return this;
     }
     
@@ -382,9 +407,12 @@ public class AgentBuilder
     public AgentBuilder WithFunction(Delegate method, string? name = null, string? description = null, Dictionary<string, string>? parameterDescriptions = null)
     {
         if (method == null) throw new ArgumentNullException(nameof(method));
-        if (_defaultChatOptions == null)
-            _defaultChatOptions = new ChatOptions();
-        var tools = _defaultChatOptions.Tools?.ToList() ?? new List<AITool>();
+        // Get or create default chat options
+        if (_config.Provider == null)
+            _config.Provider = new ProviderConfig();
+        if (_config.Provider.DefaultChatOptions == null)
+            _config.Provider.DefaultChatOptions = new ChatOptions();
+        var tools = _config.Provider.DefaultChatOptions.Tools?.ToList() ?? new List<AITool>();
         var options = new HPDAIFunctionFactoryOptions
         {
             Name = name ?? method.Method.Name,
@@ -394,7 +422,7 @@ public class AgentBuilder
         
         var function = HPDAIFunctionFactory.Create(method, options);
         tools.Add(function);
-        _defaultChatOptions.Tools = tools;
+        _config.Provider.DefaultChatOptions.Tools = tools;
         
         // Set scope context for subsequent filter registrations
         var functionName = name ?? method.Method.Name;
@@ -415,7 +443,11 @@ public class AgentBuilder
         if (string.IsNullOrWhiteSpace(manifestPath))
             throw new ArgumentException("Manifest path cannot be null or empty", nameof(manifestPath));
 
-        _mcpManifestPath = manifestPath;
+        _config.Mcp = new McpConfig
+        {
+            ManifestPath = manifestPath,
+            Options = options
+        };
         _mcpClientManager = new MCPClientManager(_logger?.CreateLogger<MCPClientManager>() ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MCPClientManager>.Instance, options);
         
         return this;
@@ -443,7 +475,12 @@ public class AgentBuilder
         if (string.IsNullOrWhiteSpace(manifestContent))
             throw new ArgumentException("Manifest content cannot be null or empty", nameof(manifestContent));
 
-        _mcpManifestContent = manifestContent;
+        // Store content in ManifestPath for now - we might need a separate property for content
+        _config.Mcp = new McpConfig
+        {
+            ManifestPath = manifestContent, // This represents content, not path
+            Options = options
+        };
         _mcpClientManager = new MCPClientManager(_logger?.CreateLogger<MCPClientManager>() ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MCPClientManager>.Instance, options);
         
         return this;
@@ -456,17 +493,17 @@ public class AgentBuilder
     public Agent Build()
     {
         // If no base client provided but provider info is available, create the client
-        if (_baseClient == null && _provider.HasValue && !string.IsNullOrEmpty(_modelName))
+        if (_baseClient == null && _config.Provider != null && !string.IsNullOrEmpty(_config.Provider.ModelName))
         {
             // Handle Apple Intelligence as a special case since it doesn't need an API key
-            if (_provider.Value == ChatProvider.AppleIntelligence)
+            if (_config.Provider.Provider == ChatProvider.AppleIntelligence)
             {
-                _baseClient = CreateClientFromProvider(_provider.Value, _modelName, null);
+                _baseClient = CreateClientFromProvider(_config.Provider.Provider, _config.Provider.ModelName, null);
             }
             else
             {
-                var apiKey = ResolveApiKey(_provider.Value);
-                _baseClient = CreateClientFromProvider(_provider.Value, _modelName, apiKey);
+                var apiKey = ResolveApiKey(_config.Provider.Provider, _config.Provider.ApiKey);
+                _baseClient = CreateClientFromProvider(_config.Provider.Provider, _config.Provider.ModelName, apiKey);
             }
         }
 
@@ -474,9 +511,16 @@ public class AgentBuilder
             throw new InvalidOperationException("Base client must be provided using WithBaseClient() or WithProvider()");
 
         // Register Memory Injected Memory prompt filter if configured
-        if (_memoryInjectedOptions != null && _memoryInjectedManager != null)
+        if (_config.InjectedMemory != null && _memoryInjectedManager != null)
         {
-            var memoryFilter = new AgentInjectedMemoryFilter(_memoryInjectedOptions, _logger?.CreateLogger<AgentInjectedMemoryFilter>());
+            var memoryOptions = new AgentInjectedMemoryOptions
+            {
+                StorageDirectory = _config.InjectedMemory.StorageDirectory,
+                MaxTokens = _config.InjectedMemory.MaxTokens,
+                EnableAutoEviction = _config.InjectedMemory.EnableAutoEviction,
+                AutoEvictionThreshold = _config.InjectedMemory.AutoEvictionThreshold
+            };
+            var memoryFilter = new AgentInjectedMemoryFilter(memoryOptions, _logger?.CreateLogger<AgentInjectedMemoryFilter>());
             _promptFilters.Add(memoryFilter);
         }
 
@@ -499,13 +543,17 @@ public class AgentBuilder
             try
             {
                 List<AIFunction> mcpTools;
-                if (!string.IsNullOrEmpty(_mcpManifestPath))
+                if (_config.Mcp != null && !string.IsNullOrEmpty(_config.Mcp.ManifestPath))
                 {
-                    mcpTools = _mcpClientManager.LoadToolsFromManifestAsync(_mcpManifestPath).GetAwaiter().GetResult();
-                }
-                else if (!string.IsNullOrEmpty(_mcpManifestContent))
-                {
-                    mcpTools = _mcpClientManager.LoadToolsFromManifestContentAsync(_mcpManifestContent).GetAwaiter().GetResult();
+                    // Check if this is actually content vs path based on if it starts with '{'
+                    if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
+                    {
+                        mcpTools = _mcpClientManager.LoadToolsFromManifestContentAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        mcpTools = _mcpClientManager.LoadToolsFromManifestAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
+                    }
                 }
                 else
                 {
@@ -522,19 +570,18 @@ public class AgentBuilder
             }
         }
         
-        var mergedOptions = MergePluginFunctions(_defaultChatOptions, pluginFunctions);
+        var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
 
+        // Create agent using the new, cleaner constructor with AgentConfig
         var agent = new Agent(
+            _config,
             _baseClient,
-            _agentName,
-            mergedOptions,
-            _systemInstructions,
+            mergedOptions, // Pass the merged options directly
             _promptFilters,
             _scopedFilterManager,
-            _permissionFilter, // Pass permission filter
-            _continuationPermissionManager,
-            _maxFunctionCalls);
+            _permissionFilter,
+            _continuationPermissionManager);
 
         // Attach audio capability if configured
         var audioCapability = CreateAudioCapability(agent);
@@ -561,7 +608,7 @@ public class AgentBuilder
         if (_sttClient == null && _ttsClient == null)
             return null;
 
-        var options = _audioOptions ?? new AudioCapabilityOptions();
+        var options = _config.Audio?.Options ?? new AudioCapabilityOptions();
         
         return new AudioCapability(
             agent: agent,
@@ -700,11 +747,11 @@ public class AgentBuilder
         };
     }
     
-    private string ResolveApiKey(ChatProvider provider)
+    private string ResolveApiKey(ChatProvider provider, string? explicitApiKey = null)
     {
         // 1. Use explicitly provided API key if available
-        if (!string.IsNullOrEmpty(_providerApiKey))
-            return _providerApiKey;
+        if (!string.IsNullOrEmpty(explicitApiKey))
+            return explicitApiKey;
         
         // 2. Try configuration (appsettings.json)
         var configKey = GetConfigurationKey(provider);
@@ -793,12 +840,17 @@ public class AgentBuilder
     /// <summary>
     /// Gets the agent name for use in extension methods
     /// </summary>
-    public string AgentName => _agentName;
+    public string AgentName => _config.Name;
 
     /// <summary>
     /// Internal access to configuration for extension methods
     /// </summary>
     internal IConfiguration? Configuration => _configuration;
+
+    /// <summary>
+    /// Internal access to config object for extension methods
+    /// </summary>
+    internal AgentConfig Config => _config;
 
     #endregion
 

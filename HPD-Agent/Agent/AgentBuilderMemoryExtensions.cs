@@ -28,6 +28,16 @@ public static class AgentBuilderMemoryExtensions
         var options = new AgentInjectedMemoryOptions();
         configure(options);
 
+        // Set the config on the builder
+        builder.Config.InjectedMemory = new InjectedMemoryConfig
+        {
+            StorageDirectory = options.StorageDirectory,
+            MaxTokens = options.MaxTokens,
+            EnableAutoEviction = options.EnableAutoEviction,
+            AutoEvictionThreshold = options.AutoEvictionThreshold
+        };
+
+        // The rest of the logic remains the same
         var manager = new AgentInjectedMemoryManager(options.StorageDirectory);
         var plugin = new AgentInjectedMemoryPlugin(manager, builder.AgentName);
         var filter = new AgentInjectedMemoryFilter(options);

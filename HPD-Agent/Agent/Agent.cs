@@ -66,6 +66,11 @@ public class Agent : IChatClient, IAGUIAgent
 
     // Function calling configuration
     private readonly int _maxFunctionCalls;
+
+    /// <summary>
+    /// Agent configuration object containing all settings
+    /// </summary>
+    public AgentConfig? Config { get; private set; }
     // Operation metadata keys for ChatResponse.AdditionalProperties
     public static readonly string OperationHadFunctionCallsKey = "Agent.OperationHadFunctionCalls";
     public static readonly string OperationFunctionCallsKey = "Agent.OperationFunctionCalls";
@@ -127,6 +132,33 @@ public class Agent : IChatClient, IAGUIAgent
     _continuationPermissionManager = continuationPermissionManager;
     _maxFunctionCalls = maxFunctionCalls;
     _eventConverter = new AGUIEventConverter();
+    Config = null; // Legacy constructor doesn't have config
+    }
+
+    /// <summary>
+    /// Initializes a new Agent instance from an AgentConfig object (new preferred constructor)
+    /// </summary>
+    public Agent(
+        AgentConfig config,
+        IChatClient baseClient,
+        ChatOptions? mergedOptions,
+        List<IPromptFilter> promptFilters,
+        ScopedFilterManager scopedFilterManager,
+        IAiFunctionFilter? permissionFilter = null,
+        ContinuationPermissionManager? continuationPermissionManager = null)
+    {
+        Config = config ?? throw new ArgumentNullException(nameof(config));
+        _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
+        _name = config.Name;
+        _defaultOptions = mergedOptions ?? config.Provider?.DefaultChatOptions;
+        _systemInstructions = config.SystemInstructions;
+        _scopedFilterManager = scopedFilterManager ?? throw new ArgumentNullException(nameof(scopedFilterManager));
+        _aiFunctionFilters = new List<IAiFunctionFilter>();
+        _promptFilters = promptFilters?.ToList() ?? new List<IPromptFilter>();
+        _permissionFilter = permissionFilter;
+        _continuationPermissionManager = continuationPermissionManager;
+        _maxFunctionCalls = config.MaxFunctionCalls;
+        _eventConverter = new AGUIEventConverter();
     }
 
     /// <summary>
