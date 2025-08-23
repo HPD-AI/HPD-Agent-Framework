@@ -328,7 +328,7 @@ public class AgentBuilder
     /// Sets the configuration source for reading API keys and other settings
     /// </summary>
     /// <param name="configuration">Configuration instance (e.g., from appsettings.json)</param>
-    public AgentBuilder WithConfiguration(IConfiguration configuration)
+    public AgentBuilder WithAPIConfiguration(IConfiguration configuration)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         return this;
@@ -524,6 +524,9 @@ public class AgentBuilder
             _promptFilters.Add(memoryFilter);
         }
 
+        // Automatically finalize web search configuration if providers were configured
+        AgentBuilderWebSearchExtensions.FinalizeWebSearch(this);
+        
         // Create plugin functions using per-plugin contexts and merge with default options
         var pluginFunctions = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())

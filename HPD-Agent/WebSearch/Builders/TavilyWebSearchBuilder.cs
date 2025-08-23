@@ -1,4 +1,5 @@
-
+using Microsoft.Extensions.Configuration;
+using System;
 
 /// <summary>
 /// Configuration container for Tavily web search settings with comprehensive API support
@@ -90,6 +91,12 @@ public class TavilyConfig
 public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
 {
     private readonly TavilyConfig _config = new();
+    private readonly IConfiguration? _configuration;
+
+    public TavilyWebSearchBuilder(IConfiguration? configuration = null)
+    {
+        _configuration = configuration;
+    }
     
     /// <inheritdoc />
     public ITavilyWebSearchBuilder WithApiKey(string apiKey)
@@ -251,30 +258,7 @@ public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
         return this;
     }
     
-    /// <inheritdoc />
-    public ITavilyWebSearchBuilder ForBasicSearch()
-    {
-        return this
-            .WithSearchDepth(TavilySearchDepth.Basic)
-            .WithMaxResults(5)
-            .IncludeAnswers(false)
-            .IncludeImages(false)
-            .IncludeRawContent(false);
-    }
     
-    /// <inheritdoc />
-    public ITavilyWebSearchBuilder ForAdvancedSearch()
-    {
-        return this
-            .WithSearchDepth(TavilySearchDepth.Advanced)
-            .WithMaxResults(10)
-            .WithChunksPerSource(3)
-            .IncludeAdvancedAnswers()
-            .IncludeMarkdownContent()
-            .IncludeImages(true)
-            .IncludeImageDescriptions(true)
-            .IncludeFavicon(true);
-    }
     
     /// <inheritdoc />
     public ITavilyWebSearchBuilder WithChunksPerSource(int chunks)
@@ -294,31 +278,7 @@ public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
         return this;
     }
     
-    /// <inheritdoc />
-    public ITavilyWebSearchBuilder ForResearchMode()
-    {
-        return this
-            .WithSearchDepth(TavilySearchDepth.Advanced)
-            .WithTopic("general")
-            .IncludeAdvancedAnswers()
-            .IncludeMarkdownContent()
-            .WithChunksPerSource(3)
-            .WithMaxResults(10)
-            .IncludeImages(false) // Focus on text content for research
-            .EnableAutoParameters(true);
-    }
     
-    /// <inheritdoc />
-    public ITavilyWebSearchBuilder ForNewsMode()
-    {
-        return this
-            .WithTopic("news")
-            .WithTimeRange("week")
-            .IncludeAnswers(true)
-            .IncludeImages(true)
-            .IncludeFavicon(true)
-            .WithMaxResults(15);
-    }
     
     /// <summary>
     /// Gets the current configuration for validation or inspection
@@ -329,10 +289,16 @@ public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
     /// <inheritdoc />
     IWebSearchConnector IWebSearchProviderBuilder<ITavilyWebSearchBuilder>.Build()
     {
-        // Apply smart defaults based on configuration
-        ApplySmartDefaults();
+        // If no API key was provided manually, try to resolve it from configuration
+        if (string.IsNullOrWhiteSpace(_config.ApiKey))
+        {
+            _config.ApiKey = _configuration?["Tavily:ApiKey"] ?? string.Empty;
+        }
+
+        // Apply the fixed defaults
+        ApplyDefaults();
         
-        // Validate configuration
+        // Validate configuration (this will now throw if the key is missing from both manual and auto-resolution)
         _config.Validate();
         
         // Create and return the connector
@@ -340,29 +306,11 @@ public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
     }
     
     /// <summary>
-    /// Applies intelligent defaults based on other configuration settings
+    /// Applies a fixed, sensible default configuration for basic search.
     /// </summary>
-    private void ApplySmartDefaults()
+    private void ApplyDefaults()
     {
-        // Smart defaults for advanced search
-        if (_config.SearchDepth == TavilySearchDepth.Advanced && !_config.ChunksPerSource.HasValue)
-        {
-            _config.ChunksPerSource = 1;
-        }
-        
-        // Auto-enable answers for research mode indicators
-        if (_config.ChunksPerSource >= 2 && _config.IncludeAnswer == null)
-        {
-            _config.IncludeAnswer = true;
-        }
-        
-        // Enable raw content for advanced searches by default
-        if (_config.SearchDepth == TavilySearchDepth.Advanced && _config.IncludeRawContent == null)
-        {
-            _config.IncludeRawContent = true;
-        }
-        
-        // Default timeout if not specified
+        // Set default timeout if not specified
         if (!_config.Timeout.HasValue)
         {
             _config.Timeout = TimeSpan.FromSeconds(30);
@@ -371,14 +319,13 @@ public class TavilyWebSearchBuilder : ITavilyWebSearchBuilder
         // Default max results if not specified
         if (!_config.MaxResults.HasValue)
         {
-            _config.MaxResults = 10;
+            _config.MaxResults = 5;
         }
         
-        // Default retry policy if not specified
-        if (!_config.RetryCount.HasValue)
+        // Default to basic search depth if not specified
+        if (!_config.SearchDepth.HasValue)
         {
-            _config.RetryCount = 2;
-            _config.RetryDelay = TimeSpan.FromSeconds(1);
+            _config.SearchDepth = TavilySearchDepth.Basic;
         }
     }
 }

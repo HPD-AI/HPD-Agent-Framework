@@ -71,12 +71,6 @@ public class Project
         DocumentManager.SetContext(Id);
     }
 
-    /// <summary>Sets the agent for this project (should be done once)</summary>
-    public void SetAgent(Agent agent)
-    {
-        Agent = agent;
-    }
-
 
     /// <summary>Creates a conversation using the project's agent</summary>
     public Conversation CreateConversation()

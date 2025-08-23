@@ -20,20 +20,6 @@ await RunInteractiveChat(conversation);
 // ✨ NEW CONFIG-FIRST APPROACH: Using AgentConfig pattern
 static (Project, Conversation, Agent) CreateAIAssistant(IConfiguration config)
 {
-    // � Get API keys from configuration
-    // API keys will be resolved from appsettings.json automatically
-    var tavilyKey = config["Tavily:ApiKey"];
-    if (string.IsNullOrWhiteSpace(tavilyKey))
-        throw new InvalidOperationException("Tavily API key not configured. Set 'Tavily:ApiKey' in appsettings.json");
-
-    // �🚀 Create WebSearch plugin instance (fix CS0310)
-    var webSearchPlugin = new WebSearchPlugin(new WebSearchContext(
-        new IWebSearchConnector[]
-        {
-            new TavilyConnector(new TavilyConfig { ApiKey = tavilyKey })
-        }, 
-        "tavily"));
-
     // ✨ CREATE AGENT CONFIG OBJECT FIRST
     var agentConfig = new AgentConfig
     {
@@ -60,27 +46,26 @@ static (Project, Conversation, Agent) CreateAIAssistant(IConfiguration config)
         },
         Audio = new AudioConfig
         {
-            // ElevenLabs will be configured from environment variables
+            // ElevenLabs will be configured from environment va`les
         }
     };
 
     // ✨ BUILD AGENT FROM CONFIG + FLUENT PLUGINS/FILTERS
     var agent = new AgentBuilder(agentConfig)
-        .WithConfiguration(config) // Pass appsettings.json for API key resolution
+        .WithAPIConfiguration(config) // Pass appsettings.json for API key resolution
         .WithFilter(new LoggingAiFunctionFilter())
+        .WithTavilyWebSearch()
         .WithPlugin<MathPlugin>()
-        .WithPlugin(webSearchPlugin)  // ✨ Fixed: Use instance instead of generic
         .WithElevenLabsAudio() // Will use environment variables or config
         .WithFullPermissions(new ConsolePermissionHandler())
         .Build();
 
     // 🎯 Project with smart defaults
     var project = Project.Create("AI Chat Session");
-    project.SetAgent(agent);
 
     // 💬 Conversation just works
-    var conversation = project.CreateConversation();
-    
+    var conversation = project.CreateConversation(agent);
+
     // ✨ Show config info
     Console.WriteLine($"✨ Agent created with config-first pattern!");
     Console.WriteLine($"📋 Config: {agentConfig.Name} - {agentConfig.Provider?.ModelName}");

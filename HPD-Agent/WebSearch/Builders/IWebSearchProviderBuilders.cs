@@ -173,31 +173,6 @@ public interface ITavilyWebSearchBuilder : IWebSearchProviderBuilder<ITavilyWebS
     /// <returns>The builder instance for chaining</returns>
     ITavilyWebSearchBuilder EnableAutoParameters(bool enable = true);
     
-    // === Preset Configurations ===
-    
-    /// <summary>
-    /// Configures for research mode with optimal settings
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    ITavilyWebSearchBuilder ForResearchMode();
-    
-    /// <summary>
-    /// Configures for news searching with optimal settings
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    ITavilyWebSearchBuilder ForNewsMode();
-    
-    /// <summary>
-    /// Configures for fast basic search
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    ITavilyWebSearchBuilder ForBasicSearch();
-    
-    /// <summary>
-    /// Configures for comprehensive advanced search
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    ITavilyWebSearchBuilder ForAdvancedSearch();
 }
 
 /// <summary>
@@ -262,17 +237,6 @@ public interface IBraveWebSearchBuilder : IWebSearchProviderBuilder<IBraveWebSea
     /// <returns>The builder instance for chaining</returns>
     IBraveWebSearchBuilder EnableExtraSnippets(bool enable = true);
     
-    /// <summary>
-    /// Configures for privacy-focused searching
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    IBraveWebSearchBuilder ForPrivacyFocusedSearch();
-    
-    /// <summary>
-    /// Configures for developer/technical searching
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    IBraveWebSearchBuilder ForDeveloperSearch();
 }
 
 /// <summary>
@@ -337,11 +301,6 @@ public interface IBingWebSearchBuilder : IWebSearchProviderBuilder<IBingWebSearc
     /// <returns>The builder instance for chaining</returns>
     IBingWebSearchBuilder WithTextFormat(BingTextFormat format);
     
-    /// <summary>
-    /// Configures for enterprise use case
-    /// </summary>
-    /// <returns>The builder instance for chaining</returns>
-    IBingWebSearchBuilder ForEnterpriseSearch();
 }
 
 // Enums for configuration options

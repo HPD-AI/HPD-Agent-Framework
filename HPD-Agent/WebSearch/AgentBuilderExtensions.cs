@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Configuration;
 
 
 /// <summary>
@@ -8,8 +9,9 @@ using System.Linq;
 /// </summary>
 public static class AgentBuilderWebSearchExtensions
 {
-    // Store connectors temporarily until we can integrate with AgentBuilder properly
+    // Store connectors and default provider preferences
     private static readonly Dictionary<AgentBuilder, List<IWebSearchConnector>> _pendingConnectors = new();
+    private static readonly Dictionary<AgentBuilder, string?> _defaultProviders = new();
     
     /// <summary>
     /// Configures Tavily web search provider with fluent builder pattern
@@ -17,15 +19,30 @@ public static class AgentBuilderWebSearchExtensions
     /// <param name="builder">The agent builder</param>
     /// <param name="configure">Configuration action for Tavily settings</param>
     /// <returns>The agent builder for chaining</returns>
-    public static AgentBuilder WithWebSearchProvider(this AgentBuilder builder,
+    public static AgentBuilder WithTavilyWebSearch(this AgentBuilder builder,
         Func<ITavilyWebSearchBuilder, ITavilyWebSearchBuilder> configure)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
         if (configure == null) throw new ArgumentNullException(nameof(configure));
         
-        var tavilyBuilder = new TavilyWebSearchBuilder();
+        var tavilyBuilder = new TavilyWebSearchBuilder(builder.Configuration);
         var configuredBuilder = configure(tavilyBuilder);
         var connector = ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)configuredBuilder).Build();
+        
+        return AddWebSearchConnector(builder, connector);
+    }
+
+    /// <summary>
+    /// Configures Tavily web search provider with default settings
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The agent builder for chaining</returns>
+    public static AgentBuilder WithTavilyWebSearch(this AgentBuilder builder)
+    {
+        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        
+        var tavilyBuilder = new TavilyWebSearchBuilder(builder.Configuration);
+        var connector = ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)tavilyBuilder).Build();
         
         return AddWebSearchConnector(builder, connector);
     }
@@ -36,15 +53,30 @@ public static class AgentBuilderWebSearchExtensions
     /// <param name="builder">The agent builder</param>
     /// <param name="configure">Configuration action for Brave settings</param>
     /// <returns>The agent builder for chaining</returns>
-    public static AgentBuilder WithWebSearchProvider(this AgentBuilder builder,
+    public static AgentBuilder WithBraveWebSearch(this AgentBuilder builder,
         Func<IBraveWebSearchBuilder, IBraveWebSearchBuilder> configure)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
         if (configure == null) throw new ArgumentNullException(nameof(configure));
         
-        var braveBuilder = new BraveWebSearchBuilder();
+        var braveBuilder = new BraveWebSearchBuilder(builder.Configuration);
         var configuredBuilder = configure(braveBuilder);
         var connector = ((IWebSearchProviderBuilder<IBraveWebSearchBuilder>)configuredBuilder).Build();
+        
+        return AddWebSearchConnector(builder, connector);
+    }
+
+    /// <summary>
+    /// Configures Brave web search provider with default settings
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The agent builder for chaining</returns>
+    public static AgentBuilder WithBraveWebSearch(this AgentBuilder builder)
+    {
+        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        
+        var braveBuilder = new BraveWebSearchBuilder(builder.Configuration);
+        var connector = ((IWebSearchProviderBuilder<IBraveWebSearchBuilder>)braveBuilder).Build();
         
         return AddWebSearchConnector(builder, connector);
     }
@@ -55,28 +87,44 @@ public static class AgentBuilderWebSearchExtensions
     /// <param name="builder">The agent builder</param>
     /// <param name="configure">Configuration action for Bing settings</param>
     /// <returns>The agent builder for chaining</returns>
-    public static AgentBuilder WithWebSearchProvider(this AgentBuilder builder,
+    public static AgentBuilder WithBingWebSearch(this AgentBuilder builder,
         Func<IBingWebSearchBuilder, IBingWebSearchBuilder> configure)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
         if (configure == null) throw new ArgumentNullException(nameof(configure));
         
-        var bingBuilder = new BingWebSearchBuilder();
+        var bingBuilder = new BingWebSearchBuilder(builder.Configuration);
         var configuredBuilder = configure(bingBuilder);
         var connector = ((IWebSearchProviderBuilder<IBingWebSearchBuilder>)configuredBuilder).Build();
         
         return AddWebSearchConnector(builder, connector);
     }
+
+    /// <summary>
+    /// Configures Bing web search provider with default settings
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The agent builder for chaining</returns>
+    public static AgentBuilder WithBingWebSearch(this AgentBuilder builder)
+    {
+        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        
+        var bingBuilder = new BingWebSearchBuilder(builder.Configuration);
+        var connector = ((IWebSearchProviderBuilder<IBingWebSearchBuilder>)bingBuilder).Build();
+        
+        return AddWebSearchConnector(builder, connector);
+    }
     
     /// <summary>
-    /// Adds a web search connector to the agent's capabilities and automatically configures the WebSearchPlugin
+    /// Adds a web search connector to the agent's capabilities
+    /// The WebSearchPlugin will be automatically created when all providers are configured
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="connector">The configured web search connector</param>
     /// <returns>The agent builder for chaining</returns>
     private static AgentBuilder AddWebSearchConnector(AgentBuilder builder, IWebSearchConnector connector)
     {
-        // Store the connector for later collection during WithWebSearchPlugin()
+        // Store the connector for later collection
         if (!_pendingConnectors.ContainsKey(builder))
         {
             _pendingConnectors[builder] = new List<IWebSearchConnector>();
@@ -87,21 +135,43 @@ public static class AgentBuilderWebSearchExtensions
     }
     
     /// <summary>
-    /// Finalizes web search configuration by creating the WebSearchPlugin with all configured providers.
-    /// This method should be called after all WithWebSearchProvider() calls.
+    /// Sets the default web search provider to use when no provider is specified
     /// </summary>
     /// <param name="builder">The agent builder</param>
-    /// <param name="defaultProvider">Name of the default provider to use (optional)</param>
+    /// <param name="providerName">Name of the provider to use as default (tavily, brave, bing)</param>
     /// <returns>The agent builder for chaining</returns>
-    public static AgentBuilder WithWebSearchPlugin(this AgentBuilder builder, string? defaultProvider = null)
+    public static AgentBuilder WithDefaultWebSearchProvider(this AgentBuilder builder, string providerName)
+    {
+        if (builder == null) throw new ArgumentNullException(nameof(builder));
+        if (string.IsNullOrWhiteSpace(providerName)) throw new ArgumentException("Provider name cannot be empty", nameof(providerName));
+        
+        // Store the default provider preference
+        _defaultProviders[builder] = providerName.ToLowerInvariant();
+        
+        // Note: Plugin will be created when FinalizeWebSearch() is called
+        
+        return builder;
+    }
+
+    /// <summary>
+    /// Finalizes web search configuration and creates the WebSearchPlugin with all configured providers.
+    /// This is called automatically by AgentBuilder.Build() when web search providers are configured.
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The agent builder for chaining</returns>
+    internal static AgentBuilder FinalizeWebSearch(this AgentBuilder builder)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
         
         // Collect all registered connectors for this builder
         if (!_pendingConnectors.TryGetValue(builder, out var connectors) || !connectors.Any())
         {
-            throw new InvalidOperationException("No web search providers configured. Call WithWebSearchProvider() before WithWebSearchPlugin().");
+            // No web search providers configured - just return silently
+            return builder;
         }
+        
+        // Get the default provider preference (if set)
+        _defaultProviders.TryGetValue(builder, out var defaultProvider);
         
         // Create the WebSearchContext with all connectors
         var context = new WebSearchContext(connectors, defaultProvider);
@@ -112,8 +182,19 @@ public static class AgentBuilderWebSearchExtensions
         
         // Clean up the temporary storage
         _pendingConnectors.Remove(builder);
+        _defaultProviders.Remove(builder);
         
         return builder;
+    }
+
+    /// <summary>
+    /// Cleanup method to remove temporary storage when agent is built
+    /// This should be called by the framework when the agent is finalized
+    /// </summary>
+    internal static void CleanupWebSearchStorage(AgentBuilder builder)
+    {
+        _pendingConnectors.Remove(builder);
+        _defaultProviders.Remove(builder);
     }
 }
 
@@ -124,6 +205,12 @@ public static class AgentBuilderWebSearchExtensions
 public class BraveWebSearchBuilder : IBraveWebSearchBuilder
 {
     private readonly BraveConfig _config = new();
+    private readonly IConfiguration? _configuration;
+
+    public BraveWebSearchBuilder(IConfiguration? configuration = null)
+    {
+        _configuration = configuration;
+    }
     
     public IBraveWebSearchBuilder WithApiKey(string apiKey)
     {
@@ -198,26 +285,19 @@ public class BraveWebSearchBuilder : IBraveWebSearchBuilder
         return this;
     }
     
-    public IBraveWebSearchBuilder ForPrivacyFocusedSearch()
-    {
-        return this
-            .WithSafeSearch(BraveSafeSearch.Strict)
-            .WithResultFilter("web")
-            .EnableSpellCheck(false)
-            .WithCountry("ALL");
-    }
     
-    public IBraveWebSearchBuilder ForDeveloperSearch()
-    {
-        return this
-            .WithResultFilter("web,news")
-            .WithSearchLanguage("en")
-            .WithCountry("US")
-            .EnableExtraSnippets(true);
-    }
     
     IWebSearchConnector IWebSearchProviderBuilder<IBraveWebSearchBuilder>.Build()
     {
+        // If no API key was provided manually, try to resolve it from configuration
+        if (string.IsNullOrWhiteSpace(_config.ApiKey))
+        {
+            _config.ApiKey = _configuration?["Brave:ApiKey"] ?? string.Empty;
+        }
+        // Apply fixed defaults for Brave
+        if (!_config.Timeout.HasValue) _config.Timeout = TimeSpan.FromSeconds(30);
+        if (string.IsNullOrWhiteSpace(_config.Country)) _config.Country = "US";
+        
         _config.Validate();
         // TODO: Implement BraveConnector
         throw new NotImplementedException("BraveConnector implementation coming in next iteration");
@@ -227,6 +307,12 @@ public class BraveWebSearchBuilder : IBraveWebSearchBuilder
 public class BingWebSearchBuilder : IBingWebSearchBuilder
 {
     private readonly BingConfig _config = new();
+    private readonly IConfiguration? _configuration;
+
+    public BingWebSearchBuilder(IConfiguration? configuration = null)
+    {
+        _configuration = configuration;
+    }
     
     public IBingWebSearchBuilder WithApiKey(string apiKey)
     {
@@ -301,16 +387,18 @@ public class BingWebSearchBuilder : IBingWebSearchBuilder
         return this;
     }
     
-    public IBingWebSearchBuilder ForEnterpriseSearch()
-    {
-        return this
-            .WithResponseFilter("webpages,images,news")
-            .EnableShoppingSearch(true)
-            .WithTextDecorations(true);
-    }
     
     IWebSearchConnector IWebSearchProviderBuilder<IBingWebSearchBuilder>.Build()
     {
+        // If no API key was provided manually, try to resolve it from configuration
+        if (string.IsNullOrWhiteSpace(_config.ApiKey))
+        {
+            _config.ApiKey = _configuration?["Bing:ApiKey"] ?? string.Empty;
+        }
+        // Apply fixed defaults for Bing
+        if (!_config.Timeout.HasValue) _config.Timeout = TimeSpan.FromSeconds(30);
+        if (string.IsNullOrWhiteSpace(_config.Market)) _config.Market = "en-US";
+
         _config.Validate();
         // TODO: Implement BingConnector
         throw new NotImplementedException("BingConnector implementation coming in next iteration");
