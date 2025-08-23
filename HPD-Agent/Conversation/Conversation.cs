@@ -195,9 +195,21 @@ public class Conversation
         // Inject project context for Memory CAG if available
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
         {
-            options ??= new ChatOptions();
-            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-            options.AdditionalProperties["Project"] = project;
+            if (options == null)
+            {
+                options = new ChatOptions
+                {
+                    AdditionalProperties = new AdditionalPropertiesDictionary
+                    {
+                        ["Project"] = project
+                    }
+                };
+            }
+            else
+            {
+                options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+                options.AdditionalProperties["Project"] = project;
+            }
         }
         
     // Delegate response generation to orchestrator

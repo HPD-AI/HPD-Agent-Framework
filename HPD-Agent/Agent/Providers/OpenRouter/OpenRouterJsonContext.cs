@@ -18,6 +18,7 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(OpenRouterChoice))]
 [JsonSerializable(typeof(OpenRouterUsage))]
 [JsonSerializable(typeof(OpenRouterError))]
+[JsonSerializable(typeof(OpenRouterReasoning))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(List<OpenRouterMessage>))]
 [JsonSerializable(typeof(List<OpenRouterToolCall>))]

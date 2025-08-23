@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 /// <summary>
 /// Request model for OpenRouter API
@@ -37,6 +38,9 @@ public class OpenRouterRequest
 
     [JsonPropertyName("response_format")]
     public object? ResponseFormat { get; set; }
+
+    [JsonPropertyName("reasoning")]
+    public OpenRouterReasoning? Reasoning { get; set; }
 }
 
 /// <summary>
@@ -85,6 +89,9 @@ public class OpenRouterMessage
 
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+
+    [JsonPropertyName("reasoning")]
+    public JsonElement? Reasoning { get; set; }
 }
 
 /// <summary>
@@ -188,3 +195,22 @@ public class OpenRouterError
     [JsonPropertyName("code")]
     public string? Code { get; set; }
 }
+
+/// <summary>
+/// Reasoning configuration for the OpenRouter API.
+/// </summary>
+public class OpenRouterReasoning
+{
+    [JsonPropertyName("exclude")]
+    public bool? Exclude { get; set; }
+
+    [JsonPropertyName("effort")]
+    public string? Effort { get; set; }
+
+    [JsonPropertyName("max_tokens")]
+    public int? MaxTokens { get; set; }
+
+    [JsonPropertyName("enabled")]
+    public bool? Enabled { get; set; }
+}
+

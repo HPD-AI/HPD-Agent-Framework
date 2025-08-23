@@ -197,6 +197,12 @@ public sealed class OpenRouterChatClient : IChatClient
                 update.Contents.Add(new TextContent(delta.Content));
             }
             
+            // Add reasoning content if present in this chunk
+            if (delta.Reasoning.HasValue && delta.Reasoning.Value.ValueKind == JsonValueKind.String)
+            {
+                update.Contents.Add(new TextReasoningContent(delta.Reasoning.Value.GetString()));
+            }
+            
             // Handle tool calls if present
             if (delta.ToolCalls != null && delta.ToolCalls.Count > 0)
             {
@@ -297,7 +303,18 @@ public sealed class OpenRouterChatClient : IChatClient
             }
         }
 
-        // Add text content if present or if no tool calls
+        // Add reasoning content if present
+        if (message.Reasoning.HasValue && message.Reasoning.Value.ValueKind == JsonValueKind.String)
+        {
+            contents.Add(new TextReasoningContent(message.Reasoning.Value.GetString()));
+        }
+        else if (message.Reasoning.HasValue)
+        {
+            // Handle cases where reasoning might be a complex object by serializing it
+            contents.Add(new TextReasoningContent(JsonSerializer.Serialize(message.Reasoning.Value, OpenRouterJsonContext.Default.JsonElement)));
+        }
+
+        // Add text content if present or if no tool calls/reasoning
         if (!string.IsNullOrEmpty(message.Content) || contents.Count == 0)
         {
             contents.Insert(0, new TextContent(message.Content ?? string.Empty));
@@ -359,6 +376,26 @@ public sealed class OpenRouterChatClient : IChatClient
             if (options.ResponseFormat is ChatResponseFormatJson)
             {
                 request.ResponseFormat = new { type = "json_object" };
+            }
+        }
+
+        // Check for reasoning in ExtensionOptions
+        if (options?.AdditionalProperties?.TryGetValue("reasoning", out var reasoningValue) == true)
+        {
+            if (reasoningValue is OpenRouterReasoning reasoning)
+            {
+                request.Reasoning = reasoning;
+            }
+            else if (reasoningValue is JsonElement jsonElement)
+            {
+                try
+                {
+                    request.Reasoning = JsonSerializer.Deserialize(jsonElement.GetRawText(), _jsonContext.OpenRouterReasoning);
+                }
+                catch (JsonException)
+                {
+                    // Ignore invalid reasoning configuration
+                }
             }
         }
 
