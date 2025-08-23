@@ -29,6 +29,11 @@ public class AgentConfig
     /// Configuration for audio capabilities (TTS/STT).
     /// </summary>
     public AudioConfig? Audio { get; set; }
+
+    /// <summary>
+    /// Configuration for web search capabilities.
+    /// </summary>
+    public WebSearchConfig? WebSearch { get; set; }
 }
 
 #region Supporting Configuration Classes
@@ -90,6 +95,33 @@ public class ProviderConfig
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
     public ChatOptions? DefaultChatOptions { get; set; }
+}
+
+/// <summary>
+/// Holds all web search related configurations.
+/// </summary>
+public class WebSearchConfig
+{
+    /// <summary>
+    /// The name of the default search provider to use if multiple are configured.
+    /// Should match one of the keys in the provider configs (e.g., "Tavily").
+    /// </summary>
+    public string? DefaultProvider { get; set; }
+
+    /// <summary>
+    /// Configuration for Tavily web search provider.
+    /// </summary>
+    public TavilyConfig? Tavily { get; set; }
+
+    /// <summary>
+    /// Configuration for Brave web search provider.
+    /// </summary>
+    public BraveConfig? Brave { get; set; }
+
+    /// <summary>
+    /// Configuration for Bing web search provider.
+    /// </summary>
+    public BingConfig? Bing { get; set; }
 }
 
 #endregion
