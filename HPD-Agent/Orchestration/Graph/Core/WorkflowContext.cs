@@ -1,12 +1,25 @@
-using Microsoft.Extensions.AI;
+using System;
+using System.Collections.Generic;
 
 /// <summary>
-/// Immutable workflow context focused purely on workflow execution state.
-/// History management is the responsibility of the calling Conversation.
+/// Represents a single, atomic step in the execution of a workflow.
+/// </summary>
+public record ExecutionStep(
+    string NodeId,
+    string NodeKey,
+    object InputState,      // A snapshot of TState before execution
+    object OutputState,     // A snapshot of TState after execution
+    string? EdgeConditionKey,
+    string? ConditionResult,
+    TimeSpan Duration
+);
+
+/// <summary>
+/// Immutable workflow context focused on workflow execution state and traceability.
 /// </summary>
 public record WorkflowContext<TState>(
     TState State,
-    string? ConversationId,
     string? CurrentNodeId,
-    DateTime LastUpdatedAt
+    IReadOnlyList<ExecutionStep> Trace,
+    AggregatorCollection Aggregators
 ) where TState : class, new();

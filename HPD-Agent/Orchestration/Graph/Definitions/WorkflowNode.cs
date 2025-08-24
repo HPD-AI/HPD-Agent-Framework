@@ -3,6 +3,5 @@
 /// </summary>
 public record WorkflowNode(
     string Id,
-    string AgentName,
-    IReadOnlyDictionary<string, string>? InputMappings = null
+    string NodeKey // Changed from AgentName
 );

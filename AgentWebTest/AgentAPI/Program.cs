@@ -280,7 +280,6 @@ public class ProjectManager
 
         var project = Project.Create(name);
         project.Description = description;
-        project.SetAgent(agent);
         
         return project;
     }

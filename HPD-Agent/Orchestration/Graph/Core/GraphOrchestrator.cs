@@ -1,46 +1,45 @@
 using Microsoft.Extensions.AI;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 /// <summary>
-/// Graph orchestrator that executes a workflow definition over multiple agents.
+/// Graph orchestrator that executes a declarative workflow definition using a registry of executable components.
 /// </summary>
 public class GraphOrchestrator<TState> : IOrchestrator where TState : class, new()
 {
     private readonly WorkflowDefinition _workflow;
-    private readonly IReadOnlyDictionary<string, Agent> _agents;
-    private readonly IConditionEvaluator<TState> _conditionEvaluator;
+    private readonly WorkflowRegistry<TState> _registry;
     private readonly ICheckpointStore<TState>? _checkpointStore;
-    // Track which agents were used during execution
-    private readonly List<string> _usedAgentsDuringExecution = new();
+    private readonly AggregatorCollection _aggregators = new();
 
     public GraphOrchestrator(
         WorkflowDefinition workflow,
-        IEnumerable<Agent> agents,
-        IConditionEvaluator<TState>? conditionEvaluator = null,
+        WorkflowRegistry<TState> registry,
         ICheckpointStore<TState>? checkpointStore = null)
     {
         _workflow = workflow;
-        _agents = agents.ToDictionary(a => a.Name, a => a);
-        _conditionEvaluator = conditionEvaluator ?? new SmartDefaultEvaluator<TState>();
+        _registry = registry;
         _checkpointStore = checkpointStore;
         ValidateWorkflow();
     }
 
     public async Task<ChatResponse> OrchestrateAsync(
         IReadOnlyList<ChatMessage> history,
-        IReadOnlyList<Agent> agents,
+        IReadOnlyList<Agent> agents, // Note: agents are now part of StateNode, this is for interface compliance
         string? conversationId = null,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        // Collect all streaming updates and return the final response
         var allUpdates = new List<ChatResponseUpdate>();
         await foreach (var update in OrchestrateStreamingAsync(history, agents, conversationId, options, cancellationToken))
         {
             allUpdates.Add(update);
         }
-
-        // Return constructed response from all updates
         return ConstructChatResponseFromUpdates(allUpdates);
     }
 
@@ -52,30 +51,69 @@ public class GraphOrchestrator<TState> : IOrchestrator where TState : class, new
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var context = await RestoreOrCreateWorkflowContext(conversationId);
+        var stopwatch = new Stopwatch();
 
-        while (context.CurrentNodeId is not null && !cancellationToken.IsCancellationRequested)
+        while (context.CurrentNodeId != null && context.CurrentNodeId != "END" && !cancellationToken.IsCancellationRequested)
         {
-            // Create a new list to hold updates from the current node's execution
-            var responseUpdates = new List<ChatResponseUpdate>();
+            var workflowNode = _workflow.Nodes.First(n => n.Id == context.CurrentNodeId);
+            var stateNode = _registry.GetNode(workflowNode.NodeKey);
 
-            // Execute the node and stream its results
-            await foreach (var update in ExecuteNodeStreamingAsync(context, history, options, cancellationToken))
-            {
-                responseUpdates.Add(update);
-                yield return update; // Yield the update to the caller immediately
-            }
+            var inputState = context.State; // Snapshot state before execution
+            stopwatch.Restart();
 
-            // After the stream for the current node is complete, update the context
-            context = await UpdateWorkflowContextAfterStreamingAsync(context, responseUpdates, cancellationToken);
+            // Execute the node's logic
+            var outputState = await stateNode.ExecuteAsync(context, history, cancellationToken);
+            
+            stopwatch.Stop();
+
+            // Determine the next node
+            var (nextNodeId, conditionKey, conditionResult) = await GetNextNodeDetails(context.CurrentNodeId, outputState);
+
+            // Create the execution step for the trace
+            var step = new ExecutionStep(
+                workflowNode.Id,
+                workflowNode.NodeKey,
+                inputState,
+                outputState,
+                conditionKey,
+                conditionResult,
+                stopwatch.Elapsed
+            );
+
+            // Update the context with the new state and trace
+            var newTrace = new List<ExecutionStep>(context.Trace) { step };
+            context = new WorkflowContext<TState>(outputState, nextNodeId, newTrace, _aggregators);
             
             if (_checkpointStore != null && conversationId != null)
             {
                 await _checkpointStore.SaveAsync(conversationId, context, cancellationToken);
             }
 
-            // Determine the next node to execute
-            context = context with { CurrentNodeId = await GetNextNodeAsync(context, history, cancellationToken) };
+            // Yield a representation of the state change (implementation detail)
+            // For now, we can yield a simple text update.
+            yield return new ChatResponseUpdate(ChatRole.Assistant, $"Completed step: {workflowNode.NodeKey}. New state: {outputState.ToString()}");
+
+            // Reset aggregators for the next superstep
+            _aggregators.ResetAll();
         }
+    }
+    
+    private async Task<(string? NextNodeId, string? ConditionKey, string? ConditionResult)> GetNextNodeDetails(string currentNodeId, TState state)
+    {
+        foreach (var edge in _workflow.Edges.Where(e => e.FromNodeId == currentNodeId))
+        {            var conditionFunc = _registry.GetCondition(edge.ConditionKey);
+            var resultKey = await conditionFunc(state);
+
+            if (resultKey != null && edge.RouteMap.TryGetValue(resultKey, out var targetNodeId))
+            {                return (targetNodeId, edge.ConditionKey, resultKey);
+            }
+            
+            // Handle direct edges where ToNodeId is specified and condition is simple
+            if (edge.ToNodeId != null && (resultKey == "true" || resultKey == null))
+            {                 return (edge.ToNodeId, edge.ConditionKey, resultKey);
+            }
+        }
+        return (null, null, null); // End of workflow
     }
 
     private async Task<WorkflowContext<TState>> RestoreOrCreateWorkflowContext(string? conversationId)
@@ -89,165 +127,49 @@ public class GraphOrchestrator<TState> : IOrchestrator where TState : class, new
 
         return new WorkflowContext<TState>(
             State: new TState(),
-            ConversationId: conversationId,
             CurrentNodeId: _workflow.StartNodeId,
-            LastUpdatedAt: DateTime.UtcNow
+            Trace: new List<ExecutionStep>(),
+            Aggregators: _aggregators // Initialize here
         );
     }
-
-
-    // Determine next node based on condition evaluation
-    private async Task<string?> GetNextNodeAsync(
-        WorkflowContext<TState> context,
-        IReadOnlyList<ChatMessage> history,
-        CancellationToken cancellationToken)
+    
+    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates)
     {
-        // Evaluate outgoing edges; return first matching target or null
-        foreach (var edge in _workflow.Edges.Where(e => e.FromNodeId == context.CurrentNodeId!))
-        {
-            // Create a temporary context with history for condition evaluation
-            var contextWithHistory = CreateContextWithHistory(context, history);
-            if (await _conditionEvaluator.EvaluateAsync(edge.Condition, contextWithHistory, cancellationToken))
-                return edge.ToNodeId;
-        }
-        return null;
+        // This helper can be simplified or enhanced later.
+        var lastContent = updates.LastOrDefault()?.Text ?? string.Empty;
+        var message = new ChatMessage(ChatRole.Assistant, lastContent);
+        return new ChatResponse(message);
     }
-
-    // Helper method to create context with history for condition evaluation only
-    private WorkflowContext<TState> CreateContextWithHistory(WorkflowContext<TState> context, IReadOnlyList<ChatMessage> history)
-    {
-        // This is a temporary shim - ideally condition evaluators should not need full history
-        // but work with workflow state only. For now, we create a compatibility layer.
-        return context;
-    }
-
-    /// <summary>
-    /// Override this method for custom state update logic. Default is no-op.
-    /// </summary>
-    protected virtual Task<TState> UpdateStateAsync(
-        TState currentState,
-        WorkflowNode node,
-        ChatResponse response,
-        CancellationToken cancellationToken)
-    {
-        return Task.FromResult(currentState);
-    }
-
-    /// <summary>
-    /// Override this method for node-specific input mapping. Default passes full history.
-    /// </summary>
-    protected virtual IReadOnlyList<ChatMessage> ApplyInputMappings(
-        WorkflowContext<TState> context,
-        WorkflowNode node,
-        IReadOnlyList<ChatMessage> history)
-    {
-        return history;
-    }
-
-    private WorkflowNode GetNode(string nodeId)
-        => _workflow.Nodes.FirstOrDefault(n => n.Id == nodeId)
-            ?? throw new InvalidOperationException($"Node '{nodeId}' not found in workflow '{_workflow.Name}'");
-
-    private Agent GetAgent(string agentName)
-        => _agents.TryGetValue(agentName, out var agent)
-            ? agent
-            : throw new InvalidOperationException($"Agent '{agentName}' not registered. Available agents: {string.Join(", ", _agents.Keys)}");
-
-    private static IEnumerable<ChatMessage> ExtractMessages(ChatResponse response)
-        => response.Messages?.Any() == true
-            ? response.Messages
-            : Array.Empty<ChatMessage>();
 
     private void ValidateWorkflow()
     {
-        var nodeIds = _workflow.Nodes.Select(n => n.Id).ToHashSet();
-        if (!nodeIds.Contains(_workflow.StartNodeId))
-            throw new ArgumentException($"Start node '{_workflow.StartNodeId}' not found in workflow '{_workflow.Name}'");
+        var nodeKeys = new HashSet<string>(_registry.GetAllNodeKeys());
+        var conditionKeys = new HashSet<string>(_registry.GetAllConditionKeys());
+
+        if (!_workflow.Nodes.Any(n => n.Id == _workflow.StartNodeId))
+        {
+            throw new InvalidOperationException($"Start node '{_workflow.StartNodeId}' is not defined in the workflow's node list.");
+        }
+
+        foreach (var node in _workflow.Nodes)
+        {
+            if (!nodeKeys.Contains(node.NodeKey))
+            {
+                throw new InvalidOperationException($"Node with ID '{node.Id}' references NodeKey '{node.NodeKey}', which is not registered.");
+            }
+        }
+
         foreach (var edge in _workflow.Edges)
         {
-            if (!nodeIds.Contains(edge.FromNodeId) || !nodeIds.Contains(edge.ToNodeId))
-                throw new ArgumentException($"Invalid edge in workflow '{_workflow.Name}': {edge.FromNodeId} -> {edge.ToNodeId}");
-        }
-    }
-
-    private async IAsyncEnumerable<ChatResponseUpdate> ExecuteNodeStreamingAsync(
-        WorkflowContext<TState> context,
-        IReadOnlyList<ChatMessage> history,
-        ChatOptions? options,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var node = GetNode(context.CurrentNodeId!);
-        var agent = GetAgent(node.AgentName);
-        _usedAgentsDuringExecution.Add(agent.Name);
-        var effectiveHistory = ApplyInputMappings(context, node, history);
-
-        // Get the streaming response from the agent
-        var streamingResponse = agent.GetStreamingResponseAsync(effectiveHistory, options, cancellationToken);
-
-        await foreach (var update in streamingResponse)
-        {
-            yield return update;
-        }
-    }
-
-    private async Task<WorkflowContext<TState>> UpdateWorkflowContextAfterStreamingAsync(
-        WorkflowContext<TState> context,
-        List<ChatResponseUpdate> updates,
-        CancellationToken cancellationToken)
-    {
-        // Reconstruct a ChatResponse from the streamed updates for state update only
-        var finalResponse = ConstructChatResponseFromUpdates(updates);
-
-        var node = GetNode(context.CurrentNodeId!);
-        var updatedState = await UpdateStateAsync(context.State, node, finalResponse, cancellationToken);
-
-        return context with
-        {
-            State = updatedState,
-            LastUpdatedAt = DateTime.UtcNow
-        };
-    }
-
-    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates)
-    {
-        // Collect all content from the updates
-        var allContents = new List<AIContent>();
-        ChatFinishReason? finishReason = null;
-        string? modelId = null;
-        string? responseId = null;
-        DateTimeOffset? createdAt = null;
-        
-        foreach (var update in updates)
-        {
-            if (update.Contents != null)
+            if (!_workflow.Nodes.Any(n => n.Id == edge.FromNodeId))
             {
-                allContents.AddRange(update.Contents);
+                throw new InvalidOperationException($"Edge references a 'FromNodeId' of '{edge.FromNodeId}', which is not a defined node.");
             }
-            
-            if (update.FinishReason != null)
-                finishReason = update.FinishReason;
-                
-            if (update.ModelId != null)
-                modelId = update.ModelId;
-                
-            if (update.ResponseId != null)
-                responseId = update.ResponseId;
-                
-            if (update.CreatedAt != null)
-                createdAt = update.CreatedAt;
+
+            if (!conditionKeys.Contains(edge.ConditionKey))
+            {
+                throw new InvalidOperationException($"Edge from '{edge.FromNodeId}' references ConditionKey '{edge.ConditionKey}', which is not registered.");
+            }
         }
-        
-        // Create a ChatMessage from the collected content
-        var chatMessage = new ChatMessage(ChatRole.Assistant, allContents)
-        {
-            MessageId = responseId
-        };
-        
-        return new ChatResponse(chatMessage)
-        {
-            FinishReason = finishReason,
-            ModelId = modelId,
-            CreatedAt = createdAt
-        };
     }
 }

@@ -1,32 +1,23 @@
+using System.Collections.Generic;
+
 /// <summary>
 /// Factory methods for creating common orchestrator configurations.
 /// </summary>
 public static class GraphOrchestratorExtensions
 {
     /// <summary>
-    /// Create a simple orchestrator with no state management.
+    /// Creates a GraphOrchestrator from a workflow definition and a registry of executable components.
     /// </summary>
-    public static GraphOrchestrator<NoState> CreateSimple(
+    /// <typeparam name="TState">The workflow's state type.</typeparam>
+    /// <param name="workflow">The declarative workflow definition.</param>
+    /// <param name="registry">The registry containing the compiled StateNodes and ConditionFuncs.</param>
+    /// <param name="checkpointStore">Optional persistence store for resilient workflows.</param>
+    /// <returns>A fully configured GraphOrchestrator instance.</returns>
+    public static GraphOrchestrator<TState> CreateOrchestrator<TState>(
         this WorkflowDefinition workflow,
-        IEnumerable<Agent> agents) => new(workflow, agents);
-
-    /// <summary>
-    /// Create an orchestrator with typed state management.
-    /// </summary>
-    public static GraphOrchestrator<TState> CreateWithState<TState>(
-        this WorkflowDefinition workflow,
-        IEnumerable<Agent> agents,
-        IConditionEvaluator<TState>? evaluator = null,
-        ICheckpointStore<TState>? store = null) where TState : class, new()
-        => new(workflow, agents, evaluator, store);
-
-    /// <summary>
-    /// Create a resilient orchestrator with checkpoint persistence.
-    /// </summary>
-    public static GraphOrchestrator<TState> CreateResilient<TState>(
-        this WorkflowDefinition workflow,
-        IEnumerable<Agent> agents,
-        ICheckpointStore<TState> checkpointStore,
-        IConditionEvaluator<TState>? evaluator = null) where TState : class, new()
-        => new(workflow, agents, evaluator, checkpointStore);
+        WorkflowRegistry<TState> registry,
+        ICheckpointStore<TState>? checkpointStore = null) where TState : class, new()
+    {
+        return new GraphOrchestrator<TState>(workflow, registry, checkpointStore);
+    }
 }
