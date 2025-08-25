@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using OllamaSharp;
+using FluentValidation;
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -492,6 +493,20 @@ public class AgentBuilder
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
     public Agent Build()
     {
+        // === START: VALIDATION LOGIC ===
+        // Validate the core agent configuration
+        var agentConfigValidator = new AgentConfigValidator();
+        agentConfigValidator.ValidateAndThrow(_config);
+
+        // Validate provider-specific configurations if they exist
+        if (_config.WebSearch?.Tavily != null)
+        {
+            var tavilyValidator = new TavilyConfigValidator();
+            tavilyValidator.ValidateAndThrow(_config.WebSearch.Tavily);
+        }
+        // TODO: Add similar validation blocks for Brave, Bing, ElevenLabs, AzureSpeech etc.
+        // === END: VALIDATION LOGIC ===
+
         // If no base client provided but provider info is available, create the client
         if (_baseClient == null && _config.Provider != null && !string.IsNullOrEmpty(_config.Provider.ModelName))
         {
