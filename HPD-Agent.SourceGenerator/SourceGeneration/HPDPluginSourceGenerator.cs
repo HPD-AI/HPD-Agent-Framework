@@ -210,6 +210,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine("using System.Threading.Tasks;");
+        sb.AppendLine("using System.Text.Json.Serialization;");
+        sb.AppendLine("using FluentValidation;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine();
         
@@ -218,6 +220,13 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         {
             sb.AppendLine($"namespace {plugin.Namespace};");
             sb.AppendLine();
+        }
+        
+        // Generate DTOs and Validators for each function
+        foreach (var function in plugin.Functions)
+        {
+            GenerateArgumentsDto(sb, function);
+            GenerateValidator(sb, function);
         }
         
         // Registration class
@@ -248,43 +257,35 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
     /// Generates the registration code for a single function.
     /// </summary>
     /// <summary>
-    /// V3.0: Generate function registration with conditional parameter filtering.
+    /// V4.0: Generate function registration using generated DTOs and validators.
     /// </summary>
     private static string GenerateFunctionRegistrationWithParameterFiltering(FunctionInfo function)
     {
-        var parameterParts = function.Parameters.Select(p => 
-        {
-            var paramDecl = $"{p.Type} {p.Name}";
-            if (p.HasDefaultValue && !string.IsNullOrEmpty(p.DefaultValue))
-            {
-                paramDecl += $" = {p.DefaultValue}";
-            }
-            return paramDecl;
-        });
-        var parameterList = string.Join(", ", parameterParts);
-        var argumentList = string.Join(", ", function.Parameters.Select(p => p.Name));
+        var dtoName = $"{function.Name}Arguments";
+        var validatorName = $"{dtoName}Validator";
+        var argumentMapping = GenerateArgumentMapping(function);
         
         var nameCode = $"\"{function.FunctionName}\"";
         var descriptionCode = function.HasDynamicDescription 
             ? $"Resolve{function.Name}Description(context)"
             : $"\"{function.Description}\"";
 
-        // Generate conditional parameter filtering
+        // Generate options with DTO-based approach
         string optionsCode;
         if (function.HasConditionalParameters)
         {
-            optionsCode = GenerateOptionsWithConditionalParameters(function);
+            optionsCode = GenerateDtoOptionsWithConditionalParameters(function, nameCode, descriptionCode, validatorName);
         }
         else
         {
-            optionsCode = GenerateStaticOptions(function, nameCode, descriptionCode);
+            optionsCode = GenerateDtoStaticOptions(function, nameCode, descriptionCode, validatorName);
         }
         
         if (function.IsAsync)
         {
             return $$"""
-                HPDAIFunctionFactory.Create(
-                            async ({{parameterList}}) => await instance.{{function.Name}}({{argumentList}}),
+                HPDAIFunctionFactory.CreateWithDto<{{dtoName}}>(
+                            (Func<{{dtoName}}, Task<object?>>)(async (args) => await instance.{{function.Name}}({{argumentMapping}})),
                             {{optionsCode}}
                         )
                 """;
@@ -292,12 +293,46 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         else
         {
             return $$"""
-                HPDAIFunctionFactory.Create(
-                            ({{parameterList}}) => instance.{{function.Name}}({{argumentList}}),
+                HPDAIFunctionFactory.CreateWithDto<{{dtoName}}>(
+                            (Func<{{dtoName}}, object?>)((args) => instance.{{function.Name}}({{argumentMapping}})),
                             {{optionsCode}}
                         )
                 """;
         }
+    }
+
+    /// <summary>
+    /// Generates argument mapping from DTO to method parameters.
+    /// </summary>
+    private static string GenerateArgumentMapping(FunctionInfo function)
+    {
+        return string.Join(", ", function.Parameters.Select(p => 
+        {
+            // Handle nullable to non-nullable conversion for parameters with default values
+            if (p.HasDefaultValue && !IsNullableType(p.Type))
+            {
+                return $"args.{p.Name} ?? {p.DefaultValue ?? GetDefaultValueForType(p.Type)}";
+            }
+            return $"args.{p.Name}";
+        }));
+    }
+
+    /// <summary>
+    /// Gets the default value for a given type.
+    /// </summary>
+    private static string GetDefaultValueForType(string type)
+    {
+        return type switch
+        {
+            "int" or "Int32" => "0",
+            "long" or "Int64" => "0L",
+            "double" or "Double" => "0.0",
+            "float" or "Single" => "0.0f",
+            "bool" or "Boolean" => "false",
+            "decimal" or "Decimal" => "0m",
+            "string" => "\"\"",
+            _ => "default"
+        };
     }
 
     /// <summary>
@@ -364,6 +399,85 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         sb.AppendLine($"                                Name = {nameCode},");
         sb.AppendLine($"                                Description = {descriptionCode},");
         sb.AppendLine($"                                RequiresPermission = {function.RequiresPermission.ToString().ToLower()}");
+        if (hasParameterDescriptions)
+        {
+            sb.AppendLine(",");
+            sb.AppendLine("                                ParameterDescriptions = new Dictionary<string, string>");
+            sb.AppendLine("                                {");
+            var descriptionsWithValues = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
+            for (int i = 0; i < descriptionsWithValues.Count; i++)
+            {
+                var param = descriptionsWithValues[i];
+                var comma = i < descriptionsWithValues.Count - 1 ? "," : "";
+                var paramDescCode = param.HasDynamicDescription 
+                    ? $"Resolve{function.Name}Parameter{param.Name}Description(context)"
+                    : $"\"{param.Description}\"";
+                sb.AppendLine($"                                    {{ \"{param.Name}\", {paramDescCode} }}{comma}");
+            }
+            sb.AppendLine("                                }");
+        }
+        sb.AppendLine("                            }");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// V4.0: Generate DTO-based options with conditional parameter filtering logic.
+    /// </summary>
+    private static string GenerateDtoOptionsWithConditionalParameters(FunctionInfo function, string nameCode, string descriptionCode, string validatorName)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("new HPDAIFunctionFactoryOptions");
+        sb.AppendLine("                        {");
+        sb.AppendLine($"                            Name = {nameCode},");
+        sb.AppendLine($"                            Description = {descriptionCode},");
+        sb.AppendLine($"                            Validator = new {validatorName}(),");
+        sb.AppendLine("                            ParameterDescriptions = CreateParameterDescriptions(context)");
+        sb.AppendLine("                        }");
+        
+        // Generate local helper method for this specific function
+        sb.AppendLine();
+        sb.AppendLine("                        Dictionary<string, string> CreateParameterDescriptions(IPluginMetadataContext? ctx)");
+        sb.AppendLine("                        {");
+        sb.AppendLine("                            var result = new Dictionary<string, string>();");
+        
+        var parametersWithDescriptions = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
+        foreach (var param in parametersWithDescriptions)
+        {
+            var paramDescCode = param.HasDynamicDescription 
+                ? $"Resolve{function.Name}Parameter{param.Name}Description(ctx)"
+                : $"\"{param.Description}\"";
+            
+            if (param.IsConditional)
+            {
+                sb.AppendLine($"                            if (Evaluate{function.Name}Parameter{param.Name}Condition(ctx))");
+                sb.AppendLine($"                                result[\"{param.Name}\"] = {paramDescCode};");
+            }
+            else
+            {
+                sb.AppendLine($"                            result[\"{param.Name}\"] = {paramDescCode};");
+            }
+        }
+        
+        sb.AppendLine("                            return result;");
+        sb.AppendLine("                        }");
+        
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// V4.0: Generate DTO-based static options (no conditional parameters).
+    /// </summary>
+    private static string GenerateDtoStaticOptions(FunctionInfo function, string nameCode, string descriptionCode, string validatorName)
+    {
+        var hasParameterDescriptions = function.Parameters.Any(p => !string.IsNullOrEmpty(p.Description));
+        
+        var sb = new StringBuilder();
+        sb.AppendLine("new HPDAIFunctionFactoryOptions");
+        sb.AppendLine("                            {");
+        sb.AppendLine($"                                Name = {nameCode},");
+        sb.AppendLine($"                                Description = {descriptionCode},");
+        sb.AppendLine($"                                RequiresPermission = {function.RequiresPermission.ToString().ToLower()},");
+        sb.AppendLine($"                                Validator = new {validatorName}()");
         if (hasParameterDescriptions)
         {
             sb.AppendLine(",");
@@ -1050,6 +1164,115 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         return method.AttributeLists
             .SelectMany(attrList => attrList.Attributes)
             .Any(attr => attr.Name.ToString().Contains("RequiresPermission"));
+    }
+
+    /// <summary>
+    /// Generates a DTO class for function arguments.
+    /// </summary>
+    private static void GenerateArgumentsDto(StringBuilder sb, FunctionInfo function)
+    {
+        var dtoName = $"{function.Name}Arguments";
+        
+        sb.AppendLine($"/// <summary>");
+        sb.AppendLine($"/// Arguments DTO for {function.Name} function.");
+        sb.AppendLine($"/// </summary>");
+        sb.AppendLine($"public class {dtoName}");
+        sb.AppendLine("{");
+        
+        foreach (var param in function.Parameters)
+        {
+            // Add JsonPropertyName attribute for proper JSON mapping
+            sb.AppendLine($"    [JsonPropertyName(\"{param.Name}\")]");
+            
+            // Handle nullable types and default values
+            var typeDeclaration = param.Type;
+            var needsNullable = param.HasDefaultValue && !IsNullableType(param.Type);
+            if (needsNullable)
+            {
+                typeDeclaration += "?";
+            }
+            
+            // Add XML documentation if parameter has description
+            if (!string.IsNullOrEmpty(param.Description))
+            {
+                sb.AppendLine($"    /// <summary>");
+                sb.AppendLine($"    /// {param.Description}");
+                sb.AppendLine($"    /// </summary>");
+            }
+            
+            sb.Append($"    public {typeDeclaration} {param.Name} {{ get; set; }}");
+            
+            // Add default value if available
+            if (param.HasDefaultValue && !string.IsNullOrEmpty(param.DefaultValue))
+            {
+                sb.AppendLine($" = {param.DefaultValue};");
+            }
+            else
+            {
+                sb.AppendLine();
+            }
+        }
+        
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Generates a FluentValidation validator for function arguments.
+    /// </summary>
+    private static void GenerateValidator(StringBuilder sb, FunctionInfo function)
+    {
+        var dtoName = $"{function.Name}Arguments";
+        var validatorName = $"{dtoName}Validator";
+        
+        sb.AppendLine($"/// <summary>");
+        sb.AppendLine($"/// Validator for {function.Name} function arguments.");
+        sb.AppendLine($"/// </summary>");
+        sb.AppendLine($"public class {validatorName} : AbstractValidator<{dtoName}>");
+        sb.AppendLine("{");
+        sb.AppendLine($"    public {validatorName}()");
+        sb.AppendLine("    {");
+        
+        foreach (var param in function.Parameters)
+        {
+            // Required parameters (no default value and not nullable)
+            if (!param.HasDefaultValue && !IsNullableType(param.Type))
+            {
+                sb.AppendLine($"        RuleFor(x => x.{param.Name})");
+                sb.AppendLine($"            .NotEmpty()");
+                sb.AppendLine($"            .WithMessage(\"{param.Name} is required.\");");
+                sb.AppendLine();
+            }
+            
+            // Type-specific validations
+            if (param.Type == "string")
+            {
+                // Add string length validation if it's required
+                if (!param.HasDefaultValue && !IsNullableType(param.Type))
+                {
+                    sb.AppendLine($"        RuleFor(x => x.{param.Name})");
+                    sb.AppendLine($"            .NotNull()");
+                    sb.AppendLine($"            .NotEmpty()");
+                    sb.AppendLine($"            .WithMessage(\"{param.Name} cannot be null or empty.\");");
+                    sb.AppendLine();
+                }
+            }
+        }
+        
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Checks if a type string represents a nullable type.
+    /// </summary>
+    private static bool IsNullableType(string typeString)
+    {
+        return typeString.EndsWith("?") || 
+               typeString.StartsWith("string") || 
+               typeString.StartsWith("object") ||
+               typeString.Contains("Nullable<");
     }
 }
 

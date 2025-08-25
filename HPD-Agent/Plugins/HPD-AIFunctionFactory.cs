@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
 using System.Reflection;
+using FluentValidation;
 
 /// <summary>
 /// Extended AIFunctionFactory that supports parameter descriptions, invocation filters, and enhanced JSON schema generation.
@@ -27,6 +28,24 @@ public class HPDAIFunctionFactory
     public static AIFunction Create(MethodInfo method, object? target, HPDAIFunctionFactoryOptions? options = null)
     {
         return new HPDAIFunction(method, target, options ?? _defaultOptions);
+    }
+
+    /// <summary>
+    /// Creates an AIFunction with DTO-based parameter validation using the generated DTO type (sync).
+    /// </summary>
+    public static AIFunction CreateWithDto<TDto>(Func<TDto, object?> function, HPDAIFunctionFactoryOptions? options = null)
+        where TDto : class, new()
+    {
+        return new HPDAIFunctionWithDto<TDto>(function, options ?? _defaultOptions);
+    }
+
+    /// <summary>
+    /// Creates an AIFunction with DTO-based parameter validation using the generated DTO type (async).
+    /// </summary>
+    public static AIFunction CreateWithDto<TDto>(Func<TDto, Task<object?>> function, HPDAIFunctionFactoryOptions? options = null)
+        where TDto : class, new()
+    {
+        return new HPDAIFunctionWithDto<TDto>(function, options ?? _defaultOptions);
     }
 
     /// <summary>
@@ -353,6 +372,204 @@ public class HPDAIFunctionFactory
             return null;
         }
     }
+
+    /// <summary>
+    /// DTO-based AIFunction implementation with automatic validation and parameter mapping.
+    /// </summary>
+    public class HPDAIFunctionWithDto<TDto> : AIFunction where TDto : class, new()
+    {
+        private readonly Func<TDto, object?>? _syncFunction;
+        private readonly Func<TDto, Task<object?>>? _asyncFunction;
+        private readonly HPDAIFunctionFactoryOptions _options;
+        private readonly Lazy<JsonElement> _jsonSchema;
+        private readonly Lazy<JsonElement?> _returnJsonSchema;
+        private readonly IValidator<TDto>? _validator;
+        private readonly bool _isAsync;
+
+        public HPDAIFunctionWithDto(Func<TDto, object?> function, HPDAIFunctionFactoryOptions options)
+        {
+            _syncFunction = function ?? throw new ArgumentNullException(nameof(function));
+            _options = options;
+            _validator = options.Validator as IValidator<TDto>;
+            _isAsync = false;
+
+            _jsonSchema = new Lazy<JsonElement>(() => CreateDtoJsonSchema());
+            _returnJsonSchema = new Lazy<JsonElement?>(() => CreateDtoReturnJsonSchema());
+
+            Name = options.Name ?? function.Method.Name;
+            Description = options.Description ??
+                function.Method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description ?? "";
+        }
+
+        public HPDAIFunctionWithDto(Func<TDto, Task<object?>> function, HPDAIFunctionFactoryOptions options)
+        {
+            _asyncFunction = function ?? throw new ArgumentNullException(nameof(function));
+            _options = options;
+            _validator = options.Validator as IValidator<TDto>;
+            _isAsync = true;
+
+            _jsonSchema = new Lazy<JsonElement>(() => CreateDtoJsonSchema());
+            _returnJsonSchema = new Lazy<JsonElement?>(() => CreateDtoReturnJsonSchema());
+
+            Name = options.Name ?? function.Method.Name;
+            Description = options.Description ??
+                function.Method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description ?? "";
+        }
+
+        public override string Name { get; }
+        public override string Description { get; }
+        public override JsonElement JsonSchema => _jsonSchema.Value;
+        public override JsonElement? ReturnJsonSchema => _returnJsonSchema.Value;
+        public override MethodInfo? UnderlyingMethod => _syncFunction?.Method ?? _asyncFunction?.Method;
+
+        private JsonElement CreateDtoJsonSchema()
+        {
+            // Generate schema from DTO type
+            var properties = new Dictionary<string, object>();
+            var required = new List<string>();
+
+            foreach (var prop in typeof(TDto).GetProperties())
+            {
+                var propSchema = new Dictionary<string, object>
+                {
+                    { "type", GetJsonType(prop.PropertyType) }
+                };
+
+                // Get description from options
+                if (_options.ParameterDescriptions?.ContainsKey(prop.Name) == true)
+                {
+                    propSchema["description"] = _options.ParameterDescriptions[prop.Name];
+                }
+
+                properties[prop.Name] = propSchema;
+
+                // Check if property is required (no nullable type and no default value)
+                if (!IsNullablePropertyType(prop.PropertyType))
+                {
+                    required.Add(prop.Name);
+                }
+            }
+
+            var schema = new Dictionary<string, object>
+            {
+                { "type", "object" },
+                { "properties", properties }
+            };
+
+            if (required.Count > 0)
+            {
+                schema["required"] = required;
+            }
+
+            var jsonString = JsonSerializer.Serialize(schema, _aotJsonContext.DictionaryStringObject);
+            return JsonSerializer.Deserialize(jsonString, _aotJsonContext.JsonElement);
+        }
+
+        private JsonElement? CreateDtoReturnJsonSchema()
+        {
+            var returnType = _isAsync ? typeof(Task<object?>) : typeof(object);
+            
+            if (returnType == typeof(void) ||
+                returnType == typeof(Task) ||
+                returnType == typeof(ValueTask))
+            {
+                return null;
+            }
+
+            if (returnType.IsGenericType)
+            {
+                var genericTypeDef = returnType.GetGenericTypeDefinition();
+                if (genericTypeDef == typeof(Task<>) ||
+                    genericTypeDef == typeof(ValueTask<>))
+                {
+                    returnType = returnType.GetGenericArguments()[0];
+                }
+            }
+
+            var schema = new Dictionary<string, object>
+            {
+                { "type", GetJsonType(returnType) }
+            };
+
+            var jsonString = JsonSerializer.Serialize(schema, _aotJsonContext.DictionaryStringObject);
+            return JsonSerializer.Deserialize(jsonString, _aotJsonContext.JsonElement);
+        }
+
+        private string GetJsonType(Type type)
+        {
+            if (type == typeof(string))
+                return "string";
+            if (type == typeof(int) || type == typeof(long) || type == typeof(float) || type == typeof(double))
+                return "number";
+            if (type == typeof(bool))
+                return "boolean";
+            if (type.IsArray || typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
+                return "array";
+            return "object";
+        }
+
+        private static bool IsNullablePropertyType(Type type)
+        {
+            return type.IsClass || 
+                   (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>));
+        }
+
+        protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
+        {
+            // Deserialize arguments to DTO
+            var argumentsJson = JsonSerializer.Serialize(arguments, _aotJsonContext.DictionaryStringObject);
+            var dto = JsonSerializer.Deserialize<TDto>(argumentsJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (dto == null)
+            {
+                throw new ArgumentException("Failed to deserialize function arguments to DTO");
+            }
+
+            // Validate DTO if validator is provided
+            if (_validator != null)
+            {
+                var validationResult = await _validator.ValidateAsync(dto, cancellationToken);
+                if (!validationResult.IsValid)
+                {
+                    var errors = string.Join(", ", validationResult.Errors.Select(e => e.ErrorMessage));
+                    throw new ArgumentException($"Validation failed: {errors}");
+                }
+            }
+
+            // Call the function with DTO as parameter
+            if (_isAsync && _asyncFunction != null)
+            {
+                return await _asyncFunction(dto);
+            }
+            else if (!_isAsync && _syncFunction != null)
+            {
+                return _syncFunction(dto);
+            }
+            else
+            {
+                throw new InvalidOperationException("No function delegate available");
+            }
+        }
+
+        private static object? ExtractTaskResult(Task task)
+        {
+            return task switch
+            {
+                Task<object> objTask => objTask.Result,
+                Task<string> stringTask => stringTask.Result,
+                Task<int> intTask => intTask.Result,
+                Task<long> longTask => longTask.Result,
+                Task<double> doubleTask => doubleTask.Result,
+                Task<float> floatTask => floatTask.Result,
+                Task<bool> boolTask => boolTask.Result,
+                Task<decimal> decimalTask => decimalTask.Result,
+                _ => null
+            };
+        }
+    }
 }
 
 /// <summary>
@@ -379,10 +596,16 @@ public class HPDAIFunctionFactoryOptions
     /// Parameter descriptions mapped by parameter name.
     /// </summary>
     public Dictionary<string, string>? ParameterDescriptions { get; set; }
+    
     /// <summary>
     /// Whether the function requires user permission before execution.
     /// </summary>
     public bool RequiresPermission { get; set; }
+    
+    /// <summary>
+    /// Optional validator for function arguments.
+    /// </summary>
+    public IValidator? Validator { get; set; }
 }
 
 /// <summary>
