@@ -523,18 +523,116 @@ public class HPDAIFunctionFactory
             return $"Please correct these validation issues and try again:\n{string.Join("\n", suggestions)}";
         }
 
+        /// <summary>
+        /// Parses JSON error messages to extract user-friendly information.
+        /// </summary>
+        private static string ParseJsonError(string jsonError)
+        {
+            // Extract property name and expected type from JSON error messages
+            if (jsonError.Contains("could not be converted to") && jsonError.Contains("Path: $."))
+            {
+                var pathStart = jsonError.IndexOf("Path: $.");
+                if (pathStart >= 0)
+                {
+                    var pathEnd = jsonError.IndexOf(" |", pathStart);
+                    if (pathEnd >= 0)
+                    {
+                        var propertyPath = jsonError.Substring(pathStart + 8, pathEnd - pathStart - 8);
+                        var typeStart = jsonError.IndexOf("converted to ") + 13;
+                        var typeEnd = jsonError.IndexOf(".", typeStart);
+                        if (typeEnd > typeStart)
+                        {
+                            var expectedType = jsonError.Substring(typeStart, typeEnd - typeStart);
+                            var friendlyType = GetFriendlyTypeName(expectedType);
+                            return $"Parameter '{propertyPath}' must be a {friendlyType}";
+                        }
+                    }
+                }
+            }
+            
+            return "Invalid parameter type provided";
+        }
+
+        /// <summary>
+        /// Converts .NET type names to user-friendly names.
+        /// </summary>
+        private static string GetFriendlyTypeName(string typeName)
+        {
+            return typeName switch
+            {
+                "System.Int64" => "number (integer)",
+                "System.Int32" => "number (integer)", 
+                "System.Double" => "number (decimal)",
+                "System.Single" => "number (decimal)",
+                "System.Boolean" => "boolean (true/false)",
+                "System.String" => "text string",
+                "System.Decimal" => "number (decimal)",
+                _ => typeName.Replace("System.", "").ToLowerInvariant()
+            };
+        }
+
+        /// <summary>
+        /// Generates helpful guidance for type conversion errors.
+        /// </summary>
+        private static string GenerateTypeConversionGuidance(string jsonError, Type dtoType)
+        {
+            var parsedError = ParseJsonError(jsonError);
+            var properties = dtoType.GetProperties();
+            
+            var guidance = $"{parsedError}\n\nExpected parameter types:";
+            foreach (var prop in properties)
+            {
+                var friendlyType = GetFriendlyTypeName(prop.PropertyType.Name);
+                guidance += $"\n- {prop.Name}: {friendlyType}";
+            }
+            
+            return guidance;
+        }
+
         protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
         {
-            // Deserialize arguments to DTO
-            var argumentsJson = JsonSerializer.Serialize(arguments, _aotJsonContext.DictionaryStringObject);
-            var dto = JsonSerializer.Deserialize<TDto>(argumentsJson, new JsonSerializerOptions
+            // Convert AIFunctionArguments to dictionary, then serialize to DTO
+            var argumentsDict = new Dictionary<string, object?>();
+            foreach (var kvp in arguments)
             {
-                PropertyNameCaseInsensitive = true
-            });
+                argumentsDict[kvp.Key] = kvp.Value;
+            }
+            
+            var argumentsJson = JsonSerializer.Serialize(argumentsDict);
+            
+            TDto dto;
+            try
+            {
+                dto = JsonSerializer.Deserialize<TDto>(argumentsJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                })!;
 
-            if (dto == null)
+                if (dto == null)
+                {
+                    return new TypeConversionErrorResponse
+                    {
+                        success = false,
+                        error_type = "deserialization_failed",
+                        function_name = Name,
+                        error_message = "Failed to deserialize function arguments to DTO",
+                        json_error = "DTO deserialization returned null",
+                        retry_guidance = "Please ensure all required parameters are provided with correct types"
+                    };
+                }
+            }
+            catch (JsonException jsonEx)
             {
-                throw new ArgumentException("Failed to deserialize function arguments to DTO");
+                // Convert JSON deserialization errors to structured validation responses
+                return new TypeConversionErrorResponse
+                {
+                    success = false,
+                    error_type = "type_conversion_failed",
+                    function_name = Name,
+                    error_message = ParseJsonError(jsonEx.Message),
+                    json_error = jsonEx.Message,
+                    retry_guidance = GenerateTypeConversionGuidance(jsonEx.Message, typeof(TDto))
+                };
             }
 
             // Validate DTO if validator is provided
@@ -544,12 +642,12 @@ public class HPDAIFunctionFactory
                 if (!validationResult.IsValid)
                 {
                     // Return structured validation response instead of throwing
-                    return new
+                    return new ValidationErrorResponse
                     {
                         success = false,
                         error_type = "validation_failed",
                         function_name = Name,
-                        validation_errors = validationResult.Errors.Select(error => new
+                        validation_errors = validationResult.Errors.Select(error => new ValidationError
                         {
                             property = error.PropertyName,
                             attempted_value = error.AttemptedValue,
@@ -632,6 +730,37 @@ public class HPDAIFunctionFactoryOptions
 }
 
 /// <summary>
+/// Error response types for structured validation feedback
+/// </summary>
+public class ValidationErrorResponse
+{
+    public bool success { get; set; }
+    public string error_type { get; set; } = "";
+    public string function_name { get; set; } = "";
+    public ValidationError[] validation_errors { get; set; } = Array.Empty<ValidationError>();
+    public string retry_guidance { get; set; } = "";
+}
+
+public class TypeConversionErrorResponse  
+{
+    public bool success { get; set; }
+    public string error_type { get; set; } = "";
+    public string function_name { get; set; } = "";
+    public string error_message { get; set; } = "";
+    public string json_error { get; set; } = "";
+    public string retry_guidance { get; set; } = "";
+}
+
+public class ValidationError
+{
+    public string property { get; set; } = "";
+    public object? attempted_value { get; set; }
+    public string error_message { get; set; } = "";
+    public string error_code { get; set; } = "";
+    public string severity { get; set; } = "";
+}
+
+/// <summary>
 /// AOT-compatible JSON context for basic type serialization
 /// </summary>
 [JsonSourceGenerationOptions(WriteIndented = false)]
@@ -650,6 +779,10 @@ public class HPDAIFunctionFactoryOptions
 [JsonSerializable(typeof(List<object>))]
 [JsonSerializable(typeof(List<Dictionary<string, object>>))]
 [JsonSerializable(typeof(List<Dictionary<string, object?>>))]
+[JsonSerializable(typeof(ValidationErrorResponse))]
+[JsonSerializable(typeof(TypeConversionErrorResponse))]
+[JsonSerializable(typeof(ValidationError))]
+[JsonSerializable(typeof(ValidationError[]))]
 internal partial class AOTJsonContext : JsonSerializerContext
 {
 }

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using static HPDAIFunctionFactory;
 
 /// <summary>
 /// AOT-compatible JSON source generation context for OpenRouter API types
@@ -33,6 +34,7 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(long))]
 [JsonSerializable(typeof(System.Text.Json.JsonElement))]
+[JsonSerializable(typeof(TypeConversionErrorResponse))]
 internal partial class OpenRouterJsonContext : JsonSerializerContext
 {
 }
