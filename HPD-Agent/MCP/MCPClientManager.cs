@@ -156,12 +156,100 @@ public class MCPClientManager : IDisposable
     private async Task<List<AIFunction>> LoadServerToolsAsync(MCPServerConfig serverConfig, CancellationToken cancellationToken)
     {
         var client = await GetOrCreateClientAsync(serverConfig, cancellationToken);
-        
+
         // ListToolsAsync returns McpClientTool[], which inherit from AIFunction
         var mcpTools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-        
-        // Direct cast - no conversion needed!
-        return mcpTools.Cast<AIFunction>().ToList();
+
+        var adaptedTools = new List<AIFunction>();
+
+        foreach (var tool in mcpTools)
+        {
+            try
+            {
+                // Ensure we have an AIFunction reference to invoke
+                if (tool is not AIFunction originalAIFunction)
+                {
+                    _logger.LogWarning("MCP tool from server '{ServerName}' is not an AIFunction - skipping", serverConfig.Name);
+                    continue;
+                }
+
+                // Invocation wrapper delegates to the original tool's InvokeAsync
+                Func<AIFunctionArguments, CancellationToken, Task<object?>> invocationWrapper =
+                    async (args, ct) => await originalAIFunction.InvokeAsync(args, ct).ConfigureAwait(false);
+
+                var options = new HPDAIFunctionFactoryOptions
+                {
+                    Name = originalAIFunction.Name,
+                    Description = originalAIFunction.Description,
+                    RequiresPermission = true,
+                };
+
+                // Attempt to copy schema information if the external tool exposes it
+                try
+                {
+                    var toolType = tool.GetType();
+                    var jsonSchemaProp = toolType.GetProperty("JsonSchema");
+                    if (jsonSchemaProp != null)
+                    {
+                        var val = jsonSchemaProp.GetValue(tool);
+                        if (val is System.Text.Json.JsonElement je)
+                        {
+                            options.SchemaProvider = () => je;
+                        }
+                        else if (val is string s && !string.IsNullOrEmpty(s))
+                        {
+                            try
+                            {
+                                using var doc = System.Text.Json.JsonDocument.Parse(s);
+                                var parsed = doc.RootElement.Clone();
+                                options.SchemaProvider = () => parsed;
+                            }
+                            catch { /* ignore parse errors */ }
+                        }
+                    }
+
+                    // If there is a SchemaProvider delegate on the external tool, try to adapt it
+                    var schemaProviderProp = toolType.GetProperty("SchemaProvider");
+                    if (schemaProviderProp != null)
+                    {
+                        var sp = schemaProviderProp.GetValue(tool);
+                        if (sp is Func<System.Text.Json.JsonElement> spFunc)
+                        {
+                            options.SchemaProvider = spFunc;
+                        }
+                        else if (sp is Func<string> spStr)
+                        {
+                            try
+                            {
+                                using var doc = System.Text.Json.JsonDocument.Parse(spStr());
+                                var el = doc.RootElement.Clone();
+                                options.SchemaProvider = () => el;
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Unable to extract schema from MCP tool '{ToolName}' - continuing without schema", tool.Name);
+                }
+
+                // Create an adapted AIFunction via our factory so it's compatible with generated plugins
+                var adapted = HPDAIFunctionFactory.Create(invocationWrapper, options);
+                adaptedTools.Add(adapted);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to adapt MCP tool from server '{ServerName}': {Error}", serverConfig.Name, ex.Message);
+                // As a fallback, if possible, include the original AIFunction instance
+                if (tool is AIFunction fallback)
+                {
+                    adaptedTools.Add(fallback);
+                }
+            }
+        }
+
+        return adaptedTools;
     }
 
     /// <summary>

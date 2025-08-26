@@ -176,6 +176,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using System.Threading;");
         sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using System.Text.Json;");
+    sb.AppendLine("using System.Text.Json.Nodes;");
         sb.AppendLine("using System.Text.Json.Serialization;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine("using System.Linq;");
@@ -323,7 +324,25 @@ $@"    /// <summary>
         string schemaProviderCode = "() => { ";
         if (relevantParams.Any())
         {
-            schemaProviderCode += $"var schema = new Json.Schema.JsonSchemaBuilder().FromType<{dtoName}>().Build(); return JsonSerializer.SerializeToElement(schema);";
+            schemaProviderCode += $@"
+    var schema = new Json.Schema.JsonSchemaBuilder().FromType<{dtoName}>().Build();
+    var schemaJson = JsonSerializer.Serialize(schema);
+    var node = JsonNode.Parse(schemaJson);
+    if (node is JsonObject root && root[""properties""] is JsonObject properties)
+    {{
+";
+            foreach (var param in relevantParams.Where(p => !string.IsNullOrEmpty(p.Description)))
+            {
+                var escapedDescription = SymbolDisplay.FormatLiteral(param.Description, true);
+                schemaProviderCode += $@"
+        if (properties[""{param.Name}""] is JsonObject {param.Name}Obj)
+        {{
+            {param.Name}Obj[""description""] = {escapedDescription};
+        }}
+";
+            }
+            schemaProviderCode += "    }\n";
+            schemaProviderCode += "    return JsonSerializer.SerializeToElement(node ?? JsonNode.Parse(\"{}\"));\n";
         }
         else
         {
@@ -354,6 +373,7 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         var options = new StringBuilder();
         options.AppendLine($"                Name = {nameCode},");
         options.AppendLine($"                Description = {descriptionCode},");
+    options.AppendLine($"                RequiresPermission = {function.RequiresPermission.ToString().ToLower()},");
         options.AppendLine($"                Validator = Create{function.Name}Validator(),");
         options.AppendLine($"                SchemaProvider = {schemaProviderCode},");
         options.Append($"                ParameterDescriptions = {GenerateParameterDescriptions(function)}");

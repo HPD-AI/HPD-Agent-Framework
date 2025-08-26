@@ -9,14 +9,26 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 
 /// <summary>
-/// Extended AIFunctionFactory that supports parameter descriptions, invocation filters, and enhanced JSON schema generation.
+/// A modern, unified AIFunctionFactory that prioritizes delegate-based invocation 
+/// for performance and AOT-compatibility, with a reflection-based fallback.
 /// </summary>
 public class HPDAIFunctionFactory
 {
     private static readonly HPDAIFunctionFactoryOptions _defaultOptions = new();
 
     /// <summary>
-    /// Creates an AIFunction with rich parameter descriptions and invocation filters.
+    /// Creates an AIFunction using a pre-compiled invocation delegate.
+    /// This is the preferred method for source-generated plugins and adapters.
+    /// </summary>
+    public static AIFunction Create(
+        Func<AIFunctionArguments, CancellationToken, Task<object?>> invocation, 
+        HPDAIFunctionFactoryOptions? options = null)
+    {
+        return new HPDAIFunction(invocation, options ?? _defaultOptions);
+    }
+
+    /// <summary>
+    /// [Legacy] Creates an AIFunction using reflection.
     /// </summary>
     public static AIFunction Create(Delegate method, HPDAIFunctionFactoryOptions? options = null)
     {
@@ -24,7 +36,7 @@ public class HPDAIFunctionFactory
     }
 
     /// <summary>
-    /// Creates an AIFunction with rich parameter descriptions and invocation filters.
+    /// [Legacy] Creates an AIFunction using reflection.
     /// </summary>
     public static AIFunction Create(MethodInfo method, object? target, HPDAIFunctionFactoryOptions? options = null)
     {
@@ -32,26 +44,37 @@ public class HPDAIFunctionFactory
     }
 
     /// <summary>
-    /// AIFunction implementation that includes parameter descriptions in its JSON schema and supports invocation filters.
+    /// A unified AIFunction that supports both delegate and reflection-based invocation.
     /// </summary>
     public class HPDAIFunction : AIFunction
     {
-        private readonly MethodInfo _method;
+        private readonly Func<AIFunctionArguments, CancellationToken, Task<object?>>? _invocationHandler;
+        private readonly MethodInfo? _method;
         private readonly object? _target;
-        private readonly HPDAIFunctionFactoryOptions _options;
 
+        // Constructor for the modern, delegate-based approach
+        public HPDAIFunction(Func<AIFunctionArguments, CancellationToken, Task<object?>> invocationHandler, HPDAIFunctionFactoryOptions options)
+        {
+            _invocationHandler = invocationHandler ?? throw new ArgumentNullException(nameof(invocationHandler));
+            _method = invocationHandler.Method; // For metadata
+            _target = invocationHandler.Target;
+            HPDOptions = options;
+
+            JsonSchema = options.SchemaProvider?.Invoke() ?? default;
+            Name = options.Name ?? _method.Name;
+            Description = options.Description ?? "";
+        }
+
+        // Constructor for the legacy, reflection-based approach
         public HPDAIFunction(MethodInfo method, object? target, HPDAIFunctionFactoryOptions options)
         {
             _method = method ?? throw new ArgumentNullException(nameof(method));
             _target = target;
-            _options = options;
             HPDOptions = options;
 
             JsonSchema = options.SchemaProvider?.Invoke() ?? default;
-
             Name = options.Name ?? method.Name;
-            Description = options.Description ??
-                method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description ?? "";
+            Description = options.Description ?? "";
         }
 
         public HPDAIFunctionFactoryOptions HPDOptions { get; }
@@ -62,9 +85,17 @@ public class HPDAIFunctionFactory
 
         protected override async ValueTask<object?> InvokeCoreAsync(AIFunctionArguments arguments, CancellationToken cancellationToken)
         {
-            // The actual invocation logic is now passed in via a delegate from the source generator,
-            // but we keep this override as part of the class structure.
-            // A more advanced implementation could use the provided delegate directly.
+            // 1. Prioritize the fast, pre-compiled delegate if it exists.
+            if (_invocationHandler != null)
+            {
+                return await _invocationHandler(arguments, cancellationToken).ConfigureAwait(false);
+            }
+
+            // 2. Fallback to the slower, reflection-based invocation if no delegate was provided.
+            if (_method == null)
+            {
+                throw new InvalidOperationException("AIFunction is not configured for invocation.");
+            }
             
             var parameters = _method.GetParameters();
             var args = new object?[parameters.Length];
@@ -94,7 +125,7 @@ public class HPDAIFunctionFactory
                         }
                         throw new ArgumentException($"Required parameter '{param.Name}' was not provided.");
                     }
-                    args[i] = value; // Direct assignment is sufficient now
+                    args[i] = value;
                 }
             }
 
@@ -102,7 +133,6 @@ public class HPDAIFunctionFactory
             if (result is Task task)
             {
                 await task.ConfigureAwait(true);
-                // Extract result from Task<T> if it's a generic Task
                 var taskType = task.GetType();
                 if (taskType.IsGenericType)
                 {
@@ -115,40 +145,13 @@ public class HPDAIFunctionFactory
     }
 }
 
-/// <summary>
-/// Options for HPDAIFunctionFactory with enhanced metadata support.
-/// </summary>
+// Options class remains the same
 public class HPDAIFunctionFactoryOptions
 {
     public string? Name { get; set; }
     public string? Description { get; set; }
     public Dictionary<string, string>? ParameterDescriptions { get; set; }
     public bool RequiresPermission { get; set; }
-    
-    // A delegate for the generated validation logic.
     public Func<string, (bool IsValid, string ErrorMessage)>? Validator { get; set; }
-    
-    // A delegate to provide the generated JSON schema.
     public Func<JsonElement>? SchemaProvider { get; set; }
-}
-
-// This context can be simplified if not used elsewhere, but is harmless to keep.
-[JsonSourceGenerationOptions(WriteIndented = false)]
-[JsonSerializable(typeof(Dictionary<string, object>))]
-[JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(JsonElement))]
-[JsonSerializable(typeof(List<string>))]
-[JsonSerializable(typeof(List<object>))]
-[JsonSerializable(typeof(List<Dictionary<string, object>>))]
-[JsonSerializable(typeof(List<Dictionary<string, object?>>))]
-internal partial class AOTJsonContext : JsonSerializerContext
-{
 }
