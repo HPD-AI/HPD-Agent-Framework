@@ -33,8 +33,6 @@ using static HPDAIFunctionFactory;
 [JsonSerializable(typeof(float))]
 [JsonSerializable(typeof(bool))]
 [JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(System.Text.Json.JsonElement))]
-[JsonSerializable(typeof(TypeConversionErrorResponse))]
 internal partial class OpenRouterJsonContext : JsonSerializerContext
 {
 }

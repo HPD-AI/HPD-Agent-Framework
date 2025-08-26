@@ -16,7 +16,6 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Find all classes containing AIFunction methods
         var pluginClasses = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, ct) => IsPluginClass(node, ct),
@@ -24,13 +23,9 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             .Where(static plugin => plugin is not null)
             .Collect();
         
-        // Generate registration code for each plugin
         context.RegisterSourceOutput(pluginClasses, GeneratePluginRegistrations);
     }
     
-    /// <summary>
-    /// Determines if a syntax node represents a plugin class (contains AIFunction methods).
-    /// </summary>
     private static bool IsPluginClass(SyntaxNode node, CancellationToken cancellationToken = default)
     {
         return node is ClassDeclarationSyntax classDecl &&
@@ -41,15 +36,11 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
                        .Any(attr => attr.Name.ToString().Contains("AIFunction")));
     }
     
-    /// <summary>
-    /// Extracts plugin information from a class declaration.
-    /// </summary>
     private static PluginInfo? GetPluginDeclaration(GeneratorSyntaxContext context, CancellationToken cancellationToken)
     {
         var classDecl = (ClassDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
         
-        // Find all methods with [AIFunction] attribute
         var functions = classDecl.Members
             .OfType<MethodDeclarationSyntax>()
             .Where(method => HasAIFunctionAttribute(method, semanticModel))
@@ -57,452 +48,352 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             .Where(func => func != null)
             .ToList();
         
-        // Skip classes with no AI functions
         if (!functions.Any()) return null;
         
-        // Get namespace
         var namespaceName = GetNamespace(classDecl);
         
         return new PluginInfo
         {
             Name = classDecl.Identifier.ValueText,
-            Description = $"Plugin containing {functions.Count} AI functions.", // Auto-generated description
+            Description = $"Plugin containing {functions.Count} AI functions.",
             Namespace = namespaceName,
             Functions = functions!
         };
     }
     
-    /// <summary>
-    /// Generates plugin registration code for all discovered plugins.
-    /// </summary>
     private static void GeneratePluginRegistrations(SourceProductionContext context, ImmutableArray<PluginInfo?> plugins)
     {
-        // Always generate a test file to confirm the generator is running
         context.AddSource("_SourceGeneratorTest.g.cs", "// Source generator is running!");
         
-        // Add debug info about what we found
-        var debugInfo = $"// Found {plugins.Length} plugins total\n";
-        debugInfo += $"// Non-null plugins: {plugins.Count(p => p != null)}\n";
+        var debugInfo = new StringBuilder();
+        debugInfo.AppendLine($"// Found {plugins.Length} plugins total");
+        debugInfo.AppendLine($"// Non-null plugins: {plugins.Count(p => p != null)}");
         for (int i = 0; i < plugins.Length; i++)
         {
             var plugin = plugins[i];
             if (plugin != null)
             {
-                debugInfo += $"// Plugin {i}: {plugin.Name} with {plugin.Functions.Count} functions\n";
+                debugInfo.AppendLine($"// Plugin {i}: {plugin.Name} with {plugin.Functions.Count} functions");
             }
             else
             {
-                debugInfo += $"// Plugin {i}: null\n";
+                debugInfo.AppendLine($"// Plugin {i}: null");
             }
         }
-        context.AddSource("_SourceGeneratorDebug.g.cs", debugInfo);
-        
-        foreach (var plugin in plugins)
+        context.AddSource("_SourceGeneratorDebug.g.cs", debugInfo.ToString());
+
+        foreach (var plugin in plugins.Where(p => p != null))
         {
-            if (plugin != null)
+            if (plugin == null) continue;
+
+            foreach (var function in plugin.Functions)
             {
-                // ✅ Execute validation for all functions with validation data
-                foreach (var function in plugin.Functions)
+                if (function.ValidationData?.NeedsValidation == true)
                 {
-                    if (function.ValidationData?.NeedsValidation == true)
+                    var contextTypeName = function.ContextTypeName;
+                    if (!string.IsNullOrEmpty(contextTypeName))
                     {
-                        var contextTypeName = function.ContextTypeName;
-                        if (!string.IsNullOrEmpty(contextTypeName))
+                        var contextType = function.ValidationData.SemanticModel.Compilation.GetTypeByMetadataName(contextTypeName!);
+                        if (contextType != null)
                         {
-                            var contextType = function.ValidationData.SemanticModel.Compilation.GetTypeByMetadataName(contextTypeName!);
-                            if (contextType != null)
+                            ValidateTemplateProperties(context, function, contextType, function.ValidationData.Method);
+                            if (!string.IsNullOrEmpty(function.ConditionalExpression))
                             {
-                                ValidateTemplateProperties(context, function, contextType, function.ValidationData.Method);
-                                if (!string.IsNullOrEmpty(function.ConditionalExpression))
+                                ValidateConditionalExpression(context, function.ConditionalExpression!, contextType, function.ValidationData.Method, $"function {function.Name}");
+                            }
+                            ValidateFunctionContextUsage(context, function, function.ValidationData.Method);
+                            
+                            foreach (var parameter in function.Parameters.Where(p => p.IsConditional))
+                            {
+                                if (!string.IsNullOrEmpty(parameter.ConditionalExpression))
                                 {
-                                    ValidateConditionalExpression(context, function.ConditionalExpression!, contextType, function.ValidationData.Method, $"function {function.Name}");
-                                }
-                                ValidateFunctionContextUsage(context, function, function.ValidationData.Method);
-                                
-                                // Validate conditional parameters
-                                foreach (var parameter in function.Parameters.Where(p => p.IsConditional))
-                                {
-                                    if (!string.IsNullOrEmpty(parameter.ConditionalExpression))
-                                    {
-                                        ValidateConditionalExpression(context, parameter.ConditionalExpression!, contextType, function.ValidationData.Method, $"parameter {parameter.Name} in function {function.Name}");
-                                    }
+                                    ValidateConditionalExpression(context, parameter.ConditionalExpression!, contextType, function.ValidationData.Method, $"parameter {parameter.Name} in function {function.Name}");
                                 }
                             }
                         }
                     }
                 }
-                
-                var source = GeneratePluginRegistration(plugin);
-                context.AddSource($"{plugin.Name}Registration.g.cs", source);
             }
+            
+            var source = GeneratePluginRegistration(plugin);
+            context.AddSource($"{plugin.Name}Registration.g.cs", source);
         }
     }
     
-    /// <summary>
-    /// Generates the CreatePlugin method with context support.
-    /// </summary>
     private static string GenerateCreatePluginMethod(PluginInfo plugin)
     {
         var unconditionalFunctions = plugin.Functions.Where(f => !f.IsConditional).ToList();
         var conditionalFunctions = plugin.Functions.Where(f => f.IsConditional).ToList();
         
         var sb = new StringBuilder();
-        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Creates an AIFunction list for the {plugin.Name} plugin.");
-        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine("    /// </summary>");
         sb.AppendLine($"    /// <param name=\"instance\">The plugin instance</param>");
         sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
         sb.AppendLine($"    public static List<AIFunction> CreatePlugin({plugin.Name} instance, IPluginMetadataContext? context = null)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        var functions = new List<AIFunction>();");
-        sb.AppendLine();
+        sb.AppendLine("    {");
+        sb.AppendLine("        var functions = new List<AIFunction>();");
         
-        // Always included functions
         if (unconditionalFunctions.Any())
         {
-            sb.AppendLine($"        // Always included functions");
+            sb.AppendLine();
+            sb.AppendLine("        // Always included functions");
             foreach (var function in unconditionalFunctions)
             {
-                var functionCode = GenerateFunctionRegistrationWithParameterFiltering(function);
-                sb.AppendLine($"        functions.Add({functionCode});");
+                sb.AppendLine($"        functions.Add({GenerateFunctionRegistration(function, plugin)});");
             }
-            sb.AppendLine();
         }
         
-        // Conditionally included functions
         if (conditionalFunctions.Any())
         {
-            sb.AppendLine($"        // Conditionally included functions");
+            sb.AppendLine();
+            sb.AppendLine("        // Conditionally included functions");
             foreach (var function in conditionalFunctions)
             {
                 sb.AppendLine($"        if (Evaluate{function.Name}Condition(context))");
-                sb.AppendLine($"        {{");
-                var functionCode = GenerateFunctionRegistrationWithParameterFiltering(function);
-                sb.AppendLine($"            functions.Add({functionCode});");
-                sb.AppendLine($"        }}");
-                sb.AppendLine();
+                sb.AppendLine("        {");
+                sb.AppendLine($"            functions.Add({GenerateFunctionRegistration(function, plugin)});");
+                sb.AppendLine("        }");
             }
         }
         
-        sb.AppendLine($"        return functions;");
-        sb.AppendLine($"    }}");
+        sb.AppendLine();
+        sb.AppendLine("        return functions;");
+        sb.AppendLine("    }");
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Generates the registration code for a single plugin.
-    /// </summary>
     private static string GeneratePluginRegistration(PluginInfo plugin)
     {
         var sb = new StringBuilder();
         
-        // File header
-        sb.AppendLine("// <auto-generated>");
-        sb.AppendLine("// This code was generated by HPDPluginSourceGenerator");
-        sb.AppendLine("// </auto-generated>");
-        sb.AppendLine();
-        // disable null and type conflict warnings in generated code
-        sb.AppendLine("#pragma warning disable CS8601");
-        sb.AppendLine("#pragma warning disable CS0436");
-        sb.AppendLine();
-        sb.AppendLine("#nullable enable");
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#pragma warning disable");
         sb.AppendLine();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Threading;");
         sb.AppendLine("using System.Threading.Tasks;");
+        sb.AppendLine("using System.Text.Json;");
         sb.AppendLine("using System.Text.Json.Serialization;");
-        sb.AppendLine("using FluentValidation;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
-        sb.AppendLine();
+        sb.AppendLine("using System.Linq;");
+        sb.AppendLine("using System.Text;");
+        sb.AppendLine("using Json.Schema;");
+        sb.AppendLine("using Json.Schema.Generation;");
         
-        // Namespace
         if (!string.IsNullOrEmpty(plugin.Namespace))
         {
-            sb.AppendLine($"namespace {plugin.Namespace};");
             sb.AppendLine();
+            sb.AppendLine($"namespace {plugin.Namespace}");
+            sb.AppendLine("{");
         }
+
+        sb.AppendLine(GenerateArgumentsDtoAndContext(plugin));
         
-        // Generate DTOs and Validators for each function
-        foreach (var function in plugin.Functions)
-        {
-            GenerateArgumentsDto(sb, function);
-            GenerateValidator(sb, function);
-        }
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine($"    /// Generated registration code for {plugin.Name} plugin.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine($"    [System.CodeDom.Compiler.GeneratedCodeAttribute(\"HPDPluginSourceGenerator\", \"1.0.0.0\")]");
+        sb.AppendLine($"    public static partial class {plugin.Name}Registration");
+        sb.AppendLine("    {");
         
-        // Registration class
-        sb.AppendLine($"/// <summary>");
-        sb.AppendLine($"/// Generated registration code for {plugin.Name} plugin with generic context support.");
-        sb.AppendLine($"/// </summary>");
-        sb.AppendLine($"public static partial class {plugin.Name}Registration");
-        sb.AppendLine("{");
-        
-        // CreatePlugin method
         sb.AppendLine(GenerateCreatePluginMethod(plugin));
         
-        // Context resolution methods (always generate conditional evaluators if needed)
-        bool hasContextMethods = plugin.RequiresContext;
-        bool hasConditionalEvaluators = plugin.Functions.Any(f => f.IsConditional);
-        if (hasContextMethods || hasConditionalEvaluators)
+        foreach (var function in plugin.Functions)
+        {
+            sb.AppendLine();
+            sb.AppendLine(GenerateSchemaValidator(function, plugin));
+        }
+        
+        if (plugin.RequiresContext || plugin.Functions.Any(f => f.IsConditional))
         {
             sb.AppendLine();
             sb.AppendLine(GenerateContextResolutionMethods(plugin));
         }
         
-        sb.AppendLine("}");
+        sb.AppendLine("    }");
+        
+        if (!string.IsNullOrEmpty(plugin.Namespace))
+        {
+            sb.AppendLine("}");
+        }
         
         return sb.ToString();
     }
-    
-    /// <summary>
-    /// Generates the registration code for a single function.
-    /// </summary>
-    /// <summary>
-    /// V4.0: Generate function registration using generated DTOs and validators.
-    /// </summary>
-    private static string GenerateFunctionRegistrationWithParameterFiltering(FunctionInfo function)
-    {
-        var dtoName = $"{function.Name}Arguments";
-        var validatorName = $"{dtoName}Validator";
-        var argumentMapping = GenerateArgumentMapping(function);
-        
-        var nameCode = $"\"{function.FunctionName}\"";
-        var descriptionCode = function.HasDynamicDescription 
-            ? $"Resolve{function.Name}Description(context)"
-            : $"\"{function.Description}\"";
 
-        // Generate options with DTO-based approach
-        string optionsCode;
-        if (function.HasConditionalParameters)
+    private static string GenerateArgumentsDtoAndContext(PluginInfo plugin)
+    {
+        var sb = new StringBuilder();
+        var contextSerializableTypes = new List<string>();
+
+        foreach (var function in plugin.Functions)
         {
-            optionsCode = GenerateDtoOptionsWithConditionalParameters(function, nameCode, descriptionCode, validatorName);
+            if (!function.Parameters.Any(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider")) continue;
+
+            var dtoName = $"{function.Name}Args";
+            contextSerializableTypes.Add(dtoName);
+
+            sb.AppendLine(
+$@"    /// <summary>
+    /// Represents the arguments for the {function.Name} function, generated at compile-time.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCodeAttribute(""HPDPluginSourceGenerator"", ""1.0.0.0"")]
+    public class {dtoName}
+    {{");
+
+            foreach (var param in function.Parameters.Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider"))
+            {
+                sb.AppendLine($"        [System.Text.Json.Serialization.JsonPropertyName(\"{param.Name}\")]");
+                sb.AppendLine($"        public {param.Type} {param.Name} {{ get; set; }} = default!;");
+            }
+
+            sb.AppendLine("    }");
+            sb.AppendLine();
         }
-        else
-        {
-            optionsCode = GenerateDtoStaticOptions(function, nameCode, descriptionCode, validatorName);
-        }
-        
-        if (function.IsAsync)
-        {
-            return $$"""
-                HPDAIFunctionFactory.CreateWithDto<{{dtoName}}>(
-                            (Func<{{dtoName}}, Task<object?>>)(async (args) => await instance.{{function.Name}}({{argumentMapping}})),
-                            {{optionsCode}}
-                        )
-                """;
-        }
-        else
-        {
-            return $$"""
-                HPDAIFunctionFactory.CreateWithDto<{{dtoName}}>(
-                            (Func<{{dtoName}}, object?>)((args) => instance.{{function.Name}}({{argumentMapping}})),
-                            {{optionsCode}}
-                        )
-                """;
-        }
+
+        // Note: Do NOT emit a JsonSerializerContext here. The System.Text.Json source generator
+        // does not process attributes emitted by another source generator in the same compilation,
+        // causing abstract member implementation errors. We rely on default serialization for
+        // these generated DTOs instead.
+
+        return sb.ToString();
     }
 
-    /// <summary>
-    /// Generates argument mapping from DTO to method parameters.
-    /// </summary>
-    private static string GenerateArgumentMapping(FunctionInfo function)
+    private static string GenerateSchemaValidator(FunctionInfo function, PluginInfo plugin)
     {
-        return string.Join(", ", function.Parameters.Select(p => 
+        var relevantParams = function.Parameters
+            .Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider").ToList();
+
+        if (!relevantParams.Any())
         {
-            // Handle nullable to non-nullable conversion for parameters with default values
-            if (p.HasDefaultValue && !IsNullableType(p.Type))
-            {
-                return $"args.{p.Name} ?? {p.DefaultValue ?? GetDefaultValueForType(p.Type)}";
-            }
+            return $"        private static Func<string, (bool IsValid, string ErrorMessage)>? Create{function.Name}Validator() => null;";
+        }
+
+        var dtoName = $"{function.Name}Args";
+        // Using default serialization for validation; no source-generated context available here
+        var contextName = (string?)null; // unused but kept to minimize template diff
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"        private static Func<string, (bool IsValid, string ErrorMessage)> Create{function.Name}Validator()");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return (jsonArgs) =>");
+        sb.AppendLine("            {");
+        sb.AppendLine("                try");
+        sb.AppendLine("                {");
+        sb.AppendLine($"                    JsonSerializer.Deserialize(jsonArgs, typeof({dtoName}));");
+        sb.AppendLine("                    return (true, string.Empty);");
+        sb.AppendLine("                }");
+        sb.AppendLine("                catch (JsonException ex)");
+        sb.AppendLine("                {");
+        sb.AppendLine($"                    return (false, $\"JSON argument validation failed for '{function.FunctionName}': {{ex.Message}}\");");
+        sb.AppendLine("                }");
+        sb.AppendLine("            };");
+        sb.AppendLine("        }");
+        return sb.ToString();
+    }
+
+    private static string GenerateFunctionRegistration(FunctionInfo function, PluginInfo plugin)
+    {
+        var nameCode = $"\"{function.FunctionName}\"";
+        var descriptionCode = function.HasDynamicDescription
+            ? $"Resolve{function.Name}Description(context)"
+            : $"\"{function.Description}\"";
+        
+        var relevantParams = function.Parameters
+            .Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider").ToList();
+        
+        var dtoName = relevantParams.Any() ? $"{function.Name}Args" : "object";
+        // No source-generated context here; default serializer will be used
+        var contextName = "null";
+        
+        var invocationArgs = string.Join(", ", function.Parameters.Select(p =>
+        {
+            if (p.Type == "CancellationToken") return "cancellationToken";
+            if (p.Type == "AIFunctionArguments") return "arguments";
+            if (p.Type == "IServiceProvider") return "arguments.Services";
             return $"args.{p.Name}";
         }));
+
+        string asyncKeyword = function.IsAsync ? "async" : "";
+        string awaitKeyword = function.IsAsync ? "await" : "";
+        string returnType = function.IsAsync ? "Task<object?>" : "object?";
+        
+        string schemaProviderCode = "() => { ";
+        if (relevantParams.Any())
+        {
+            schemaProviderCode += $"var schema = new Json.Schema.JsonSchemaBuilder().FromType<{dtoName}>().Build(); return JsonSerializer.SerializeToElement(schema);";
+        }
+        else
+        {
+            schemaProviderCode += "return JsonSerializer.SerializeToElement(new Json.Schema.JsonSchemaBuilder().Type(Json.Schema.SchemaValueType.Object).Build());";
+        }
+        schemaProviderCode += " }";
+
+        string invocationLogic;
+        if (relevantParams.Any())
+        {
+            invocationLogic = 
+$@"({asyncKeyword} (arguments, cancellationToken) =>
+            {{
+                var jsonArgs = JsonSerializer.Serialize(arguments);
+                var args = ({dtoName})JsonSerializer.Deserialize(jsonArgs, typeof({dtoName}));
+                return {awaitKeyword} instance.{function.Name}({invocationArgs});
+            }})";
+        }
+        else
+        {
+            invocationLogic = 
+$@"({asyncKeyword} (arguments, cancellationToken) =>
+            {{
+                return {awaitKeyword} instance.{function.Name}({invocationArgs});
+            }})";
+        }
+
+        var options = new StringBuilder();
+        options.AppendLine($"                Name = {nameCode},");
+        options.AppendLine($"                Description = {descriptionCode},");
+        options.AppendLine($"                Validator = Create{function.Name}Validator(),");
+        options.AppendLine($"                SchemaProvider = {schemaProviderCode},");
+        options.Append($"                ParameterDescriptions = {GenerateParameterDescriptions(function)}");
+        
+        return 
+$@"HPDAIFunctionFactory.Create(
+            new Func<AIFunctionArguments, CancellationToken, {returnType}>{invocationLogic},
+            new HPDAIFunctionFactoryOptions
+            {{ 
+{options}
+            }}
+        )";
     }
 
-    /// <summary>
-    /// Gets the default value for a given type.
-    /// </summary>
-    private static string GetDefaultValueForType(string type)
+    private static string GenerateParameterDescriptions(FunctionInfo function)
     {
-        return type switch
-        {
-            "int" or "Int32" => "0",
-            "long" or "Int64" => "0L",
-            "double" or "Double" => "0.0",
-            "float" or "Single" => "0.0f",
-            "bool" or "Boolean" => "false",
-            "decimal" or "Decimal" => "0m",
-            "string" => "\"\"",
-            _ => "default"
-        };
-    }
-
-    /// <summary>
-    /// V3.0: Generate options with conditional parameter filtering logic.
-    /// </summary>
-    /// <summary>
-    /// BETTER: Generate inline conditional checks for each parameter.
-    /// </summary>
-    private static string GenerateOptionsWithConditionalParameters(FunctionInfo function)
-    {
-        var nameCode = $"\"{function.FunctionName}\"";
-        var descriptionCode = function.HasDynamicDescription 
-            ? $"Resolve{function.Name}Description(context)"
-            : $"\"{function.Description}\"";
-        
-        var sb = new StringBuilder();
-        sb.AppendLine("new HPDAIFunctionFactoryOptions");
-        sb.AppendLine("                        {");
-        sb.AppendLine($"                            Name = {nameCode},");
-        sb.AppendLine($"                            Description = {descriptionCode},");
-        sb.AppendLine("                            ParameterDescriptions = CreateParameterDescriptions(context)");
-        sb.AppendLine("                        }");
-        
-        // Generate local helper method for this specific function
-        sb.AppendLine();
-        sb.AppendLine("                        Dictionary<string, string> CreateParameterDescriptions(IPluginMetadataContext? ctx)");
-        sb.AppendLine("                        {");
-        sb.AppendLine("                            var result = new Dictionary<string, string>();");
-        
-        var parametersWithDescriptions = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
-        foreach (var param in parametersWithDescriptions)
-        {
-            var paramDescCode = param.HasDynamicDescription 
-                ? $"Resolve{function.Name}Parameter{param.Name}Description(ctx)"
-                : $"\"{param.Description}\"";
+        var paramsWithDesc = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
+        if (!paramsWithDesc.Any())
+            return "null";
             
-            if (param.IsConditional)
-            {
-                sb.AppendLine($"                            if (Evaluate{function.Name}Parameter{param.Name}Condition(ctx))");
-                sb.AppendLine($"                                result[\"{param.Name}\"] = {paramDescCode};");
-            }
-            else
-            {
-                sb.AppendLine($"                            result[\"{param.Name}\"] = {paramDescCode};");
-            }
-        }
+        var descriptions = new StringBuilder();
+        descriptions.AppendLine("new Dictionary<string, string> {");
         
-        sb.AppendLine("                            return result;");
-        sb.AppendLine("                        }");
-        
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// V3.0: Generate static options (no conditional parameters).
-    /// </summary>
-    private static string GenerateStaticOptions(FunctionInfo function, string nameCode, string descriptionCode)
-    {
-        var hasParameterDescriptions = function.Parameters.Any(p => !string.IsNullOrEmpty(p.Description));
-        
-        var sb = new StringBuilder();
-        sb.AppendLine("new HPDAIFunctionFactoryOptions");
-        sb.AppendLine("                            {");
-        sb.AppendLine($"                                Name = {nameCode},");
-        sb.AppendLine($"                                Description = {descriptionCode},");
-        sb.AppendLine($"                                RequiresPermission = {function.RequiresPermission.ToString().ToLower()}");
-        if (hasParameterDescriptions)
+        for (int i = 0; i < paramsWithDesc.Count; i++)
         {
-            sb.AppendLine(",");
-            sb.AppendLine("                                ParameterDescriptions = new Dictionary<string, string>");
-            sb.AppendLine("                                {");
-            var descriptionsWithValues = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
-            for (int i = 0; i < descriptionsWithValues.Count; i++)
-            {
-                var param = descriptionsWithValues[i];
-                var comma = i < descriptionsWithValues.Count - 1 ? "," : "";
-                var paramDescCode = param.HasDynamicDescription 
-                    ? $"Resolve{function.Name}Parameter{param.Name}Description(context)"
-                    : $"\"{param.Description}\"";
-                sb.AppendLine($"                                    {{ \"{param.Name}\", {paramDescCode} }}{comma}");
-            }
-            sb.AppendLine("                                }");
-        }
-        sb.AppendLine("                            }");
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// V4.0: Generate DTO-based options with conditional parameter filtering logic.
-    /// </summary>
-    private static string GenerateDtoOptionsWithConditionalParameters(FunctionInfo function, string nameCode, string descriptionCode, string validatorName)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("new HPDAIFunctionFactoryOptions");
-        sb.AppendLine("                        {");
-        sb.AppendLine($"                            Name = {nameCode},");
-        sb.AppendLine($"                            Description = {descriptionCode},");
-        sb.AppendLine($"                            Validator = new {validatorName}(),");
-        sb.AppendLine("                            ParameterDescriptions = CreateParameterDescriptions(context)");
-        sb.AppendLine("                        }");
-        
-        // Generate local helper method for this specific function
-        sb.AppendLine();
-        sb.AppendLine("                        Dictionary<string, string> CreateParameterDescriptions(IPluginMetadataContext? ctx)");
-        sb.AppendLine("                        {");
-        sb.AppendLine("                            var result = new Dictionary<string, string>();");
-        
-        var parametersWithDescriptions = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
-        foreach (var param in parametersWithDescriptions)
-        {
-            var paramDescCode = param.HasDynamicDescription 
-                ? $"Resolve{function.Name}Parameter{param.Name}Description(ctx)"
+            var param = paramsWithDesc[i];
+            var comma = i < paramsWithDesc.Count - 1 ? "," : "";
+            var descCode = param.HasDynamicDescription 
+                ? $"Resolve{function.Name}Parameter{param.Name}Description(context)"
                 : $"\"{param.Description}\"";
-            
-            if (param.IsConditional)
-            {
-                sb.AppendLine($"                            if (Evaluate{function.Name}Parameter{param.Name}Condition(ctx))");
-                sb.AppendLine($"                                result[\"{param.Name}\"] = {paramDescCode};");
-            }
-            else
-            {
-                sb.AppendLine($"                            result[\"{param.Name}\"] = {paramDescCode};");
-            }
+            descriptions.AppendLine($"                    {{ \"{param.Name}\", {descCode} }}{comma}");
         }
         
-        sb.AppendLine("                            return result;");
-        sb.AppendLine("                        }");
-        
-        return sb.ToString();
+        descriptions.Append("                }");
+        return descriptions.ToString();
     }
 
-    /// <summary>
-    /// V4.0: Generate DTO-based static options (no conditional parameters).
-    /// </summary>
-    private static string GenerateDtoStaticOptions(FunctionInfo function, string nameCode, string descriptionCode, string validatorName)
-    {
-        var hasParameterDescriptions = function.Parameters.Any(p => !string.IsNullOrEmpty(p.Description));
-        
-        var sb = new StringBuilder();
-        sb.AppendLine("new HPDAIFunctionFactoryOptions");
-        sb.AppendLine("                            {");
-        sb.AppendLine($"                                Name = {nameCode},");
-        sb.AppendLine($"                                Description = {descriptionCode},");
-        sb.AppendLine($"                                RequiresPermission = {function.RequiresPermission.ToString().ToLower()},");
-        sb.AppendLine($"                                Validator = new {validatorName}()");
-        if (hasParameterDescriptions)
-        {
-            sb.AppendLine(",");
-            sb.AppendLine("                                ParameterDescriptions = new Dictionary<string, string>");
-            sb.AppendLine("                                {");
-            var descriptionsWithValues = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
-            for (int i = 0; i < descriptionsWithValues.Count; i++)
-            {
-                var param = descriptionsWithValues[i];
-                var comma = i < descriptionsWithValues.Count - 1 ? "," : "";
-                var paramDescCode = param.HasDynamicDescription 
-                    ? $"Resolve{function.Name}Parameter{param.Name}Description(context)"
-                    : $"\"{param.Description}\"";
-                sb.AppendLine($"                                    {{ \"{param.Name}\", {paramDescCode} }}{comma}");
-            }
-            sb.AppendLine("                                }");
-        }
-        sb.AppendLine("                            }");
-        return sb.ToString();
-    }
+    // Helper Methods
 
-    /// <summary>
-    /// V3.0: Generate context resolution methods for dynamic descriptions and conditional logic.
-    /// </summary>
-    private static string GenerateContextResolutionMethods(PluginInfo plugin)
+private static string GenerateContextResolutionMethods(PluginInfo plugin)
     {
         var sb = new StringBuilder();
         
@@ -572,9 +463,6 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         
         return sb.ToString();
     }
-
-    // Helper methods for analysis...
-    
     private static bool HasAIFunctionAttribute(MethodDeclarationSyntax method, SemanticModel semanticModel)
     {
         return method.AttributeLists
@@ -1166,114 +1054,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             .Any(attr => attr.Name.ToString().Contains("RequiresPermission"));
     }
 
-    /// <summary>
-    /// Generates a DTO class for function arguments.
-    /// </summary>
-    private static void GenerateArgumentsDto(StringBuilder sb, FunctionInfo function)
-    {
-        var dtoName = $"{function.Name}Arguments";
-        
-        sb.AppendLine($"/// <summary>");
-        sb.AppendLine($"/// Arguments DTO for {function.Name} function.");
-        sb.AppendLine($"/// </summary>");
-        sb.AppendLine($"public class {dtoName}");
-        sb.AppendLine("{");
-        
-        foreach (var param in function.Parameters)
-        {
-            // Add JsonPropertyName attribute for proper JSON mapping
-            sb.AppendLine($"    [JsonPropertyName(\"{param.Name}\")]");
-            
-            // Handle nullable types and default values
-            var typeDeclaration = param.Type;
-            var needsNullable = param.HasDefaultValue && !IsNullableType(param.Type);
-            if (needsNullable)
-            {
-                typeDeclaration += "?";
-            }
-            
-            // Add XML documentation if parameter has description
-            if (!string.IsNullOrEmpty(param.Description))
-            {
-                sb.AppendLine($"    /// <summary>");
-                sb.AppendLine($"    /// {param.Description}");
-                sb.AppendLine($"    /// </summary>");
-            }
-            
-            sb.Append($"    public {typeDeclaration} {param.Name} {{ get; set; }}");
-            
-            // Add default value if available
-            if (param.HasDefaultValue && !string.IsNullOrEmpty(param.DefaultValue))
-            {
-                sb.AppendLine($" = {param.DefaultValue};");
-            }
-            else
-            {
-                sb.AppendLine();
-            }
-        }
-        
-        sb.AppendLine("}");
-        sb.AppendLine();
-    }
 
-    /// <summary>
-    /// Generates a FluentValidation validator for function arguments.
-    /// </summary>
-    private static void GenerateValidator(StringBuilder sb, FunctionInfo function)
-    {
-        var dtoName = $"{function.Name}Arguments";
-        var validatorName = $"{dtoName}Validator";
-        
-        sb.AppendLine($"/// <summary>");
-        sb.AppendLine($"/// Validator for {function.Name} function arguments.");
-        sb.AppendLine($"/// </summary>");
-        sb.AppendLine($"public class {validatorName} : AbstractValidator<{dtoName}>");
-        sb.AppendLine("{");
-        sb.AppendLine($"    public {validatorName}()");
-        sb.AppendLine("    {");
-        
-        foreach (var param in function.Parameters)
-        {
-            // Required parameters (no default value and not nullable)
-            if (!param.HasDefaultValue && !IsNullableType(param.Type))
-            {
-                sb.AppendLine($"        RuleFor(x => x.{param.Name})");
-                sb.AppendLine($"            .NotEmpty()");
-                sb.AppendLine($"            .WithMessage(\"{param.Name} is required.\");");
-                sb.AppendLine();
-            }
-            
-            // Type-specific validations
-            if (param.Type == "string")
-            {
-                // Add string length validation if it's required
-                if (!param.HasDefaultValue && !IsNullableType(param.Type))
-                {
-                    sb.AppendLine($"        RuleFor(x => x.{param.Name})");
-                    sb.AppendLine($"            .NotNull()");
-                    sb.AppendLine($"            .NotEmpty()");
-                    sb.AppendLine($"            .WithMessage(\"{param.Name} cannot be null or empty.\");");
-                    sb.AppendLine();
-                }
-            }
-        }
-        
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
-        sb.AppendLine();
-    }
 
-    /// <summary>
-    /// Checks if a type string represents a nullable type.
-    /// </summary>
-    private static bool IsNullableType(string typeString)
-    {
-        return typeString.EndsWith("?") || 
-               typeString.StartsWith("string") || 
-               typeString.StartsWith("object") ||
-               typeString.Contains("Nullable<");
-    }
 }
 
 /// <summary>
@@ -1297,3 +1079,4 @@ internal class ExpressionToken
     public string Operator { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;
 }
+

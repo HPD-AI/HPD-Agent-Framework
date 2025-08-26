@@ -31,12 +31,14 @@ public class AiFunctionContext :  FunctionInvocationContext
     /// <summary>
     /// The AI function being invoked (if available).
     /// </summary>
-    public AIFunction? Function { get; set; }
+    public new AIFunction? Function { get; set; }
+
+    
 
     /// <summary>
     /// Arguments for the function call (AOT-safe access).
     /// </summary>
-    public IDictionary<string, object?> Arguments => ToolCallRequest.Arguments;
+    public new AIFunctionArguments Arguments { get; }
 
     public AiFunctionContext(Conversation conversation, ToolCallRequest toolCallRequest)
     {

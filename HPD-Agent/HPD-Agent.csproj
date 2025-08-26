@@ -46,12 +46,13 @@
 
     <!-- Validation -->
     <PackageReference Include="FluentValidation" Version="12.0.0" />
+    
+    <!-- JSON Schema -->
+    <PackageReference Include="JsonSchema.Net.Generation" Version="4.1.1" />
   </ItemGroup>
 
-
   <ItemGroup>
-    <!-- Reference the source generator project -->
-    <ProjectReference Include="..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- No longer need AGUI project reference since we have AOT-compatible types -->
