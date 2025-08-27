@@ -193,39 +193,106 @@ public class Conversation
         
 
         // Inject project context for Memory CAG if available
+        options = InjectProjectContextIfNeeded(options);
+        
+        // Delegate response generation to orchestrator
+        var finalResponse = await _orchestrator.OrchestrateAsync(_messages, _agents, this.Id, options, cancellationToken);
+
+        // ✅ COMMIT response to history FIRST
+        _messages.AddMessages(finalResponse);
+        UpdateActivity();
+
+        // ✅ THEN run filters on the completed turn
+        var agentMetadata = CollectAgentMetadata(finalResponse);
+        var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
+        await ApplyConversationFilters(context);
+
+        return finalResponse;
+    }
+
+    /// <summary>
+    /// Send a message and parse the response as structured JSON
+    /// </summary>
+    public async Task<ChatResponse<T>> SendStructuredAsync<T>(
+        string message,
+        ChatOptions? options = null,
+        JsonSerializerOptions? serializerOptions = null,
+        bool? useJsonSchemaResponseFormat = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Add user message (same as SendAsync)
+        var userMessage = new ChatMessage(ChatRole.User, message);
+        _messages.Add(userMessage);
+        UpdateActivity();
+
+        // Inject project context (same as SendAsync)
+        options = InjectProjectContextIfNeeded(options);
+        
+        // HERE'S THE KEY: Create a temporary IChatClient that wraps your orchestrator
+        var tempClient = new SimpleOrchestrationWrapper(_orchestrator, _agents, Id);
+        
+        // Use Microsoft.Extensions.AI structured extensions directly
+        var structuredResponse = await tempClient.GetResponseAsync<T>(
+            _messages, 
+            serializerOptions ?? AIJsonUtilities.DefaultOptions,
+            options, 
+            useJsonSchemaResponseFormat, 
+            cancellationToken);
+        
+        // Extract raw response for history (CRITICAL)
+        var rawResponse = (ChatResponse)structuredResponse;
+        
+        // Add RAW response to history (same as SendAsync)
+        _messages.AddMessages(rawResponse);
+        UpdateActivity();
+
+        // Apply filters (same as SendAsync)
+        var agentMetadata = CollectAgentMetadata(rawResponse);
+        var context = new ConversationFilterContext(this, userMessage, rawResponse, agentMetadata, options, cancellationToken);
+        await ApplyConversationFilters(context);
+
+        return structuredResponse;
+    }
+
+    /// <summary>
+    /// Send with documents and structured output
+    /// </summary>
+    public async Task<ChatResponse<T>> SendStructuredWithDocumentsAsync<T>(
+        string message,
+        string[] documentPaths,
+        TextExtractionUtility textExtractor,
+        ChatOptions? options = null,
+        JsonSerializerOptions? serializerOptions = null,
+        bool? useJsonSchemaResponseFormat = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (documentPaths == null || documentPaths.Length == 0)
+            return await SendStructuredAsync<T>(message, options, serializerOptions, useJsonSchemaResponseFormat, cancellationToken);
+
+        var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
+        
+        var enhancedMessage = _uploadStrategy switch
+        {
+            ConversationDocumentHandling.FullTextInjection => 
+                ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads),
+            _ => message
+        };
+
+        return await SendStructuredAsync<T>(enhancedMessage, options, serializerOptions, useJsonSchemaResponseFormat, cancellationToken);
+    }
+
+    // Helper method to avoid code duplication
+    private ChatOptions? InjectProjectContextIfNeeded(ChatOptions? options)
+    {
         if (Metadata.TryGetValue("Project", out var obj) && obj is Project project)
         {
-            if (options == null)
-            {
-                options = new ChatOptions
-                {
-                    AdditionalProperties = new AdditionalPropertiesDictionary
-                    {
-                        ["Project"] = project
-                    }
-                };
-            }
-            else
-            {
-                options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-                options.AdditionalProperties["Project"] = project;
-            }
+            options ??= new ChatOptions();
+            options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            options.AdditionalProperties["Project"] = project;
         }
-        
-    // Delegate response generation to orchestrator
-    var finalResponse = await _orchestrator.OrchestrateAsync(_messages, _agents, this.Id, options, cancellationToken);
-
-    // ✅ COMMIT response to history FIRST
-    _messages.AddMessages(finalResponse);
-    UpdateActivity();
-
-    // ✅ THEN run filters on the completed turn
-    var agentMetadata = CollectAgentMetadata(finalResponse);
-    var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
-    await ApplyConversationFilters(context);
-
-    return finalResponse;
+        return options;
     }
+
 
     /// <summary>
     /// Stream a conversation turn
@@ -497,6 +564,36 @@ public class Conversation
 
     #endregion
 
+}
+
+/// <summary>
+/// Minimal wrapper to make orchestrator work with Microsoft.Extensions.AI structured extensions
+/// </summary>
+internal class SimpleOrchestrationWrapper : IChatClient
+{
+    private readonly IOrchestrator _orchestrator;
+    private readonly IReadOnlyList<Agent> _agents;
+    private readonly string _conversationId;
+
+    public SimpleOrchestrationWrapper(IOrchestrator orchestrator, IReadOnlyList<Agent> agents, string conversationId)
+    {
+        _orchestrator = orchestrator;
+        _agents = agents;
+        _conversationId = conversationId;
+    }
+
+    public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        return _orchestrator.OrchestrateAsync(messages.ToList(), _agents, _conversationId, options, cancellationToken);
+    }
+
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        return _orchestrator.OrchestrateStreamingAsync(messages.ToList(), _agents, _conversationId, options, cancellationToken);
+    }
+
+    public void Dispose() { }
+    public object? GetService(Type serviceType, object? serviceKey) => null;
 }
 
 
