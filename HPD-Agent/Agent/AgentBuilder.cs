@@ -1,13 +1,15 @@
 using Microsoft.Extensions.AI;
-using OpenAI.Chat;
-using Azure.AI.Inference;
-using Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
-using OllamaSharp;
 using FluentValidation;
+using Microsoft.Extensions.Logging.Abstractions;
+using OpenAI.Chat;
+using Azure.AI.Inference;
+using Azure;
+using OllamaSharp;
+using System.Diagnostics;
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -19,30 +21,30 @@ public class AgentBuilder
     private readonly AgentConfig _config;
 
     // Fields that are NOT part of the serializable config remain
-    private IChatClient? _baseClient;
-    private IConfiguration? _configuration;
-    private readonly PluginManager _pluginManager = new();
-    private IPluginMetadataContext? _defaultContext;
+    internal IChatClient? _baseClient;
+    internal IConfiguration? _configuration;
+    internal readonly PluginManager _pluginManager = new();
+    internal IPluginMetadataContext? _defaultContext;
     // store individual plugin contexts
-    private readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
+    internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
     private readonly List<IAiFunctionFilter> _globalFilters = new();
-    private readonly ScopedFilterManager _scopedFilterManager = new();
-    private readonly BuilderScopeContext _scopeContext = new();
-    private readonly List<IPromptFilter> _promptFilters = new();
-    private IAiFunctionFilter? _permissionFilter; // Dedicated permission filter
+    internal readonly ScopedFilterManager _scopedFilterManager = new();
+    internal readonly BuilderScopeContext _scopeContext = new();
+    internal readonly List<IPromptFilter> _promptFilters = new();
+    internal IAiFunctionFilter? _permissionFilter; // Dedicated permission filter
 
-    // Audio capability fields (runtime only)
-    private ISpeechToTextClient? _sttClient;
-    private ITextToSpeechClient? _ttsClient;
-    private readonly Dictionary<Type, object> _providerConfigs = new();
-    private IServiceProvider? _serviceProvider;
-    private ILoggerFactory? _logger;
+    // Audio capability fields (runtime only) - made internal for extensions
+    internal ISpeechToTextClient? _sttClient;
+    internal ITextToSpeechClient? _ttsClient;
+    internal readonly Dictionary<Type, object> _providerConfigs = new();
+    internal IServiceProvider? _serviceProvider;
+    internal ILoggerFactory? _logger;
 
     // Memory Injected Memory runtime fields
-    private AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
+    internal AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
 
     // MCP runtime fields
-    private MCPClientManager? _mcpClientManager;
+    internal MCPClientManager? _mcpClientManager;
 
     // Permission system integration
     private ContinuationPermissionManager? _continuationPermissionManager;
@@ -72,7 +74,7 @@ public class AgentBuilder
         _config.SystemInstructions = instructions ?? throw new ArgumentNullException(nameof(instructions));
         return this;
     }
-    
+
     /// <summary>
     /// Provides the service provider for resolving dependencies.
     /// This is required if you use `UseRegisteredEmbeddingGenerator()` for contextual functions.
@@ -83,188 +85,7 @@ public class AgentBuilder
         _logger = serviceProvider.GetService<ILoggerFactory>();
         return this;
     }
-    
-    /// <summary>
-    /// Adds Function Invocation filters that apply to all tool calls in conversations
-    /// </summary>
-    public AgentBuilder WithFunctionInvokationFilters(params IAiFunctionFilter[] filters)
-    {
-        if (filters != null)
-        {
-            foreach (var filter in filters)
-            {
-                _scopedFilterManager.AddFilter(filter, _scopeContext.CurrentScope, _scopeContext.CurrentTarget);
-            }
-        }
-        return this;
-    }
-    
-    /// <summary>
-    /// Adds an Function Invocation filter by type (will be instantiated)
-    /// </summary>
-    public AgentBuilder WithFunctionInvocationFilter<T>() where T : IAiFunctionFilter, new()
-    {
-        var filter = new T();
-        _scopedFilterManager.AddFilter(filter, _scopeContext.CurrentScope, _scopeContext.CurrentTarget);
-        return this;
-    }
-    
-    /// <summary>
-    /// Adds an function filter instance
-    /// </summary>
-    public AgentBuilder WithFilter(IAiFunctionFilter filter)
-    {
-        if (filter is FunctionPermissionFilter pFilter)
-        {
-            // Store permission filter separately
-            _permissionFilter = pFilter;
-        }
-        else if (filter != null)
-        {
-            _scopedFilterManager.AddFilter(filter, _scopeContext.CurrentScope, _scopeContext.CurrentTarget);
-        }
-        return this;
-    }
-    
-    // Audio Capability Configurations
-    
-    /// <summary>Register STT client directly</summary>
-    public AgentBuilder WithSpeechToText(ISpeechToTextClient sttClient)
-    {
-        _sttClient = sttClient ?? throw new ArgumentNullException(nameof(sttClient));
-        return this;
-    }
 
-    /// <summary>Register TTS client directly</summary>
-    public AgentBuilder WithTextToSpeech(ITextToSpeechClient ttsClient)
-    {
-        _ttsClient = ttsClient ?? throw new ArgumentNullException(nameof(ttsClient));
-        return this;
-    }
-
-    /// <summary>Configure audio capability options</summary>
-    public AgentBuilder WithAudioOptions(Action<AudioCapabilityOptions> configure)
-    {
-        if (_config.Audio == null)
-            _config.Audio = new AudioConfig();
-        _config.Audio.Options ??= new AudioCapabilityOptions();
-        configure(_config.Audio.Options);
-        return this;
-    }
-
-    /// <summary>ElevenLabs STT with configuration object</summary>
-    public AgentBuilder WithElevenLabsSpeechToText(ElevenLabsConfig config)
-    {
-        var client = new ElevenLabsSpeechToTextClient(config, null, _logger?.CreateLogger<ElevenLabsSpeechToTextClient>());
-        return WithSpeechToText(client);
-    }
-
-    /// <summary>ElevenLabs TTS with configuration object</summary>
-    public AgentBuilder WithElevenLabsTextToSpeech(ElevenLabsConfig config, string? voiceId = null)
-    {
-        var client = new ElevenLabsTextToSpeechClient(config, voiceId, null, 
-            _logger?.CreateLogger<ElevenLabsTextToSpeechClient>());
-        return WithTextToSpeech(client);
-    }
-
-    /// <summary>ElevenLabs complete pipeline</summary>
-    public AgentBuilder WithElevenLabsAudio(string? apiKey = null, string? voiceId = null)
-    {
-        var config = ResolveOrCreateConfig<ElevenLabsConfig>();
-        if (!string.IsNullOrEmpty(apiKey))
-            config.ApiKey = apiKey;
-        if (!string.IsNullOrEmpty(voiceId))
-            config.DefaultVoiceId = voiceId;
-        
-        // Store in config
-        if (_config.Audio == null)
-            _config.Audio = new AudioConfig();
-        _config.Audio.ElevenLabs = config;
-        
-        return WithElevenLabsSpeechToText(config)
-               .WithElevenLabsTextToSpeech(config, voiceId);
-    }
-
-    #region Azure Speech Integration
-
-    /// <summary>Azure Speech STT with configuration object</summary>
-    public AgentBuilder WithAzureSpeechToText(AzureSpeechConfig config)
-    {
-        config.Validate();
-        var client = new AzureSpeechToTextClient(config, _logger?.CreateLogger<AzureSpeechToTextClient>());
-        return WithSpeechToText(client);
-    }
-
-    /// <summary>Azure Speech STT with key parameters</summary>
-    public AgentBuilder WithAzureSpeechToText(string apiKey, string region, string? language = null)
-    {
-        var config = new AzureSpeechConfig
-        {
-            ApiKey = apiKey,
-            Region = region,
-            DefaultLanguage = language ?? "en-US"
-        };
-        return WithAzureSpeechToText(config);
-    }
-
-    /// <summary>Azure Speech TTS with configuration object</summary>
-    public AgentBuilder WithAzureTextToSpeech(AzureSpeechConfig config)
-    {
-        config.Validate();
-        var client = new AzureTextToSpeechClient(config, _logger?.CreateLogger<AzureTextToSpeechClient>());
-        return WithTextToSpeech(client);
-    }
-
-    /// <summary>Azure Speech complete pipeline</summary>
-    public AgentBuilder WithAzureSpeechAudio(string apiKey, string region, string? voice = null)
-    {
-        var config = new AzureSpeechConfig
-        {
-            ApiKey = apiKey,
-            Region = region,
-            DefaultVoice = voice ?? "en-US-AriaNeural"
-        };
-        
-        // Store in config
-        if (_config.Audio == null)
-            _config.Audio = new AudioConfig();
-        _config.Audio.AzureSpeech = config;
-        
-        return WithAzureSpeechToText(config)
-               .WithAzureTextToSpeech(config);
-    }
-
-    #endregion
-
-    /// <summary>
-    /// Adds a prompt filter instance
-    /// </summary>
-    public AgentBuilder WithPromptFilter(IPromptFilter filter)
-    {
-        if (filter != null)
-        {
-            _promptFilters.Add(filter);
-        }
-        return this;
-    }
-
-    /// <summary>
-    /// Adds a prompt filter by type (will be instantiated)
-    /// </summary>
-    public AgentBuilder WithPromptFilter<T>() where T : IPromptFilter, new()
-        => WithPromptFilter(new T());
-
-    /// <summary>
-    /// Adds multiple prompt filters
-    /// </summary>
-    public AgentBuilder WithPromptFilters(params IPromptFilter[] filters)
-    {
-        if (filters != null)
-        {
-            foreach (var f in filters) _promptFilters.Add(f);
-        }
-        return this;
-    }
 
     /// <summary>
     /// Configures the maximum number of function calls allowed in a single conversation turn
@@ -274,7 +95,7 @@ public class AgentBuilder
     {
         if (maxFunctionCalls <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxFunctionCalls), "Maximum function calls must be greater than 0");
-        
+
         _config.MaxFunctionCalls = maxFunctionCalls;
         return this;
     }
@@ -301,49 +122,14 @@ public class AgentBuilder
         // to wrap the current _baseClient in the telemetry middleware.
         var builder = new ChatClientBuilder(_baseClient);
         builder.UseOpenTelemetry(loggerFactory, sourceName, configure);
-        
+
         // Replace the existing base client with the newly built pipeline that includes telemetry.
         _baseClient = builder.Build(_serviceProvider);
 
         return this;
     }
-    
-    /// <summary>
-    /// Configures the agent to use a specific provider with model name
-    /// </summary>
-    /// <param name="provider">The chat provider to use</param>
-    /// <param name="modelName">The specific model name (e.g., "gpt-4", "anthropic/claude-3.5-sonnet")</param>
-    /// <param name="apiKey">API key for the provider (optional - will fallback to configuration/environment)</param>
-    public AgentBuilder WithProvider(ChatProvider provider, string modelName, string? apiKey = null)
-    {
-        _config.Provider = new ProviderConfig
-        {
-            Provider = provider,
-            ModelName = modelName ?? throw new ArgumentNullException(nameof(modelName)),
-            ApiKey = apiKey
-        };
-        return this;
-    }
-    
-    /// <summary>
-    /// Sets the configuration source for reading API keys and other settings
-    /// </summary>
-    /// <param name="configuration">Configuration instance (e.g., from appsettings.json)</param>
-    public AgentBuilder WithAPIConfiguration(IConfiguration configuration)
-    {
-        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-        return this;
-    }
-    
-    /// <summary>
-    /// Sets the base IChatClient that provides the core LLM functionality
-    /// </summary>
-    public AgentBuilder WithBaseClient(IChatClient baseClient)
-    {
-        _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
-        return this;
-    }
-    
+
+
     /// <summary>
     /// Sets the agent name
     /// </summary>
@@ -352,7 +138,7 @@ public class AgentBuilder
         _config.Name = name ?? throw new ArgumentNullException(nameof(name));
         return this;
     }
-    
+
     /// <summary>
     /// Sets default chat options (including backend tools)
     /// </summary>
@@ -363,100 +149,11 @@ public class AgentBuilder
         _config.Provider.DefaultChatOptions = options;
         return this;
     }
-    
-    
-    /// <summary>
-    /// Registers a plugin by type with optional execution context.
-    /// </summary>
-    public AgentBuilder WithPlugin<T>(IPluginMetadataContext? context = null) where T : class, new()
-    {
-        _pluginManager.RegisterPlugin<T>();
-        var pluginName = typeof(T).Name;
-        _scopeContext.SetPluginScope(pluginName);
-        _pluginContexts[pluginName] = context;
-        return this;
-    }
-    
-    /// <summary>
-    /// Registers a plugin using an instance with optional execution context.
-    /// </summary>
-    public AgentBuilder WithPlugin<T>(T instance, IPluginMetadataContext? context = null) where T : class
-    {
-        _pluginManager.RegisterPlugin(instance);
-        var pluginName = typeof(T).Name;
-        _scopeContext.SetPluginScope(pluginName);
-        _pluginContexts[pluginName] = context;
-        return this;
-    }
-    
-    /// <summary>
-    /// Registers a plugin by Type with optional execution context.
-    /// </summary>
-    public AgentBuilder WithPlugin(Type pluginType, IPluginMetadataContext? context = null)
-    {
-        _pluginManager.RegisterPlugin(pluginType);
-        var pluginName = pluginType.Name;
-        _scopeContext.SetPluginScope(pluginName);
-        _pluginContexts[pluginName] = context;
-        return this;
-    }
 
-    
-    // MCP Integration Methods
-    
-    /// <summary>
-    /// Enables MCP support with the specified manifest file
-    /// </summary>
-    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
-    /// <param name="options">Optional MCP configuration options</param>
-    public AgentBuilder WithMCP(string manifestPath, MCPOptions? options = null)
-    {
-        if (string.IsNullOrWhiteSpace(manifestPath))
-            throw new ArgumentException("Manifest path cannot be null or empty", nameof(manifestPath));
 
-        _config.Mcp = new McpConfig
-        {
-            ManifestPath = manifestPath,
-            Options = options
-        };
-        _mcpClientManager = new MCPClientManager(_logger?.CreateLogger<MCPClientManager>() ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MCPClientManager>.Instance, options);
-        
-        return this;
-    }
 
-    /// <summary>
-    /// Enables MCP support with fluent configuration
-    /// </summary>
-    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
-    /// <param name="configure">Configuration action for MCP options</param>
-    public AgentBuilder WithMCP(string manifestPath, Action<MCPOptions> configure)
-    {
-        var options = new MCPOptions();
-        configure(options);
-        return WithMCP(manifestPath, options);
-    }
 
-    /// <summary>
-    /// Enables MCP support with manifest content directly
-    /// </summary>
-    /// <param name="manifestContent">JSON content of the MCP manifest</param>
-    /// <param name="options">Optional MCP configuration options</param>
-    public AgentBuilder WithMCPContent(string manifestContent, MCPOptions? options = null)
-    {
-        if (string.IsNullOrWhiteSpace(manifestContent))
-            throw new ArgumentException("Manifest content cannot be null or empty", nameof(manifestContent));
 
-        // Store content in ManifestPath for now - we might need a separate property for content
-        _config.Mcp = new McpConfig
-        {
-            ManifestPath = manifestContent, // This represents content, not path
-            Options = options
-        };
-        _mcpClientManager = new MCPClientManager(_logger?.CreateLogger<MCPClientManager>() ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<MCPClientManager>.Instance, options);
-        
-        return this;
-    }
-    
     /// <summary>
     /// Builds the dual interface agent
     /// </summary>
@@ -477,26 +174,14 @@ public class AgentBuilder
         // TODO: Add similar validation blocks for Brave, Bing, ElevenLabs, AzureSpeech etc.
         // === END: VALIDATION LOGIC ===
 
-        // If no base client provided but provider info is available, create the client
-        if (_baseClient == null && _config.Provider != null && !string.IsNullOrEmpty(_config.Provider.ModelName))
-        {
-            // Handle Apple Intelligence as a special case since it doesn't need an API key
-            if (_config.Provider.Provider == ChatProvider.AppleIntelligence)
-            {
-                _baseClient = CreateClientFromProvider(_config.Provider.Provider, _config.Provider.ModelName, null);
-            }
-            else
-            {
-                var apiKey = ResolveApiKey(_config.Provider.Provider, _config.Provider.ApiKey);
-                _baseClient = CreateClientFromProvider(_config.Provider.Provider, _config.Provider.ModelName, apiKey);
-            }
-        }
+        // Ensure base client is available by creating from provider if needed
+        this.EnsureBaseClientFromProvider();
 
         if (_baseClient == null)
             throw new InvalidOperationException("Base client must be provided using WithBaseClient() or WithProvider()");
 
         // Register Memory Injected Memory prompt filter if configured
-        if (_config.InjectedMemory != null && _memoryInjectedManager != null)
+        if (_config.InjectedMemory != null && MemoryInjectedManager != null)
         {
             var memoryOptions = new AgentInjectedMemoryOptions
             {
@@ -511,7 +196,7 @@ public class AgentBuilder
 
         // Automatically finalize web search configuration if providers were configured
         AgentBuilderWebSearchExtensions.FinalizeWebSearch(this);
-        
+
         // Create plugin functions using per-plugin contexts and merge with default options
         var pluginFunctions = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())
@@ -521,12 +206,12 @@ public class AgentBuilder
             var functions = registration.ToAIFunctions(ctx ?? _defaultContext);
             pluginFunctions.AddRange(functions);
         }
-        
+
         // Register function-to-plugin mappings for scoped filters
         RegisterFunctionPluginMappings(pluginFunctions);
-        
+
         // Load MCP tools if configured
-        if (_mcpClientManager != null)
+        if (McpClientManager != null)
         {
             try
             {
@@ -536,18 +221,18 @@ public class AgentBuilder
                     // Check if this is actually content vs path based on if it starts with '{'
                     if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
                     {
-                        mcpTools = _mcpClientManager.LoadToolsFromManifestContentAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
+                        mcpTools = McpClientManager.LoadToolsFromManifestContentAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
                     }
                     else
                     {
-                        mcpTools = _mcpClientManager.LoadToolsFromManifestAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
+                        mcpTools = McpClientManager.LoadToolsFromManifestAsync(_config.Mcp.ManifestPath).GetAwaiter().GetResult();
                     }
                 }
                 else
                 {
                     throw new InvalidOperationException("MCP client manager is configured but no manifest path or content provided");
                 }
-                
+
                 pluginFunctions.AddRange(mcpTools);
                 _logger?.CreateLogger<AgentBuilder>().LogInformation("Successfully integrated {Count} MCP tools into agent", mcpTools.Count);
             }
@@ -557,7 +242,7 @@ public class AgentBuilder
                 throw new InvalidOperationException("Failed to initialize MCP integration", ex);
             }
         }
-        
+
         var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
 
@@ -572,111 +257,25 @@ public class AgentBuilder
             _continuationPermissionManager);
 
         // Attach audio capability if configured
-        var audioCapability = CreateAudioCapability(agent);
+        var audioCapability = this.CreateAudioCapability(agent);
         if (audioCapability != null)
         {
             agent.AddCapability("Audio", audioCapability);
         }
 
         // Attach MCP capability if configured
-        if (_mcpClientManager != null)
+        if (McpClientManager != null)
         {
-            agent.AddCapability("MCP", _mcpClientManager);
+            agent.AddCapability("MCP", McpClientManager);
         }
 
         return agent;
     }
-    
+
     #region Helper Methods
-    
-    /// <summary>Create audio capability during build</summary>
-    private AudioCapability? CreateAudioCapability(Agent agent)
-    {
-        // Skip if no audio clients configured
-        if (_sttClient == null && _ttsClient == null)
-            return null;
 
-        var options = _config.Audio?.Options ?? new AudioCapabilityOptions();
-        
-        return new AudioCapability(
-            agent: agent,
-            options: options,
-            sttClient: _sttClient,
-            ttsClient: _ttsClient,
-            filterManager: _scopedFilterManager,
-            logger: _logger?.CreateLogger<AudioCapability>());
-    }
-    
-    private T ResolveOrCreateConfig<T>() where T : class, new()
-    {
-        // 1. Try explicitly stored config
-        if (_providerConfigs.TryGetValue(typeof(T), out var stored))
-            return (T)stored;
-        
-        // 2. Try DI container
-        var fromDi = _serviceProvider?.GetService<T>();
-        if (fromDi != null) return fromDi;
-        
-        // 3. Try creating from environment
-        var fromEnv = CreateConfigFromEnvironment<T>();
-        if (fromEnv != null) return fromEnv;
-        
-        // 4. Create default
-        return new T();
-    }
 
-    private T? CreateConfigFromEnvironment<T>() where T : class
-    {
-        // Only create from environment in non-analyzer context
-        if (IsAnalyzerContext())
-            return null;
-            
-        return typeof(T).Name switch
-        {
-            nameof(ElevenLabsConfig) => CreateElevenLabsConfigFromEnvironment() as T,
-            nameof(AzureSpeechConfig) => CreateAzureConfigFromEnvironment() as T,
-            _ => null
-        };
-    }
-    
-    private ElevenLabsConfig? CreateElevenLabsConfigFromEnvironment()
-    {
-        var apiKey = GetEnvironmentVariable("ELEVENLABS_API_KEY");
-        var voiceId = GetEnvironmentVariable("ELEVENLABS_VOICE_ID");
-        
-        if (string.IsNullOrEmpty(apiKey))
-            return null;
-            
-        return new ElevenLabsConfig
-        {
-            ApiKey = apiKey,
-            DefaultVoiceId = voiceId
-        };
-    }
-    
-    private AzureSpeechConfig? CreateAzureConfigFromEnvironment()
-    {
-        var apiKey = GetEnvironmentVariable("AZURE_SPEECH_KEY");
-        var region = GetEnvironmentVariable("AZURE_SPEECH_REGION");
-        var language = GetEnvironmentVariable("AZURE_SPEECH_LANGUAGE");
-        
-        if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(region))
-            return null;
-            
-        return new AzureSpeechConfig
-        {
-            ApiKey = apiKey,
-            Region = region,
-            DefaultLanguage = language ?? "en-US"
-        };
-    }
-    
-    private static bool IsAnalyzerContext()
-    {
-        // Simple heuristic to detect analyzer context
-        return System.Diagnostics.Debugger.IsAttached == false;
-    }
-    
+
     /// <summary>
     /// Registers function-to-plugin mappings for scoped filter support
     /// </summary>
@@ -703,7 +302,7 @@ public class AgentBuilder
             }
         }
     }
-    
+
     /// <summary>
     /// Merges plugin functions into chat options.
     /// </summary>
@@ -711,13 +310,13 @@ public class AgentBuilder
     {
         if (pluginFunctions.Count == 0)
             return defaultOptions;
-        
+
         var options = defaultOptions ?? new ChatOptions();
-        
+
         // Add plugin functions to existing tools
         var allTools = new List<AITool>(options.Tools ?? []);
         allTools.AddRange(pluginFunctions);
-        
+
         return new ChatOptions
         {
             Tools = allTools,
@@ -734,60 +333,650 @@ public class AgentBuilder
             AdditionalProperties = options.AdditionalProperties
         };
     }
-    
-    private string ResolveApiKey(ChatProvider provider, string? explicitApiKey = null)
+
+
+    /// <summary>
+    /// Creates a new builder instance
+    /// </summary>
+    public static AgentBuilder Create() => new();
+
+
+    // Public properties for extension methods
+    /// <summary>
+    /// Gets the agent name for use in extension methods
+    /// </summary>
+    public string AgentName => _config.Name;
+
+    /// <summary>
+    /// Internal access to configuration for extension methods
+    /// </summary>
+    internal IConfiguration? Configuration => _configuration;
+
+    /// <summary>
+    /// Internal access to config object for extension methods
+    /// </summary>
+    internal AgentConfig Config => _config;
+
+    /// <summary>
+    /// Internal access to base client for extension methods
+    /// </summary>
+    internal IChatClient? BaseClient
+    {
+        get => _baseClient;
+        set => _baseClient = value;
+    }
+
+    /// <summary>
+    /// Internal access to STT client for extension methods
+    /// </summary>
+    internal ISpeechToTextClient? SttClient
+    {
+        get => _sttClient;
+        set => _sttClient = value;
+    }
+
+    /// <summary>
+    /// Internal access to TTS client for extension methods
+    /// </summary>
+    internal ITextToSpeechClient? TtsClient
+    {
+        get => _ttsClient;
+        set => _ttsClient = value;
+    }
+
+    /// <summary>
+    /// Internal access to provider configs for extension methods
+    /// </summary>
+    internal Dictionary<Type, object> ProviderConfigs => _providerConfigs;
+
+    /// <summary>
+    /// Internal access to service provider for extension methods
+    /// </summary>
+    internal IServiceProvider? ServiceProvider => _serviceProvider;
+
+    /// <summary>
+    /// Internal access to logger for extension methods
+    /// </summary>
+    internal ILoggerFactory? Logger => _logger;
+
+    /// <summary>
+    /// Internal access to scoped filter manager for extension methods
+    /// </summary>
+    internal ScopedFilterManager ScopedFilterManager => _scopedFilterManager;
+
+    /// <summary>
+    /// Internal access to plugin manager for extension methods
+    /// </summary>
+    internal PluginManager PluginManager => _pluginManager;
+
+    /// <summary>
+    /// Internal access to default plugin context for extension methods
+    /// </summary>
+    internal IPluginMetadataContext? DefaultContext
+    {
+        get => _defaultContext;
+        set => _defaultContext = value;
+    }
+
+    /// <summary>
+    /// Internal access to plugin contexts for extension methods
+    /// </summary>
+    internal Dictionary<string, IPluginMetadataContext?> PluginContexts => _pluginContexts;
+
+    /// <summary>
+    /// Internal access to scope context for extension methods
+    /// </summary>
+    internal BuilderScopeContext ScopeContext => _scopeContext;
+
+    /// <summary>
+    /// Internal access to prompt filters for extension methods
+    /// </summary>
+    internal List<IPromptFilter> PromptFilters => _promptFilters;
+
+    /// <summary>
+    /// Internal access to permission filter for extension methods
+    /// </summary>
+    internal IAiFunctionFilter? PermissionFilter
+    {
+        get => _permissionFilter;
+        set => _permissionFilter = value;
+    }
+
+    /// <summary>
+    /// Internal access to MCP client manager for extension methods
+    /// </summary>
+    internal MCPClientManager? McpClientManager
+    {
+        get => _mcpClientManager;
+        set => _mcpClientManager = value;
+    }
+
+    /// <summary>
+    /// Internal access to memory injected manager for extension methods
+    /// </summary>
+    internal AgentInjectedMemoryManager? MemoryInjectedManager
+    {
+        get => _memoryInjectedManager;
+        set => _memoryInjectedManager = value;
+    }
+
+    #endregion
+
+    public AgentBuilder WithContinuationManager(ContinuationPermissionManager manager)
+    {
+        _continuationPermissionManager = manager;
+        return this;
+    }
+}
+
+#region Audio Extensions
+/// <summary>
+/// Extension methods for configuring Audio (TTS/STT) capabilities for the AgentBuilder.
+/// </summary>
+public static class AgentBuilderAudioExtensions
+{
+    /// <summary>Register STT client directly</summary>
+    public static AgentBuilder WithSpeechToText(this AgentBuilder builder, ISpeechToTextClient sttClient)
+    {
+        builder.SttClient = sttClient ?? throw new ArgumentNullException(nameof(sttClient));
+        return builder;
+    }
+
+    /// <summary>Register TTS client directly</summary>
+    public static AgentBuilder WithTextToSpeech(this AgentBuilder builder, ITextToSpeechClient ttsClient)
+    {
+        builder.TtsClient = ttsClient ?? throw new ArgumentNullException(nameof(ttsClient));
+        return builder;
+    }
+
+    /// <summary>Configure audio capability options</summary>
+    public static AgentBuilder WithAudioOptions(this AgentBuilder builder, Action<AudioCapabilityOptions> configure)
+    {
+        if (builder.Config.Audio == null)
+            builder.Config.Audio = new AudioConfig();
+        builder.Config.Audio.Options ??= new AudioCapabilityOptions();
+        configure(builder.Config.Audio.Options);
+        return builder;
+    }
+
+    /// <summary>ElevenLabs STT with configuration object</summary>
+    public static AgentBuilder WithElevenLabsSpeechToText(this AgentBuilder builder, ElevenLabsConfig config)
+    {
+        var client = new ElevenLabsSpeechToTextClient(config, null, builder.Logger?.CreateLogger<ElevenLabsSpeechToTextClient>());
+        return builder.WithSpeechToText(client);
+    }
+
+    /// <summary>ElevenLabs TTS with configuration object</summary>
+    public static AgentBuilder WithElevenLabsTextToSpeech(this AgentBuilder builder, ElevenLabsConfig config, string? voiceId = null)
+    {
+        var client = new ElevenLabsTextToSpeechClient(config, voiceId, null,
+            builder.Logger?.CreateLogger<ElevenLabsTextToSpeechClient>());
+        return builder.WithTextToSpeech(client);
+    }
+
+    /// <summary>ElevenLabs complete pipeline</summary>
+    public static AgentBuilder WithElevenLabsAudio(this AgentBuilder builder, string? apiKey = null, string? voiceId = null)
+    {
+        var config = builder.ResolveOrCreateConfig<ElevenLabsConfig>();
+        if (!string.IsNullOrEmpty(apiKey))
+            config.ApiKey = apiKey;
+        if (!string.IsNullOrEmpty(voiceId))
+            config.DefaultVoiceId = voiceId;
+
+        // Store in config
+        if (builder.Config.Audio == null)
+            builder.Config.Audio = new AudioConfig();
+        builder.Config.Audio.ElevenLabs = config;
+
+        return builder.WithElevenLabsSpeechToText(config)
+               .WithElevenLabsTextToSpeech(config, voiceId);
+    }
+
+    /// <summary>Azure Speech STT with configuration object</summary>
+    public static AgentBuilder WithAzureSpeechToText(this AgentBuilder builder, AzureSpeechConfig config)
+    {
+        config.Validate();
+        var client = new AzureSpeechToTextClient(config, builder.Logger?.CreateLogger<AzureSpeechToTextClient>());
+        return builder.WithSpeechToText(client);
+    }
+
+    /// <summary>Azure Speech STT with key parameters</summary>
+    public static AgentBuilder WithAzureSpeechToText(this AgentBuilder builder, string apiKey, string region, string? language = null)
+    {
+        var config = new AzureSpeechConfig
+        {
+            ApiKey = apiKey,
+            Region = region,
+            DefaultLanguage = language ?? "en-US"
+        };
+        return builder.WithAzureSpeechToText(config);
+    }
+
+    /// <summary>Azure Speech TTS with configuration object</summary>
+    public static AgentBuilder WithAzureTextToSpeech(this AgentBuilder builder, AzureSpeechConfig config)
+    {
+        config.Validate();
+        var client = new AzureTextToSpeechClient(config, builder.Logger?.CreateLogger<AzureTextToSpeechClient>());
+        return builder.WithTextToSpeech(client);
+    }
+
+    /// <summary>Azure Speech complete pipeline</summary>
+    public static AgentBuilder WithAzureSpeechAudio(this AgentBuilder builder, string apiKey, string region, string? voice = null)
+    {
+        var config = new AzureSpeechConfig
+        {
+            ApiKey = apiKey,
+            Region = region,
+            DefaultVoice = voice ?? "en-US-AriaNeural"
+        };
+
+        // Store in config
+        if (builder.Config.Audio == null)
+            builder.Config.Audio = new AudioConfig();
+        builder.Config.Audio.AzureSpeech = config;
+
+        return builder.WithAzureSpeechToText(config)
+               .WithAzureTextToSpeech(config);
+    }
+
+    /// <summary>Create audio capability during build</summary>
+    internal static AudioCapability? CreateAudioCapability(this AgentBuilder builder, global::Agent agent)
+    {
+        // Skip if no audio clients configured
+        if (builder.SttClient == null && builder.TtsClient == null)
+            return null;
+
+        var options = builder.Config.Audio?.Options ?? new AudioCapabilityOptions();
+
+        return new AudioCapability(
+            agent: agent,
+            options: options,
+            sttClient: builder.SttClient,
+            ttsClient: builder.TtsClient,
+            filterManager: builder.ScopedFilterManager,
+            logger: builder.Logger?.CreateLogger<AudioCapability>());
+    }
+
+    private static T ResolveOrCreateConfig<T>(this AgentBuilder builder) where T : class, new()
+    {
+        return AgentBuilderHelpers.ResolveOrCreateConfig<T>(builder.ProviderConfigs);
+    }
+
+
+    private static ElevenLabsConfig? CreateElevenLabsConfigFromEnvironment()
+    {
+        var config = AgentBuilderHelpers.CreateElevenLabsConfigFromEnvironment();
+        return string.IsNullOrEmpty(config.ApiKey) ? null : config;
+    }
+
+    private static AzureSpeechConfig? CreateAzureConfigFromEnvironment()
+    {
+        var config = AgentBuilderHelpers.CreateAzureConfigFromEnvironment();
+        return string.IsNullOrEmpty(config.ApiKey) ? null : config;
+    }
+
+}
+#endregion
+
+#region Filter Extensions
+/// <summary>
+/// Extension methods for configuring prompt and function filters for the AgentBuilder.
+/// </summary>
+public static class AgentBuilderFilterExtensions
+{
+    /// <summary>
+    /// Adds Function Invocation filters that apply to all tool calls in conversations
+    /// </summary>
+    public static AgentBuilder WithFunctionInvokationFilters(this AgentBuilder builder, params IAiFunctionFilter[] filters)
+    {
+        if (filters != null)
+        {
+            foreach (var filter in filters)
+            {
+                builder.ScopedFilterManager.AddFilter(filter, builder.ScopeContext.CurrentScope, builder.ScopeContext.CurrentTarget);
+            }
+        }
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds an Function Invocation filter by type (will be instantiated)
+    /// </summary>
+    public static AgentBuilder WithFunctionInvocationFilter<T>(this AgentBuilder builder) where T : IAiFunctionFilter, new()
+    {
+        var filter = new T();
+        builder.ScopedFilterManager.AddFilter(filter, builder.ScopeContext.CurrentScope, builder.ScopeContext.CurrentTarget);
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds an function filter instance
+    /// </summary>
+    public static AgentBuilder WithFilter(this AgentBuilder builder, IAiFunctionFilter filter)
+    {
+        if (filter is FunctionPermissionFilter pFilter)
+        {
+            // Store permission filter separately
+            builder.PermissionFilter = pFilter;
+        }
+        else if (filter != null)
+        {
+            builder.ScopedFilterManager.AddFilter(filter, builder.ScopeContext.CurrentScope, builder.ScopeContext.CurrentTarget);
+        }
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a prompt filter instance
+    /// </summary>
+    public static AgentBuilder WithPromptFilter(this AgentBuilder builder, IPromptFilter filter)
+    {
+        if (filter != null)
+        {
+            builder.PromptFilters.Add(filter);
+        }
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a prompt filter by type (will be instantiated)
+    /// </summary>
+    public static AgentBuilder WithPromptFilter<T>(this AgentBuilder builder) where T : IPromptFilter, new()
+        => builder.WithPromptFilter(new T());
+
+    /// <summary>
+    /// Adds multiple prompt filters
+    /// </summary>
+    public static AgentBuilder WithPromptFilters(this AgentBuilder builder, params IPromptFilter[] filters)
+    {
+        if (filters != null)
+        {
+            foreach (var f in filters)
+                builder.PromptFilters.Add(f);
+        }
+        return builder;
+    }
+}
+
+#endregion
+
+#region MCP Extensions
+/// <summary>
+/// Extension methods for configuring Model Context Protocol (MCP) capabilities for the AgentBuilder.
+/// </summary>
+public static class AgentBuilderMcpExtensions
+{
+    /// <summary>
+    /// Enables MCP support with the specified manifest file
+    /// </summary>
+    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
+    /// <param name="options">Optional MCP configuration options</param>
+    public static AgentBuilder WithMCP(this AgentBuilder builder, string manifestPath, MCPOptions? options = null)
+    {
+        if (string.IsNullOrWhiteSpace(manifestPath))
+            throw new ArgumentException("Manifest path cannot be null or empty", nameof(manifestPath));
+
+        builder.Config.Mcp = new McpConfig
+        {
+            ManifestPath = manifestPath,
+            Options = options
+        };
+        builder.McpClientManager = new MCPClientManager(builder.Logger?.CreateLogger<MCPClientManager>() ?? NullLogger<MCPClientManager>.Instance, options);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Enables MCP support with fluent configuration
+    /// </summary>
+    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
+    /// <param name="configure">Configuration action for MCP options</param>
+    public static AgentBuilder WithMCP(this AgentBuilder builder, string manifestPath, Action<MCPOptions> configure)
+    {
+        var options = new MCPOptions();
+        configure(options);
+        return builder.WithMCP(manifestPath, options);
+    }
+
+    /// <summary>
+    /// Enables MCP support with manifest content directly
+    /// </summary>
+    /// <param name="manifestContent">JSON content of the MCP manifest</param>
+    /// <param name="options">Optional MCP configuration options</param>
+    public static AgentBuilder WithMCPContent(this AgentBuilder builder, string manifestContent, MCPOptions? options = null)
+    {
+        if (string.IsNullOrWhiteSpace(manifestContent))
+            throw new ArgumentException("Manifest content cannot be null or empty", nameof(manifestContent));
+
+        // Store content in ManifestPath for now - we might need a separate property for content
+        builder.Config.Mcp = new McpConfig
+        {
+            ManifestPath = manifestContent, // This represents content, not path
+            Options = options
+        };
+        builder.McpClientManager = new MCPClientManager(builder.Logger?.CreateLogger<MCPClientManager>() ?? NullLogger<MCPClientManager>.Instance, options);
+
+        return builder;
+    }
+}
+
+#endregion
+
+#region Memory Extensions
+/// <summary>
+/// Extension methods for configuring agent-specific memory capabilities.
+/// </summary>
+public static class AgentBuilderMemoryExtensions
+{
+    /// <summary>
+    /// Configures the agent's deep, static, read-only knowledge base.
+    /// This utilizes an Indexed Retrieval (RAG) system for the agent's core expertise.
+    /// </summary>
+    /// 
+    /*
+    public static AgentBuilder WithKnowledgeBase(this AgentBuilder builder)
+    {
+
+        return builder;
+    }
+    */
+
+    /// <summary>
+    /// Configures the agent's dynamic, editable working memory.
+    /// This enables a Full Text Injection (formerly CAG) system and provides the agent
+    /// with tools to manage its own persistent facts.
+    /// </summary>
+    public static AgentBuilder WithInjectedMemory(this AgentBuilder builder, Action<AgentInjectedMemoryOptions> configure)
+    {
+        var options = new AgentInjectedMemoryOptions();
+        configure(options);
+
+        // Set the config on the builder
+        builder.Config.InjectedMemory = new InjectedMemoryConfig
+        {
+            StorageDirectory = options.StorageDirectory,
+            MaxTokens = options.MaxTokens,
+            EnableAutoEviction = options.EnableAutoEviction,
+            AutoEvictionThreshold = options.AutoEvictionThreshold
+        };
+
+        var manager = new AgentInjectedMemoryManager(options.StorageDirectory);
+        builder.MemoryInjectedManager = manager; // Set the internal property on the builder
+
+        var plugin = new AgentInjectedMemoryPlugin(manager, builder.AgentName);
+        var filter = new AgentInjectedMemoryFilter(options);
+
+        // Register plugin and filter directly without cross-extension dependencies
+        RegisterInjectedMemoryPlugin(builder, plugin);
+        RegisterInjectedMemoryFilter(builder, filter);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the memory plugin directly with the builder's plugin manager
+    /// Avoids dependency on AgentBuilderPluginExtensions
+    /// </summary>
+    private static void RegisterInjectedMemoryPlugin(AgentBuilder builder, AgentInjectedMemoryPlugin plugin)
+    {
+        builder.PluginManager.RegisterPlugin(plugin);
+        var pluginName = typeof(AgentInjectedMemoryPlugin).Name;
+        builder.ScopeContext.SetPluginScope(pluginName);
+        builder.PluginContexts[pluginName] = null; // No special context needed for memory plugin
+    }
+
+    /// <summary>
+    /// Registers the memory filter directly with the builder's filter manager
+    /// Avoids dependency on AgentBuilderFilterExtensions
+    /// </summary>
+    private static void RegisterInjectedMemoryFilter(AgentBuilder builder, AgentInjectedMemoryFilter filter)
+    {
+        builder.PromptFilters.Add(filter);
+    }
+}
+#endregion
+
+#region Plugin Extensions
+
+
+/// <summary>
+/// Extension methods for configuring plugins for the AgentBuilder.
+/// </summary>
+public static class AgentBuilderPluginExtensions
+{
+    /// <summary>
+    /// Registers a plugin by type with optional execution context.
+    /// </summary>
+    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadataContext? context = null) where T : class, new()
+    {
+        builder.PluginManager.RegisterPlugin<T>();
+        var pluginName = typeof(T).Name;
+        builder.ScopeContext.SetPluginScope(pluginName);
+        builder.PluginContexts[pluginName] = context;
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a plugin using an instance with optional execution context.
+    /// </summary>
+    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadataContext? context = null) where T : class
+    {
+        builder.PluginManager.RegisterPlugin(instance);
+        var pluginName = typeof(T).Name;
+        builder.ScopeContext.SetPluginScope(pluginName);
+        builder.PluginContexts[pluginName] = context;
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a plugin by Type with optional execution context.
+    /// </summary>
+    public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadataContext? context = null)
+    {
+        builder.PluginManager.RegisterPlugin(pluginType);
+        var pluginName = pluginType.Name;
+        builder.ScopeContext.SetPluginScope(pluginName);
+        builder.PluginContexts[pluginName] = context;
+        return builder;
+    }
+}
+
+#endregion
+
+#region Provider Extensions
+
+public static class AgentBuilderProviderExtensions
+{
+    /// <summary>
+    /// Configures the agent to use a specific provider with model name
+    /// </summary>
+    /// <param name="builder">The agent builder.</param>
+    /// <param name="provider">The chat provider to use</param>
+    /// <param name="modelName">The specific model name (e.g., "gpt-4", "anthropic/claude-3.5-sonnet")</param>
+    /// <param name="apiKey">API key for the provider (optional - will fallback to configuration/environment)</param>
+    public static AgentBuilder WithProvider(this AgentBuilder builder, ChatProvider provider, string modelName, string? apiKey = null)
+    {
+        builder.Config.Provider = new ProviderConfig
+        {
+            Provider = provider,
+            ModelName = modelName ?? throw new ArgumentNullException(nameof(modelName)),
+            ApiKey = apiKey
+        };
+        return builder;
+    }
+
+    /// <summary>
+    /// Sets the configuration source for reading API keys and other settings
+    /// </summary>
+    /// <param name="builder">The agent builder.</param>
+    /// <param name="configuration">Configuration instance (e.g., from appsettings.json)</param>
+    public static AgentBuilder WithAPIConfiguration(this AgentBuilder builder, IConfiguration configuration)
+    {
+        builder._configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        return builder;
+    }
+
+    /// <summary>
+    /// Sets the base IChatClient that provides the core LLM functionality
+    /// </summary>
+    /// <param name="builder">The agent builder.</param>
+    /// <param name="baseClient">The base chat client.</param>
+    public static AgentBuilder WithBaseClient(this AgentBuilder builder, IChatClient baseClient)
+    {
+        builder._baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
+        return builder;
+    }
+
+    internal static string ResolveApiKey(this AgentBuilder builder, ChatProvider provider, string? explicitApiKey = null)
     {
         // 1. Use explicitly provided API key if available
         if (!string.IsNullOrEmpty(explicitApiKey))
             return explicitApiKey;
-        
+
         // 2. Try configuration (appsettings.json)
         var configKey = GetConfigurationKey(provider);
-        var apiKeyFromConfig = _configuration?[configKey];
+        var apiKeyFromConfig = builder._configuration?[configKey];
         if (!string.IsNullOrEmpty(apiKeyFromConfig))
             return apiKeyFromConfig;
-        
+
         // 3. Try environment variable
         var envKey = GetEnvironmentVariableName(provider);
-        var apiKeyFromEnv = GetEnvironmentVariable(envKey);
+        var apiKeyFromEnv = AgentBuilderHelpers.GetEnvironmentVariable(envKey);
         if (!string.IsNullOrEmpty(apiKeyFromEnv))
             return apiKeyFromEnv;
-        
+
         // 4. Fallback to generic environment variable names (AOT-safe)
         var genericEnvKey = GetGenericEnvironmentVariableName(provider);
-        var genericApiKey = GetEnvironmentVariable(genericEnvKey);
+        var genericApiKey = AgentBuilderHelpers.GetEnvironmentVariable(genericEnvKey);
         if (!string.IsNullOrEmpty(genericApiKey))
             return genericApiKey;
-        
+
         throw new InvalidOperationException($"API key for {provider} not found. Provide it via:" +
             $"\n1. WithProvider() method parameter" +
             $"\n2. Configuration key: '{configKey}'" +
             $"\n3. Environment variable: '{envKey}' or '{genericEnvKey}'");
     }
-    
+
     private static string GetConfigurationKey(ChatProvider provider) => provider switch
     {
         ChatProvider.OpenRouter => "OpenRouter:ApiKey",
-        ChatProvider.OpenAI => "OpenAI:ApiKey", 
+        ChatProvider.OpenAI => "OpenAI:ApiKey",
         ChatProvider.AzureOpenAI => "AzureOpenAI:ApiKey",
         ChatProvider.Ollama => "Ollama:ApiKey",
         ChatProvider.AppleIntelligence => "AppleIntelligence:ApiKey",
         _ => "Unknown:ApiKey" // AOT-safe fallback
     };
-    
+
     private static string GetEnvironmentVariableName(ChatProvider provider) => provider switch
     {
         ChatProvider.OpenRouter => "OPENROUTER_API_KEY",
         ChatProvider.OpenAI => "OPENAI_API_KEY",
-        ChatProvider.AzureOpenAI => "AZURE_OPENAI_API_KEY", 
+        ChatProvider.AzureOpenAI => "AZURE_OPENAI_API_KEY",
         ChatProvider.Ollama => "OLLAMA_API_KEY",
         ChatProvider.AppleIntelligence => "APPLE_INTELLIGENCE_API_KEY",
         _ => "UNKNOWN_API_KEY" // AOT-safe fallback
     };
 
-    /// <summary>
-    /// AOT-safe method to get generic environment variable names
-    /// </summary>
     private static string GetGenericEnvironmentVariableName(ChatProvider provider) => provider switch
     {
         ChatProvider.OpenRouter => "OPENROUTER_API_KEY",
@@ -797,8 +986,29 @@ public class AgentBuilder
         ChatProvider.AppleIntelligence => "APPLEINTELLIGENCE_API_KEY",
         _ => "GENERIC_API_KEY" // AOT-safe fallback
     };
-    
-    private IChatClient CreateClientFromProvider(ChatProvider provider, string modelName, string? apiKey)
+
+    /// <summary>
+    /// Ensures a base client is available by creating one from provider configuration if needed
+    /// </summary>
+    internal static void EnsureBaseClientFromProvider(this AgentBuilder builder)
+    {
+        // If no base client provided but provider info is available, create the client
+        if (builder.BaseClient == null && builder.Config.Provider != null && !string.IsNullOrEmpty(builder.Config.Provider.ModelName))
+        {
+            // Handle Apple Intelligence as a special case since it doesn't need an API key
+            if (builder.Config.Provider.Provider == ChatProvider.AppleIntelligence)
+            {
+                builder.BaseClient = builder.CreateClientFromProvider(builder.Config.Provider.Provider, builder.Config.Provider.ModelName, null);
+            }
+            else
+            {
+                var apiKey = builder.ResolveApiKey(builder.Config.Provider.Provider, builder.Config.Provider.ApiKey);
+                builder.BaseClient = builder.CreateClientFromProvider(builder.Config.Provider.Provider, builder.Config.Provider.ModelName, apiKey);
+            }
+        }
+    }
+
+    internal static IChatClient CreateClientFromProvider(this AgentBuilder builder, ChatProvider provider, string modelName, string? apiKey)
     {
         return provider switch
         {
@@ -823,43 +1033,78 @@ public class AgentBuilder
             _ => throw new NotSupportedException($"Provider {provider} is not supported."),
         };
     }
-    
-    /// <summary>
-    /// Creates a new builder instance
-    /// </summary>
-    public static AgentBuilder Create() => new();
-    
+
+}
+
+#endregion
+
+#region Helper Methods
+
+/// <summary>
+/// Shared utility methods for AgentBuilder extension classes.
+/// Contains common helper methods to avoid duplication across extension files.
+/// </summary>
+internal static class AgentBuilderHelpers
+{
     /// <summary>
     /// Helper method to get environment variables (isolated to avoid analyzer warnings)
     /// </summary>
 #pragma warning disable RS1035 // Environment access is valid in application code, not analyzer code
-    private static string? GetEnvironmentVariable(string name)
+    internal static string? GetEnvironmentVariable(string name)
     {
         return Environment.GetEnvironmentVariable(name);
     }
 #pragma warning restore RS1035
 
-    // Public properties for extension methods
     /// <summary>
-    /// Gets the agent name for use in extension methods
+    /// Simple heuristic to detect analyzer context
     /// </summary>
-    public string AgentName => _config.Name;
-
-    /// <summary>
-    /// Internal access to configuration for extension methods
-    /// </summary>
-    internal IConfiguration? Configuration => _configuration;
-
-    /// <summary>
-    /// Internal access to config object for extension methods
-    /// </summary>
-    internal AgentConfig Config => _config;
-
-    #endregion
-
-    public AgentBuilder WithContinuationManager(ContinuationPermissionManager manager)
+    internal static bool IsAnalyzerContext()
     {
-        _continuationPermissionManager = manager;
-        return this;
+        return Debugger.IsAttached == false;
+    }
+
+    /// <summary>
+    /// Resolves or creates a configuration object from the provider configs dictionary
+    /// AOT-safe implementation without reflection
+    /// </summary>
+    internal static T ResolveOrCreateConfig<T>(Dictionary<Type, object> providerConfigs) where T : new()
+    {
+        if (providerConfigs.TryGetValue(typeof(T), out var existing))
+        {
+            return (T)existing;
+        }
+
+        var config = new T();
+        providerConfigs[typeof(T)] = config;
+        return config;
+    }
+
+    /// <summary>
+    /// Creates ElevenLabs configuration from environment variables
+    /// </summary>
+    internal static ElevenLabsConfig CreateElevenLabsConfigFromEnvironment()
+    {
+        return new ElevenLabsConfig
+        {
+            ApiKey = GetEnvironmentVariable("ELEVENLABS_API_KEY"),
+            DefaultVoiceId = GetEnvironmentVariable("ELEVENLABS_VOICE_ID") ?? "21m00Tcm4TlvDq8ikWAM", // Default voice
+            BaseUrl = GetEnvironmentVariable("ELEVENLABS_BASE_URL") ?? "https://api.elevenlabs.io"
+        };
+    }
+
+    /// <summary>
+    /// Creates Azure Speech configuration from environment variables
+    /// </summary>
+    internal static AzureSpeechConfig CreateAzureConfigFromEnvironment()
+    {
+        return new AzureSpeechConfig
+        {
+            ApiKey = GetEnvironmentVariable("AZURE_SPEECH_KEY"),
+            Region = GetEnvironmentVariable("AZURE_SPEECH_REGION") ?? "eastus",
+            DefaultVoice = GetEnvironmentVariable("AZURE_SPEECH_VOICE") ?? "en-US-AriaNeural"
+        };
     }
 }
+
+#endregion
