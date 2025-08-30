@@ -68,7 +68,7 @@ public class HPDAIFunctionFactory
             {
                 // If no raw JSON is available, serialize the arguments dictionary.
                 var argumentsDict = arguments.Where(kvp => kvp.Key != "__raw_json__").ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                var jsonString = JsonSerializer.Serialize(argumentsDict);
+                var jsonString = JsonSerializer.Serialize(argumentsDict, HPDJsonContext.Default.DictionaryStringObject);
                 jsonArgs = JsonDocument.Parse(jsonString).RootElement;
             }
             
@@ -202,6 +202,13 @@ public class ValidationError
 [JsonSerializable(typeof(List<int>))]
 [JsonSerializable(typeof(List<double>))]
 [JsonSerializable(typeof(List<object>))]
+
+// --- Schema library types for AOT compatibility ---
+[JsonSerializable(typeof(Json.Schema.JsonSchema))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonNode))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonArray))]
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonValue))]
 public partial class HPDJsonContext : JsonSerializerContext
 {
 }

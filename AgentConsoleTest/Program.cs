@@ -76,12 +76,6 @@ static async Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfigurati
         .WithFullPermissions(new ConsolePermissionHandler())
         .WithMCP(agentConfig.Mcp.ManifestPath)
         .Build();
-    
-        var mcpReport = await MCPRegistrationDebugger.DiagnoseMCPIssuesAsync(
-            new AgentBuilder(agentConfig).WithAPIConfiguration(config),
-            agentConfig.Mcp.ManifestPath
-        );
-        mcpReport.PrintReport();
 
 // 🎯 Project with smart defaults
 var project = Project.Create("AI Chat Session");

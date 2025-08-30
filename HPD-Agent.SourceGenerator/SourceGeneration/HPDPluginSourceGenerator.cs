@@ -178,6 +178,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         sb.AppendLine("using System.Text.Json;");
     sb.AppendLine("using System.Text.Json.Nodes;");
         sb.AppendLine("using System.Text.Json.Serialization;");
+        sb.AppendLine("using System.Text.Json.Serialization.Metadata;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Text;");
@@ -345,7 +346,7 @@ $@"    /// <summary>
         {
             schemaProviderCode += $@"
     var schema = new Json.Schema.JsonSchemaBuilder().FromType<{dtoName}>().Build();
-    var schemaJson = JsonSerializer.Serialize(schema);
+    var schemaJson = JsonSerializer.Serialize(schema, HPDJsonContext.Default.JsonSchema);
     var node = JsonNode.Parse(schemaJson);
     if (node is JsonObject root && root[""properties""] is JsonObject properties)
     {{
@@ -361,11 +362,11 @@ $@"    /// <summary>
 ";
             }
             schemaProviderCode += "    }\n";
-            schemaProviderCode += "    return JsonSerializer.SerializeToElement(node ?? JsonNode.Parse(\"{}\"));\n";
+            schemaProviderCode += "    return JsonSerializer.SerializeToElement(node ?? JsonNode.Parse(\"{}\"), HPDJsonContext.Default.JsonNode);\n";
         }
         else
         {
-            schemaProviderCode += "return JsonSerializer.SerializeToElement(new Json.Schema.JsonSchemaBuilder().Type(Json.Schema.SchemaValueType.Object).Build());";
+            schemaProviderCode += "return JsonSerializer.SerializeToElement(new Json.Schema.JsonSchemaBuilder().Type(Json.Schema.SchemaValueType.Object).Build(), HPDJsonContext.Default.JsonSchema);";
         }
         schemaProviderCode += " }";
 
