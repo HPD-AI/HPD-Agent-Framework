@@ -129,37 +129,48 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
     context.Response.Headers.Append("Connection", "keep-alive");
 
     var userMessage = request.Messages.FirstOrDefault()?.Content ?? "";
+    var messages = conversation.Messages.ToList();
+    messages.Add(new ChatMessage(ChatRole.User, userMessage));
 
+    var agent = pm.CreateAgent();
     var writer = new StreamWriter(context.Response.Body, leaveOpen: true);
 
     try
     {
-        // Use default streaming from conversation
-        await foreach (var update in conversation.SendStreamingAsync(userMessage, null, context.RequestAborted))
+        // ✅ 1. Call the method that returns BOTH the stream and the final history
+        var turnResult = await agent.ExecuteStreamingTurnAsync(messages, null, context.RequestAborted);
+
+        // ✅ 2. Stream the response updates directly to the client
+        await foreach (var update in turnResult.ResponseStream.WithCancellation(context.RequestAborted))
         {
-            // Extract text content and stream it
-            if (update.Contents != null)
+            // If you want to convert ChatResponseUpdate to BaseEvent, use your converter here
+            // For now, just stream the update as JSON
+            var eventJson = System.Text.Json.JsonSerializer.Serialize(update, typeof(ChatResponseUpdate), AppJsonSerializerContext.Default);
+            await writer.WriteAsync($"data: {eventJson}\n\n");
+            await writer.FlushAsync();
+        }
+
+        // ✅ 3. AFTER streaming is complete, await the final history
+        var finalTurnHistory = await turnResult.FinalHistory;
+
+        // ✅ 4. Update the conversation state with the new messages from the turn
+        // If Messages is read-only, use AddMessage in a loop
+        if (finalTurnHistory != null)
+        {
+            if (conversation.Messages is List<ChatMessage> msgList)
             {
-                foreach (var content in update.Contents.OfType<TextContent>())
+                msgList.AddRange(finalTurnHistory);
+            }
+            else
+            {
+                foreach (var msg in finalTurnHistory)
                 {
-                    if (!string.IsNullOrEmpty(content.Text))
-                    {
-                        var response = new StreamContentResponse(content.Text);
-                        await writer.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(response, AppJsonSerializerContext.Default.StreamContentResponse)}\n\n");
-                        await writer.FlushAsync();
-                    }
+                    conversation.AddMessage(msg);
                 }
             }
-
-            // Handle finish
-            if (update.FinishReason != null)
-            {
-                var response = new StreamFinishResponse(true, update.FinishReason.ToString());
-                await writer.WriteAsync($"data: {System.Text.Json.JsonSerializer.Serialize(response, AppJsonSerializerContext.Default.StreamFinishResponse)}\n\n");
-                await writer.FlushAsync();
-                break;
-            }
         }
+        // (Here you would also save the conversation object back to your ProjectManager/database)
+        // pm.SaveConversation(projectId, conversation);
     }
     catch (Exception ex)
     {

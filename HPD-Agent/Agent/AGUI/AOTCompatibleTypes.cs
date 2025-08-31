@@ -52,6 +52,23 @@ public sealed record DeveloperMessage : BaseMessage;
 public sealed record ToolMessage : BaseMessage;
 
 // Event Types (with JsonSourceGenerator support)
+[JsonDerivedType(typeof(RunStartedEvent), "RUN_STARTED")]
+[JsonDerivedType(typeof(RunFinishedEvent), "RUN_FINISHED")]
+[JsonDerivedType(typeof(RunErrorEvent), "RUN_ERROR")]
+[JsonDerivedType(typeof(StepStartedEvent), "STEP_STARTED")]
+[JsonDerivedType(typeof(StepFinishedEvent), "STEP_FINISHED")]
+[JsonDerivedType(typeof(TextMessageStartEvent), "TEXT_MESSAGE_START")]
+[JsonDerivedType(typeof(TextMessageContentEvent), "TEXT_MESSAGE_CONTENT")]
+[JsonDerivedType(typeof(TextMessageEndEvent), "TEXT_MESSAGE_END")]
+[JsonDerivedType(typeof(ToolCallStartEvent), "TOOL_CALL_START")]
+[JsonDerivedType(typeof(ToolCallArgsEvent), "TOOL_CALL_ARGS")]
+[JsonDerivedType(typeof(ToolCallEndEvent), "TOOL_CALL_END")]
+[JsonDerivedType(typeof(StateSnapshotEvent), "STATE_SNAPSHOT")]
+[JsonDerivedType(typeof(StateDeltaEvent), "STATE_DELTA")]
+[JsonDerivedType(typeof(CustomEvent), "CUSTOM")]
+[JsonDerivedType(typeof(RawEvent), "RAW")]
+[JsonDerivedType(typeof(MessagesSnapshotEvent), "MESSAGES_SNAPSHOT")]
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 public abstract record BaseEvent
 {
     [JsonPropertyName("type")]

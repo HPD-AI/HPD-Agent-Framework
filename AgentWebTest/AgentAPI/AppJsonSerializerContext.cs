@@ -34,9 +34,24 @@ using Microsoft.AspNetCore.Mvc;
 [JsonSerializable(typeof(StreamFinishResponse))]
 [JsonSerializable(typeof(StreamErrorResponse))]
 
-// 🎯 LIBRARY MAGIC: All AG-UI events handled automatically by StreamAGUIResponseAsync()
-// No need to manually list BaseEvent, TextMessageContentEvent, ToolCallStartEvent, etc.
-// The library uses its own AGUIJsonContext.Default for AG-UI events internally
+// AG-UI BaseEvent types for native streaming (all event classes)
+[JsonSerializable(typeof(BaseEvent))]
+[JsonSerializable(typeof(RunStartedEvent))]
+[JsonSerializable(typeof(RunFinishedEvent))]
+[JsonSerializable(typeof(RunErrorEvent))]
+[JsonSerializable(typeof(StepStartedEvent))]
+[JsonSerializable(typeof(StepFinishedEvent))]
+[JsonSerializable(typeof(TextMessageStartEvent))]
+[JsonSerializable(typeof(TextMessageContentEvent))]
+[JsonSerializable(typeof(TextMessageEndEvent))]
+[JsonSerializable(typeof(ToolCallStartEvent))]
+[JsonSerializable(typeof(ToolCallArgsEvent))]
+[JsonSerializable(typeof(ToolCallEndEvent))]
+[JsonSerializable(typeof(StateSnapshotEvent))]
+[JsonSerializable(typeof(StateDeltaEvent))]
+[JsonSerializable(typeof(CustomEvent))]
+[JsonSerializable(typeof(RawEvent))]
+[JsonSerializable(typeof(MessagesSnapshotEvent))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }

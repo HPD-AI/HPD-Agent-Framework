@@ -211,76 +211,6 @@ public class Conversation
         return finalResponse;
     }
 
-    /// <summary>
-    /// Send a message and parse the response as structured JSON
-    /// </summary>
-    public async Task<ChatResponse<T>> SendStructuredAsync<T>(
-        string message,
-        ChatOptions? options = null,
-        JsonSerializerOptions? serializerOptions = null,
-        bool? useJsonSchemaResponseFormat = null,
-        CancellationToken cancellationToken = default)
-    {
-        // Add user message (same as SendAsync)
-        var userMessage = new ChatMessage(ChatRole.User, message);
-        _messages.Add(userMessage);
-        UpdateActivity();
-
-        // Inject project context (same as SendAsync)
-        options = InjectProjectContextIfNeeded(options);
-        
-        // HERE'S THE KEY: Create a temporary IChatClient that wraps your orchestrator
-        var tempClient = new SimpleOrchestrationWrapper(_orchestrator, _agents, Id);
-        
-        // Use Microsoft.Extensions.AI structured extensions directly
-        var structuredResponse = await tempClient.GetResponseAsync<T>(
-            _messages, 
-            serializerOptions ?? AIJsonUtilities.DefaultOptions,
-            options, 
-            useJsonSchemaResponseFormat, 
-            cancellationToken);
-        
-        // Extract raw response for history (CRITICAL)
-        var rawResponse = (ChatResponse)structuredResponse;
-        
-        // Add RAW response to history (same as SendAsync)
-        _messages.AddMessages(rawResponse);
-        UpdateActivity();
-
-        // Apply filters (same as SendAsync)
-        var agentMetadata = CollectAgentMetadata(rawResponse);
-        var context = new ConversationFilterContext(this, userMessage, rawResponse, agentMetadata, options, cancellationToken);
-        await ApplyConversationFilters(context);
-
-        return structuredResponse;
-    }
-
-    /// <summary>
-    /// Send with documents and structured output
-    /// </summary>
-    public async Task<ChatResponse<T>> SendStructuredWithDocumentsAsync<T>(
-        string message,
-        string[] documentPaths,
-        TextExtractionUtility textExtractor,
-        ChatOptions? options = null,
-        JsonSerializerOptions? serializerOptions = null,
-        bool? useJsonSchemaResponseFormat = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (documentPaths == null || documentPaths.Length == 0)
-            return await SendStructuredAsync<T>(message, options, serializerOptions, useJsonSchemaResponseFormat, cancellationToken);
-
-        var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
-        
-        var enhancedMessage = _uploadStrategy switch
-        {
-            ConversationDocumentHandling.FullTextInjection => 
-                ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads),
-            _ => message
-        };
-
-        return await SendStructuredAsync<T>(enhancedMessage, options, serializerOptions, useJsonSchemaResponseFormat, cancellationToken);
-    }
 
     // Helper method to avoid code duplication
     private ChatOptions? InjectProjectContextIfNeeded(ChatOptions? options)
@@ -333,7 +263,6 @@ public class Conversation
         return options;
     }
 
-
     /// <summary>
     /// Stream a conversation turn
     /// </summary>
@@ -376,71 +305,6 @@ public class Conversation
             await ApplyConversationFilters(context);
         }
     }
-
-    /// <summary>
-    /// PLACEHOLDER: Streaming response for web clients using AGUI/SSE format
-    /// 
-    /// PURPOSE: This method should provide Server-Sent Events (SSE) streaming for web clients
-    /// that expect AGUI protocol events (run_started, text_message_content, run_finished, etc.).
-    /// 
-    /// INTENDED FUNCTIONALITY:
-    /// - Convert SendStreamingAsync output to AGUI SSE format
-    /// - Write events directly to HTTP response stream for real-time web UI updates  
-    /// - Handle AGUI tool call events (ToolCallStart, ToolCallArgs, ToolCallEnd)
-    /// - Maintain conversation history like other send methods
-    /// 
-    /// CURRENT STATUS: Placeholder implementation - use SendStreamingAsync instead
-    /// TODO: Implement proper AGUI SSE conversion when SendStreamingAsync is working correctly
-    /// </summary>
-    public async Task StreamResponseAsync(
-        string message,
-        Stream responseStream,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        // PLACEHOLDER: For now, just write a simple response to avoid breaking callers
-        using var writer = new StreamWriter(responseStream, leaveOpen: true);
-        await writer.WriteAsync("data: {\"error\":\"StreamResponseAsync not implemented - use SendStreamingAsync\"}\n\n");
-        await writer.FlushAsync();
-        
-        // TODO: Implement AGUI SSE streaming when ready
-        throw new NotImplementedException("StreamResponseAsync is a placeholder. Use SendStreamingAsync for now.");
-    }
-
-    /// <summary>
-    /// PLACEHOLDER: WebSocket streaming response for real-time web applications
-    /// 
-    /// PURPOSE: This method should provide WebSocket-based streaming for web clients
-    /// that need bi-directional real-time communication with AGUI protocol support.
-    /// 
-    /// INTENDED FUNCTIONALITY:
-    /// - Convert SendStreamingAsync output to AGUI WebSocket messages
-    /// - Send events over WebSocket connection for real-time updates
-    /// - Support bi-directional communication (client can send interrupts/cancellations)
-    /// - Handle AGUI tool call events and user interactions
-    /// - Maintain conversation history like other send methods
-    /// 
-    /// CURRENT STATUS: Placeholder implementation - use SendStreamingAsync instead  
-    /// TODO: Implement proper AGUI WebSocket streaming when SendStreamingAsync is working correctly
-    /// </summary>
-    public async Task StreamResponseToWebSocketAsync(
-        string message,
-        System.Net.WebSockets.WebSocket webSocket,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        // PLACEHOLDER: Send error message over WebSocket to avoid breaking callers
-        var errorMessage = System.Text.Encoding.UTF8.GetBytes("{\"error\":\"StreamResponseToWebSocketAsync not implemented - use SendStreamingAsync\"}");
-        await webSocket.SendAsync(
-            new ArraySegment<byte>(errorMessage), 
-            System.Net.WebSockets.WebSocketMessageType.Text, 
-            true, 
-            cancellationToken);
-        
-        // TODO: Implement AGUI WebSocket streaming when ready
-        throw new NotImplementedException("StreamResponseToWebSocketAsync is a placeholder. Use SendStreamingAsync for now.");
-    }
-
 
     /// <summary>
     protected void UpdateActivity() => LastActivity = DateTime.UtcNow;
@@ -542,39 +406,6 @@ public class Conversation
 
 }
 
-/// <summary>
-/// Minimal wrapper to make orchestrator work with Microsoft.Extensions.AI structured extensions
-/// </summary>
-internal class SimpleOrchestrationWrapper : IChatClient
-{
-    private readonly IOrchestrator _orchestrator;
-    private readonly IReadOnlyList<Agent> _agents;
-    private readonly string _conversationId;
-
-    public SimpleOrchestrationWrapper(IOrchestrator orchestrator, IReadOnlyList<Agent> agents, string conversationId)
-    {
-        _orchestrator = orchestrator;
-        _agents = agents;
-        _conversationId = conversationId;
-    }
-
-    public Task<ChatResponse> GetResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        return _orchestrator.OrchestrateAsync(messages.ToList(), _agents, _conversationId, options, cancellationToken);
-    }
-
-    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(IEnumerable<ChatMessage> messages, ChatOptions? options = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var turnResult = _orchestrator.OrchestrateStreamingAsync(messages.ToList(), _agents, _conversationId, options, cancellationToken);
-        await foreach (var update in turnResult.ResponseStream.WithCancellation(cancellationToken))
-        {
-            yield return update;
-        }
-    }
-
-    public void Dispose() { }
-    public object? GetService(Type serviceType, object? serviceKey) => null;
-}
 
 
 /// <summary>

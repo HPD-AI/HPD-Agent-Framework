@@ -2,7 +2,6 @@
 using System.Threading.Channels;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
-using AGUIDotnet.Events;
 
 /// <summary>
 /// Agent facade that delegates to specialized components for clean separation of concerns.
@@ -307,7 +306,7 @@ public class Agent : IChatClient
                                 StepId = Guid.NewGuid().ToString(),
                                 StepName = "Reasoning",
                                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                Type = EventTypes.STEP_STARTED
+                                Type = "STEP_STARTED"
                             };
                             
                             // Emit the reasoning text as content (for UI visibility)
@@ -316,7 +315,7 @@ public class Agent : IChatClient
                                 MessageId = messageId, 
                                 Delta = reasoning.Text,
                                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                Type = EventTypes.TEXT_MESSAGE_CONTENT
+                                Type = "TEXT_MESSAGE_CONTENT"
                             };
                             
                             // CRITICAL: Do NOT add reasoning to assistantContents (not saved to history)
@@ -332,7 +331,7 @@ public class Agent : IChatClient
                                 MessageId = messageId, 
                                 Delta = textContent.Text,
                                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                Type = EventTypes.TEXT_MESSAGE_CONTENT
+                                Type = "TEXT_MESSAGE_CONTENT"
                             };
                         }
                         else if (content is FunctionCallContent functionCall)
@@ -367,7 +366,7 @@ public class Agent : IChatClient
                         ToolCallName = toolRequest.Name,
                         ParentMessageId = messageId,
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        Type = EventTypes.TOOL_CALL_START
+                        Type = "TOOL_CALL_START"
                     };
                 }
                 
@@ -388,7 +387,7 @@ public class Agent : IChatClient
                         { 
                             ToolCallId = result.CallId,
                             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                            Type = EventTypes.TOOL_CALL_END
+                            Type = "TOOL_CALL_END"
                         };
                     }
                 }

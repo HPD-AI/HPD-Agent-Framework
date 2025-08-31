@@ -1,3 +1,5 @@
+using Microsoft.Extensions.AI;
+
 /// <summary>
 /// Represents the scope of a filter - what functions it applies to
 /// </summary>
@@ -93,6 +95,17 @@ public class ScopedFilterManager
     /// Gets all scoped filters
     /// </summary>
     public IReadOnlyList<ScopedFilter> GetAllScopedFilters() => _scopedFilters.AsReadOnly();
+    
+    /// <summary>
+    /// Gets all global filters that apply to all functions
+    /// </summary>
+    public List<IAiFunctionFilter> GetGlobalFilters()
+    {
+        return _scopedFilters
+            .Where(sf => sf.Scope == FilterScope.Global)
+            .Select(sf => sf.Filter)
+            .ToList();
+    }
 }
 
 /// <summary>
