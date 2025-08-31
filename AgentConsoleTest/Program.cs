@@ -72,6 +72,9 @@ static async Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfigurati
         .WithAPIConfiguration(config) // Pass appsettings.json for API key resolution
         .WithFilter(new LoggingAiFunctionFilter())
         .WithTavilyWebSearch()
+        .WithInjectedMemory(opts => opts
+            .WithStorageDirectory("./agent-memory-storage")
+            .WithMaxTokens(6000))
         .WithPlugin<MathPlugin>()
         .WithElevenLabsAudio() // Will use environment variables or config
         .WithFullPermissions(new ConsolePermissionHandler())

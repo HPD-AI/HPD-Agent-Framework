@@ -281,7 +281,7 @@ public class Conversation
         options = InjectAgentToolsIfNeeded(options);
         
         // ✅ FIXED: Call the streaming orchestrator and get StreamingTurnResult
-        var turnResult = _orchestrator.OrchestrateStreamingAsync(_messages, _agents, this.Id, options, cancellationToken);
+        var turnResult = await _orchestrator.OrchestrateStreamingAsync(_messages, _agents, this.Id, options, cancellationToken);
         
         // Stream the response to caller
         await foreach (var update in turnResult.ResponseStream.WithCancellation(cancellationToken))
@@ -314,13 +314,21 @@ public class Conversation
     {
         var metadata = new Dictionary<string, List<string>>();
         
-        // If response is provided and contains operation metadata, use it
-        if (response?.GetOperationHadFunctionCalls() == true)
+        // Extract function call information directly from the response messages
+        if (response?.Messages != null)
         {
-            var primaryAgent = _agents.FirstOrDefault();
-            if (primaryAgent != null)
+            var functionCalls = response.Messages
+                .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
+                .Select(fc => fc.Name)
+                .ToList();
+
+            if (functionCalls.Any())
             {
-                metadata[primaryAgent.Name] = response.GetOperationFunctionCalls().ToList();
+                var primaryAgent = _agents.FirstOrDefault();
+                if (primaryAgent != null)
+                {
+                    metadata[primaryAgent.Name] = functionCalls;
+                }
             }
         }
         

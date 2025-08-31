@@ -30,7 +30,7 @@ public interface IOrchestrator
     /// <param name="options">Optional chat settings.</param>
     /// <param name="cancellationToken">A cancellation token.</param>
     /// <returns>A StreamingTurnResult containing both the response stream and final turn history.</returns>
-    StreamingTurnResult OrchestrateStreamingAsync(
+    Task<StreamingTurnResult> OrchestrateStreamingAsync(
         IReadOnlyList<ChatMessage> history,
         IReadOnlyList<Agent> agents,
         string? conversationId = null,

@@ -27,10 +27,6 @@ public class Agent : IChatClient
     /// Agent configuration object containing all settings
     /// </summary>
     public AgentConfig? Config { get; private set; }
-    // Operation metadata keys for ChatResponse.AdditionalProperties
-    public static readonly string OperationHadFunctionCallsKey = "Agent.OperationHadFunctionCalls";
-    public static readonly string OperationFunctionCallsKey = "Agent.OperationFunctionCalls";
-    public static readonly string OperationFunctionCallCountKey = "Agent.OperationFunctionCallCount";
 
 
     /// <summary>
@@ -530,87 +526,11 @@ public class Agent : IChatClient
         await _aguiEventHandler.RunAsync(input, events, cancellationToken);
     }
 
-    /// <summary>
-    /// Executes the agent using the AG-UI RunAsync pattern and streams the SSE results 
-    /// directly to a given stream. This encapsulates the AG-UI channel logic and provides
-    /// proper error handling for web streaming scenarios.
-    /// </summary>
-    public async Task StreamAGUIResponseAsync(
-        RunAgentInput input,
-        Stream responseStream,
-        CancellationToken cancellationToken = default)
-    {
-        await _aguiEventHandler.StreamAGUIResponseAsync(input, responseStream, cancellationToken);
-    }
 
-    /// <summary>
-    /// Executes the agent and streams the AG-UI events directly to a WebSocket connection.
-    /// This encapsulates the WebSocket protocol logic and provides proper error handling.
-    /// </summary>
-    public async Task StreamToWebSocketAsync(
-        RunAgentInput input,
-        System.Net.WebSockets.WebSocket webSocket,
-        CancellationToken cancellationToken)
-    {
-        await _aguiEventHandler.StreamToWebSocketAsync(input, webSocket, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes the agent using orchestrated streaming and emits SSE results directly to a stream.
-    /// This version accepts an external, orchestrated stream instead of generating its own.
-    /// </summary>
-    public async Task StreamAGUIResponseAsync(
-        RunAgentInput input,
-        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
-        Stream responseStream,
-        CancellationToken cancellationToken = default)
-    {
-        await _aguiEventHandler.StreamAGUIResponseAsync(input, orchestratedStream, responseStream, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes the agent using orchestrated streaming and emits events directly to a WebSocket.
-    /// This version accepts an external, orchestrated stream instead of generating its own.
-    /// </summary>
-    public async Task StreamToWebSocketAsync(
-        RunAgentInput input,
-        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
-        System.Net.WebSockets.WebSocket webSocket,
-        CancellationToken cancellationToken)
-    {
-        await _aguiEventHandler.StreamToWebSocketAsync(input, orchestratedStream, webSocket, cancellationToken);
-    }
 
     #endregion
 
 
-    /// <summary>
-    /// Converts ChatResponseUpdate to AG-UI events using simple defaults.
-    /// This delegates to the AGUIEventHandler for processing.
-    /// </summary>
-    /// <param name="update">The chat response update to convert</param>
-    /// <param name="messageId">Optional message ID (auto-generated if not provided)</param>
-    /// <returns>Collection of AG-UI events ready for streaming</returns>
-    public IEnumerable<BaseEvent> ConvertToAGUIEvents(ChatResponseUpdate update, string messageId = "")
-    {
-        return _aguiEventHandler.ConvertToAGUIEvents(update, messageId);
-    }
-
-    /// <summary>
-    /// Converts ChatResponseUpdate to AG-UI events with advanced options.
-    /// This delegates to the AGUIEventHandler for processing.
-    /// </summary>
-    /// <param name="update">The chat response update to convert</param>
-    /// <param name="messageId">Message ID for the events</param>
-    /// <param name="emitBackendToolCalls">Whether to emit backend tool call events</param>
-    /// <returns>Collection of AG-UI events with customized behavior</returns>
-    public IEnumerable<BaseEvent> ConvertToAGUIEvents(
-        ChatResponseUpdate update,
-        string messageId,
-        bool emitBackendToolCalls = false)
-    {
-        return _aguiEventHandler.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls);
-    }
 
     /// <summary>
     /// Serializes any AG-UI event to JSON using the correct polymorphic serialization.
@@ -624,38 +544,6 @@ public class Agent : IChatClient
     }
 }
 
-/// <summary>
-/// Extension methods for accessing Agent operation metadata from ChatResponse
-/// </summary>
-public static class ChatResponseExtensions
-{
-    /// <summary>
-    /// Gets whether the operation had function calls
-    /// </summary>
-    public static bool GetOperationHadFunctionCalls(this ChatResponse response)
-    {
-        return response.AdditionalProperties?.TryGetValue(Agent.OperationHadFunctionCallsKey, out var value) == true
-            && value is bool hadCalls && hadCalls;
-    }
-
-    /// <summary>
-    /// Gets the list of function calls made during the operation
-    /// </summary>
-    public static string[] GetOperationFunctionCalls(this ChatResponse response)
-    {
-        return response.AdditionalProperties?.TryGetValue(Agent.OperationFunctionCallsKey, out var value) == true
-            && value is string[] calls ? calls : Array.Empty<string>();
-    }
-
-    /// <summary>
-    /// Gets the number of function call iterations during the operation
-    /// </summary>
-    public static int GetOperationFunctionCallCount(this ChatResponse response)
-    {
-        return response.AdditionalProperties?.TryGetValue(Agent.OperationFunctionCallCountKey, out var value) == true
-            && value is int count ? count : 0;
-    }
-}
 
 #region AGUI Event Handling
 
@@ -736,155 +624,8 @@ public class AGUIEventHandler : IAGUIAgent
         }
     }
 
-    /// <summary>
-    /// Executes the agent using the AG-UI RunAsync pattern and streams the SSE results 
-    /// directly to a given stream. This encapsulates the AG-UI channel logic and provides
-    /// proper error handling for web streaming scenarios.
-    /// </summary>
-    public async Task StreamAGUIResponseAsync(
-        RunAgentInput input,
-        Stream responseStream,
-        CancellationToken cancellationToken = default)
-    {
-        // Convert AGUI input to Extensions.AI format and create a self-generated stream
-        var messages = _eventConverter.ConvertToExtensionsAI(input);
-        var chatOptions = _eventConverter.ConvertToExtensionsAIChatOptions(input, _config?.Provider?.DefaultChatOptions);
 
-        var turnResult = await _agent.ExecuteStreamingTurnAsync(messages, chatOptions, cancellationToken);
-        var selfGeneratedStream = turnResult.ResponseStream;
 
-        await StreamAGUIResponseAsync(input, selfGeneratedStream, responseStream, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes the agent and streams the AG-UI events directly to a WebSocket connection.
-    /// This encapsulates the WebSocket protocol logic and provides proper error handling.
-    /// </summary>
-    public async Task StreamToWebSocketAsync(
-        RunAgentInput input,
-        System.Net.WebSockets.WebSocket webSocket,
-        CancellationToken cancellationToken)
-    {
-        // Convert AGUI input to Extensions.AI format and create a self-generated stream
-        var messages = _eventConverter.ConvertToExtensionsAI(input);
-        var chatOptions = _eventConverter.ConvertToExtensionsAIChatOptions(input, _config?.Provider?.DefaultChatOptions);
-
-        var turnResult = await _agent.ExecuteStreamingTurnAsync(messages, chatOptions, cancellationToken);
-        var selfGeneratedStream = turnResult.ResponseStream;
-
-        await StreamToWebSocketAsync(input, selfGeneratedStream, webSocket, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes the agent using orchestrated streaming and emits SSE results directly to a stream.
-    /// This version accepts an external, orchestrated stream instead of generating its own.
-    /// </summary>
-    public async Task StreamAGUIResponseAsync(
-        RunAgentInput input,
-        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
-        Stream responseStream,
-        CancellationToken cancellationToken = default)
-    {
-        await using var writer = new StreamWriter(responseStream, leaveOpen: true);
-        try
-        {
-            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateRunStarted(input))}\n\n");
-            var messageId = Guid.NewGuid().ToString();
-            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateTextMessageStart(messageId))}\n\n");
-
-            await foreach (var update in orchestratedStream.WithCancellation(cancellationToken))
-            {
-                var aguiEvents = _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls: true);
-                foreach (var aguiEvent in aguiEvents)
-                {
-                    await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(aguiEvent)}\n\n");
-                    await writer.FlushAsync();
-                }
-            }
-
-            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateTextMessageEnd(messageId))}\n\n");
-            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(AGUIEventConverter.LifecycleEvents.CreateRunFinished(input))}\n\n");
-        }
-        catch (Exception ex)
-        {
-            var errorEvent = AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex);
-            await writer.WriteAsync($"data: {EventSerialization.SerializeEvent(errorEvent)}\n\n");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Executes the agent using orchestrated streaming and emits events directly to a WebSocket.
-    /// This version accepts an external, orchestrated stream instead of generating its own.
-    /// </summary>
-    public async Task StreamToWebSocketAsync(
-        RunAgentInput input,
-        IAsyncEnumerable<ChatResponseUpdate> orchestratedStream,
-        System.Net.WebSockets.WebSocket webSocket,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunStarted(input));
-            var messageId = Guid.NewGuid().ToString();
-            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateTextMessageStart(messageId));
-
-            await foreach (var update in orchestratedStream.WithCancellation(cancellationToken))
-            {
-                var aguiEvents = _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls: true);
-                foreach (var aguiEvent in aguiEvents)
-                {
-                    await SendSocketMessage(aguiEvent);
-                }
-            }
-
-            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateTextMessageEnd(messageId));
-            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunFinished(input));
-        }
-        catch (Exception ex)
-        {
-            await SendSocketMessage(AGUIEventConverter.LifecycleEvents.CreateRunError(input, ex));
-            throw;
-        }
-
-        async Task SendSocketMessage(BaseEvent evt)
-        {
-            if (webSocket.State != System.Net.WebSockets.WebSocketState.Open) return;
-            var json = EventSerialization.SerializeEvent(evt);
-            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-            await webSocket.SendAsync(new ArraySegment<byte>(bytes), System.Net.WebSockets.WebSocketMessageType.Text, true, cancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// Converts ChatResponseUpdate to AG-UI events using simple defaults.
-    /// </summary>
-    /// <param name="update">The chat response update to convert</param>
-    /// <param name="messageId">Optional message ID (auto-generated if not provided)</param>
-    /// <returns>Collection of AG-UI events ready for streaming</returns>
-    public IEnumerable<BaseEvent> ConvertToAGUIEvents(ChatResponseUpdate update, string messageId = "")
-    {
-        if (string.IsNullOrEmpty(messageId))
-            messageId = Guid.NewGuid().ToString();
-
-        return _eventConverter.ConvertToAGUIEvents(update, messageId);
-    }
-
-    /// <summary>
-    /// Converts ChatResponseUpdate to AG-UI events with advanced options.
-    /// Provides escape hatch for power users who need full control.
-    /// </summary>
-    /// <param name="update">The chat response update to convert</param>
-    /// <param name="messageId">Message ID for the events</param>
-    /// <param name="emitBackendToolCalls">Whether to emit backend tool call events</param>
-    /// <returns>Collection of AG-UI events with customized behavior</returns>
-    public IEnumerable<BaseEvent> ConvertToAGUIEvents(
-        ChatResponseUpdate update,
-        string messageId,
-        bool emitBackendToolCalls = false)
-    {
-        return _eventConverter.ConvertToAGUIEvents(update, messageId, emitBackendToolCalls);
-    }
 
     /// <summary>
     /// Serializes any AG-UI event to JSON using the correct polymorphic serialization.
@@ -959,135 +700,6 @@ public class FunctionCallProcessor
         _maxFunctionCalls = maxFunctionCalls;
     }
 
-    /// <summary>
-    /// Processes a response that may contain function calls, handling multi-turn execution.
-    /// Based on Microsoft.Extensions.AI.FunctionInvokingChatClient pattern
-    /// </summary>
-    public async Task<ChatResponse> ProcessResponseWithFiltersAsync(
-        ChatResponse response,
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        IChatClient baseClient,
-        CancellationToken cancellationToken)
-    {
-        // Copy the original messages to avoid multiple enumeration
-        List<ChatMessage> originalMessages = [.. messages];
-        var currentMessages = originalMessages.AsEnumerable();
-
-        List<ChatMessage>? augmentedHistory = null; // the actual history of messages sent on turns other than the first
-        ChatResponse? currentResponse = response; // the response from the inner client
-        List<ChatMessage>? responseMessages = null; // tracked list of messages, across multiple turns, to be used for the final response
-        List<FunctionCallContent>? functionCallContents = null; // function call contents that need responding to in the current turn
-
-        // Use OperationTracker
-        var operationTracker = new OperationTracker();
-
-        for (int iteration = 0; iteration < _maxFunctionCalls; iteration++)
-        {
-            functionCallContents?.Clear();
-
-            // Any function call work to do? If yes, ensure we're tracking that work in functionCallContents.
-            bool requiresFunctionInvocation =
-                (options?.Tools is { Count: > 0 }) &&
-                CopyFunctionCalls(currentResponse.Messages, ref functionCallContents);
-
-            // In a common case where we make a request and there's no function calling work required,
-            // fast path out by just returning the original response.
-            if (iteration == 0 && !requiresFunctionInvocation)
-            {
-                return currentResponse;
-            }
-
-            // Track aggregate details from the response, including all of the response messages
-            (responseMessages ??= []).AddRange(currentResponse.Messages);
-
-            // If there are no tools to call, or for any other reason we should stop, we're done.
-            // Break out of the loop and allow the handling at the end to configure the response
-            // with aggregated data from previous requests.
-            if (!requiresFunctionInvocation)
-            {
-                break;
-            }
-
-            // Use OperationTracker
-            if (requiresFunctionInvocation)
-            {
-                operationTracker.TrackFunctionCall(functionCallContents!.Select(fc => fc.Name), iteration + 1);
-
-                // Check continuation permission if configured
-                if (_continuationPermissionManager != null && iteration > 0)
-                {
-                    var completedFunctions = GetCompletedFunctionNames(responseMessages);
-                    var plannedFunctions = GetPlannedFunctionNames(functionCallContents);
-                    var conversationId = ExtractConversationId(originalMessages);
-                    var projectId = ExtractProjectId(options);
-
-                    var decision = await _continuationPermissionManager.ShouldContinueAsync(
-                        iteration + 1, _maxFunctionCalls, completedFunctions, plannedFunctions,
-                        conversationId, projectId);
-
-                    if (!decision.ShouldContinue)
-                    {
-                        // Add a message explaining why we stopped
-                        var stopMessage = new ChatMessage(ChatRole.Assistant,
-                            decision.Reason ?? "Function call continuation was denied.");
-                        responseMessages.Add(stopMessage);
-                        break;
-                    }
-                }
-            }
-
-            // Prepare the history for the next iteration.
-            PrepareHistoryForNextIteration(originalMessages, ref currentMessages, ref augmentedHistory, currentResponse, responseMessages);
-
-            // Add the responses from the function calls into the augmented history and also into the tracked
-            // list of response messages.
-            var addedMessages = await ProcessFunctionCallsAsync(augmentedHistory ?? currentMessages.ToList(), options, functionCallContents!, cancellationToken);
-            // Add the tool results into the history for the NEXT turn so the model sees them.
-            (augmentedHistory ?? (List<ChatMessage>)currentMessages).AddRange(addedMessages);
-            responseMessages.AddRange(addedMessages);
-
-            // Call the LLM again with the updated history
-            // For the next turn, create a new set of options to avoid forcing the model to call a tool again.
-            // This prevents an infinite loop where the model keeps invoking functions.
-            var nextTurnOptions = options == null
-                ? new ChatOptions()
-                : new ChatOptions
-                {
-                    Tools = options.Tools,
-                    // Explicitly reset ToolMode to null (defaults to 'Auto') so the model is free to answer.
-                    ToolMode = AutoChatToolMode.Auto,
-                    AllowMultipleToolCalls = options.AllowMultipleToolCalls,
-                    MaxOutputTokens = options.MaxOutputTokens,
-                    Temperature = options.Temperature,
-                    TopP = options.TopP,
-                    FrequencyPenalty = options.FrequencyPenalty,
-                    PresencePenalty = options.PresencePenalty,
-                    ResponseFormat = options.ResponseFormat,
-                    Seed = options.Seed,
-                    StopSequences = options.StopSequences,
-                    ModelId = options.ModelId,
-                    AdditionalProperties = options.AdditionalProperties
-                };
-
-            currentResponse = await baseClient.GetResponseAsync(currentMessages, nextTurnOptions, cancellationToken);
-        }
-
-        // Configure the final response with aggregated data
-        if (responseMessages != null)
-        {
-            currentResponse.Messages = responseMessages;
-        }
-
-        // Use OperationTracker to get metadata
-        var finalMetadata = operationTracker.GetMetadata();
-        currentResponse.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-        currentResponse.AdditionalProperties[Agent.OperationHadFunctionCallsKey] = finalMetadata.HadFunctionCalls;
-        currentResponse.AdditionalProperties[Agent.OperationFunctionCallsKey] = finalMetadata.FunctionCalls.ToArray();
-        currentResponse.AdditionalProperties[Agent.OperationFunctionCallCountKey] = finalMetadata.FunctionCallCount;
-
-        return currentResponse;
-    }
 
     /// <summary>
     /// Processes the function calls and returns the messages to add to the conversation
@@ -1182,97 +794,6 @@ public class FunctionCallProcessor
     /// <summary>
     /// Prepares the various chat message lists after a response from the inner client and before invoking functions
     /// </summary>
-    private static void PrepareHistoryForNextIteration(
-        IEnumerable<ChatMessage> originalMessages,
-        ref IEnumerable<ChatMessage> currentMessages,
-        ref List<ChatMessage>? augmentedHistory,
-        ChatResponse response,
-        List<ChatMessage> allTurnsResponseMessages)
-    {
-        // We're going to need to augment the history with function result contents.
-        // That means we need a separate list to store the augmented history.
-        augmentedHistory ??= originalMessages.ToList();
-
-        // Now add the most recent response messages.
-        augmentedHistory.AddRange(response.Messages);
-
-        // Use the augmented history as the new set of messages to send.
-        currentMessages = augmentedHistory;
-    }
-
-    /// <summary>
-    /// Copies any FunctionCallContent from messages to functionCalls
-    /// </summary>
-    private static bool CopyFunctionCalls(
-        IList<ChatMessage> messages, ref List<FunctionCallContent>? functionCalls)
-    {
-        bool any = false;
-        int count = messages.Count;
-        for (int i = 0; i < count; i++)
-        {
-            any |= CopyFunctionCalls(messages[i].Contents, ref functionCalls);
-        }
-
-        return any;
-    }
-
-    /// <summary>
-    /// Copies any FunctionCallContent from content to functionCalls
-    /// </summary>
-    private static bool CopyFunctionCalls(
-        IList<AIContent> content, ref List<FunctionCallContent>? functionCalls)
-    {
-        bool any = false;
-        int count = content.Count;
-        for (int i = 0; i < count; i++)
-        {
-            if (content[i] is FunctionCallContent functionCall)
-            {
-                (functionCalls ??= []).Add(functionCall);
-                any = true;
-            }
-        }
-
-        return any;
-    }
-
-    /// <summary>
-    /// Helper methods for ContinuationPermissionManager
-    /// </summary>
-    private static string ExtractConversationId(IEnumerable<ChatMessage> messages)
-    {
-        if (messages.Any())
-            return messages.First().MessageId ?? "temp_conv_id";
-        return "unknown_conv_id";
-    }
-
-    private static string? ExtractProjectId(ChatOptions? options)
-    {
-        if (options?.AdditionalProperties?.TryGetValue("Project", out var projectObj) == true && projectObj is Project project)
-            return project.Id;
-        return null;
-    }
-
-    private static string[] GetCompletedFunctionNames(List<ChatMessage> responseMessages)
-    {
-        var completedCallIds = responseMessages
-            .Where(m => m.Role == ChatRole.Tool)
-            .SelectMany(m => m.Contents.OfType<FunctionResultContent>())
-            .Select(fr => fr.CallId)
-            .ToHashSet();
-
-        return responseMessages
-            .SelectMany(m => m.Contents.OfType<FunctionCallContent>())
-            .Where(fc => completedCallIds.Contains(fc.CallId))
-            .Select(fc => fc.Name)
-            .Distinct()
-            .ToArray();
-    }
-
-    private static string[] GetPlannedFunctionNames(List<FunctionCallContent>? functionCallContents)
-    {
-        return functionCallContents?.Select(fc => fc.Name).ToArray() ?? Array.Empty<string>();
-    }
 }
 
 #endregion 
@@ -1432,42 +953,260 @@ public class MessageProcessor
 
 #endregion
 
-#region Operation Tracker
+#region AgentTurn
 /// <summary>
-/// Metadata about function call operations for thread-safe per-call tracking
+/// Manages a single streaming call to the LLM and translates the raw output into TurnEvents
 /// </summary>
-public class OperationMetadata
+public class AgentTurn
 {
-    public bool HadFunctionCalls { get; set; }
-    public List<string> FunctionCalls { get; set; } = new();
-    public int FunctionCallCount { get; set; }
-}
-
-/// <summary>
-/// Manages the tracking of function call metadata for an operation.
-/// </summary>
-public class OperationTracker
-{
-    private readonly OperationMetadata _metadata = new();
+    private readonly IChatClient _baseClient;
 
     /// <summary>
-    /// Tracks a function call.
+    /// Initializes a new instance of AgentTurn
     /// </summary>
-    /// <param name="functionCalls">The function calls to track.</param>
-    /// <param name="iteration">The current iteration of the operation.</param>
-    public void TrackFunctionCall(IEnumerable<string> functionCalls, int iteration)
+    /// <param name="baseClient">The underlying chat client to use for LLM calls</param>
+    public AgentTurn(IChatClient baseClient)
     {
-        _metadata.HadFunctionCalls = true;
-        _metadata.FunctionCalls.AddRange(functionCalls);
-        _metadata.FunctionCallCount = iteration;
+        _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
     }
 
     /// <summary>
-    /// Gets the current operation metadata.
+    /// Runs a single turn with the LLM and yields ChatResponseUpdates representing the response
     /// </summary>
-    /// <returns>The operation metadata.</returns>
-    public OperationMetadata GetMetadata() => _metadata;
+    /// <param name="messages">The conversation history to send to the LLM</param>
+    /// <param name="options">Optional chat options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of ChatResponseUpdates representing the LLM's response</returns>
+    public async IAsyncEnumerable<ChatResponseUpdate> RunAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var update in RunAsyncCore(messages, options, cancellationToken))
+        {
+            yield return update;
+        }
+    }
+
+    private async IAsyncEnumerable<ChatResponseUpdate> RunAsyncCore(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // Get the streaming response from the base client
+        var stream = _baseClient.GetStreamingResponseAsync(messages, options, cancellationToken);
+
+        IAsyncEnumerator<ChatResponseUpdate>? enumerator = null;
+        Exception? errorToYield = null;
+
+        try
+        {
+            enumerator = stream.GetAsyncEnumerator(cancellationToken);
+
+            while (true)
+            {
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    errorToYield = ex;
+                    break;
+                }
+
+                if (!hasNext)
+                    break;
+
+                var update = enumerator.Current;
+
+                // Yield the update directly
+                yield return update;
+            }
+        }
+        finally
+        {
+            if (enumerator != null)
+            {
+                try
+                {
+                    await enumerator.DisposeAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Ignore disposal errors
+                }
+            }
+        }
+
+        // If there was an error, throw it after cleanup
+        if (errorToYield != null)
+        {
+            throw errorToYield;
+        }
+    }
 }
 
 #endregion
 
+#region 
+
+/// <summary>
+/// Represents the result of a streaming turn, providing both the stream and the final turn history
+/// </summary>
+public class StreamingTurnResult
+{
+    /// <summary>
+    /// The stream of response updates that can be consumed by the caller
+    /// </summary>
+    public IAsyncEnumerable<ChatResponseUpdate> ResponseStream { get; }
+
+    /// <summary>
+    /// Task that completes with the final turn history once streaming is done
+    /// </summary>
+    public Task<IReadOnlyList<ChatMessage>> FinalHistory { get; }
+
+    /// <summary>
+    /// Initializes a new instance of StreamingTurnResult
+    /// </summary>
+    /// <param name="responseStream">The stream of response updates</param>
+    /// <param name="finalHistory">Task that provides the final turn history</param>
+    public StreamingTurnResult(
+        IAsyncEnumerable<ChatResponseUpdate> responseStream,
+        Task<IReadOnlyList<ChatMessage>> finalHistory)
+    {
+        ResponseStream = responseStream ?? throw new ArgumentNullException(nameof(responseStream));
+        FinalHistory = finalHistory ?? throw new ArgumentNullException(nameof(finalHistory));
+    }
+}
+
+#endregion
+
+#region Tool Scheduler
+
+/// <summary>
+/// Responsible for executing tools and running the associated IAiFunctionFilter pipeline
+/// </summary>
+public class ToolScheduler
+{
+    private readonly FunctionCallProcessor _functionCallProcessor;
+
+    /// <summary>
+    /// Initializes a new instance of ToolScheduler
+    /// </summary>
+    /// <param name="functionCallProcessor">The function call processor to use for tool execution</param>
+    public ToolScheduler(FunctionCallProcessor functionCallProcessor)
+    {
+        _functionCallProcessor = functionCallProcessor ?? throw new ArgumentNullException(nameof(functionCallProcessor));
+    }
+
+    /// <summary>
+    /// Executes the requested tools in parallel and returns the tool response message
+    /// </summary>
+    /// <param name="currentHistory">The current conversation history</param>
+    /// <param name="toolRequests">The tool call requests to execute</param>
+    /// <param name="options">Optional chat options containing tool definitions</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A chat message containing the tool execution results</returns>
+    public async Task<ChatMessage> ExecuteToolsAsync(
+        List<ChatMessage> currentHistory,
+        List<FunctionCallContent> toolRequests,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        // For single tool calls, use sequential execution (no parallelization overhead)
+        if (toolRequests.Count <= 1)
+        {
+            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, cancellationToken);
+        }
+
+        // For multiple tool calls, execute in parallel for better performance
+        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes tools sequentially (used for single tools or as fallback)
+    /// </summary>
+    private async Task<ChatMessage> ExecuteSequentiallyAsync(
+        List<ChatMessage> currentHistory,
+        List<FunctionCallContent> toolRequests,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        // Use the existing FunctionCallProcessor to execute the tools sequentially
+        var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
+            currentHistory, options, toolRequests, cancellationToken);
+
+        // Combine all tool results into a single message
+        var allContents = new List<AIContent>();
+        foreach (var message in resultMessages)
+        {
+            allContents.AddRange(message.Contents);
+        }
+
+        return new ChatMessage(ChatRole.Tool, allContents);
+    }
+
+    /// <summary>
+    /// Executes tools in parallel for improved performance with multiple independent tools
+    /// </summary>
+    private async Task<ChatMessage> ExecuteInParallelAsync(
+        List<ChatMessage> currentHistory,
+        List<FunctionCallContent> toolRequests,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        // Create tasks for each tool execution
+        var executionTasks = toolRequests.Select(async toolRequest =>
+        {
+            try
+            {
+                // Execute each tool call individually through the processor
+                var singleToolList = new List<FunctionCallContent> { toolRequest };
+                var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
+                    currentHistory, options, singleToolList, cancellationToken);
+
+                return (Success: true, Messages: resultMessages, Error: (Exception?)null);
+            }
+            catch (Exception ex)
+            {
+                // Capture any errors for aggregation
+                return (Success: false, Messages: new List<ChatMessage>(), Error: ex);
+            }
+        }).ToArray();
+
+        // Wait for all tasks to complete
+        var results = await Task.WhenAll(executionTasks);
+
+        // Aggregate results and handle errors
+        var allContents = new List<AIContent>();
+        var errors = new List<Exception>();
+
+        foreach (var result in results)
+        {
+            if (result.Success)
+            {
+                foreach (var message in result.Messages)
+                {
+                    allContents.AddRange(message.Contents);
+                }
+            }
+            else if (result.Error != null)
+            {
+                errors.Add(result.Error);
+            }
+        }
+
+        // If there were any errors, include them in the response
+        if (errors.Count > 0)
+        {
+            var errorMessage = $"Some tool executions failed: {string.Join("; ", errors.Select(e => e.Message))}";
+            allContents.Add(new TextContent($"⚠️ Tool Execution Errors: {errorMessage}"));
+        }
+
+        return new ChatMessage(ChatRole.Tool, allContents);
+    }
+}
+
+#endregion

@@ -137,40 +137,19 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
 
     try
     {
-        // ✅ 1. Call the method that returns BOTH the stream and the final history
-        var turnResult = await agent.ExecuteStreamingTurnAsync(messages, null, context.RequestAborted);
-
-        // ✅ 2. Stream the response updates directly to the client
-        await foreach (var update in turnResult.ResponseStream.WithCancellation(context.RequestAborted))
+        // ✅ 1. Stream AG-UI events directly from agent
+        await foreach (var baseEvent in agent.StreamEventsAsync(messages, null, context.RequestAborted))
         {
-            // If you want to convert ChatResponseUpdate to BaseEvent, use your converter here
-            // For now, just stream the update as JSON
-            var eventJson = System.Text.Json.JsonSerializer.Serialize(update, typeof(ChatResponseUpdate), AppJsonSerializerContext.Default);
+            // Stream the BaseEvent as JSON directly (AG-UI format)
+            var eventJson = System.Text.Json.JsonSerializer.Serialize(baseEvent, typeof(BaseEvent), AppJsonSerializerContext.Default);
             await writer.WriteAsync($"data: {eventJson}\n\n");
             await writer.FlushAsync();
         }
 
-        // ✅ 3. AFTER streaming is complete, await the final history
-        var finalTurnHistory = await turnResult.FinalHistory;
-
-        // ✅ 4. Update the conversation state with the new messages from the turn
-        // If Messages is read-only, use AddMessage in a loop
-        if (finalTurnHistory != null)
-        {
-            if (conversation.Messages is List<ChatMessage> msgList)
-            {
-                msgList.AddRange(finalTurnHistory);
-            }
-            else
-            {
-                foreach (var msg in finalTurnHistory)
-                {
-                    conversation.AddMessage(msg);
-                }
-            }
-        }
-        // (Here you would also save the conversation object back to your ProjectManager/database)
-        // pm.SaveConversation(projectId, conversation);
+        // ✅ 2. Update conversation with the user message that was sent
+        conversation.AddMessage(new ChatMessage(ChatRole.User, userMessage));
+        // Note: AG-UI events don't provide final history directly, 
+        // so we'll need to track the assistant response as we receive content events
     }
     catch (Exception ex)
     {
