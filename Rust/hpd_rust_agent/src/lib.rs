@@ -4,6 +4,7 @@
 mod ffi;
 pub mod agent;
 pub mod conversation;
+pub mod project;
 pub mod streaming;
 pub mod config;
 pub mod plugins;
@@ -16,6 +17,7 @@ pub use hpd_rust_agent_macros::{hpd_plugin, ai_function, requires_permission};
 pub use plugins::{PluginRegistration, register_plugin, get_registered_plugins, get_plugin_stats};
 pub use agent::{Agent, AgentBuilder, AgentConfig, Plugin, RustFunctionInfo};
 pub use conversation::Conversation;
+pub use project::{Project, ProjectInfo};
 pub use config::AppSettings;
 
 pub fn add(left: u64, right: u64) -> u64 {
@@ -254,5 +256,116 @@ mod tests {
         } else {
             println!("⚠️  FFI function returned null");
         }
+    }
+
+    #[test]
+    fn test_project_creation() {
+        // Test creating a project with name only
+        let project_result = crate::project::Project::create("Test Project", None);
+        assert!(project_result.is_ok(), "Project creation should succeed");
+
+        let project = project_result.unwrap();
+        
+        // Test getting project info
+        let info_result = project.get_info();
+        assert!(info_result.is_ok(), "Getting project info should succeed");
+        
+        let info = info_result.unwrap();
+        assert_eq!(info.name, "Test Project", "Project name should match");
+        assert_eq!(info.conversation_count, 0, "New project should have 0 conversations");
+        
+        println!("✅ Project created successfully with ID: {}", info.id);
+        
+        // Project will be automatically destroyed when dropped
+    }
+
+    #[test]
+    fn test_project_with_storage_directory() {
+        // Test creating a project with storage directory
+        let project_result = crate::project::Project::create("Test Project With Storage", Some("/tmp/test-storage"));
+        assert!(project_result.is_ok(), "Project creation with storage directory should succeed");
+
+        let project = project_result.unwrap();
+        
+        // Test getting project info
+        let info_result = project.get_info();
+        assert!(info_result.is_ok(), "Getting project info should succeed");
+        
+        let info = info_result.unwrap();
+        assert_eq!(info.name, "Test Project With Storage", "Project name should match");
+        
+        println!("✅ Project with storage directory created successfully with ID: {}", info.id);
+    }
+
+    #[test]
+    fn test_project_conversation_creation() {
+        // Load configuration from appsettings.json
+        let config = crate::config::AppSettings::load()
+            .expect("Failed to load appsettings.json");
+        
+        let api_key = config.get_openrouter_api_key()
+            .expect("OpenRouter API key not found in configuration");
+        
+        let model = config.get_default_model()
+            .unwrap_or("google/gemini-2.5-pro");
+
+        // Create a project
+        let project = crate::project::Project::create("Test Conversation Project", None)
+            .expect("Failed to create project");
+
+        // Create an agent
+        let agent = crate::agent::AgentBuilder::new("test-agent")
+            .with_instructions("You are a test assistant")
+            .with_openrouter(model, api_key)
+            .build()
+            .expect("Failed to create agent");
+
+        // Create a conversation within the project
+        let conversation_result = project.create_conversation(vec![agent]);
+        assert!(conversation_result.is_ok(), "Project conversation creation should succeed");
+
+        let conversation = conversation_result.unwrap();
+        
+        // Test sending a message through the project-scoped conversation
+        let response = conversation.send("Hello from project conversation");
+        assert!(response.is_ok(), "Sending message should succeed");
+        
+        let message = response.unwrap();
+        assert!(!message.is_empty(), "Response should not be empty");
+        
+        println!("✅ Project conversation created and message sent successfully");
+        println!("Response: {}", message);
+
+        // Test project info after conversation creation
+        let info = project.get_info().expect("Failed to get project info");
+        assert_eq!(info.conversation_count, 1, "Project should have 1 conversation after creation");
+        
+        println!("✅ Project now has {} conversation(s)", info.conversation_count);
+    }
+
+    #[test]
+    fn test_project_info_retrieval() {
+        let project = crate::project::Project::create("Info Test Project", None)
+            .expect("Failed to create project");
+
+        let info = project.get_info().expect("Failed to get project info");
+        
+        // Test all fields are populated
+        assert!(!info.id.is_empty(), "Project ID should not be empty");
+        assert!(!info.name.is_empty(), "Project name should not be empty");
+        assert!(!info.created_at.is_empty(), "Created at should not be empty");
+        assert!(!info.last_activity.is_empty(), "Last activity should not be empty");
+        
+        // Test specific values
+        assert_eq!(info.name, "Info Test Project", "Project name should match");
+        assert_eq!(info.conversation_count, 0, "New project should have 0 conversations");
+        
+        println!("✅ Project info retrieved successfully:");
+        println!("  ID: {}", info.id);
+        println!("  Name: {}", info.name);
+        println!("  Description: {}", info.description);
+        println!("  Conversations: {}", info.conversation_count);
+        println!("  Created: {}", info.created_at);
+        println!("  Last Activity: {}", info.last_activity);
     }
 }

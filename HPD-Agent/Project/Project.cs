@@ -1,6 +1,31 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Text.Json.Serialization;
+
+/// <summary>
+/// Project information for FFI/API responses.
+/// </summary>
+public class ProjectInfo
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("conversation_count")]
+    public int ConversationCount { get; set; }
+
+    [JsonPropertyName("created_at")]
+    public string CreatedAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("last_activity")]
+    public string LastActivity { get; set; } = string.Empty;
+}
 
 /// <summary>
 /// Represents a project containing conversations and scoped memories.

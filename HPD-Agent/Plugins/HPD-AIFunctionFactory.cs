@@ -244,6 +244,9 @@ public class ValidationError
 [JsonSerializable(typeof(List<Microsoft.Extensions.AI.AIContent>))]
 [JsonSerializable(typeof(IList<Microsoft.Extensions.AI.ChatMessage>))]
 [JsonSerializable(typeof(IEnumerable<Microsoft.Extensions.AI.ChatMessage>))]
+
+// --- Project FFI types ---
+[JsonSerializable(typeof(ProjectInfo))]
 public partial class HPDJsonContext : JsonSerializerContext
 {
 }

@@ -7,6 +7,11 @@ pub struct Conversation {
 }
 
 impl Conversation {
+    /// Create a Conversation from an existing handle (for internal use)
+    pub(crate) fn from_handle(handle: *mut c_void) -> Self {
+        Self { handle }
+    }
+
     pub fn new(agents: Vec<Agent>) -> Result<Self, String> {
         if agents.is_empty() {
             return Err("At least one agent is required to create a conversation".to_string());

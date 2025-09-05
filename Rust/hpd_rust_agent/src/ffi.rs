@@ -15,6 +15,10 @@ extern "C" {
     pub fn destroy_conversation(conversation_handle: *mut c_void);
     pub fn conversation_send(conversation_handle: *mut c_void, message: *const c_char) -> *mut c_char;
     pub fn conversation_send_streaming(conversation_handle: *mut c_void, message: *const c_char, callback: *const c_void, context: *mut c_void);
+    pub fn create_project(name: *const c_char, storage_directory: *const c_char) -> *mut c_void;
+    pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
+    pub fn destroy_project(project_handle: *mut c_void);
+    pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
 }
 
 #[cfg(target_os = "macos")]
@@ -28,6 +32,10 @@ extern "C" {
     pub fn destroy_conversation(conversation_handle: *mut c_void);
     pub fn conversation_send(conversation_handle: *mut c_void, message: *const c_char) -> *mut c_char;
     pub fn conversation_send_streaming(conversation_handle: *mut c_void, message: *const c_char, callback: *const c_void, context: *mut c_void);
+    pub fn create_project(name: *const c_char, storage_directory: *const c_char) -> *mut c_void;
+    pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
+    pub fn destroy_project(project_handle: *mut c_void);
+    pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
 }
 
 #[cfg(target_os = "linux")]
@@ -41,6 +49,10 @@ extern "C" {
     pub fn destroy_conversation(conversation_handle: *mut c_void);
     pub fn conversation_send(conversation_handle: *mut c_void, message: *const c_char) -> *mut c_char;
     pub fn conversation_send_streaming(conversation_handle: *mut c_void, message: *const c_char, callback: *const c_void, context: *mut c_void);
+    pub fn create_project(name: *const c_char, storage_directory: *const c_char) -> *mut c_void;
+    pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
+    pub fn destroy_project(project_handle: *mut c_void);
+    pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
 }
 
 // Plugin System FFI Functions

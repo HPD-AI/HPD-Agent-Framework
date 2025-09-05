@@ -240,4 +240,111 @@ public static partial class NativeExports
             }
         });
     }
+
+    /// <summary>
+    /// Creates a project with the specified name and optional storage directory.
+    /// </summary>
+    /// <param name="namePtr">Pointer to UTF-8 string containing project name</param>
+    /// <param name="storageDirectoryPtr">Pointer to UTF-8 string containing storage directory path, or IntPtr.Zero for default</param>
+    /// <returns>Handle to the created Project, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "create_project")]
+    public static IntPtr CreateProject(IntPtr namePtr, IntPtr storageDirectoryPtr)
+    {
+        try
+        {
+            string? name = Marshal.PtrToStringUTF8(namePtr);
+            if (string.IsNullOrEmpty(name)) return IntPtr.Zero;
+
+            string? storageDirectory = storageDirectoryPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(storageDirectoryPtr) : null;
+
+            var project = Project.Create(name, storageDirectory);
+            return ObjectManager.Add(project);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERR] CreateProject failed: {ex.Message}");
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Creates a conversation within a project using the provided agents.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="agentHandlesPtr">Pointer to array of agent handles</param>
+    /// <param name="agentCount">Number of agents in the array</param>
+    /// <returns>Handle to the created Conversation, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_create_conversation")]
+    public static IntPtr ProjectCreateConversation(IntPtr projectHandle, IntPtr agentHandlesPtr, int agentCount)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            var agentHandles = new IntPtr[agentCount];
+            Marshal.Copy(agentHandlesPtr, agentHandles, 0, agentCount);
+
+            var agents = agentHandles.Select(ObjectManager.Get<Agent>).Where(a => a != null).ToList();
+            if (!agents.Any())
+            {
+                throw new InvalidOperationException("No valid agents provided to create conversation.");
+            }
+
+            var conversation = agents.Count == 1 
+                ? project.CreateConversation(agents.First())
+                : project.CreateConversation(agents);
+
+            return ObjectManager.Add(conversation);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERR] ProjectCreateConversation failed: {ex.Message}");
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Destroys a project and releases its resources.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project to destroy</param>
+    [UnmanagedCallersOnly(EntryPoint = "destroy_project")]
+    public static void DestroyProject(IntPtr projectHandle)
+    {
+        Console.WriteLine($"[DEBUG] Destroying project with handle: {projectHandle}");
+        ObjectManager.Remove(projectHandle);
+    }
+
+    /// <summary>
+    /// Gets project information as a JSON string.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <returns>Pointer to UTF-8 JSON string containing project info, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "get_project_info")]
+    public static IntPtr GetProjectInfo(IntPtr projectHandle)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            var projectInfo = new ProjectInfo
+            {
+                Id = project.Id,
+                Name = project.Name,
+                Description = project.Description,
+                ConversationCount = project.ConversationCount,
+                CreatedAt = project.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                LastActivity = project.LastActivity.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            };
+
+            string json = JsonSerializer.Serialize(projectInfo, HPDJsonContext.Default.ProjectInfo);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ERR] GetProjectInfo failed: {ex.Message}");
+            return IntPtr.Zero;
+        }
+    }
 }
