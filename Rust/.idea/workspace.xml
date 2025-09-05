@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/hpd_rust_agent/Cargo.toml">
+      <package file="$PROJECT_DIR$/hpd_rust_agent">
+        <feature name="default" enabled="true" />
+      </package>
+    </cargoProject>
+    <cargoProject FILE="$PROJECT_DIR$/hpd_rust_agent_macros/Cargo.toml">
+      <package file="$PROJECT_DIR$/hpd_rust_agent_macros">
+        <feature name="default" enabled="true" />
+      </package>
+    </cargoProject>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d658d3d0-4c8d-404c-a6c2-de90d339316a" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/examples/basic_agent.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/examples/basic_agent.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/examples/function_call_test.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/examples/function_call_test.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/examples/plugin_development.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/examples/plugin_development.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/examples/real_agent_conversation.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/examples/real_agent_conversation.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/examples/streaming_example.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/examples/streaming_example.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/src/agent.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/src/agent.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/src/conversation.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/src/conversation.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/hpd_rust_agent/src/tests/test_module5.rs" beforeDir="false" afterPath="$PROJECT_DIR$/hpd_rust_agent/src/tests/test_module5.rs" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="09nJq9Gb" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 5
+}]]></component>
+  <component name="ProjectId" id="32GJivRgyxQDWiCqTGUYOmqRrJE" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/Users/ewoofcoding/Documents/HPD/HPD-Agent/Rust",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.first.attach.projects": "true",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="d658d3d0-4c8d-404c-a6c2-de90d339316a" name="Changes" comment="" />
+      <created>1757041106145</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1757041106145</updated>
+      <workItem from="1757041107439" duration="101000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>

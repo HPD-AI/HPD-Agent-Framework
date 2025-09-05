@@ -5,7 +5,7 @@
 
 use hpd_rust_agent::{
     hpd_plugin, ai_function, requires_permission,
-    RustAgentBuilder, RustConversation, AppSettings,
+    AgentBuilder, Conversation, AppSettings,
     get_registered_plugins, get_plugin_stats
 };
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -261,7 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 4: Create agent with plugin
     println!("\n🤖 Creating AI agent with plugin...");
-    let agent = RustAgentBuilder::new("plugin-demo-agent")
+    let agent = AgentBuilder::new("plugin-demo-agent")
         .with_instructions(
             "You are a helpful assistant with access to a comprehensive plugin. \
              Use the plugin functions to demonstrate their capabilities. \
@@ -277,7 +277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Agent created with plugins");
 
     // Step 5: Create conversation
-    let conversation = RustConversation::new(vec![agent])
+    let conversation = Conversation::new(vec![agent])
         .map_err(|e| format!("Failed to create conversation: {}", e))?;
 
     // Step 6: Demonstrate plugin functions

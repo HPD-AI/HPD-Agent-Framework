@@ -1,13 +1,13 @@
-use crate::{ffi, agent::RustAgent};
+use crate::{ffi, agent::Agent};
 use std::{mem, ffi::{c_void, CStr, CString}};
 use tokio_stream::{Stream, wrappers::UnboundedReceiverStream};
 
-pub struct RustConversation {
+pub struct Conversation {
     handle: *mut c_void,
 }
 
-impl RustConversation {
-    pub fn new(agents: Vec<RustAgent>) -> Result<Self, String> {
+impl Conversation {
+    pub fn new(agents: Vec<Agent>) -> Result<Self, String> {
         if agents.is_empty() {
             return Err("At least one agent is required to create a conversation".to_string());
         }
@@ -68,7 +68,7 @@ impl RustConversation {
     }
 }
 
-impl Drop for RustConversation {
+impl Drop for Conversation {
     fn drop(&mut self) {
         if !self.handle.is_null() {
             unsafe { ffi::destroy_conversation(self.handle) };
@@ -78,5 +78,5 @@ impl Drop for RustConversation {
 }
 
 // Send and Sync are safe because the C# side manages thread safety
-unsafe impl Send for RustConversation {}
-unsafe impl Sync for RustConversation {}
+unsafe impl Send for Conversation {}
+unsafe impl Sync for Conversation {}

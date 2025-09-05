@@ -1,5 +1,5 @@
-use hpd_rust_agent::agent::{RustAgentBuilder, ProviderConfig, ChatProvider};
-use hpd_rust_agent::conversation::RustConversation;
+use hpd_rust_agent::agent::{AgentBuilder, ProviderConfig, ChatProvider};
+use hpd_rust_agent::conversation::Conversation;
 use hpd_rust_agent::example_plugins::{MathPlugin, StringPlugin};
 use tokio;
 
@@ -9,7 +9,7 @@ async fn main() {
     println!("====================================\n");
 
     // Create a minimal agent test
-    let agent = RustAgentBuilder::new("Function Test Agent")
+    let agent = AgentBuilder::new("Function Test Agent")
         .with_instructions("You are a test agent. When users ask math questions, you must call the available math functions.")
         .with_provider(ProviderConfig {
             provider: ChatProvider::OpenRouter,
@@ -21,7 +21,7 @@ async fn main() {
         .build()
         .expect("Failed to create agent");
 
-    let conversation = RustConversation::new(vec![agent])
+    let conversation = Conversation::new(vec![agent])
         .expect("Failed to create conversation");
 
     println!("✅ Agent and conversation ready!\n");

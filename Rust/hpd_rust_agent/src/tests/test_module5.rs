@@ -85,7 +85,7 @@ impl FinalTestPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::RustAgentBuilder;
+    use crate::agent::AgentBuilder;
     use crate::plugins::get_registered_plugins;
 
     #[tokio::test]
@@ -175,7 +175,7 @@ mod tests {
         let model = config.get_default_model()
             .unwrap_or("google/gemini-2.5-pro");
         
-        let agent_result = RustAgentBuilder::new("final-test-agent")
+        let agent_result = AgentBuilder::new("final-test-agent")
             .with_instructions("You are a test assistant with file operations.")
             .with_openrouter(model, api_key) // Use OpenRouter with google/gemini-2.5-pro
             .with_plugin(plugin)

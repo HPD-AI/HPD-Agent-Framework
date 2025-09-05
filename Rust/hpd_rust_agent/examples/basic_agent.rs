@@ -3,7 +3,7 @@
 //! This example demonstrates how to create a simple AI agent and have a conversation.
 //! This is the minimal setup needed to get started with the HPD Rust Agent Library.
 
-use hpd_rust_agent::{RustAgentBuilder, RustConversation, AppSettings};
+use hpd_rust_agent::{AgentBuilder, Conversation, AppSettings};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 3: Create an AI agent with basic configuration
     println!("\n🤖 Creating AI agent...");
-    let agent = RustAgentBuilder::new("basic-assistant")
+    let agent = AgentBuilder::new("basic-assistant")
         .with_instructions("You are a helpful AI assistant. Be friendly and concise.")
         .with_max_function_calls(5)
         .with_max_conversation_history(10)
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 4: Create a conversation
     println!("\n💬 Starting conversation...");
-    let conversation = RustConversation::new(vec![agent])
+    let conversation = Conversation::new(vec![agent])
         .map_err(|e| format!("Failed to create conversation: {}", e))?;
     
     println!("✅ Conversation initialized");
@@ -87,7 +87,7 @@ mod tests {
         let config = AppSettings::load().expect("Config should load");
         
         if let Some(api_key) = config.get_openrouter_api_key() {
-            let agent = RustAgentBuilder::new("test-agent")
+            let agent = AgentBuilder::new("test-agent")
                 .with_instructions("Test instructions")
                 .with_openrouter("google/gemini-2.5-pro", api_key)
                 .build();
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn test_agent_builder_chain() {
         // Test the builder pattern without actually building
-        let builder = RustAgentBuilder::new("test")
+        let builder = AgentBuilder::new("test")
             .with_instructions("Test")
             .with_max_function_calls(10)
             .with_max_conversation_history(20);

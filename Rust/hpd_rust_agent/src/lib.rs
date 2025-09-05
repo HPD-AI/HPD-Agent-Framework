@@ -14,8 +14,8 @@ pub use hpd_rust_agent_macros::{hpd_plugin, ai_function, requires_permission};
 
 // Re-export key types for convenience
 pub use plugins::{PluginRegistration, register_plugin, get_registered_plugins, get_plugin_stats};
-pub use agent::{RustAgent, RustAgentBuilder, AgentConfig, Plugin, RustFunctionInfo};
-pub use conversation::RustConversation;
+pub use agent::{Agent, AgentBuilder, AgentConfig, Plugin, RustFunctionInfo};
+pub use conversation::Conversation;
 pub use config::AppSettings;
 
 pub fn add(left: u64, right: u64) -> u64 {
@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn debug_json_serialization() {
-        let agent_builder = crate::agent::RustAgentBuilder::new("test-agent")
+        let agent_builder = crate::agent::AgentBuilder::new("test-agent")
             .with_instructions("Test instructions")
             .with_ollama("llama3.2:latest");
         
@@ -78,14 +78,14 @@ mod tests {
             .unwrap_or("google/gemini-2.5-pro");
         
         // Create an agent with configuration from appsettings.json
-        let agent = crate::agent::RustAgentBuilder::new("test-agent")
+        let agent = crate::agent::AgentBuilder::new("test-agent")
             .with_instructions("Test instructions")
             .with_openrouter(model, api_key)
             .build()
             .unwrap();
 
         let agents = vec![agent];
-        let conversation_result = crate::conversation::RustConversation::new(agents);
+        let conversation_result = crate::conversation::Conversation::new(agents);
         assert!(conversation_result.is_ok());
 
         // `conversation` will be dropped here, triggering the FFI destroy call.
@@ -105,14 +105,14 @@ mod tests {
             .unwrap_or("google/gemini-2.5-pro");
         
         // Create an agent with configuration from appsettings.json
-        let agent = crate::agent::RustAgentBuilder::new("test-agent")
+        let agent = crate::agent::AgentBuilder::new("test-agent")
             .with_instructions("Test instructions")
             .with_openrouter(model, api_key)
             .build()
             .unwrap();
 
         let agents = vec![agent];
-        let conversation = crate::conversation::RustConversation::new(agents).unwrap();
+        let conversation = crate::conversation::Conversation::new(agents).unwrap();
         
         // Send a simple message
         let response = conversation.send("Hello").unwrap();
@@ -137,14 +137,14 @@ mod tests {
             .unwrap_or("google/gemini-2.5-pro");
         
         // Create an agent with configuration from appsettings.json
-        let agent = crate::agent::RustAgentBuilder::new("test-agent")
+        let agent = crate::agent::AgentBuilder::new("test-agent")
             .with_instructions("Test instructions")
             .with_openrouter(model, api_key)
             .build()
             .unwrap();
 
         let agents = vec![agent];
-        let conversation = crate::conversation::RustConversation::new(agents).unwrap();
+        let conversation = crate::conversation::Conversation::new(agents).unwrap();
         
         // Send a streaming message
         let mut stream = conversation.send_streaming("Use a tool").unwrap();

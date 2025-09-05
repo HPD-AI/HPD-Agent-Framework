@@ -3,7 +3,7 @@
 //! This example demonstrates real-time streaming conversations with event handling.
 //! Learn how to process streaming responses and handle different event types.
 
-use hpd_rust_agent::{RustAgentBuilder, RustConversation, AppSettings};
+use hpd_rust_agent::{AgentBuilder, Conversation, AppSettings};
 use tokio_stream::StreamExt;
 use serde_json::Value;
 use std::io::{self, Write};
@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2: Create an agent optimized for streaming
     println!("\n🤖 Creating streaming-optimized agent...");
-    let agent = RustAgentBuilder::new("streaming-assistant")
+    let agent = AgentBuilder::new("streaming-assistant")
         .with_instructions(
             "You are a helpful assistant that provides detailed, step-by-step responses. \
              When explaining complex topics, break them down into clear steps. \
@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Agent created successfully");
 
     // Step 3: Create conversation
-    let conversation = RustConversation::new(vec![agent])
+    let conversation = Conversation::new(vec![agent])
         .map_err(|e| format!("Failed to create conversation: {}", e))?;
 
     // Step 4: Demonstrate different streaming scenarios
@@ -314,13 +314,13 @@ mod tests {
         // Only run if configuration is available
         if let Ok(config) = AppSettings::load() {
             if let Some(api_key) = config.get_openrouter_api_key() {
-                let agent = RustAgentBuilder::new("test-streaming")
+                let agent = AgentBuilder::new("test-streaming")
                     .with_instructions("Give brief responses")
                     .with_openrouter("google/gemini-2.5-pro", api_key)
                     .build()
                     .expect("Agent should build");
 
-                let conversation = RustConversation::new(vec![agent])
+                let conversation = Conversation::new(vec![agent])
                     .expect("Conversation should create");
 
                 let mut stream = conversation.send_streaming("Say hello briefly")

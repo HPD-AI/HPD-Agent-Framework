@@ -1,5 +1,5 @@
-use hpd_rust_agent::agent::{RustAgentBuilder, ProviderConfig, ChatProvider};
-use hpd_rust_agent::conversation::RustConversation;
+use hpd_rust_agent::agent::{AgentBuilder, ProviderConfig, ChatProvider};
+use hpd_rust_agent::conversation::Conversation;
 use hpd_rust_agent::example_plugins::{MathPlugin, StringPlugin};
 use tokio;
 
@@ -10,7 +10,7 @@ async fn main() {
 
     // Create a real agent with OpenRouter + Gemini 2.5 Pro
     println!("🔧 Creating agent with OpenRouter + Gemini 2.5 Pro...");
-    let agent = RustAgentBuilder::new("Math Assistant")
+    let agent = AgentBuilder::new("Math Assistant")
         .with_instructions(
             "You are a helpful math assistant powered by Google Gemini 2.5 Pro. \
             When users ask math questions, use the available math functions to calculate the answers. \
@@ -40,7 +40,7 @@ async fn main() {
 
     // Create a conversation
     println!("💬 Creating conversation...");
-    let conversation = match RustConversation::new(vec![agent]) {
+    let conversation = match Conversation::new(vec![agent]) {
         Ok(conversation) => {
             println!("✅ Conversation created!");
             conversation

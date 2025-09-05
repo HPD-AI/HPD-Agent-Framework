@@ -98,11 +98,11 @@ impl Default for AgentConfig {
     }
 }
 
-pub struct RustAgent {
+pub struct Agent {
     pub(crate) handle: *mut c_void,
 }
 
-impl Drop for RustAgent {
+impl Drop for Agent {
     fn drop(&mut self) {
         // Add a null check for safety
         if !self.handle.is_null() {
@@ -113,15 +113,15 @@ impl Drop for RustAgent {
 }
 
 // Send and Sync are safe because the C# side manages thread safety
-unsafe impl Send for RustAgent {}
-unsafe impl Sync for RustAgent {}
+unsafe impl Send for Agent {}
+unsafe impl Sync for Agent {}
 
-pub struct RustAgentBuilder {
+pub struct AgentBuilder {
     config: AgentConfig,
     pending_plugins: Vec<RustFunctionInfo>,
 }
 
-impl RustAgentBuilder {
+impl AgentBuilder {
     pub fn new(name: &str) -> Self {
         Self {
             config: AgentConfig {
@@ -211,7 +211,7 @@ impl RustAgentBuilder {
         self
     }
 
-    pub fn build(self) -> Result<RustAgent, String> {
+    pub fn build(self) -> Result<Agent, String> {
         let config_json = serde_json::to_string(&self.config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
         
@@ -232,7 +232,7 @@ impl RustAgentBuilder {
         if agent_handle.is_null() {
             Err("Failed to create agent on C# side.".to_string())
         } else {
-            Ok(RustAgent { handle: agent_handle })
+            Ok(Agent { handle: agent_handle })
         }
     }
 
