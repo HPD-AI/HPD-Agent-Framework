@@ -35,6 +35,7 @@ When a user asks for a calculation, always use the appropriate function rather t
             api_key: Some("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".to_string()),
             endpoint: Some("https://openrouter.ai/api/v1".to_string()),
         }),
+        plugin_configurations: None,
     };
 
     // Serialize config to JSON
@@ -65,7 +66,7 @@ When a user asks for a calculation, always use the appropriate function rather t
 
     // Test different math problems
     let math_questions = vec![
-        "What functions do you have?"
+        "What functions do you have?",
         "What is 156 + 847?",
         "Can you calculate 25 squared (25 to the power of 2)?",
         "What's the square root of 144?",
@@ -78,7 +79,7 @@ When a user asks for a calculation, always use the appropriate function rather t
 
     for (i, question) in math_questions.iter().enumerate() {
         println!("🧮 Question {}: {}", i + 1, question);
-        println!("─".repeat(50));
+        println!("{}", "─".repeat(50));
 
         let question_cstring = CString::new(*question).unwrap();
         

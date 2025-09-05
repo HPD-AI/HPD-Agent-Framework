@@ -97,7 +97,6 @@ public static partial class NativeExports
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[WARN] Failed to create context for plugin {pluginConfig.Key}: {ex.Message}");
                         // Continue with other plugins
                     }
                 }
@@ -111,7 +110,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] CreateAgentWithPlugins failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -151,7 +149,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WARN] Failed to evaluate condition for {pluginTypeName}.{functionName}: {ex.Message}");
             return false; // Fail safe - hide function if evaluation fails
         }
     }
@@ -183,7 +180,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[WARN] Failed to find plugin type {pluginTypeName}: {ex.Message}");
             return null;
         }
     }
@@ -195,7 +191,6 @@ public static partial class NativeExports
     [UnmanagedCallersOnly(EntryPoint = "destroy_agent")]
     public static void DestroyAgent(IntPtr agentHandle)
     {
-        Console.WriteLine($"[DEBUG] Destroying agent with handle: {agentHandle}");
         ObjectManager.Remove(agentHandle);
     }
 
@@ -224,7 +219,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] Failed to create conversation: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -236,7 +230,6 @@ public static partial class NativeExports
     [UnmanagedCallersOnly(EntryPoint = "destroy_conversation")]
     public static void DestroyConversation(IntPtr conversationHandle)
     {
-        Console.WriteLine($"[DEBUG] Destroying conversation with handle: {conversationHandle}");
         ObjectManager.Remove(conversationHandle);
     }
 
@@ -267,7 +260,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] SendAsync failed: {ex.Message}");
             return IntPtr.Zero; // Return null pointer to indicate an error.
         }
     }
@@ -282,44 +274,74 @@ public static partial class NativeExports
     [UnmanagedCallersOnly(EntryPoint = "conversation_send_streaming")]
     public static void ConversationSendStreaming(IntPtr conversationHandle, IntPtr messagePtr, IntPtr callback, IntPtr context)
     {
-        // Run in a background thread so the FFI call returns immediately.
+        // CRITICAL: Read the message synchronously BEFORE starting the async task
+        // This prevents the race condition where the Rust CString gets deallocated
+        // before we can read it in the async task
+        
+        var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+        if (conversation == null) 
+        {
+            // Signal error through callback
+            string errorJson = "{\"type\":\"ERROR\", \"message\":\"Invalid conversation handle\"}";
+            var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
+            var errorCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+            errorCallback(context, errorJsonPtr);
+            Marshal.FreeCoTaskMem(errorJsonPtr);
+            errorCallback(context, IntPtr.Zero); // End stream
+            return;
+        }
+
+        string? message = Marshal.PtrToStringUTF8(messagePtr);
+        if (string.IsNullOrEmpty(message)) 
+        {
+            // Signal error through callback
+            string errorJson = "{\"type\":\"ERROR\", \"message\":\"Message is null or empty\"}";
+            var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
+            var errorCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+            errorCallback(context, errorJsonPtr);
+            Marshal.FreeCoTaskMem(errorJsonPtr);
+            errorCallback(context, IntPtr.Zero); // End stream
+            return;
+        }
+        
+        // Now run the streaming in a background thread with the captured message string
         Task.Run(async () =>
         {
             try
             {
-                var conversation = ObjectManager.Get<Conversation>(conversationHandle);
-                if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
-
-                string? message = Marshal.PtrToStringUTF8(messagePtr);
-                if (string.IsNullOrEmpty(message)) return;
-
                 // Get the primary agent to stream events from
                 var primaryAgent = conversation.PrimaryAgent;
-                if (primaryAgent == null) throw new InvalidOperationException("No agents in conversation.");
-
-                // Get the native AGUI event stream from the agent.
-                var messages = new[] { new ChatMessage(ChatRole.User, message) };
-                await foreach (var aguiEvent in primaryAgent.StreamEventsAsync(messages))
+                if (primaryAgent == null) 
                 {
-                    // Serialize the event to JSON using the agent's serializer.
-                    string eventJson = primaryAgent.SerializeEvent(aguiEvent);
+                    throw new InvalidOperationException("No agents in conversation.");
+                }
+
+                // FIXED: Use agent streaming but with conversation's complete message history
+                // Include all conversation history with the new message
+                var allMessages = conversation.Messages.ToList();
+                allMessages.Add(new ChatMessage(ChatRole.User, message));
+                
+                // Stream using the agent's method with full conversation context
+                await foreach (var responseUpdate in primaryAgent.GetStreamingResponseAsync(allMessages))
+                {
+                    // Convert ChatResponseUpdate to AGUI event format
+                    string eventJson = ConvertChatResponseUpdateToAGUIEvent(responseUpdate);
+                    
                     var eventJsonPtr = Marshal.StringToCoTaskMemAnsi(eventJson);
                     
-                    // Invoke the Rust callback with the event data.
                     var callbackDelegate = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
                     callbackDelegate(context, eventJsonPtr);
                     
-                    // Free the memory for the JSON string *after* the callback.
                     Marshal.FreeCoTaskMem(eventJsonPtr);
                 }
-                 // Signal the end of the stream with a null pointer.
+                
                 var endCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
                 endCallback(context, IntPtr.Zero);
             }
             catch (Exception ex)
             {
                 // Signal an error through the callback.
-                string errorJson = $"{{\"type\":\"run_error\", \"message\":\"{ex.Message.Replace("\"", "'")}\"}}";
+                string errorJson = $"{{\"type\":\"ERROR\", \"message\":\"{ex.Message.Replace("\"", "'")}\"}}";
                 var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
                 var errorCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
                 errorCallback(context, errorJsonPtr);
@@ -327,6 +349,35 @@ public static partial class NativeExports
                 errorCallback(context, IntPtr.Zero); // End stream after error.
             }
         });
+    }
+
+    /// <summary>
+    /// Converts ChatResponseUpdate to AGUI event format for streaming
+    /// </summary>
+    private static string ConvertChatResponseUpdateToAGUIEvent(ChatResponseUpdate update)
+    {
+        // Convert the ChatResponseUpdate to AGUI-style events
+        // This is a simplified conversion - you may need to expand based on your AGUI event format
+        
+        if (!string.IsNullOrEmpty(update.Text))
+        {
+            return $"{{\"type\":\"TEXT_MESSAGE_CONTENT\",\"content\":\"{update.Text.Replace("\"", "\\\"").Replace("\n", "\\n")}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}}}";
+        }
+        
+        // Check for function call content in the update's Contents
+        if (update.Contents != null)
+        {
+            foreach (var content in update.Contents)
+            {
+                if (content is FunctionCallContent functionCall)
+                {
+                    return $"{{\"type\":\"FUNCTION_CALL_STARTED\",\"function_name\":\"{functionCall.Name}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}}}";
+                }
+            }
+        }
+
+        // Default event for other types
+        return $"{{\"type\":\"STEP_STARTED\",\"stepName\":\"Processing\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}}}";
     }
 
     /// <summary>
@@ -350,7 +401,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] CreateProject failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -387,7 +437,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] ProjectCreateConversation failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -399,7 +448,6 @@ public static partial class NativeExports
     [UnmanagedCallersOnly(EntryPoint = "destroy_project")]
     public static void DestroyProject(IntPtr projectHandle)
     {
-        Console.WriteLine($"[DEBUG] Destroying project with handle: {projectHandle}");
         ObjectManager.Remove(projectHandle);
     }
 
@@ -431,7 +479,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] GetProjectInfo failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -469,7 +516,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] GetPluginMetadataJson failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -496,7 +542,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] CreateContextHandle failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -529,7 +574,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] UpdateContextHandle failed: {ex.Message}");
             return false;
         }
     }
@@ -571,7 +615,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] EvaluatePrecompiledCondition failed: {ex.Message}");
             return false;
         }
     }
@@ -617,7 +660,6 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ERR] FilterAvailableFunctions failed: {ex.Message}");
             return IntPtr.Zero;
         }
     }

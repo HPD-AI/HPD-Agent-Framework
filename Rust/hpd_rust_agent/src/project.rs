@@ -12,6 +12,7 @@
 //! let project = Project::create("My AI Project", Some("./project-storage"))?;
 //! 
 //! // Create agents with plugins
+//! let api_key = "your-api-key-here";
 //! let agent = AgentBuilder::new("research-agent")
 //!     .with_instructions("You are a research assistant")
 //!     .with_openrouter("anthropic/claude-3-sonnet", &api_key)
