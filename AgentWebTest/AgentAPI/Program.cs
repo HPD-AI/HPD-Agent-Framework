@@ -203,7 +203,7 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
 
             // Use default streaming and send over WebSocket
             bool isFinished = false;
-            await foreach (var evt in conversation.SendStreamingAsync(userMessage, null, CancellationToken.None))
+            await foreach (var evt in conversation.SendStreamingAsync(userMessage, null, null, CancellationToken.None))
             {
                 switch (evt)
                 {

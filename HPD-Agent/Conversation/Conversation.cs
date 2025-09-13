@@ -11,16 +11,7 @@ public class Conversation
 {
     protected readonly List<ChatMessage> _messages = new();
     protected readonly Dictionary<string, object> _metadata = new();
-    // Orchestration strategy and agents
-    private IOrchestrator? _orchestrator;
-    /// <summary>
-    /// Gets or sets the orchestration strategy for this conversation. Allows runtime switching.
-    /// </summary>
-    public IOrchestrator? Orchestrator
-    {
-        get => _orchestrator;
-        set => _orchestrator = value;
-    }
+    // Agents
     private readonly List<Agent> _agents;
     // Conversation filter list
     private readonly List<IConversationFilter> _conversationFilters = new();
@@ -49,7 +40,6 @@ public class Conversation
     public Conversation(IEnumerable<IAiFunctionFilter>? filters = null)
     {
         _filters = filters?.ToList() ?? new List<IAiFunctionFilter>();
-        _orchestrator = null;  // No default orchestrator
         _agents = new List<Agent>();
     }
 
@@ -63,22 +53,12 @@ public class Conversation
     }
     
     /// <summary>
-    /// Creates a conversation with a custom orchestration strategy and agent list
+    /// Creates a conversation with an agent list
     /// </summary>
-    public Conversation(IOrchestrator? orchestrator, IEnumerable<Agent> agents, IEnumerable<IAiFunctionFilter>? filters = null)
+    public Conversation(IEnumerable<Agent> agents, IEnumerable<IAiFunctionFilter>? filters = null)
         : this(filters)
     {
-        // Allow null orchestrator for single-agent scenarios
-        _orchestrator = orchestrator;  // Can be null now
         _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
-        
-        // Validate: if multiple agents, orchestrator is required
-        if (_agents.Count > 1 && _orchestrator == null)
-        {
-            throw new ArgumentException(
-                "An orchestrator is required for conversations with multiple agents", 
-                nameof(orchestrator));
-        }
     }
 
     /// <summary>
@@ -90,14 +70,6 @@ public class Conversation
         _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
         _uploadStrategy = documentHandling;
         AddMetadata("Project", project);
-        
-        // Validate: if multiple agents, orchestrator is required (will be set later)
-        if (_agents.Count > 1 && _orchestrator == null)
-        {
-            throw new ArgumentException(
-                "An orchestrator is required for conversations with multiple agents. " +
-                "Use the constructor that accepts an IOrchestrator parameter.");
-        }
     }
 
     /// <summary>
@@ -108,14 +80,6 @@ public class Conversation
     {
         _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
         _uploadStrategy = documentHandling;
-        
-        // Validate: if multiple agents, orchestrator is required (will be set later)
-        if (_agents.Count > 1 && _orchestrator == null)
-        {
-            throw new ArgumentException(
-                "An orchestrator is required for conversations with multiple agents. " +
-                "Use the constructor that accepts an IOrchestrator parameter.");
-        }
     }
 
     // Static factory methods for progressive disclosure
@@ -180,7 +144,7 @@ public class Conversation
         CancellationToken cancellationToken = default)
     {
         if (documentPaths == null || documentPaths.Length == 0)
-            return await SendAsync(message, options, cancellationToken);
+            return await SendAsync(message, options, null, cancellationToken);
 
         var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
         
@@ -188,12 +152,12 @@ public class Conversation
         {
             case ConversationDocumentHandling.IndexedRetrieval:
                 // Documents are already indexed in RAG memory, send message normally
-                return await SendAsync(message, options, cancellationToken);
+                return await SendAsync(message, options, null, cancellationToken);
                 
             case ConversationDocumentHandling.FullTextInjection:
                 // Inject document content directly into the message
                 var enhancedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads);
-                return await SendAsync(enhancedMessage, options, cancellationToken);
+                return await SendAsync(enhancedMessage, options, null, cancellationToken);
                 
             default:
                 throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}");
@@ -208,6 +172,7 @@ public class Conversation
     public async Task<ChatResponse> SendAsync(
         string message,
         ChatOptions? options = null,
+        IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
         // Add user message
@@ -233,14 +198,14 @@ public class Conversation
         else
         {
             // ORCHESTRATED PATH - Multiple agents require orchestration
-            if (_orchestrator == null)
+            if (orchestrator == null)
             {
                 throw new InvalidOperationException(
                     $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. " +
-                    "Please provide an IOrchestrator implementation when creating the conversation.");
+                    "Please provide an IOrchestrator implementation as a parameter.");
             }
 
-            finalResponse = await _orchestrator.OrchestrateAsync(
+            finalResponse = await orchestrator.OrchestrateAsync(
                 _messages, _agents, this.Id, options, cancellationToken);
         }
 
@@ -314,6 +279,7 @@ public class Conversation
     public async IAsyncEnumerable<BaseEvent> SendStreamingAsync(
         string message,
         ChatOptions? options = null,
+        IOrchestrator? orchestrator = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var userMessage = new ChatMessage(ChatRole.User, message);
@@ -357,7 +323,7 @@ public class Conversation
         else
         {
             // ORCHESTRATED PATH - Multi-agent
-            if (_orchestrator == null)
+            if (orchestrator == null)
             {
                 throw new InvalidOperationException(
                     $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator.");
