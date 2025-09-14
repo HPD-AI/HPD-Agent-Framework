@@ -136,7 +136,7 @@ public class Conversation
     /// <param name="options">Chat options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Chat response</returns>
-    public async Task<ChatResponse> SendWithDocumentsAsync(
+    public async Task<ConversationTurnResult> SendWithDocumentsAsync(
         string message,
         string[] documentPaths,
         TextExtractionUtility textExtractor,
@@ -147,18 +147,18 @@ public class Conversation
             return await SendAsync(message, options, null, cancellationToken);
 
         var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
-        
+
         switch (_uploadStrategy)
         {
             case ConversationDocumentHandling.IndexedRetrieval:
                 // Documents are already indexed in RAG memory, send message normally
                 return await SendAsync(message, options, null, cancellationToken);
-                
+
             case ConversationDocumentHandling.FullTextInjection:
                 // Inject document content directly into the message
                 var enhancedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads);
                 return await SendAsync(enhancedMessage, options, null, cancellationToken);
-                
+
             default:
                 throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}");
         }
@@ -167,15 +167,16 @@ public class Conversation
 
 
     /// <summary>
-    /// Send a message using the default agent or specified agent
+    /// Send a message using the default agent or specified agent.
+    /// BREAKING: Now returns ConversationTurnResult instead of ChatResponse.
     /// </summary>
-    public async Task<ChatResponse> SendAsync(
+    public async Task<ConversationTurnResult> SendAsync(
         string message,
         ChatOptions? options = null,
         IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
-        // Add user message
+        var startTime = DateTime.UtcNow;
         var userMessage = new ChatMessage(ChatRole.User, message);
         _messages.Add(userMessage);
         UpdateActivity();
@@ -184,41 +185,56 @@ public class Conversation
         options = InjectProjectContextIfNeeded(options);
         options = InjectAgentToolsIfNeeded(options);
 
-        ChatResponse finalResponse;
+        OrchestrationResult orchestrationResult;
 
         if (_agents.Count == 0)
         {
-            throw new InvalidOperationException("No agents configured for this conversation");
+            throw new InvalidOperationException("No agents configured");
         }
-        else if (_agents.Count == 1)
+        else if (_agents.Count == 1 || orchestrator == null)
         {
-            // DIRECT PATH - Single agent, no orchestration needed
-            finalResponse = await _agents[0].GetResponseAsync(_messages, options, cancellationToken);
+            // Single agent path
+            var agent = _agents[0];
+            var response = await agent.GetResponseAsync(_messages, options, cancellationToken);
+            orchestrationResult = new OrchestrationResult
+            {
+                Response = response,
+                SelectedAgent = agent,
+                Metadata = new OrchestrationMetadata
+                {
+                    StrategyName = "SingleAgent",
+                    DecisionDuration = TimeSpan.Zero
+                }
+            };
         }
         else
         {
-            // ORCHESTRATED PATH - Multiple agents require orchestration
-            if (orchestrator == null)
-            {
-                throw new InvalidOperationException(
-                    $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. " +
-                    "Please provide an IOrchestrator implementation as a parameter.");
-            }
-
-            finalResponse = await orchestrator.OrchestrateAsync(
+            // Multi-agent orchestration
+            orchestrationResult = await orchestrator.OrchestrateAsync(
                 _messages, _agents, this.Id, options, cancellationToken);
         }
 
         // Commit response to history
-        _messages.AddMessages(finalResponse);
+        _messages.AddMessages(orchestrationResult.Response);
         UpdateActivity();
 
         // Apply filters
-        var agentMetadata = CollectAgentMetadata(finalResponse);
-        var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
+        var agentMetadata = CollectAgentMetadata(orchestrationResult.Response);
+        var context = new ConversationFilterContext(this, userMessage, orchestrationResult.Response, agentMetadata, options, cancellationToken);
         await ApplyConversationFilters(context);
 
-        return finalResponse;
+        return new ConversationTurnResult
+        {
+            Response = orchestrationResult.Response,
+            TurnHistory = ExtractTurnHistory(userMessage, orchestrationResult.Response),
+            RespondingAgent = orchestrationResult.SelectedAgent,
+            UsedOrchestrator = orchestrator,
+            Duration = DateTime.UtcNow - startTime,
+            OrchestrationMetadata = orchestrationResult.Metadata,
+            Usage = CreateTokenUsage(orchestrationResult.Response),
+            RequestId = Guid.NewGuid().ToString(),
+            ActivityId = System.Diagnostics.Activity.Current?.Id
+        };
     }
 
 
@@ -297,7 +313,7 @@ public class Conversation
         else if (_agents.Count == 1)
         {
             // DIRECT PATH - Single agent
-            var result = await _agents[0].ExecuteStreamingEventsAsync(_messages, options, cancellationToken);
+            var result = await _agents[0].ExecuteStreamingTurnAsync(_messages, options, cancellationToken);
 
             // Stream the events
             await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
@@ -329,15 +345,41 @@ public class Conversation
                     $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator.");
             }
 
-            // For now, throw not implemented since orchestrator needs updating
-            throw new NotImplementedException(
-                "Multi-agent BaseEvent streaming not yet implemented. " +
-                "IOrchestrator needs to be updated to support BaseEvent streaming.");
+            // Use the orchestrator's streaming method
+            var orchestrationResult = await orchestrator.OrchestrateStreamingAsync(
+                _messages, _agents, this.Id, options, cancellationToken);
+
+            // Stream all orchestration and agent events
+            await foreach (var evt in orchestrationResult.EventStream.WithCancellation(cancellationToken))
+            {
+                yield return evt;
+            }
+
+            // Wait for final result and update conversation
+            var finalResult = await orchestrationResult.FinalResult;
+            _messages.AddMessages(finalResult.Response);
+            UpdateActivity();
+
+            // Apply filters on the completed turn
+            var agentMetadata = CollectAgentMetadata(finalResult.Response);
+            var context = new ConversationFilterContext(
+                this, userMessage, finalResult.Response, agentMetadata, options, cancellationToken);
+            await ApplyConversationFilters(context);
         }
     }
 
     /// <summary>
     protected void UpdateActivity() => LastActivity = DateTime.UtcNow;
+
+    /// <summary>
+    /// Extracts the turn history from user message and response.
+    /// </summary>
+    private IReadOnlyList<ChatMessage> ExtractTurnHistory(ChatMessage userMessage, ChatResponse response)
+    {
+        var turnMessages = new List<ChatMessage> { userMessage };
+        turnMessages.AddRange(response.Messages);
+        return turnMessages.AsReadOnly();
+    }
 
     // Collect metadata of function calls from response
     private Dictionary<string, List<string>> CollectAgentMetadata(ChatResponse? response = null)
@@ -436,6 +478,24 @@ public class Conversation
             
         return string.Join(" ", textContents);
     }
+
+    /// <summary>
+    /// Creates TokenUsage from ChatResponse.Usage if available
+    /// </summary>
+    private static TokenUsage? CreateTokenUsage(ChatResponse response)
+    {
+        if (response.Usage == null)
+            return null;
+
+        return new TokenUsage
+        {
+            PromptTokens = (int)(response.Usage.InputTokenCount ?? 0),
+            CompletionTokens = (int)(response.Usage.OutputTokenCount ?? 0),
+            TotalTokens = (int)(response.Usage.TotalTokenCount ?? 0),
+            ModelId = response.ModelId
+            // EstimatedCost is intentionally left null - cost calculation should be handled by business logic layer
+        };
+    }
     
     
     
@@ -456,6 +516,51 @@ public class ConversationState
     public Dictionary<string, object> Metadata { get; set; } = new();
     public DateTime CreatedAt { get; set; }
     public DateTime LastActivity { get; set; }
+}
+
+/// <summary>
+/// Primary return type for conversation turns.
+/// BREAKING: SendAsync now returns this instead of ChatResponse.
+/// </summary>
+/// <summary>
+/// Token usage and cost information for a conversation turn
+/// </summary>
+public record TokenUsage
+{
+    public int PromptTokens { get; init; }
+    public int CompletionTokens { get; init; }
+    public int TotalTokens { get; init; }
+    public decimal? EstimatedCost { get; init; }
+    public string? ModelId { get; init; }
+}
+
+/// <summary>
+/// Result of a conversation turn with rich metadata for business decisions
+/// </summary>
+public record ConversationTurnResult
+{
+    public required ChatResponse Response { get; init; }
+    public required IReadOnlyList<ChatMessage> TurnHistory { get; init; }
+    public required Agent RespondingAgent { get; init; }
+    public IOrchestrator? UsedOrchestrator { get; init; }
+    public required TimeSpan Duration { get; init; }
+    public required OrchestrationMetadata OrchestrationMetadata { get; init; }
+
+    // NEW: Core business data for immediate decisions
+    public TokenUsage? Usage { get; init; }
+    public string RequestId { get; init; } = Guid.NewGuid().ToString();
+    public string? ActivityId { get; init; }
+
+    /// <summary>
+    /// Convenience conversions for backward compatibility.
+    /// </summary>
+    public static implicit operator ChatResponse(ConversationTurnResult result)
+        => result.Response;
+
+    public static implicit operator ChatMessage(ConversationTurnResult result)
+        => result.Response.Messages.FirstOrDefault() ?? new ChatMessage();
+
+    public string Text => Response.Text;
 }
 
 /// <summary>

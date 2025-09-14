@@ -23,6 +23,11 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(StateDeltaEvent))]
 [JsonSerializable(typeof(StateSnapshotEvent))]
 [JsonSerializable(typeof(MessagesSnapshotEvent))]
+[JsonSerializable(typeof(OrchestrationStartEvent))]
+[JsonSerializable(typeof(OrchestrationDecisionEvent))]
+[JsonSerializable(typeof(AgentEvaluationEvent))]
+[JsonSerializable(typeof(AgentHandoffEvent))]
+[JsonSerializable(typeof(OrchestrationCompleteEvent))]
 [JsonSerializable(typeof(CustomEvent))]
 [JsonSerializable(typeof(RawEvent))]
 [JsonSerializable(typeof(Tool))]
@@ -30,6 +35,7 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))] // FIX: Added for AOT compatibility
 [JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, float>))] // FIX: Added for orchestration event scores
 [JsonSerializable(typeof(object))] // FIX: Added for AOT compatibility
 [JsonSerializable(typeof(List<BaseMessage>))] // FIX: Added for collections
 [JsonSerializable(typeof(List<Tool>))] // FIX: Added for collections

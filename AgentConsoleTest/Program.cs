@@ -153,17 +153,35 @@ static async Task StreamResponse(Conversation conversation, string message)
     {
         switch (evt)
         {
+            case RunStartedEvent runStart:
+                Console.Write($"\n🚀 Run {runStart.RunId} started");
+                break;
+            case RunFinishedEvent runFinish:
+                Console.Write($"\n✅ Run {runFinish.RunId} completed");
+                break;
+            case RunErrorEvent runError:
+                Console.Write($"\n❌ Run failed: {runError.Message}");
+                break;
             case StepStartedEvent step:
                 Console.Write($"\n💭 {step.StepName}: ");
+                break;
+            case TextMessageStartEvent msgStart:
+                Console.Write($"\n🤖 ");
                 break;
             case TextMessageContentEvent text:
                 Console.Write(text.Delta);
                 break;
+            case TextMessageEndEvent msgEnd:
+                // Just add a newline after message completes
+                break;
             case ToolCallStartEvent toolStart:
-                Console.Write($"\n🔧 {toolStart.ToolCallName}...");
+                Console.Write($"\n🔧 {toolStart.ToolCallName}");
+                break;
+            case ToolCallArgsEvent toolArgs:
+                Console.Write($"({toolArgs.Delta})");
                 break;
             case ToolCallEndEvent toolEnd:
-                Console.Write(" ✅");
+                Console.Write("... ✅");
                 break;
         }
     }

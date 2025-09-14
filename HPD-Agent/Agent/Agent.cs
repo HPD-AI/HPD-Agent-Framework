@@ -129,83 +129,25 @@ public class Agent : IChatClient
         CancellationToken cancellationToken = default)
     {
         // Use the unified streaming approach and collect all updates
-        var allUpdates = new List<ChatResponseUpdate>();
-        
+        var allEvents = new List<BaseEvent>();
+
         var turnResult = await ExecuteStreamingTurnAsync(messages, options, cancellationToken);
-        
+
         // Consume the entire stream
-        await foreach (var update in turnResult.ResponseStream.WithCancellation(cancellationToken))
+        await foreach (var evt in turnResult.EventStream.WithCancellation(cancellationToken))
         {
-            allUpdates.Add(update);
+            allEvents.Add(evt);
         }
         
-        // Wait for final history to ensure turn is complete
-        await turnResult.FinalHistory;
-        
-        // Construct and return the final response
-        return ConstructChatResponseFromUpdates(allUpdates);
+        // Wait for final history and construct response
+        var finalHistory = await turnResult.FinalHistory;
+        // Extract assistant messages from final history
+        var assistantMessages = finalHistory.Where(m => m.Role == ChatRole.Assistant).ToList();
+        return new ChatResponse(assistantMessages);
     }
 
-    /// <summary>
-    /// Streams native AG-UI BaseEvent objects directly from the agent's core loop
-    /// </summary>
-    public IAsyncEnumerable<BaseEvent> StreamEventsAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        var turnHistory = new List<ChatMessage>();
-        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>();
 
-        // Prepare messages using MessageProcessor
-        var conversation = new Conversation(this);
-        messages.ToList().ForEach(m => conversation.AddMessage(m));
 
-        return PrepareAndStreamEventsAsync(messages, options, turnHistory, historyCompletionSource, cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes a streaming turn that returns BaseEvents and final history
-    /// </summary>
-    public async Task<StreamingEventResult> ExecuteStreamingEventsAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        // Create a TaskCompletionSource for the final history
-        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>();
-        var turnHistory = new List<ChatMessage>();
-
-        // Create the event stream
-        var eventStream = PrepareAndStreamEventsAsync(
-            messages, options, turnHistory, historyCompletionSource, cancellationToken);
-
-        // Return both stream and history task
-        return new StreamingEventResult(eventStream, historyCompletionSource.Task);
-    }
-
-    private async IAsyncEnumerable<BaseEvent> PrepareAndStreamEventsAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        List<ChatMessage> turnHistory,
-        TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var conversation = new Conversation(this);
-        messages.ToList().ForEach(m => conversation.AddMessage(m));
-        
-        var (effectiveMessages, effectiveOptions) = await _messageProcessor.PrepareMessagesAsync(
-            messages, options, conversation, _name, cancellationToken);
-        
-        await foreach (var baseEvent in RunAgenticLoopCore(effectiveMessages, effectiveOptions, turnHistory, historyCompletionSource, cancellationToken))
-        {
-            yield return baseEvent;
-        }
-    }
-
-    /// <summary>
-    /// Executes a streaming turn for the agent, returning both the stream and final history
-    /// </summary>
     public async Task<StreamingTurnResult> ExecuteStreamingTurnAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
@@ -213,10 +155,11 @@ public class Agent : IChatClient
     {
         // Create a TaskCompletionSource for the final history
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>();
-        
-        // Create the streaming enumerable
-        var responseStream = RunAgenticLoopAsync(messages, options, historyCompletionSource, cancellationToken);
-        
+        var turnHistory = new List<ChatMessage>();
+
+        // Create the streaming enumerable - use BaseEvent directly without conversion
+        var responseStream = RunAgenticLoopCore(messages, options, turnHistory, historyCompletionSource, cancellationToken);
+
         // Return the result containing both stream and history task
         return new StreamingTurnResult(responseStream, historyCompletionSource.Task);
     }
@@ -227,9 +170,9 @@ public class Agent : IChatClient
         ChatOptions? options = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Simply delegate to ExecuteStreamingTurnAsync and return the stream part
-        var result = await ExecuteStreamingTurnAsync(messages, options, cancellationToken);
-        await foreach (var update in result.ResponseStream.WithCancellation(cancellationToken))
+        // Use the raw streaming loop directly for ChatResponseUpdate compatibility
+        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>();
+        await foreach (var update in RunAgenticLoopAsync(messages, options, historyCompletionSource, cancellationToken).WithCancellation(cancellationToken))
         {
             yield return update;
         }
@@ -281,11 +224,24 @@ public class Agent : IChatClient
         TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Generate a message ID for this turn
+        // Generate IDs for this run
+        var runId = Guid.NewGuid().ToString();
+        var threadId = "default"; // TODO: Get from conversation context
         var messageId = Guid.NewGuid().ToString();
-        
-        // Collect all response updates to build final history
+
+        // Emit mandatory RunStarted event
+        yield return new RunStartedEvent
+        {
+            Type = "RUN_STARTED",
+            ThreadId = threadId,
+            RunId = runId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+
+        // Collect all response updates to build final history - cannot use try-catch with yield
         var responseUpdates = new List<ChatResponseUpdate>();
+        bool hasError = false;
+        Exception? caughtException = null;
         
         // Prepare messages using MessageProcessor
         var conversation = new Conversation(this);
@@ -296,13 +252,16 @@ public class Agent : IChatClient
         
         var currentMessages = effectiveMessages.ToList();
         
+        // Emit message start event at the beginning
+        bool messageStarted = false;
+
         // Main agentic loop
         for (int iteration = 0; iteration < _maxFunctionCalls; iteration++)
         {
             var toolRequests = new List<FunctionCallContent>();
             var assistantContents = new List<AIContent>();
             bool streamFinished = false;
-            
+
             // Run turn and collect events
             await foreach (var update in _agentTurn.RunAsync(currentMessages, effectiveOptions, cancellationToken))
             {
@@ -350,13 +309,26 @@ public class Agent : IChatClient
                         }
                         else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                         {
+                            // Emit message start if this is the first text content
+                            if (!messageStarted)
+                            {
+                                yield return new TextMessageStartEvent
+                                {
+                                    Type = "TEXT_MESSAGE_START",
+                                    MessageId = messageId,
+                                    Role = "assistant", // Assistant is responding
+                                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                                };
+                                messageStarted = true;
+                            }
+
                             // Regular text content - add to history
                             assistantContents.Add(textContent);
-                            
+
                             // Emit text content event
-                            yield return new TextMessageContentEvent 
-                            { 
-                                MessageId = messageId, 
+                            yield return new TextMessageContentEvent
+                            {
+                                MessageId = messageId,
                                 Delta = textContent.Text,
                                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                                 Type = "TEXT_MESSAGE_CONTENT"
@@ -388,14 +360,30 @@ public class Agent : IChatClient
                 // Emit tool call start events
                 foreach (var toolRequest in toolRequests)
                 {
-                    yield return new ToolCallStartEvent 
-                    { 
-                        ToolCallId = toolRequest.CallId, 
+                    yield return new ToolCallStartEvent
+                    {
+                        ToolCallId = toolRequest.CallId,
                         ToolCallName = toolRequest.Name,
                         ParentMessageId = messageId,
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         Type = "TOOL_CALL_START"
                     };
+
+                    // Emit tool call arguments event
+                    if (toolRequest.Arguments != null && toolRequest.Arguments.Count > 0)
+                    {
+                        var argsJson = System.Text.Json.JsonSerializer.Serialize(
+                            toolRequest.Arguments,
+                            AGUIJsonContext.Default.DictionaryStringObject);
+
+                        yield return new ToolCallArgsEvent
+                        {
+                            Type = "TOOL_CALL_ARGS",
+                            ToolCallId = toolRequest.CallId,
+                            Delta = argsJson,
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                        };
+                    }
                 }
                 
                 // Execute tools
@@ -475,7 +463,27 @@ public class Agent : IChatClient
                 turnHistory.Add(finalAssistantMessage);
             }
         }
-        
+
+        // Emit message end event if we started a message
+        if (messageStarted)
+        {
+            yield return new TextMessageEndEvent
+            {
+                MessageId = messageId,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Type = "TEXT_MESSAGE_END"
+            };
+        }
+
+        // Emit mandatory RunFinished event (errors handled at higher level)
+        yield return new RunFinishedEvent
+        {
+            Type = "RUN_FINISHED",
+            ThreadId = threadId,
+            RunId = runId,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+        };
+
         // Set the final complete history
         historyCompletionSource.SetResult(turnHistory);
     }
@@ -631,7 +639,8 @@ public class AGUIEventHandler : IAGUIAgent
             await events.WriteAsync(AGUIEventConverter.LifecycleEvents.CreateTextMessageStart(messageId), cancellationToken);
 
             // Use the agent's native BaseEvent stream directly
-            await foreach (var baseEvent in _agent.StreamEventsAsync(messages, chatOptions, cancellationToken))
+            var streamResult = await _agent.ExecuteStreamingTurnAsync(messages, chatOptions, cancellationToken);
+            await foreach (var baseEvent in streamResult.EventStream.WithCancellation(cancellationToken))
             {
                 // Write native events directly to the channel
                 await events.WriteAsync(baseEvent, cancellationToken);
@@ -1085,14 +1094,15 @@ public class AgentTurn
 #region 
 
 /// <summary>
-/// Represents the result of a streaming turn, providing both the stream and the final turn history
+/// Updated to stream BaseEvent instead of ChatResponseUpdate.
+/// This is a breaking change for v0.
 /// </summary>
 public class StreamingTurnResult
 {
     /// <summary>
-    /// The stream of response updates that can be consumed by the caller
+    /// BREAKING: Change from ChatResponseUpdate to BaseEvent
     /// </summary>
-    public IAsyncEnumerable<ChatResponseUpdate> ResponseStream { get; }
+    public IAsyncEnumerable<BaseEvent> EventStream { get; }
 
     /// <summary>
     /// Task that completes with the final turn history once streaming is done
@@ -1102,33 +1112,9 @@ public class StreamingTurnResult
     /// <summary>
     /// Initializes a new instance of StreamingTurnResult
     /// </summary>
-    /// <param name="responseStream">The stream of response updates</param>
+    /// <param name="eventStream">The stream of BaseEvents</param>
     /// <param name="finalHistory">Task that provides the final turn history</param>
     public StreamingTurnResult(
-        IAsyncEnumerable<ChatResponseUpdate> responseStream,
-        Task<IReadOnlyList<ChatMessage>> finalHistory)
-    {
-        ResponseStream = responseStream ?? throw new ArgumentNullException(nameof(responseStream));
-        FinalHistory = finalHistory ?? throw new ArgumentNullException(nameof(finalHistory));
-    }
-}
-
-/// <summary>
-/// Result of streaming BaseEvents with final history tracking
-/// </summary>
-public class StreamingEventResult
-{
-    /// <summary>
-    /// The stream of BaseEvents for full transparency
-    /// </summary>
-    public IAsyncEnumerable<BaseEvent> EventStream { get; }
-
-    /// <summary>
-    /// Task that completes with the final turn history once streaming is done
-    /// </summary>
-    public Task<IReadOnlyList<ChatMessage>> FinalHistory { get; }
-
-    public StreamingEventResult(
         IAsyncEnumerable<BaseEvent> eventStream,
         Task<IReadOnlyList<ChatMessage>> finalHistory)
     {
@@ -1136,6 +1122,7 @@ public class StreamingEventResult
         FinalHistory = finalHistory ?? throw new ArgumentNullException(nameof(finalHistory));
     }
 }
+
 
 #endregion
 

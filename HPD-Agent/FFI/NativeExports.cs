@@ -257,7 +257,7 @@ public static partial class NativeExports
             var response = conversation.SendAsync(message).GetAwaiter().GetResult();
 
             // Extract the primary text content from the agent's final response message.
-            var responseText = response.Messages.LastOrDefault()?.Text ?? "";
+            var responseText = response.Response.Messages.LastOrDefault()?.Text ?? "";
             
             return Marshal.StringToCoTaskMemAnsi(responseText);
         }

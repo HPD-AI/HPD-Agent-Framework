@@ -32,6 +32,11 @@ internal static class EventSerialization
             StateDeltaEvent stateDeltaEvent => JsonSerializer.Serialize(stateDeltaEvent, AGUIJsonContext.Default.StateDeltaEvent),
             StateSnapshotEvent stateSnapshotEvent => JsonSerializer.Serialize(stateSnapshotEvent, AGUIJsonContext.Default.StateSnapshotEvent),
             MessagesSnapshotEvent messagesSnapshotEvent => JsonSerializer.Serialize(messagesSnapshotEvent, AGUIJsonContext.Default.MessagesSnapshotEvent),
+            OrchestrationStartEvent orchestrationStartEvent => JsonSerializer.Serialize(orchestrationStartEvent, AGUIJsonContext.Default.OrchestrationStartEvent),
+            OrchestrationDecisionEvent orchestrationDecisionEvent => JsonSerializer.Serialize(orchestrationDecisionEvent, AGUIJsonContext.Default.OrchestrationDecisionEvent),
+            AgentEvaluationEvent agentEvaluationEvent => JsonSerializer.Serialize(agentEvaluationEvent, AGUIJsonContext.Default.AgentEvaluationEvent),
+            AgentHandoffEvent agentHandoffEvent => JsonSerializer.Serialize(agentHandoffEvent, AGUIJsonContext.Default.AgentHandoffEvent),
+            OrchestrationCompleteEvent orchestrationCompleteEvent => JsonSerializer.Serialize(orchestrationCompleteEvent, AGUIJsonContext.Default.OrchestrationCompleteEvent),
             CustomEvent customEvent => JsonSerializer.Serialize(customEvent, AGUIJsonContext.Default.CustomEvent),
             RawEvent rawEvent => JsonSerializer.Serialize(rawEvent, AGUIJsonContext.Default.RawEvent),
             _ => JsonSerializer.Serialize(evt, AGUIJsonContext.Default.BaseEvent)
