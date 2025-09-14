@@ -19,14 +19,6 @@ extern "C" {
     pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
     pub fn destroy_project(project_handle: *mut c_void);
     pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
-
-    // Phase 2: Dynamic Plugin Metadata FFI Functions
-    pub fn get_plugin_metadata_json() -> *mut c_char;
-    pub fn create_context_handle(config_json: *const c_char) -> *mut c_void;
-    pub fn update_context_handle(context_handle: *mut c_void, config_json: *const c_char) -> bool;
-    pub fn destroy_context_handle(context_handle: *mut c_void);
-    pub fn evaluate_precompiled_condition(plugin_type_name: *const c_char, function_name: *const c_char, context_handle: *mut c_void) -> bool;
-    pub fn filter_available_functions(plugin_type_name: *const c_char, context_handle: *mut c_void) -> *mut c_char;
 }
 
 #[cfg(target_os = "macos")]
@@ -44,14 +36,6 @@ extern "C" {
     pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
     pub fn destroy_project(project_handle: *mut c_void);
     pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
-
-    // Phase 2: Dynamic Plugin Metadata FFI Functions
-    pub fn get_plugin_metadata_json() -> *mut c_char;
-    pub fn create_context_handle(config_json: *const c_char) -> *mut c_void;
-    pub fn update_context_handle(context_handle: *mut c_void, config_json: *const c_char) -> bool;
-    pub fn destroy_context_handle(context_handle: *mut c_void);
-    pub fn evaluate_precompiled_condition(plugin_type_name: *const c_char, function_name: *const c_char, context_handle: *mut c_void) -> bool;
-    pub fn filter_available_functions(plugin_type_name: *const c_char, context_handle: *mut c_void) -> *mut c_char;
 }
 
 #[cfg(target_os = "linux")]
@@ -69,14 +53,6 @@ extern "C" {
     pub fn project_create_conversation(project_handle: *mut c_void, agent_handles: *const *mut c_void, agent_count: c_int) -> *mut c_void;
     pub fn destroy_project(project_handle: *mut c_void);
     pub fn get_project_info(project_handle: *mut c_void) -> *mut c_char;
-
-    // Phase 2: Dynamic Plugin Metadata FFI Functions
-    pub fn get_plugin_metadata_json() -> *mut c_char;
-    pub fn create_context_handle(config_json: *const c_char) -> *mut c_void;
-    pub fn update_context_handle(context_handle: *mut c_void, config_json: *const c_char) -> bool;
-    pub fn destroy_context_handle(context_handle: *mut c_void);
-    pub fn evaluate_precompiled_condition(plugin_type_name: *const c_char, function_name: *const c_char, context_handle: *mut c_void) -> bool;
-    pub fn filter_available_functions(plugin_type_name: *const c_char, context_handle: *mut c_void) -> *mut c_char;
 }
 
 // Plugin System FFI Functions

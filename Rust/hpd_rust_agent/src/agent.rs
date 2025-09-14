@@ -3,7 +3,6 @@ use std::ffi::{CString, c_void};
 use std::collections::HashMap;
 use crate::ffi;
 use crate::plugins::PluginRegistration;
-use crate::plugin_context::PluginConfiguration;
 
 /// Trait that all plugins must implement
 /// This is implemented automatically by the #[hpd_plugin] macro
@@ -59,11 +58,6 @@ pub struct AgentConfig {
     // pub mcp: Option<McpConfig>,
     // pub audio: Option<AudioConfig>,
     // pub web_search: Option<WebSearchConfig>,
-    
-    /// Plugin-specific configurations for context-aware function filtering.
-    /// Key is plugin name, value contains dynamic context properties.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plugin_configurations: Option<HashMap<String, PluginConfiguration>>,
 }
 
 #[derive(Serialize)]
@@ -101,7 +95,6 @@ impl Default for AgentConfig {
             max_function_calls: 10,
             max_conversation_history: 20,
             provider: None,
-            plugin_configurations: None,
         }
     }
 }
@@ -217,48 +210,6 @@ impl AgentBuilder {
             endpoint: None,
         });
         self
-    }
-
-    /// Add a plugin configuration for context-aware behavior.
-    /// This enables dynamic function filtering based on runtime context properties.
-    pub fn with_plugin_config(mut self, plugin_name: impl Into<String>, config: PluginConfiguration) -> Self {
-        if self.config.plugin_configurations.is_none() {
-            self.config.plugin_configurations = Some(HashMap::new());
-        }
-        
-        self.config.plugin_configurations
-            .as_mut()
-            .unwrap()
-            .insert(plugin_name.into(), config);
-        
-        self
-    }
-
-    /// Add multiple plugin configurations at once.
-    pub fn with_plugin_configs(mut self, configs: HashMap<String, PluginConfiguration>) -> Self {
-        if self.config.plugin_configurations.is_none() {
-            self.config.plugin_configurations = Some(HashMap::new());
-        }
-        
-        self.config.plugin_configurations
-            .as_mut()
-            .unwrap()
-            .extend(configs);
-        
-        self
-    }
-
-    /// Create a plugin configuration with simple properties and add it to the agent.
-    pub fn with_dynamic_plugin_context(self, plugin_name: impl Into<String>, context_type: impl Into<String>, properties: HashMap<String, serde_json::Value>) -> Self {
-        let plugin_name = plugin_name.into();
-        let config = PluginConfiguration {
-            plugin_name: plugin_name.clone(),
-            context_type: context_type.into(),
-            properties,
-            available_functions: None,
-        };
-        
-        self.with_plugin_config(plugin_name, config)
     }
 
     pub fn build(self) -> Result<Agent, String> {

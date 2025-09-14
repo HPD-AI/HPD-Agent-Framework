@@ -222,17 +222,6 @@ public class ValidationError
 [JsonSerializable(typeof(AudioConfig))]
 [JsonSerializable(typeof(WebSearchConfig))]
 
-// --- Plugin configuration types ---
-[JsonSerializable(typeof(PluginConfiguration))]
-[JsonSerializable(typeof(List<PluginConfiguration>))]
-[JsonSerializable(typeof(Dictionary<string, PluginConfiguration>))]
-[JsonSerializable(typeof(DynamicFunctionMetadata))]
-[JsonSerializable(typeof(List<DynamicFunctionMetadata>))]
-[JsonSerializable(typeof(PluginOperationResult<string>))]
-[JsonSerializable(typeof(PluginOperationResult<List<DynamicFunctionMetadata>>))]
-[JsonSerializable(typeof(PluginOperationResult<Dictionary<string, object?>>))]
-[JsonSerializable(typeof(PluginError))]
-
 // --- Conversation and messaging types ---
 [JsonSerializable(typeof(ChatMessage))]
 [JsonSerializable(typeof(ChatRole))]

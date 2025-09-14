@@ -9,7 +9,6 @@ pub mod streaming;
 pub mod config;
 pub mod plugins;
 pub mod example_plugins;
-pub mod plugin_context;
 
 // Re-export the procedural macros
 pub use hpd_rust_agent_macros::{hpd_plugin, ai_function, requires_permission};
@@ -20,7 +19,6 @@ pub use agent::{Agent, AgentBuilder, AgentConfig, Plugin, RustFunctionInfo};
 pub use conversation::Conversation;
 pub use project::{Project, ProjectInfo};
 pub use config::AppSettings;
-pub use plugin_context::{PluginConfiguration, PluginContext, DynamicFunctionMetadata, ffi_interface};
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
