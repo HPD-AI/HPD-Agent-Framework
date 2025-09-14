@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.AI;
@@ -37,43 +38,19 @@ using A2A;
 [JsonSerializable(typeof(StreamErrorResponse))]
 [JsonSerializable(typeof(ContentEvent))]
 [JsonSerializable(typeof(FinishEvent))]
-
-// Microsoft.Extensions.AI types
-[JsonSerializable(typeof(ChatResponseUpdate))]
-[JsonSerializable(typeof(TextContent))]
-[JsonSerializable(typeof(ChatFinishReason))]
-
-// AG-UI BaseEvent types for native streaming (all event classes)
-[JsonSerializable(typeof(BaseEvent))]
-[JsonSerializable(typeof(RunStartedEvent))]
-[JsonSerializable(typeof(RunFinishedEvent))]
-[JsonSerializable(typeof(RunErrorEvent))]
-[JsonSerializable(typeof(StepStartedEvent))]
-[JsonSerializable(typeof(StepFinishedEvent))]
-[JsonSerializable(typeof(TextMessageStartEvent))]
-[JsonSerializable(typeof(TextMessageContentEvent))]
-[JsonSerializable(typeof(TextMessageEndEvent))]
-[JsonSerializable(typeof(ToolCallStartEvent))]
-[JsonSerializable(typeof(ToolCallArgsEvent))]
-[JsonSerializable(typeof(ToolCallEndEvent))]
-[JsonSerializable(typeof(StateSnapshotEvent))]
-[JsonSerializable(typeof(StateDeltaEvent))]
-[JsonSerializable(typeof(CustomEvent))]
-[JsonSerializable(typeof(RawEvent))]
-[JsonSerializable(typeof(MessagesSnapshotEvent))]
-
-// A2A protocol types for JSON serialization
-[JsonSerializable(typeof(AgentCard))]
-[JsonSerializable(typeof(AgentSkill))]
-[JsonSerializable(typeof(AgentCapabilities))]
-[JsonSerializable(typeof(AgentTask))]
-[JsonSerializable(typeof(Message))]
-[JsonSerializable(typeof(Artifact))]
-[JsonSerializable(typeof(List<AgentSkill>))]
-[JsonSerializable(typeof(List<string>))]
-[JsonSerializable(typeof(string[]))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
+    /// <summary>
+    /// Combined type info resolver that includes App, HPD, AGUI, and partial A2A types.
+    /// Note: Some A2A types (AgentCard, AgentCapabilities, AgentTask, Message, Artifact) 
+    /// cannot use source generation due to AgentTransport dependencies and will fall back to runtime serialization.
+    /// </summary>
+    public static IJsonTypeInfoResolver Combined { get; } = 
+        JsonTypeInfoResolver.Combine(
+            Default, 
+            HPDJsonContext.Default,
+            AGUIJsonContext.Default,
+            A2AJsonSerializerContext.Default);
 }
 
 // Streaming response types for AOT compatibility

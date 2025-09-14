@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using A2A;
 
 /// <summary>
 /// A modern, unified AIFunctionFactory that prioritizes delegate-based invocation 
@@ -248,6 +249,7 @@ public class ValidationError
 [JsonSerializable(typeof(Microsoft.Extensions.AI.AdditionalPropertiesDictionary))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatFinishReason))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.TextContent))]
+[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatResponseUpdate))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.FunctionCallContent))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.FunctionResultContent))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.AIContent))]

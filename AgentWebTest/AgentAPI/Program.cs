@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using System.Diagnostics.CodeAnalysis;
@@ -9,7 +10,7 @@ var builder = WebApplication.CreateSlimBuilder(args);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Combined);
 });
 
 builder.Services.AddCors(options =>
@@ -155,7 +156,8 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
         await foreach (var baseEvent in streamResult.EventStream.WithCancellation(context.RequestAborted))
         {
             // Stream the BaseEvent as JSON directly (AG-UI format)
-            var eventJson = System.Text.Json.JsonSerializer.Serialize(baseEvent, typeof(BaseEvent), AppJsonSerializerContext.Default);
+            var serializerOptions = new JsonSerializerOptions { TypeInfoResolver = AppJsonSerializerContext.Combined };
+            var eventJson = System.Text.Json.JsonSerializer.Serialize(baseEvent, serializerOptions);
             await writer.WriteAsync($"data: {eventJson}\n\n");
             await writer.FlushAsync();
         }
