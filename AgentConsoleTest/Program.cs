@@ -1,7 +1,5 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using System.Linq;
-using AGUIDotnet.Events;
 
 Console.WriteLine("🚀 HPD-Agent Console Test");
 

@@ -1,10 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using System.Threading.Channels;
-using Microsoft.Extensions.AI;
-using AGUIDotnet.Types;
-using AGUIDotnet.Events;
 
 namespace HPD_Agent.FFI;
 
