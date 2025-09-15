@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["internal"]
+internal = []
+
 [dependencies]
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }

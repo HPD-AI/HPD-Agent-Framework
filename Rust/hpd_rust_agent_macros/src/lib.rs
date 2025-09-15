@@ -116,7 +116,8 @@ fn impl_hpd_plugin(args: Punctuated<syn::Expr, Comma>, mut item_impl: ItemImpl) 
         
         #registration_code
         
-        // Implement the Plugin trait
+        // Implement the Plugin trait - use conditional compilation for internal vs external
+        #[cfg(any(test, feature = "internal"))]
         impl crate::agent::Plugin for #struct_name {
             fn register_functions(&self) {
                 // Register functions only when explicitly called (not automatically)
@@ -124,6 +125,19 @@ fn impl_hpd_plugin(args: Punctuated<syn::Expr, Comma>, mut item_impl: ItemImpl) 
             }
             
             fn get_plugin_info(&self) -> Vec<crate::agent::RustFunctionInfo> {
+                let registration = Self::register_plugin();
+                (&registration).into()
+            }
+        }
+        
+        #[cfg(not(any(test, feature = "internal")))]
+        impl hpd_rust_agent::agent::Plugin for #struct_name {
+            fn register_functions(&self) {
+                // Register functions only when explicitly called (not automatically)
+                Self::register_with_agent();
+            }
+            
+            fn get_plugin_info(&self) -> Vec<hpd_rust_agent::agent::RustFunctionInfo> {
                 let registration = Self::register_plugin();
                 (&registration).into()
             }
@@ -398,8 +412,18 @@ fn generate_executor_registrations(
             }
         };
         
+        // Generate code that works for both internal and external usage
         quote! {
+            // Register async executor with conditional paths
+            #[cfg(any(test, feature = "internal"))]
             crate::plugins::register_async_executor(
+                #func_name.to_string(),
+                Box::new(move |args_json: String| {
+                    #executor_code
+                })
+            );
+            #[cfg(not(any(test, feature = "internal")))]
+            hpd_rust_agent::plugins::register_async_executor(
                 #func_name.to_string(),
                 Box::new(move |args_json: String| {
                     #executor_code
@@ -524,8 +548,21 @@ fn generate_plugin_registration(
             }
             
             /// Register this plugin with the HPD Agent system
+            #[cfg(any(test, feature = "internal"))]
             pub fn register_plugin() -> crate::plugins::PluginRegistration {
                 crate::plugins::PluginRegistration {
+                    name: #plugin_name.to_string(),
+                    description: #plugin_description.to_string(),
+                    functions: vec![
+                        #(#function_registrations),*
+                    ],
+                    schemas: Self::get_plugin_schema(),
+                }
+            }
+            
+            #[cfg(not(any(test, feature = "internal")))]
+            pub fn register_plugin() -> hpd_rust_agent::plugins::PluginRegistration {
+                hpd_rust_agent::plugins::PluginRegistration {
                     name: #plugin_name.to_string(),
                     description: #plugin_description.to_string(),
                     functions: vec![
@@ -549,7 +586,10 @@ fn generate_plugin_registration(
             /// This should only be called when the plugin is explicitly added to an agent
             pub fn register_with_agent() {
                 // Register plugin metadata
+                #[cfg(any(test, feature = "internal"))]
                 crate::plugins::register_plugin(Self::register_plugin());
+                #[cfg(not(any(test, feature = "internal")))]
+                hpd_rust_agent::plugins::register_plugin(Self::register_plugin());
                 
                 // Register function executors
                 #(#executor_registrations)*

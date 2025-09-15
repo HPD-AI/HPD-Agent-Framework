@@ -13,6 +13,7 @@ pub mod example_plugins;
 // Re-export the procedural macros
 pub use hpd_rust_agent_macros::{hpd_plugin, ai_function, requires_permission};
 
+
 // Re-export key types for convenience
 pub use plugins::{PluginRegistration, register_plugin, get_registered_plugins, get_plugin_stats};
 pub use agent::{Agent, AgentBuilder, AgentConfig, Plugin, RustFunctionInfo};
