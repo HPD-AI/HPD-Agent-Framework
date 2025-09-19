@@ -18,6 +18,13 @@ public class Conversation
     // Memory management
     private ConversationDocumentHandling _uploadStrategy = ConversationDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
     private readonly List<ConversationDocumentUpload> _pendingInjections = new();
+    private TextExtractionUtility? _textExtractor;
+    
+    /// <summary>
+    /// Gets or sets the default orchestrator for multi-agent scenarios.
+    /// When set, this orchestrator will be used if no orchestrator is provided to Send methods.
+    /// </summary>
+    public IOrchestrator? DefaultOrchestrator { get; set; }
 
     public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
     public IReadOnlyDictionary<string, object> Metadata => _metadata.AsReadOnly();
@@ -127,63 +134,49 @@ public class Conversation
         }
     }
 
-    /// <summary>
-    /// Send a message with attached documents, handling them according to the upload strategy
-    /// </summary>
-    /// <param name="message">User message</param>
-    /// <param name="documentPaths">Paths to documents to attach</param>
-    /// <param name="textExtractor">Text extraction utility</param>
-    /// <param name="options">Chat options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Chat response</returns>
-    public async Task<ConversationTurnResult> SendWithDocumentsAsync(
-        string message,
-        string[] documentPaths,
-        TextExtractionUtility textExtractor,
-        ChatOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (documentPaths == null || documentPaths.Length == 0)
-            return await SendAsync(message, options, null, cancellationToken);
 
-        var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
-
-        switch (_uploadStrategy)
-        {
-            case ConversationDocumentHandling.IndexedRetrieval:
-                // Documents are already indexed in RAG memory, send message normally
-                return await SendAsync(message, options, null, cancellationToken);
-
-            case ConversationDocumentHandling.FullTextInjection:
-                // Inject document content directly into the message
-                var enhancedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads);
-                return await SendAsync(enhancedMessage, options, null, cancellationToken);
-
-            default:
-                throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}");
-        }
-    }
 
 
 
     /// <summary>
-    /// Send a message using the default agent or specified agent.
+    /// Send a message in the conversation.
+    /// For multi-agent scenarios, uses the provided orchestrator or falls back to DefaultOrchestrator.
     /// BREAKING: Now returns ConversationTurnResult instead of ChatResponse.
     /// </summary>
+    /// <param name="message">The message to send</param>
+    /// <param name="options">Optional chat options</param>
+    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
+    /// <param name="documentPaths">Optional document paths to include</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     public async Task<ConversationTurnResult> SendAsync(
         string message,
         ChatOptions? options = null,
         IOrchestrator? orchestrator = null,
+        string[]? documentPaths = null,
         CancellationToken cancellationToken = default)
     {
+        // Process documents if provided
+        if (documentPaths?.Length > 0)
+        {
+            var textExtractor = GetOrCreateTextExtractor();
+            var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
+            
+            message = _uploadStrategy switch
+            {
+                ConversationDocumentHandling.FullTextInjection => 
+                    ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads),
+                ConversationDocumentHandling.IndexedRetrieval => message,
+                _ => throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}")
+            };
+        }
+
         var startTime = DateTime.UtcNow;
         var userMessage = new ChatMessage(ChatRole.User, message);
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // Inject context and tools
+        // Inject context
         options = InjectProjectContextIfNeeded(options);
-        options = InjectAgentToolsIfNeeded(options);
 
         OrchestrationResult orchestrationResult;
 
@@ -191,9 +184,9 @@ public class Conversation
         {
             throw new InvalidOperationException("No agents configured");
         }
-        else if (_agents.Count == 1 || orchestrator == null)
+        else if (_agents.Count == 1)
         {
-            // Single agent path
+            // Single agent path - no orchestration needed
             var agent = _agents[0];
             var response = await agent.GetResponseAsync(_messages, options, cancellationToken);
             orchestrationResult = new OrchestrationResult
@@ -209,8 +202,14 @@ public class Conversation
         }
         else
         {
-            // Multi-agent orchestration
-            orchestrationResult = await orchestrator.OrchestrateAsync(
+            // Multi-agent orchestration - use provided or default orchestrator
+            var effectiveOrchestrator = orchestrator ?? DefaultOrchestrator;
+            if (effectiveOrchestrator == null)
+            {
+                throw new InvalidOperationException("Multiple agents configured but no orchestrator provided. Set DefaultOrchestrator or pass an orchestrator parameter.");
+            }
+            
+            orchestrationResult = await effectiveOrchestrator.OrchestrateAsync(
                 _messages, _agents, this.Id, options, cancellationToken);
         }
 
@@ -222,6 +221,7 @@ public class Conversation
         var agentMetadata = CollectAgentMetadata(orchestrationResult.Response);
         var context = new ConversationFilterContext(this, userMessage, orchestrationResult.Response, agentMetadata, options, cancellationToken);
         await ApplyConversationFilters(context);
+
 
         return new ConversationTurnResult
         {
@@ -251,60 +251,185 @@ public class Conversation
     }
 
     /// <summary>
-    /// Merges agent tools into ChatOptions to ensure function calling works
+    /// Stream a conversation turn and return both event stream and final metadata.
+    /// For multi-agent scenarios, uses the provided orchestrator or falls back to DefaultOrchestrator.
     /// </summary>
-    private ChatOptions? InjectAgentToolsIfNeeded(ChatOptions? options)
-    {
-        var primaryAgent = _agents.FirstOrDefault();
-        if (primaryAgent?.DefaultOptions?.Tools?.Any() == true)
-        {
-            options ??= new ChatOptions();
-            
-            // Start with existing tools (if any)
-            var existingTools = options.Tools?.ToList() ?? new List<AITool>();
-            var agentTools = primaryAgent.DefaultOptions.Tools;
-            
-            // Add agent tools that aren't already present (avoid duplicates)
-            foreach (var agentTool in agentTools)
-            {
-                if (agentTool is AIFunction af)
-                {
-                    // Check if this tool name already exists
-                    bool alreadyExists = existingTools.OfType<AIFunction>()
-                        .Any(existing => existing.Name == af.Name);
-                    
-                    if (!alreadyExists)
-                    {
-                        existingTools.Add(agentTool);
-                    }
-                }
-            }
-            
-            options.Tools = existingTools;
-            options.ToolMode = ChatToolMode.Auto; // Enable function calling
-            
-            // Successfully injected {agentTools.Count} agent tools. Total tools now: {existingTools.Count}
-        }
-        
-        return options;
-    }
-
-    /// <summary>
-    /// Stream a conversation turn with full event transparency
-    /// </summary>
-    public async IAsyncEnumerable<BaseEvent> SendStreamingAsync(
+    /// <param name="message">The user message to send</param>
+    /// <param name="options">Chat options</param>
+    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
+    /// <param name="documentPaths">Optional document paths to process and include</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Streaming result with event stream and final metadata</returns>
+    public async Task<ConversationStreamingResult> SendStreamingAsync(
         string message,
         ChatOptions? options = null,
         IOrchestrator? orchestrator = null,
+        string[]? documentPaths = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Process documents if provided
+        if (documentPaths?.Length > 0)
+        {
+            var textExtractor = GetOrCreateTextExtractor();
+            var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
+            
+            message = _uploadStrategy switch
+            {
+                ConversationDocumentHandling.FullTextInjection => 
+                    ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads),
+                ConversationDocumentHandling.IndexedRetrieval => message,
+                _ => throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}")
+            };
+        }
+
+        // Create TaskCompletionSource for the final result
+        var resultTcs = new TaskCompletionSource<ConversationTurnResult>();
+        
+        // Create the event stream
+        var eventStream = SendStreamingEventsAsync(message, options, orchestrator, documentPaths, cancellationToken);
+        
+        // Start a task to consume events and build the final result
+        _ = Task.Run(async () => 
+        {
+            var startTime = DateTime.UtcNow;
+            ChatResponse? finalResponse = null;
+            Agent? selectedAgent = null;
+            OrchestrationMetadata? orchestrationMetadata = null;
+            var userMessage = new ChatMessage(ChatRole.User, message);
+            
+            try
+            {
+                // Consume the stream to capture metadata
+                await foreach (var evt in eventStream.WithCancellation(cancellationToken))
+                {
+                    // The event stream processing already handles adding messages to conversation
+                    // We just need to wait for it to complete
+                }
+                
+                // After stream completes, extract the final response from conversation history
+                var lastMessages = _messages.TakeLast(10).ToList();
+                var assistantMessage = lastMessages.LastOrDefault(m => m.Role == ChatRole.Assistant);
+                
+                if (assistantMessage != null)
+                {
+                    finalResponse = new ChatResponse(assistantMessage);
+                    selectedAgent = _agents.FirstOrDefault();
+                    orchestrationMetadata = new OrchestrationMetadata
+                    {
+                        StrategyName = _agents.Count == 1 ? "SingleAgent" : "Orchestrated",
+                        DecisionDuration = TimeSpan.Zero
+                    };
+                }
+                
+                // Set the final result
+                resultTcs.SetResult(new ConversationTurnResult
+                {
+                    Response = finalResponse ?? new ChatResponse(new ChatMessage(ChatRole.Assistant, "")),
+                    TurnHistory = ExtractTurnHistory(userMessage, finalResponse ?? new ChatResponse(new ChatMessage(ChatRole.Assistant, ""))),
+                    RespondingAgent = selectedAgent ?? _agents.FirstOrDefault()!,
+                    UsedOrchestrator = orchestrator,
+                    Duration = DateTime.UtcNow - startTime,
+                    OrchestrationMetadata = orchestrationMetadata ?? new OrchestrationMetadata(),
+                    Usage = CreateTokenUsage(finalResponse ?? new ChatResponse(new ChatMessage(ChatRole.Assistant, ""))),
+                    RequestId = Guid.NewGuid().ToString(),
+                    ActivityId = System.Diagnostics.Activity.Current?.Id
+                });
+            }
+            catch (Exception ex)
+            {
+                resultTcs.SetException(ex);
+            }
+        }, cancellationToken);
+        
+        return new ConversationStreamingResult
+        {
+            EventStream = eventStream,
+            FinalResult = resultTcs.Task
+        };
+    }
+
+    /// <summary>
+    /// Stream a conversation turn with default console display formatting.
+    /// Provides a user-friendly experience with automatic event formatting and output.
+    /// For advanced event control, use SendStreamingAsync instead.
+    /// </summary>
+    /// <param name="message">The user message to send</param>
+    /// <param name="outputHandler">Optional custom output handler. Defaults to Console.Write</param>
+    /// <param name="options">Chat options</param>
+    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
+    /// <param name="documentPaths">Optional document paths to process and include</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Final conversation turn result with all metadata</returns>
+    public async Task<ConversationTurnResult> SendStreamingWithOutputAsync(
+        string message,
+        Action<string>? outputHandler = null,
+        ChatOptions? options = null,
+        IOrchestrator? orchestrator = null,
+        string[]? documentPaths = null,
+        CancellationToken cancellationToken = default)
+    {
+        outputHandler ??= Console.Write;
+        
+        var result = await SendStreamingAsync(message, options, orchestrator, documentPaths, cancellationToken);
+        
+        // Stream events to output handler
+        await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
+        {
+            var formattedOutput = FormatEventForDisplay(evt);
+            if (!string.IsNullOrEmpty(formattedOutput))
+            {
+                outputHandler(formattedOutput);
+            }
+        }
+        
+        // Return the final result with all metadata
+        return await result.FinalResult;
+    }
+
+    /// <summary>
+    /// Formats a BaseEvent for display with clean text output plus reasoning steps
+    /// </summary>
+    private static string FormatEventForDisplay(BaseEvent evt)
+    {
+        return evt switch
+        {
+            StepStartedEvent step => $"\n\n",
+            TextMessageContentEvent text => text.Delta,
+            _ => "" // Only show reasoning steps and assistant text, ignore other events
+        };
+    }
+
+    /// <summary>
+    /// Stream a conversation turn with full event transparency (advanced users)
+    /// </summary>
+    internal async IAsyncEnumerable<BaseEvent> SendStreamingEventsAsync(
+        string message,
+        ChatOptions? options = null,
+        IOrchestrator? orchestrator = null,
+        string[]? documentPaths = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // Process documents if provided
+        if (documentPaths?.Length > 0)
+        {
+            var textExtractor = GetOrCreateTextExtractor();
+            var uploads = await ProcessDocumentUploadsAsync(documentPaths, textExtractor, cancellationToken);
+            
+            message = _uploadStrategy switch
+            {
+                ConversationDocumentHandling.FullTextInjection => 
+                    ConversationDocumentHelper.FormatMessageWithDocuments(message, uploads),
+                ConversationDocumentHandling.IndexedRetrieval => message,
+                _ => throw new InvalidOperationException($"Unknown upload strategy: {_uploadStrategy}")
+            };
+        }
+
         var userMessage = new ChatMessage(ChatRole.User, message);
         _messages.Add(userMessage);
         UpdateActivity();
 
-        // Inject project context AND agent tools
+        // Inject project context
         options = InjectProjectContextIfNeeded(options);
-        options = InjectAgentToolsIfNeeded(options);
 
         if (_agents.Count == 0)
         {
@@ -339,14 +464,15 @@ public class Conversation
         else
         {
             // ORCHESTRATED PATH - Multi-agent
-            if (orchestrator == null)
+            var effectiveOrchestrator = orchestrator ?? DefaultOrchestrator;
+            if (effectiveOrchestrator == null)
             {
                 throw new InvalidOperationException(
-                    $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator.");
+                    $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. Set DefaultOrchestrator or pass an orchestrator parameter.");
             }
 
             // Use the orchestrator's streaming method
-            var orchestrationResult = await orchestrator.OrchestrateStreamingAsync(
+            var orchestrationResult = await effectiveOrchestrator.OrchestrateStreamingAsync(
                 _messages, _agents, this.Id, options, cancellationToken);
 
             // Stream all orchestration and agent events
@@ -366,6 +492,14 @@ public class Conversation
                 this, userMessage, finalResult.Response, agentMetadata, options, cancellationToken);
             await ApplyConversationFilters(context);
         }
+    }
+
+    /// <summary>
+    /// Gets or creates a TextExtractionUtility instance for document processing
+    /// </summary>
+    private TextExtractionUtility GetOrCreateTextExtractor()
+    {
+        return _textExtractor ??= new TextExtractionUtility();
     }
 
     /// <summary>
@@ -534,6 +668,7 @@ public record TokenUsage
     public string? ModelId { get; init; }
 }
 
+
 /// <summary>
 /// Result of a conversation turn with rich metadata for business decisions
 /// </summary>
@@ -561,6 +696,15 @@ public record ConversationTurnResult
         => result.Response.Messages.FirstOrDefault() ?? new ChatMessage();
 
     public string Text => Response.Text;
+}
+
+/// <summary>
+/// Streaming result for conversation turns, providing both event stream and final metadata.
+/// </summary>
+public record ConversationStreamingResult
+{
+    public required IAsyncEnumerable<BaseEvent> EventStream { get; init; }
+    public required Task<ConversationTurnResult> FinalResult { get; init; }
 }
 
 /// <summary>

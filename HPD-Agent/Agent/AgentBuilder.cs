@@ -33,9 +33,6 @@ public class AgentBuilder
     internal readonly List<IPromptFilter> _promptFilters = new();
     internal IAiFunctionFilter? _permissionFilter; // Dedicated permission filter
 
-    // Audio capability fields (runtime only) - made internal for extensions
-    internal ISpeechToTextClient? _sttClient;
-    internal ITextToSpeechClient? _ttsClient;
     internal readonly Dictionary<Type, object> _providerConfigs = new();
     internal IServiceProvider? _serviceProvider;
     internal ILoggerFactory? _logger;
@@ -256,12 +253,6 @@ public class AgentBuilder
             _permissionFilter,
             _continuationPermissionManager);
 
-        // Attach audio capability if configured
-        var audioCapability = this.CreateAudioCapability(agent);
-        if (audioCapability != null)
-        {
-            agent.AddCapability("Audio", audioCapability);
-        }
 
         // Attach MCP capability if configured
         if (McpClientManager != null)
@@ -366,23 +357,6 @@ public class AgentBuilder
         set => _baseClient = value;
     }
 
-    /// <summary>
-    /// Internal access to STT client for extension methods
-    /// </summary>
-    internal ISpeechToTextClient? SttClient
-    {
-        get => _sttClient;
-        set => _sttClient = value;
-    }
-
-    /// <summary>
-    /// Internal access to TTS client for extension methods
-    /// </summary>
-    internal ITextToSpeechClient? TtsClient
-    {
-        get => _ttsClient;
-        set => _ttsClient = value;
-    }
 
     /// <summary>
     /// Internal access to provider configs for extension methods
@@ -491,154 +465,6 @@ public class AgentBuilder
     }
 }
 
-#region Audio Extensions
-/// <summary>
-/// Extension methods for configuring Audio (TTS/STT) capabilities for the AgentBuilder.
-/// </summary>
-public static class AgentBuilderAudioExtensions
-{
-    /// <summary>Register STT client directly</summary>
-    public static AgentBuilder WithSpeechToText(this AgentBuilder builder, ISpeechToTextClient sttClient)
-    {
-        builder.SttClient = sttClient ?? throw new ArgumentNullException(nameof(sttClient));
-        return builder;
-    }
-
-    /// <summary>Register TTS client directly</summary>
-    public static AgentBuilder WithTextToSpeech(this AgentBuilder builder, ITextToSpeechClient ttsClient)
-    {
-        builder.TtsClient = ttsClient ?? throw new ArgumentNullException(nameof(ttsClient));
-        return builder;
-    }
-
-    /// <summary>Configure audio capability options</summary>
-    public static AgentBuilder WithAudioOptions(this AgentBuilder builder, Action<AudioCapabilityOptions> configure)
-    {
-        if (builder.Config.Audio == null)
-            builder.Config.Audio = new AudioConfig();
-        builder.Config.Audio.Options ??= new AudioCapabilityOptions();
-        configure(builder.Config.Audio.Options);
-        return builder;
-    }
-
-    /// <summary>ElevenLabs STT with configuration object</summary>
-    public static AgentBuilder WithElevenLabsSpeechToText(this AgentBuilder builder, ElevenLabsConfig config)
-    {
-        var client = new ElevenLabsSpeechToTextClient(config, null, builder.Logger?.CreateLogger<ElevenLabsSpeechToTextClient>());
-        return builder.WithSpeechToText(client);
-    }
-
-    /// <summary>ElevenLabs TTS with configuration object</summary>
-    public static AgentBuilder WithElevenLabsTextToSpeech(this AgentBuilder builder, ElevenLabsConfig config, string? voiceId = null)
-    {
-        var client = new ElevenLabsTextToSpeechClient(config, voiceId, null,
-            builder.Logger?.CreateLogger<ElevenLabsTextToSpeechClient>());
-        return builder.WithTextToSpeech(client);
-    }
-
-    /// <summary>ElevenLabs complete pipeline</summary>
-    public static AgentBuilder WithElevenLabsAudio(this AgentBuilder builder, string? apiKey = null, string? voiceId = null)
-    {
-        var config = builder.ResolveOrCreateConfig<ElevenLabsConfig>();
-        if (!string.IsNullOrEmpty(apiKey))
-            config.ApiKey = apiKey;
-        if (!string.IsNullOrEmpty(voiceId))
-            config.DefaultVoiceId = voiceId;
-
-        // Store in config
-        if (builder.Config.Audio == null)
-            builder.Config.Audio = new AudioConfig();
-        builder.Config.Audio.ElevenLabs = config;
-
-        return builder.WithElevenLabsSpeechToText(config)
-               .WithElevenLabsTextToSpeech(config, voiceId);
-    }
-
-    /// <summary>Azure Speech STT with configuration object</summary>
-    public static AgentBuilder WithAzureSpeechToText(this AgentBuilder builder, AzureSpeechConfig config)
-    {
-        config.Validate();
-        var client = new AzureSpeechToTextClient(config, builder.Logger?.CreateLogger<AzureSpeechToTextClient>());
-        return builder.WithSpeechToText(client);
-    }
-
-    /// <summary>Azure Speech STT with key parameters</summary>
-    public static AgentBuilder WithAzureSpeechToText(this AgentBuilder builder, string apiKey, string region, string? language = null)
-    {
-        var config = new AzureSpeechConfig
-        {
-            ApiKey = apiKey,
-            Region = region,
-            DefaultLanguage = language ?? "en-US"
-        };
-        return builder.WithAzureSpeechToText(config);
-    }
-
-    /// <summary>Azure Speech TTS with configuration object</summary>
-    public static AgentBuilder WithAzureTextToSpeech(this AgentBuilder builder, AzureSpeechConfig config)
-    {
-        config.Validate();
-        var client = new AzureTextToSpeechClient(config, builder.Logger?.CreateLogger<AzureTextToSpeechClient>());
-        return builder.WithTextToSpeech(client);
-    }
-
-    /// <summary>Azure Speech complete pipeline</summary>
-    public static AgentBuilder WithAzureSpeechAudio(this AgentBuilder builder, string apiKey, string region, string? voice = null)
-    {
-        var config = new AzureSpeechConfig
-        {
-            ApiKey = apiKey,
-            Region = region,
-            DefaultVoice = voice ?? "en-US-AriaNeural"
-        };
-
-        // Store in config
-        if (builder.Config.Audio == null)
-            builder.Config.Audio = new AudioConfig();
-        builder.Config.Audio.AzureSpeech = config;
-
-        return builder.WithAzureSpeechToText(config)
-               .WithAzureTextToSpeech(config);
-    }
-
-    /// <summary>Create audio capability during build</summary>
-    internal static AudioCapability? CreateAudioCapability(this AgentBuilder builder, global::Agent agent)
-    {
-        // Skip if no audio clients configured
-        if (builder.SttClient == null && builder.TtsClient == null)
-            return null;
-
-        var options = builder.Config.Audio?.Options ?? new AudioCapabilityOptions();
-
-        return new AudioCapability(
-            agent: agent,
-            options: options,
-            sttClient: builder.SttClient,
-            ttsClient: builder.TtsClient,
-            filterManager: builder.ScopedFilterManager,
-            logger: builder.Logger?.CreateLogger<AudioCapability>());
-    }
-
-    private static T ResolveOrCreateConfig<T>(this AgentBuilder builder) where T : class, new()
-    {
-        return AgentBuilderHelpers.ResolveOrCreateConfig<T>(builder.ProviderConfigs);
-    }
-
-
-    private static ElevenLabsConfig? CreateElevenLabsConfigFromEnvironment()
-    {
-        var config = AgentBuilderHelpers.CreateElevenLabsConfigFromEnvironment();
-        return string.IsNullOrEmpty(config.ApiKey) ? null : config;
-    }
-
-    private static AzureSpeechConfig? CreateAzureConfigFromEnvironment()
-    {
-        var config = AgentBuilderHelpers.CreateAzureConfigFromEnvironment();
-        return string.IsNullOrEmpty(config.ApiKey) ? null : config;
-    }
-
-}
-#endregion
 
 #region Filter Extensions
 /// <summary>

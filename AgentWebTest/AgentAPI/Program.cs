@@ -122,6 +122,7 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/chat",
         return Results.NotFound();
 
     // 🚀 ONE LINE: Everything handled by conversation
+    // For future document support: conversation.SendAsync(request.Message, documentPaths: request.DocumentPaths)
     var response = await conversation.SendAsync(request.Message);
     return Results.Ok(ToAgentResponse(response));
 });
@@ -179,7 +180,7 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
     }
 });
 
-// 🚀 WEBSOCKET: Real-time bi-directional streaming using default approach
+// 🚀 WEBSOCKET: Real-time bi-directional streaming using new ConversationStreamingResult
 agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws", 
     async (string projectId, string conversationId, HttpContext context, ProjectManager pm) =>
 {
@@ -204,9 +205,12 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
             var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
             var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
 
-            // Use default streaming and send over WebSocket
+            // Use new streaming API that returns ConversationStreamingResult
+            // For future document support: pass document paths as 4th parameter
+            var streamResult = await conversation.SendStreamingAsync(userMessage, null, null, null, CancellationToken.None);
+            
             bool isFinished = false;
-            await foreach (var evt in conversation.SendStreamingAsync(userMessage, null, null, CancellationToken.None))
+            await foreach (var evt in streamResult.EventStream.WithCancellation(CancellationToken.None))
             {
                 switch (evt)
                 {
@@ -230,6 +234,21 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
                         break;
                 }
             }
+
+            // Send final metadata as completion event
+            var finalResult = await streamResult.FinalResult;
+            var metadataResponse = new StreamMetadataResponse(
+                finalResult.Usage?.TotalTokens ?? 0,
+                finalResult.Duration.TotalSeconds,
+                finalResult.RespondingAgent.Name,
+                finalResult.Usage?.EstimatedCost);
+            var metadataMessage = System.Text.Json.JsonSerializer.Serialize(metadataResponse, AppJsonSerializerContext.Default.StreamMetadataResponse);
+            var metadataBytes = System.Text.Encoding.UTF8.GetBytes(metadataMessage);
+            await webSocket.SendAsync(
+                new ArraySegment<byte>(metadataBytes),
+                System.Net.WebSockets.WebSocketMessageType.Text,
+                true,
+                CancellationToken.None);
 
             if (isFinished)
             {
@@ -263,29 +282,6 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
     }
 });
 
-// ✨ SIMPLIFIED: Audio with auto-capability detection
-agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stt", 
-    async (string projectId, string conversationId, HttpRequest req, ProjectManager pm) =>
-{
-    if (pm.GetConversation(projectId, conversationId) is not { } conversation)
-        return Results.NotFound();
-
-    // 🎯 SIMPLE: Create agent for audio capability
-    var project = pm.GetProject(projectId);
-    if (project == null)
-        return Results.NotFound();
-        
-    var agent = pm.CreateAgent();
-    if (agent.Audio is not { } audio)
-        return Results.BadRequest(new ErrorResponse("Audio not available"));
-
-    using var audioStream = new MemoryStream();
-    await req.Body.CopyToAsync(audioStream);
-    audioStream.Position = 0;
-    
-    var transcript = await audio.TranscribeAsync(audioStream);
-    return Results.Ok(new SttResponse(transcript ?? ""));
-});
 
 app.Run();
 
@@ -387,7 +383,6 @@ public class ProjectManager
             .WithFilter(new LoggingAiFunctionFilter())
             .WithTavilyWebSearch()    
             .WithPlugin<MathPlugin>()
-            .WithElevenLabsAudio()
             .WithMCP("./MCP.json")
             .WithMaxFunctionCalls(6)
             .Build();

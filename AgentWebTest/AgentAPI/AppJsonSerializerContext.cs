@@ -36,6 +36,7 @@ using A2A;
 [JsonSerializable(typeof(StreamContentResponse))]
 [JsonSerializable(typeof(StreamFinishResponse))]
 [JsonSerializable(typeof(StreamErrorResponse))]
+[JsonSerializable(typeof(StreamMetadataResponse))]
 [JsonSerializable(typeof(ContentEvent))]
 [JsonSerializable(typeof(FinishEvent))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
@@ -57,6 +58,7 @@ internal partial class AppJsonSerializerContext : JsonSerializerContext
 public record StreamContentResponse(string content);
 public record StreamFinishResponse(bool finished, string reason);
 public record StreamErrorResponse(string error);
+public record StreamMetadataResponse(long TotalTokens, double DurationSeconds, string AgentName, decimal? EstimatedCost);
 
 // Event types for frontend compatibility
 public record ContentEvent(string type, string content);

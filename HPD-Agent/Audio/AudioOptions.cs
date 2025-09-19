@@ -37,32 +37,29 @@ public sealed class AudioCapabilityOptions
 }
 
 /// <summary>
-/// Per-request audio processing options
+/// Per-conversation audio processing options for STT and TTS operations
 /// </summary>
 [Experimental("HPDAUDIO001")]
 public sealed class AudioProcessingOptions
 {
-    /// <summary>Gets or sets the STT model to use for this request.</summary>
+    /// <summary>Gets or sets the STT model to use for this conversation.</summary>
     public string? SttModel { get; set; }
 
-    /// <summary>Gets or sets the TTS model to use for this request.</summary>
+    /// <summary>Gets or sets the TTS model to use for this conversation.</summary>
     public string? TtsModel { get; set; }
 
-    /// <summary>Gets or sets the voice to use for TTS in this request.</summary>
+    /// <summary>Gets or sets the voice to use for TTS in this conversation.</summary>
     public string? Voice { get; set; }
 
-    /// <summary>Gets or sets the language for this request.</summary>
+    /// <summary>Gets or sets the language for this conversation.</summary>
     public string? Language { get; set; }
-
-    /// <summary>Gets or sets custom instructions for the LLM processing phase.</summary>
-    public string? CustomInstructions { get; set; }
 
     /// <summary>Gets or sets whether to include the transcription in the response.</summary>
     public bool IncludeTranscription { get; set; } = true;
 
-    /// <summary>Gets or sets whether to enable streaming mode.</summary>
-    public bool EnableStreaming { get; set; }
+    /// <summary>Gets or sets whether to synthesize audio response.</summary>
+    public bool SynthesizeResponse { get; set; }
 
-    /// <summary>Gets or sets any additional properties for this request.</summary>
+    /// <summary>Gets or sets any additional properties for this conversation.</summary>
     public AdditionalPropertiesDictionary? AdditionalProperties { get; set; }
 }

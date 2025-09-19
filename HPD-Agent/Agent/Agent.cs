@@ -112,10 +112,6 @@ public class Agent : IChatClient
     public bool RemoveCapability(string name)
         => _capabilityManager.RemoveCapability(name);
 
-    /// <summary>
-    /// Gets the audio capability if available
-    /// </summary>
-    public AudioCapability? Audio => GetCapability<AudioCapability>("Audio");
 
     #endregion
 

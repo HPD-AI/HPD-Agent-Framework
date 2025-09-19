@@ -74,7 +74,6 @@ static async Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfigurati
             .WithStorageDirectory("./agent-memory-storage")
             .WithMaxTokens(6000))
         .WithPlugin<MathPlugin>()
-        .WithElevenLabsAudio() // Will use environment variables or config
         .WithFullPermissions(new ConsolePermissionHandler())
         .WithMCP(agentConfig.Mcp.ManifestPath)
         .Build();
@@ -145,43 +144,19 @@ static async Task RunInteractiveChat(Conversation conversation)
     }
 }
 
-static async Task StreamResponse(Conversation conversation, string message)
+static async Task StreamResponse(Conversation conversation, string message, string[]? documentPaths = null)
 {
-    await foreach (var evt in conversation.SendStreamingAsync(message))
+    // Now returns ConversationStreamingResult with event stream and final metadata
+    var result = await conversation.SendStreamingWithOutputAsync(message, documentPaths: documentPaths);
+    
+    // Display metadata after streaming completes
+    if (result.Usage != null)
     {
-        switch (evt)
-        {
-            case RunStartedEvent runStart:
-                Console.Write($"\n🚀 Run {runStart.RunId} started");
-                break;
-            case RunFinishedEvent runFinish:
-                Console.Write($"\n✅ Run {runFinish.RunId} completed");
-                break;
-            case RunErrorEvent runError:
-                Console.Write($"\n❌ Run failed: {runError.Message}");
-                break;
-            case StepStartedEvent step:
-                Console.Write($"\n💭 {step.StepName}: ");
-                break;
-            case TextMessageStartEvent msgStart:
-                Console.Write($"\n🤖 ");
-                break;
-            case TextMessageContentEvent text:
-                Console.Write(text.Delta);
-                break;
-            case TextMessageEndEvent msgEnd:
-                // Just add a newline after message completes
-                break;
-            case ToolCallStartEvent toolStart:
-                Console.Write($"\n🔧 {toolStart.ToolCallName}");
-                break;
-            case ToolCallArgsEvent toolArgs:
-                Console.Write($"({toolArgs.Delta})");
-                break;
-            case ToolCallEndEvent toolEnd:
-                Console.Write("... ✅");
-                break;
-        }
+        Console.Write($" [Tokens: {result.Usage.TotalTokens}");
+        if (result.Usage.EstimatedCost.HasValue)
+            Console.Write($", Cost: ${result.Usage.EstimatedCost:F4}");
+        Console.Write($", Agent: {result.RespondingAgent.Name}");
+        Console.Write($", Duration: {result.Duration.TotalSeconds:F1}s]");
     }
 }
 
@@ -193,15 +168,10 @@ static async Task HandleAudioCommandStreaming(Conversation conversation)
     
     if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
     {
-        // ✨ Create TextExtractionUtility instance for document processing
-        var textExtractor = new TextExtractionUtility();
-        
-        // 🎯 Process documents, then stream response
-        var uploads = await conversation.ProcessDocumentUploadsAsync([path], textExtractor);
-        var enhancedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(
-            "Please transcribe this audio and provide a helpful response", uploads);
-        
-        await StreamResponse(conversation, enhancedMessage);
+        // Direct call with documents using the new consolidated API
+        await StreamResponse(conversation, 
+            "Please transcribe this audio and provide a helpful response", 
+            documentPaths: [path]);
     }
     else
     {

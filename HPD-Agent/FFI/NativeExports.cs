@@ -428,7 +428,8 @@ public static partial class NativeExports
                 Marshal.FreeCoTaskMem(messageStartPtr);
                 
                 // 3. Use streaming with the conversation's actual message history
-                await foreach (var evt in conversation.SendStreamingAsync(message, null))
+                var streamResult = await conversation.SendStreamingAsync(message, null);
+                await foreach (var evt in streamResult.EventStream)
                 {
                     // Serialize the BaseEvent directly to JSON
                     string eventJson = SerializeBaseEvent(evt);
@@ -462,6 +463,76 @@ public static partial class NativeExports
                 errorCallback(context, errorJsonPtr);
                 Marshal.FreeCoTaskMem(errorJsonPtr);
                 errorCallback(context, IntPtr.Zero); // End stream after error.
+            }
+        });
+    }
+
+    /// <summary>
+    /// Sends a message to a conversation with simple text streaming (no detailed events).
+    /// This provides a clean, minimal output similar to ChatGPT.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <param name="messagePtr">Pointer to the UTF-8 message string</param>
+    /// <param name="callback">Function pointer to receive text content</param>
+    /// <param name="context">Context pointer passed back to callback</param>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_send_simple")]
+    public static void ConversationSendSimple(IntPtr conversationHandle, IntPtr messagePtr, IntPtr callback, IntPtr context)
+    {
+        var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+        if (conversation == null) 
+        {
+            // Signal error through callback
+            string errorJson = "{\"type\":\"ERROR\", \"message\":\"Invalid conversation handle\"}";
+            var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
+            var errorCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+            errorCallback(context, errorJsonPtr);
+            Marshal.FreeCoTaskMem(errorJsonPtr);
+            errorCallback(context, IntPtr.Zero); // End stream
+            return;
+        }
+
+        string? message = Marshal.PtrToStringUTF8(messagePtr);
+        if (string.IsNullOrEmpty(message)) 
+        {
+            string errorJson = "{\"type\":\"ERROR\", \"message\":\"Message is null or empty\"}";
+            var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
+            var errorCallback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+            errorCallback(context, errorJsonPtr);
+            Marshal.FreeCoTaskMem(errorJsonPtr);
+            errorCallback(context, IntPtr.Zero); // End stream
+            return;
+        }
+        
+        Task.Run(async () =>
+        {
+            try
+            {
+                var callbackDelegate = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+                
+                // Use the simple streaming method with a custom output handler
+                await conversation.SendStreamingWithOutputAsync(message, text =>
+                {
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        // Send plain text content as simple JSON
+                        var contentJson = $"{{\"type\":\"CONTENT\",\"text\":{System.Text.Json.JsonSerializer.Serialize(text)}}}";
+                        var contentPtr = Marshal.StringToCoTaskMemAnsi(contentJson);
+                        callbackDelegate(context, contentPtr);
+                        Marshal.FreeCoTaskMem(contentPtr);
+                    }
+                });
+                
+                // Signal end of stream
+                callbackDelegate(context, IntPtr.Zero);
+            }
+            catch (Exception ex)
+            {
+                var callbackDelegate = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callback);
+                string errorJson = $"{{\"type\":\"ERROR\", \"message\":{System.Text.Json.JsonSerializer.Serialize(ex.Message)}}}";
+                var errorJsonPtr = Marshal.StringToCoTaskMemAnsi(errorJson);
+                callbackDelegate(context, errorJsonPtr);
+                Marshal.FreeCoTaskMem(errorJsonPtr);
+                callbackDelegate(context, IntPtr.Zero); // End stream
             }
         });
     }

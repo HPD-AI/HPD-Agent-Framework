@@ -71,6 +71,25 @@ impl Conversation {
 
         Ok(UnboundedReceiverStream::new(rx))
     }
+
+    pub fn send_simple(
+        &self,
+        message: &str,
+    ) -> Result<impl Stream<Item = String>, String> {
+        let (context_key, rx) = crate::streaming::create_stream();
+        let c_message = CString::new(message).map_err(|_| "Message contains null bytes".to_string())?;
+
+        unsafe {
+            ffi::conversation_send_simple(
+                self.handle,
+                c_message.as_ptr(),
+                crate::streaming::stream_callback as *const _,
+                context_key as *mut c_void,
+            );
+        }
+
+        Ok(UnboundedReceiverStream::new(rx))
+    }
 }
 
 impl Drop for Conversation {
