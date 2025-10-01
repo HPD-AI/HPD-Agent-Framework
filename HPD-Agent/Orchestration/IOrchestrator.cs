@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 /// Core orchestration interface for v0.
 /// Replaces existing interface entirely with rich result types and BaseEvent streaming.
 /// </summary>
-public interface IOrchestrator
+internal interface IOrchestrator
 {
     /// <summary>
     /// Simple orchestration returning rich result with metadata.
@@ -42,7 +42,7 @@ public interface IOrchestrator
 /// <summary>
 /// Orchestration decision metadata.
 /// </summary>
-public record OrchestrationMetadata
+internal record OrchestrationMetadata
 {
     public TimeSpan DecisionDuration { get; init; }
     public string StrategyName { get; init; } = "";
@@ -53,7 +53,7 @@ public record OrchestrationMetadata
 /// <summary>
 /// Primary orchestration result.
 /// </summary>
-public record OrchestrationResult
+internal record OrchestrationResult
 {
     public required ChatResponse Response { get; init; }
     public required Agent SelectedAgent { get; init; }
@@ -69,7 +69,7 @@ public record OrchestrationResult
 /// <summary>
 /// Streaming orchestration result with BaseEvent stream.
 /// </summary>
-public record OrchestrationStreamingResult
+internal record OrchestrationStreamingResult
 {
     public required IAsyncEnumerable<BaseEvent> EventStream { get; init; }
     public required Task<OrchestrationResult> FinalResult { get; init; }

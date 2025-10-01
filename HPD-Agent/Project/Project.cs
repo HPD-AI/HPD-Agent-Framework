@@ -7,7 +7,7 @@ using HPD_Agent.TextExtraction;
 /// <summary>
 /// Project information for FFI/API responses.
 /// </summary>
-public class ProjectInfo
+internal class ProjectInfo
 {
     [JsonPropertyName("id")]
     public string Id { get; set; } = string.Empty;
@@ -32,7 +32,7 @@ public class ProjectInfo
 /// Represents a project containing conversations and scoped memories.
 /// </summary>
 
-public class Project
+internal class Project
 {
     /// <summary>Unique project identifier.</summary>
     public string Id { get; }
@@ -274,7 +274,7 @@ public class Project
 /// <summary>
 /// PHASE 2: Project summary information for dashboard and overview scenarios.
 /// </summary>
-public class ProjectSummary
+internal class ProjectSummary
 {
     public required string Id { get; set; }
     public required string Name { get; set; }

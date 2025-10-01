@@ -9,7 +9,7 @@ using System.Diagnostics;
 /// Clean conversation management built on Microsoft.Extensions.AI
 /// Replaces SK's complex AgentChat hierarchy with simple, focused classes
 /// </summary>
-public class Conversation
+internal class Conversation
 {
     protected readonly List<ChatMessage> _messages = new();
     protected readonly Dictionary<string, object> _metadata = new();
@@ -706,7 +706,7 @@ public class Conversation
 /// <summary>
 /// Simple state class - no complex channel states or broadcast queues
 /// </summary>
-public class ConversationState
+internal class ConversationState
 {
     public string Id { get; set; } = "";
     public List<ChatMessage> Messages { get; set; } = new();
@@ -722,7 +722,7 @@ public class ConversationState
 /// <summary>
 /// Token usage and cost information for a conversation turn
 /// </summary>
-public record TokenUsage
+internal record TokenUsage
 {
     public int PromptTokens { get; init; }
     public int CompletionTokens { get; init; }
@@ -735,7 +735,7 @@ public record TokenUsage
 /// <summary>
 /// Result of a conversation turn with rich metadata for business decisions
 /// </summary>
-public record ConversationTurnResult
+internal record ConversationTurnResult
 {
     public required ChatResponse Response { get; init; }
     public required IReadOnlyList<ChatMessage> TurnHistory { get; init; }
@@ -764,7 +764,7 @@ public record ConversationTurnResult
 /// <summary>
 /// Streaming result for conversation turns, providing both event stream and final metadata.
 /// </summary>
-public record ConversationStreamingResult
+internal record ConversationStreamingResult
 {
     public required IAsyncEnumerable<BaseEvent> EventStream { get; init; }
     public required Task<ConversationTurnResult> FinalResult { get; init; }
