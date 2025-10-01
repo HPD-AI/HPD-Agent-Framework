@@ -1495,7 +1495,344 @@ internal static class AgentBuilderHelpers
 }
 
 #endregion
+#region Error Handling Policy
 
+/// <summary>
+/// Error handling policy that normalizes exceptions across different providers
+/// into consistent ErrorContent format following Microsoft.Extensions.AI patterns.
+/// </summary>
+public class ErrorHandlingPolicy
+{
+    /// <summary>
+    /// Whether to normalize provider-specific errors into standard formats
+    /// </summary>
+    public bool NormalizeProviderErrors { get; set; } = true;
+
+    /// <summary>
+    /// Whether to include provider-specific details in error messages
+    /// </summary>
+    public bool IncludeProviderDetails { get; set; } = false;
+
+    /// <summary>
+    /// Maximum number of retries for transient errors
+    /// </summary>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Normalizes an exception into a consistent ErrorContent format
+    /// </summary>
+    /// <param name="ex">The exception to normalize</param>
+    /// <param name="provider">The provider that generated the exception</param>
+    /// <returns>Normalized ErrorContent</returns>
+    public ErrorContent NormalizeError(Exception ex, ChatProvider provider)
+    {
+        if (!NormalizeProviderErrors)
+        {
+            return new ErrorContent(ex.Message);
+        }
+
+        var normalizedMessage = ex.Message;
+        var errorCode = "UnknownError";
+
+        // Provider-specific error normalization
+        switch (provider)
+        {
+            case ChatProvider.OpenAI:
+                (normalizedMessage, errorCode) = NormalizeOpenAIError(ex);
+                break;
+            case ChatProvider.OpenRouter:
+                (normalizedMessage, errorCode) = NormalizeOpenRouterError(ex);
+                break;
+            case ChatProvider.AzureOpenAI:
+                (normalizedMessage, errorCode) = NormalizeAzureError(ex);
+                break;
+            case ChatProvider.AzureAIInference:
+                (normalizedMessage, errorCode) = NormalizeAzureAIInferenceError(ex);
+                break;
+            case ChatProvider.Anthropic:
+                (normalizedMessage, errorCode) = NormalizeAnthropicError(ex);
+                break;
+            case ChatProvider.Ollama:
+                (normalizedMessage, errorCode) = NormalizeOllamaError(ex);
+                break;
+            case ChatProvider.GoogleAI:
+                (normalizedMessage, errorCode) = NormalizeGoogleAIError(ex);
+                break;
+            case ChatProvider.VertexAI:
+                (normalizedMessage, errorCode) = NormalizeVertexAIError(ex);
+                break;
+            case ChatProvider.HuggingFace:
+                (normalizedMessage, errorCode) = NormalizeHuggingFaceError(ex);
+                break;
+            case ChatProvider.Bedrock:
+                (normalizedMessage, errorCode) = NormalizeBedrockError(ex);
+                break;
+            case ChatProvider.OnnxRuntime:
+                (normalizedMessage, errorCode) = NormalizeOnnxRuntimeError(ex);
+                break;
+            case ChatProvider.Mistral:
+                (normalizedMessage, errorCode) = NormalizeMistralError(ex);
+                break;
+            default:
+                normalizedMessage = ex.Message;
+                errorCode = "ProviderError";
+                break;
+        }
+
+        var errorContent = new ErrorContent(normalizedMessage)
+        {
+            ErrorCode = errorCode
+        };
+
+        // Add provider details if requested
+        if (IncludeProviderDetails)
+        {
+            errorContent.AdditionalProperties ??= new();
+            errorContent.AdditionalProperties["Provider"] = provider.ToString();
+            errorContent.AdditionalProperties["OriginalMessage"] = ex.Message;
+            errorContent.AdditionalProperties["ExceptionType"] = ex.GetType().Name;
+        }
+
+        return errorContent;
+    }
+
+    /// <summary>
+    /// Determines if an error is transient and should be retried
+    /// </summary>
+    /// <param name="ex">The exception to check</param>
+    /// <param name="provider">The provider that generated the exception</param>
+    /// <returns>True if the error is transient</returns>
+    public bool IsTransientError(Exception ex, ChatProvider provider)
+    {
+        var message = ex.Message.ToLowerInvariant();
+
+        // Common transient error patterns
+        if (message.Contains("rate limit") ||
+            message.Contains("timeout") ||
+            message.Contains("503") ||
+            message.Contains("502") ||
+            message.Contains("network") ||
+            message.Contains("connection"))
+        {
+            return true;
+        }
+
+        // Provider-specific transient patterns
+        return provider switch
+        {
+            ChatProvider.OpenAI => message.Contains("overloaded") || message.Contains("429"),
+            ChatProvider.OpenRouter => message.Contains("queue") || message.Contains("busy"),
+            ChatProvider.AzureOpenAI => message.Contains("deployment busy") || message.Contains("throttling"),
+            ChatProvider.AzureAIInference => message.Contains("throttling") || message.Contains("resource busy"),
+            ChatProvider.Anthropic => message.Contains("overloaded") || message.Contains("rate_limit"),
+            ChatProvider.Ollama => message.Contains("loading") || message.Contains("busy"),
+            ChatProvider.GoogleAI => message.Contains("quota exceeded") || message.Contains("backend error"),
+            ChatProvider.VertexAI => message.Contains("quota exceeded") || message.Contains("backend error"),
+            ChatProvider.HuggingFace => message.Contains("model loading") || message.Contains("estimated_time"),
+            ChatProvider.Bedrock => message.Contains("throttling") || message.Contains("model busy"),
+            ChatProvider.OnnxRuntime => message.Contains("model loading") || message.Contains("initialization"),
+            ChatProvider.Mistral => message.Contains("rate limit") || message.Contains("overloaded"),
+            _ => false
+        };
+    }
+
+    private static (string message, string code) NormalizeOpenAIError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
+            var m when m.Contains("insufficient quota") => ("API quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("invalid api key") => ("Invalid API key provided.", "InvalidApiKey"),
+            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("refused") => ("Request was refused by the model.", "Refusal"),
+            var m when m.Contains("context_length_exceeded") => ("Input exceeds maximum context length.", "ContextTooLong"),
+            var m when m.Contains("content filter") => ("Content was filtered due to policy violations.", "ContentFiltered"),
+            _ => (message, "OpenAIError")
+        };
+    }
+
+    private static (string message, string code) NormalizeOpenRouterError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
+            var m when m.Contains("credits") => ("Insufficient credits.", "InsufficientCredits"),
+            var m when m.Contains("queue") => ("Request queued due to high demand.", "Queued"),
+            var m when m.Contains("model unavailable") => ("Model is currently unavailable.", "ModelUnavailable"),
+            _ => (message, "OpenRouterError")
+        };
+    }
+
+    private static (string message, string code) NormalizeAzureError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
+            var m when m.Contains("deployment not found") => ("Model deployment not found.", "DeploymentNotFound"),
+            var m when m.Contains("quota") => ("Deployment quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("content filter") => ("Content filtered by Azure policies.", "ContentFiltered"),
+            _ => (message, "AzureError")
+        };
+    }
+
+    private static (string message, string code) NormalizeOllamaError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("model not found") => ("Model not found. Please pull the model first.", "ModelNotFound"),
+            var m when m.Contains("connection refused") => ("Cannot connect to Ollama server.", "ConnectionFailed"),
+            var m when m.Contains("loading") => ("Model is still loading. Please wait.", "ModelLoading"),
+            var m when m.Contains("out of memory") => ("Insufficient memory to run model.", "OutOfMemory"),
+            _ => (message, "OllamaError")
+        };
+    }
+
+    private static (string message, string code) NormalizeAzureAIInferenceError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
+            var m when m.Contains("quota") => ("API quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("throttling") => ("Request was throttled. Please retry after some time.", "Throttled"),
+            var m when m.Contains("model not found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("resource busy") => ("Azure AI resource is busy. Please try again later.", "ResourceBusy"),
+            var m when m.Contains("content filter") => ("Content filtered by Azure policies.", "ContentFiltered"),
+            _ => (message, "AzureAIInferenceError")
+        };
+    }
+
+    private static (string message, string code) NormalizeAnthropicError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("rate_limit_error") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
+            var m when m.Contains("invalid_request_error") => ("Invalid request. Check your parameters.", "InvalidRequest"),
+            var m when m.Contains("authentication_error") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
+            var m when m.Contains("permission_error") => ("Permission denied. Check your access rights.", "PermissionDenied"),
+            var m when m.Contains("not_found_error") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("overloaded_error") => ("Service is overloaded. Please try again later.", "ServiceOverloaded"),
+            var m when m.Contains("api_error") => ("Internal API error occurred.", "InternalApiError"),
+            _ => (message, "AnthropicError")
+        };
+    }
+
+    private static (string message, string code) NormalizeGoogleAIError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("invalid_api_key") => ("Invalid API key provided.", "InvalidApiKey"),
+            var m when m.Contains("quota_exceeded") => ("API quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("resource_exhausted") => ("Resource quota exhausted.", "ResourceExhausted"),
+            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("permission_denied") => ("Permission denied. Check your access rights.", "PermissionDenied"),
+            var m when m.Contains("backend_error") => ("Backend service error. Please try again later.", "BackendError"),
+            var m when m.Contains("safety") => ("Content was blocked due to safety policies.", "SafetyBlocked"),
+            _ => (message, "GoogleAIError")
+        };
+    }
+
+    private static (string message, string code) NormalizeVertexAIError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("unauthenticated") => ("Authentication failed. Check your credentials.", "AuthenticationFailed"),
+            var m when m.Contains("permission_denied") => ("Permission denied. Check your access rights.", "PermissionDenied"),
+            var m when m.Contains("quota_exceeded") => ("Project quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("resource_exhausted") => ("Resource quota exhausted.", "ResourceExhausted"),
+            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("backend_error") => ("Backend service error. Please try again later.", "BackendError"),
+            var m when m.Contains("safety") => ("Content was blocked due to safety policies.", "SafetyBlocked"),
+            _ => (message, "VertexAIError")
+        };
+    }
+
+    private static (string message, string code) NormalizeHuggingFaceError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("authorization") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
+            var m when m.Contains("model loading") => ("Model is still loading. Please wait.", "ModelLoading"),
+            var m when m.Contains("estimated_time") => ("Model loading in progress. Please wait.", "ModelLoading"),
+            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
+            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("service_unavailable") => ("Service temporarily unavailable.", "ServiceUnavailable"),
+            var m when m.Contains("bad_request") => ("Invalid request. Check your parameters.", "InvalidRequest"),
+            _ => (message, "HuggingFaceError")
+        };
+    }
+
+    private static (string message, string code) NormalizeBedrockError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("accessdenied") => ("Access denied. Check your AWS credentials and permissions.", "AccessDenied"),
+            var m when m.Contains("throttling") => ("Request was throttled. Please retry after some time.", "Throttled"),
+            var m when m.Contains("model_not_ready") => ("Model is not ready. Please try again later.", "ModelNotReady"),
+            var m when m.Contains("validation") => ("Invalid request. Check your parameters.", "ValidationError"),
+            var m when m.Contains("service_quota") => ("Service quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("model_error") => ("Model execution error occurred.", "ModelError"),
+            var m when m.Contains("content_policy") => ("Content was blocked due to content policies.", "ContentBlocked"),
+            _ => (message, "BedrockError")
+        };
+    }
+
+    private static (string message, string code) NormalizeOnnxRuntimeError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("model not found") => ("ONNX model file not found.", "ModelNotFound"),
+            var m when m.Contains("initialization") => ("Model initialization failed.", "InitializationFailed"),
+            var m when m.Contains("invalid input") => ("Invalid input format or dimensions.", "InvalidInput"),
+            var m when m.Contains("out of memory") => ("Insufficient memory to run model.", "OutOfMemory"),
+            var m when m.Contains("session") => ("Model session error occurred.", "SessionError"),
+            var m when m.Contains("provider") => ("Execution provider error.", "ProviderError"),
+            var m when m.Contains("graph") => ("Model graph error occurred.", "GraphError"),
+            _ => (message, "OnnxRuntimeError")
+        };
+    }
+
+    private static (string message, string code) NormalizeMistralError(Exception ex)
+    {
+        var message = ex.Message;
+
+        return message.ToLowerInvariant() switch
+        {
+            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
+            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
+            var m when m.Contains("overloaded") => ("Service is overloaded. Please try again later.", "ServiceOverloaded"),
+            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
+            var m when m.Contains("bad_request") => ("Invalid request. Check your parameters.", "InvalidRequest"),
+            var m when m.Contains("quota") => ("API quota exceeded.", "QuotaExceeded"),
+            var m when m.Contains("internal_error") => ("Internal server error occurred.", "InternalError"),
+            _ => (message, "MistralError")
+        };
+    }
+}
+
+
+#endregion
 /// <summary>
 /// Empty service provider for middleware when no service provider is available
 /// </summary>
