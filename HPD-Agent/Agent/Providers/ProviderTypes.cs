@@ -22,30 +22,9 @@ public enum ChatProvider
 }
 
 /// <summary>
-/// Text generation providers for Kernel Memory ITextGenerator (used in Memory RAG builders)
-/// </summary>
-public enum TextGenerationProvider
-{
-    // Native Kernel Memory support
-    OpenAI,
-    AzureOpenAI,
-    Ollama,
-    Anthropic,
-    LlamaSharp,
-    ONNX,
-    
-    // Custom implementations
-    OpenRouter,
-    
-    // Future potential additions
-    Cohere,
-    HuggingFace
-}
-
-/// <summary>
 /// Embedding providers for Microsoft.Extensions.AI IEmbeddingGenerator
 /// </summary>
-public enum AIEmbeddingProvider
+public enum EmbeddingProvider
 {
     // Native Extensions.AI support
     OpenAI,
@@ -58,27 +37,6 @@ public enum AIEmbeddingProvider
     HuggingFace,
     ONNX,
     LocalEmbeddings
-}
-
-/// <summary>
-/// Embedding providers supported by Kernel Memory and agent RAG workflows
-/// </summary>
-public enum MemoryEmbeddingProvider
-{
-    // Native Kernel Memory support
-    OpenAI,
-    AzureOpenAI,
-    Ollama,
-    
-    // Custom implementations  
-    VoyageAI,
-    
-    // Future potential additions
-    Anthropic,
-    Cohere,
-    HuggingFace,
-    ONNX,
-    LocalEmbeddings  // For SmartComponents.LocalEmbeddings
 }
 
 /// <summary>
@@ -122,24 +80,4 @@ public enum AgentStorageType
     Redis,
     Elasticsearch,
     MongoDBAtlas
-}
-
-/// <summary>
-/// Storage types for Conversation Memory (session-scoped, runtime)
-/// </summary>
-public enum ConversationStorageType
-{
-    InMemory,
-    SimpleVectorDb,
-    Hybrid
-}
-
-/// <summary>
-/// Storage types for Project Memory (persistent, multi-user)
-/// </summary>
-public enum ProjectStorageType
-{
-    Persistent,
-    HighAvailability,
-    CloudNative
 }
