@@ -39,13 +39,37 @@ public class FileSystemContext : IPluginMetadataContext
     /// </summary>
     public bool EnableSearch { get; }
 
+    /// <summary>
+    /// Whether shell command execution is enabled
+    /// </summary>
+    public bool EnableShell { get; }
+
+    /// <summary>
+    /// Maximum timeout for shell commands (in seconds)
+    /// </summary>
+    public int MaxShellTimeoutSeconds { get; }
+
+    /// <summary>
+    /// Allowed shell commands (whitelist). If empty, all commands except blocklist are allowed.
+    /// </summary>
+    public HashSet<string> AllowedShellCommands { get; }
+
+    /// <summary>
+    /// Blocked shell commands (blacklist). These are always denied, even if in allowlist.
+    /// </summary>
+    public HashSet<string> BlockedShellCommands { get; }
+
     public FileSystemContext(
         string workspaceRoot,
         bool allowOutsideWorkspace = false,
         bool respectGitIgnore = true,
         bool respectGeminiIgnore = true,
         long maxFileSize = 10_000_000, // 10 MB default
-        bool enableSearch = true)
+        bool enableSearch = true,
+        bool enableShell = false, // Shell disabled by default for security
+        int maxShellTimeoutSeconds = 300, // 5 minutes max
+        HashSet<string>? allowedShellCommands = null,
+        HashSet<string>? blockedShellCommands = null)
     {
         WorkspaceRoot = Path.GetFullPath(workspaceRoot);
         AllowOutsideWorkspace = allowOutsideWorkspace;
@@ -53,6 +77,45 @@ public class FileSystemContext : IPluginMetadataContext
         RespectGeminiIgnore = respectGeminiIgnore;
         MaxFileSize = maxFileSize;
         EnableSearch = enableSearch;
+        EnableShell = enableShell;
+        MaxShellTimeoutSeconds = maxShellTimeoutSeconds;
+
+        // Initialize shell command lists with safe defaults
+        AllowedShellCommands = allowedShellCommands ?? new HashSet<string>
+        {
+            // Safe read-only commands
+            "ls", "cat", "head", "tail", "grep", "find", "which", "echo", "pwd", "wc", "sort", "uniq",
+
+            // Version control
+            "git",
+
+            // Package managers (safe queries)
+            "npm", "yarn", "pnpm", "dotnet", "node", "python", "pip", "cargo", "go",
+
+            // Build tools
+            "make", "cmake", "msbuild", "gradle", "mvn"
+        };
+
+        BlockedShellCommands = blockedShellCommands ?? new HashSet<string>
+        {
+            // Dangerous file operations
+            "rm", "del", "format", "mkfs", "dd", "shred", "truncate",
+
+            // Privilege escalation
+            "sudo", "su", "doas",
+
+            // Permission changes
+            "chmod", "chown", "chgrp", "chattr",
+
+            // Process control
+            "kill", "killall", "pkill", "xkill",
+
+            // System control
+            "shutdown", "reboot", "halt", "poweroff", "init",
+
+            // Network dangerous
+            "nc", "netcat", "telnet", "curl", "wget" // Can download/execute code
+        };
 
         // Populate properties dictionary
         _properties[nameof(WorkspaceRoot)] = WorkspaceRoot;
@@ -61,6 +124,8 @@ public class FileSystemContext : IPluginMetadataContext
         _properties[nameof(RespectGeminiIgnore)] = RespectGeminiIgnore;
         _properties[nameof(MaxFileSize)] = MaxFileSize;
         _properties[nameof(EnableSearch)] = EnableSearch;
+        _properties[nameof(EnableShell)] = EnableShell;
+        _properties[nameof(MaxShellTimeoutSeconds)] = MaxShellTimeoutSeconds;
     }
 
     /// <summary>

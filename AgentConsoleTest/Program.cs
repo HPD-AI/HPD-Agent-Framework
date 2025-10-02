@@ -150,7 +150,13 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
             .WithMaxTokens(6000))
         .WithPlanMode() // Plan mode enabled with defaults
         .WithPlugin<MathPlugin>()
-        .WithPlugin<FileSystemPlugin>()
+        .WithPlugin(new FileSystemPlugin(new FileSystemContext(
+            workspaceRoot: Directory.GetCurrentDirectory(),
+            enableShell: true, // ✅ Enable shell execution
+            maxShellTimeoutSeconds: 60, // 1 minute max timeout
+            enableSearch: true,
+            respectGitIgnore: true
+        )))
         .WithConsolePermissions() // Function permissions only via ConsolePermissionFilter
         .WithMCP(agentConfig.Mcp.ManifestPath)
         .Build();

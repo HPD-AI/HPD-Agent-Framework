@@ -19,6 +19,7 @@ namespace HPD.Agent.Plugins.FileSystem;
 public partial class FileSystemPlugin
 {
     private readonly FileSystemContext _context;
+    private readonly GitIgnoreChecker? _gitIgnoreChecker;
 
     /// <summary>
     /// Creates a new FileSystemPlugin with default context (current directory, search enabled)
@@ -34,6 +35,15 @@ public partial class FileSystemPlugin
     public FileSystemPlugin(FileSystemContext context)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+
+        // Initialize GitIgnoreChecker if gitignore support is enabled
+        if (_context.RespectGitIgnore || _context.RespectGeminiIgnore)
+        {
+            _gitIgnoreChecker = new GitIgnoreChecker(
+                _context.WorkspaceRoot,
+                _context.RespectGitIgnore,
+                _context.RespectGeminiIgnore);
+        }
     }
 
     #region Core File Operations

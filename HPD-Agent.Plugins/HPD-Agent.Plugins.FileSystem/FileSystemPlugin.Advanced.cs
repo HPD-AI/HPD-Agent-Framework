@@ -58,14 +58,33 @@ public partial class FileSystemPlugin
                 .Select(f => new FileInfo(Path.Combine(basePath, f.Path)))
                 .ToList();
 
+            // Apply gitignore filtering if enabled
+            var filteredMatches = matches;
+            int ignoredCount = 0;
+
+            if (_gitIgnoreChecker != null)
+            {
+                var filtered = _gitIgnoreChecker.FilterIgnored(matches.Select(f => f.FullName))
+                    .Select(path => new FileInfo(path))
+                    .ToList();
+
+                ignoredCount = matches.Count - filtered.Count;
+                filteredMatches = filtered;
+            }
+
             // Sort by most recently modified first
-            var sortedMatches = matches
+            var sortedMatches = filteredMatches
                 .OrderByDescending(f => f.LastWriteTime)
                 .ToList();
 
             // Build result
             var sb = new StringBuilder();
             sb.AppendLine($"--- Found {sortedMatches.Count} files matching '{pattern}' ---");
+
+            if (ignoredCount > 0)
+            {
+                sb.AppendLine($"(Filtered {ignoredCount} ignored files via .gitignore/.hpdignore)");
+            }
 
             const int maxResults = 100;
             var displayCount = Math.Min(sortedMatches.Count, maxResults);
@@ -144,6 +163,12 @@ public partial class FileSystemPlugin
                 filesToSearch = Directory.EnumerateFiles(basePath, "*", SearchOption.AllDirectories);
             }
 
+            // Apply gitignore filtering if enabled
+            if (_gitIgnoreChecker != null)
+            {
+                filesToSearch = _gitIgnoreChecker.FilterIgnored(filesToSearch);
+            }
+
             foreach (var file in filesToSearch)
             {
                 if (matches.Count >= maxTotalMatches)
@@ -203,16 +228,188 @@ public partial class FileSystemPlugin
         }
     }
 
+    [AIFunction<FileSystemContext>]
+    [ConditionalFunction("EnableSearch")]
+    [AIDescription("Read and concatenate content from multiple files matching glob patterns. Useful for getting an overview of a codebase or analyzing multiple files. Only available when search is enabled.")]
+    [RequiresPermission]
+    public async Task<string> ReadManyFiles(
+        [AIDescription("Array of glob patterns (e.g., '**/*.cs', '*.md', 'src/**/*.json')")] string[] patterns,
+        [AIDescription("Optional: Array of glob patterns to exclude (e.g., '**/bin/**', '**/obj/**')")] string[]? exclude = null,
+        [AIDescription("Optional: Directory to search in (defaults to workspace root)")] string? searchPath = null)
+    {
+        if (!_context.EnableSearch)
+            return "Error: Search operations are disabled in this context.";
+
+        // Validate patterns
+        if (patterns == null || patterns.Length == 0)
+            return "Error: At least one pattern must be provided.";
+
+        var basePath = searchPath ?? _context.WorkspaceRoot;
+
+        // Validate path
+        if (!Path.IsPathRooted(basePath))
+            basePath = Path.Combine(_context.WorkspaceRoot, basePath);
+
+        if (!_context.IsPathWithinWorkspace(basePath))
+            return $"Error: Search path must be within workspace: {_context.WorkspaceRoot}";
+
+        if (!Directory.Exists(basePath))
+            return $"Error: Directory not found: {basePath}";
+
+        try
+        {
+            // Setup matcher
+            var matcher = new Matcher();
+
+            // Add include patterns
+            foreach (var pattern in patterns)
+            {
+                if (!string.IsNullOrWhiteSpace(pattern))
+                    matcher.AddInclude(pattern);
+            }
+
+            // Add exclude patterns
+            if (exclude != null)
+            {
+                foreach (var pattern in exclude)
+                {
+                    if (!string.IsNullOrWhiteSpace(pattern))
+                        matcher.AddExclude(pattern);
+                }
+            }
+
+            // Add default excludes (common directories to skip)
+            var defaultExcludes = new[] { "**/node_modules/**", "**/bin/**", "**/obj/**", "**/.git/**", "**/dist/**", "**/build/**" };
+            foreach (var pattern in defaultExcludes)
+            {
+                matcher.AddExclude(pattern);
+            }
+
+            // Execute matching
+            var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(basePath)));
+
+            var matchedFiles = result.Files
+                .Select(f => Path.Combine(basePath, f.Path))
+                .Where(f => _context.IsPathWithinWorkspace(f))
+                .ToList();
+
+            // Apply gitignore filtering if enabled
+            if (_gitIgnoreChecker != null)
+            {
+                matchedFiles = _gitIgnoreChecker.FilterIgnored(matchedFiles).ToList();
+            }
+
+            if (matchedFiles.Count == 0)
+            {
+                return $"No files found matching patterns: {string.Join(", ", patterns)}";
+            }
+
+            // Limit to prevent overwhelming the context
+            const int maxFiles = 50;
+            var filesToRead = matchedFiles.Take(maxFiles).ToList();
+
+            var skippedFiles = new List<string>();
+            var contentParts = new List<string>();
+
+            // Read files in parallel
+            var readTasks = filesToRead.Select(async filePath =>
+            {
+                try
+                {
+                    // Skip binary files
+                    if (IsBinaryFile(filePath))
+                    {
+                        return (filePath, content: (string?)null, error: "binary file");
+                    }
+
+                    // Read file
+                    var fileInfo = new FileInfo(filePath);
+
+                    // Skip files that are too large
+                    if (fileInfo.Length > _context.MaxFileSize)
+                    {
+                        return (filePath, content: (string?)null, error: $"file too large ({FormatFileSize(fileInfo.Length)})");
+                    }
+
+                    var content = await File.ReadAllTextAsync(filePath);
+                    return (filePath, content, error: (string?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (filePath, content: (string?)null, error: ex.Message);
+                }
+            });
+
+            var results = await Task.WhenAll(readTasks);
+
+            // Build concatenated output
+            foreach (var (filePath, content, error) in results)
+            {
+                var relativePath = Path.GetRelativePath(_context.WorkspaceRoot, filePath);
+
+                if (error != null)
+                {
+                    skippedFiles.Add($"{relativePath} ({error})");
+                    continue;
+                }
+
+                if (content != null)
+                {
+                    contentParts.Add($"--- {relativePath} ---\n\n{content}\n");
+                }
+            }
+
+            // Build result message
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== Read {contentParts.Count} file(s) matching patterns: {string.Join(", ", patterns)} ===");
+            sb.AppendLine();
+
+            if (skippedFiles.Any())
+            {
+                sb.AppendLine($"Skipped {skippedFiles.Count} file(s):");
+                foreach (var skipped in skippedFiles.Take(10))
+                {
+                    sb.AppendLine($"  - {skipped}");
+                }
+                if (skippedFiles.Count > 10)
+                {
+                    sb.AppendLine($"  ... and {skippedFiles.Count - 10} more");
+                }
+                sb.AppendLine();
+            }
+
+            if (matchedFiles.Count > maxFiles)
+            {
+                sb.AppendLine($"Note: Showing first {maxFiles} of {matchedFiles.Count} matching files.");
+                sb.AppendLine();
+            }
+
+            // Add file contents
+            foreach (var part in contentParts)
+            {
+                sb.AppendLine(part);
+            }
+
+            sb.AppendLine("--- End of content ---");
+
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return $"Error reading multiple files: {ex.Message}";
+        }
+    }
+
     #endregion
 
     #region Advanced Edit Operations
 
     [AIFunction<FileSystemContext>]
-    [AIDescription("Edit a file by replacing old_string with new_string. Shows a diff preview of changes.")]
+    [AIDescription("Edit a file by replacing old_string with new_string. Uses smart matching strategies (exact, flexible whitespace, regex fuzzy). Shows a diff preview of changes.")]
     [RequiresPermission]
     public async Task<string> EditFile(
         [AIDescription("The absolute path to the file to edit")] string filePath,
-        [AIDescription("The exact string to find and replace")] string oldString,
+        [AIDescription("The exact string to find and replace (will try smart matching if exact match fails)")] string oldString,
         [AIDescription("The new string to replace with")] string newString)
     {
         // Validate path
@@ -236,21 +433,23 @@ public partial class FileSystemPlugin
             // Read current content
             var currentContent = await File.ReadAllTextAsync(filePath);
 
-            // Check if old_string exists
-            if (!currentContent.Contains(oldString))
+            // Try smart replacement strategies
+            var replacementResult = CalculateSmartReplacement(currentContent, oldString, newString);
+
+            // Validate occurrences
+            if (replacementResult.occurrences == 0)
             {
-                return $"Error: Could not find the specified text in the file.{Environment.NewLine}Looking for: {oldString.Substring(0, Math.Min(100, oldString.Length))}...";
+                return $"Error: Could not find the specified text in the file.{Environment.NewLine}" +
+                       $"Looking for: {oldString.Substring(0, Math.Min(100, oldString.Length))}...{Environment.NewLine}" +
+                       $"Tried: exact match, flexible whitespace matching, and regex fuzzy matching.";
             }
 
-            // Check if multiple occurrences
-            var occurrences = Regex.Matches(currentContent, Regex.Escape(oldString)).Count;
-            if (occurrences > 1)
+            if (replacementResult.occurrences > 1)
             {
-                return $"Error: Found {occurrences} occurrences of the text. The old_string must be unique in the file. Please provide more context to make it unique.";
+                return $"Error: Found {replacementResult.occurrences} occurrences of the text. The old_string must be unique in the file. Please provide more context to make it unique.";
             }
 
-            // Perform replacement
-            var newContent = currentContent.Replace(oldString, newString);
+            var newContent = replacementResult.newContent;
 
             // Generate diff
             var diffBuilder = new InlineDiffBuilder(new Differ());
@@ -266,6 +465,7 @@ public partial class FileSystemPlugin
             var linesChanged = diff.Lines.Count(l => l.Type != ChangeType.Unchanged);
 
             return $"✓ File edited successfully: {filePath}{Environment.NewLine}" +
+                   $"Strategy: {replacementResult.strategy}{Environment.NewLine}" +
                    $"Changed {linesChanged} lines{Environment.NewLine}{Environment.NewLine}" +
                    $"--- Diff ---{Environment.NewLine}{diffDisplay}";
         }
@@ -273,6 +473,180 @@ public partial class FileSystemPlugin
         {
             return $"Error editing file: {ex.Message}";
         }
+    }
+
+    #endregion
+
+    #region Smart Edit Helper Methods
+
+    /// <summary>
+    /// Result of a smart replacement operation
+    /// </summary>
+    private record SmartReplacementResult(string newContent, int occurrences, string strategy);
+
+    /// <summary>
+    /// Tries multiple strategies to find and replace text: exact, flexible (whitespace-insensitive), and regex fuzzy
+    /// </summary>
+    private SmartReplacementResult CalculateSmartReplacement(string currentContent, string oldString, string newString)
+    {
+        // Normalize line endings to \n for consistent processing
+        var normalizedContent = currentContent.Replace("\r\n", "\n");
+        var normalizedOldString = oldString.Replace("\r\n", "\n");
+        var normalizedNewString = newString.Replace("\r\n", "\n");
+
+        // Strategy 1: Exact match
+        var exactOccurrences = CountOccurrences(normalizedContent, normalizedOldString);
+        if (exactOccurrences > 0)
+        {
+            var result = normalizedContent.Replace(normalizedOldString, normalizedNewString);
+            return new SmartReplacementResult(result, exactOccurrences, "exact match");
+        }
+
+        // Strategy 2: Flexible match (ignores whitespace differences and indentation)
+        var flexibleResult = FlexibleReplace(normalizedContent, normalizedOldString, normalizedNewString);
+        if (flexibleResult.occurrences > 0)
+        {
+            return new SmartReplacementResult(flexibleResult.newContent, flexibleResult.occurrences, "flexible whitespace match");
+        }
+
+        // Strategy 3: Regex fuzzy match (tokenizes and allows flexible whitespace)
+        var regexResult = RegexFuzzyReplace(normalizedContent, normalizedOldString, normalizedNewString);
+        if (regexResult.occurrences > 0)
+        {
+            return new SmartReplacementResult(regexResult.newContent, regexResult.occurrences, "regex fuzzy match");
+        }
+
+        // No matches found
+        return new SmartReplacementResult(currentContent, 0, "no match");
+    }
+
+    /// <summary>
+    /// Flexible replacement that ignores indentation differences
+    /// </summary>
+    private (string newContent, int occurrences) FlexibleReplace(string content, string search, string replace)
+    {
+        var sourceLines = content.Split('\n');
+        var searchLines = search.Split('\n').Select(l => l.Trim()).ToArray();
+        var replaceLines = replace.Split('\n');
+
+        if (searchLines.Length == 0)
+            return (content, 0);
+
+        int occurrences = 0;
+        int i = 0;
+
+        while (i <= sourceLines.Length - searchLines.Length)
+        {
+            var window = sourceLines.Skip(i).Take(searchLines.Length).ToArray();
+            var windowStripped = window.Select(l => l.Trim()).ToArray();
+
+            // Check if this window matches the search pattern (ignoring whitespace)
+            if (windowStripped.SequenceEqual(searchLines))
+            {
+                occurrences++;
+
+                // Preserve the indentation of the first line
+                var firstLineIndentation = GetIndentation(window[0]);
+                var indentedReplace = replaceLines.Select(line => firstLineIndentation + line.TrimStart());
+
+                // Replace this section
+                var before = sourceLines.Take(i);
+                var after = sourceLines.Skip(i + searchLines.Length);
+                sourceLines = before.Concat(indentedReplace).Concat(after).ToArray();
+
+                i += replaceLines.Length;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        return (string.Join("\n", sourceLines), occurrences);
+    }
+
+    /// <summary>
+    /// Regex-based fuzzy matching - tokenizes the search string and allows flexible whitespace
+    /// </summary>
+    private (string newContent, int occurrences) RegexFuzzyReplace(string content, string search, string replace)
+    {
+        // Delimiters to split on
+        var delimiters = new[] { '(', ')', ':', '[', ']', '{', '}', '>', '<', '=' };
+
+        // Process search string: add spaces around delimiters
+        var processedSearch = search;
+        foreach (var delim in delimiters)
+        {
+            processedSearch = processedSearch.Replace(delim.ToString(), $" {delim} ");
+        }
+
+        // Split by whitespace and filter empty tokens
+        var tokens = processedSearch.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+        if (tokens.Length == 0)
+            return (content, 0);
+
+        // Escape each token for regex
+        var escapedTokens = tokens.Select(Regex.Escape);
+
+        // Join tokens with flexible whitespace pattern
+        var pattern = string.Join(@"\s*", escapedTokens);
+
+        // Build final pattern: capture leading whitespace (indentation) and match tokens
+        var finalPattern = @"^(\s*)" + pattern;
+
+        try
+        {
+            var regex = new Regex(finalPattern, RegexOptions.Multiline);
+            var match = regex.Match(content);
+
+            if (!match.Success)
+                return (content, 0);
+
+            // Extract indentation from the match
+            var indentation = match.Groups[1].Value;
+
+            // Apply indentation to replacement lines
+            var replaceLines = replace.Split('\n');
+            var indentedReplace = string.Join("\n", replaceLines.Select(line => indentation + line.TrimStart()));
+
+            // Replace only the first occurrence
+            var result = regex.Replace(content, indentedReplace, 1);
+
+            return (result, 1);
+        }
+        catch (ArgumentException)
+        {
+            // Regex pattern failed - return no match
+            return (content, 0);
+        }
+    }
+
+    /// <summary>
+    /// Counts occurrences of a substring in a string
+    /// </summary>
+    private static int CountOccurrences(string str, string substr)
+    {
+        if (string.IsNullOrEmpty(substr))
+            return 0;
+
+        int count = 0;
+        int pos = str.IndexOf(substr, StringComparison.Ordinal);
+        while (pos != -1)
+        {
+            count++;
+            pos = str.IndexOf(substr, pos + substr.Length, StringComparison.Ordinal);
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Gets the leading whitespace from a string
+    /// </summary>
+    private static string GetIndentation(string line)
+    {
+        var match = Regex.Match(line, @"^(\s*)");
+        return match.Success ? match.Groups[1].Value : string.Empty;
     }
 
     #endregion
