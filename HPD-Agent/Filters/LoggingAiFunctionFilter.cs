@@ -24,9 +24,8 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
         // Pre-invocation logging
         var functionName = context.ToolCallRequest?.FunctionName ?? "<unknown>";
         var args = context.ToolCallRequest?.Arguments ?? context.Arguments;
-        var conversationId = context.Conversation?.Id ?? "<no-conversation>";
-        
-        var preMessage = $"[LOG][PRE] Conversation: {conversationId} Function: {functionName}\nArgs: {FormatArgs(args)}";
+
+        var preMessage = $"[LOG][PRE] Function: {functionName}\nArgs: {FormatArgs(args)}";
         LogMessage(preMessage);
 
         // Invoke next filter or target function
@@ -34,7 +33,7 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
 
         // Post-invocation logging
         var result = context.Result;
-        var postMessage = $"[LOG][POST] Conversation: {conversationId} Function: {functionName} Result: {FormatResult(result)}";
+        var postMessage = $"[LOG][POST] Function: {functionName} Result: {FormatResult(result)}";
         LogMessage(postMessage);
         LogMessage(new string('-', 50));
     }

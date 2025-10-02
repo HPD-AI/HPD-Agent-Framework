@@ -86,7 +86,7 @@ public class Project
 
         var directory = storageDirectory ?? "./injected-memory-storage";
         AgentInjectedMemoryManager = new AgentInjectedMemoryManager(directory);
-        AgentInjectedMemoryManager.SetContext(Id);
+        // Note: Project scope removed from memory system - memories are now scoped by agent name only
 
         // Initialize document manager with same directory structure
         var textExtractor = new TextExtractionUtility();

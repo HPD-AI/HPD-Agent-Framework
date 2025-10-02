@@ -1,7 +1,33 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 Console.WriteLine("🚀 HPD-Agent Console Test");
+
+// ========================================
+// 📊 Configure OpenTelemetry Exporters
+// ========================================
+Console.WriteLine("📊 Configuring OpenTelemetry exporters...");
+
+// Configure metrics (counters, histograms)
+var meterProvider = Sdk.CreateMeterProviderBuilder()
+    .AddMeter("HPD.Agent")              // Subscribe to HPD-Agent metrics
+    .AddMeter("CustomerService.Agent")  // Subscribe to custom agent metrics
+    .AddConsoleExporter()               // Export to console
+    .Build();
+
+// Configure traces (distributed tracing)
+var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource("HPD.Agent")             // Subscribe to HPD-Agent traces
+    .AddSource("CustomerService.Agent") // Subscribe to custom agent traces
+    .AddConsoleExporter()               // Export to console
+    .Build();
+
+Console.WriteLine("✅ OpenTelemetry exporters configured!");
+Console.WriteLine("   📈 Metrics will be visible in console output");
+Console.WriteLine("   🔍 Traces will be visible in console output\n");
 
 // ✨ Load configuration from appsettings.json
 var config = new ConfigurationBuilder()
@@ -72,6 +98,10 @@ else
 Console.WriteLine("\n🧪 Testing Microsoft.Extensions.AI enhancements...");
 await TestAgentEnhancements(agent);
 
+// 📊 Test Observability Features
+Console.WriteLine("\n📊 Testing Observability Features...");
+await TestObservabilityFeatures();
+
 // 🎯 Simple chat loop
 await RunInteractiveChat(conversation);
 
@@ -83,8 +113,13 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
     {
         Name = "AI Assistant",
         SystemInstructions = "You are a helpful AI assistant with memory, knowledge base, and web search capabilities.",
-        MaxFunctionCallTurns = 1,
-        MaxConversationHistory = 20,
+        MaxFunctionCallTurns = 10,
+        HistoryReduction = new HistoryReductionConfig
+        {
+            Enabled = true,
+            Strategy = HistoryReductionStrategy.MessageCounting,
+            TargetMessageCount = 20
+        },
         Provider = new ProviderConfig
         {
             Provider = ChatProvider.OpenRouter,
@@ -112,6 +147,7 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
         .WithInjectedMemory(opts => opts
             .WithStorageDirectory("./agent-memory-storage")
             .WithMaxTokens(6000))
+        .WithPlanMode() // Plan mode enabled with defaults
         .WithPlugin<MathPlugin>()
         .WithConsolePermissions() // Function permissions only via ConsolePermissionFilter
         .WithMCP(agentConfig.Mcp.ManifestPath)
@@ -285,6 +321,132 @@ static async Task TestAgentEnhancements(Agent agent)
     {
         Console.WriteLine($"\n❌ Enhancement test failed: {ex.Message}");
     }
+
+    await Task.CompletedTask;
+}
+
+// 📊 Test Observability Features (OpenTelemetry Tracing & Metrics)
+static async Task TestObservabilityFeatures()
+{
+    Console.WriteLine("=== OpenTelemetry Observability Test ===");
+    Console.WriteLine("This demonstrates how to enable complete observability with traces and metrics.\n");
+
+    // Load configuration
+    var config = new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build();
+
+    Console.WriteLine("🔧 Step 1: Create Agent WITH Observability");
+    Console.WriteLine("------------------------------------------------");
+    Console.WriteLine("✅ Good news: Method order doesn't matter! Call .WithOpenTelemetry() anywhere.");
+    Console.WriteLine();
+
+    // ✨ EXAMPLE 1: Minimal observability setup
+    var observableAgent = AgentBuilder.Create()
+        .WithOpenTelemetry()                   // Can be called ANYWHERE in the chain!
+        .WithAPIConfiguration(config)
+        .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
+        .WithPlugin<MathPlugin>()
+        .Build();
+
+    Console.WriteLine("✅ Observability enabled with .WithOpenTelemetry()");
+    Console.WriteLine("   • Traces: Agent turns, LLM calls, and tool executions");
+    Console.WriteLine("   • Metrics: Tool call counts, durations, and error rates");
+    Console.WriteLine("   • Source: HPD.Agent (default)\n");
+
+    // ✨ EXAMPLE 2: Custom source name for multi-agent systems
+    Console.WriteLine("🔧 Step 2: Custom Source Name (for multi-agent systems)");
+    Console.WriteLine("------------------------------------------------");
+
+    var customerServiceAgent = AgentBuilder.Create()
+        .WithOpenTelemetry("CustomerService.Agent") // Can be first, last, or anywhere!
+        .WithAPIConfiguration(config)
+        .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
+        .Build();
+
+    Console.WriteLine("✅ Custom observability source: 'CustomerService.Agent'");
+    Console.WriteLine("   • Allows filtering traces/metrics by agent type");
+    Console.WriteLine("   • Useful for multi-agent architectures\n");
+
+    // ✨ EXAMPLE 3: What metrics are available
+    Console.WriteLine("📊 Step 3: Available Metrics");
+    Console.WriteLine("------------------------------------------------");
+    Console.WriteLine("Automatic metrics emitted for every tool call:");
+    Console.WriteLine("   1. agent.tool_calls.count (Counter)");
+    Console.WriteLine("      - Total number of tool calls");
+    Console.WriteLine("      - Tagged with: gen_ai.tool.name");
+    Console.WriteLine();
+    Console.WriteLine("   2. agent.tool_calls.duration (Histogram)");
+    Console.WriteLine("      - Execution time in milliseconds");
+    Console.WriteLine("      - Tagged with: gen_ai.tool.name");
+    Console.WriteLine("      - Unit: ms");
+    Console.WriteLine();
+    Console.WriteLine("   3. agent.tool_calls.errors (Counter)");
+    Console.WriteLine("      - Number of failed tool calls");
+    Console.WriteLine("      - Tagged with: gen_ai.tool.name\n");
+
+    // ✨ EXAMPLE 4: What traces are available
+    Console.WriteLine("🔍 Step 4: Available Traces (Spans)");
+    Console.WriteLine("------------------------------------------------");
+    Console.WriteLine("Automatic distributed traces created:");
+    Console.WriteLine("   1. Agent Turn (Parent Span)");
+    Console.WriteLine("      - Name: 'agent.chat_completion'");
+    Console.WriteLine("      - Captures entire user interaction");
+    Console.WriteLine();
+    Console.WriteLine("   2. LLM Calls (Child Spans)");
+    Console.WriteLine("      - Created by Microsoft.Extensions.AI");
+    Console.WriteLine("      - Includes tokens, model, provider info");
+    Console.WriteLine();
+    Console.WriteLine("   3. Tool Calls (Grandchild Spans)");
+    Console.WriteLine("      - Name: 'execute_tool <function_name>'");
+    Console.WriteLine("      - Tags: agent.name, conversation.id, gen_ai.tool.name");
+    Console.WriteLine("      - Includes: arguments, results, errors\n");
+
+    // ✨ EXAMPLE 5: How to consume the telemetry
+    Console.WriteLine("🎯 Step 5: How to Consume Telemetry");
+    Console.WriteLine("------------------------------------------------");
+    Console.WriteLine("Option A: Export to OpenTelemetry Collector");
+    Console.WriteLine("   - Use OpenTelemetry.Exporter.OpenTelemetryProtocol");
+    Console.WriteLine("   - Configure MeterProvider and TracerProvider");
+    Console.WriteLine("   - Send to: Jaeger, Zipkin, Prometheus, etc.");
+    Console.WriteLine();
+    Console.WriteLine("Option B: Export to Console (for development)");
+    Console.WriteLine("   - Use OpenTelemetry.Exporter.Console");
+    Console.WriteLine("   - See traces and metrics in real-time");
+    Console.WriteLine();
+    Console.WriteLine("Option C: Application Insights (Azure)");
+    Console.WriteLine("   - Use Azure.Monitor.OpenTelemetry.Exporter");
+    Console.WriteLine("   - Full integration with Azure monitoring\n");
+
+    // ✨ EXAMPLE 6: Complete configuration example
+    Console.WriteLine("💡 Step 6: Complete Configuration Example");
+    Console.WriteLine("------------------------------------------------");
+    Console.WriteLine(@"
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+
+// Configure OpenTelemetry SDK (in your Program.cs startup)
+var meterProvider = Sdk.CreateMeterProviderBuilder()
+    .AddMeter(""HPD.Agent"")  // Subscribe to HPD-Agent metrics
+    .AddConsoleExporter()     // Or use OTLP, Prometheus, etc.
+    .Build();
+
+var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .AddSource(""HPD.Agent"") // Subscribe to HPD-Agent traces
+    .AddConsoleExporter()     // Or use OTLP, Jaeger, etc.
+    .Build();
+
+// Now create your agent with observability enabled
+var agent = AgentBuilder.Create()
+    .WithOpenTelemetry()                           // Order doesn't matter!
+    .WithProvider(ChatProvider.OpenAI, ""gpt-4"")
+    .Build();                                      // Metrics and traces now flow!
+");
+
+    Console.WriteLine("✅ All observability features demonstrated!");
+    Console.WriteLine("🎯 Your agent now has full OpenTelemetry instrumentation");
+    Console.WriteLine("📊 Ready for production monitoring and observability platforms\n");
 
     await Task.CompletedTask;
 }

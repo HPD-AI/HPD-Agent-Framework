@@ -13,7 +13,6 @@ public class AgentConfig
     /// Each turn allows the LLM to analyze previous results and decide whether to call more functions or provide a final response.
     /// </summary>
     public int MaxFunctionCallTurns { get; set; } = 10;
-    public int MaxConversationHistory { get; set; } = 20;
     
     /// <summary>
     /// How many additional turns to allow when user chooses to continue beyond the limit.
@@ -45,6 +44,21 @@ public class AgentConfig
     /// Configuration for error handling behavior.
     /// </summary>
     public ErrorHandlingConfig? ErrorHandling { get; set; }
+
+    /// <summary>
+    /// Configuration for document handling behavior.
+    /// </summary>
+    public DocumentHandlingConfig? DocumentHandling { get; set; }
+
+    /// <summary>
+    /// Configuration for conversation history reduction to manage context window size.
+    /// </summary>
+    public HistoryReductionConfig? HistoryReduction { get; set; }
+
+    /// <summary>
+    /// Configuration for plan mode - enables agents to create and manage execution plans.
+    /// </summary>
+    public PlanModeConfig? PlanMode { get; set; }
 }
 
 #region Supporting Configuration Classes
@@ -149,6 +163,114 @@ public class ErrorHandlingConfig
     /// Maximum number of retries for transient errors
     /// </summary>
     public int MaxRetries { get; set; } = 3;
+}
+
+/// <summary>
+/// Configuration for document handling behavior.
+/// </summary>
+public class DocumentHandlingConfig
+{
+    /// <summary>
+    /// Strategy for how documents should be processed and included in prompts.
+    /// Default is FullTextInjection.
+    /// </summary>
+    public ConversationDocumentHandling Strategy { get; set; } = ConversationDocumentHandling.FullTextInjection;
+
+    /// <summary>
+    /// Custom document tag format for message injection.
+    /// Uses string.Format with {0} = filename, {1} = extracted text.
+    /// If null, uses default format from ConversationDocumentHelper.
+    /// </summary>
+    public string? DocumentTagFormat { get; set; }
+
+    /// <summary>
+    /// Maximum file size in bytes to process (default: 10MB).
+    /// Files larger than this will be rejected.
+    /// </summary>
+    public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
+}
+
+/// <summary>
+/// Configuration for conversation history reduction using Microsoft.Extensions.AI IChatReducer.
+/// </summary>
+public class HistoryReductionConfig
+{
+    /// <summary>
+    /// Whether history reduction is enabled.
+    /// Default is false to maintain backward compatibility.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Strategy for reducing conversation history.
+    /// Default is MessageCounting (keeps last N messages).
+    /// </summary>
+    public HistoryReductionStrategy Strategy { get; set; } = HistoryReductionStrategy.MessageCounting;
+
+    /// <summary>
+    /// Target number of messages to retain after reduction.
+    /// Default is 20 messages.
+    /// </summary>
+    public int TargetMessageCount { get; set; } = 20;
+
+    /// <summary>
+    /// Threshold count for SummarizingChatReducer.
+    /// Number of messages allowed beyond TargetMessageCount before summarization is triggered.
+    /// Only used when Strategy is Summarizing. Default is 5.
+    /// </summary>
+    public int? SummarizationThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Custom summarization prompt for SummarizingChatReducer.
+    /// If null, uses the default prompt from Microsoft.Extensions.AI.
+    /// Only used when Strategy is Summarizing.
+    /// </summary>
+    public string? CustomSummarizationPrompt { get; set; }
+
+    /// <summary>
+    /// Optional separate provider configuration for the summarization LLM.
+    /// If null, uses the agent's main provider (baseClient).
+    /// Useful for cost optimization - e.g., use GPT-4o-mini for summaries while main agent uses GPT-4.
+    /// Only used when Strategy is Summarizing.
+    /// </summary>
+    public ProviderConfig? SummarizerProvider { get; set; }
+}
+
+/// <summary>
+/// Strategy for reducing conversation history size.
+/// </summary>
+public enum HistoryReductionStrategy
+{
+    /// <summary>
+    /// Keep only the N most recent messages (plus first system message).
+    /// Fast and simple, but loses older context completely.
+    /// </summary>
+    MessageCounting,
+
+    /// <summary>
+    /// Use LLM to summarize older messages when history exceeds threshold.
+    /// Preserves context through summarization, but requires additional LLM calls.
+    /// </summary>
+    Summarizing
+}
+
+/// <summary>
+/// Configuration for plan mode capabilities.
+/// Enables agents to create and manage execution plans for complex multi-step tasks.
+/// </summary>
+public class PlanModeConfig
+{
+    /// <summary>
+    /// Whether plan mode is enabled for this agent.
+    /// Default is true when configured via WithPlanMode().
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Custom instructions to add to system prompt explaining plan mode usage.
+    /// If null, uses default instructions.
+    /// </summary>
+    public string? CustomInstructions { get; set; }
 }
 
 /// <summary>

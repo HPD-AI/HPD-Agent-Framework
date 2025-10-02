@@ -18,11 +18,6 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
             .LessThanOrEqualTo(50)
             .WithMessage("MaxFunctionCallTurns must be between 1 and 50.");
 
-        RuleFor(config => config.MaxConversationHistory)
-            .GreaterThan(0)
-            .LessThanOrEqualTo(1000)
-            .WithMessage("MaxConversationHistory must be between 1 and 1000.");
-
         // Provider validation - ensure a provider is configured
         RuleFor(config => config.Provider)
             .NotNull()
@@ -190,7 +185,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
         // Check if the combination of settings might cause issues
         var maxTokens = config.InjectedMemory?.MaxTokens ?? 0;
         var maxFunctionCalls = config.MaxFunctionCallTurns;
-        var maxHistory = config.MaxConversationHistory;
+        var maxHistory = config.HistoryReduction?.TargetMessageCount ?? 20;
 
         // Warn if total potential token usage is very high
         var estimatedMaxTokens = maxTokens + (maxHistory * 500) + (maxFunctionCalls * 200);

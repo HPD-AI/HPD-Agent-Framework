@@ -15,8 +15,6 @@ public class Conversation
     protected readonly Dictionary<string, object> _metadata = new();
     // Agents
     private readonly List<Agent> _agents;
-    // Conversation filter list
-    private readonly List<IConversationFilter> _conversationFilters = new();
     // Memory management
     private ConversationDocumentHandling _uploadStrategy = ConversationDocumentHandling.FullTextInjection; // Default to FullTextInjection for simpler scenarios
     private readonly List<ConversationDocumentUpload> _pendingInjections = new();
@@ -40,9 +38,6 @@ public class Conversation
     {
         _metadata[key] = value;
     }
-    /// <summary>Add a conversation filter to process completed turns</summary>
-    public void AddConversationFilter(IConversationFilter filter)
-        => _conversationFilters.Add(filter);
     public string Id { get; } = Guid.NewGuid().ToString();
     
     // Debug constructor to track conversation creation
@@ -241,11 +236,6 @@ public class Conversation
             // Commit response to history
             _messages.AddMessages(orchestrationResult.Response);
             UpdateActivity();
-
-            // Apply filters
-            var agentMetadata = CollectAgentMetadata(orchestrationResult.Response);
-            var context = new ConversationFilterContext(this, userMessage, orchestrationResult.Response, agentMetadata, options, cancellationToken);
-            await ApplyConversationFilters(context);
 
             // Record telemetry metrics
             var duration = DateTimeOffset.UtcNow - startTime;
@@ -494,14 +484,24 @@ public class Conversation
         // Inject project context
         options = InjectProjectContextIfNeeded(options);
 
-        if (_agents.Count == 0)
+        // Inject conversation ID into ChatOptions for plugin access
+        // This is more reliable than AsyncLocal when ExecutionContext may not flow through Microsoft.Extensions.AI
+        options ??= new ChatOptions();
+        options.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+        options.AdditionalProperties["ConversationId"] = Id;
+
+        // Set conversation context for AsyncLocal access by plugins (backup mechanism)
+        ConversationContext.SetConversationId(Id);
+        try
+        {
+            if (_agents.Count == 0)
         {
             throw new InvalidOperationException("No agents configured for this conversation");
         }
         else if (_agents.Count == 1)
         {
             // DIRECT PATH - Single agent
-            var result = await _agents[0].ExecuteStreamingTurnAsync(_messages, options, cancellationToken);
+            var result = await _agents[0].ExecuteStreamingTurnAsync(_messages, options, documentPaths, cancellationToken);
 
             // Stream the events
             await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
@@ -518,10 +518,7 @@ public class Conversation
             var lastMessage = finalHistory.LastOrDefault();
             if (lastMessage != null)
             {
-                var finalResponse = new ChatResponse(lastMessage);
-                var agentMetadata = CollectAgentMetadata(finalResponse);
-                var context = new ConversationFilterContext(this, userMessage, finalResponse, agentMetadata, options, cancellationToken);
-                await ApplyConversationFilters(context);
+                // Filters are now applied by the Agent directly
             }
         }
         else
@@ -549,11 +546,13 @@ public class Conversation
             _messages.AddMessages(finalResult.Response);
             UpdateActivity();
 
-            // Apply filters on the completed turn
-            var agentMetadata = CollectAgentMetadata(finalResult.Response);
-            var context = new ConversationFilterContext(
-                this, userMessage, finalResult.Response, agentMetadata, options, cancellationToken);
-            await ApplyConversationFilters(context);
+            // Filters are now applied by the Agent directly
+        }
+        }
+        finally
+        {
+            // Clear conversation context after turn execution
+            ConversationContext.Clear();
         }
     }
 
@@ -604,21 +603,6 @@ public class Conversation
         return metadata;
     }
 
-    // Apply conversation filters (stub - no filters by default)
-    private async Task ApplyConversationFilters(ConversationFilterContext context)
-    {
-        if (!_conversationFilters.Any()) return;
-        // Build reverse pipeline
-        Func<ConversationFilterContext, Task> pipeline = _ => Task.CompletedTask;
-        foreach (var filter in _conversationFilters.AsEnumerable().Reverse())
-        {
-            var next = pipeline;
-            pipeline = ctx => filter.InvokeAsync(ctx, next);
-        }
-        await pipeline(context);
-    }
-
-    
 
     #region Conversation Helpers (Phase 2 Implementation)
     

@@ -153,7 +153,7 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
     try
     {
         // ✅ 1. Stream AG-UI events directly from agent
-        var streamResult = await agent.ExecuteStreamingTurnAsync(messages, null, context.RequestAborted);
+        var streamResult = await agent.ExecuteStreamingTurnAsync(messages, options: null, documentPaths: null, cancellationToken: context.RequestAborted);
         await foreach (var baseEvent in streamResult.EventStream.WithCancellation(context.RequestAborted))
         {
             // Stream the BaseEvent as JSON directly (AG-UI format)

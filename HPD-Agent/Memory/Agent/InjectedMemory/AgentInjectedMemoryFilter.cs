@@ -8,8 +8,10 @@ using System.Text;
 /// </summary>
 public class AgentInjectedMemoryFilter : IPromptFilter
 {
+    private readonly AgentInjectedMemoryManager _memoryManager;
     private readonly AgentInjectedMemoryOptions _options;
     private readonly ILogger<AgentInjectedMemoryFilter>? _logger;
+    private readonly string? _memoryId;
     private string? _cachedMemoryContext;
     private DateTime _lastCacheTime = DateTime.MinValue;
     private readonly TimeSpan _cacheValidTime;
@@ -19,44 +21,49 @@ public class AgentInjectedMemoryFilter : IPromptFilter
     {
         _options = options;
         _logger = logger;
+        _memoryId = options.MemoryId;
         _cacheValidTime = TimeSpan.FromMinutes(1);
+
+        // Create the memory manager from options (pass null for logger as it expects ILogger<AgentInjectedMemoryManager>)
+        _memoryManager = new AgentInjectedMemoryManager(options.StorageDirectory, null);
+        _memoryManager.RegisterCacheInvalidationCallback(InvalidateCache);
     }
 
     public async Task<IEnumerable<ChatMessage>> InvokeAsync(
         PromptFilterContext context,
         Func<PromptFilterContext, Task<IEnumerable<ChatMessage>>> next)
     {
-        if (context.Properties.TryGetValue("Project", out var proj) && proj is Project project)
+        var now = DateTime.UtcNow;
+        string memoryTag = string.Empty;
+        bool useCache;
+
+        lock (_cacheLock)
         {
-            var now = DateTime.UtcNow;
-            string memoryTag = string.Empty;
-            var mgr = project.AgentInjectedMemoryManager;
-            mgr.RegisterCacheInvalidationCallback(InvalidateCache);
-            bool useCache;
+            if (_cachedMemoryContext != null && (now - _lastCacheTime) < _cacheValidTime)
+            {
+                memoryTag = _cachedMemoryContext;
+                useCache = true;
+            }
+            else
+            {
+                useCache = false;
+            }
+        }
+
+        if (!useCache)
+        {
+            // Use MemoryId if set, otherwise fall back to agent name
+            var storageKey = _memoryId ?? context.AgentName;
+            var memories = await _memoryManager.GetMemoriesAsync(storageKey);
+            memoryTag = BuildMemoryTag(memories);
             lock (_cacheLock)
             {
-                if (_cachedMemoryContext != null && (now - _lastCacheTime) < _cacheValidTime)
-                {
-                    memoryTag = _cachedMemoryContext;
-                    useCache = true;
-                }
-                else
-                {
-                    useCache = false;
-                }
+                _cachedMemoryContext = memoryTag;
+                _lastCacheTime = now;
             }
-            if (!useCache)
-            {
-                var memories = await mgr.GetMemoriesAsync(context.AgentName);
-                memoryTag = BuildMemoryTag(memories);
-                lock (_cacheLock)
-                {
-                    _cachedMemoryContext = memoryTag;
-                    _lastCacheTime = now;
-                }
-            }
-            context.Messages = InjectMemories(context.Messages, memoryTag);
         }
+
+        context.Messages = InjectMemories(context.Messages, memoryTag);
         return await next(context);
     }
 

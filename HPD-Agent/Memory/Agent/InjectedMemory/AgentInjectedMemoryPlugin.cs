@@ -8,13 +8,13 @@ using System.Threading.Tasks;
 public class AgentInjectedMemoryPlugin
 {
     private readonly AgentInjectedMemoryManager _manager;
-    private readonly string _agentName;
+    private readonly string _memoryId;
     private readonly ILogger<AgentInjectedMemoryPlugin>? _logger;
 
-    public AgentInjectedMemoryPlugin(AgentInjectedMemoryManager manager, string agentName, ILogger<AgentInjectedMemoryPlugin>? logger = null)
+    public AgentInjectedMemoryPlugin(AgentInjectedMemoryManager manager, string memoryId, ILogger<AgentInjectedMemoryPlugin>? logger = null)
     {
         _manager = manager;
-        _agentName = agentName;
+        _memoryId = memoryId;
         _logger = logger;
     }
 
@@ -29,7 +29,7 @@ public class AgentInjectedMemoryPlugin
             return "Error: Title and content are required for creating a memory.";
         }
         
-        var created = await _manager.CreateMemoryAsync(_agentName, title, content);
+        var created = await _manager.CreateMemoryAsync(_memoryId, title, content);
         return $"Created memory {created.Id}";
     }
 
@@ -49,7 +49,7 @@ public class AgentInjectedMemoryPlugin
             return "Error: Title and content are required for updating a memory.";
         }
         
-        var updated = await _manager.UpdateMemoryAsync(_agentName, memoryId, title, content);
+        var updated = await _manager.UpdateMemoryAsync(_memoryId, memoryId, title, content);
         return $"Updated memory {updated.Id}";
     }
 
@@ -63,7 +63,7 @@ public class AgentInjectedMemoryPlugin
             return "Error: Memory ID is required for deleting a memory.";
         }
         
-        await _manager.DeleteMemoryAsync(_agentName, memoryId);
+        await _manager.DeleteMemoryAsync(_memoryId, memoryId);
         return $"Deleted memory {memoryId}";
     }
 }

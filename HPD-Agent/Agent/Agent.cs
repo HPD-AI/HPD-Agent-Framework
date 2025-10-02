@@ -30,6 +30,7 @@ public class Agent : IChatClient
     private readonly AGUIEventHandler _aguiEventHandler;
     private readonly CapabilityManager _capabilityManager;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
+    private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
 
     /// <summary>
     /// Agent configuration object containing all settings
@@ -73,7 +74,8 @@ public class Agent : IChatClient
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
-        IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null)
+        IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
+        IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null)
     {
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
@@ -98,8 +100,15 @@ public class Agent : IChatClient
 
         // Fix: Store and use AI function filters
         _aiFunctionFilters = aiFunctionFilters ?? new List<IAiFunctionFilter>();
+        _messageTurnFilters = messageTurnFilters ?? new List<IMessageTurnFilter>();
 
-        _messageProcessor = new MessageProcessor(config.SystemInstructions, mergedOptions ?? config.Provider?.DefaultChatOptions, promptFilters);
+        // Create history reducer if configured
+        var chatReducer = CreateChatReducer(config, baseClient);
+
+        // Augment system instructions with plan mode guidance if enabled
+        var systemInstructions = AugmentSystemInstructionsForPlanMode(config);
+
+        _messageProcessor = new MessageProcessor(systemInstructions, mergedOptions ?? config.Provider?.DefaultChatOptions, promptFilters, chatReducer);
         _functionCallProcessor = new FunctionCallProcessor(scopedFilterManager, permissionFilters, _aiFunctionFilters, config.MaxFunctionCallTurns);
         _agentTurn = new AgentTurn(_baseClient);
         _toolScheduler = new ToolScheduler(_functionCallProcessor);
@@ -121,6 +130,16 @@ public class Agent : IChatClient
     /// Default chat options
     /// </summary>
     public ChatOptions? DefaultOptions => Config?.Provider?.DefaultChatOptions ?? _messageProcessor.DefaultOptions;
+
+    /// <summary>
+    /// Clears the execution plan for a specific conversation.
+    /// Plans are conversation-scoped and isolated automatically via ConversationContext.
+    /// This method is typically not needed but provided for explicit cleanup if desired.
+    /// </summary>
+    public void ClearPlan(string conversationId, AgentPlanManager planManager)
+    {
+        planManager?.ClearPlan(conversationId);
+    }
 
     /// <summary>
     /// AIFuncton filters applied to tool calls in conversations (via ScopedFilterManager)
@@ -197,7 +216,7 @@ public class Agent : IChatClient
             // Use the unified streaming approach and collect all updates
             var allEvents = new List<BaseEvent>();
 
-            var turnResult = await ExecuteStreamingTurnAsync(messages, options, cancellationToken);
+            var turnResult = await ExecuteStreamingTurnAsync(messages, options, null, cancellationToken);
 
             // Consume the entire stream
             await foreach (var evt in turnResult.EventStream.WithCancellation(cancellationToken))
@@ -234,20 +253,53 @@ public class Agent : IChatClient
 
 
 
-    public Task<StreamingTurnResult> ExecuteStreamingTurnAsync(
+    public async Task<StreamingTurnResult> ExecuteStreamingTurnAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
+        string[]? documentPaths = null,
         CancellationToken cancellationToken = default)
     {
+        // Process documents if provided
+        if (documentPaths?.Length > 0)
+        {
+            messages = await AgentDocumentProcessor.ProcessDocumentsAsync(messages, documentPaths, Config, cancellationToken);
+        }
+
+        var messagesList = messages.ToList();
+        var userMessage = messagesList.LastOrDefault(m => m.Role == ChatRole.User)
+            ?? new ChatMessage(ChatRole.User, string.Empty);
+
         // Create a TaskCompletionSource for the final history
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>();
         var turnHistory = new List<ChatMessage>();
 
         // Create the streaming enumerable - use BaseEvent directly without conversion
-        var responseStream = RunAgenticLoopCore(messages, options, turnHistory, historyCompletionSource, cancellationToken);
+        var responseStream = RunAgenticLoopCore(messagesList, options, turnHistory, historyCompletionSource, cancellationToken);
 
-        // Return the result containing both stream and history task
-        return Task.FromResult(new StreamingTurnResult(responseStream, historyCompletionSource.Task));
+        // Wrap the final history task to apply message turn filters when complete
+        var wrappedHistoryTask = historyCompletionSource.Task.ContinueWith(async task =>
+        {
+            var history = await task;
+
+            // Apply message turn filters after the turn completes
+            if (task.IsCompletedSuccessfully && _messageTurnFilters.Any())
+            {
+                try
+                {
+                    await ApplyMessageTurnFilters(userMessage, history, options, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Log but don't fail the turn if filters fail
+                    System.Diagnostics.Debug.WriteLine($"Message turn filter error: {ex.Message}");
+                }
+            }
+
+            return history;
+        }, cancellationToken).Unwrap();
+
+        // Return the result containing both stream and wrapped history task
+        return new StreamingTurnResult(responseStream, wrappedHistoryTask);
     }
 
     /// <inheritdoc />
@@ -337,11 +389,8 @@ public class Agent : IChatClient
         var responseUpdates = new List<ChatResponseUpdate>();
 
         // Prepare messages using MessageProcessor
-        var conversation = new Conversation(this);
-        messages.ToList().ForEach(m => conversation.AddMessage(m));
-
         var (effectiveMessages, effectiveOptions) = await _messageProcessor.PrepareMessagesAsync(
-            messages, options, conversation, _name, cancellationToken);
+            messages, options, _name, cancellationToken);
 
         var currentMessages = effectiveMessages.ToList();
 
@@ -457,7 +506,7 @@ public class Agent : IChatClient
 
                 // Execute tools
                 var toolResultMessage = await _toolScheduler.ExecuteToolsAsync(
-                    currentMessages, toolRequests, effectiveOptions, agentRunContext, cancellationToken);
+                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, cancellationToken);
 
                 // Add tool results to history
                 currentMessages.Add(toolResultMessage);
@@ -624,6 +673,195 @@ public class Agent : IChatClient
 
     #endregion
 
+    #region History Reduction
+
+    /// <summary>
+    /// Creates an IChatReducer based on the AgentConfig settings
+    /// </summary>
+    private static string? AugmentSystemInstructionsForPlanMode(AgentConfig config)
+    {
+        var baseInstructions = config.SystemInstructions;
+        var planConfig = config.PlanMode;
+
+        if (planConfig == null || !planConfig.Enabled)
+        {
+            return baseInstructions;
+        }
+
+        var planInstructions = planConfig.CustomInstructions ?? GetDefaultPlanModeInstructions();
+
+        if (string.IsNullOrEmpty(baseInstructions))
+        {
+            return planInstructions;
+        }
+
+        return $"{baseInstructions}\n\n{planInstructions}";
+    }
+
+    private static string GetDefaultPlanModeInstructions()
+    {
+        return @"[PLAN MODE ENABLED]
+You have access to plan management tools for complex multi-step tasks.
+
+Available functions:
+- create_plan(goal, steps[]): Create a new plan with a goal and initial steps
+- update_plan_step(stepId, status, notes): Update step status (pending/in_progress/completed/blocked) and add notes
+- add_plan_step(description, afterStepId): Add a new step when you discover additional work needed
+- add_context_note(note): Record important discoveries, learnings, or context during execution
+- get_current_plan(): View the current plan and its status
+- complete_plan(): Mark the entire plan as complete when goal is achieved
+
+Best practices:
+- Create plans for tasks requiring 3+ steps, affecting multiple files, or with uncertain scope
+- Update step status as you progress to maintain context across conversation turns
+- Add context notes when discovering important information (e.g., ""Found auth uses JWT, not sessions"")
+- Plans are conversation-scoped working memory - they help you maintain progress and avoid repeating failed approaches
+- When a step is blocked, mark it as 'blocked' with notes explaining why, then continue with other steps if possible";
+    }
+
+    private static IChatReducer? CreateChatReducer(AgentConfig config, IChatClient baseClient)
+    {
+        var historyConfig = config.HistoryReduction;
+
+        if (historyConfig == null || !historyConfig.Enabled)
+        {
+            return null;
+        }
+
+        return historyConfig.Strategy switch
+        {
+            HistoryReductionStrategy.MessageCounting =>
+                new MessageCountingChatReducer(historyConfig.TargetMessageCount),
+
+            HistoryReductionStrategy.Summarizing =>
+                CreateSummarizingReducer(baseClient, historyConfig, config),
+
+            _ => throw new ArgumentException($"Unknown history reduction strategy: {historyConfig.Strategy}")
+        };
+    }
+
+    /// <summary>
+    /// Creates a SummarizingChatReducer with custom configuration
+    /// </summary>
+    private static SummarizingChatReducer CreateSummarizingReducer(IChatClient baseClient, HistoryReductionConfig historyConfig, AgentConfig agentConfig)
+    {
+        // Determine which client to use for summarization
+        IChatClient summarizerClient = baseClient; // Default to main client
+
+        if (historyConfig.SummarizerProvider != null)
+        {
+            // Create a separate client for summarization
+            summarizerClient = CreateClientForProvider(historyConfig.SummarizerProvider);
+        }
+
+        var reducer = new SummarizingChatReducer(
+            summarizerClient,
+            historyConfig.TargetMessageCount,
+            historyConfig.SummarizationThreshold);
+
+        if (!string.IsNullOrEmpty(historyConfig.CustomSummarizationPrompt))
+        {
+            reducer.SummarizationPrompt = historyConfig.CustomSummarizationPrompt;
+        }
+
+        return reducer;
+    }
+
+    /// <summary>
+    /// Creates an IChatClient from a ProviderConfig for use by the summarizer.
+    /// Delegates to AgentBuilderHelpers to reuse existing provider creation logic.
+    /// </summary>
+    private static IChatClient CreateClientForProvider(ProviderConfig providerConfig)
+    {
+        return AgentBuilderHelpers.CreateClientFromProviderConfig(providerConfig);
+    }
+
+    #endregion
+
+    #region Message Turn Filters
+
+    /// <summary>
+    /// Applies message turn filters after a complete turn (including all function calls) finishes
+    /// </summary>
+    private async Task ApplyMessageTurnFilters(
+        ChatMessage userMessage,
+        IReadOnlyList<ChatMessage> finalHistory,
+        ChatOptions? options,
+        CancellationToken cancellationToken)
+    {
+        if (!_messageTurnFilters.Any())
+        {
+            return;
+        }
+
+        // Extract assistant messages from final history as the response
+        var assistantMessages = finalHistory.Where(m => m.Role == ChatRole.Assistant).ToList();
+        if (!assistantMessages.Any())
+        {
+            return; // No response to filter
+        }
+
+        var response = new ChatResponse(assistantMessages);
+
+        // Collect agent function call metadata
+        var agentFunctionCalls = CollectAgentFunctionCalls(finalHistory);
+
+        // Create filter context (convert AdditionalProperties to Dictionary if available)
+        Dictionary<string, object>? metadata = null;
+        if (options?.AdditionalProperties != null)
+        {
+            metadata = new Dictionary<string, object>(options.AdditionalProperties!);
+        }
+
+        var context = new MessageTurnFilterContext(
+            _conversationId ?? Guid.NewGuid().ToString(),
+            userMessage,
+            response,
+            agentFunctionCalls,
+            metadata,
+            options,
+            cancellationToken);
+
+        // Build reverse pipeline
+        Func<MessageTurnFilterContext, Task> pipeline = _ => Task.CompletedTask;
+        foreach (var filter in _messageTurnFilters.AsEnumerable().Reverse())
+        {
+            var next = pipeline;
+            pipeline = ctx => filter.InvokeAsync(ctx, next);
+        }
+
+        await pipeline(context);
+    }
+
+    /// <summary>
+    /// Collects function call metadata from the message history
+    /// </summary>
+    private Dictionary<string, List<string>> CollectAgentFunctionCalls(IReadOnlyList<ChatMessage> history)
+    {
+        var metadata = new Dictionary<string, List<string>>();
+
+        foreach (var message in history)
+        {
+            if (message.Role != ChatRole.Assistant)
+                continue;
+
+            var functionCalls = message.Contents
+                .OfType<FunctionCallContent>()
+                .Select(fc => fc.Name)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .ToList();
+
+            if (functionCalls.Any())
+            {
+                metadata[_name] = functionCalls;
+            }
+        }
+
+        return metadata;
+    }
+
+    #endregion
+
     #region AGUI Delegation Methods
 
     /// <summary>
@@ -708,7 +946,7 @@ public class AGUIEventHandler : IAGUIAgent
 
             // Fix: Remove duplicate message start/end events - let the inner loop handle all message boundaries
             // Use the agent's native BaseEvent stream directly
-            var streamResult = await _agent.ExecuteStreamingTurnAsync(messages, chatOptions, cancellationToken);
+            var streamResult = await _agent.ExecuteStreamingTurnAsync(messages, chatOptions, null, cancellationToken);
             await foreach (var baseEvent in streamResult.EventStream.WithCancellation(cancellationToken))
             {
                 // Write native events directly to the channel
@@ -814,6 +1052,7 @@ public class FunctionCallProcessor
         ChatOptions? options,
         List<FunctionCallContent> functionCallContents,
         AgentRunContext agentRunContext,
+        string? agentName,
         CancellationToken cancellationToken)
     {
         var resultMessages = new List<ChatMessage>();
@@ -831,13 +1070,11 @@ public class FunctionCallProcessor
                 Arguments = functionCall.Arguments ?? new Dictionary<string, object?>()
             };
 
-            var tempConversation = new Conversation();
-            foreach (var msg in messages) { tempConversation.AddMessage(msg); }
-
-            var context = new AiFunctionContext(tempConversation, toolCallRequest)
+            var context = new AiFunctionContext(toolCallRequest)
             {
                 Function = FindFunction(toolCallRequest.FunctionName, options?.Tools),
-                RunContext = agentRunContext
+                RunContext = agentRunContext,
+                AgentName = agentName
             };
 
             // The final step in the pipeline is the actual function invocation.
@@ -923,12 +1160,14 @@ public class MessageProcessor
     private readonly IReadOnlyList<IPromptFilter> _promptFilters;
     private readonly string? _systemInstructions;
     private readonly ChatOptions? _defaultOptions;
+    private readonly IChatReducer? _chatReducer;
 
-    public MessageProcessor(string? systemInstructions, ChatOptions? defaultOptions, IReadOnlyList<IPromptFilter> promptFilters)
+    public MessageProcessor(string? systemInstructions, ChatOptions? defaultOptions, IReadOnlyList<IPromptFilter> promptFilters, IChatReducer? chatReducer = null)
     {
         _systemInstructions = systemInstructions;
         _defaultOptions = defaultOptions;
         _promptFilters = promptFilters ?? new List<IPromptFilter>();
+        _chatReducer = chatReducer;
     }
 
     /// <summary>
@@ -947,14 +1186,19 @@ public class MessageProcessor
     public async Task<(IEnumerable<ChatMessage> messages, ChatOptions? options)> PrepareMessagesAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
-        Conversation conversation,
         string agentName,
         CancellationToken cancellationToken)
     {
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
 
-        effectiveMessages = await ApplyPromptFiltersAsync(effectiveMessages, effectiveOptions, conversation, agentName, cancellationToken);
+        // Apply history reduction if configured
+        if (_chatReducer != null)
+        {
+            effectiveMessages = await _chatReducer.ReduceAsync(effectiveMessages, cancellationToken);
+        }
+
+        effectiveMessages = await ApplyPromptFiltersAsync(effectiveMessages, effectiveOptions, agentName, cancellationToken);
 
         return (effectiveMessages, effectiveOptions);
     }
@@ -1017,7 +1261,6 @@ public class MessageProcessor
     private async Task<IEnumerable<ChatMessage>> ApplyPromptFiltersAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
-        Conversation conversation,
         string agentName,
         CancellationToken cancellationToken)
     {
@@ -1027,7 +1270,7 @@ public class MessageProcessor
         }
 
         // Create filter context
-        var context = new PromptFilterContext(messages, options, conversation, agentName, cancellationToken);
+        var context = new PromptFilterContext(messages, options, agentName, cancellationToken);
 
         // Transfer additional properties to filter context
         if (options?.AdditionalProperties != null)
@@ -1228,6 +1471,7 @@ public class ToolScheduler
     /// <param name="toolRequests">The tool call requests to execute</param>
     /// <param name="options">Optional chat options containing tool definitions</param>
     /// <param name="agentRunContext">Agent run context for cross-call tracking</param>
+    /// <param name="agentName">The name of the agent executing the tools</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A chat message containing the tool execution results</returns>
     public async Task<ChatMessage> ExecuteToolsAsync(
@@ -1235,16 +1479,17 @@ public class ToolScheduler
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentRunContext agentRunContext,
+        string? agentName,
         CancellationToken cancellationToken)
     {
         // For single tool calls, use sequential execution (no parallelization overhead)
         if (toolRequests.Count <= 1)
         {
-            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentRunContext, cancellationToken);
+            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentRunContext, agentName, cancellationToken);
         }
 
         // For multiple tool calls, execute in parallel for better performance
-        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentRunContext, cancellationToken);
+        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentRunContext, agentName, cancellationToken);
     }
 
     /// <summary>
@@ -1255,11 +1500,12 @@ public class ToolScheduler
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentRunContext agentRunContext,
+        string? agentName,
         CancellationToken cancellationToken)
     {
         // Use the existing FunctionCallProcessor to execute the tools sequentially
         var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
-            currentHistory, options, toolRequests, agentRunContext, cancellationToken);
+            currentHistory, options, toolRequests, agentRunContext, agentName, cancellationToken);
 
         // Combine all tool results into a single message
         var allContents = new List<AIContent>();
@@ -1279,6 +1525,7 @@ public class ToolScheduler
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentRunContext agentRunContext,
+        string? agentName,
         CancellationToken cancellationToken)
     {
         // Create tasks for each tool execution
@@ -1289,7 +1536,7 @@ public class ToolScheduler
                 // Execute each tool call individually through the processor
                 var singleToolList = new List<FunctionCallContent> { toolRequest };
                 var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
-                    currentHistory, options, singleToolList, agentRunContext, cancellationToken);
+                    currentHistory, options, singleToolList, agentRunContext, agentName, cancellationToken);
 
                 return (Success: true, Messages: resultMessages, Error: (Exception?)null);
             }
@@ -1330,6 +1577,105 @@ public class ToolScheduler
         }
 
         return new ChatMessage(ChatRole.Tool, allContents);
+    }
+}
+
+#endregion
+
+#region Document Processing Helper
+
+/// <summary>
+/// Helper methods for document processing in Agent
+/// </summary>
+internal static class AgentDocumentProcessor
+{
+    /// <summary>
+    /// Processes documents and modifies messages to include document content
+    /// </summary>
+    public static async Task<IEnumerable<ChatMessage>> ProcessDocumentsAsync(
+        IEnumerable<ChatMessage> messages,
+        string[] documentPaths,
+        AgentConfig? config,
+        CancellationToken cancellationToken)
+    {
+        if (documentPaths == null || documentPaths.Length == 0)
+        {
+            return messages;
+        }
+
+        // Get document handling configuration
+        var docConfig = config?.DocumentHandling;
+        var strategy = docConfig?.Strategy ?? ConversationDocumentHandling.FullTextInjection;
+
+        // Only FullTextInjection is supported for now
+        if (strategy != ConversationDocumentHandling.FullTextInjection)
+        {
+            throw new NotImplementedException($"Document handling strategy '{strategy}' is not yet implemented. Only FullTextInjection is currently supported.");
+        }
+
+        // Process document uploads
+        var textExtractor = new HPD_Agent.TextExtraction.TextExtractionUtility();
+        var uploads = await ConversationDocumentHelper.ProcessUploadsAsync(documentPaths, textExtractor, cancellationToken);
+
+        // Modify the last user message with document content
+        return ModifyLastUserMessageWithDocuments(messages, uploads, docConfig?.DocumentTagFormat);
+    }
+
+    /// <summary>
+    /// Modifies the last user message to include document content
+    /// </summary>
+    private static IEnumerable<ChatMessage> ModifyLastUserMessageWithDocuments(
+        IEnumerable<ChatMessage> messages,
+        ConversationDocumentUpload[] uploads,
+        string? customTagFormat = null)
+    {
+        var messagesList = messages.ToList();
+        if (messagesList.Count == 0 || uploads.Length == 0)
+        {
+            return messagesList;
+        }
+
+        // Find the last user message
+        var lastUserMessageIndex = -1;
+        for (int i = messagesList.Count - 1; i >= 0; i--)
+        {
+            if (messagesList[i].Role == ChatRole.User)
+            {
+                lastUserMessageIndex = i;
+                break;
+            }
+        }
+
+        if (lastUserMessageIndex == -1)
+        {
+            return messagesList;
+        }
+
+        var lastUserMessage = messagesList[lastUserMessageIndex];
+        var originalText = ExtractTextFromMessage(lastUserMessage);
+
+        // Format message with documents
+        var formattedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(
+            originalText, uploads, customTagFormat);
+
+        // Create new message with updated content
+        var newMessage = new ChatMessage(ChatRole.User, formattedMessage);
+        messagesList[lastUserMessageIndex] = newMessage;
+
+        return messagesList;
+    }
+
+    /// <summary>
+    /// Extracts text content from a ChatMessage
+    /// </summary>
+    private static string ExtractTextFromMessage(ChatMessage message)
+    {
+        var textContents = message.Contents
+            .OfType<TextContent>()
+            .Select(tc => tc.Text)
+            .Where(text => !string.IsNullOrEmpty(text));
+
+        return string.Join(" ", textContents);
     }
 }
 

@@ -16,6 +16,7 @@ using HuggingFace;
 using Amazon.BedrockRuntime;
 using Amazon;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 using Microsoft.ML.OnnxRuntimeGenAI;
@@ -42,10 +43,13 @@ public class AgentBuilder
     internal readonly BuilderScopeContext _scopeContext = new();
     internal readonly List<IPromptFilter> _promptFilters = new();
     internal readonly List<IPermissionFilter> _permissionFilters = new(); // Permission filters
+    internal readonly List<IMessageTurnFilter> _messageTurnFilters = new(); // Message turn filters
 
     internal readonly Dictionary<Type, object> _providerConfigs = new();
     internal IServiceProvider? _serviceProvider;
     internal ILoggerFactory? _logger;
+    private ActivitySource? _activitySource; // OpenTelemetry ActivitySource for observability
+    private Meter? _meter; // OpenTelemetry Meter for metrics
 
     // Memory Injected Memory runtime fields
     internal AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
@@ -171,30 +175,32 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Wraps the base chat client with OpenTelemetry middleware to enable standardized telemetry.
-    /// This should be called after the base client has been configured via WithProvider() or WithBaseClient().
+    /// Wraps the base chat client with OpenTelemetry middleware to enable standardized telemetry for LLM calls,
+    /// and adds a filter to create detailed traces and metrics for tool calls.
+    /// This enables complete observability: Agent Turn traces, LLM Call traces, Tool Call traces, and Tool Call metrics.
+    /// Can be called at any point in the builder chain - telemetry will be applied during Build().
     /// </summary>
-    /// <param name="sourceName">An optional source name for the telemetry data. Defaults to "Experimental.Microsoft.Extensions.AI".</param>
+    /// <param name="sourceName">An optional source name for the telemetry data. Defaults to "HPD.Agent".</param>
     /// <param name="configure">An optional callback to configure the OpenTelemetryChatClient instance.</param>
-    public AgentBuilder WithOpenTelemetry(string? sourceName = null, Action<OpenTelemetryChatClient>? configure = null)
+    public AgentBuilder WithOpenTelemetry(string? sourceName = "HPD.Agent", Action<OpenTelemetryChatClient>? configure = null)
     {
-        // This method must be called after a base client is available.
-        if (_baseClient == null)
+        // Add telemetry as a middleware that will be applied during Build()
+        _middlewares.Add((client, services) =>
         {
-            throw new InvalidOperationException("WithOpenTelemetry() must be called after WithProvider() or WithBaseClient().");
-        }
+            var loggerFactory = services.GetService<ILoggerFactory>();
+            var builder = new ChatClientBuilder(client);
+            builder.UseOpenTelemetry(loggerFactory, sourceName, configure);
+            return builder.Build(services);
+        });
 
-        // The AgentBuilder needs access to an ILoggerFactory to pass to the telemetry client.
-        // We can get this from the IServiceProvider if one was provided.
-        var loggerFactory = _serviceProvider?.GetService<ILoggerFactory>();
+        // === Add Tool Call Tracing and Metrics ===
+        // Create or reuse the ActivitySource and Meter
+        _activitySource ??= new ActivitySource(sourceName ?? "HPD.Agent");
+        _meter ??= new Meter(sourceName ?? "HPD.Agent");
 
-        // Use the AsBuilder() and UseOpenTelemetry() extension methods from Microsoft.Extensions.AI
-        // to wrap the current _baseClient in the telemetry middleware.
-        var builder = new ChatClientBuilder(_baseClient);
-        builder.UseOpenTelemetry(loggerFactory, sourceName, configure);
-
-        // Replace the existing base client with the newly built pipeline that includes telemetry.
-        _baseClient = builder.Build(_serviceProvider);
+        // Create and register the observability filter with both tracing and metrics support
+        var observabilityFilter = new ObservabilityAiFunctionFilter(_activitySource, _meter);
+        this.WithFilter(observabilityFilter);
 
         return this;
     }
@@ -438,7 +444,9 @@ public class AgentBuilder
             mergedOptions, // Pass the merged options directly
             _promptFilters,
             _scopedFilterManager,
-            _permissionFilters);
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
 
 
         // Attach MCP capability if configured
@@ -728,6 +736,37 @@ public static class AgentBuilderFilterExtensions
         }
         return builder;
     }
+
+    /// <summary>
+    /// Adds a message turn filter to process completed turns
+    /// </summary>
+    public static AgentBuilder WithMessageTurnFilter(this AgentBuilder builder, IMessageTurnFilter filter)
+    {
+        builder._messageTurnFilters.Add(filter);
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a message turn filter of the specified type (creates new instance)
+    /// </summary>
+    public static AgentBuilder WithMessageTurnFilter<T>(this AgentBuilder builder) where T : IMessageTurnFilter, new()
+    {
+        builder._messageTurnFilters.Add(new T());
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds multiple message turn filters
+    /// </summary>
+    public static AgentBuilder WithMessageTurnFilters(this AgentBuilder builder, params IMessageTurnFilter[] filters)
+    {
+        if (filters != null)
+        {
+            foreach (var f in filters)
+                builder._messageTurnFilters.Add(f);
+        }
+        return builder;
+    }
 }
 
 #endregion
@@ -835,7 +874,9 @@ public static class AgentBuilderMemoryExtensions
         var manager = new AgentInjectedMemoryManager(options.StorageDirectory);
         builder.MemoryInjectedManager = manager; // Set the internal property on the builder
 
-        var plugin = new AgentInjectedMemoryPlugin(manager, builder.AgentName);
+        // Use MemoryId if provided, otherwise fall back to agent name
+        var memoryId = options.MemoryId ?? builder.AgentName;
+        var plugin = new AgentInjectedMemoryPlugin(manager, memoryId);
         var filter = new AgentInjectedMemoryFilter(options);
 
         // Register plugin and filter directly without cross-extension dependencies
@@ -864,6 +905,38 @@ public static class AgentBuilderMemoryExtensions
     private static void RegisterInjectedMemoryFilter(AgentBuilder builder, AgentInjectedMemoryFilter filter)
     {
         builder.PromptFilters.Add(filter);
+    }
+
+    /// <summary>
+    /// Enables plan mode for the agent, allowing it to create and manage execution plans.
+    /// Plan mode provides AIFunctions for creating plans, updating steps, and tracking progress.
+    /// </summary>
+    public static AgentBuilder WithPlanMode(this AgentBuilder builder, Action<PlanModeConfig>? configure = null)
+    {
+        var config = new PlanModeConfig();
+        configure?.Invoke(config);
+
+        // Set the config on the builder
+        builder.Config.PlanMode = config;
+
+        // Create the plan manager (shared singleton)
+        // Plans are conversation-scoped via AsyncLocal context
+        var manager = new AgentPlanManager();
+
+        // Create plugin and filter with manager
+        var plugin = new AgentPlanPlugin(manager);
+        var filter = new AgentPlanFilter(manager);
+
+        // Register plugin directly
+        builder.PluginManager.RegisterPlugin(plugin);
+        var pluginName = typeof(AgentPlanPlugin).Name;
+        builder.ScopeContext.SetPluginScope(pluginName);
+        builder.PluginContexts[pluginName] = null;
+
+        // Register filter directly
+        builder.PromptFilters.Add(filter);
+
+        return builder;
     }
 }
 #endregion
@@ -1491,6 +1564,20 @@ internal static class AgentBuilderHelpers
             ChatProvider.OnnxRuntime => null, // Local model, no URI
             _ => null
         };
+    }
+
+    /// <summary>
+    /// Creates an IChatClient from a ProviderConfig.
+    /// Used by Agent's history reduction to create a separate summarizer client.
+    /// </summary>
+    internal static IChatClient CreateClientFromProviderConfig(ProviderConfig providerConfig)
+    {
+        // Use a dummy builder to access extension methods
+        var builder = new AgentBuilder();
+        return builder.CreateClientFromProvider(
+            providerConfig.Provider,
+            providerConfig.ModelName,
+            providerConfig.ApiKey);
     }
 }
 

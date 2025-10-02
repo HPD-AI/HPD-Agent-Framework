@@ -3,7 +3,8 @@ using Microsoft.Extensions.Logging;
 #pragma warning disable RS1035, IL2026, IL3050 // Allow file IO and dynamic JSON code in CAG manager
 
 /// <summary>
-/// CRUD manager for Injected Memory (formerly Context-Aware Generation) with project-scoped context support.
+/// CRUD manager for Injected Memory (formerly Context-Aware Generation).
+/// Memories are scoped per agent name.
 /// </summary>
 public class AgentInjectedMemoryManager
 {
@@ -12,22 +13,11 @@ public class AgentInjectedMemoryManager
     private readonly List<Action> _invalidationCallbacks = new();
     private readonly object _fileLock = new();
 
-    /// <summary>Current context (e.g., project id) appended to file name.</summary>
-    public string? CurrentContext { get; private set; }
-
     public AgentInjectedMemoryManager(string storageDirectory, ILogger<AgentInjectedMemoryManager>? logger = null)
     {
         _storageDirectory = Path.GetFullPath(storageDirectory);
-        Directory.CreateDirectory(_storageDirectory);
         _logger = logger;
     }
-
-    public void SetContext(string? context)
-    {
-        CurrentContext = context;
-    }
-
-    public void ClearContext() => CurrentContext = null;
 
     public void RegisterCacheInvalidationCallback(Action invalidateCallback)
     {
@@ -101,35 +91,23 @@ public class AgentInjectedMemoryManager
         InvokeInvalidation();
     }
 
-    public Task<List<string>> GetAvailableContextsAsync(string agentName, CancellationToken cancellationToken = default)
-    {
-        var files = Directory.EnumerateFiles(_storageDirectory, agentName + "*.json");
-        var contexts = files.Select(path =>
-        {
-            var name = Path.GetFileNameWithoutExtension(path);
-            if (name.Length > agentName.Length + 1 && name.StartsWith(agentName + "_"))
-            {
-                return name.Substring(agentName.Length + 1);
-            }
-            return string.Empty;
-        })
-        .Where(ctx => ctx != string.Empty)
-        .ToList();
-        return Task.FromResult(contexts);
-    }
 
     private string GetFilePath(string agentName)
     {
-        var fileName = agentName;
-        if (!string.IsNullOrEmpty(CurrentContext))
+        return Path.Combine(_storageDirectory, agentName + ".json");
+    }
+
+    private void EnsureDirectoryExists()
+    {
+        if (!Directory.Exists(_storageDirectory))
         {
-            fileName += "_" + CurrentContext;
+            Directory.CreateDirectory(_storageDirectory);
         }
-        return Path.Combine(_storageDirectory, fileName + ".json");
     }
 
     private void SaveMemories(string agentName, List<AgentInjectedMemory> memories)
     {
+        EnsureDirectoryExists();
         var file = GetFilePath(agentName);
         lock (_fileLock)
         {

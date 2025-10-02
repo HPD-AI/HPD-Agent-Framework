@@ -2,21 +2,20 @@ using Microsoft.Extensions.AI;
 
 /// <summary>
 /// Represents the context of an orchestration step where a tool may be invoked.
-/// This context is now much richer, providing access to the entire conversation.
 /// Native AOT compatible - does not inherit from FunctionInvocationContext.
 /// </summary>
 public class AiFunctionContext :  FunctionInvocationContext
 
 {
     /// <summary>
-    /// The conversation that this orchestration step belongs to.
-    /// </summary>
-    public Conversation Conversation { get; }
-
-    /// <summary>
     /// The raw tool call request from the Language Model.
     /// </summary>
     public ToolCallRequest ToolCallRequest { get; }
+
+    /// <summary>
+    /// The name of the agent executing this function
+    /// </summary>
+    public string? AgentName { get; set; }
 
     /// <summary>
     /// Context about the current agent run/turn
@@ -38,16 +37,15 @@ public class AiFunctionContext :  FunctionInvocationContext
     /// </summary>
     public new AIFunction? Function { get; set; }
 
-    
+
 
     /// <summary>
     /// Arguments for the function call (AOT-safe access).
     /// </summary>
     public new AIFunctionArguments Arguments { get; }
 
-    public AiFunctionContext(Conversation conversation, ToolCallRequest toolCallRequest)
+    public AiFunctionContext(ToolCallRequest toolCallRequest)
     {
-        Conversation = conversation ?? throw new ArgumentNullException(nameof(conversation));
         ToolCallRequest = toolCallRequest ?? throw new ArgumentNullException(nameof(toolCallRequest));
         Arguments = new AIFunctionArguments(toolCallRequest.Arguments);
     }

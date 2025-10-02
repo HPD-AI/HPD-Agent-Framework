@@ -1225,9 +1225,8 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                 // For complex types, arrays, or unknown types, fall back to ToString or throw
                 if (type.StartsWith("List<") || type.StartsWith("IList<") || type.EndsWith("[]"))
                 {
-                    // Handle arrays/lists
-                    sb.AppendLine($"{indent}                // TODO: Implement array parsing for {type}");
-                    sb.AppendLine($"{indent}                throw new NotSupportedException($\"Array parsing for type {type} not yet implemented\");");
+                    // Handle arrays/lists using JsonSerializer
+                    sb.AppendLine($"{indent}                {targetVar} = JsonSerializer.Deserialize<{type}>({jsonPropertyVar}.GetRawText());");
                 }
                 else
                 {
