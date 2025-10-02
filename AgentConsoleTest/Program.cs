@@ -149,6 +149,10 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
             .WithMaxTokens(6000))
         .WithPlanMode() // Plan mode enabled with defaults
         .WithPlugin<MathPlugin>()
+        .WithPlugin<HPD.Agent.Plugins.FileSystem.FileSystemPlugin>(
+            new HPD.Agent.Plugins.FileSystem.FileSystemContext(
+                workspaceRoot: Directory.GetCurrentDirectory(),
+                enableSearch: true))  // FileSystem plugin with defaults
         .WithConsolePermissions() // Function permissions only via ConsolePermissionFilter
         .WithMCP(agentConfig.Mcp.ManifestPath)
         .Build();

@@ -23,7 +23,8 @@ internal static class DSLCodeGenerator
             if (match.Success)
             {
                 var propertyName = match.Groups[1].Value;
-                replacements.Add($"template = template.Replace(\"{expression}\", typedContext.{propertyName}?.ToString() ?? \"\");");
+                // Use ToString() without null-conditional operator to support value types
+                replacements.Add($"template = template.Replace(\"{expression}\", typedContext.{propertyName}.ToString() ?? \"\");");
             }
         }
         
@@ -160,7 +161,8 @@ internal static class DSLCodeGenerator
             if (match.Success)
             {
                 var propertyName = match.Groups[1].Value;
-                replacements.Add($"template = template.Replace(\"{expression}\", typedContext.{propertyName}?.ToString() ?? \"\");");
+                // Use ToString() without null-conditional operator to support value types
+                replacements.Add($"template = template.Replace(\"{expression}\", typedContext.{propertyName}.ToString() ?? \"\");");
             }
         }
         

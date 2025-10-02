@@ -64,25 +64,37 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
     private static void GeneratePluginRegistrations(SourceProductionContext context, ImmutableArray<PluginInfo?> plugins)
     {
         context.AddSource("_SourceGeneratorTest.g.cs", "// Source generator is running!");
-        
+
+        // Group plugins by name+namespace to handle partial classes
+        var pluginGroups = plugins
+            .Where(p => p != null)
+            .GroupBy(p => $"{p!.Namespace}.{p.Name}")
+            .Select(group =>
+            {
+                // Merge all partial class parts into one plugin
+                var first = group.First()!;
+                var allFunctions = group.SelectMany(p => p!.Functions).ToList();
+
+                return new PluginInfo
+                {
+                    Name = first.Name,
+                    Description = $"Plugin containing {allFunctions.Count} AI functions.",
+                    Namespace = first.Namespace,
+                    Functions = allFunctions
+                };
+            })
+            .ToList();
+
         var debugInfo = new StringBuilder();
-        debugInfo.AppendLine($"// Found {plugins.Length} plugins total");
-        debugInfo.AppendLine($"// Non-null plugins: {plugins.Count(p => p != null)}");
-        for (int i = 0; i < plugins.Length; i++)
+        debugInfo.AppendLine($"// Found {plugins.Length} plugin parts total");
+        debugInfo.AppendLine($"// Merged into {pluginGroups.Count} unique plugins");
+        foreach (var plugin in pluginGroups)
         {
-            var plugin = plugins[i];
-            if (plugin != null)
-            {
-                debugInfo.AppendLine($"// Plugin {i}: {plugin.Name} with {plugin.Functions.Count} functions");
-            }
-            else
-            {
-                debugInfo.AppendLine($"// Plugin {i}: null");
-            }
+            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.Functions.Count} functions");
         }
         context.AddSource("_SourceGeneratorDebug.g.cs", debugInfo.ToString());
 
-        foreach (var plugin in plugins.Where(p => p != null))
+        foreach (var plugin in pluginGroups)
         {
             if (plugin == null) continue;
 
