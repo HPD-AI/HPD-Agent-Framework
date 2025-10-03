@@ -215,7 +215,8 @@ public class Conversation
                     Metadata = new OrchestrationMetadata
                     {
                         StrategyName = "SingleAgent",
-                        DecisionDuration = TimeSpan.Zero
+                        DecisionDuration = TimeSpan.Zero,
+                        Context = agent.GetReductionMetadata() // Include reduction metadata
                     }
                 };
             }
@@ -232,6 +233,9 @@ public class Conversation
                 orchestrationResult = await effectiveOrchestrator.OrchestrateAsync(
                     _messages, _agents, this.Id, options, cancellationToken);
             }
+
+            // Apply reduction BEFORE adding response to history
+            ApplyReductionIfPresent(orchestrationResult);
 
             // Commit response to history
             _messages.AddMessages(orchestrationResult.Response);
@@ -501,7 +505,8 @@ public class Conversation
         else if (_agents.Count == 1)
         {
             // DIRECT PATH - Single agent
-            var result = await _agents[0].ExecuteStreamingTurnAsync(_messages, options, documentPaths, cancellationToken);
+            var agent = _agents[0];
+            var result = await agent.ExecuteStreamingTurnAsync(_messages, options, documentPaths, cancellationToken);
 
             // Stream the events
             await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
@@ -511,6 +516,20 @@ public class Conversation
 
             // Wait for final history and update conversation
             var finalHistory = await result.FinalHistory;
+
+            // Check for reduction metadata and apply BEFORE adding new messages
+            var reductionMetadata = agent.GetReductionMetadata();
+            if (reductionMetadata.TryGetValue("SummaryMessage", out var summaryObj) &&
+                summaryObj is ChatMessage summary &&
+                reductionMetadata.TryGetValue("MessagesRemovedCount", out var countObj) &&
+                countObj is int count)
+            {
+                int systemMsgCount = _messages.Count(m => m.Role == ChatRole.System);
+                _messages.RemoveRange(systemMsgCount, count);
+                _messages.Insert(systemMsgCount, summary);
+                agent.ClearReductionMetadata();
+            }
+
             _messages.AddRange(finalHistory);
             UpdateActivity();
 
@@ -543,6 +562,10 @@ public class Conversation
 
             // Wait for final result and update conversation
             var finalResult = await orchestrationResult.FinalResult;
+
+            // Apply reduction from orchestration metadata BEFORE adding response
+            ApplyReductionIfPresent(finalResult);
+
             _messages.AddMessages(finalResult.Response);
             UpdateActivity();
 
@@ -562,6 +585,32 @@ public class Conversation
     private TextExtractionUtility GetOrCreateTextExtractor()
     {
         return _textExtractor ??= new TextExtractionUtility();
+    }
+
+    /// <summary>
+    /// Extracts reduction metadata from OrchestrationMetadata.Context and applies to storage.
+    /// </summary>
+    private void ApplyReductionIfPresent(OrchestrationResult result)
+    {
+        var context = result.Metadata.Context;
+
+        if (context.TryGetValue("SummaryMessage", out var summaryObj) &&
+            summaryObj is ChatMessage summary &&
+            context.TryGetValue("MessagesRemovedCount", out var countObj) &&
+            countObj is int count)
+        {
+            // Find system message count (preserve them)
+            int systemMsgCount = _messages.Count(m => m.Role == ChatRole.System);
+
+            // Remove the summarized messages
+            _messages.RemoveRange(systemMsgCount, count);
+
+            // Insert summary right after system message(s)
+            _messages.Insert(systemMsgCount, summary);
+
+            // Clear agent's metadata after use
+            result.SelectedAgent?.ClearReductionMetadata();
+        }
     }
 
     /// <summary>

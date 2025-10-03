@@ -32,6 +32,10 @@ public class Agent : IChatClient
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
 
+    // Reduction metadata tracking
+    private ChatMessage? _lastSummaryMessage;
+    private int? _lastMessagesRemovedCount;
+
     /// <summary>
     /// Agent configuration object containing all settings
     /// </summary>
@@ -391,6 +395,19 @@ public class Agent : IChatClient
         // Prepare messages using MessageProcessor
         var (effectiveMessages, effectiveOptions) = await _messageProcessor.PrepareMessagesAsync(
             messages, options, _name, cancellationToken);
+
+        // Check if MessageProcessor performed reduction and stored metadata
+        if (_messageProcessor.LastReductionMetadata.HasValue)
+        {
+            _lastSummaryMessage = _messageProcessor.LastReductionMetadata.Value.SummaryMessage;
+            _lastMessagesRemovedCount = _messageProcessor.LastReductionMetadata.Value.RemovedCount;
+        }
+        else
+        {
+            // Clear metadata if no reduction occurred this turn
+            _lastSummaryMessage = null;
+            _lastMessagesRemovedCount = null;
+        }
 
         var currentMessages = effectiveMessages.ToList();
 
@@ -892,7 +909,41 @@ Best practices:
         return _aguiEventHandler.SerializeEvent(aguiEvent);
     }
 
+    #region History Reduction Metadata
 
+    /// <summary>
+    /// Gets reduction metadata from the last turn (if reduction occurred).
+    /// Used to populate OrchestrationMetadata.Context for Conversation to apply reduction.
+    /// </summary>
+    /// <returns>Dictionary containing SummaryMessage and MessagesRemovedCount if reduction occurred, empty otherwise.</returns>
+    public IReadOnlyDictionary<string, object> GetReductionMetadata()
+    {
+        var metadata = new Dictionary<string, object>();
+
+        if (_lastSummaryMessage != null)
+        {
+            metadata["SummaryMessage"] = _lastSummaryMessage;
+        }
+
+        if (_lastMessagesRemovedCount.HasValue)
+        {
+            metadata["MessagesRemovedCount"] = _lastMessagesRemovedCount.Value;
+        }
+
+        return metadata;
+    }
+
+    /// <summary>
+    /// Clears reduction metadata after it has been used.
+    /// Called by Conversation after applying reduction to prevent stale metadata.
+    /// </summary>
+    public void ClearReductionMetadata()
+    {
+        _lastSummaryMessage = null;
+        _lastMessagesRemovedCount = null;
+    }
+
+    #endregion
 
 }
 
@@ -1162,6 +1213,12 @@ public class MessageProcessor
     private readonly ChatOptions? _defaultOptions;
     private readonly IChatReducer? _chatReducer;
 
+    /// <summary>
+    /// Reduction metadata from the last PrepareMessages call.
+    /// Null if no reduction occurred.
+    /// </summary>
+    public (ChatMessage? SummaryMessage, int RemovedCount)? LastReductionMetadata { get; private set; }
+
     public MessageProcessor(string? systemInstructions, ChatOptions? defaultOptions, IReadOnlyList<IPromptFilter> promptFilters, IChatReducer? chatReducer = null)
     {
         _systemInstructions = systemInstructions;
@@ -1192,10 +1249,67 @@ public class MessageProcessor
         var effectiveMessages = PrependSystemInstructions(messages);
         var effectiveOptions = MergeOptions(options);
 
-        // Apply history reduction if configured
+        // Apply cache-aware history reduction if configured
         if (_chatReducer != null)
         {
-            effectiveMessages = await _chatReducer.ReduceAsync(effectiveMessages, cancellationToken);
+            var messagesList = effectiveMessages.ToList();
+
+            // Check for existing summary marker (cache optimization)
+            var lastSummaryIndex = messagesList.FindLastIndex(m =>
+                m.AdditionalProperties?.ContainsKey(HistoryReductionConfig.SummaryMetadataKey) == true);
+
+            bool shouldReduce = false;
+
+            if (lastSummaryIndex >= 0)
+            {
+                // Summary found - only count messages AFTER the summary
+                var messagesAfterSummary = messagesList.Count - lastSummaryIndex - 1;
+
+                // For now, use hardcoded threshold values
+                // TODO: Extract from reducer configuration
+                int targetCount = 20;
+                int threshold = 5;
+
+                shouldReduce = messagesAfterSummary > (targetCount + threshold);
+            }
+            else
+            {
+                // No summary found - check total message count
+                int targetCount = 20;
+                int threshold = 5;
+
+                shouldReduce = messagesList.Count > (targetCount + threshold);
+            }
+
+            if (shouldReduce)
+            {
+                var reduced = await _chatReducer.ReduceAsync(effectiveMessages, cancellationToken);
+
+                if (reduced != null)
+                {
+                    var reducedList = reduced.ToList();
+
+                    // Extract summary message
+                    var summaryMsg = reducedList.FirstOrDefault(m =>
+                        m.AdditionalProperties?.ContainsKey(HistoryReductionConfig.SummaryMetadataKey) == true);
+
+                    if (summaryMsg != null)
+                    {
+                        // Calculate how many messages were removed
+                        int removedCount = messagesList.Count - reducedList.Count + 1; // +1 for summary itself
+
+                        // Store metadata for Agent to access
+                        LastReductionMetadata = (summaryMsg, removedCount);
+                    }
+
+                    effectiveMessages = reducedList;
+                }
+            }
+            else
+            {
+                // Clear metadata if no reduction occurred
+                LastReductionMetadata = null;
+            }
         }
 
         effectiveMessages = await ApplyPromptFiltersAsync(effectiveMessages, effectiveOptions, agentName, cancellationToken);
