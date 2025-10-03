@@ -32,7 +32,7 @@
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="9.9.0" />
     <PackageReference Include="Microsoft.Extensions.AI.AzureAIInference" Version="9.7.1-preview.1.25365.4" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="9.7.1-preview.1.25365.4" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.1.0-rc" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.1.0-rc4" />
     <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI.DirectML" Version="0.9.2" />
     <PackageReference Include="Mistral.SDK" Version="2.3.0" />
 
