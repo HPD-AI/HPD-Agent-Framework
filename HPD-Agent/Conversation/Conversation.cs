@@ -204,10 +204,36 @@ public class Conversation
             }
             else if (_agents.Count == 1)
             {
-                // Single agent path - no orchestration needed
+                // Single agent path - use streaming internally to capture reduction metadata
                 var agent = _agents[0];
                 activity?.SetTag("conversation.orchestration_strategy", "SingleAgent");
-                var response = await agent.GetResponseAsync(_messages, options, cancellationToken);
+
+                // Use ExecuteStreamingTurnAsync to get reduction metadata
+                var streamingResult = await agent.ExecuteStreamingTurnAsync(_messages, options, cancellationToken: cancellationToken);
+
+                // Collect all messages from the stream (consume but don't yield)
+                await foreach (var _ in streamingResult.EventStream.WithCancellation(cancellationToken))
+                {
+                    // Just consume the events
+                }
+
+                // Get final history
+                var finalHistory = await streamingResult.FinalHistory;
+
+                // Convert to ChatResponse for orchestration result
+                var response = new ChatResponse(finalHistory.ToList());
+
+                // Create orchestration result with reduction metadata
+                var reductionContext = new Dictionary<string, object>();
+                if (streamingResult.Reduction != null)
+                {
+                    if (streamingResult.Reduction.SummaryMessage != null)
+                    {
+                        reductionContext["SummaryMessage"] = streamingResult.Reduction.SummaryMessage;
+                    }
+                    reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
+                }
+
                 orchestrationResult = new OrchestrationResult
                 {
                     Response = response,
@@ -216,7 +242,7 @@ public class Conversation
                     {
                         StrategyName = "SingleAgent",
                         DecisionDuration = TimeSpan.Zero,
-                        Context = agent.GetReductionMetadata() // Include reduction metadata
+                        Context = reductionContext
                     }
                 };
             }
@@ -521,16 +547,15 @@ public class Conversation
             var finalHistory = await result.FinalHistory;
 
             // Check for reduction metadata and apply BEFORE adding new messages
-            var reductionMetadata = agent.GetReductionMetadata();
-            if (reductionMetadata.TryGetValue("SummaryMessage", out var summaryObj) &&
-                summaryObj is ChatMessage summary &&
-                reductionMetadata.TryGetValue("MessagesRemovedCount", out var countObj) &&
-                countObj is int count)
+            if (result.Reduction != null)
             {
                 int systemMsgCount = _messages.Count(m => m.Role == ChatRole.System);
-                _messages.RemoveRange(systemMsgCount, count);
-                _messages.Insert(systemMsgCount, summary);
-                agent.ClearReductionMetadata();
+                _messages.RemoveRange(systemMsgCount, result.Reduction.MessagesRemovedCount);
+
+                if (result.Reduction.SummaryMessage != null)
+                {
+                    _messages.Insert(systemMsgCount, result.Reduction.SummaryMessage);
+                }
             }
 
             _messages.AddRange(finalHistory);
@@ -611,8 +636,8 @@ public class Conversation
             // Insert summary right after system message(s)
             _messages.Insert(systemMsgCount, summary);
 
-            // Clear agent's metadata after use
-            result.SelectedAgent?.ClearReductionMetadata();
+            // Note: No need to clear agent metadata anymore - reduction metadata is now
+            // returned via StreamingTurnResult.Reduction and doesn't persist in agent instance
         }
     }
 

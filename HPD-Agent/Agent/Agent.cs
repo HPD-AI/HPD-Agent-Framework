@@ -34,10 +34,6 @@ public class Agent : IChatClient
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
 
-    // Reduction metadata tracking
-    private ChatMessage? _lastSummaryMessage;
-    private int? _lastMessagesRemovedCount;
-
     /// <summary>
     /// Agent configuration object containing all settings
     /// </summary>
@@ -282,6 +278,18 @@ public class Agent : IChatClient
         // Create the streaming enumerable - use BaseEvent directly without conversion
         var responseStream = RunAgenticLoopCore(messagesList, options, turnHistory, historyCompletionSource, cancellationToken);
 
+        // Capture reduction metadata from MessageProcessor (set during PrepareMessagesAsync in RunAgenticLoopCore)
+        ReductionMetadata? reductionMetadata = null;
+        if (_messageProcessor.LastReductionMetadata.HasValue)
+        {
+            var metadata = _messageProcessor.LastReductionMetadata.Value;
+            reductionMetadata = new ReductionMetadata
+            {
+                SummaryMessage = metadata.SummaryMessage,
+                MessagesRemovedCount = metadata.RemovedCount
+            };
+        }
+
         // Wrap the final history task to apply message turn filters when complete
         var wrappedHistoryTask = historyCompletionSource.Task.ContinueWith(async task =>
         {
@@ -304,8 +312,11 @@ public class Agent : IChatClient
             return history;
         }, cancellationToken).Unwrap();
 
-        // Return the result containing both stream and wrapped history task
-        return new StreamingTurnResult(responseStream, wrappedHistoryTask);
+        // Return the result containing stream, history, and reduction metadata
+        return new StreamingTurnResult(responseStream, wrappedHistoryTask)
+        {
+            Reduction = reductionMetadata
+        };
     }
 
     /// <inheritdoc />
@@ -406,18 +417,8 @@ public class Agent : IChatClient
         var (effectiveMessages, effectiveOptions) = await _messageProcessor.PrepareMessagesAsync(
             messages, options, _name, effectiveCancellationToken);
 
-        // Check if MessageProcessor performed reduction and stored metadata
-        if (_messageProcessor.LastReductionMetadata.HasValue)
-        {
-            _lastSummaryMessage = _messageProcessor.LastReductionMetadata.Value.SummaryMessage;
-            _lastMessagesRemovedCount = _messageProcessor.LastReductionMetadata.Value.RemovedCount;
-        }
-        else
-        {
-            // Clear metadata if no reduction occurred this turn
-            _lastSummaryMessage = null;
-            _lastMessagesRemovedCount = null;
-        }
+        // Note: Reduction metadata is now captured in ExecuteStreamingTurnAsync
+        // and returned via StreamingTurnResult.Reduction property
 
         var currentMessages = effectiveMessages.ToList();
 
@@ -599,7 +600,7 @@ public class Agent : IChatClient
                 // Circuit breaker: Check for consecutive same-function calls (Gemini CLI-inspired)
                 // Tracks function signature (name + arguments) to detect exact repetition
                 // Handles parallel tool calls by checking each one
-                if (toolRequests.Count > 0 && Config?.AgenticLoop?.MaxConsecutiveSameFunctionCalls is { } maxConsecutive)
+                if (toolRequests.Count > 0 && Config?.AgenticLoop?.MaxConsecutiveFunctionCalls is { } maxConsecutive)
                 {
                     // Check each tool request in the batch (handles parallel calls)
                     foreach (var toolRequest in toolRequests)
@@ -1028,37 +1029,17 @@ Best practices:
 
     #region History Reduction Metadata
 
-    /// <summary>
-    /// Gets reduction metadata from the last turn (if reduction occurred).
-    /// Used to populate OrchestrationMetadata.Context for Conversation to apply reduction.
-    /// </summary>
-    /// <returns>Dictionary containing SummaryMessage and MessagesRemovedCount if reduction occurred, empty otherwise.</returns>
-    public IReadOnlyDictionary<string, object> GetReductionMetadata()
-    {
-        var metadata = new Dictionary<string, object>();
-
-        if (_lastSummaryMessage != null)
-        {
-            metadata["SummaryMessage"] = _lastSummaryMessage;
-        }
-
-        if (_lastMessagesRemovedCount.HasValue)
-        {
-            metadata["MessagesRemovedCount"] = _lastMessagesRemovedCount.Value;
-        }
-
-        return metadata;
-    }
-
-    /// <summary>
-    /// Clears reduction metadata after it has been used.
-    /// Called by Conversation after applying reduction to prevent stale metadata.
-    /// </summary>
-    public void ClearReductionMetadata()
-    {
-        _lastSummaryMessage = null;
-        _lastMessagesRemovedCount = null;
-    }
+    // NOTE: Reduction metadata is now returned via StreamingTurnResult.Reduction property
+    // instead of being stored in agent instance fields. This makes Agent stateless and
+    // allows it to be safely reused across multiple conversations.
+    //
+    // Old API (removed):
+    // - public IReadOnlyDictionary<string, object> GetReductionMetadata()
+    // - public void ClearReductionMetadata()
+    //
+    // New pattern:
+    // - StreamingTurnResult.Reduction contains ReductionMetadata if reduction occurred
+    // - Conversation reads metadata from result object instead of calling agent method
 
     #endregion
 
@@ -1782,7 +1763,26 @@ public class AgentTurn
 
 #endregion
 
-#region 
+#region Streaming Turn Result
+
+/// <summary>
+/// Metadata about history reduction that occurred during a turn.
+/// Contains information needed by Conversation to apply the reduction to storage.
+/// </summary>
+public record ReductionMetadata
+{
+    /// <summary>
+    /// The summary message that should be inserted into conversation history.
+    /// Contains the __summary__ marker in AdditionalProperties.
+    /// </summary>
+    public ChatMessage? SummaryMessage { get; init; }
+
+    /// <summary>
+    /// Number of messages that were removed during reduction.
+    /// Conversation uses this to know how many messages to remove from storage.
+    /// </summary>
+    public int MessagesRemovedCount { get; init; }
+}
 
 /// <summary>
 /// Updated to stream BaseEvent instead of ChatResponseUpdate.
@@ -1799,6 +1799,12 @@ public class StreamingTurnResult
     /// Task that completes with the final turn history once streaming is done
     /// </summary>
     public Task<IReadOnlyList<ChatMessage>> FinalHistory { get; }
+
+    /// <summary>
+    /// Reduction metadata if history reduction occurred during this turn.
+    /// Null if no reduction was performed.
+    /// </summary>
+    public ReductionMetadata? Reduction { get; init; }
 
     /// <summary>
     /// Initializes a new instance of StreamingTurnResult

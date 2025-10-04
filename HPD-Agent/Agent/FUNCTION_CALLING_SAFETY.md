@@ -859,7 +859,7 @@ public class AgenticLoopConfig
     /// Default: 5
     /// Inspired by: Gemini CLI (TOOL_CALL_LOOP_THRESHOLD)
     /// </summary>
-    public int? MaxConsecutiveSameFunctionCalls { get; set; } = 5;
+    public int? MaxConsecutiveFunctionCalls { get; set; } = 5;
 }
 ```
 
@@ -870,7 +870,7 @@ var config = new AgentConfig
     AgenticLoop = new AgenticLoopConfig
     {
         MaxTurnDuration = TimeSpan.FromMinutes(10),  // Allow longer turns
-        MaxConsecutiveSameFunctionCalls = 3          // More aggressive circuit breaker
+        MaxConsecutiveFunctionCalls = 3          // More aggressive circuit breaker
     }
 };
 ```
@@ -937,7 +937,7 @@ new AgentConfig
     AgenticLoop = new()
     {
         MaxTurnDuration = TimeSpan.FromMinutes(2),
-        MaxConsecutiveSameFunctionCalls = 3
+        MaxConsecutiveFunctionCalls = 3
     },
     ErrorHandling = new()
     {
@@ -954,7 +954,7 @@ new AgentConfig
     AgenticLoop = new()
     {
         MaxTurnDuration = TimeSpan.FromMinutes(10),
-        MaxConsecutiveSameFunctionCalls = 5
+        MaxConsecutiveFunctionCalls = 5
     },
     ErrorHandling = new()
     {
@@ -972,7 +972,7 @@ new AgentConfig
     AgenticLoop = new()
     {
         MaxTurnDuration = TimeSpan.FromMinutes(30),
-        MaxConsecutiveSameFunctionCalls = 10
+        MaxConsecutiveFunctionCalls = 10
     },
     ErrorHandling = new()
     {

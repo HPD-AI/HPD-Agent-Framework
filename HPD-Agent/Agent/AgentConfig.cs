@@ -343,7 +343,7 @@ public class AgenticLoopConfig
     /// <summary>
     /// Max times the same function can be called consecutively before circuit breaker triggers (default: 5)
     /// </summary>
-    public int? MaxConsecutiveSameFunctionCalls { get; set; } = 5;
+    public int? MaxConsecutiveFunctionCalls { get; set; } = 5;
 
     /// <summary>
     /// Maximum number of functions to execute in parallel (default: null = unlimited).

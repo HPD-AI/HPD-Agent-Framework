@@ -83,33 +83,29 @@ public enum HistoryReductionStrategy
 
 ### 2. Agent Components
 
-#### A. Metadata Storage (`Agent.cs:35-37`)
+#### A. Reduction Metadata Record (`Agent.cs`)
 ```csharp
-// Tracks reduction from last turn
-private ChatMessage? _lastSummaryMessage;
-private int? _lastMessagesRemovedCount;
-```
-
-#### B. Public API (`Agent.cs:899-933`)
-```csharp
-// Returns metadata for Conversation to apply reduction
-public IReadOnlyDictionary<string, object> GetReductionMetadata()
+// NEW: Metadata is now returned via result object, not stored in agent
+public record ReductionMetadata
 {
-    var metadata = new Dictionary<string, object>();
-    if (_lastSummaryMessage != null)
-        metadata["SummaryMessage"] = _lastSummaryMessage;
-    if (_lastMessagesRemovedCount.HasValue)
-        metadata["MessagesRemovedCount"] = _lastMessagesRemovedCount.Value;
-    return metadata;
-}
-
-// Called by Conversation after applying reduction
-public void ClearReductionMetadata()
-{
-    _lastSummaryMessage = null;
-    _lastMessagesRemovedCount = null;
+    public ChatMessage? SummaryMessage { get; init; }
+    public int MessagesRemovedCount { get; init; }
 }
 ```
+
+#### B. StreamingTurnResult with Reduction (`Agent.cs`)
+```csharp
+public class StreamingTurnResult
+{
+    public IAsyncEnumerable<BaseEvent> EventStream { get; }
+    public Task<IReadOnlyList<ChatMessage>> FinalHistory { get; }
+
+    // NEW: Reduction metadata returned in result, not stored in agent instance
+    public ReductionMetadata? Reduction { get; init; }
+}
+```
+
+**Key Change:** Agent is now **stateless** - reduction metadata is returned via `StreamingTurnResult.Reduction` instead of being stored in agent instance fields. This allows safe agent reuse across multiple conversations.
 
 #### C. MessageProcessor - Cache-Aware Reduction (`Agent.cs:1239-1300`)
 
@@ -173,13 +169,29 @@ public async Task<(IEnumerable<ChatMessage>, ChatOptions?)> PrepareMessagesAsync
 - ✅ Only counts messages after last summary
 - ✅ Skips reduction if under threshold (saves LLM calls!)
 
-#### D. Metadata Capture (`Agent.cs:399-410`)
+#### D. Metadata Capture in ExecuteStreamingTurnAsync (`Agent.cs`)
 ```csharp
-// After PrepareMessagesAsync
-if (_messageProcessor.LastReductionMetadata.HasValue)
+public async Task<StreamingTurnResult> ExecuteStreamingTurnAsync(...)
 {
-    _lastSummaryMessage = _messageProcessor.LastReductionMetadata.Value.SummaryMessage;
-    _lastMessagesRemovedCount = _messageProcessor.LastReductionMetadata.Value.RemovedCount;
+    // ... streaming logic ...
+
+    // Capture reduction metadata from MessageProcessor
+    ReductionMetadata? reductionMetadata = null;
+    if (_messageProcessor.LastReductionMetadata.HasValue)
+    {
+        var metadata = _messageProcessor.LastReductionMetadata.Value;
+        reductionMetadata = new ReductionMetadata
+        {
+            SummaryMessage = metadata.SummaryMessage,
+            MessagesRemovedCount = metadata.RemovedCount
+        };
+    }
+
+    // Return metadata in result object (not stored in agent instance)
+    return new StreamingTurnResult(responseStream, wrappedHistoryTask)
+    {
+        Reduction = reductionMetadata
+    };
 }
 ```
 
@@ -213,16 +225,37 @@ private void ApplyReductionIfPresent(OrchestrationResult result)
 
 #### B. Integration Points
 
-**SendAsync - Single Agent** (`Conversation.cs:219`)
+**SendAsync - Single Agent** (`Conversation.cs`)
 ```csharp
+// NEW: Use ExecuteStreamingTurnAsync to get reduction metadata
+var streamingResult = await agent.ExecuteStreamingTurnAsync(_messages, options, cancellationToken: cancellationToken);
+
+// Consume stream
+await foreach (var _ in streamingResult.EventStream.WithCancellation(cancellationToken)) { }
+
+// Get final history
+var finalHistory = await streamingResult.FinalHistory;
+
+// Package reduction metadata into Context dictionary
+var reductionContext = new Dictionary<string, object>();
+if (streamingResult.Reduction != null)
+{
+    if (streamingResult.Reduction.SummaryMessage != null)
+    {
+        reductionContext["SummaryMessage"] = streamingResult.Reduction.SummaryMessage;
+    }
+    reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
+}
+
 orchestrationResult = new OrchestrationResult
 {
-    Response = response,
+    Response = new ChatResponse(finalHistory.ToList()),
     SelectedAgent = agent,
     Metadata = new OrchestrationMetadata
     {
         StrategyName = "SingleAgent",
-        Context = agent.GetReductionMetadata() // ← Include metadata
+        DecisionDuration = TimeSpan.Zero,
+        Context = reductionContext // ← Include metadata from result, not agent
     }
 };
 ```
@@ -236,17 +269,33 @@ ApplyReductionIfPresent(orchestrationResult);
 _messages.AddMessages(orchestrationResult.Response);
 ```
 
-**Streaming Path** (`Conversation.cs:520-531`)
+**Streaming Path** (`Conversation.cs`)
 ```csharp
-// After streaming completes
-var reductionMetadata = agent.GetReductionMetadata();
-if (reductionMetadata.TryGetValue("SummaryMessage", out var summaryObj) && ...)
+// NEW: Get reduction metadata from StreamingTurnResult
+var result = await agent.ExecuteStreamingTurnAsync(_messages, options, documentPaths, cancellationToken);
+
+// Stream events
+await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
+{
+    yield return evt;
+}
+
+// Wait for final history
+var finalHistory = await result.FinalHistory;
+
+// Apply reduction from result metadata
+if (result.Reduction != null)
 {
     int systemMsgCount = _messages.Count(m => m.Role == ChatRole.System);
-    _messages.RemoveRange(systemMsgCount, count);
-    _messages.Insert(systemMsgCount, summary);
-    agent.ClearReductionMetadata();
+    _messages.RemoveRange(systemMsgCount, result.Reduction.MessagesRemovedCount);
+
+    if (result.Reduction.SummaryMessage != null)
+    {
+        _messages.Insert(systemMsgCount, result.Reduction.SummaryMessage);
+    }
 }
+
+_messages.AddRange(finalHistory);
 ```
 
 ---
@@ -260,46 +309,55 @@ if (reductionMetadata.TryGetValue("SummaryMessage", out var summaryObj) && ...)
    ↓
 2. Conversation adds to _messages
    ↓
-3. Agent.PrepareMessagesAsync()
+3. Agent.PrepareMessagesAsync() (in RunAgenticLoopCore)
    ├─ Check for __summary__ marker
    ├─ Count messages after summary
    ├─ If > threshold: Reduce
    ├─ Extract summary message
-   └─ Store in LastReductionMetadata
+   └─ Store in MessageProcessor.LastReductionMetadata
    ↓
-4. Agent captures metadata (RunAgenticLoopCore)
-   ├─ _lastSummaryMessage = metadata.SummaryMessage
-   └─ _lastMessagesRemovedCount = metadata.RemovedCount
+4. Agent.ExecuteStreamingTurnAsync captures metadata
+   ├─ Read from MessageProcessor.LastReductionMetadata
+   ├─ Create ReductionMetadata object
+   └─ Return in StreamingTurnResult.Reduction property
    ↓
 5. Agent sends reduced messages to LLM
    ↓
 6. LLM responds
    ↓
-7. Agent.GetReductionMetadata()
-   └─ Returns Dictionary with SummaryMessage + MessagesRemovedCount
+7. Conversation receives StreamingTurnResult
+   └─ result.Reduction contains ReductionMetadata (if reduction occurred)
    ↓
-8. Conversation receives OrchestrationResult
-   └─ Metadata.Context contains reduction metadata
+8. For SendAsync: Package into OrchestrationMetadata.Context
+   └─ Context["SummaryMessage"] = result.Reduction.SummaryMessage
+   └─ Context["MessagesRemovedCount"] = result.Reduction.MessagesRemovedCount
    ↓
-9. Conversation.ApplyReductionIfPresent()
+9. Conversation.ApplyReductionIfPresent() or direct application
    ├─ Remove old messages: RemoveRange(systemMsgCount, count)
    ├─ Insert summary: Insert(systemMsgCount, summary)
-   └─ Clear agent metadata
+   └─ No need to clear metadata (not stored in agent)
    ↓
 10. Conversation adds response to _messages
 ```
 
-### Metadata Flow via OrchestrationMetadata.Context
+### Metadata Flow via StreamingTurnResult and OrchestrationMetadata.Context
 
-**Why use Context dictionary?**
-- ✅ No contract changes to `OrchestrationResult`
-- ✅ Orchestrators automatically support it
-- ✅ Clean separation of concerns
-- ✅ Extensible for future metadata
+**NEW Pattern (Stateless Agent):**
+- ✅ Agent returns metadata via `StreamingTurnResult.Reduction` property
+- ✅ Metadata is **not stored** in agent instance (agent is stateless)
+- ✅ Agent can be safely reused across multiple conversations
+- ✅ For orchestrators: Convert `Reduction` → `OrchestrationMetadata.Context`
 
 ```csharp
-// Agent side
-agent.GetReductionMetadata() → Dictionary<string, object>
+// Agent side (NEW)
+StreamingTurnResult.Reduction → ReductionMetadata object (or null)
+
+// For orchestrators: Convert to Context dictionary
+if (streamingResult.Reduction != null)
+{
+    context["SummaryMessage"] = streamingResult.Reduction.SummaryMessage;
+    context["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
+}
 
 // Flows through
 OrchestrationResult.Metadata.Context → Dictionary<string, object>
@@ -393,7 +451,7 @@ UseSingleSummary = false
 
 ## For Orchestrator Implementers
 
-If you're creating a custom orchestrator, **you must pass through reduction metadata**:
+If you're creating a custom orchestrator, **you must pass through reduction metadata** from `StreamingTurnResult.Reduction`:
 
 ```csharp
 public class MyCustomOrchestrator : IOrchestrator
@@ -405,29 +463,50 @@ public class MyCustomOrchestrator : IOrchestrator
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        // Your agent selection logic
+        // 1. Your agent selection logic
         var selectedAgent = SelectBestAgent(history, agents);
 
-        // Call the agent
-        var response = await selectedAgent.GetResponseAsync(
-            history, options, cancellationToken);
+        // 2. Call the agent using ExecuteStreamingTurnAsync
+        var streamingResult = await selectedAgent.ExecuteStreamingTurnAsync(
+            history, options, cancellationToken: cancellationToken);
 
+        // 3. Consume the stream
+        await foreach (var evt in streamingResult.EventStream.WithCancellation(cancellationToken))
+        {
+            // Process events as needed
+        }
+
+        // 4. Get final history
+        var finalHistory = await streamingResult.FinalHistory;
+
+        // 5. Package reduction metadata into Context dictionary
+        var reductionContext = new Dictionary<string, object>();
+        if (streamingResult.Reduction != null)
+        {
+            if (streamingResult.Reduction.SummaryMessage != null)
+            {
+                reductionContext["SummaryMessage"] = streamingResult.Reduction.SummaryMessage;
+            }
+            reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
+        }
+
+        // 6. Return orchestration result
         return new OrchestrationResult
         {
-            Response = response,
+            Response = new ChatResponse(finalHistory.ToList()),
             SelectedAgent = selectedAgent,
             Metadata = new OrchestrationMetadata
             {
                 StrategyName = "MyStrategy",
                 DecisionDuration = TimeSpan.Zero,
-                Context = selectedAgent.GetReductionMetadata() // ← CRITICAL!
+                Context = reductionContext // ← CRITICAL: Include reduction metadata!
             }
         };
     }
 }
 ```
 
-**Without this line**, reduction won't be applied to Conversation storage!
+**CRITICAL:** Without packaging `streamingResult.Reduction` into `Context`, reduction won't be applied to Conversation storage!
 
 ---
 
@@ -609,13 +688,65 @@ public ReductionStats GetReductionStats()
 
 ## Key Takeaways
 
-1. **Agent detects and reduces**, Conversation applies
-2. **Cache-aware**: Check for `__summary__` marker to avoid redundant work
-3. **Metadata flows** via `OrchestrationMetadata.Context` (no contract changes!)
-4. **Use `AdditionalProperties`**, not `Metadata` (Microsoft.Extensions.AI quirk)
-5. **Orchestrators must call** `GetReductionMetadata()` to support reduction
-6. **Single storage** - old messages are deleted (Semantic Kernel pattern)
-7. **Performance**: ~60% reduction in summarization costs with caching
+1. **Agent is now STATELESS** - Reduction metadata returned via `StreamingTurnResult.Reduction`, not stored in agent instance
+2. **Agents can be safely reused** across multiple conversations without interference
+3. **Agent detects and reduces**, Conversation applies
+4. **Cache-aware**: Check for `__summary__` marker to avoid redundant work
+5. **Metadata flows** via `StreamingTurnResult.Reduction` → `OrchestrationMetadata.Context`
+6. **Use `AdditionalProperties`**, not `Metadata` (Microsoft.Extensions.AI quirk)
+7. **Orchestrators must package** `streamingResult.Reduction` into `Context` dictionary
+8. **Single storage** - old messages are deleted (Semantic Kernel pattern)
+9. **Performance**: ~60% reduction in summarization costs with caching
+
+---
+
+## Breaking Changes (Architecture v2.0)
+
+### What Changed
+
+**REMOVED:**
+- ❌ `Agent._lastSummaryMessage` (instance field)
+- ❌ `Agent._lastMessagesRemovedCount` (instance field)
+- ❌ `Agent.GetReductionMetadata()` method
+- ❌ `Agent.ClearReductionMetadata()` method
+
+**ADDED:**
+- ✅ `ReductionMetadata` record
+- ✅ `StreamingTurnResult.Reduction` property
+
+### Migration Guide
+
+**Old Pattern:**
+```csharp
+// Agent stores state
+var response = await agent.GetResponseAsync(messages, options);
+var metadata = agent.GetReductionMetadata(); // ❌ Removed
+agent.ClearReductionMetadata(); // ❌ Removed
+```
+
+**New Pattern:**
+```csharp
+// Agent returns metadata in result
+var result = await agent.ExecuteStreamingTurnAsync(messages, options);
+
+// Consume stream
+await foreach (var evt in result.EventStream) { }
+
+// Get metadata from result, not agent instance
+if (result.Reduction != null) // ✅ New
+{
+    var summary = result.Reduction.SummaryMessage;
+    var count = result.Reduction.MessagesRemovedCount;
+}
+```
+
+### Why This Change?
+
+**Problem:** Agent stored conversation-specific state, preventing safe reuse across multiple conversations.
+
+**Solution:** Return metadata via result objects. Agent is now stateless and can serve multiple conversations concurrently.
+
+**Benefit:** Same agent instance can be shared across thousands of conversations without state interference.
 
 ---
 
@@ -627,6 +758,12 @@ public ReductionStats GetReductionStats()
 - **Agent.cs**: Reduction logic and metadata management
 - **Conversation.cs**: Storage and application of reduction
 
-**Last Updated:** 2025-01-02
-**Architecture Version:** 1.0
+**Last Updated:** 2025-01-04
+**Architecture Version:** 2.0 (Stateless Agent)
 **Status:** ✅ Implemented and Tested
+
+**v2.0 Changes:**
+- Agent is now stateless (reduction metadata in result objects)
+- Enables safe agent reuse across multiple conversations
+- Breaking changes: Removed `GetReductionMetadata()` and `ClearReductionMetadata()`
+- Added `ReductionMetadata` record and `StreamingTurnResult.Reduction` property
