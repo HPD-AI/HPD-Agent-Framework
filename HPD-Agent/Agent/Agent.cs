@@ -2,6 +2,8 @@
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 
 /// <summary>
 /// Agent facade that delegates to specialized components for clean separation of concerns.
@@ -85,7 +87,7 @@ public class Agent : IChatClient
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = config.Name;
         _scopedFilterManager = scopedFilterManager ?? throw new ArgumentNullException(nameof(scopedFilterManager));
-        _maxFunctionCalls = config.MaxFunctionCallTurns;
+        _maxFunctionCalls = config.MaxAgenticIterations;
 
         // Initialize Microsoft.Extensions.AI compliance metadata
         _metadata = new ChatClientMetadata(
@@ -113,9 +115,9 @@ public class Agent : IChatClient
         var systemInstructions = AugmentSystemInstructionsForPlanMode(config);
 
         _messageProcessor = new MessageProcessor(systemInstructions, mergedOptions ?? config.Provider?.DefaultChatOptions, promptFilters, chatReducer);
-        _functionCallProcessor = new FunctionCallProcessor(scopedFilterManager, permissionFilters, _aiFunctionFilters, config.MaxFunctionCallTurns);
+        _functionCallProcessor = new FunctionCallProcessor(scopedFilterManager, permissionFilters, _aiFunctionFilters, config.MaxAgenticIterations, config.ErrorHandling);
         _agentTurn = new AgentTurn(_baseClient);
-        _toolScheduler = new ToolScheduler(_functionCallProcessor);
+        _toolScheduler = new ToolScheduler(_functionCallProcessor, config);
         _aguiEventHandler = new AGUIEventHandler(this, _baseClient, _messageProcessor, _name, config);
         _capabilityManager = new CapabilityManager();
     }
@@ -366,6 +368,14 @@ public class Agent : IChatClient
         TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // Create linked cancellation token for turn timeout
+        using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (Config?.AgenticLoop?.MaxTurnDuration is { } turnTimeout)
+        {
+            turnCts.CancelAfter(turnTimeout);
+        }
+        var effectiveCancellationToken = turnCts.Token;
+
         // Generate IDs for this run
         var runId = Guid.NewGuid().ToString();
 
@@ -394,7 +404,7 @@ public class Agent : IChatClient
 
         // Prepare messages using MessageProcessor
         var (effectiveMessages, effectiveOptions) = await _messageProcessor.PrepareMessagesAsync(
-            messages, options, _name, cancellationToken);
+            messages, options, _name, effectiveCancellationToken);
 
         // Check if MessageProcessor performed reduction and stored metadata
         if (_messageProcessor.LastReductionMetadata.HasValue)
@@ -417,11 +427,22 @@ public class Agent : IChatClient
         // Create agent run context for tracking across all function calls
         var agentRunContext = new AgentRunContext(runId, conversationId, _maxFunctionCalls);
 
+        // Track consecutive same-function calls for circuit breaker (Gemini CLI-inspired)
+        // Tracks function name + arguments hash to detect exact repetition
+        string? lastFunctionSignature = null;
+        int consecutiveSameSignatureCount = 0;
+
         // Main agentic loop - use while loop to allow dynamic limit extension
         int iteration = 0;
         while (iteration <= agentRunContext.MaxIterations)
         {
             agentRunContext.CurrentIteration = iteration;
+
+            // Check if run has been terminated early (e.g., by error limit or tool request)
+            if (agentRunContext.IsTerminated)
+            {
+                break;
+            }
 
             var toolRequests = new List<FunctionCallContent>();
             var assistantContents = new List<AIContent>();
@@ -432,7 +453,7 @@ public class Agent : IChatClient
             string? reasoningStepId = null;
 
             // Run turn and collect events
-            await foreach (var update in _agentTurn.RunAsync(currentMessages, effectiveOptions, cancellationToken))
+            await foreach (var update in _agentTurn.RunAsync(currentMessages, effectiveOptions, effectiveCancellationToken))
             {
                 // Store update for building final history
                 responseUpdates.Add(update);
@@ -547,13 +568,14 @@ public class Agent : IChatClient
 
                 // Execute tools
                 var toolResultMessage = await _toolScheduler.ExecuteToolsAsync(
-                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, cancellationToken);
+                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, effectiveCancellationToken);
 
                 // Add tool results to history
                 currentMessages.Add(toolResultMessage);
                 turnHistory.Add(toolResultMessage);
 
-                // Fix: Emit both tool call end and custom tool result events
+                // Check for errors in tool results and track consecutive errors
+                bool hasErrors = false;
                 foreach (var content in toolResultMessage.Contents)
                 {
                     if (content is FunctionResultContent result)
@@ -564,7 +586,76 @@ public class Agent : IChatClient
                         var matchingTool = toolRequests.FirstOrDefault(t => t.CallId == result.CallId);
                         var toolName = matchingTool?.Name ?? "unknown";
                         yield return EventSerialization.CreateToolResult(messageId, result.CallId, toolName, result.Result ?? "null");
+
+                        // Check if this result represents an error
+                        if (result.Exception != null ||
+                            (result.Result?.ToString()?.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ?? false))
+                        {
+                            hasErrors = true;
+                        }
                     }
+                }
+
+                // Circuit breaker: Check for consecutive same-function calls (Gemini CLI-inspired)
+                // Tracks function signature (name + arguments) to detect exact repetition
+                // Handles parallel tool calls by checking each one
+                if (toolRequests.Count > 0 && Config?.AgenticLoop?.MaxConsecutiveSameFunctionCalls is { } maxConsecutive)
+                {
+                    // Check each tool request in the batch (handles parallel calls)
+                    foreach (var toolRequest in toolRequests)
+                    {
+                        var currentSignature = GetFunctionSignature(toolRequest);
+
+                        if (currentSignature == lastFunctionSignature)
+                        {
+                            consecutiveSameSignatureCount++;
+                        }
+                        else
+                        {
+                            lastFunctionSignature = currentSignature;
+                            consecutiveSameSignatureCount = 1;
+                        }
+
+                        if (consecutiveSameSignatureCount >= maxConsecutive)
+                        {
+                            var errorMessage = $"⚠️ Circuit breaker triggered: Function '{toolRequest.Name}' with same arguments called {consecutiveSameSignatureCount} times consecutively. Stopping to prevent infinite loop.";
+                            yield return EventSerialization.CreateTextMessageContent(messageId, errorMessage);
+
+                            agentRunContext.IsTerminated = true;
+                            agentRunContext.TerminationReason = $"Circuit breaker: '{toolRequest.Name}' with same arguments called {consecutiveSameSignatureCount} times consecutively";
+                            break;
+                        }
+                    }
+
+                    // If circuit breaker triggered, exit the main loop
+                    if (agentRunContext.IsTerminated)
+                    {
+                        break;
+                    }
+                }
+
+                // Track consecutive errors across iterations
+                if (hasErrors)
+                {
+                    agentRunContext.RecordError();
+
+                    var maxConsecutiveErrors = Config?.ErrorHandling?.MaxRetries ?? 3;
+                    if (agentRunContext.HasExceededErrorLimit(maxConsecutiveErrors))
+                    {
+                        // Emit error event and terminate
+                        yield return EventSerialization.CreateTextMessageContent(
+                            messageId,
+                            $"⚠️ Maximum consecutive errors ({maxConsecutiveErrors}) exceeded. Stopping execution to prevent infinite error loop.");
+
+                        agentRunContext.IsTerminated = true;
+                        agentRunContext.TerminationReason = $"Exceeded maximum consecutive errors ({maxConsecutiveErrors})";
+                        break;
+                    }
+                }
+                else
+                {
+                    // Reset error count on successful iteration
+                    agentRunContext.RecordSuccess();
                 }
 
                 // Fix: Do NOT add tool results to responseUpdates - they belong to tool role, not assistant
@@ -971,6 +1062,33 @@ Best practices:
 
     #endregion
 
+    #region Circuit Breaker Helper
+
+    /// <summary>
+    /// Generates a unique signature for a function call based on name and arguments.
+    /// Inspired by Gemini CLI's loop detection approach.
+    /// Uses SHA256 hash of "functionName:jsonArguments" to detect exact repetition.
+    /// </summary>
+    /// <param name="toolCall">The function call to generate a signature for</param>
+    /// <returns>SHA256 hash string representing the function signature</returns>
+    private static string GetFunctionSignature(FunctionCallContent toolCall)
+    {
+        // Serialize arguments to JSON for consistent comparison (using source-generated context for AOT)
+        var argsJson = System.Text.Json.JsonSerializer.Serialize(
+            toolCall.Arguments ?? new Dictionary<string, object?>(),
+            AGUIJsonContext.Default.DictionaryStringObject);
+
+        // Combine function name and arguments
+        var combined = $"{toolCall.Name}:{argsJson}";
+
+        // Generate SHA256 hash for efficient comparison
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(combined));
+        return Convert.ToHexString(hashBytes);
+    }
+
+    #endregion
+
 }
 
 
@@ -1111,15 +1229,81 @@ public class FunctionCallProcessor
     private readonly IReadOnlyList<IPermissionFilter> _permissionFilters;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly int _maxFunctionCalls;
+    private readonly ErrorHandlingConfig? _errorHandlingConfig;
 
-    public FunctionCallProcessor(ScopedFilterManager? scopedFilterManager, IReadOnlyList<IPermissionFilter>? permissionFilters, IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters, int maxFunctionCalls)
+    public FunctionCallProcessor(
+        ScopedFilterManager? scopedFilterManager,
+        IReadOnlyList<IPermissionFilter>? permissionFilters,
+        IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters,
+        int maxFunctionCalls,
+        ErrorHandlingConfig? errorHandlingConfig = null)
     {
         _scopedFilterManager = scopedFilterManager;
         _permissionFilters = permissionFilters ?? new List<IPermissionFilter>();
         _aiFunctionFilters = aiFunctionFilters ?? new List<IAiFunctionFilter>();
         _maxFunctionCalls = maxFunctionCalls;
+        _errorHandlingConfig = errorHandlingConfig;
     }
 
+
+    /// <summary>
+    /// Checks if a function call requires and has permission to execute.
+    /// Returns true if approved (or no permission needed), false if denied.
+    /// </summary>
+    public async Task<bool> CheckPermissionAsync(
+        FunctionCallContent functionCall,
+        ChatOptions? options,
+        AgentRunContext agentRunContext,
+        string? agentName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(functionCall.Name))
+            return false;
+
+        var toolCallRequest = new ToolCallRequest
+        {
+            FunctionName = functionCall.Name,
+            Arguments = functionCall.Arguments ?? new Dictionary<string, object?>()
+        };
+
+        var context = new AiFunctionContext(toolCallRequest)
+        {
+            Function = FindFunction(toolCallRequest.FunctionName, options?.Tools),
+            RunContext = agentRunContext,
+            AgentName = agentName
+        };
+
+        // Pass the CallId through metadata for permission tracking
+        context.Metadata["CallId"] = functionCall.CallId;
+
+        // If function not found, deny
+        if (context.Function == null)
+            return false;
+
+        // Check if the function requires permission
+        if (context.Function is not HPDAIFunctionFactory.HPDAIFunction hpdFunction ||
+            !hpdFunction.HPDOptions.RequiresPermission)
+        {
+            return true; // No permission needed, auto-approve
+        }
+
+        // Run ONLY permission filters (no execution)
+        Func<AiFunctionContext, Task> noOpNext = async (ctx) => { await Task.CompletedTask; };
+        var pipeline = noOpNext;
+
+        // Build permission filter pipeline
+        foreach (var permissionFilter in _permissionFilters.Reverse())
+        {
+            var previous = pipeline;
+            pipeline = ctx => permissionFilter.InvokeAsync(ctx, previous);
+        }
+
+        // Execute permission check
+        await pipeline(context);
+
+        // Return approval status
+        return !context.IsTerminated;
+    }
 
     /// <summary>
     /// Processes the function calls and returns the messages to add to the conversation
@@ -1154,7 +1338,10 @@ public class FunctionCallProcessor
                 AgentName = agentName
             };
 
-            // The final step in the pipeline is the actual function invocation.
+            // Pass the CallId through metadata for permission tracking
+            context.Metadata["CallId"] = functionCall.CallId;
+
+            // The final step in the pipeline is the actual function invocation with retry logic.
             Func<AiFunctionContext, Task> finalInvoke = async (ctx) =>
             {
                 if (ctx.Function is null)
@@ -1162,15 +1349,8 @@ public class FunctionCallProcessor
                     ctx.Result = $"Function '{ctx.ToolCallRequest.FunctionName}' not found.";
                     return;
                 }
-                try
-                {
-                    var args = new AIFunctionArguments(ctx.ToolCallRequest.Arguments);
-                    ctx.Result = await ctx.Function.InvokeAsync(args, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    ctx.Result = $"Error invoking function: {ex.Message}";
-                }
+
+                await ExecuteWithRetryAsync(ctx, cancellationToken);
             };
 
             var pipeline = finalInvoke;
@@ -1209,6 +1389,57 @@ public class FunctionCallProcessor
         }
 
         return resultMessages;
+    }
+
+    /// <summary>
+    /// Executes a function with retry logic and timeout enforcement.
+    /// Implements exponential backoff for transient failures.
+    /// </summary>
+    private async Task ExecuteWithRetryAsync(AiFunctionContext context, CancellationToken cancellationToken)
+    {
+        var maxRetries = _errorHandlingConfig?.MaxRetries ?? 3;
+        var retryDelay = _errorHandlingConfig?.RetryDelay ?? TimeSpan.FromSeconds(1);
+        var functionTimeout = _errorHandlingConfig?.SingleFunctionTimeout;
+
+        Exception? lastException = null;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                // Create linked cancellation token for function timeout
+                using var functionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                if (functionTimeout.HasValue)
+                {
+                    functionCts.CancelAfter(functionTimeout.Value);
+                }
+
+                var args = new AIFunctionArguments(context.ToolCallRequest.Arguments);
+                context.Result = await context.Function!.InvokeAsync(args, functionCts.Token);
+                return; // Success - exit retry loop
+            }
+            catch (OperationCanceledException) when (functionTimeout.HasValue && !cancellationToken.IsCancellationRequested)
+            {
+                // Function-specific timeout (not the overall cancellation)
+                context.Result = $"Function '{context.ToolCallRequest.FunctionName}' timed out after {functionTimeout.Value.TotalSeconds} seconds.";
+                return;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+
+                // Don't retry if we've exhausted attempts
+                if (attempt >= maxRetries)
+                {
+                    context.Result = $"Error invoking function '{context.ToolCallRequest.FunctionName}' after {maxRetries + 1} attempts: {ex.Message}";
+                    return;
+                }
+
+                // Exponential backoff: delay increases with each attempt
+                var delay = TimeSpan.FromMilliseconds(retryDelay.TotalMilliseconds * (attempt + 1));
+                await Task.Delay(delay, cancellationToken);
+            }
+        }
     }
 
     /// <summary>
@@ -1594,14 +1825,17 @@ public class StreamingTurnResult
 public class ToolScheduler
 {
     private readonly FunctionCallProcessor _functionCallProcessor;
+    private readonly AgentConfig? _config;
 
     /// <summary>
     /// Initializes a new instance of ToolScheduler
     /// </summary>
     /// <param name="functionCallProcessor">The function call processor to use for tool execution</param>
-    public ToolScheduler(FunctionCallProcessor functionCallProcessor)
+    /// <param name="config">Agent configuration for execution settings</param>
+    public ToolScheduler(FunctionCallProcessor functionCallProcessor, AgentConfig? config)
     {
         _functionCallProcessor = functionCallProcessor ?? throw new ArgumentNullException(nameof(functionCallProcessor));
+        _config = config;
     }
 
     /// <summary>
@@ -1668,32 +1902,64 @@ public class ToolScheduler
         string? agentName,
         CancellationToken cancellationToken)
     {
-        // Create tasks for each tool execution
-        var executionTasks = toolRequests.Select(async toolRequest =>
+        // TWO-PHASE EXECUTION (inspired by Gemini CLI's CoreToolScheduler)
+        // Phase 1: Check permissions for ALL tools SEQUENTIALLY (prevents race conditions)
+        // Phase 2: Execute ALL approved tools in PARALLEL (with optional throttling)
+
+        var approvedTools = new List<FunctionCallContent>();
+        var deniedTools = new List<FunctionCallContent>();
+
+        // PHASE 1: Permission checking (sequential to prevent race conditions)
+        foreach (var toolRequest in toolRequests)
         {
+            var approved = await _functionCallProcessor.CheckPermissionAsync(
+                toolRequest, options, agentRunContext, agentName, cancellationToken);
+
+            if (approved)
+            {
+                approvedTools.Add(toolRequest);
+            }
+            else
+            {
+                deniedTools.Add(toolRequest);
+            }
+        }
+
+        // PHASE 2: Execute approved tools in parallel with optional throttling
+        var maxParallel = _config?.AgenticLoop?.MaxParallelFunctions ?? int.MaxValue;
+        using var semaphore = new SemaphoreSlim(maxParallel);
+
+        var executionTasks = approvedTools.Select(async toolRequest =>
+        {
+            await semaphore.WaitAsync(cancellationToken);
             try
             {
-                // Execute each tool call individually through the processor
+                // Execute each approved tool call through the processor
                 var singleToolList = new List<FunctionCallContent> { toolRequest };
                 var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
                     currentHistory, options, singleToolList, agentRunContext, agentName, cancellationToken);
 
-                return (Success: true, Messages: resultMessages, Error: (Exception?)null);
+                return (Success: true, Messages: resultMessages, Error: (Exception?)null, ToolRequest: toolRequest);
             }
             catch (Exception ex)
             {
                 // Capture any errors for aggregation
-                return (Success: false, Messages: new List<ChatMessage>(), Error: ex);
+                return (Success: false, Messages: new List<ChatMessage>(), Error: ex, ToolRequest: toolRequest);
+            }
+            finally
+            {
+                semaphore.Release();
             }
         }).ToArray();
 
-        // Wait for all tasks to complete
+        // Wait for all approved tasks to complete
         var results = await Task.WhenAll(executionTasks);
 
         // Aggregate results and handle errors
         var allContents = new List<AIContent>();
         var errors = new List<Exception>();
 
+        // Add results from approved tools
         foreach (var result in results)
         {
             if (result.Success)
@@ -1709,7 +1975,17 @@ public class ToolScheduler
             }
         }
 
-        // If there were any errors, include them in the response
+        // Add denied tool results with proper error messages
+        foreach (var deniedTool in deniedTools)
+        {
+            var functionResult = new FunctionResultContent(
+                deniedTool.CallId,
+                $"Execution of '{deniedTool.Name}' was denied by the user."
+            );
+            allContents.Add(functionResult);
+        }
+
+        // If there were any execution errors, include them in the response
         if (errors.Count > 0)
         {
             var errorMessage = $"Some tool executions failed: {string.Join("; ", errors.Select(e => e.Message))}";

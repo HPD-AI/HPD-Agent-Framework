@@ -152,7 +152,7 @@ public class AgentBuilder
         if (maxTurns <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxTurns), "Maximum function call turns must be greater than 0");
 
-        _config.MaxFunctionCallTurns = maxTurns;
+        _config.MaxAgenticIterations = maxTurns;
         return this;
     }
 

@@ -114,7 +114,7 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
     {
         Name = "AI Assistant",
         SystemInstructions = "You are a helpful AI assistant with memory, knowledge base, and web search capabilities.",
-        MaxFunctionCallTurns = 10,
+        MaxAgenticIterations = 10,
         HistoryReduction = new HistoryReductionConfig
         {
             Enabled = true,
@@ -174,7 +174,7 @@ var project = Project.Create("AI Chat Session");
     Console.WriteLine($"✨ Agent created with config-first pattern!");
     Console.WriteLine($"📋 Config: {agentConfig.Name} - {agentConfig.Provider?.ModelName}");
     Console.WriteLine($"🧠 Memory: {agentConfig.InjectedMemory?.StorageDirectory}");
-    Console.WriteLine($"🔧 Max Function Call Turns: {agentConfig.MaxFunctionCallTurns}");
+    Console.WriteLine($"🔧 Max Function Call Turns: {agentConfig.MaxAgenticIterations}");
     
     return Task.FromResult((project, conversation, agent));
 }

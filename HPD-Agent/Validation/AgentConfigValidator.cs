@@ -13,7 +13,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
             .Length(1, 100)
             .WithMessage("Agent name must be between 1 and 100 characters.");
 
-        RuleFor(config => config.MaxFunctionCallTurns)
+        RuleFor(config => config.MaxAgenticIterations)
             .GreaterThan(0)
             .LessThanOrEqualTo(50)
             .WithMessage("MaxFunctionCallTurns must be between 1 and 50.");
@@ -184,7 +184,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
     {
         // Check if the combination of settings might cause issues
         var maxTokens = config.InjectedMemory?.MaxTokens ?? 0;
-        var maxFunctionCalls = config.MaxFunctionCallTurns;
+        var maxFunctionCalls = config.MaxAgenticIterations;
         var maxHistory = config.HistoryReduction?.TargetMessageCount ?? 20;
 
         // Warn if total potential token usage is very high

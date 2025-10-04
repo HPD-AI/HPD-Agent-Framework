@@ -12,7 +12,7 @@ public class AgentConfig
     /// Maximum number of turns the agent can take to call functions before requiring continuation permission.
     /// Each turn allows the LLM to analyze previous results and decide whether to call more functions or provide a final response.
     /// </summary>
-    public int MaxFunctionCallTurns { get; set; } = 10;
+    public int MaxAgenticIterations { get; set; } = 10;
     
     /// <summary>
     /// How many additional turns to allow when user chooses to continue beyond the limit.
@@ -344,6 +344,13 @@ public class AgenticLoopConfig
     /// Max times the same function can be called consecutively before circuit breaker triggers (default: 5)
     /// </summary>
     public int? MaxConsecutiveSameFunctionCalls { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum number of functions to execute in parallel (default: null = unlimited).
+    /// Useful for limiting resource consumption when functions are CPU-intensive,
+    /// respecting external API rate limits, or matching database connection pool sizes.
+    /// </summary>
+    public int? MaxParallelFunctions { get; set; } = null;
 }
 
 /// <summary>

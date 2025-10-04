@@ -68,39 +68,12 @@ internal sealed class OpenRouterChatClient : IChatClient
         var requestBody = BuildRequestBody(messages, options, stream: true);
         var requestJson = JsonSerializer.Serialize(requestBody, _jsonContext.OpenRouterChatRequest);
 
-        // DEBUG: Log message history to debug infinite loops
-        Console.WriteLine($"=== OpenRouter Request ({requestBody.Messages.Count} messages) ===");
-        foreach (var msg in requestBody.Messages)
-        {
-            var preview = msg.Content?.Length > 50 ? msg.Content.Substring(0, 50) + "..." : msg.Content;
-            Console.WriteLine($"  [{msg.Role}] content='{preview}', tools={msg.ToolCalls?.Count ?? 0}, tool_call_id={msg.ToolCallId}");
-
-            if (msg.ToolCalls != null)
-            {
-                foreach (var tc in msg.ToolCalls)
-                {
-                    Console.WriteLine($"    → Tool: {tc.Function.Name} (id={tc.Id})");
-                }
-            }
-        }
-        Console.WriteLine("=========================================================");
-
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
             Content = new StringContent(requestJson, Encoding.UTF8, "application/json")
         };
 
         using var httpResponse = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-
-        if (!httpResponse.IsSuccessStatusCode)
-        {
-            var errorContent = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
-            Console.WriteLine($"=== OpenRouter Error ===");
-            Console.WriteLine($"Status: {httpResponse.StatusCode}");
-            Console.WriteLine($"Error: {errorContent}");
-            Console.WriteLine("========================");
-        }
-
         httpResponse.EnsureSuccessStatusCode();
 
         using var stream = await httpResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
