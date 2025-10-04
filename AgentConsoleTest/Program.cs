@@ -124,7 +124,10 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
         Provider = new ProviderConfig
         {
             Provider = ChatProvider.OpenRouter,
-            ModelName = "google/gemini-2.5-pro",
+            ModelName = "anthropic/claude-sonnet-4.5", // 🧠 Reasoning model - FREE on OpenRouter!
+            // Alternative reasoning models:
+            // "deepseek/deepseek-r1-distill-qwen-32b" - smaller/faster
+            // "openai/o1" - OpenAI's reasoning model (expensive)
             // No ApiKey here - will use appsettings.json via ResolveApiKey
         },
         InjectedMemory = new InjectedMemoryConfig

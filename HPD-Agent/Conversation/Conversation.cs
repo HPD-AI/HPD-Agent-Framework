@@ -237,6 +237,9 @@ public class Conversation
             // Apply reduction BEFORE adding response to history
             ApplyReductionIfPresent(orchestrationResult);
 
+            // Store token counts from response (BAML-inspired pattern)
+            StoreTokenCounts(orchestrationResult.Response, userMessage);
+
             // Commit response to history
             _messages.AddMessages(orchestrationResult.Response);
             UpdateActivity();
@@ -449,7 +452,7 @@ public class Conversation
     {
         return evt switch
         {
-            StepStartedEvent step => $"\n\n",
+            StepStartedEvent step => $"\nThinking Event\n",
             ReasoningContentEvent text => text.Content,
             TextMessageContentEvent text => text.Delta,
             _ => "" // Only show reasoning steps and assistant text, ignore other events
@@ -725,6 +728,53 @@ public class Conversation
             ModelId = response.ModelId
             // EstimatedCost is intentionally left null - cost calculation should be handled by business logic layer
         };
+    }
+
+    /// <summary>
+    /// Stores token counts from ChatResponse into messages for token-aware reduction.
+    /// Follows BAML's pattern of capturing provider-returned token counts.
+    /// This enables accurate token budgeting without custom tokenizers.
+    /// </summary>
+    private void StoreTokenCounts(ChatResponse response, ChatMessage userMessage)
+    {
+        if (response.Usage == null)
+            return;
+
+        // Store input tokens on the user message
+        if (response.Usage.InputTokenCount.HasValue)
+        {
+            userMessage.SetTokenCount((int)response.Usage.InputTokenCount.Value);
+        }
+
+        // Store output tokens on assistant messages
+        // Note: For multi-message responses, we distribute tokens across messages
+        var assistantMessages = response.Messages.Where(m => m.Role == ChatRole.Assistant).ToList();
+        if (assistantMessages.Count > 0 && response.Usage.OutputTokenCount.HasValue)
+        {
+            var outputTokens = (int)response.Usage.OutputTokenCount.Value;
+
+            if (assistantMessages.Count == 1)
+            {
+                // Single message - assign all output tokens
+                assistantMessages[0].SetTokenCount(outputTokens);
+            }
+            else
+            {
+                // Multiple messages - distribute proportionally by content length
+                var totalLength = assistantMessages.Sum(m =>
+                    m.Contents.OfType<TextContent>().Sum(c => c.Text?.Length ?? 0));
+
+                foreach (var msg in assistantMessages)
+                {
+                    var msgLength = msg.Contents.OfType<TextContent>().Sum(c => c.Text?.Length ?? 0);
+                    if (totalLength > 0)
+                    {
+                        var proportion = (double)msgLength / totalLength;
+                        msg.SetTokenCount((int)(outputTokens * proportion));
+                    }
+                }
+            }
+        }
     }
     
     

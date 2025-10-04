@@ -1,46 +1,37 @@
+using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Json.Serialization.Metadata;
-using static HPDAIFunctionFactory;
+
+namespace HPD_Agent.Providers.OpenRouter;
 
 /// <summary>
-/// AOT-compatible JSON source generation context for OpenRouter API types
+/// Source-generated JSON type information for OpenRouter client.
+/// Enables AOT-safe JSON serialization/deserialization.
 /// </summary>
 [JsonSourceGenerationOptions(
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    JsonSerializerDefaults.Web,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    WriteIndented = false
-)]
-[JsonSerializable(typeof(OpenRouterRequest))]
-[JsonSerializable(typeof(OpenRouterResponse))]
-[JsonSerializable(typeof(OpenRouterMessage))]
-[JsonSerializable(typeof(OpenRouterToolCall))]
-[JsonSerializable(typeof(OpenRouterFunction))]
-[JsonSerializable(typeof(OpenRouterTool))]
-[JsonSerializable(typeof(OpenRouterToolFunction))]
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(OpenRouterChatResponse))]
+[JsonSerializable(typeof(OpenRouterStreamingResponse))]
 [JsonSerializable(typeof(OpenRouterChoice))]
+[JsonSerializable(typeof(OpenRouterMessage))]
+[JsonSerializable(typeof(OpenRouterReasoningDetail))]
+[JsonSerializable(typeof(OpenRouterToolCall))]
+[JsonSerializable(typeof(OpenRouterFunctionCall))]
 [JsonSerializable(typeof(OpenRouterUsage))]
-[JsonSerializable(typeof(OpenRouterError))]
-[JsonSerializable(typeof(OpenRouterReasoning))]
+[JsonSerializable(typeof(OpenRouterStreamingChoice))]
+[JsonSerializable(typeof(OpenRouterDelta))]
+[JsonSerializable(typeof(OpenRouterToolCallDelta))]
+[JsonSerializable(typeof(OpenRouterFunctionCallDelta))]
+[JsonSerializable(typeof(OpenRouterChatRequest))]
+[JsonSerializable(typeof(OpenRouterRequestMessage))]
+[JsonSerializable(typeof(OpenRouterRequestToolCall))]
+[JsonSerializable(typeof(OpenRouterRequestFunction))]
+[JsonSerializable(typeof(OpenRouterRequestTool))]
+[JsonSerializable(typeof(OpenRouterRequestToolFunction))]
+[JsonSerializable(typeof(OpenRouterReasoningConfig))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
-[JsonSerializable(typeof(List<OpenRouterMessage>))]
-[JsonSerializable(typeof(List<OpenRouterToolCall>))]
-[JsonSerializable(typeof(List<OpenRouterTool>))]
-[JsonSerializable(typeof(List<OpenRouterChoice>))]
-[JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(IDictionary<string, object?>))]
 [JsonSerializable(typeof(object))]
-[JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(double))]
-[JsonSerializable(typeof(float))]
-[JsonSerializable(typeof(bool))]
-[JsonSerializable(typeof(long))]
-[JsonSerializable(typeof(decimal))]
-[JsonSerializable(typeof(System.Text.Json.JsonElement))]
-internal partial class OpenRouterJsonContext : JsonSerializerContext
-{
-    /// <summary>
-    /// Combined type info resolver that includes both OpenRouter and HPD types
-    /// </summary>
-    public static IJsonTypeInfoResolver Combined { get; } = 
-        JsonTypeInfoResolver.Combine(Default, HPDJsonContext.Default);
-}
+internal sealed partial class OpenRouterJsonContext : JsonSerializerContext;

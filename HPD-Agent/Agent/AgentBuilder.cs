@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
+using OpenAI;
 using OpenAI.Chat;
 using Azure.AI.Inference;
 using Azure;
@@ -503,10 +504,13 @@ public class AgentBuilder
         var allTools = new List<AITool>(options.Tools ?? []);
         allTools.AddRange(pluginFunctions);
 
+        // Translate ToolSelectionConfig to ChatToolMode (FFI-friendly → M.E.AI)
+        var toolMode = TranslateToolMode(_config.ToolSelection);
+
         return new ChatOptions
         {
             Tools = allTools,
-            ToolMode = ChatToolMode.Auto, // Enable function calling!
+            ToolMode = toolMode,
             MaxOutputTokens = options.MaxOutputTokens,
             Temperature = options.Temperature,
             TopP = options.TopP,
@@ -517,6 +521,28 @@ public class AgentBuilder
             StopSequences = options.StopSequences,
             ModelId = options.ModelId,
             AdditionalProperties = options.AdditionalProperties
+        };
+    }
+
+    /// <summary>
+    /// Translates FFI-friendly ToolSelectionConfig to Microsoft.Extensions.AI ChatToolMode.
+    /// This keeps foreign language bindings (Python, JS, etc.) free from M.E.AI dependencies.
+    /// </summary>
+    private static ChatToolMode TranslateToolMode(ToolSelectionConfig? toolSelection)
+    {
+        if (toolSelection == null)
+            return ChatToolMode.Auto;
+
+        return toolSelection.ToolMode switch
+        {
+            "None" => ChatToolMode.None,
+            "RequireAny" => ChatToolMode.RequireAny,
+            "RequireSpecific" when !string.IsNullOrEmpty(toolSelection.RequiredFunctionName)
+                => ChatToolMode.RequireSpecific(toolSelection.RequiredFunctionName),
+            "RequireSpecific"
+                => throw new InvalidOperationException("ToolMode 'RequireSpecific' requires RequiredFunctionName to be set."),
+            "Auto" => ChatToolMode.Auto,
+            _ => throw new InvalidOperationException($"Unknown ToolMode: '{toolSelection.ToolMode}'. Valid values: 'Auto', 'None', 'RequireAny', 'RequireSpecific'.")
         };
     }
 
@@ -908,6 +934,134 @@ public static class AgentBuilderMemoryExtensions
     }
 
     /// <summary>
+    /// Configures conversation history reduction to manage context window size.
+    /// Supports message-based reduction (keeps last N messages) or summarization (uses LLM to compress old messages).
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="configure">Configuration action for history reduction settings</param>
+    /// <returns>The builder for method chaining</returns>
+    /// <example>
+    /// <code>
+    /// builder.WithHistoryReduction(config => {
+    ///     config.Enabled = true;
+    ///     config.Strategy = HistoryReductionStrategy.Summarizing;
+    ///     config.TargetMessageCount = 30;
+    ///     config.SummarizationThreshold = 10;
+    /// });
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithHistoryReduction(this AgentBuilder builder, Action<HistoryReductionConfig>? configure = null)
+    {
+        var config = builder.Config.HistoryReduction ?? new HistoryReductionConfig();
+        configure?.Invoke(config);
+
+        builder.Config.HistoryReduction = config;
+        return builder;
+    }
+
+    /// <summary>
+    /// Enables simple message counting reduction (keeps last N messages).
+    /// Quick setup method for basic history management.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="targetMessageCount">Number of messages to keep (default: 20)</param>
+    /// <param name="threshold">Extra messages allowed before reduction triggers (default: 5)</param>
+    /// <returns>The builder for method chaining</returns>
+    public static AgentBuilder WithMessageCountingReduction(this AgentBuilder builder, int targetMessageCount = 20, int threshold = 5)
+    {
+        return builder.WithHistoryReduction(config =>
+        {
+            config.Enabled = true;
+            config.Strategy = HistoryReductionStrategy.MessageCounting;
+            config.TargetMessageCount = targetMessageCount;
+            config.SummarizationThreshold = threshold;
+        });
+    }
+
+    /// <summary>
+    /// Enables summarizing reduction (uses LLM to compress old messages).
+    /// Provides better context retention than message counting but requires additional LLM calls.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="targetMessageCount">Number of messages to keep (default: 20)</param>
+    /// <param name="threshold">Extra messages before summarization triggers (default: 5)</param>
+    /// <param name="customPrompt">Optional custom summarization prompt</param>
+    /// <returns>The builder for method chaining</returns>
+    public static AgentBuilder WithSummarizingReduction(this AgentBuilder builder, int targetMessageCount = 20, int threshold = 5, string? customPrompt = null)
+    {
+        return builder.WithHistoryReduction(config =>
+        {
+            config.Enabled = true;
+            config.Strategy = HistoryReductionStrategy.Summarizing;
+            config.TargetMessageCount = targetMessageCount;
+            config.SummarizationThreshold = threshold;
+            config.CustomSummarizationPrompt = customPrompt;
+        });
+    }
+
+    /// <summary>
+    /// Configures a separate LLM provider for summarization to optimize costs.
+    /// Use a cheaper/faster model for summaries while keeping your main model for responses.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="provider">The provider to use for summarization (e.g., OpenAI, Anthropic)</param>
+    /// <param name="modelName">The model name (e.g., "gpt-4o-mini", "claude-3-haiku-20240307")</param>
+    /// <param name="apiKey">Optional API key (uses main provider's key if not specified)</param>
+    /// <returns>The builder for method chaining</returns>
+    /// <example>
+    /// <code>
+    /// builder
+    ///     .WithOpenAI(apiKey, "gpt-4") // Main agent uses GPT-4
+    ///     .WithSummarizingReduction()
+    ///     .WithSummarizerProvider(ChatProvider.OpenAI, "gpt-4o-mini"); // Summaries use mini
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithSummarizerProvider(this AgentBuilder builder, ChatProvider provider, string modelName, string? apiKey = null)
+    {
+        var config = builder.Config.HistoryReduction ?? new HistoryReductionConfig { Enabled = true };
+
+        config.SummarizerProvider = new ProviderConfig
+        {
+            Provider = provider,
+            ModelName = modelName,
+            ApiKey = apiKey ?? builder.Config.Provider?.ApiKey
+        };
+
+        builder.Config.HistoryReduction = config;
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures a separate LLM provider for summarization with full provider configuration.
+    /// Use this for advanced scenarios requiring custom endpoints or options.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="configureSummarizer">Action to configure the summarizer provider</param>
+    /// <returns>The builder for method chaining</returns>
+    /// <example>
+    /// <code>
+    /// builder
+    ///     .WithSummarizingReduction()
+    ///     .WithSummarizerProvider(config => {
+    ///         config.Provider = ChatProvider.Ollama;
+    ///         config.ModelName = "llama3.2";
+    ///         config.Endpoint = "http://localhost:11434";
+    ///     });
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithSummarizerProvider(this AgentBuilder builder, Action<ProviderConfig> configureSummarizer)
+    {
+        var historyConfig = builder.Config.HistoryReduction ?? new HistoryReductionConfig { Enabled = true };
+        var summarizerConfig = new ProviderConfig();
+
+        configureSummarizer(summarizerConfig);
+        historyConfig.SummarizerProvider = summarizerConfig;
+
+        builder.Config.HistoryReduction = historyConfig;
+        return builder;
+    }
+
+    /// <summary>
     /// Enables plan mode for the agent, allowing it to create and manage execution plans.
     /// Plan mode provides AIFunctions for creating plans, updating steps, and tracking progress.
     /// </summary>
@@ -1168,13 +1322,7 @@ public static class AgentBuilderProviderExtensions
     {
         return provider switch
         {
-            ChatProvider.OpenRouter => new OpenRouterChatClient(new OpenRouterConfig
-            {
-                ApiKey = apiKey!,
-                ModelName = modelName,
-                Temperature = 0.7,
-                MaxTokens = 2048
-            }),
+            ChatProvider.OpenRouter => CreateOpenRouterClient(modelName, apiKey!),
             ChatProvider.OpenAI => new ChatClient(modelName, apiKey!).AsIChatClient(),
             ChatProvider.AzureOpenAI => new ChatCompletionsClient(
                 new Uri("https://{your-resource-name}.openai.azure.com/openai/deployments/{yourDeployment}"),
@@ -1190,6 +1338,26 @@ public static class AgentBuilderProviderExtensions
             ChatProvider.Mistral => new MistralClient(apiKey!).Completions,
             _ => throw new NotSupportedException($"Provider {provider} is not supported."),
         };
+    }
+
+    /// <summary>
+    /// Creates an OpenRouter client using our custom OpenRouterChatClient.
+    /// Properly exposes reasoning content from OpenRouter's reasoning_details field.
+    /// </summary>
+    private static IChatClient CreateOpenRouterClient(string modelName, string apiKey)
+    {
+        // Create HttpClient configured for OpenRouter
+        var httpClient = new HttpClient
+        {
+            BaseAddress = new Uri("https://openrouter.ai/api/v1/")
+        };
+
+        httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+        httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://github.com/your-repo"); // Optional: for rankings
+        httpClient.DefaultRequestHeaders.Add("X-Title", "HPD-Agent"); // Optional: for rankings
+
+        // Create our custom OpenRouterChatClient that properly handles reasoning_details
+        return new HPD_Agent.Providers.OpenRouter.OpenRouterChatClient(httpClient, modelName);
     }
 
     /// <summary>

@@ -59,6 +59,16 @@ public class AgentConfig
     /// Configuration for plan mode - enables agents to create and manage execution plans.
     /// </summary>
     public PlanModeConfig? PlanMode { get; set; }
+
+    /// <summary>
+    /// Configuration for agentic loop safety controls (timeouts, circuit breakers).
+    /// </summary>
+    public AgenticLoopConfig? AgenticLoop { get; set; }
+
+    /// <summary>
+    /// Configuration for tool selection behavior (how the LLM chooses which tools to use).
+    /// </summary>
+    public ToolSelectionConfig? ToolSelection { get; set; }
 }
 
 #region Supporting Configuration Classes
@@ -163,6 +173,16 @@ public class ErrorHandlingConfig
     /// Maximum number of retries for transient errors
     /// </summary>
     public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Timeout for a single function execution (default: 30 seconds)
+    /// </summary>
+    public TimeSpan? SingleFunctionTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Delay before retrying failed function (default: 1 second, exponentially increased per attempt)
+    /// </summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1);
 }
 
 /// <summary>
@@ -210,6 +230,7 @@ public class HistoryReductionConfig
     /// <summary>
     /// Target number of messages to retain after reduction.
     /// Default is 20 messages.
+    /// Used when MaxTokenBudget is not set or as a fallback.
     /// </summary>
     public int TargetMessageCount { get; set; } = 20;
 
@@ -219,6 +240,29 @@ public class HistoryReductionConfig
     /// Only used when Strategy is Summarizing. Default is 5.
     /// </summary>
     public int? SummarizationThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum token budget before triggering reduction (optional, FFI-friendly).
+    /// When set, this takes precedence over TargetMessageCount.
+    /// Uses actual token counts from provider API responses (BAML-inspired pattern).
+    /// Falls back to character-based estimation for messages without usage data.
+    /// If null, uses message-based reduction (backward compatible).
+    /// </summary>
+    public int? MaxTokenBudget { get; set; } = null;
+
+    /// <summary>
+    /// Target token count after reduction (default: 4000).
+    /// Only used when MaxTokenBudget is set.
+    /// The reducer will aim to keep conversation around this token count.
+    /// </summary>
+    public int TargetTokenBudget { get; set; } = 4000;
+
+    /// <summary>
+    /// Token threshold for triggering reduction when using token budgets.
+    /// Number of tokens allowed beyond TargetTokenBudget before reduction is triggered.
+    /// Only used when MaxTokenBudget is set. Default is 1000 tokens.
+    /// </summary>
+    public int TokenBudgetThreshold { get; set; } = 1000;
 
     /// <summary>
     /// Custom summarization prompt for SummarizingChatReducer.
@@ -284,6 +328,41 @@ public class PlanModeConfig
     /// If null, uses default instructions.
     /// </summary>
     public string? CustomInstructions { get; set; }
+}
+
+/// <summary>
+/// Configuration for agentic loop safety controls to prevent runaway execution.
+/// </summary>
+public class AgenticLoopConfig
+{
+    /// <summary>
+    /// Maximum duration for a single turn before timeout (default: 5 minutes)
+    /// </summary>
+    public TimeSpan? MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Max times the same function can be called consecutively before circuit breaker triggers (default: 5)
+    /// </summary>
+    public int? MaxConsecutiveSameFunctionCalls { get; set; } = 5;
+}
+
+/// <summary>
+/// Configuration for tool selection behavior.
+/// FFI-friendly: Uses primitives (strings) instead of complex types for cross-language compatibility.
+/// </summary>
+public class ToolSelectionConfig
+{
+    /// <summary>
+    /// Tool selection mode: "Auto" (LLM decides), "None" (no tools), "RequireAny" (must call at least one), or "RequireSpecific" (must call the named function).
+    /// Default is "Auto".
+    /// </summary>
+    public string ToolMode { get; set; } = "Auto";
+
+    /// <summary>
+    /// Required function name when ToolMode = "RequireSpecific".
+    /// Ignored for other modes.
+    /// </summary>
+    public string? RequiredFunctionName { get; set; }
 }
 
 /// <summary>

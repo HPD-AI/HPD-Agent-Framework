@@ -292,10 +292,10 @@ public class Agent : IChatClient
                 {
                     await ApplyMessageTurnFilters(userMessage, history, options, cancellationToken);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     // Log but don't fail the turn if filters fail
-                    System.Diagnostics.Debug.WriteLine($"Message turn filter error: {ex.Message}");
+                    // Silently continue if filters fail
                 }
             }
 
@@ -427,6 +427,10 @@ public class Agent : IChatClient
             var assistantContents = new List<AIContent>();
             bool streamFinished = false;
 
+            // Track reasoning step state PER ITERATION (reset for each turn/function call)
+            bool reasoningStepStarted = false;
+            string? reasoningStepId = null;
+
             // Run turn and collect events
             await foreach (var update in _agentTurn.RunAsync(currentMessages, effectiveOptions, cancellationToken))
             {
@@ -440,22 +444,30 @@ public class Agent : IChatClient
                     {
                         if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                         {
-                            // Generate a consistent step ID for start and finish events
-                            var stepId = Guid.NewGuid().ToString();
+                            // Emit step started event ONLY on first reasoning chunk
+                            if (!reasoningStepStarted)
+                            {
+                                reasoningStepId = Guid.NewGuid().ToString();
+                                yield return EventSerialization.CreateStepStarted(reasoningStepId, "Reasoning");
+                                reasoningStepStarted = true;
+                            }
 
-                            // Emit step started event for reasoning (visible to UI, NOT saved to history)
-                            yield return EventSerialization.CreateStepStarted(stepId, "Reasoning");
-
-                            // Fix: Emit reasoning as a custom event for dev visibility (not user-visible text)
+                            // Emit reasoning content for each chunk
                             yield return EventSerialization.CreateReasoningContent(messageId, reasoning.Text);
 
-                            // Emit step finished event for reasoning
-                            yield return EventSerialization.CreateStepFinished(stepId, "Reasoning");
-
-                            // CRITICAL: Do NOT add reasoning to assistantContents (not saved to history)
+                            // Add reasoning to assistantContents so it's preserved in conversation history
+                            assistantContents.Add(reasoning);
                         }
                         else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                         {
+                            // If we were in reasoning mode, finish the reasoning step
+                            if (reasoningStepStarted && reasoningStepId != null)
+                            {
+                                yield return EventSerialization.CreateStepFinished(reasoningStepId, "Reasoning");
+                                reasoningStepStarted = false;
+                                reasoningStepId = null;
+                            }
+
                             // Emit message start if this is the first text content
                             if (!messageStarted)
                             {
@@ -481,6 +493,14 @@ public class Agent : IChatClient
                 if (update.FinishReason != null)
                 {
                     streamFinished = true;
+
+                    // If reasoning step is still active when stream ends, finish it
+                    if (reasoningStepStarted && reasoningStepId != null)
+                    {
+                        yield return EventSerialization.CreateStepFinished(reasoningStepId, "Reasoning");
+                        reasoningStepStarted = false;
+                        reasoningStepId = null;
+                    }
                 }
             }
 
@@ -494,10 +514,14 @@ public class Agent : IChatClient
                     messageStarted = true;
                 }
 
-                // Create assistant message with tool calls
+                // Create assistant message with tool calls for current turn (includes reasoning)
                 var assistantMessage = new ChatMessage(ChatRole.Assistant, assistantContents);
                 currentMessages.Add(assistantMessage);
-                turnHistory.Add(assistantMessage);
+
+                // Create assistant message for history WITHOUT reasoning (save tokens in future turns)
+                var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
+                var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
+                turnHistory.Add(historyMessage);
 
                 // Emit tool call start events and track statistics
                 foreach (var toolRequest in toolRequests)
@@ -574,8 +598,10 @@ public class Agent : IChatClient
                 // No tools called and stream finished - we're done
                 if (assistantContents.Any())
                 {
-                    var assistantMessage = new ChatMessage(ChatRole.Assistant, assistantContents);
-                    turnHistory.Add(assistantMessage);
+                    // Save to history WITHOUT reasoning (save tokens in future turns)
+                    var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
+                    var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
+                    turnHistory.Add(historyMessage);
                 }
                 break;
             }
@@ -634,8 +660,8 @@ public class Agent : IChatClient
         {
             if (update.Contents != null)
             {
-                // Fix: Only include TextContent in assistant messages, not tool results
-                allContents.AddRange(update.Contents.OfType<TextContent>());
+                // Only include TextContent (exclude TextReasoningContent to save tokens in future turns)
+                allContents.AddRange(update.Contents.Where(c => c is TextContent && c is not TextReasoningContent));
             }
 
             if (update.FinishReason != null)
