@@ -142,6 +142,17 @@ public class Conversation
                 cancellationToken);
 
             activity?.SetTag("conversation.orchestration_strategy", orchestrationResult.Metadata.StrategyName);
+            activity?.SetTag("orchestration.status", orchestrationResult.Status.ToString().ToLowerInvariant());
+            activity?.SetTag("orchestration.execution_count", orchestrationResult.ExecutionCount);
+            activity?.SetTag("orchestration.execution_time_ms", orchestrationResult.ExecutionTimeMs);
+            if (orchestrationResult.AggregatedUsage != null)
+            {
+                activity?.SetTag("orchestration.aggregated_tokens", orchestrationResult.AggregatedUsage.TotalTokens);
+            }
+            if (orchestrationResult.ExecutionOrder != null)
+            {
+                activity?.SetTag("orchestration.execution_order", string.Join(" -> ", orchestrationResult.ExecutionOrder));
+            }
 
             // Apply reduction BEFORE adding response to history
             ApplyReductionIfPresent(orchestrationResult);
@@ -157,7 +168,7 @@ public class Conversation
             var tokenUsage = CreateTokenUsage(orchestrationResult.Response);
 
             activity?.SetTag("conversation.duration_ms", duration.TotalMilliseconds);
-            activity?.SetTag("conversation.responding_agent", orchestrationResult.SelectedAgent?.Name);
+            activity?.SetTag("conversation.responding_agent", orchestrationResult.PrimaryAgent?.Name);
             activity?.SetTag("conversation.tokens_used", tokenUsage?.TotalTokens ?? 0);
             activity?.SetTag("conversation.success", true);
 
@@ -165,7 +176,7 @@ public class Conversation
             {
                 Response = orchestrationResult.Response,
                 TurnHistory = ExtractTurnHistory(userMessage, orchestrationResult.Response),
-                RespondingAgent = orchestrationResult.SelectedAgent!,
+                RespondingAgent = orchestrationResult.PrimaryAgent!,
                 UsedOrchestrator = orchestrator,
                 Duration = duration,
                 OrchestrationMetadata = orchestrationResult.Metadata,

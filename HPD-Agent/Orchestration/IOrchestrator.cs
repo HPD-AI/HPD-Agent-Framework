@@ -49,7 +49,10 @@ using Microsoft.Extensions.AI;
 ///     return new OrchestrationResult
 ///     {
 ///         Response = new ChatResponse(finalHistory),
-///         SelectedAgent = selectedAgent,
+///         PrimaryAgent = selectedAgent,
+///         RunId = conversationId ?? Guid.NewGuid().ToString("N"),
+///         CreatedAt = DateTimeOffset.UtcNow,
+///         Status = OrchestrationStatus.Completed,  // Single-turn orchestration
 ///         Metadata = new OrchestrationMetadata
 ///         {
 ///             StrategyName = "YourStrategy",
@@ -96,6 +99,32 @@ public interface IOrchestrator
 }
 
 /// <summary>
+/// Orchestration execution status.
+/// </summary>
+public enum OrchestrationStatus
+{
+    /// <summary>
+    /// Orchestration has not started yet.
+    /// </summary>
+    Pending,
+
+    /// <summary>
+    /// Orchestration is currently executing.
+    /// </summary>
+    Executing,
+
+    /// <summary>
+    /// Orchestration completed successfully.
+    /// </summary>
+    Completed,
+
+    /// <summary>
+    /// Orchestration failed or was terminated.
+    /// </summary>
+    Failed
+}
+
+/// <summary>
 /// Orchestration decision metadata.
 /// </summary>
 public record OrchestrationMetadata
@@ -104,22 +133,164 @@ public record OrchestrationMetadata
     public string StrategyName { get; init; } = "";
     public IReadOnlyDictionary<string, float> AgentScores { get; init; } = new Dictionary<string, float>();
     public IReadOnlyDictionary<string, object> Context { get; init; } = new Dictionary<string, object>();
+
+    /// <summary>
+    /// Whether orchestrator state was modified during this turn.
+    /// Null if orchestrator is stateless.
+    /// </summary>
+    public bool? StateModified { get; init; }
+
+    /// <summary>
+    /// Which state keys were modified during this turn.
+    /// Null if orchestrator doesn't track state changes.
+    /// </summary>
+    public IReadOnlyList<string>? ModifiedStateKeys { get; init; }
 }
 
 /// <summary>
 /// Primary orchestration result.
+/// Contains universal fields applicable to all orchestrator types.
 /// </summary>
 public record OrchestrationResult
 {
-    public required ChatResponse Response { get; init; }
-    public required Agent SelectedAgent { get; init; }
-    public OrchestrationMetadata Metadata { get; init; } = new();
+    // ========================================
+    // REQUIRED (All orchestrators must provide)
+    // ========================================
 
     /// <summary>
-    /// Implicit conversion for convenience and backward compatibility.
+    /// The final response from the orchestration.
+    /// </summary>
+    public required ChatResponse Response { get; init; }
+
+    /// <summary>
+    /// The primary agent that produced the response.
+    /// For multi-agent orchestrations, this is the agent that generated the final output.
+    /// </summary>
+    public required Agent PrimaryAgent { get; init; }
+
+    /// <summary>
+    /// Unique identifier for this orchestration run.
+    /// Use to correlate multiple turns in the same orchestration session.
+    /// </summary>
+    public required string RunId { get; init; }
+
+    // ========================================
+    // WITH DEFAULTS (All orchestrators benefit)
+    // ========================================
+
+    /// <summary>
+    /// When this result was created.
+    /// </summary>
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Orchestration execution status.
+    /// </summary>
+    public OrchestrationStatus Status { get; init; } = OrchestrationStatus.Completed;
+
+    /// <summary>
+    /// Basic metadata about the orchestration decision.
+    /// </summary>
+    public OrchestrationMetadata Metadata { get; init; } = new();
+
+    // ========================================
+    // OPTIONAL (Only some orchestrators use)
+    // ========================================
+
+    /// <summary>
+    /// All agents that were activated during this turn.
+    /// Null if orchestrator only activated a single agent (the PrimaryAgent).
+    /// </summary>
+    public IReadOnlyList<Agent>? ActivatedAgents { get; init; }
+
+    /// <summary>
+    /// Current turn number in multi-turn orchestration (0-based).
+    /// Null if orchestrator doesn't track turns.
+    /// </summary>
+    public int? TurnNumber { get; init; }
+
+    /// <summary>
+    /// Whether this orchestration requires user input before continuing.
+    /// Only relevant for human-in-the-loop workflows.
+    /// </summary>
+    public bool RequiresUserInput { get; init; }
+
+    /// <summary>
+    /// Checkpoint for resuming orchestration.
+    /// Null if orchestrator doesn't support checkpointing.
+    /// </summary>
+    public OrchestrationCheckpoint? Checkpoint { get; init; }
+
+    /// <summary>
+    /// Aggregated token usage across all agents in this orchestration.
+    /// Null if no token usage information is available.
+    /// </summary>
+    public TokenUsage? AggregatedUsage { get; init; }
+
+    /// <summary>
+    /// Total number of agents/nodes that executed during orchestration.
+    /// </summary>
+    public int ExecutionCount { get; init; } = 1;
+
+    /// <summary>
+    /// Total execution time for the entire orchestration in milliseconds.
+    /// </summary>
+    public int ExecutionTimeMs { get; init; }
+
+    /// <summary>
+    /// Execution order (which agents ran in sequence).
+    /// Null if orchestrator doesn't track execution order.
+    /// </summary>
+    public IReadOnlyList<string>? ExecutionOrder { get; init; }
+
+    // ========================================
+    // BACKWARD COMPATIBILITY
+    // ========================================
+
+    /// <summary>
+    /// Whether the orchestration is complete (backward compatibility).
+    /// - true: Orchestration completed successfully
+    /// - false: Orchestration is pending, executing, or failed
+    /// </summary>
+    public bool IsComplete => Status == OrchestrationStatus.Completed;
+
+    /// <summary>
+    /// Implicit conversion for convenience.
     /// </summary>
     public static implicit operator ChatResponse(OrchestrationResult result)
         => result.Response;
+}
+
+/// <summary>
+/// Checkpoint for resuming orchestration.
+/// </summary>
+public record OrchestrationCheckpoint
+{
+    /// <summary>
+    /// The run this checkpoint belongs to.
+    /// </summary>
+    public required string RunId { get; init; }
+
+    /// <summary>
+    /// Unique identifier for this specific checkpoint.
+    /// </summary>
+    public required string CheckpointId { get; init; }
+
+    /// <summary>
+    /// When this checkpoint was created.
+    /// </summary>
+    public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+
+    /// <summary>
+    /// Current state identifier (e.g., graph node, workflow step).
+    /// Orchestrator-specific.
+    /// </summary>
+    public string? CurrentState { get; init; }
+
+    /// <summary>
+    /// Orchestrator-specific variables for resuming.
+    /// </summary>
+    public Dictionary<string, object>? Variables { get; init; }
 }
 
 /// <summary>

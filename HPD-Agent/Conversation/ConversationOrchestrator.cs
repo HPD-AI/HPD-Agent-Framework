@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using System.Diagnostics;
 
 /// <summary>
 /// Internal orchestrator that handles agent selection and execution for conversations.
@@ -47,7 +48,7 @@ internal class ConversationOrchestrator
         if (_agents.Count == 1)
         {
             // Single agent - direct execution
-            return await ExecuteSingleAgentAsync(history, options, cancellationToken);
+            return await ExecuteSingleAgentAsync(history, conversationId, options, cancellationToken);
         }
         else
         {
@@ -102,9 +103,11 @@ internal class ConversationOrchestrator
     /// </summary>
     private async Task<OrchestrationResult> ExecuteSingleAgentAsync(
         IReadOnlyList<ChatMessage> history,
+        string? conversationId,
         ChatOptions? options,
         CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         var agent = _agents[0];
         var streamingResult = await agent.ExecuteStreamingTurnAsync(history, options, cancellationToken: cancellationToken);
 
@@ -116,6 +119,7 @@ internal class ConversationOrchestrator
 
         // Get final history
         var finalHistory = await streamingResult.FinalHistory;
+        sw.Stop();
 
         // Package reduction metadata into Context dictionary
         var reductionContext = new Dictionary<string, object>();
@@ -128,10 +132,30 @@ internal class ConversationOrchestrator
             reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
         }
 
+        // Extract token usage from response
+        TokenUsage? tokenUsage = null;
+        var response = new ChatResponse(finalHistory.ToList());
+        if (response.Usage != null)
+        {
+            tokenUsage = new TokenUsage
+            {
+                PromptTokens = (int)(response.Usage.InputTokenCount ?? 0),
+                CompletionTokens = (int)(response.Usage.OutputTokenCount ?? 0),
+                TotalTokens = (int)(response.Usage.TotalTokenCount ?? 0),
+                ModelId = response.ModelId
+            };
+        }
+
         return new OrchestrationResult
         {
-            Response = new ChatResponse(finalHistory.ToList()),
-            SelectedAgent = agent,
+            Response = response,
+            PrimaryAgent = agent,
+            RunId = conversationId ?? Guid.NewGuid().ToString("N"),
+            Status = OrchestrationStatus.Completed,
+            ExecutionCount = 1,
+            ExecutionTimeMs = (int)sw.ElapsedMilliseconds,
+            AggregatedUsage = tokenUsage,
+            ExecutionOrder = new[] { agent.Name },
             Metadata = new OrchestrationMetadata
             {
                 StrategyName = "SingleAgent",
@@ -151,6 +175,7 @@ internal class ConversationOrchestrator
         ChatOptions? options,
         CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         var agent = _agents[0];
         var streamingResult = await agent.ExecuteStreamingTurnAsync(history, options, cancellationToken: cancellationToken);
 
@@ -158,6 +183,7 @@ internal class ConversationOrchestrator
         var finalResultTask = streamingResult.FinalHistory.ContinueWith(async historyTask =>
         {
             var finalHistory = await historyTask;
+            sw.Stop();
 
             // Package reduction metadata
             var reductionContext = new Dictionary<string, object>();
@@ -170,10 +196,30 @@ internal class ConversationOrchestrator
                 reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
             }
 
+            // Extract token usage from response
+            TokenUsage? tokenUsage = null;
+            var response = new ChatResponse(finalHistory.ToList());
+            if (response.Usage != null)
+            {
+                tokenUsage = new TokenUsage
+                {
+                    PromptTokens = (int)(response.Usage.InputTokenCount ?? 0),
+                    CompletionTokens = (int)(response.Usage.OutputTokenCount ?? 0),
+                    TotalTokens = (int)(response.Usage.TotalTokenCount ?? 0),
+                    ModelId = response.ModelId
+                };
+            }
+
             return new OrchestrationResult
             {
-                Response = new ChatResponse(finalHistory.ToList()),
-                SelectedAgent = agent,
+                Response = response,
+                PrimaryAgent = agent,
+                RunId = conversationId ?? Guid.NewGuid().ToString("N"),
+                Status = OrchestrationStatus.Completed,
+                ExecutionCount = 1,
+                ExecutionTimeMs = (int)sw.ElapsedMilliseconds,
+                AggregatedUsage = tokenUsage,
+                ExecutionOrder = new[] { agent.Name },
                 Metadata = new OrchestrationMetadata
                 {
                     StrategyName = "SingleAgent",
