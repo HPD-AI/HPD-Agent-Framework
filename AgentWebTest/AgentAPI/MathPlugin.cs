@@ -20,7 +20,7 @@ public class MathPluginMetadataContext : IPluginMetadataContext
     public long MaxValue { get; }
     public bool AllowNegative { get; }
 
-    public T GetProperty<T>(string propertyName, T defaultValue = default)
+    public T? GetProperty<T>(string propertyName, T? defaultValue = default)
     {
         if (_properties.TryGetValue(propertyName, out var value))
         {
