@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Orchestration", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.TextExtraction", "HPD-Agent.TextExtraction\HPD-Agent.TextExtraction.csproj", "{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Plugins", "HPD-Agent.Plugins", "{DA053773-4718-BBFE-4AB7-9E4FCE55BF84}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Plugins.FileSystem", "HPD-Agent.Plugins\HPD-Agent.Plugins.FileSystem\HPD-Agent.Plugins.FileSystem.csproj", "{DB341036-1919-4305-A8D1-0BFC4FDB945C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -127,11 +131,24 @@ Global
 		{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}.Release|x64.Build.0 = Release|Any CPU
 		{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}.Release|x86.ActiveCfg = Release|Any CPU
 		{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}.Release|x86.Build.0 = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|x64.Build.0 = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Debug|x86.Build.0 = Debug|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|x64.ActiveCfg = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|x64.Build.0 = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|x86.ActiveCfg = Release|Any CPU
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{EE81C6FF-29A5-450B-9DB2-710AE1E84CB2} = {4A0CCF76-3BFE-E486-4EB1-0415D00EB564}
+		{DB341036-1919-4305-A8D1-0BFC4FDB945C} = {DA053773-4718-BBFE-4AB7-9E4FCE55BF84}
 	EndGlobalSection
 EndGlobal

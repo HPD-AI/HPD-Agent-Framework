@@ -1,13 +1,13 @@
 using Microsoft.Extensions.AI;
 
 /// <summary>
-/// Context provided to conversation filters containing completed turn information.
+/// Context provided to message turn filters containing completed turn information.
 /// Rich context enables applications to make intelligent checkpoint decisions.
 /// </summary>
-public class ConversationFilterContext
+public class MessageTurnFilterContext
 {
     // Core data
-    public Conversation Conversation { get; }
+    public string ConversationId { get; }
     public ChatMessage UserMessage { get; }
     public ChatResponse AgentResponse { get; }
     public ChatOptions? Options { get; }
@@ -24,15 +24,16 @@ public class ConversationFilterContext
     // Extensibility
     public Dictionary<string, object> Properties { get; }
 
-    public ConversationFilterContext(
-        Conversation conversation,
+    public MessageTurnFilterContext(
+        string conversationId,
         ChatMessage userMessage,
         ChatResponse agentResponse,
         Dictionary<string, List<string>>? agentFunctionCalls = null,
+        Dictionary<string, object>? metadata = null,
         ChatOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        Conversation = conversation ?? throw new ArgumentNullException(nameof(conversation));
+        ConversationId = conversationId ?? throw new ArgumentNullException(nameof(conversationId));
         UserMessage = userMessage ?? throw new ArgumentNullException(nameof(userMessage));
         AgentResponse = agentResponse ?? throw new ArgumentNullException(nameof(agentResponse));
         AgentFunctionCalls = agentFunctionCalls ?? new Dictionary<string, List<string>>();
@@ -40,9 +41,14 @@ public class ConversationFilterContext
         CancellationToken = cancellationToken;
         Properties = new Dictionary<string, object>();
 
-        // Auto-inject project context (existing pattern)
-        if (conversation.Metadata.TryGetValue("Project", out var project))
-            Properties["Project"] = project;
+        // Copy metadata to Properties for extensibility
+        if (metadata != null)
+        {
+            foreach (var kvp in metadata)
+            {
+                Properties[kvp.Key] = kvp.Value;
+            }
+        }
     }
 
     // Convenience methods

@@ -42,12 +42,30 @@ public class ConsolePermissionFilter : IPermissionFilter
         }
 
         var functionName = context.ToolCallRequest.FunctionName;
-        var conversationId = context.Conversation.Id;
-        context.Conversation.Metadata.TryGetValue("Project", out var projectObj);
-        var projectId = (projectObj as Project)?.Id;
+        var conversationId = context.RunContext?.ConversationId ?? string.Empty;
+
+        // Get the unique call ID for this specific tool invocation
+        // The call ID should be passed through the context or metadata
+        var callId = context.Metadata.TryGetValue("CallId", out var idObj)
+            ? idObj?.ToString()
+            : null;
+
+        // Check if this tool call was already approved in this run (prevents duplicate prompts)
+        if (callId != null && context.RunContext?.IsToolApproved(callId) == true)
+        {
+            await next(context);
+            return;
+        }
+
+        // Extract project ID from run context metadata if available
+        string? projectId = null;
+        if (context.RunContext?.Metadata.TryGetValue("Project", out var projectObj) == true)
+        {
+            projectId = (projectObj as Project)?.Id;
+        }
 
         // Check storage if available
-        if (_storage != null)
+        if (_storage != null && !string.IsNullOrEmpty(conversationId))
         {
             var storedChoice = await _storage.GetStoredPermissionAsync(functionName, conversationId, projectId);
 
@@ -82,6 +100,12 @@ public class ConsolePermissionFilter : IPermissionFilter
         // Apply decision
         if (decision.Approved)
         {
+            // Mark as approved to prevent duplicate prompts in parallel execution
+            if (callId != null)
+            {
+                context.RunContext?.MarkToolApproved(callId);
+            }
+
             await next(context);
         }
         else

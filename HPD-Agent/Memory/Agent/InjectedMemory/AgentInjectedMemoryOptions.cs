@@ -17,7 +17,10 @@ public class AgentInjectedMemoryOptions
     
     /// <summary>Token threshold for triggering auto-eviction (percentage)</summary>
     public int AutoEvictionThreshold { get; set; } = 85;
-    
+
+    /// <summary>Optional memory identifier. If not set, will use agent name for memory storage.</summary>
+    public string? MemoryId { get; set; }
+
     /// <summary>Fluently set maximum token count.</summary>
     public AgentInjectedMemoryOptions WithMaxTokens(int tokens)
     {
@@ -37,6 +40,13 @@ public class AgentInjectedMemoryOptions
     {
         EnableAutoEviction = true;
         AutoEvictionThreshold = thresholdPercent;
+        return this;
+    }
+
+    /// <summary>Fluently set memory identifier for storage.</summary>
+    public AgentInjectedMemoryOptions WithMemoryId(string memoryId)
+    {
+        MemoryId = memoryId;
         return this;
     }
 }

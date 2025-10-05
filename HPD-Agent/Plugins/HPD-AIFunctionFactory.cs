@@ -92,8 +92,9 @@ public class HPDAIFunctionFactory
             }
 
             // 4. Invoke the function using the delegate approach only.
-            arguments.SetJson(jsonArgs); 
-            return await _invocationHandler(arguments, cancellationToken).ConfigureAwait(false);
+            // NOTE: Must NOT use ConfigureAwait(false) here to preserve ExecutionContext flow for AsyncLocal (e.g., ConversationContext)
+            arguments.SetJson(jsonArgs);
+            return await _invocationHandler(arguments, cancellationToken);
         }
     }
 }

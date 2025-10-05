@@ -12,8 +12,7 @@ public class AgentConfig
     /// Maximum number of turns the agent can take to call functions before requiring continuation permission.
     /// Each turn allows the LLM to analyze previous results and decide whether to call more functions or provide a final response.
     /// </summary>
-    public int MaxFunctionCallTurns { get; set; } = 10;
-    public int MaxConversationHistory { get; set; } = 20;
+    public int MaxAgenticIterations { get; set; } = 10;
     
     /// <summary>
     /// How many additional turns to allow when user chooses to continue beyond the limit.
@@ -45,6 +44,31 @@ public class AgentConfig
     /// Configuration for error handling behavior.
     /// </summary>
     public ErrorHandlingConfig? ErrorHandling { get; set; }
+
+    /// <summary>
+    /// Configuration for document handling behavior.
+    /// </summary>
+    public DocumentHandlingConfig? DocumentHandling { get; set; }
+
+    /// <summary>
+    /// Configuration for conversation history reduction to manage context window size.
+    /// </summary>
+    public HistoryReductionConfig? HistoryReduction { get; set; }
+
+    /// <summary>
+    /// Configuration for plan mode - enables agents to create and manage execution plans.
+    /// </summary>
+    public PlanModeConfig? PlanMode { get; set; }
+
+    /// <summary>
+    /// Configuration for agentic loop safety controls (timeouts, circuit breakers).
+    /// </summary>
+    public AgenticLoopConfig? AgenticLoop { get; set; }
+
+    /// <summary>
+    /// Configuration for tool selection behavior (how the LLM chooses which tools to use).
+    /// </summary>
+    public ToolSelectionConfig? ToolSelection { get; set; }
 }
 
 #region Supporting Configuration Classes
@@ -149,6 +173,203 @@ public class ErrorHandlingConfig
     /// Maximum number of retries for transient errors
     /// </summary>
     public int MaxRetries { get; set; } = 3;
+
+    /// <summary>
+    /// Timeout for a single function execution (default: 30 seconds)
+    /// </summary>
+    public TimeSpan? SingleFunctionTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Delay before retrying failed function (default: 1 second, exponentially increased per attempt)
+    /// </summary>
+    public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+}
+
+/// <summary>
+/// Configuration for document handling behavior.
+/// </summary>
+public class DocumentHandlingConfig
+{
+    /// <summary>
+    /// Strategy for how documents should be processed and included in prompts.
+    /// Default is FullTextInjection.
+    /// </summary>
+    public ConversationDocumentHandling Strategy { get; set; } = ConversationDocumentHandling.FullTextInjection;
+
+    /// <summary>
+    /// Custom document tag format for message injection.
+    /// Uses string.Format with {0} = filename, {1} = extracted text.
+    /// If null, uses default format from ConversationDocumentHelper.
+    /// </summary>
+    public string? DocumentTagFormat { get; set; }
+
+    /// <summary>
+    /// Maximum file size in bytes to process (default: 10MB).
+    /// Files larger than this will be rejected.
+    /// </summary>
+    public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
+}
+
+/// <summary>
+/// Configuration for conversation history reduction using Microsoft.Extensions.AI IChatReducer.
+/// </summary>
+public class HistoryReductionConfig
+{
+    /// <summary>
+    /// Whether history reduction is enabled.
+    /// Default is false to maintain backward compatibility.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Strategy for reducing conversation history.
+    /// Default is MessageCounting (keeps last N messages).
+    /// </summary>
+    public HistoryReductionStrategy Strategy { get; set; } = HistoryReductionStrategy.MessageCounting;
+
+    /// <summary>
+    /// Target number of messages to retain after reduction.
+    /// Default is 20 messages.
+    /// Used when MaxTokenBudget is not set or as a fallback.
+    /// </summary>
+    public int TargetMessageCount { get; set; } = 20;
+
+    /// <summary>
+    /// Threshold count for SummarizingChatReducer.
+    /// Number of messages allowed beyond TargetMessageCount before summarization is triggered.
+    /// Only used when Strategy is Summarizing. Default is 5.
+    /// </summary>
+    public int? SummarizationThreshold { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum token budget before triggering reduction (optional, FFI-friendly).
+    /// When set, this takes precedence over TargetMessageCount.
+    /// Uses actual token counts from provider API responses (BAML-inspired pattern).
+    /// Falls back to character-based estimation for messages without usage data.
+    /// If null, uses message-based reduction (backward compatible).
+    /// </summary>
+    public int? MaxTokenBudget { get; set; } = null;
+
+    /// <summary>
+    /// Target token count after reduction (default: 4000).
+    /// Only used when MaxTokenBudget is set.
+    /// The reducer will aim to keep conversation around this token count.
+    /// </summary>
+    public int TargetTokenBudget { get; set; } = 4000;
+
+    /// <summary>
+    /// Token threshold for triggering reduction when using token budgets.
+    /// Number of tokens allowed beyond TargetTokenBudget before reduction is triggered.
+    /// Only used when MaxTokenBudget is set. Default is 1000 tokens.
+    /// </summary>
+    public int TokenBudgetThreshold { get; set; } = 1000;
+
+    /// <summary>
+    /// Custom summarization prompt for SummarizingChatReducer.
+    /// If null, uses the default prompt from Microsoft.Extensions.AI.
+    /// Only used when Strategy is Summarizing.
+    /// </summary>
+    public string? CustomSummarizationPrompt { get; set; }
+
+    /// <summary>
+    /// Optional separate provider configuration for the summarization LLM.
+    /// If null, uses the agent's main provider (baseClient).
+    /// Useful for cost optimization - e.g., use GPT-4o-mini for summaries while main agent uses GPT-4.
+    /// Only used when Strategy is Summarizing.
+    /// </summary>
+    public ProviderConfig? SummarizerProvider { get; set; }
+
+    /// <summary>
+    /// Metadata key used to mark summary messages in chat history.
+    /// Summary messages are identified by this key in their Metadata dictionary.
+    /// </summary>
+    public const string SummaryMetadataKey = "__summary__";
+
+    /// <summary>
+    /// Whether to use a single comprehensive summary (re-summarize everything including old summary)
+    /// or maintain layered summaries (incremental summarization).
+    /// Default is true (single summary for better quality, following Semantic Kernel pattern).
+    /// </summary>
+    public bool UseSingleSummary { get; set; } = true;
+}
+
+/// <summary>
+/// Strategy for reducing conversation history size.
+/// </summary>
+public enum HistoryReductionStrategy
+{
+    /// <summary>
+    /// Keep only the N most recent messages (plus first system message).
+    /// Fast and simple, but loses older context completely.
+    /// </summary>
+    MessageCounting,
+
+    /// <summary>
+    /// Use LLM to summarize older messages when history exceeds threshold.
+    /// Preserves context through summarization, but requires additional LLM calls.
+    /// </summary>
+    Summarizing
+}
+
+/// <summary>
+/// Configuration for plan mode capabilities.
+/// Enables agents to create and manage execution plans for complex multi-step tasks.
+/// </summary>
+public class PlanModeConfig
+{
+    /// <summary>
+    /// Whether plan mode is enabled for this agent.
+    /// Default is true when configured via WithPlanMode().
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Custom instructions to add to system prompt explaining plan mode usage.
+    /// If null, uses default instructions.
+    /// </summary>
+    public string? CustomInstructions { get; set; }
+}
+
+/// <summary>
+/// Configuration for agentic loop safety controls to prevent runaway execution.
+/// </summary>
+public class AgenticLoopConfig
+{
+    /// <summary>
+    /// Maximum duration for a single turn before timeout (default: 5 minutes)
+    /// </summary>
+    public TimeSpan? MaxTurnDuration { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Max times the same function can be called consecutively before circuit breaker triggers (default: 5)
+    /// </summary>
+    public int? MaxConsecutiveFunctionCalls { get; set; } = 5;
+
+    /// <summary>
+    /// Maximum number of functions to execute in parallel (default: null = unlimited).
+    /// Useful for limiting resource consumption when functions are CPU-intensive,
+    /// respecting external API rate limits, or matching database connection pool sizes.
+    /// </summary>
+    public int? MaxParallelFunctions { get; set; } = null;
+}
+
+/// <summary>
+/// Configuration for tool selection behavior.
+/// FFI-friendly: Uses primitives (strings) instead of complex types for cross-language compatibility.
+/// </summary>
+public class ToolSelectionConfig
+{
+    /// <summary>
+    /// Tool selection mode: "Auto" (LLM decides), "None" (no tools), "RequireAny" (must call at least one), or "RequireSpecific" (must call the named function).
+    /// Default is "Auto".
+    /// </summary>
+    public string ToolMode { get; set; } = "Auto";
+
+    /// <summary>
+    /// Required function name when ToolMode = "RequireSpecific".
+    /// Ignored for other modes.
+    /// </summary>
+    public string? RequiredFunctionName { get; set; }
 }
 
 /// <summary>

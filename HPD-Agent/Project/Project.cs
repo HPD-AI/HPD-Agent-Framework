@@ -86,7 +86,7 @@ internal class Project
 
         var directory = storageDirectory ?? "./injected-memory-storage";
         AgentInjectedMemoryManager = new AgentInjectedMemoryManager(directory);
-        AgentInjectedMemoryManager.SetContext(Id);
+        // Note: Project scope removed from memory system - memories are now scoped by agent name only
 
         // Initialize document manager with same directory structure
         var textExtractor = new TextExtractionUtility();
@@ -107,11 +107,11 @@ internal class Project
     }
 
     /// <summary>
-    /// Creates a new conversation with default memory handling (FullTextInjection).
+    /// Creates a new conversation.
     /// </summary>
     public Conversation CreateConversation(IEnumerable<Agent> agents)
     {
-        var conv = new Conversation(this, agents, ConversationDocumentHandling.FullTextInjection);
+        var conv = new Conversation(this, agents);
         Conversations.Add(conv);
         UpdateActivity();
         return conv;
@@ -224,15 +224,13 @@ internal class Project
     /// Convenience method that handles project-aware conversation setup.
     /// </summary>
     /// <param name="agents">Agents to include in the conversation</param>
-    /// <param name="documentHandling">How documents should be handled in this conversation</param>
-    /// <param name="filters">Optional AI function filters</param>
+    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios</param>
     /// <returns>New conversation instance</returns>
     public Conversation CreateConversation(
-        IEnumerable<Agent> agents, 
-        ConversationDocumentHandling documentHandling = ConversationDocumentHandling.FullTextInjection,
-        IEnumerable<IAiFunctionFilter>? filters = null)
+        IEnumerable<Agent> agents,
+        IOrchestrator? orchestrator = null)
     {
-        var conversation = new Conversation(this, agents, documentHandling, filters);
+        var conversation = new Conversation(this, agents, orchestrator);
         Conversations.Add(conversation);
         UpdateLastActivity();
         return conversation;

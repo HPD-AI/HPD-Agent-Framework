@@ -153,7 +153,7 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
     try
     {
         // ✅ 1. Stream AG-UI events directly from agent
-        var streamResult = await agent.ExecuteStreamingTurnAsync(messages, null, context.RequestAborted);
+        var streamResult = await agent.ExecuteStreamingTurnAsync(messages, options: null, documentPaths: null, cancellationToken: context.RequestAborted);
         await foreach (var baseEvent in streamResult.EventStream.WithCancellation(context.RequestAborted))
         {
             // Stream the BaseEvent as JSON directly (AG-UI format)
@@ -206,8 +206,7 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
             var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
 
             // Use new streaming API that returns ConversationStreamingResult
-            // For future document support: pass document paths as 4th parameter
-            var streamResult = await conversation.SendStreamingAsync(userMessage, null, null, null, CancellationToken.None);
+            var streamResult = await conversation.SendStreamingAsync(userMessage, null, null, CancellationToken.None);
             
             bool isFinished = false;
             await foreach (var evt in streamResult.EventStream.WithCancellation(CancellationToken.None))
@@ -298,7 +297,7 @@ static ConversationWithMessagesDto ToConversationWithMessagesDto(Conversation c)
     c.Messages.Count,
     c.Messages.Select(msg => new ConversationMessageDto(
         msg.Role.ToString().ToLowerInvariant(),
-        c.ExtractTextContent(msg),  // ✨ Use conversation method like console app
+        ExtractTextFromMessage(msg),  // ✨ Use helper method to extract text
         DateTime.UtcNow)).ToArray());
 
 static AgentChatResponse ToAgentResponse(ChatResponse response) => new(
@@ -309,12 +308,21 @@ static AgentChatResponse ToAgentResponse(ChatResponse response) => new(
         response.Usage?.OutputTokenCount ?? 0, 
         response.Usage?.TotalTokenCount ?? 0));
 
-// ✨ SIMPLE: One helper method like console app (same as your console code)
+// ✨ SIMPLE: Helper methods like console app
 static string ExtractTextFromResponse(ChatResponse response)
 {
     var lastMessage = response.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant);
     var textContent = lastMessage?.Contents.OfType<TextContent>().FirstOrDefault()?.Text;
     return textContent ?? "No response received.";
+}
+
+static string ExtractTextFromMessage(ChatMessage message)
+{
+    var textContents = message.Contents
+        .OfType<TextContent>()
+        .Select(tc => tc.Text)
+        .Where(text => !string.IsNullOrEmpty(text));
+    return string.Join(" ", textContents);
 }
 
 // ✨ CLEAN PROJECT MANAGER (Fixed CS7036 and IL2026)

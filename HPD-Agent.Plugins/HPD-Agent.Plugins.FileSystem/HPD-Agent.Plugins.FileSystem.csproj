@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HPD.Agent.Plugins.FileSystem</RootNamespace>
+
+    <!-- Package Metadata -->
+    <PackageId>HPD.Agent.Plugins.FileSystem</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>HPD-Agent Contributors</Authors>
+    <Description>File system operations plugin for HPD-Agent. Provides AI functions for reading, writing, editing, searching, and discovering files.</Description>
+    <PackageTags>ai;agent;filesystem;plugin;hpd-agent</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-repo/HPD-Agent</RepositoryUrl>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core dependencies (match HPD-Agent versions) -->
+    <PackageReference Include="CliWrap" Version="3.9.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="9.9.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="9.9.0" />
+
+    <!-- File operations -->
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="9.0.6" />
+    <PackageReference Include="DiffPlex" Version="1.7.2" />
+    <PackageReference Include="MAB.DotIgnore" Version="3.0.2" />
+    <PackageReference Include="Ude.NetStandard" Version="1.2.0" />
+
+    <!-- JSON Schema (match HPD-Agent) -->
+    <PackageReference Include="JsonSchema.Net.Generation" Version="4.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to core HPD-Agent project -->
+    <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

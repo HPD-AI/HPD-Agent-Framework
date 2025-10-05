@@ -2,21 +2,20 @@ using Microsoft.Extensions.AI;
 
 /// <summary>
 /// Represents the context of an orchestration step where a tool may be invoked.
-/// This context is now much richer, providing access to the entire conversation.
 /// Native AOT compatible - does not inherit from FunctionInvocationContext.
 /// </summary>
 public class AiFunctionContext :  FunctionInvocationContext
 
 {
     /// <summary>
-    /// The conversation that this orchestration step belongs to.
-    /// </summary>
-    public Conversation Conversation { get; }
-
-    /// <summary>
     /// The raw tool call request from the Language Model.
     /// </summary>
     public ToolCallRequest ToolCallRequest { get; }
+
+    /// <summary>
+    /// The name of the agent executing this function
+    /// </summary>
+    public string? AgentName { get; set; }
 
     /// <summary>
     /// Context about the current agent run/turn
@@ -38,16 +37,18 @@ public class AiFunctionContext :  FunctionInvocationContext
     /// </summary>
     public new AIFunction? Function { get; set; }
 
-    
+    /// <summary>
+    /// Additional metadata for this function invocation context
+    /// </summary>
+    public Dictionary<string, object> Metadata { get; } = new();
 
     /// <summary>
     /// Arguments for the function call (AOT-safe access).
     /// </summary>
     public new AIFunctionArguments Arguments { get; }
 
-    public AiFunctionContext(Conversation conversation, ToolCallRequest toolCallRequest)
+    public AiFunctionContext(ToolCallRequest toolCallRequest)
     {
-        Conversation = conversation ?? throw new ArgumentNullException(nameof(conversation));
         ToolCallRequest = toolCallRequest ?? throw new ArgumentNullException(nameof(toolCallRequest));
         Arguments = new AIFunctionArguments(toolCallRequest.Arguments);
     }
@@ -111,6 +112,12 @@ public class AgentRunContext
     public List<string> CompletedFunctions { get; } = new();
 
     /// <summary>
+    /// Set of tool call IDs that have been approved for execution in this run
+    /// Used to prevent duplicate permission prompts in parallel execution
+    /// </summary>
+    private readonly HashSet<string> _approvedToolCalls = new();
+
+    /// <summary>
     /// Additional metadata for this run
     /// </summary>
     public Dictionary<string, object> Metadata { get; } = new();
@@ -124,6 +131,12 @@ public class AgentRunContext
     /// Reason for termination (if terminated)
     /// </summary>
     public string? TerminationReason { get; set; }
+
+    /// <summary>
+    /// Tracks consecutive errors across iterations to prevent infinite error loops.
+    /// Reset to 0 when a successful iteration occurs.
+    /// </summary>
+    public int ConsecutiveErrorCount { get; set; } = 0;
 
     /// <summary>
     /// Constructor for AgentRunContext
@@ -145,6 +158,16 @@ public class AgentRunContext
     }
 
     /// <summary>
+    /// Checks if a tool call has already been approved in this run
+    /// </summary>
+    public bool IsToolApproved(string callId) => _approvedToolCalls.Contains(callId);
+
+    /// <summary>
+    /// Marks a tool call as approved for execution in this run
+    /// </summary>
+    public void MarkToolApproved(string callId) => _approvedToolCalls.Add(callId);
+
+    /// <summary>
     /// Gets the total elapsed time for this run
     /// </summary>
     public TimeSpan ElapsedTime => DateTime.UtcNow - StartTime;
@@ -153,4 +176,30 @@ public class AgentRunContext
     /// Checks if we've hit the maximum iteration limit
     /// </summary>
     public bool HasReachedMaxIterations => CurrentIteration >= MaxIterations;
+
+    /// <summary>
+    /// Records a successful iteration and resets consecutive error count
+    /// </summary>
+    public void RecordSuccess()
+    {
+        ConsecutiveErrorCount = 0;
+    }
+
+    /// <summary>
+    /// Records an error and increments consecutive error count
+    /// </summary>
+    public void RecordError()
+    {
+        ConsecutiveErrorCount++;
+    }
+
+    /// <summary>
+    /// Checks if consecutive errors have exceeded the maximum allowed limit
+    /// </summary>
+    /// <param name="maxConsecutiveErrors">Maximum allowed consecutive errors</param>
+    /// <returns>True if limit exceeded, false otherwise</returns>
+    public bool HasExceededErrorLimit(int maxConsecutiveErrors)
+    {
+        return ConsecutiveErrorCount > maxConsecutiveErrors;
+    }
 }
