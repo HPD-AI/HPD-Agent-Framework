@@ -32,6 +32,20 @@ namespace HPD_Agent.FFI
         [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
         private static extern void rust_free_string(IntPtr ptr);
 
+        [DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        private static extern bool rust_register_plugin_executors(
+            [MarshalAs(UnmanagedType.LPStr)] string pluginName);
+
+        /// <summary>
+        /// Register plugin executors on the Rust side
+        /// This MUST be called after loading plugin info to populate the function registry
+        /// </summary>
+        public static bool RegisterPluginExecutors(string pluginName)
+        {
+            return rust_register_plugin_executors(pluginName);
+        }
+
         /// <summary>
         /// Get all registered plugins information
         /// </summary>

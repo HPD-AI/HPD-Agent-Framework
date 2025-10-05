@@ -37,6 +37,9 @@ public class RustFunctionInfo
     
     [JsonPropertyName("requiredPermissions")]
     public List<string> RequiredPermissions { get; set; } = new();
+    
+    [JsonPropertyName("plugin_name")]
+    public string PluginName { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -114,24 +117,49 @@ public static partial class NativeExports
             
             // Parse and add Rust plugins
             string? pluginsJson = Marshal.PtrToStringUTF8(pluginsJsonPtr);
+            Console.WriteLine($"[FFI] Received plugins JSON: {pluginsJson}");
+            
             if (!string.IsNullOrEmpty(pluginsJson))
             {
                 try
                 {
                     var rustFunctions = JsonSerializer.Deserialize(pluginsJson, HPDJsonContext.Default.ListRustFunctionInfo);
+                    Console.WriteLine($"[FFI] Deserialized {rustFunctions?.Count ?? 0} Rust functions");
+                    
                     if (rustFunctions != null && rustFunctions.Count > 0)
                     {
+                        // Track unique plugin names
+                        var pluginNames = new HashSet<string>();
+                        
                         foreach (var rustFunc in rustFunctions)
                         {
+                            Console.WriteLine($"[FFI] Adding Rust function: {rustFunc.Name} - {rustFunc.Description}");
                             var aiFunction = CreateRustFunctionWrapper(rustFunc);
                             builder.AddRustFunction(aiFunction);
+                            
+                            // Track plugin name for registration
+                            if (!string.IsNullOrEmpty(rustFunc.PluginName))
+                            {
+                                pluginNames.Add(rustFunc.PluginName);
+                            }
                         }
+                        
+                        // Register plugin executors on Rust side
+                        foreach (var pluginName in pluginNames)
+                        {
+                            Console.WriteLine($"[FFI] Registering executors for plugin: {pluginName}");
+                            bool success = RustPluginFFI.RegisterPluginExecutors(pluginName);
+                            Console.WriteLine($"[FFI] Registration result for {pluginName}: {success}");
+                        }
+                        
+                        Console.WriteLine($"[FFI] Successfully added {rustFunctions.Count} Rust functions to agent");
                     }
                 }
                 catch (Exception ex)
                 {
                     // Log but don't fail - agent can still work without Rust functions
                     Console.WriteLine($"Failed to parse Rust plugins: {ex.Message}");
+                    Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 }
             }
 
@@ -624,6 +652,550 @@ public static partial class NativeExports
 
             string json = JsonSerializer.Serialize(projectInfo, HPDJsonContext.Default.ProjectInfo);
             return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets a conversation by ID from a project.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="conversationIdPtr">Pointer to UTF-8 string containing the conversation ID</param>
+    /// <returns>Handle to the conversation, or IntPtr.Zero if not found</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_get_conversation")]
+    public static IntPtr ProjectGetConversation(IntPtr projectHandle, IntPtr conversationIdPtr)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            string? conversationId = Marshal.PtrToStringUTF8(conversationIdPtr);
+            if (string.IsNullOrEmpty(conversationId)) return IntPtr.Zero;
+
+            var conversation = project.GetConversation(conversationId);
+            if (conversation == null) return IntPtr.Zero;
+
+            return ObjectManager.Add(conversation);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Removes a conversation by ID from a project.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="conversationIdPtr">Pointer to UTF-8 string containing the conversation ID</param>
+    /// <returns>1 if removed successfully, 0 if not found or error</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_remove_conversation")]
+    public static int ProjectRemoveConversation(IntPtr projectHandle, IntPtr conversationIdPtr)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            string? conversationId = Marshal.PtrToStringUTF8(conversationIdPtr);
+            if (string.IsNullOrEmpty(conversationId)) return 0;
+
+            bool removed = project.RemoveConversation(conversationId);
+            return removed ? 1 : 0;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Gets all conversation IDs in a project as a JSON array.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <returns>Pointer to UTF-8 JSON array of conversation IDs, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_get_conversation_ids")]
+    public static IntPtr ProjectGetConversationIds(IntPtr projectHandle)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            var conversationIds = project.Conversations.Select(c => c.Id).ToList();
+            string json = JsonSerializer.Serialize(conversationIds);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Uploads a document to the project from a file path.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="filePathPtr">Pointer to UTF-8 string containing the file path</param>
+    /// <param name="descriptionPtr">Pointer to UTF-8 string containing description, or IntPtr.Zero for none</param>
+    /// <returns>Pointer to UTF-8 JSON string containing ProjectDocument, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_upload_document")]
+    public static IntPtr ProjectUploadDocument(IntPtr projectHandle, IntPtr filePathPtr, IntPtr descriptionPtr)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            string? filePath = Marshal.PtrToStringUTF8(filePathPtr);
+            if (string.IsNullOrEmpty(filePath)) return IntPtr.Zero;
+
+            string? description = descriptionPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(descriptionPtr) : null;
+
+            // Block on the async method for FFI
+            var document = project.UploadDocumentAsync(filePath, description).GetAwaiter().GetResult();
+
+            string json = JsonSerializer.Serialize(document);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Uploads a document to the project from a URL.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="urlPtr">Pointer to UTF-8 string containing the URL</param>
+    /// <param name="descriptionPtr">Pointer to UTF-8 string containing description, or IntPtr.Zero for none</param>
+    /// <returns>Pointer to UTF-8 JSON string containing ProjectDocument, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_upload_document_from_url")]
+    public static IntPtr ProjectUploadDocumentFromUrl(IntPtr projectHandle, IntPtr urlPtr, IntPtr descriptionPtr)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            string? url = Marshal.PtrToStringUTF8(urlPtr);
+            if (string.IsNullOrEmpty(url)) return IntPtr.Zero;
+
+            string? description = descriptionPtr != IntPtr.Zero ? Marshal.PtrToStringUTF8(descriptionPtr) : null;
+
+            // Block on the async method for FFI
+            var document = project.UploadDocumentFromUrlAsync(url, description).GetAwaiter().GetResult();
+
+            string json = JsonSerializer.Serialize(document);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets the project summary with aggregated statistics.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <returns>Pointer to UTF-8 JSON string containing ProjectSummary, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_get_summary")]
+    public static IntPtr ProjectGetSummary(IntPtr projectHandle)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            // Block on the async method for FFI
+            var summary = project.GetSummaryAsync().GetAwaiter().GetResult();
+
+            string json = JsonSerializer.Serialize(summary);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets the most recent conversation in the project.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <returns>Handle to the most recent conversation, or IntPtr.Zero if no conversations exist</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_get_most_recent_conversation")]
+    public static IntPtr ProjectGetMostRecentConversation(IntPtr projectHandle)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            var conversation = project.GetMostRecentConversation();
+            if (conversation == null) return IntPtr.Zero;
+
+            return ObjectManager.Add(conversation);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Searches conversations in the project by text content.
+    /// </summary>
+    /// <param name="projectHandle">Handle to the project</param>
+    /// <param name="searchTermPtr">Pointer to UTF-8 string containing the search term</param>
+    /// <param name="maxResults">Maximum number of results to return</param>
+    /// <returns>Pointer to UTF-8 JSON array of conversation IDs, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "project_search_conversations")]
+    public static IntPtr ProjectSearchConversations(IntPtr projectHandle, IntPtr searchTermPtr, int maxResults)
+    {
+        try
+        {
+            var project = ObjectManager.Get<Project>(projectHandle);
+            if (project == null) throw new InvalidOperationException("Project handle is invalid.");
+
+            string? searchTerm = Marshal.PtrToStringUTF8(searchTermPtr);
+            if (string.IsNullOrEmpty(searchTerm)) return IntPtr.Zero;
+
+            var results = project.SearchConversations(searchTerm, maxResults);
+            var conversationIds = results.Select(c => c.Id).ToList();
+
+            string json = JsonSerializer.Serialize(conversationIds);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets the conversation thread ID.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>Pointer to UTF-8 string containing the thread ID, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_get_id")]
+    public static IntPtr ConversationGetId(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            return Marshal.StringToCoTaskMemAnsi(conversation.Id);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of messages in the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>Number of messages, or -1 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_get_message_count")]
+    public static int ConversationGetMessageCount(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            return conversation.Thread.Messages.Count;
+        }
+        catch (Exception)
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// Gets the conversation messages as a JSON array.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>Pointer to UTF-8 JSON string containing messages array, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_get_messages")]
+    public static IntPtr ConversationGetMessages(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            var messages = conversation.Thread.Messages.Select(m => new
+            {
+                role = m.Role.ToString(),
+                text = m.Text,
+                contents = m.Contents.Select(c => new
+                {
+                    type = c switch
+                    {
+                        Microsoft.Extensions.AI.TextContent => "text",
+                        Microsoft.Extensions.AI.FunctionCallContent => "function_call",
+                        Microsoft.Extensions.AI.FunctionResultContent => "function_result",
+                        Microsoft.Extensions.AI.DataContent => "data",
+                        _ => "unknown"
+                    },
+                    text = c is Microsoft.Extensions.AI.TextContent tc ? tc.Text : null,
+                    callId = c is Microsoft.Extensions.AI.FunctionCallContent fcc ? fcc.CallId : null,
+                    name = c is Microsoft.Extensions.AI.FunctionCallContent fcc2 ? fcc2.Name : null,
+                    result = c is Microsoft.Extensions.AI.FunctionResultContent frc ? frc.Result?.ToString() : null
+                }).ToList()
+            }).ToList();
+
+            string json = JsonSerializer.Serialize(messages);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Gets the conversation metadata as a JSON object.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>Pointer to UTF-8 JSON string containing metadata, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_get_metadata")]
+    public static IntPtr ConversationGetMetadata(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            var metadata = new
+            {
+                threadId = conversation.Id,
+                createdAt = conversation.Thread.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                lastActivity = conversation.Thread.LastActivity.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                messageCount = conversation.Thread.Messages.Count,
+                metadata = conversation.Thread.Metadata
+            };
+
+            string json = JsonSerializer.Serialize(metadata);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Adds a message to the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <param name="messageJsonPtr">Pointer to UTF-8 JSON string containing the message</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_add_message")]
+    public static int ConversationAddMessage(IntPtr conversationHandle, IntPtr messageJsonPtr)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            string? messageJson = Marshal.PtrToStringUTF8(messageJsonPtr);
+            if (string.IsNullOrEmpty(messageJson)) return 0;
+
+            var message = JsonSerializer.Deserialize<ChatMessage>(messageJson);
+            if (message == null) return 0;
+
+            conversation.AddMessage(message);
+            return 1;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Adds metadata to the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <param name="keyPtr">Pointer to UTF-8 string containing the metadata key</param>
+    /// <param name="valueJsonPtr">Pointer to UTF-8 JSON string containing the metadata value</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_add_metadata")]
+    public static int ConversationAddMetadata(IntPtr conversationHandle, IntPtr keyPtr, IntPtr valueJsonPtr)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            string? key = Marshal.PtrToStringUTF8(keyPtr);
+            if (string.IsNullOrEmpty(key)) return 0;
+
+            string? valueJson = Marshal.PtrToStringUTF8(valueJsonPtr);
+            if (string.IsNullOrEmpty(valueJson)) return 0;
+
+            var value = JsonSerializer.Deserialize<object>(valueJson);
+            if (value == null) return 0;
+
+            conversation.AddMetadata(key, value);
+            return 1;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Clears all messages and metadata from the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_clear")]
+    public static int ConversationClear(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            conversation.Thread.Clear();
+            return 1;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Applies history reduction to the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <param name="summaryMessageJsonPtr">Pointer to UTF-8 JSON string containing the summary message, or IntPtr.Zero for none</param>
+    /// <param name="removedCount">Number of messages to remove</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_apply_reduction")]
+    public static int ConversationApplyReduction(IntPtr conversationHandle, IntPtr summaryMessageJsonPtr, int removedCount)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            ChatMessage? summaryMessage = null;
+            if (summaryMessageJsonPtr != IntPtr.Zero)
+            {
+                string? summaryJson = Marshal.PtrToStringUTF8(summaryMessageJsonPtr);
+                if (!string.IsNullOrEmpty(summaryJson))
+                {
+                    summaryMessage = JsonSerializer.Deserialize<ChatMessage>(summaryJson);
+                }
+            }
+
+            conversation.Thread.ApplyReduction(summaryMessage, removedCount);
+            return 1;
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Gets a display name for the conversation thread.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <param name="maxLength">Maximum length of the display name</param>
+    /// <returns>Pointer to UTF-8 string containing the display name, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_get_display_name")]
+    public static IntPtr ConversationGetDisplayName(IntPtr conversationHandle, int maxLength)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            string displayName = conversation.Thread.GetDisplayName(maxLength);
+            return Marshal.StringToCoTaskMemAnsi(displayName);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Serializes the conversation thread to a JSON snapshot.
+    /// </summary>
+    /// <param name="conversationHandle">Handle to the conversation</param>
+    /// <returns>Pointer to UTF-8 JSON string containing the thread snapshot, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "conversation_serialize_thread")]
+    public static IntPtr ConversationSerializeThread(IntPtr conversationHandle)
+    {
+        try
+        {
+            var conversation = ObjectManager.Get<Conversation>(conversationHandle);
+            if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
+
+            var snapshot = conversation.Thread.Serialize();
+            string json = JsonSerializer.Serialize(snapshot);
+            return Marshal.StringToCoTaskMemAnsi(json);
+        }
+        catch (Exception)
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Creates a conversation with an existing thread from a JSON snapshot.
+    /// </summary>
+    /// <param name="agentHandlesPtr">Pointer to array of agent handles</param>
+    /// <param name="agentCount">Number of agents in the array</param>
+    /// <param name="threadSnapshotJsonPtr">Pointer to UTF-8 JSON string containing the thread snapshot</param>
+    /// <returns>Handle to the created Conversation, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "create_conversation_with_thread")]
+    public static IntPtr CreateConversationWithThread(IntPtr agentHandlesPtr, int agentCount, IntPtr threadSnapshotJsonPtr)
+    {
+        try
+        {
+            var agentHandles = new IntPtr[agentCount];
+            Marshal.Copy(agentHandlesPtr, agentHandles, 0, agentCount);
+
+            var agents = agentHandles.Select(ObjectManager.Get<Agent>).OfType<Agent>().ToList();
+            if (!agents.Any())
+            {
+                throw new InvalidOperationException("No valid agents provided to create conversation.");
+            }
+
+            string? snapshotJson = Marshal.PtrToStringUTF8(threadSnapshotJsonPtr);
+            if (string.IsNullOrEmpty(snapshotJson))
+            {
+                throw new InvalidOperationException("Thread snapshot JSON is null or empty.");
+            }
+
+            var snapshot = JsonSerializer.Deserialize<ConversationThreadSnapshot>(snapshotJson);
+            if (snapshot == null)
+            {
+                throw new InvalidOperationException("Failed to deserialize thread snapshot.");
+            }
+
+            var thread = ConversationThread.Deserialize(snapshot);
+            var conversation = new Conversation(agents, thread);
+
+            return ObjectManager.Add(conversation);
         }
         catch (Exception)
         {
