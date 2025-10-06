@@ -76,11 +76,6 @@ public sealed record ToolMessage : BaseMessage;
 [JsonDerivedType(typeof(CustomEvent), "CUSTOM")]
 [JsonDerivedType(typeof(RawEvent), "RAW")]
 [JsonDerivedType(typeof(MessagesSnapshotEvent), "MESSAGES_SNAPSHOT")]
-[JsonDerivedType(typeof(OrchestrationStartEvent), "ORCHESTRATION_START")]
-[JsonDerivedType(typeof(OrchestrationDecisionEvent), "ORCHESTRATION_DECISION")]
-[JsonDerivedType(typeof(AgentEvaluationEvent), "AGENT_EVALUATION")]
-[JsonDerivedType(typeof(AgentHandoffEvent), "AGENT_HANDOFF")]
-[JsonDerivedType(typeof(OrchestrationCompleteEvent), "ORCHESTRATION_COMPLETE")]
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 public abstract record BaseEvent
 {
@@ -170,21 +165,6 @@ public sealed record CustomEvent : BaseEvent
 {
     [JsonPropertyName("data")]
     public required JsonElement Data { get; init; }
-}
-
-public sealed record ToolResultEvent : BaseEvent
-{
-    [JsonPropertyName("messageId")]
-    public required string MessageId { get; init; }
-    
-    [JsonPropertyName("toolCallId")]
-    public required string ToolCallId { get; init; }
-    
-    [JsonPropertyName("toolName")]
-    public required string ToolName { get; init; }
-    
-    [JsonPropertyName("result")]
-    public required string Result { get; init; }
 }
 
 // New AG-UI Events - Text Message Chunk
@@ -331,96 +311,6 @@ public sealed record Context
     [JsonPropertyName("data")]
     public required JsonElement Data { get; init; }
 }
-
-// New orchestration events
-public sealed record OrchestrationStartEvent : BaseEvent
-{
-    [JsonPropertyName("strategyName")]
-    public required string StrategyName { get; init; }
-
-    [JsonPropertyName("agentCount")]
-    public required int AgentCount { get; init; }
-
-    [JsonPropertyName("agentNames")]
-    public IReadOnlyList<string>? AgentNames { get; init; }
-}
-
-public sealed record OrchestrationDecisionEvent : BaseEvent
-{
-    [JsonPropertyName("selectedAgentName")]
-    public required string SelectedAgentName { get; init; }
-
-    [JsonPropertyName("strategyName")]
-    public required string StrategyName { get; init; }
-
-    [JsonPropertyName("agentScores")]
-    public Dictionary<string, float>? AgentScores { get; init; }
-
-    [JsonPropertyName("decisionDurationMs")]
-    public long? DecisionDurationMs { get; init; }
-}
-
-public sealed record AgentEvaluationEvent : BaseEvent
-{
-    [JsonPropertyName("agentName")]
-    public required string AgentName { get; init; }
-
-    [JsonPropertyName("score")]
-    public required float Score { get; init; }
-
-    [JsonPropertyName("capabilities")]
-    public Dictionary<string, float>? Capabilities { get; init; }
-
-    [JsonPropertyName("evaluationReason")]
-    public string? EvaluationReason { get; init; }
-}
-
-public sealed record AgentHandoffEvent : BaseEvent
-{
-    [JsonPropertyName("fromAgentName")]
-    public required string FromAgentName { get; init; }
-
-    [JsonPropertyName("toAgentName")]
-    public required string ToAgentName { get; init; }
-
-    [JsonPropertyName("reason")]
-    public required string Reason { get; init; }
-
-    [JsonPropertyName("handoffContext")]
-    public Dictionary<string, object>? HandoffContext { get; init; }
-}
-
-public sealed record OrchestrationCompleteEvent : BaseEvent
-{
-    [JsonPropertyName("finalAgentName")]
-    public required string FinalAgentName { get; init; }
-
-    [JsonPropertyName("totalDurationMs")]
-    public required long TotalDurationMs { get; init; }
-
-    [JsonPropertyName("totalInvocations")]
-    public required int TotalInvocations { get; init; }
-}
-
-// Custom event data types for AOT compatibility
-public sealed record ToolResultEventData
-{
-    [JsonPropertyName("eventType")]
-    public string EventType { get; init; } = "tool_result";
-    
-    [JsonPropertyName("messageId")]
-    public required string MessageId { get; init; }
-    
-    [JsonPropertyName("toolCallId")]
-    public required string ToolCallId { get; init; }
-    
-    [JsonPropertyName("toolName")]
-    public required string ToolName { get; init; }
-    
-    [JsonPropertyName("result")]
-    public required string Result { get; init; }
-}
-
 
 // AOT-compatible interface
 public interface IAGUIAgent

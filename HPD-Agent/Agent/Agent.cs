@@ -675,11 +675,6 @@ public class Agent : IChatClient
                         // Emit official AG-UI TOOL_CALL_RESULT event
                         yield return EventSerialization.CreateToolCallResult(result.CallId, result.Result?.ToString() ?? "null");
 
-                        // Also emit custom tool result event for backward compatibility and additional debugging info
-                        var matchingTool = toolRequests.FirstOrDefault(t => t.CallId == result.CallId);
-                        var toolName = matchingTool?.Name ?? "unknown";
-                        yield return EventSerialization.CreateToolResult(messageId, result.CallId, toolName, result.Result ?? "null");
-
                         // Check if this result represents an error
                         if (result.Exception != null ||
                             (result.Result?.ToString()?.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ?? false))

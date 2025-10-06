@@ -40,14 +40,8 @@ internal static class EventSerialization
             StateDeltaEvent stateDeltaEvent => JsonSerializer.Serialize(stateDeltaEvent, AGUIJsonContext.Default.StateDeltaEvent),
             StateSnapshotEvent stateSnapshotEvent => JsonSerializer.Serialize(stateSnapshotEvent, AGUIJsonContext.Default.StateSnapshotEvent),
             MessagesSnapshotEvent messagesSnapshotEvent => JsonSerializer.Serialize(messagesSnapshotEvent, AGUIJsonContext.Default.MessagesSnapshotEvent),
-            OrchestrationStartEvent orchestrationStartEvent => JsonSerializer.Serialize(orchestrationStartEvent, AGUIJsonContext.Default.OrchestrationStartEvent),
-            OrchestrationDecisionEvent orchestrationDecisionEvent => JsonSerializer.Serialize(orchestrationDecisionEvent, AGUIJsonContext.Default.OrchestrationDecisionEvent),
-            AgentEvaluationEvent agentEvaluationEvent => JsonSerializer.Serialize(agentEvaluationEvent, AGUIJsonContext.Default.AgentEvaluationEvent),
-            AgentHandoffEvent agentHandoffEvent => JsonSerializer.Serialize(agentHandoffEvent, AGUIJsonContext.Default.AgentHandoffEvent),
-            OrchestrationCompleteEvent orchestrationCompleteEvent => JsonSerializer.Serialize(orchestrationCompleteEvent, AGUIJsonContext.Default.OrchestrationCompleteEvent),
             FunctionPermissionRequestEvent functionPermissionEvent => JsonSerializer.Serialize(functionPermissionEvent, AGUIJsonContext.Default.FunctionPermissionRequestEvent),
             ContinuationPermissionRequestEvent continuationPermissionEvent => JsonSerializer.Serialize(continuationPermissionEvent, AGUIJsonContext.Default.ContinuationPermissionRequestEvent),
-            ToolResultEvent legacyToolResultEvent => JsonSerializer.Serialize(legacyToolResultEvent, AGUIJsonContext.Default.ToolResultEvent),
             CustomEvent customEvent => JsonSerializer.Serialize(customEvent, AGUIJsonContext.Default.CustomEvent),
             RawEvent rawEvent => JsonSerializer.Serialize(rawEvent, AGUIJsonContext.Default.RawEvent),
             _ => JsonSerializer.Serialize(evt, AGUIJsonContext.Default.BaseEvent)
@@ -130,17 +124,6 @@ internal static class EventSerialization
     {
         Type = "RUN_ERROR",
         Message = message,
-        Timestamp = GetTimestamp()
-    };
-
-    public static ToolResultEvent CreateToolResult(string messageId, string toolCallId, string toolName, object result) => new()
-    {
-        Type = "TOOL_RESULT",
-        MessageId = messageId,
-        ToolCallId = toolCallId,
-        ToolName = toolName,
-        // FIX: For AOT compatibility, fall back to string representation for non-string results
-        Result = result?.ToString() ?? "null",
         Timestamp = GetTimestamp()
     };
 

@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
-using OpenAI;
 using OpenAI.Chat;
 using Azure.AI.Inference;
 using Azure;
@@ -448,13 +447,6 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters);
-
-
-        // Attach MCP capability if configured
-        if (McpClientManager != null)
-        {
-            agent.AddCapability("MCP", McpClientManager);
-        }
 
         return agent;
     }
