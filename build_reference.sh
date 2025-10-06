@@ -11,7 +11,7 @@ REPOS=(
     "https://github.com/langchain-ai/langgraph.git"
     "https://github.com/pydantic/pydantic-ai.git"
     "https://github.com/strands-agents/sdk-python.git"
-
+    "https://github.com/ag-ui-protocol/ag-ui.git"
     # Add more repo URLs as needed
 )
 
