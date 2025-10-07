@@ -541,37 +541,37 @@ public class Agent : IChatClient
                     {
                         if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                         {
-                            // Emit thinking start event ONLY on first reasoning chunk (official AG-UI event)
+                            // Emit reasoning start event ONLY on first reasoning chunk (official AG-UI REASONING event)
                             if (!thinkingStarted)
                             {
-                                yield return EventSerialization.CreateThinkingStart(messageId);
+                                yield return EventSerialization.CreateReasoningStart(messageId);
                                 thinkingStarted = true;
                             }
 
-                            // Emit thinking message start if not already started
+                            // Emit reasoning message start if not already started
                             if (!thinkingMessageStarted)
                             {
-                                yield return EventSerialization.CreateThinkingTextMessageStart(messageId, "assistant");
+                                yield return EventSerialization.CreateReasoningMessageStart(messageId, "assistant");
                                 thinkingMessageStarted = true;
                             }
 
-                            // Emit thinking content for each chunk (official AG-UI event)
-                            yield return EventSerialization.CreateThinkingTextMessageContent(messageId, reasoning.Text);
+                            // Emit reasoning content for each chunk (official AG-UI REASONING event)
+                            yield return EventSerialization.CreateReasoningMessageContent(messageId, reasoning.Text);
 
                             // Add reasoning to assistantContents so it's preserved in conversation history
                             assistantContents.Add(reasoning);
                         }
                         else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                         {
-                            // If we were in thinking mode, finish the thinking events
+                            // If we were in reasoning mode, finish the reasoning events
                             if (thinkingMessageStarted)
                             {
-                                yield return EventSerialization.CreateThinkingTextMessageEnd(messageId);
+                                yield return EventSerialization.CreateReasoningMessageEnd(messageId);
                                 thinkingMessageStarted = false;
                             }
                             if (thinkingStarted)
                             {
-                                yield return EventSerialization.CreateThinkingEnd(messageId);
+                                yield return EventSerialization.CreateReasoningEnd(messageId);
                                 thinkingStarted = false;
                             }
 
@@ -601,15 +601,15 @@ public class Agent : IChatClient
                 {
                     streamFinished = true;
 
-                    // If thinking is still active when stream ends, finish it
+                    // If reasoning is still active when stream ends, finish it
                     if (thinkingMessageStarted)
                     {
-                        yield return EventSerialization.CreateThinkingTextMessageEnd(messageId);
+                        yield return EventSerialization.CreateReasoningMessageEnd(messageId);
                         thinkingMessageStarted = false;
                     }
                     if (thinkingStarted)
                     {
-                        yield return EventSerialization.CreateThinkingEnd(messageId);
+                        yield return EventSerialization.CreateReasoningEnd(messageId);
                         thinkingStarted = false;
                     }
                 }

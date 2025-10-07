@@ -71,6 +71,11 @@ public sealed record ToolMessage : BaseMessage;
 [JsonDerivedType(typeof(ThinkingTextMessageEndEvent), "THINKING_TEXT_MESSAGE_END")]
 [JsonDerivedType(typeof(ThinkingStartEvent), "THINKING_START")]
 [JsonDerivedType(typeof(ThinkingEndEvent), "THINKING_END")]
+[JsonDerivedType(typeof(ReasoningStartEvent), "REASONING_START")]
+[JsonDerivedType(typeof(ReasoningEndEvent), "REASONING_END")]
+[JsonDerivedType(typeof(ReasoningMessageStartEvent), "REASONING_MESSAGE_START")]
+[JsonDerivedType(typeof(ReasoningMessageContentEvent), "REASONING_MESSAGE_CONTENT")]
+[JsonDerivedType(typeof(ReasoningMessageEndEvent), "REASONING_MESSAGE_END")]
 [JsonDerivedType(typeof(ToolCallStartEvent), "TOOL_CALL_START")]
 [JsonDerivedType(typeof(ToolCallArgsEvent), "TOOL_CALL_ARGS")]
 [JsonDerivedType(typeof(ToolCallEndEvent), "TOOL_CALL_END")]
@@ -184,7 +189,7 @@ public sealed record TextMessageChunkEvent : BaseEvent
     public string? Delta { get; init; }
 }
 
-// New AG-UI Events - Thinking/Reasoning
+// New AG-UI Events - Thinking/Reasoning (DEPRECATED - Use REASONING events instead)
 public sealed record ThinkingStartEvent : BaseEvent
 {
     [JsonPropertyName("messageId")]
@@ -216,6 +221,46 @@ public sealed record ThinkingTextMessageContentEvent : BaseEvent
 }
 
 public sealed record ThinkingTextMessageEndEvent : BaseEvent
+{
+    [JsonPropertyName("messageId")]
+    public required string MessageId { get; init; }
+}
+
+// Official AG-UI Reasoning Events (Replacement for deprecated THINKING events)
+public sealed record ReasoningStartEvent : BaseEvent
+{
+    [JsonPropertyName("messageId")]
+    public required string MessageId { get; init; }
+
+    [JsonPropertyName("encryptedContent")]
+    public string? EncryptedContent { get; init; }
+}
+
+public sealed record ReasoningEndEvent : BaseEvent
+{
+    [JsonPropertyName("messageId")]
+    public required string MessageId { get; init; }
+}
+
+public sealed record ReasoningMessageStartEvent : BaseEvent
+{
+    [JsonPropertyName("messageId")]
+    public required string MessageId { get; init; }
+
+    [JsonPropertyName("role")]
+    public string? Role { get; init; }
+}
+
+public sealed record ReasoningMessageContentEvent : BaseEvent
+{
+    [JsonPropertyName("messageId")]
+    public required string MessageId { get; init; }
+
+    [JsonPropertyName("delta")]
+    public required string Delta { get; init; }
+}
+
+public sealed record ReasoningMessageEndEvent : BaseEvent
 {
     [JsonPropertyName("messageId")]
     public required string MessageId { get; init; }

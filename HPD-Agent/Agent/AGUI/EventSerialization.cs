@@ -27,6 +27,11 @@ internal static class EventSerialization
             ThinkingTextMessageStartEvent thinkingTextStartEvent => JsonSerializer.Serialize(thinkingTextStartEvent, AGUIJsonContext.Default.ThinkingTextMessageStartEvent),
             ThinkingTextMessageContentEvent thinkingTextContentEvent => JsonSerializer.Serialize(thinkingTextContentEvent, AGUIJsonContext.Default.ThinkingTextMessageContentEvent),
             ThinkingTextMessageEndEvent thinkingTextEndEvent => JsonSerializer.Serialize(thinkingTextEndEvent, AGUIJsonContext.Default.ThinkingTextMessageEndEvent),
+            ReasoningStartEvent reasoningStartEvent => JsonSerializer.Serialize(reasoningStartEvent, AGUIJsonContext.Default.ReasoningStartEvent),
+            ReasoningEndEvent reasoningEndEvent => JsonSerializer.Serialize(reasoningEndEvent, AGUIJsonContext.Default.ReasoningEndEvent),
+            ReasoningMessageStartEvent reasoningMessageStartEvent => JsonSerializer.Serialize(reasoningMessageStartEvent, AGUIJsonContext.Default.ReasoningMessageStartEvent),
+            ReasoningMessageContentEvent reasoningMessageContentEvent => JsonSerializer.Serialize(reasoningMessageContentEvent, AGUIJsonContext.Default.ReasoningMessageContentEvent),
+            ReasoningMessageEndEvent reasoningMessageEndEvent => JsonSerializer.Serialize(reasoningMessageEndEvent, AGUIJsonContext.Default.ReasoningMessageEndEvent),
             ToolCallStartEvent toolStartEvent => JsonSerializer.Serialize(toolStartEvent, AGUIJsonContext.Default.ToolCallStartEvent),
             ToolCallArgsEvent toolArgsEvent => JsonSerializer.Serialize(toolArgsEvent, AGUIJsonContext.Default.ToolCallArgsEvent),
             ToolCallEndEvent toolEndEvent => JsonSerializer.Serialize(toolEndEvent, AGUIJsonContext.Default.ToolCallEndEvent),
@@ -212,6 +217,45 @@ internal static class EventSerialization
     public static ThinkingTextMessageEndEvent CreateThinkingTextMessageEnd(string messageId) => new()
     {
         Type = "THINKING_TEXT_MESSAGE_END",
+        MessageId = messageId,
+        Timestamp = GetTimestamp()
+    };
+
+    // Official AG-UI Reasoning Event Factories (Replacement for deprecated THINKING events)
+    public static ReasoningStartEvent CreateReasoningStart(string messageId, string? encryptedContent = null) => new()
+    {
+        Type = "REASONING_START",
+        MessageId = messageId,
+        EncryptedContent = encryptedContent,
+        Timestamp = GetTimestamp()
+    };
+
+    public static ReasoningEndEvent CreateReasoningEnd(string messageId) => new()
+    {
+        Type = "REASONING_END",
+        MessageId = messageId,
+        Timestamp = GetTimestamp()
+    };
+
+    public static ReasoningMessageStartEvent CreateReasoningMessageStart(string messageId, string? role = null) => new()
+    {
+        Type = "REASONING_MESSAGE_START",
+        MessageId = messageId,
+        Role = role,
+        Timestamp = GetTimestamp()
+    };
+
+    public static ReasoningMessageContentEvent CreateReasoningMessageContent(string messageId, string delta) => new()
+    {
+        Type = "REASONING_MESSAGE_CONTENT",
+        MessageId = messageId,
+        Delta = delta,
+        Timestamp = GetTimestamp()
+    };
+
+    public static ReasoningMessageEndEvent CreateReasoningMessageEnd(string messageId) => new()
+    {
+        Type = "REASONING_MESSAGE_END",
         MessageId = messageId,
         Timestamp = GetTimestamp()
     };
