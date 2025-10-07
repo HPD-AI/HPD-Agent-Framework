@@ -375,7 +375,7 @@ public static partial class NativeExports
             string? aguiInputJson = Marshal.PtrToStringUTF8(aguiInputJsonPtr);
             if (string.IsNullOrEmpty(aguiInputJson)) return IntPtr.Zero;
 
-            var aguiInput = JsonSerializer.Deserialize<RunAgentInput>(aguiInputJson);
+            var aguiInput = JsonSerializer.Deserialize(aguiInputJson, AGUIJsonContext.Default.RunAgentInput);
             if (aguiInput == null) return IntPtr.Zero;
 
             // Block on the async method to get the final result for the synchronous FFI call.
@@ -541,7 +541,7 @@ public static partial class NativeExports
         {
             try
             {
-                var aguiInput = JsonSerializer.Deserialize<RunAgentInput>(aguiInputJson);
+                var aguiInput = JsonSerializer.Deserialize(aguiInputJson, AGUIJsonContext.Default.RunAgentInput);
                 if (aguiInput == null)
                 {
                     throw new InvalidOperationException("Failed to deserialize AGUI input");
@@ -681,7 +681,7 @@ public static partial class NativeExports
         {
             try
             {
-                var aguiInput = JsonSerializer.Deserialize<RunAgentInput>(aguiInputJson);
+                var aguiInput = JsonSerializer.Deserialize(aguiInputJson, AGUIJsonContext.Default.RunAgentInput);
                 if (aguiInput == null)
                 {
                     throw new InvalidOperationException("Failed to deserialize AGUI input");
