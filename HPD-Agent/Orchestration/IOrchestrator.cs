@@ -34,16 +34,8 @@ using Microsoft.Extensions.AI;
 ///     // 4. Get final history
 ///     var finalHistory = await streamingResult.FinalHistory;
 ///
-///     // 5. Package reduction metadata into Context dictionary
-///     var reductionContext = new Dictionary&lt;string, object&gt;();
-///     if (streamingResult.Reduction != null)
-///     {
-///         if (streamingResult.Reduction.SummaryMessage != null)
-///         {
-///             reductionContext["SummaryMessage"] = streamingResult.Reduction.SummaryMessage;
-///         }
-///         reductionContext["MessagesRemovedCount"] = streamingResult.Reduction.MessagesRemovedCount;
-///     }
+///     // 5. Package reduction metadata using helper (RECOMMENDED)
+///     var reductionContext = OrchestrationHelpers.PackageReductionMetadata(streamingResult.Reduction);
 ///
 ///     // 6. Return orchestration result
 ///     return new OrchestrationResult
@@ -57,7 +49,7 @@ using Microsoft.Extensions.AI;
 ///         {
 ///             StrategyName = "YourStrategy",
 ///             DecisionDuration = TimeSpan.Zero,
-///             Context = reductionContext // ← CRITICAL: Include reduction metadata
+///             Context = reductionContext // ← Use helper method result
 ///         }
 ///     };
 /// }

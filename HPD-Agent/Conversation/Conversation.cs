@@ -4,16 +4,18 @@ using System.Text.Json.Serialization;
 using System.Runtime.CompilerServices;
 using HPD_Agent.TextExtraction;
 using System.Diagnostics;
+using HPD_Agent.Orchestration;
 
 /// <summary>
 /// Clean conversation management built on Microsoft.Extensions.AI
-/// Coordinates ConversationThread (state) and ConversationOrchestrator (execution).
+/// Coordinates ConversationThread (state) and Agent execution (direct for single-agent, via IOrchestrator for multi-agent).
 /// Similar to Microsoft's pattern where Agent + Thread are composed by user code.
 /// </summary>
 public class Conversation
 {
     private readonly ConversationThread _thread;
-    private readonly ConversationOrchestrator _orchestrator;
+    private readonly IReadOnlyList<Agent> _agents;
+    private IOrchestrator? _defaultOrchestrator;
 
     // OpenTelemetry Activity Source for conversation telemetry
     private static readonly ActivitySource ActivitySource = new("HPD.Conversation");
@@ -30,8 +32,8 @@ public class Conversation
     /// </summary>
     public IOrchestrator? DefaultOrchestrator
     {
-        get => _orchestrator.DefaultOrchestrator;
-        set => _orchestrator.DefaultOrchestrator = value;
+        get => _defaultOrchestrator;
+        set => _defaultOrchestrator = value;
     }
 
     // Convenient pass-through properties to thread
@@ -42,7 +44,7 @@ public class Conversation
     public IReadOnlyDictionary<string, object> Metadata => _thread.Metadata;
 
     /// <summary>Gets the primary agent in this conversation, or null if no agents are present.</summary>
-    public Agent? PrimaryAgent => _orchestrator.Agents.FirstOrDefault();
+    public Agent? PrimaryAgent => _agents.FirstOrDefault();
 
     /// <summary>Add metadata key/value to this conversation thread.</summary>
     public void AddMetadata(string key, object value) => _thread.AddMetadata(key, value);
@@ -53,7 +55,8 @@ public class Conversation
     public Conversation(Agent agent)
     {
         _thread = new ConversationThread();
-        _orchestrator = new ConversationOrchestrator(new[] { agent });
+        _agents = new[] { agent ?? throw new ArgumentNullException(nameof(agent)) };
+        _defaultOrchestrator = null;
     }
 
     /// <summary>
@@ -62,7 +65,8 @@ public class Conversation
     public Conversation(Agent agent, ConversationThread thread)
     {
         _thread = thread ?? throw new ArgumentNullException(nameof(thread));
-        _orchestrator = new ConversationOrchestrator(new[] { agent });
+        _agents = new[] { agent ?? throw new ArgumentNullException(nameof(agent)) };
+        _defaultOrchestrator = null;
     }
 
     /// <summary>
@@ -71,7 +75,8 @@ public class Conversation
     public Conversation(IEnumerable<Agent> agents, IOrchestrator? orchestrator = null)
     {
         _thread = new ConversationThread();
-        _orchestrator = new ConversationOrchestrator(agents?.ToList() ?? throw new ArgumentNullException(nameof(agents)), orchestrator);
+        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
+        _defaultOrchestrator = orchestrator;
     }
 
     /// <summary>
@@ -80,7 +85,8 @@ public class Conversation
     public Conversation(IEnumerable<Agent> agents, ConversationThread thread, IOrchestrator? orchestrator = null)
     {
         _thread = thread ?? throw new ArgumentNullException(nameof(thread));
-        _orchestrator = new ConversationOrchestrator(agents?.ToList() ?? throw new ArgumentNullException(nameof(agents)), orchestrator);
+        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
+        _defaultOrchestrator = orchestrator;
     }
 
     /// <summary>
@@ -90,7 +96,8 @@ public class Conversation
     {
         _thread = new ConversationThread();
         _thread.AddMetadata("Project", project);
-        _orchestrator = new ConversationOrchestrator(agents?.ToList() ?? throw new ArgumentNullException(nameof(agents)), orchestrator);
+        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
+        _defaultOrchestrator = orchestrator;
     }
 
     /// <summary>
@@ -136,7 +143,7 @@ public class Conversation
         // Set telemetry tags
         activity?.SetTag("conversation.id", Id);
         activity?.SetTag("conversation.message_count", _thread.MessageCount);
-        activity?.SetTag("conversation.agent_count", _orchestrator.Agents.Count);
+        activity?.SetTag("conversation.agent_count", _agents.Count);
         activity?.SetTag("conversation.primary_agent", PrimaryAgent?.Config?.Name);
 
         try
@@ -147,13 +154,67 @@ public class Conversation
             // Inject context
             options = InjectProjectContextIfNeeded(options);
 
-            // Execute turn via orchestrator (handles single/multi-agent logic)
-            var orchestrationResult = await _orchestrator.ExecuteTurnAsync(
-                _thread.Messages,
-                _thread.Id,
-                options,
-                orchestrator,
-                cancellationToken);
+            OrchestrationResult orchestrationResult;
+
+            // INLINE ROUTING LOGIC: Single vs Multi-agent
+            if (_agents.Count == 0)
+            {
+                throw new InvalidOperationException("No agents configured for this conversation");
+            }
+            else if (_agents.Count == 1)
+            {
+                // SINGLE-AGENT PATH: Direct execution
+                var agent = _agents[0];
+                var sw = Stopwatch.StartNew();
+                var streamingResult = await agent.ExecuteStreamingTurnAsync(
+                    _thread.Messages, options, cancellationToken: cancellationToken);
+
+                // Consume stream
+                await foreach (var _ in streamingResult.EventStream.WithCancellation(cancellationToken))
+                {
+                    // Just consume events
+                }
+
+                // Get final history
+                var finalHistory = await streamingResult.FinalHistory;
+                sw.Stop();
+
+                // Build OrchestrationResult
+                var response = new ChatResponse(finalHistory.ToList());
+                var singleAgentUsage = CreateTokenUsage(response);
+
+                orchestrationResult = new OrchestrationResult
+                {
+                    Response = response,
+                    PrimaryAgent = agent,
+                    RunId = Id,
+                    Status = OrchestrationStatus.Completed,
+                    ExecutionCount = 1,
+                    ExecutionTimeMs = (int)sw.ElapsedMilliseconds,
+                    AggregatedUsage = singleAgentUsage,
+                    ExecutionOrder = new[] { agent.Name },
+                    Metadata = new OrchestrationMetadata
+                    {
+                        StrategyName = "SingleAgent",
+                        DecisionDuration = TimeSpan.Zero,
+                        Context = OrchestrationHelpers.PackageReductionMetadata(streamingResult.Reduction)
+                    }
+                };
+            }
+            else
+            {
+                // MULTI-AGENT PATH: Use orchestrator
+                var effectiveOrchestrator = orchestrator ?? _defaultOrchestrator;
+                if (effectiveOrchestrator == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. " +
+                        $"Set DefaultOrchestrator or pass an orchestrator parameter.");
+                }
+
+                orchestrationResult = await effectiveOrchestrator.OrchestrateAsync(
+                    _thread.Messages, _agents, Id, options, cancellationToken);
+            }
 
             activity?.SetTag("conversation.orchestration_strategy", orchestrationResult.Metadata.StrategyName);
             activity?.SetTag("orchestration.status", orchestrationResult.Status.ToString().ToLowerInvariant());
@@ -568,14 +629,14 @@ public class Conversation
         ConversationContext.SetConversationId(Id);
         try
         {
-            if (_orchestrator.Agents.Count == 0)
+            if (_agents.Count == 0)
             {
                 throw new InvalidOperationException("No agents configured for this conversation");
             }
-            else if (_orchestrator.Agents.Count == 1)
+            else if (_agents.Count == 1)
             {
                 // DIRECT PATH - Single agent
-                var agent = _orchestrator.Agents[0];
+                var agent = _agents[0];
                 var result = await agent.ExecuteStreamingTurnAsync(_thread.Messages, options, cancellationToken: cancellationToken);
 
                 // Stream the events
@@ -625,12 +686,12 @@ public class Conversation
                 if (effectiveOrchestrator == null)
                 {
                     throw new InvalidOperationException(
-                        $"Multi-agent conversations ({_orchestrator.Agents.Count} agents) require an orchestrator. Set DefaultOrchestrator or pass an orchestrator parameter.");
+                        $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. Set DefaultOrchestrator or pass an orchestrator parameter.");
                 }
 
                 // Use the orchestrator's streaming method
                 var orchestrationResult = await effectiveOrchestrator.OrchestrateStreamingAsync(
-                    _thread.Messages, _orchestrator.Agents, this.Id, options, cancellationToken);
+                    _thread.Messages, _agents, this.Id, options, cancellationToken);
 
                 // Stream all orchestration and agent events
                 await foreach (var evt in orchestrationResult.EventStream.WithCancellation(cancellationToken))
