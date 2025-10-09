@@ -100,6 +100,12 @@ public class Agent : IChatClient
             MaxRetries = config.ErrorHandling?.MaxRetries ?? 3
         };
 
+        // Auto-detect and set provider error handler if not explicitly configured
+        if (config.ErrorHandling != null && config.ErrorHandling.ProviderHandler == null)
+        {
+            config.ErrorHandling.ProviderHandler = CreateProviderHandler(config.Provider?.Provider);
+        }
+
         // Fix: Store and use AI function filters
         _aiFunctionFilters = aiFunctionFilters ?? new List<IAiFunctionFilter>();
         _messageTurnFilters = messageTurnFilters ?? new List<IMessageTurnFilter>();
@@ -1059,6 +1065,25 @@ Best practices:
         return AgentBuilderHelpers.CreateClientFromProviderConfig(providerConfig);
     }
 
+    /// <summary>
+    /// Auto-detects and creates the appropriate error handler based on the provider.
+    /// Opinionated by default: automatically selects provider-specific handler.
+    /// Returns GenericErrorHandler as fallback for unknown providers.
+    /// </summary>
+    private static HPD.Agent.ErrorHandling.IProviderErrorHandler CreateProviderHandler(ChatProvider? provider)
+    {
+        return provider switch
+        {
+            ChatProvider.OpenAI => new HPD.Agent.ErrorHandling.Providers.OpenAIErrorHandler(),
+            ChatProvider.AzureOpenAI => new HPD.Agent.ErrorHandling.Providers.OpenAIErrorHandler(),
+            // Future provider handlers will be added here as they are implemented:
+            // ChatProvider.Anthropic => new AnthropicErrorHandler(),
+            // ChatProvider.GoogleAI => new GoogleAIErrorHandler(),
+            // ChatProvider.VertexAI => new GoogleAIErrorHandler(),
+            _ => new HPD.Agent.ErrorHandling.GenericErrorHandler()
+        };
+    }
+
     #endregion
 
     #region Message Turn Filters
@@ -1523,15 +1548,17 @@ public class FunctionCallProcessor
     }
 
     /// <summary>
-    /// Executes a function with retry logic and timeout enforcement.
-    /// Implements exponential backoff with jitter for transient failures.
-    /// Jitter prevents thundering herd when multiple parallel tools fail simultaneously.
+    /// Executes a function with provider-aware retry logic and timeout enforcement.
+    /// Uses provider-specific error handlers to parse errors and determine retry delays.
+    /// Implements intelligent backoff: API-specified > Provider-specific > Exponential with jitter.
     /// </summary>
     private async Task ExecuteWithRetryAsync(AiFunctionContext context, CancellationToken cancellationToken)
     {
         var maxRetries = _errorHandlingConfig?.MaxRetries ?? 3;
         var retryDelay = _errorHandlingConfig?.RetryDelay ?? TimeSpan.FromSeconds(1);
         var functionTimeout = _errorHandlingConfig?.SingleFunctionTimeout;
+        var providerHandler = _errorHandlingConfig?.ProviderHandler;
+        var customRetryStrategy = _errorHandlingConfig?.CustomRetryStrategy;
 
         Exception? lastException = null;
 
@@ -1567,14 +1594,64 @@ public class FunctionCallProcessor
                     return;
                 }
 
-                // Exponential backoff with full jitter: delay = random(0, base * 2^attempt)
-                // Prevents thundering herd when parallel tools fail simultaneously
-                // Reference: AWS Architecture Blog on exponential backoff and jitter
-                var baseMs = retryDelay.TotalMilliseconds;
-                var maxDelayMs = baseMs * Math.Pow(2, attempt); // 1x, 2x, 4x, 8x...
-                var jitteredDelayMs = Random.Shared.NextDouble() * maxDelayMs;
-                var delay = TimeSpan.FromMilliseconds(jitteredDelayMs);
-                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                // PRIORITY 1: Use custom retry strategy if provided
+                TimeSpan? delay = null;
+                if (customRetryStrategy != null)
+                {
+                    delay = await customRetryStrategy(ex, attempt, cancellationToken).ConfigureAwait(false);
+                    if (!delay.HasValue)
+                    {
+                        // Custom strategy says don't retry
+                        context.Result = $"Error invoking function '{context.ToolCallRequest.FunctionName}': {ex.Message} (retry declined by custom strategy)";
+                        return;
+                    }
+                }
+
+                // PRIORITY 2: Use provider-aware error handling if available
+                if (delay == null && providerHandler != null)
+                {
+                    var errorDetails = providerHandler.ParseError(ex);
+                    if (errorDetails != null)
+                    {
+                        // Check if per-category retry limits apply
+                        var categoryMaxRetries = _errorHandlingConfig?.MaxRetriesByCategory?.GetValueOrDefault(errorDetails.Category) ?? maxRetries;
+                        if (attempt >= categoryMaxRetries)
+                        {
+                            context.Result = $"Error invoking function '{context.ToolCallRequest.FunctionName}' after {categoryMaxRetries + 1} attempts ({errorDetails.Category}): {ex.Message}";
+                            return;
+                        }
+
+                        // Get provider-calculated delay
+                        var maxDelayFromConfig = _errorHandlingConfig?.MaxRetryDelay ?? TimeSpan.FromSeconds(30);
+                        var backoffMultiplier = _errorHandlingConfig?.BackoffMultiplier ?? 2.0;
+                        delay = providerHandler.GetRetryDelay(errorDetails, attempt, retryDelay, backoffMultiplier, maxDelayFromConfig);
+
+                        if (!delay.HasValue)
+                        {
+                            // Provider says this error is not retryable (e.g., 400 client error, quota exceeded)
+                            context.Result = $"Error invoking function '{context.ToolCallRequest.FunctionName}': {ex.Message} ({errorDetails.Category}, non-retryable)";
+                            return;
+                        }
+                    }
+                }
+
+                // PRIORITY 3: Fallback to exponential backoff with jitter
+                if (delay == null)
+                {
+                    var baseMs = retryDelay.TotalMilliseconds;
+                    var maxDelayMs = baseMs * Math.Pow(2, attempt); // 1x, 2x, 4x, 8x...
+                    var jitteredDelayMs = Random.Shared.NextDouble() * maxDelayMs;
+                    delay = TimeSpan.FromMilliseconds(jitteredDelayMs);
+                }
+
+                // Apply configured max delay cap
+                var maxDelayCap = _errorHandlingConfig?.MaxRetryDelay ?? TimeSpan.FromSeconds(30);
+                if (delay.Value > maxDelayCap)
+                {
+                    delay = maxDelayCap;
+                }
+
+                await Task.Delay(delay.Value, cancellationToken).ConfigureAwait(false);
             }
         }
     }

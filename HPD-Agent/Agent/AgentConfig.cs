@@ -183,6 +183,51 @@ public class ErrorHandlingConfig
     /// Delay before retrying failed function (default: 1 second, exponentially increased per attempt)
     /// </summary>
     public TimeSpan RetryDelay { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Whether to use provider-specific retry delays from Retry-After headers or error messages.
+    /// Default is true (opinionated: respect provider guidance).
+    /// </summary>
+    public bool UseProviderRetryDelays { get; set; } = true;
+
+    /// <summary>
+    /// Whether to automatically attempt token refresh on 401 authentication errors.
+    /// Default is true (opinionated: auto-recovery when possible).
+    /// </summary>
+    public bool AutoRefreshTokensOn401 { get; set; } = true;
+
+    /// <summary>
+    /// Maximum retry delay cap to prevent excessive waiting.
+    /// Default is 30 seconds.
+    /// </summary>
+    public TimeSpan MaxRetryDelay { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Exponential backoff multiplier for retry delays.
+    /// Default is 2.0 (doubles the delay each attempt).
+    /// </summary>
+    public double BackoffMultiplier { get; set; } = 2.0;
+
+    /// <summary>
+    /// Optional per-category retry limits. If null, uses MaxRetries for all categories.
+    /// Example: { ErrorCategory.RateLimitRetryable: 5, ErrorCategory.ServerError: 3 }
+    /// </summary>
+    public Dictionary<HPD.Agent.ErrorHandling.ErrorCategory, int>? MaxRetriesByCategory { get; set; }
+
+    /// <summary>
+    /// Provider-specific error handler. If null, auto-detects based on ChatProvider.
+    /// Set this to customize error parsing for specific providers or use custom handlers.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public HPD.Agent.ErrorHandling.IProviderErrorHandler? ProviderHandler { get; set; }
+
+    /// <summary>
+    /// Custom retry strategy that overrides default behavior.
+    /// Parameters: (exception, attemptNumber, cancellationToken)
+    /// Returns: TimeSpan for retry delay, or null to stop retrying.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Func<Exception, int, CancellationToken, Task<TimeSpan?>>? CustomRetryStrategy { get; set; }
 }
 
 /// <summary>

@@ -13,6 +13,7 @@ REPOS=(
     "https://github.com/strands-agents/sdk-python.git"
     "https://github.com/ag-ui-protocol/ag-ui.git"
     "https://github.com/google-gemini/gemini-cli.git"
+    "https://github.com/openai/codex.git"
     # Add more repo URLs as needed
 )
 
