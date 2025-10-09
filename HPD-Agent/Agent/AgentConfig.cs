@@ -265,6 +265,30 @@ public class HistoryReductionConfig
     public int TokenBudgetThreshold { get; set; } = 1000;
 
     /// <summary>
+    /// When set, uses percentage-based triggers instead of absolute token counts.
+    /// Requires ContextWindowSize to be configured.
+    /// Example: 0.7 = trigger reduction at 70% of context window.
+    /// Takes precedence over MaxTokenBudget when both are set.
+    /// </summary>
+    public double? TokenBudgetTriggerPercentage { get; set; } = null;
+
+    /// <summary>
+    /// Percentage of context window to preserve after reduction.
+    /// Only used when TokenBudgetTriggerPercentage is set.
+    /// Example: 0.3 = keep 30% of context window after compression.
+    /// Default is 0.3 (30% preservation).
+    /// </summary>
+    public double TokenBudgetPreservePercentage { get; set; } = 0.3;
+
+    /// <summary>
+    /// Context window size for percentage calculations.
+    /// Required when using TokenBudgetTriggerPercentage.
+    /// User must specify based on their model (e.g., 128000 for GPT-4).
+    /// No auto-detection to maintain library neutrality.
+    /// </summary>
+    public int? ContextWindowSize { get; set; } = null;
+
+    /// <summary>
     /// Custom summarization prompt for SummarizingChatReducer.
     /// If null, uses the default prompt from Microsoft.Extensions.AI.
     /// Only used when Strategy is Summarizing.

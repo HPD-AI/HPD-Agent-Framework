@@ -113,6 +113,70 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
                 .WithMessage("ErrorHandling MaxRetries must be between 0 and 10.");
         });
 
+        // History reduction validation
+        When(config => config.HistoryReduction?.Enabled == true, () =>
+        {
+            // Percentage-based validation
+            When(config => config.HistoryReduction!.TokenBudgetTriggerPercentage.HasValue, () =>
+            {
+                RuleFor(config => config.HistoryReduction!.ContextWindowSize)
+                    .NotNull()
+                    .WithMessage("ContextWindowSize must be set when using TokenBudgetTriggerPercentage.");
+
+                RuleFor(config => config.HistoryReduction!.TokenBudgetTriggerPercentage!.Value)
+                    .GreaterThan(0)
+                    .LessThan(1)
+                    .WithMessage("TokenBudgetTriggerPercentage must be between 0 and 1 (e.g., 0.7 for 70%).");
+
+                RuleFor(config => config.HistoryReduction!.TokenBudgetPreservePercentage)
+                    .GreaterThan(0)
+                    .LessThan(1)
+                    .WithMessage("TokenBudgetPreservePercentage must be between 0 and 1 (e.g., 0.3 for 30%).");
+
+                RuleFor(config => config.HistoryReduction!.ContextWindowSize!.Value)
+                    .GreaterThan(1000)
+                    .LessThanOrEqualTo(2000000)
+                    .WithMessage("ContextWindowSize must be between 1,000 and 2,000,000 tokens.");
+
+                // Ensure trigger percentage is larger than preserve percentage
+                RuleFor(config => config.HistoryReduction!)
+                    .Must(hr => hr.TokenBudgetTriggerPercentage > hr.TokenBudgetPreservePercentage)
+                    .WithMessage("TokenBudgetTriggerPercentage must be larger than TokenBudgetPreservePercentage.");
+            });
+
+            // Token budget validation
+            When(config => config.HistoryReduction!.MaxTokenBudget.HasValue, () =>
+            {
+                RuleFor(config => config.HistoryReduction!.MaxTokenBudget!.Value)
+                    .GreaterThan(100)
+                    .LessThanOrEqualTo(2000000)
+                    .WithMessage("MaxTokenBudget must be between 100 and 2,000,000 tokens.");
+
+                RuleFor(config => config.HistoryReduction!.TargetTokenBudget)
+                    .GreaterThan(0)
+                    .LessThan(config => config.HistoryReduction!.MaxTokenBudget!.Value)
+                    .WithMessage("TargetTokenBudget must be positive and less than MaxTokenBudget.");
+
+                RuleFor(config => config.HistoryReduction!.TokenBudgetThreshold)
+                    .GreaterThanOrEqualTo(0)
+                    .WithMessage("TokenBudgetThreshold must be non-negative.");
+            });
+
+            // Message count validation
+            RuleFor(config => config.HistoryReduction!.TargetMessageCount)
+                .GreaterThan(1)
+                .LessThanOrEqualTo(1000)
+                .WithMessage("TargetMessageCount must be between 2 and 1,000 messages.");
+
+            When(config => config.HistoryReduction!.SummarizationThreshold.HasValue, () =>
+            {
+                RuleFor(config => config.HistoryReduction!.SummarizationThreshold!.Value)
+                    .GreaterThanOrEqualTo(0)
+                    .LessThanOrEqualTo(100)
+                    .WithMessage("SummarizationThreshold must be between 0 and 100.");
+            });
+        });
+
         // Cross-configuration validation rules
         RuleFor(config => config)
             .Must(HaveValidProviderModelCombination)

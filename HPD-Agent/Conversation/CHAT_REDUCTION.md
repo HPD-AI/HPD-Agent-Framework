@@ -61,8 +61,20 @@ public class HistoryReductionConfig
 {
     public bool Enabled { get; set; } = false;
     public HistoryReductionStrategy Strategy { get; set; } = HistoryReductionStrategy.MessageCounting;
+
+    // Message-based triggers (backward compatible)
     public int TargetMessageCount { get; set; } = 20;
     public int? SummarizationThreshold { get; set; } = 5;
+
+    // Token-based triggers (optional)
+    public int? MaxTokenBudget { get; set; } = null;
+    public int TargetTokenBudget { get; set; } = 4000;
+    public int TokenBudgetThreshold { get; set; } = 1000;
+
+    // Percentage-based triggers (Gemini CLI-inspired)
+    public double? TokenBudgetTriggerPercentage { get; set; } = null;
+    public double TokenBudgetPreservePercentage { get; set; } = 0.3;
+    public int? ContextWindowSize { get; set; } = null;
 
     // Summary marker for cache detection
     public const string SummaryMetadataKey = "__summary__";
@@ -391,7 +403,7 @@ summaryMessage.Metadata["__summary__"] = true; // Property doesn't exist!
 
 ## Usage Examples
 
-### Basic Setup
+### Basic Setup (Message-Based)
 
 ```csharp
 var agent = Agent.CreateBuilder()
@@ -410,24 +422,49 @@ var agent = Agent.CreateBuilder()
 var conversation = Conversation.Create(new[] { agent });
 ```
 
-### Cost Optimization - Separate Summarizer
+### Token-Based with Percentage (Gemini CLI Style)
 
 ```csharp
 .WithHistoryReduction(new HistoryReductionConfig
 {
     Enabled = true,
     Strategy = HistoryReductionStrategy.Summarizing,
-    TargetMessageCount = 20,
-    SummarizationThreshold = 5,
+
+    // Percentage-based triggers
+    ContextWindowSize = 128000,                // GPT-4 context window
+    TokenBudgetTriggerPercentage = 0.7,        // Compress at 70% (89,600 tokens)
+    TokenBudgetPreservePercentage = 0.3,       // Keep 30% after (38,400 tokens)
 
     // Use cheaper model for summaries
     SummarizerProvider = new ProviderConfig
     {
         Provider = ChatProvider.OpenAI,
-        ModelName = "gpt-4o-mini", // Cheap model for summaries
+        ModelName = "gpt-4o-mini",
         ApiKey = apiKey
     }
-    // Main agent still uses gpt-4o for conversations
+})
+```
+
+### Token-Based with Absolute Limits
+
+```csharp
+.WithHistoryReduction(new HistoryReductionConfig
+{
+    Enabled = true,
+    Strategy = HistoryReductionStrategy.Summarizing,
+
+    // Absolute token triggers
+    MaxTokenBudget = 90000,                    // Trigger at 90k tokens
+    TargetTokenBudget = 40000,                 // Reduce to 40k tokens
+    TokenBudgetThreshold = 5000,               // Buffer of 5k tokens
+
+    // Cost optimization
+    SummarizerProvider = new ProviderConfig
+    {
+        Provider = ChatProvider.OpenAI,
+        ModelName = "gpt-4o-mini",
+        ApiKey = apiKey
+    }
 })
 ```
 
@@ -651,13 +688,38 @@ Console.WriteLine($"Messages after: {_messages.Count}");
 
 ## Future Enhancements (Not Implemented)
 
-### 1. Token-Based Reduction
-Instead of message count, reduce based on token count:
+### 1. Token-Based Reduction ✅ IMPLEMENTED (2025-01-09)
+
+**Three Trigger Modes (Priority Order):**
+
+#### A. Percentage-Based (Gemini CLI-Inspired)
 ```csharp
-Strategy = HistoryReductionStrategy.TokenBased,
-TargetTokenCount = 8000,
-ThresholdTokenCount = 1000
+Strategy = HistoryReductionStrategy.Summarizing,
+ContextWindowSize = 128000,           // User specifies their model's context
+TokenBudgetTriggerPercentage = 0.7,   // Trigger at 70% of context window
+TokenBudgetPreservePercentage = 0.3,  // Keep 30% after reduction
 ```
+
+#### B. Absolute Token Budget
+```csharp
+Strategy = HistoryReductionStrategy.Summarizing,
+MaxTokenBudget = 90000,               // Hard token limit before trigger
+TargetTokenBudget = 40000,            // Target after reduction
+TokenBudgetThreshold = 5000,          // Buffer before triggering
+```
+
+#### C. Message Count (Backward Compatible)
+```csharp
+Strategy = HistoryReductionStrategy.MessageCounting,
+TargetMessageCount = 20,              // Keep last 20 messages
+SummarizationThreshold = 5,           // Buffer of 5 messages
+```
+
+**Implementation Details:**
+- Uses BAML-inspired provider token counts when available
+- Falls back to conservative character-based estimation (3.5 chars/token)
+- Incremental token counting after summaries for performance
+- Priority system: Percentage > Absolute > Message Count
 
 ### 2. Dual Storage (Full Archive)
 Maintain both reduced working memory and full archive:

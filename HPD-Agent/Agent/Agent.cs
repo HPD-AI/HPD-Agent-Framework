@@ -110,17 +110,12 @@ public class Agent : IChatClient
         // Augment system instructions with plan mode guidance if enabled
         var systemInstructions = AugmentSystemInstructionsForPlanMode(config);
 
-        // Extract reduction thresholds from config (AOT-friendly, no reflection)
-        var reductionTargetCount = config.HistoryReduction?.TargetMessageCount ?? 20;
-        var reductionThreshold = config.HistoryReduction?.SummarizationThreshold ?? 5;
-
         _messageProcessor = new MessageProcessor(
-            systemInstructions, 
-            mergedOptions ?? config.Provider?.DefaultChatOptions, 
-            promptFilters, 
+            systemInstructions,
+            mergedOptions ?? config.Provider?.DefaultChatOptions,
+            promptFilters,
             chatReducer,
-            reductionTargetCount,
-            reductionThreshold);
+            config.HistoryReduction);
         _functionCallProcessor = new FunctionCallProcessor(scopedFilterManager, permissionFilters, _aiFunctionFilters, config.MaxAgenticIterations, config.ErrorHandling);
         _agentTurn = new AgentTurn(_baseClient);
         _toolScheduler = new ToolScheduler(_functionCallProcessor, config);
@@ -1611,23 +1606,20 @@ public class MessageProcessor
     private readonly string? _systemInstructions;
     private readonly ChatOptions? _defaultOptions;
     private readonly IChatReducer? _chatReducer;
-    private readonly int _reductionTargetCount;
-    private readonly int _reductionThreshold;
+    private readonly HistoryReductionConfig? _reductionConfig;
 
     public MessageProcessor(
-        string? systemInstructions, 
-        ChatOptions? defaultOptions, 
-        IReadOnlyList<IPromptFilter> promptFilters, 
+        string? systemInstructions,
+        ChatOptions? defaultOptions,
+        IReadOnlyList<IPromptFilter> promptFilters,
         IChatReducer? chatReducer,
-        int reductionTargetCount,
-        int reductionThreshold)
+        HistoryReductionConfig? reductionConfig)
     {
         _systemInstructions = systemInstructions;
         _defaultOptions = defaultOptions;
         _promptFilters = promptFilters ?? new List<IPromptFilter>();
         _chatReducer = chatReducer;
-        _reductionTargetCount = reductionTargetCount;
-        _reductionThreshold = reductionThreshold;
+        _reductionConfig = reductionConfig;
     }
 
     /// <summary>
@@ -1662,21 +1654,7 @@ public class MessageProcessor
             var lastSummaryIndex = messagesList.FindLastIndex(m =>
                 m.AdditionalProperties?.ContainsKey(HistoryReductionConfig.SummaryMetadataKey) == true);
 
-            bool shouldReduce = false;
-
-            // Use configured thresholds (AOT-friendly, no reflection)
-            // These are passed to MessageProcessor at construction time from AgentConfig
-            if (lastSummaryIndex >= 0)
-            {
-                // Summary found - only count messages AFTER the summary
-                var messagesAfterSummary = messagesList.Count - lastSummaryIndex - 1;
-                shouldReduce = messagesAfterSummary > (_reductionTargetCount + _reductionThreshold);
-            }
-            else
-            {
-                // No summary found - check total message count
-                shouldReduce = messagesList.Count > (_reductionTargetCount + _reductionThreshold);
-            }
+            bool shouldReduce = ShouldTriggerReduction(messagesList, lastSummaryIndex);
 
             ReductionMetadata? reductionMetadata = null;
 
@@ -1717,6 +1695,99 @@ public class MessageProcessor
         effectiveMessages = await ApplyPromptFiltersAsync(effectiveMessages, effectiveOptions, agentName, cancellationToken).ConfigureAwait(false);
 
         return (effectiveMessages, effectiveOptions, null);
+    }
+
+    /// <summary>
+    /// Determines if history reduction should be triggered based on configured thresholds.
+    /// Implements priority system: Percentage > Absolute Tokens > Message Count.
+    /// </summary>
+    private bool ShouldTriggerReduction(List<ChatMessage> messagesList, int lastSummaryIndex)
+    {
+        if (_reductionConfig == null) return false;
+
+        // PRIORITY 1: Percentage-based (when configured)
+        if (_reductionConfig.TokenBudgetTriggerPercentage.HasValue && _reductionConfig.ContextWindowSize.HasValue)
+        {
+            return ShouldReduceByPercentage(messagesList, lastSummaryIndex);
+        }
+
+        // PRIORITY 2: Absolute token budget (when configured)
+        if (_reductionConfig.MaxTokenBudget.HasValue)
+        {
+            return ShouldReduceByTokens(messagesList, lastSummaryIndex);
+        }
+
+        // PRIORITY 3: Message-based (default, existing logic)
+        return ShouldReduceByMessages(messagesList, lastSummaryIndex);
+    }
+
+    /// <summary>
+    /// Checks if reduction should be triggered based on percentage of context window.
+    /// Gemini CLI-inspired approach with user-specified context window size.
+    /// </summary>
+    private bool ShouldReduceByPercentage(List<ChatMessage> messagesList, int lastSummaryIndex)
+    {
+        var contextWindow = _reductionConfig!.ContextWindowSize!.Value;
+        var triggerPercentage = _reductionConfig.TokenBudgetTriggerPercentage!.Value;
+        var triggerThreshold = (int)(contextWindow * triggerPercentage);
+
+        if (lastSummaryIndex >= 0)
+        {
+            // Count tokens AFTER last summary (incremental token tracking)
+            var messagesAfterSummary = messagesList.Skip(lastSummaryIndex + 1);
+            var tokensAfterSummary = messagesAfterSummary.CalculateTotalTokens();
+            return tokensAfterSummary > triggerThreshold;
+        }
+        else
+        {
+            // Count all message tokens (first reduction)
+            var totalTokens = messagesList.CalculateTotalTokens();
+            return totalTokens > triggerThreshold;
+        }
+    }
+
+    /// <summary>
+    /// Checks if reduction should be triggered based on absolute token budget.
+    /// Uses existing MaxTokenBudget configuration.
+    /// </summary>
+    private bool ShouldReduceByTokens(List<ChatMessage> messagesList, int lastSummaryIndex)
+    {
+        var maxBudget = _reductionConfig!.MaxTokenBudget!.Value;
+        var threshold = _reductionConfig.TokenBudgetThreshold;
+
+        if (lastSummaryIndex >= 0)
+        {
+            var messagesAfterSummary = messagesList.Skip(lastSummaryIndex + 1);
+            var tokensAfterSummary = messagesAfterSummary.CalculateTotalTokens();
+            return tokensAfterSummary > (maxBudget + threshold);
+        }
+        else
+        {
+            var totalTokens = messagesList.CalculateTotalTokens();
+            return totalTokens > (maxBudget + threshold);
+        }
+    }
+
+    /// <summary>
+    /// Checks if reduction should be triggered based on message count.
+    /// Preserves existing behavior for backward compatibility.
+    /// </summary>
+    private bool ShouldReduceByMessages(List<ChatMessage> messagesList, int lastSummaryIndex)
+    {
+        var targetCount = _reductionConfig!.TargetMessageCount;
+        var threshold = _reductionConfig.SummarizationThreshold ?? 5;
+
+        if (lastSummaryIndex >= 0)
+        {
+            // Summary found - only count messages AFTER the summary
+            var messagesAfterSummary = messagesList.Count - lastSummaryIndex - 1;
+            return messagesAfterSummary > (targetCount + threshold);
+        }
+        else
+        {
+            // No summary found - check total message count
+            return messagesList.Count > (targetCount + threshold);
+        }
     }
 
     /// <summary>
