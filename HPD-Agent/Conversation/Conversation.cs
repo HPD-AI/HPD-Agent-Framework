@@ -4,20 +4,19 @@ using System.Text.Json.Serialization;
 using System.Runtime.CompilerServices;
 using HPD_Agent.TextExtraction;
 using System.Diagnostics;
-using HPD_Agent.Orchestration;
 using Microsoft.Agents.AI;
 
 /// <summary>
 /// Clean conversation management built on Microsoft.Extensions.AI
-/// Coordinates ConversationThread (state) and Agent execution (direct for single-agent, via IOrchestrator for multi-agent).
+/// Coordinates ConversationThread (state) and Agent execution.
 /// Implements AIAgent to be compatible with Microsoft.Agents.AI workflows.
+/// Multi-agent orchestration is handled by Microsoft.Agents.AI.Workflows.AgentWorkflowBuilder.
 /// Similar to Microsoft's pattern where Agent + Thread are composed by user code.
 /// </summary>
 public class Conversation : AIAgent
 {
     private readonly ConversationThread _thread;
-    private readonly IReadOnlyList<Agent> _agents;
-    private IOrchestrator? _defaultOrchestrator;
+    private readonly Agent _agent;
 
     // OpenTelemetry Activity Source for conversation telemetry
     private static readonly ActivitySource ActivitySource = new("HPD.Conversation");
@@ -28,16 +27,6 @@ public class Conversation : AIAgent
     /// </summary>
     public ConversationThread Thread => _thread;
 
-    /// <summary>
-    /// Gets or sets the default orchestrator for multi-agent scenarios.
-    /// When set, this orchestrator will be used if no orchestrator is provided to Send methods.
-    /// </summary>
-    public IOrchestrator? DefaultOrchestrator
-    {
-        get => _defaultOrchestrator;
-        set => _defaultOrchestrator = value;
-    }
-
     // Convenient pass-through properties to thread
     public new string Id => _thread.Id;  // Use 'new' to hide inherited AIAgent.Id
     public DateTime CreatedAt => _thread.CreatedAt;
@@ -45,8 +34,8 @@ public class Conversation : AIAgent
     public IReadOnlyList<ChatMessage> Messages => _thread.Messages;
     public IReadOnlyDictionary<string, object> Metadata => _thread.Metadata;
 
-    /// <summary>Gets the primary agent in this conversation, or null if no agents are present.</summary>
-    public Agent? PrimaryAgent => _agents.FirstOrDefault();
+    /// <summary>Gets the agent in this conversation.</summary>
+    public Agent Agent => _agent;
 
     /// <summary>Add metadata key/value to this conversation thread.</summary>
     public void AddMetadata(string key, object value) => _thread.AddMetadata(key, value);
@@ -54,14 +43,14 @@ public class Conversation : AIAgent
     #region AIAgent Implementation
 
     /// <summary>
-    /// Gets the name of this conversation (derived from primary agent or conversation ID).
+    /// Gets the name of this conversation (derived from agent or conversation ID).
     /// </summary>
-    public override string? Name => PrimaryAgent?.Config?.Name ?? $"Conversation-{Id}";
+    public override string? Name => _agent?.Config?.Name ?? $"Conversation-{Id}";
 
     /// <summary>
-    /// Gets the description of this conversation (derived from primary agent).
+    /// Gets the description of this conversation (derived from agent).
     /// </summary>
-    public override string? Description => PrimaryAgent?.Config?.SystemInstructions;
+    public override string? Description => _agent?.Config?.SystemInstructions;
 
     /// <summary>
     /// Creates a new thread compatible with this agent.
@@ -216,54 +205,31 @@ public class Conversation : AIAgent
     #endregion
 
     /// <summary>
-    /// Creates a conversation with a single agent and a new thread
+    /// Creates a conversation with an agent and a new thread
     /// </summary>
     public Conversation(Agent agent)
     {
         _thread = new ConversationThread();
-        _agents = new[] { agent ?? throw new ArgumentNullException(nameof(agent)) };
-        _defaultOrchestrator = null;
+        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
     }
 
     /// <summary>
-    /// Creates a conversation with a single agent and custom thread (for reusing state)
+    /// Creates a conversation with an agent and custom thread (for reusing state)
     /// </summary>
     public Conversation(Agent agent, ConversationThread thread)
     {
         _thread = thread ?? throw new ArgumentNullException(nameof(thread));
-        _agents = new[] { agent ?? throw new ArgumentNullException(nameof(agent)) };
-        _defaultOrchestrator = null;
-    }
-
-    /// <summary>
-    /// Creates a conversation with multiple agents and a new thread
-    /// </summary>
-    public Conversation(IEnumerable<Agent> agents, IOrchestrator? orchestrator = null)
-    {
-        _thread = new ConversationThread();
-        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
-        _defaultOrchestrator = orchestrator;
-    }
-
-    /// <summary>
-    /// Creates a conversation with multiple agents and custom thread (for reusing state)
-    /// </summary>
-    public Conversation(IEnumerable<Agent> agents, ConversationThread thread, IOrchestrator? orchestrator = null)
-    {
-        _thread = thread ?? throw new ArgumentNullException(nameof(thread));
-        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
-        _defaultOrchestrator = orchestrator;
+        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
     }
 
     /// <summary>
     /// Creates a conversation within a project (stores project in thread metadata)
     /// </summary>
-    public Conversation(Project project, IEnumerable<Agent> agents, IOrchestrator? orchestrator = null)
+    public Conversation(Project project, Agent agent)
     {
         _thread = new ConversationThread();
         _thread.AddMetadata("Project", project);
-        _agents = agents?.ToList() ?? throw new ArgumentNullException(nameof(agents));
-        _defaultOrchestrator = orchestrator;
+        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
     }
 
     /// <summary>
@@ -290,27 +256,22 @@ public class Conversation : AIAgent
 
     /// <summary>
     /// Send a message in the conversation.
-    /// For multi-agent scenarios, uses the provided orchestrator or falls back to DefaultOrchestrator.
     /// </summary>
     /// <param name="message">The message to send</param>
     /// <param name="options">Optional chat options</param>
-    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<ConversationTurnResult> SendAsync(
         string message,
         ChatOptions? options = null,
-        IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
-
         using var activity = ActivitySource.StartActivity("conversation.turn");
         var startTime = DateTimeOffset.UtcNow;
 
         // Set telemetry tags
         activity?.SetTag("conversation.id", Id);
         activity?.SetTag("conversation.message_count", _thread.MessageCount);
-        activity?.SetTag("conversation.agent_count", _agents.Count);
-        activity?.SetTag("conversation.primary_agent", PrimaryAgent?.Config?.Name);
+        activity?.SetTag("conversation.agent", _agent?.Config?.Name);
 
         try
         {
@@ -320,125 +281,54 @@ public class Conversation : AIAgent
             // Inject context
             options = InjectProjectContextIfNeeded(options);
 
-            OrchestrationResult orchestrationResult;
-
-            // INLINE ROUTING LOGIC: Single vs Multi-agent
-            if (_agents.Count == 0)
-            {
-                throw new InvalidOperationException("No agents configured for this conversation");
-            }
-            else if (_agents.Count == 1)
-            {
-                // SINGLE-AGENT PATH: Direct execution
-                var agent = _agents[0];
-                var sw = Stopwatch.StartNew();
-                var streamingResult = await agent.ExecuteStreamingTurnAsync(
-                    _thread.Messages, options, cancellationToken: cancellationToken);
-
-                // Consume stream
-                await foreach (var _ in streamingResult.EventStream.WithCancellation(cancellationToken))
-                {
-                    // Just consume events
-                }
-
-                // Get final history and reduction metadata
-                var finalHistory = await streamingResult.FinalHistory;
-                var reductionMetadata = await streamingResult.ReductionTask;
-                sw.Stop();
-
-                // Build OrchestrationResult
-                var response = new ChatResponse(finalHistory.ToList());
-                var singleAgentUsage = CreateTokenUsage(response);
-
-                orchestrationResult = new OrchestrationResult
-                {
-                    Output = response,                      // Generic output (ChatResponse for conversations)
-                    OutputType = "chat",                    // Specify this is chat output
-                    PrimaryAgent = agent,
-                    RunId = Id,
-                    Status = OrchestrationStatus.Completed,
-                    ExecutionCount = 1,
-                    ExecutionTimeMs = (int)sw.ElapsedMilliseconds,
-                    AggregatedUsage = singleAgentUsage,
-                    ExecutionOrder = new[] { agent.Name },
-                    Metadata = new OrchestrationMetadata
-                    {
-                        StrategyName = "SingleAgent",
-                        DecisionDuration = TimeSpan.Zero,
-                        Context = OrchestrationHelpers.PackageReductionMetadata(reductionMetadata)
-                    }
-                };
-            }
-            else
-            {
-                // MULTI-AGENT PATH: Use orchestrator
-                var effectiveOrchestrator = orchestrator ?? _defaultOrchestrator;
-                if (effectiveOrchestrator == null)
-                {
-                    throw new InvalidOperationException(
-                        $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. " +
-                        $"Set DefaultOrchestrator or pass an orchestrator parameter.");
-                }
-
-                // Build orchestration request using generic pattern (Input + InputType)
-                // History is left null - GetChatHistory() will derive it from Input for efficiency
-                var request = new OrchestrationRequest
-                {
-                    Input = _thread.Messages,           // Generic input (chat messages)
-                    InputType = "chat",                 // Specify this is chat-based
-                    History = null,                     // Let GetChatHistory() derive from Input
-                    AgentIds = _agents.Select(a => a.Name).ToList(),
-                    RunId = Id,
-                    ConversationId = Id,
-                    Extensions = new Dictionary<string, object>()
-                };
-
-                // Create runtime context with services and non-serializable objects
-                var context = new ConversationOrchestrationContext(_agents, options, _thread);
+            // Execute agent turn
+            if (_agent == null)
+                throw new InvalidOperationException("Agent is not configured for this conversation");
                 
-                orchestrationResult = await effectiveOrchestrator.OrchestrateAsync(
-                    request, context, cancellationToken);
+            var sw = Stopwatch.StartNew();
+            var streamingResult = await _agent.ExecuteStreamingTurnAsync(
+                _thread.Messages, options, cancellationToken: cancellationToken);
+
+            // Consume stream
+            await foreach (var _ in streamingResult.EventStream.WithCancellation(cancellationToken))
+            {
+                // Just consume events
             }
 
-            activity?.SetTag("conversation.orchestration_strategy", orchestrationResult.Metadata.StrategyName);
-            activity?.SetTag("orchestration.status", orchestrationResult.Status.ToString().ToLowerInvariant());
-            activity?.SetTag("orchestration.execution_count", orchestrationResult.ExecutionCount);
-            activity?.SetTag("orchestration.execution_time_ms", orchestrationResult.ExecutionTimeMs);
-            if (orchestrationResult.AggregatedUsage != null)
-            {
-                activity?.SetTag("orchestration.aggregated_tokens", orchestrationResult.AggregatedUsage.TotalTokens);
-            }
-            if (orchestrationResult.ExecutionOrder != null)
-            {
-                activity?.SetTag("orchestration.execution_order", string.Join(" -> ", orchestrationResult.ExecutionOrder));
-            }
+            // Get final history and reduction metadata
+            var finalHistory = await streamingResult.FinalHistory;
+            var reductionMetadata = await streamingResult.ReductionTask;
+            sw.Stop();
 
             // Apply reduction BEFORE adding response to history
-            ApplyReductionIfPresent(orchestrationResult);
+            if (reductionMetadata != null)
+            {
+                _thread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
+            }
+
+            // Build response
+            var response = new ChatResponse(finalHistory.ToList());
 
             // Store token counts from response (BAML-inspired pattern)
-            StoreTokenCounts(orchestrationResult.Response, userMessage);
+            StoreTokenCounts(response, userMessage);
 
             // Commit response to history
-            _thread.AddMessages(orchestrationResult.Response.Messages);
+            _thread.AddMessages(response.Messages);
 
             // Record telemetry metrics
             var duration = DateTimeOffset.UtcNow - startTime;
-            var tokenUsage = CreateTokenUsage(orchestrationResult.Response);
+            var tokenUsage = CreateTokenUsage(response);
 
             activity?.SetTag("conversation.duration_ms", duration.TotalMilliseconds);
-            activity?.SetTag("conversation.responding_agent", orchestrationResult.PrimaryAgent?.Name);
             activity?.SetTag("conversation.tokens_used", tokenUsage?.TotalTokens ?? 0);
             activity?.SetTag("conversation.success", true);
 
             return new ConversationTurnResult
             {
-                Response = orchestrationResult.Response,
-                TurnHistory = ExtractTurnHistory(userMessage, orchestrationResult.Response),
-                RespondingAgent = orchestrationResult.PrimaryAgent!,
-                UsedOrchestrator = orchestrator,
+                Response = response,
+                TurnHistory = ExtractTurnHistory(userMessage, response),
+                RespondingAgent = _agent,
                 Duration = duration,
-                OrchestrationMetadata = orchestrationResult.Metadata,
                 Usage = tokenUsage,
                 RequestId = Guid.NewGuid().ToString(),
                 ActivityId = System.Diagnostics.Activity.Current?.Id
@@ -468,7 +358,6 @@ public class Conversation : AIAgent
 
         try
         {
-            var agent = PrimaryAgent ?? throw new InvalidOperationException("No agent configured for this conversation");
 
             // ✅ IMPORTANT: Add the new user message from aguiInput to conversation thread
             // This ensures the agent sees the full conversation history
@@ -492,7 +381,7 @@ public class Conversation : AIAgent
             };
 
             // Use agent's AGUI overload with server-side messages
-            var streamResult = await agent.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+            var streamResult = await _agent.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
 
             // Consume stream (non-streaming path)
             await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
@@ -526,14 +415,8 @@ public class Conversation : AIAgent
             {
                 Response = response,
                 TurnHistory = finalHistory,
-                RespondingAgent = agent,
-                UsedOrchestrator = null,
+                RespondingAgent = _agent,
                 Duration = duration,
-                OrchestrationMetadata = new OrchestrationMetadata
-                {
-                    StrategyName = "AGUI",
-                    DecisionDuration = TimeSpan.Zero
-                },
                 Usage = CreateTokenUsage(response),
                 RequestId = aguiInput.RunId,
                 ActivityId = System.Diagnostics.Activity.Current?.Id
@@ -583,17 +466,14 @@ public class Conversation : AIAgent
 
     /// <summary>
     /// Stream a conversation turn and return both event stream and final metadata.
-    /// For multi-agent scenarios, uses the provided orchestrator or falls back to DefaultOrchestrator.
     /// </summary>
     /// <param name="message">The user message to send</param>
     /// <param name="options">Chat options</param>
-    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Streaming result with event stream and final metadata</returns>
     public Task<ConversationStreamingResult> SendStreamingAsync(
         string message,
         ChatOptions? options = null,
-        IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
 
@@ -613,7 +493,7 @@ public class Conversation : AIAgent
             try
             {
                 // ✅ NEW: Capture definitive metadata from streaming execution
-                var metadata = await SendStreamingEventsAsync(message, writer, options, orchestrator, cancellationToken);
+                var metadata = await SendStreamingEventsAsync(message, writer, options, cancellationToken);
 
                 // Close the writer to signal completion
                 writer.Complete();
@@ -624,9 +504,7 @@ public class Conversation : AIAgent
                     Response = metadata.Response,
                     TurnHistory = metadata.FinalHistory,
                     RespondingAgent = metadata.RespondingAgent,
-                    UsedOrchestrator = orchestrator,
                     Duration = DateTime.UtcNow - startTime,
-                    OrchestrationMetadata = metadata.OrchestrationMetadata,
                     Usage = CreateTokenUsage(metadata.Response),
                     RequestId = Guid.NewGuid().ToString(),
                     ActivityId = System.Diagnostics.Activity.Current?.Id
@@ -659,7 +537,6 @@ public class Conversation : AIAgent
     private async Task<ConversationStreamingResult> SendStreamingAsyncAGUI(RunAgentInput aguiInput, CancellationToken cancellationToken)
     {
         var startTime = DateTime.UtcNow;
-        var agent = PrimaryAgent ?? throw new InvalidOperationException("No agent configured for this conversation");
 
         // ✅ IMPORTANT: Add the new user message from aguiInput to conversation thread
         // This ensures the agent sees the full conversation history
@@ -683,7 +560,7 @@ public class Conversation : AIAgent
         };
 
         // Use agent's AGUI overload with server-side messages
-        var streamResult = await agent.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+        var streamResult = await _agent.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
 
         // Create task to build final result after streaming completes
         var finalResultTask = Task.Run(async () =>
@@ -710,14 +587,8 @@ public class Conversation : AIAgent
             {
                 Response = response,
                 TurnHistory = finalHistory,
-                RespondingAgent = agent,
-                UsedOrchestrator = null,
+                RespondingAgent = _agent,
                 Duration = DateTime.UtcNow - startTime,
-                OrchestrationMetadata = new OrchestrationMetadata
-                {
-                    StrategyName = "AGUI",
-                    DecisionDuration = TimeSpan.Zero
-                },
                 Usage = CreateTokenUsage(response),
                 RequestId = aguiInput.RunId,
                 ActivityId = System.Diagnostics.Activity.Current?.Id
@@ -739,19 +610,17 @@ public class Conversation : AIAgent
     /// <param name="message">The user message to send</param>
     /// <param name="outputHandler">Optional custom output handler. Defaults to Console.Write</param>
     /// <param name="options">Chat options</param>
-    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios (falls back to DefaultOrchestrator)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Final conversation turn result with all metadata</returns>
     public async Task<ConversationTurnResult> SendStreamingWithOutputAsync(
         string message,
         Action<string>? outputHandler = null,
         ChatOptions? options = null,
-        IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
         outputHandler ??= Console.Write;
 
-        var result = await SendStreamingAsync(message, options, orchestrator, cancellationToken);
+        var result = await SendStreamingAsync(message, options, cancellationToken);
         
         // Stream events to output handler
         await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
@@ -794,7 +663,6 @@ public class Conversation : AIAgent
         string message,
         System.Threading.Channels.ChannelWriter<BaseEvent> eventWriter,
         ChatOptions? options = null,
-        IOrchestrator? orchestrator = null,
         CancellationToken cancellationToken = default)
     {
         var userMessage = new ChatMessage(ChatRole.User, message);
@@ -813,136 +681,49 @@ public class Conversation : AIAgent
         ConversationContext.SetConversationId(Id);
         try
         {
-            if (_agents.Count == 0)
+            // Execute agent turn
+            var result = await _agent.ExecuteStreamingTurnAsync(_thread.Messages, options, cancellationToken: cancellationToken);
+
+            // Stream the events
+            await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
             {
-                throw new InvalidOperationException("No agents configured for this conversation");
+                await eventWriter.WriteAsync(evt, cancellationToken);
             }
-            else if (_agents.Count == 1)
+
+            // Wait for final history and update conversation
+            var finalHistory = await result.FinalHistory;
+
+            // Check for reduction metadata and apply BEFORE adding new messages
+            var reductionMetadata = await result.ReductionTask;
+            if (reductionMetadata != null)
             {
-                // DIRECT PATH - Single agent
-                var agent = _agents[0];
-                var result = await agent.ExecuteStreamingTurnAsync(_thread.Messages, options, cancellationToken: cancellationToken);
-
-                // Stream the events
-                await foreach (var evt in result.EventStream.WithCancellation(cancellationToken))
-                {
-                    await eventWriter.WriteAsync(evt, cancellationToken);
-                }
-
-                // Wait for final history and update conversation
-                var finalHistory = await result.FinalHistory;
-
-                // Check for reduction metadata and apply BEFORE adding new messages
-                var reductionMetadata = await result.ReductionTask;
-                if (reductionMetadata != null)
-                {
-                    _thread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
-                }
-
-                foreach (var msg in finalHistory)
-                {
-                    _thread.AddMessage(msg);
-                }
-
-                // Build response from final history
-                var assistantMessages = finalHistory.Where(m => m.Role == ChatRole.Assistant).ToList();
-                var response = assistantMessages.Count > 0
-                    ? new ChatResponse(assistantMessages)
-                    : new ChatResponse(new ChatMessage(ChatRole.Assistant, ""));
-
-                // Return definitive metadata instead of letting caller reconstruct
-                return new StreamingTurnMetadata
-                {
-                    Response = response,
-                    FinalHistory = finalHistory,
-                    RespondingAgent = agent,
-                    OrchestrationMetadata = new OrchestrationMetadata
-                    {
-                        StrategyName = "SingleAgent",
-                        DecisionDuration = TimeSpan.Zero
-                    },
-                    UserMessage = userMessage
-                };
+                _thread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
             }
-            else
+
+            foreach (var msg in finalHistory)
             {
-                // ORCHESTRATED PATH - Multi-agent
-                var effectiveOrchestrator = orchestrator ?? DefaultOrchestrator;
-                if (effectiveOrchestrator == null)
-                {
-                    throw new InvalidOperationException(
-                        $"Multi-agent conversations ({_agents.Count} agents) require an orchestrator. Set DefaultOrchestrator or pass an orchestrator parameter.");
-                }
-
-                // Build orchestration request using generic pattern (Input + InputType)
-                // History is left null - GetChatHistory() will derive it from Input for efficiency
-                var request = new OrchestrationRequest
-                {
-                    Input = _thread.Messages,           // Generic input (chat messages)
-                    InputType = "chat",                 // Specify this is chat-based
-                    History = null,                     // Let GetChatHistory() derive from Input
-                    AgentIds = _agents.Select(a => a.Name).ToList(),
-                    RunId = this.Id,
-                    ConversationId = this.Id,
-                    Extensions = new Dictionary<string, object>()
-                };
-
-                // Create runtime context with services and non-serializable objects
-                var context = new ConversationOrchestrationContext(_agents, options, _thread);
-                
-                // Use the orchestrator's streaming method
-                var orchestrationResult = await effectiveOrchestrator.OrchestrateStreamingAsync(
-                    request, context, cancellationToken);
-
-                // Stream all orchestration and agent events
-                await foreach (var evt in orchestrationResult.EventStream.WithCancellation(cancellationToken))
-                {
-                    await eventWriter.WriteAsync(evt, cancellationToken);
-                }
-
-                // Wait for final result and update conversation
-                var finalResult = await orchestrationResult.FinalResult;
-
-                // Apply reduction from orchestration metadata BEFORE adding response
-                ApplyReductionIfPresent(finalResult);
-
-                foreach (var msg in finalResult.Response.Messages)
-                {
-                    _thread.AddMessage(msg);
-                }
-
-                // Return definitive metadata from orchestration
-                return new StreamingTurnMetadata
-                {
-                    Response = finalResult.Response,
-                    FinalHistory = ExtractTurnHistory(userMessage, finalResult.Response),
-                    RespondingAgent = finalResult.PrimaryAgent,
-                    OrchestrationMetadata = finalResult.Metadata,
-                    UserMessage = userMessage
-                };
+                _thread.AddMessage(msg);
             }
+
+            // Build response from final history
+            var assistantMessages = finalHistory.Where(m => m.Role == ChatRole.Assistant).ToList();
+            var response = assistantMessages.Count > 0
+                ? new ChatResponse(assistantMessages)
+                : new ChatResponse(new ChatMessage(ChatRole.Assistant, ""));
+
+            // Return definitive metadata instead of letting caller reconstruct
+            return new StreamingTurnMetadata
+            {
+                Response = response,
+                FinalHistory = finalHistory,
+                RespondingAgent = _agent,
+                UserMessage = userMessage
+            };
         }
         finally
         {
             // Clear conversation context after turn execution
             ConversationContext.Clear();
-        }
-    }
-
-    /// <summary>
-    /// Extracts reduction metadata from OrchestrationMetadata.Context and applies to storage.
-    /// </summary>
-    private void ApplyReductionIfPresent(OrchestrationResult result)
-    {
-        var context = result.Metadata.Context;
-
-        if (context.TryGetValue("SummaryMessage", out var summaryObj) &&
-            summaryObj is ChatMessage summary &&
-            context.TryGetValue("MessagesRemovedCount", out var countObj) &&
-            countObj is int count)
-        {
-            // Delegate to thread's ApplyReduction method
-            _thread.ApplyReduction(summary, count);
         }
     }
 
@@ -1087,11 +868,9 @@ public record ConversationTurnResult
     public required ChatResponse Response { get; init; }
     public required IReadOnlyList<ChatMessage> TurnHistory { get; init; }
     public required Agent RespondingAgent { get; init; }
-    public IOrchestrator? UsedOrchestrator { get; init; }
     public required TimeSpan Duration { get; init; }
-    public required OrchestrationMetadata OrchestrationMetadata { get; init; }
 
-    // NEW: Core business data for immediate decisions
+    // Core business data for immediate decisions
     public TokenUsage? Usage { get; init; }
     public string RequestId { get; init; } = Guid.NewGuid().ToString();
     public string? ActivityId { get; init; }
@@ -1126,7 +905,6 @@ internal record StreamingTurnMetadata
     public required ChatResponse Response { get; init; }
     public required IReadOnlyList<ChatMessage> FinalHistory { get; init; }
     public required Agent RespondingAgent { get; init; }
-    public required OrchestrationMetadata OrchestrationMetadata { get; init; }
     public ChatMessage UserMessage { get; init; } = null!;
 }
 

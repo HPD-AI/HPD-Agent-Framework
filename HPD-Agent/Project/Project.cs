@@ -107,11 +107,18 @@ public class Project
     }
 
     /// <summary>
-    /// Creates a new conversation.
+    /// Creates a new conversation with the first agent from the provided list.
+    /// Multi-agent orchestration should use AgentWorkflowBuilder instead.
     /// </summary>
     public Conversation CreateConversation(IEnumerable<Agent> agents)
     {
-        var conv = new Conversation(this, agents);
+        var agentList = agents.ToList();
+        if (!agentList.Any())
+        {
+            throw new ArgumentException("At least one agent must be provided.", nameof(agents));
+        }
+
+        var conv = new Conversation(this, agentList.First());
         Conversations.Add(conv);
         UpdateActivity();
         return conv;
@@ -219,22 +226,6 @@ public class Project
         return Conversations.OrderByDescending(c => c.LastActivity).FirstOrDefault();
     }
     
-    /// <summary>
-    /// PHASE 2: Creates a new conversation within this project.
-    /// Convenience method that handles project-aware conversation setup.
-    /// </summary>
-    /// <param name="agents">Agents to include in the conversation</param>
-    /// <param name="orchestrator">Optional orchestrator for multi-agent scenarios</param>
-    /// <returns>New conversation instance</returns>
-    public Conversation CreateConversation(
-        IEnumerable<Agent> agents,
-        IOrchestrator? orchestrator = null)
-    {
-        var conversation = new Conversation(this, agents, orchestrator);
-        Conversations.Add(conversation);
-        UpdateLastActivity();
-        return conversation;
-    }
     
     /// <summary>
     /// PHASE 2: Searches conversations in this project by text content.

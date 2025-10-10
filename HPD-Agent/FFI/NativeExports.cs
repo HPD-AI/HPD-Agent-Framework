@@ -437,12 +437,8 @@ public static partial class NativeExports
         {
             try
             {
-                // Get the primary agent to stream events from
-                var primaryAgent = conversation.PrimaryAgent;
-                if (primaryAgent == null) 
-                {
-                    throw new InvalidOperationException("No agents in conversation.");
-                }
+                // Get the agent to stream events from
+                var agent = conversation.Agent;
 
                 // Generate IDs for AGUI protocol
                 var messageId = Guid.NewGuid().ToString();
@@ -464,7 +460,7 @@ public static partial class NativeExports
                 Marshal.FreeCoTaskMem(messageStartPtr);
                 
                 // 3. Use streaming with the conversation's actual message history
-                var streamResult = await conversation.SendStreamingAsync(message, null, null);
+                var streamResult = await conversation.SendStreamingAsync(message, null);
                 await foreach (var evt in streamResult.EventStream)
                 {
                     // Serialize the BaseEvent directly to JSON
@@ -1370,7 +1366,7 @@ public static partial class NativeExports
             }
 
             var thread = ConversationThread.Deserialize(snapshot);
-            var conversation = new Conversation(agents, thread);
+            var conversation = new Conversation(agents.First(), thread);
 
             return ObjectManager.Add(conversation);
         }
