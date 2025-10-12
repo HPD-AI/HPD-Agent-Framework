@@ -7,7 +7,6 @@ This document demonstrates how to use HPD-Agent.Memory - a next-generation memor
 | Feature | Kernel Memory | HPD-Agent.Memory |
 |---------|---------------|------------------|
 | **Pipelines** | Ingestion only | ✅ **Ingestion + Retrieval** |
-| **Parallel Execution** | Sequential only | ✅ **Parallel steps with isolation** |
 | **AI Interfaces** | Custom interfaces | ✅ **Microsoft.Extensions.AI** |
 | **Context Type** | Hardcoded DataPipeline | ✅ **Generic IPipelineContext** |
 | **Service Access** | Via orchestrator | ✅ **Standard DI** |
@@ -28,7 +27,7 @@ using Microsoft.Extensions.Logging;
 
 // Setup DI container
 var services = new ServiceCollection();
-
+ 
 // Add logging
 services.AddLogging(builder => builder.AddConsole());
 
@@ -50,22 +49,20 @@ var serviceProvider = services.BuildServiceProvider();
 ```csharp
 using HPDAgent.Memory.Core.Contexts;
 using HPDAgent.Memory.Core.Orchestration;
-using HPDAgent.Memory.Abstractions.Models;
 
-// Create ingestion context with standard template
-var context = new DocumentIngestionContext
-{
-    Index = "my-documents",
-    DocumentId = "doc_12345",
-    Services = serviceProvider,
-    Steps = PipelineTemplates.DocumentIngestionSteps.ToList(),
-    RemainingSteps = PipelineTemplates.DocumentIngestionSteps.ToList(),
-    Tags = new Dictionary<string, List<string>>
-    {
-        ["source"] = new List<string> { "user-upload" },
-        ["category"] = new List<string> { "technical-docs" }
-    }
-};
+// Create ingestion context using builder with template
+var context = PipelineTemplates
+    .DocumentIngestion<DocumentIngestionContext>(serviceProvider)
+    .WithIndex("my-documents")
+    .WithMaxTokensPerChunk(500)
+    .WithOverlapTokens(50)
+    .WithBatchSize(10)
+    .WithTag("source", "user-upload")
+    .WithTag("category", "technical-docs")
+    .BuildContext();
+
+// Set document ID
+context.DocumentId = "doc_12345";
 
 // Add files to process
 context.Files.Add(new DocumentFile
@@ -95,21 +92,18 @@ Console.WriteLine($"Pipeline completed! Executed {result.CompletedSteps.Count} s
 ```csharp
 using HPDAgent.Memory.Core.Contexts;
 
-// Create retrieval context with template
-var searchContext = new SemanticSearchContext
-{
-    Index = "my-documents",
-    Query = "How do I configure the database connection?",
-    Services = serviceProvider,
-    Steps = PipelineTemplates.SemanticSearchSteps.ToList(),
-    RemainingSteps = PipelineTemplates.SemanticSearchSteps.ToList(),
-    MaxResults = 10,
-    MinRelevance = 0.7,
-    Tags = new Dictionary<string, List<string>>
-    {
-        ["filter"] = new List<string> { "technical-docs" }
-    }
-};
+// Create retrieval context using template
+var searchContext = PipelineTemplates
+    .SemanticSearch<SemanticSearchContext>(serviceProvider)
+    .WithIndex("my-documents")
+    .WithMaxResults(10)
+    .WithMinScore(0.7f)
+    .WithTag("filter", "technical-docs")
+    .BuildContext();
+
+// Set search query
+searchContext.Query = "How do I configure the database connection?";
+searchContext.UserId = "user_12345";
 
 // Execute retrieval pipeline
 var orchestrator = serviceProvider
@@ -131,170 +125,41 @@ foreach (var item in topResults)
 
 ---
 
-## 🔗 Example 3: Hybrid Search with Graph (GraphRAG) + PARALLEL EXECUTION
+## 🔗 Example 3: Hybrid Search with Graph (GraphRAG)
 
-**Advanced retrieval with vector search + graph search running IN PARALLEL for 2x speedup!**
+**Advanced retrieval combining vector search + knowledge graphs**
 
 ```csharp
-// Create hybrid search pipeline with PARALLEL execution
-var hybridContext = new SemanticSearchContext
-{
-    Index = "knowledge-base",
-    Query = "What are the latest developments in RAG?",
-    Services = serviceProvider,
-    Steps = PipelineTemplates.HybridSearchSteps.ToList(), // ✅ Includes ParallelStep!
-    RemainingSteps = PipelineTemplates.HybridSearchSteps.ToList(),
-    MaxResults = 20,
-    MinRelevance = 0.6,
-    Data = new Dictionary<string, object>
-    {
-        ["graph_max_hops"] = 2,
-        ["graph_relationship_types"] = new[] { "cites", "relates_to" }
-    }
-};
+// Create hybrid search pipeline
+var hybridContext = PipelineTemplates
+    .HybridSearch<SemanticSearchContext>(serviceProvider)
+    .WithIndex("knowledge-base")
+    .WithMaxResults(20)
+    .WithMinScore(0.6f)
+    .WithConfiguration("graph_max_hops", 2)
+    .WithConfiguration("graph_relationship_types", new[] { "cites", "relates_to" })
+    .BuildContext();
+
+hybridContext.Query = "What are the latest developments in RAG?";
 
 // Pipeline will:
-// 1. Rewrite query (expand with synonyms) - Sequential
-// 2. Generate query embedding - Sequential
-// 3. ✨ PARALLEL STEP: vector_search + graph_search run concurrently! ✨
-// 4. Merge results from both sources - Sequential
-// 5. Rerank combined results - Sequential
-// 6. Apply access control filters - Sequential
-
-var orchestrator = serviceProvider
-    .GetRequiredService<IPipelineOrchestrator<SemanticSearchContext>>();
+// 1. Rewrite query (expand with synonyms)
+// 2. Generate query embedding
+// 3. Vector search in documents
+// 4. Graph search through relationships
+// 5. Merge results from both sources
+// 6. Rerank combined results
+// 7. Apply access control filters
 
 var result = await orchestrator.ExecuteAsync(hybridContext);
 
 // Results contain both vector similarity matches AND graph-connected documents
 Console.WriteLine($"Found {result.Results.Count} results from hybrid search");
-Console.WriteLine($"🚀 Vector + Graph search ran in parallel for 2x speedup!");
-```
-
-**What's happening under the hood:**
-```csharp
-// PipelineTemplates.HybridSearchSteps includes:
-new SequentialStep { HandlerName = "query_rewrite" },
-new SequentialStep { HandlerName = "generate_query_embedding" },
-new ParallelStep { HandlerNames = new[] { "vector_search", "graph_search" } }, // ✨ Parallel!
-new SequentialStep { HandlerName = "hybrid_merge" },
-new SequentialStep { HandlerName = "rerank" },
-new SequentialStep { HandlerName = "filter_access" }
-
-// The orchestrator:
-// - Creates isolated context copy for each parallel handler
-// - Runs vector_search and graph_search concurrently
-// - Merges results back into main context
-// - If either fails, entire step fails (all-or-nothing)
 ```
 
 ---
 
-## ⚡ Example 4: Creating Custom Parallel Pipelines
-
-**Build your own pipelines with parallel execution using PipelineBuilder**
-
-```csharp
-using HPDAgent.Memory.Abstractions.Pipeline;
-
-// Option 1: Using PipelineBuilder fluent API
-var context = new DocumentIngestionContext
-{
-    Index = "documents",
-    DocumentId = "doc_123",
-    Services = serviceProvider,
-};
-
-// Build steps with PipelineBuilder
-var builder = new PipelineBuilder<DocumentIngestionContext>()
-    .WithServices(serviceProvider)
-    .WithIndex("documents")
-    .AddStep("extract_text")           // Sequential
-    .AddStep("partition_text")         // Sequential
-    .AddParallelStep(                  // ✨ Parallel: 3 embedding models at once!
-        "generate_openai_embeddings",
-        "generate_azure_embeddings",
-        "generate_local_embeddings")
-    .AddStep("save_records");          // Sequential
-
-context.Steps = builder._steps;
-context.RemainingSteps = new List<PipelineStep>(builder._steps);
-
-// Option 2: Direct construction with PipelineStep types
-var customSteps = new List<PipelineStep>
-{
-    new SequentialStep { HandlerName = "extract_text" },
-    new SequentialStep { HandlerName = "partition_text" },
-    new ParallelStep
-    {
-        HandlerNames = new[]
-        {
-            "generate_openai_embeddings",
-            "generate_azure_embeddings",
-            "generate_local_embeddings"
-        },
-        MaxConcurrency = 2  // Limit to 2 at a time (API rate limiting)
-    },
-    new SequentialStep { HandlerName = "save_records" }
-};
-
-context.Steps = customSteps;
-context.RemainingSteps = new List<PipelineStep>(customSteps);
-
-// Execute - parallel steps run with automatic isolation!
-var result = await orchestrator.ExecuteAsync(context);
-```
-
-**Advanced: Multi-stage parallel processing**
-```csharp
-// Complex pipeline with multiple parallel stages
-var advancedSteps = new List<PipelineStep>
-{
-    new SequentialStep { HandlerName = "extract_text" },
-
-    // First parallel stage: Multiple extraction methods
-    new ParallelStep
-    {
-        HandlerNames = new[]
-        {
-            "extract_tables",
-            "extract_images",
-            "extract_metadata"
-        }
-    },
-
-    new SequentialStep { HandlerName = "merge_extractions" },
-    new SequentialStep { HandlerName = "partition_text" },
-
-    // Second parallel stage: Multiple embedding models
-    new ParallelStep
-    {
-        HandlerNames = new[]
-        {
-            "generate_semantic_embeddings",
-            "generate_sparse_embeddings"
-        }
-    },
-
-    // Third parallel stage: Multiple storage backends
-    new ParallelStep
-    {
-        HandlerNames = new[]
-        {
-            "save_to_vector_db",
-            "save_to_document_store",
-            "save_to_graph_db"
-        }
-    }
-};
-
-// Result: 3 parallel stages in one pipeline!
-// Each stage waits for all handlers to complete before moving to next
-```
-
----
-
-## 🛠️ Example 5: Creating a Custom Handler
+## 🛠️ Example 4: Creating a Custom Handler
 
 ```csharp
 using HPDAgent.Memory.Abstractions.Pipeline;
@@ -409,7 +274,7 @@ public class ExtractTextHandler : IPipelineHandler<DocumentIngestionContext>
 
 ---
 
-## 📊 Example 6: Using Context Extensions (Type-Safe Configuration)
+## 📊 Example 5: Using Context Extensions (Type-Safe Configuration)
 
 **Inspired by Kernel Memory's context argument pattern but better**
 
@@ -442,7 +307,7 @@ public async Task<PipelineResult> HandleAsync(DocumentIngestionContext context, 
 
 ---
 
-## 🔄 Example 7: Handler with Sub-Steps
+## 🔄 Example 6: Handler with Sub-Steps
 
 **For handlers that need to track multiple passes (e.g., multiple embedding models)**
 
@@ -481,7 +346,7 @@ public class GenerateEmbeddingsHandler : IPipelineHandler<DocumentIngestionConte
 
 ---
 
-## 🎨 Example 8: Custom Pipeline Templates
+## 🎨 Example 7: Custom Pipeline Templates
 
 ```csharp
 public static class MyCustomTemplates
@@ -530,10 +395,6 @@ var context = MyCustomTemplates
 
 ### What We Improved:
 - ✅ **Retrieval pipelines** (Kernel Memory can't do this!)
-- ✅ **Parallel execution** (Kernel Memory can't do this!)
-  - Enforced safety via context isolation
-  - All-or-nothing error policy
-  - 2x+ speedup for hybrid search
 - ✅ **Generic contexts** (works for any pipeline type)
 - ✅ **Separate storage** (IDocumentStore, not in orchestrator)
 - ✅ **Standard DI** (services injected normally)
@@ -541,24 +402,7 @@ var context = MyCustomTemplates
 - ✅ **Microsoft.Extensions.AI** (standard interfaces)
 - ✅ **Graph database support** (IGraphStore)
 
-### Parallel Execution Highlights:
-```csharp
-// Simple parallel step declaration
-new ParallelStep { HandlerNames = new[] { "vector_search", "graph_search" } }
-
-// The orchestrator handles all the complexity:
-// ✅ Context isolation (each handler gets a copy)
-// ✅ Concurrent execution (Task.WhenAll)
-// ✅ Safe merging (results merged back)
-// ✅ Error handling (if one fails, step fails)
-
-// Real-world performance:
-// - Hybrid search: 2x speedup (vector + graph in parallel)
-// - GraphRAG: 2x speedup (traverse + search in parallel)
-// - Multi-embedding: 3x speedup (OpenAI + Azure + local in parallel)
-```
-
 ### Result:
 **Second mover's advantage achieved!** 🎯
 
-We have all the good patterns from Kernel Memory, none of the limitations, and support for modern RAG patterns (retrieval pipelines, graph databases, hybrid search, parallel execution).
+We have all the good patterns from Kernel Memory, none of the limitations, and support for modern RAG patterns (retrieval pipelines, graph databases, hybrid search).
