@@ -3,17 +3,17 @@ using System.ComponentModel; // For [Description]
 using System.Threading.Tasks;
 
 /// <summary>
-/// HPD-Agent AI plugin for Injected Memory management
+/// HPD-Agent AI plugin for Dynamic Memory management
 /// </summary>
-public class AgentInjectedMemoryPlugin
+public class DynamicMemoryPlugin
 {
-    private readonly AgentInjectedMemoryManager _manager;
+    private readonly DynamicMemoryStore _store;
     private readonly string _memoryId;
-    private readonly ILogger<AgentInjectedMemoryPlugin>? _logger;
+    private readonly ILogger<DynamicMemoryPlugin>? _logger;
 
-    public AgentInjectedMemoryPlugin(AgentInjectedMemoryManager manager, string memoryId, ILogger<AgentInjectedMemoryPlugin>? logger = null)
+    public DynamicMemoryPlugin(DynamicMemoryStore store, string memoryId, ILogger<DynamicMemoryPlugin>? logger = null)
     {
-        _manager = manager;
+        _store = store;
         _memoryId = memoryId;
         _logger = logger;
     }
@@ -29,7 +29,7 @@ public class AgentInjectedMemoryPlugin
             return "Error: Title and content are required for creating a memory.";
         }
         
-        var created = await _manager.CreateMemoryAsync(_memoryId, title, content);
+        var created = await _store.CreateMemoryAsync(_memoryId, title, content);
         return $"Created memory {created.Id}";
     }
 
@@ -48,8 +48,8 @@ public class AgentInjectedMemoryPlugin
         {
             return "Error: Title and content are required for updating a memory.";
         }
-        
-        var updated = await _manager.UpdateMemoryAsync(_memoryId, memoryId, title, content);
+
+        var updated = await _store.UpdateMemoryAsync(_memoryId, memoryId, title, content);
         return $"Updated memory {updated.Id}";
     }
 
@@ -62,8 +62,8 @@ public class AgentInjectedMemoryPlugin
         {
             return "Error: Memory ID is required for deleting a memory.";
         }
-        
-        await _manager.DeleteMemoryAsync(_memoryId, memoryId);
+
+        await _store.DeleteMemoryAsync(_memoryId, memoryId);
         return $"Deleted memory {memoryId}";
     }
 }

@@ -6,27 +6,27 @@ using System.Text;
 /// <summary>
 /// Prompt filter that injects memory content into the system message.
 /// </summary>
-public class AgentInjectedMemoryFilter : IPromptFilter
+public class DynamicMemoryFilter : IPromptFilter
 {
-    private readonly AgentInjectedMemoryManager _memoryManager;
-    private readonly AgentInjectedMemoryOptions _options;
-    private readonly ILogger<AgentInjectedMemoryFilter>? _logger;
+    private readonly DynamicMemoryStore _store;
+    private readonly DynamicMemoryOptions _options;
+    private readonly ILogger<DynamicMemoryFilter>? _logger;
     private readonly string? _memoryId;
     private string? _cachedMemoryContext;
     private DateTime _lastCacheTime = DateTime.MinValue;
     private readonly TimeSpan _cacheValidTime;
     private readonly object _cacheLock = new object();
 
-    public AgentInjectedMemoryFilter(AgentInjectedMemoryOptions options, ILogger<AgentInjectedMemoryFilter>? logger = null)
+    public DynamicMemoryFilter(DynamicMemoryStore store, DynamicMemoryOptions options, ILogger<DynamicMemoryFilter>? logger = null)
     {
+        _store = store;
         _options = options;
         _logger = logger;
         _memoryId = options.MemoryId;
         _cacheValidTime = TimeSpan.FromMinutes(1);
 
-        // Create the memory manager from options (pass null for logger as it expects ILogger<AgentInjectedMemoryManager>)
-        _memoryManager = new AgentInjectedMemoryManager(options.StorageDirectory, null);
-        _memoryManager.RegisterCacheInvalidationCallback(InvalidateCache);
+        // Register cache invalidation callback
+        _store.RegisterInvalidationCallback(InvalidateCache);
     }
 
     public async Task<IEnumerable<ChatMessage>> InvokeAsync(
@@ -54,7 +54,7 @@ public class AgentInjectedMemoryFilter : IPromptFilter
         {
             // Use MemoryId if set, otherwise fall back to agent name
             var storageKey = _memoryId ?? context.AgentName;
-            var memories = await _memoryManager.GetMemoriesAsync(storageKey);
+            var memories = await _store.GetMemoriesAsync(storageKey);
             memoryTag = BuildMemoryTag(memories);
             lock (_cacheLock)
             {
@@ -75,7 +75,7 @@ public class AgentInjectedMemoryFilter : IPromptFilter
         }
     }
 
-    private string BuildMemoryTag(List<AgentInjectedMemory> memories)
+    private string BuildMemoryTag(List<DynamicMemory> memories)
     {
         var sb = new StringBuilder();
         sb.AppendLine("[AGENT_MEMORY_START]");

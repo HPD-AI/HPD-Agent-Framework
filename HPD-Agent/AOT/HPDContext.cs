@@ -47,7 +47,7 @@ using HPD_Agent.FFI;
 [JsonSerializable(typeof(AgentConfig))]
 [JsonSerializable(typeof(ProviderConfig))]
 [JsonSerializable(typeof(ChatProvider))]
-[JsonSerializable(typeof(InjectedMemoryConfig))]
+[JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(McpConfig))]
 [JsonSerializable(typeof(WebSearchConfig))]
 

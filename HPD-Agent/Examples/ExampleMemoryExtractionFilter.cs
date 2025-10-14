@@ -8,12 +8,12 @@ using System.Text.RegularExpressions;
 /// </summary>
 public class ExampleMemoryExtractionFilter : IPromptFilter
 {
-    private readonly AgentInjectedMemoryManager _memoryManager;
+    private readonly DynamicMemoryStore _store;
     private readonly string _agentName;
 
-    public ExampleMemoryExtractionFilter(AgentInjectedMemoryManager memoryManager, string agentName)
+    public ExampleMemoryExtractionFilter(DynamicMemoryStore store, string agentName)
     {
-        _memoryManager = memoryManager ?? throw new ArgumentNullException(nameof(memoryManager));
+        _store = store ?? throw new ArgumentNullException(nameof(store));
         _agentName = agentName ?? throw new ArgumentNullException(nameof(agentName));
     }
 
@@ -52,7 +52,7 @@ public class ExampleMemoryExtractionFilter : IPromptFilter
             var rememberedFacts = ExtractRememberTags(text);
             foreach (var fact in rememberedFacts)
             {
-                await _memoryManager.CreateMemoryAsync(
+                await _store.CreateMemoryAsync(
                     _agentName,
                     title: $"Fact from {DateTime.UtcNow:yyyy-MM-dd}",
                     content: fact,
@@ -63,7 +63,7 @@ public class ExampleMemoryExtractionFilter : IPromptFilter
             var preferences = ExtractPreferences(text, context.RequestMessages);
             foreach (var preference in preferences)
             {
-                await _memoryManager.CreateMemoryAsync(
+                await _store.CreateMemoryAsync(
                     _agentName,
                     title: "User Preference",
                     content: preference,

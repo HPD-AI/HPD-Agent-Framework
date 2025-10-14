@@ -21,6 +21,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 using Microsoft.ML.OnnxRuntimeGenAI;
 using Mistral.SDK;
+using HPD_Agent.Memory.Agent.PlanMode;
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -50,9 +51,6 @@ public class AgentBuilder
     internal ILoggerFactory? _logger;
     private ActivitySource? _activitySource; // OpenTelemetry ActivitySource for observability
     private Meter? _meter; // OpenTelemetry Meter for metrics
-
-    // Memory Injected Memory runtime fields
-    internal AgentInjectedMemoryManager? _memoryInjectedManager;  // track externally provided manager
 
     // MCP runtime fields
     internal MCPClientManager? _mcpClientManager;
@@ -371,19 +369,8 @@ public class AgentBuilder
             }
         }
 
-        // Register Memory Injected Memory prompt filter if configured
-        if (_config.InjectedMemory != null && MemoryInjectedManager != null)
-        {
-            var memoryOptions = new AgentInjectedMemoryOptions
-            {
-                StorageDirectory = _config.InjectedMemory.StorageDirectory,
-                MaxTokens = _config.InjectedMemory.MaxTokens,
-                EnableAutoEviction = _config.InjectedMemory.EnableAutoEviction,
-                AutoEvictionThreshold = _config.InjectedMemory.AutoEvictionThreshold
-            };
-            var memoryFilter = new AgentInjectedMemoryFilter(memoryOptions, _logger?.CreateLogger<AgentInjectedMemoryFilter>());
-            _promptFilters.Add(memoryFilter);
-        }
+        // Dynamic Memory registration is handled by WithDynamicMemory() extension method
+        // No need to register here in Build() - the extension already adds filter and plugin
 
         // Automatically finalize web search configuration if providers were configured
         AgentBuilderWebSearchExtensions.FinalizeWebSearch(this);
@@ -654,15 +641,6 @@ public class AgentBuilder
         set => _mcpClientManager = value;
     }
 
-    /// <summary>
-    /// Internal access to memory injected manager for extension methods
-    /// </summary>
-    internal AgentInjectedMemoryManager? MemoryInjectedManager
-    {
-        get => _memoryInjectedManager;
-        set => _memoryInjectedManager = value;
-    }
-
     #endregion
 
     /// <summary>
@@ -882,26 +860,20 @@ public static class AgentBuilderMemoryExtensions
     /// This utilizes an Indexed Retrieval (RAG) system for the agent's core expertise.
     /// </summary>
     /// 
-    /*
-    public static AgentBuilder WithKnowledgeBase(this AgentBuilder builder)
-    {
-
-        return builder;
-    }
-    */
+    
 
     /// <summary>
     /// Configures the agent's dynamic, editable working memory.
     /// This enables a Full Text Injection (formerly CAG) system and provides the agent
     /// with tools to manage its own persistent facts.
     /// </summary>
-    public static AgentBuilder WithInjectedMemory(this AgentBuilder builder, Action<AgentInjectedMemoryOptions> configure)
+    public static AgentBuilder WithDynamicMemory(this AgentBuilder builder, Action<DynamicMemoryOptions> configure)
     {
-        var options = new AgentInjectedMemoryOptions();
+        var options = new DynamicMemoryOptions();
         configure(options);
 
         // Set the config on the builder
-        builder.Config.InjectedMemory = new InjectedMemoryConfig
+        builder.Config.DynamicMemory = new DynamicMemoryConfig
         {
             StorageDirectory = options.StorageDirectory,
             MaxTokens = options.MaxTokens,
@@ -909,17 +881,19 @@ public static class AgentBuilderMemoryExtensions
             AutoEvictionThreshold = options.AutoEvictionThreshold
         };
 
-        var manager = new AgentInjectedMemoryManager(options.StorageDirectory);
-        builder.MemoryInjectedManager = manager; // Set the internal property on the builder
+        // Use custom store if provided, otherwise create JsonDynamicMemoryStore (default)
+        var store = options.Store ?? new JsonDynamicMemoryStore(
+            options.StorageDirectory,
+            builder.Logger?.CreateLogger<JsonDynamicMemoryStore>());
 
         // Use MemoryId if provided, otherwise fall back to agent name
         var memoryId = options.MemoryId ?? builder.AgentName;
-        var plugin = new AgentInjectedMemoryPlugin(manager, memoryId);
-        var filter = new AgentInjectedMemoryFilter(options);
+        var plugin = new DynamicMemoryPlugin(store, memoryId, builder.Logger?.CreateLogger<DynamicMemoryPlugin>());
+        var filter = new DynamicMemoryFilter(store, options, builder.Logger?.CreateLogger<DynamicMemoryFilter>());
 
         // Register plugin and filter directly without cross-extension dependencies
-        RegisterInjectedMemoryPlugin(builder, plugin);
-        RegisterInjectedMemoryFilter(builder, filter);
+        RegisterDynamicMemoryPlugin(builder, plugin);
+        RegisterDynamicMemoryFilter(builder, filter);
 
         return builder;
     }
@@ -928,10 +902,10 @@ public static class AgentBuilderMemoryExtensions
     /// Registers the memory plugin directly with the builder's plugin manager
     /// Avoids dependency on AgentBuilderPluginExtensions
     /// </summary>
-    private static void RegisterInjectedMemoryPlugin(AgentBuilder builder, AgentInjectedMemoryPlugin plugin)
+    private static void RegisterDynamicMemoryPlugin(AgentBuilder builder, DynamicMemoryPlugin plugin)
     {
         builder.PluginManager.RegisterPlugin(plugin);
-        var pluginName = typeof(AgentInjectedMemoryPlugin).Name;
+        var pluginName = typeof(DynamicMemoryPlugin).Name;
         builder.ScopeContext.SetPluginScope(pluginName);
         builder.PluginContexts[pluginName] = null; // No special context needed for memory plugin
     }
@@ -940,7 +914,7 @@ public static class AgentBuilderMemoryExtensions
     /// Registers the memory filter directly with the builder's filter manager
     /// Avoids dependency on AgentBuilderFilterExtensions
     /// </summary>
-    private static void RegisterInjectedMemoryFilter(AgentBuilder builder, AgentInjectedMemoryFilter filter)
+    private static void RegisterDynamicMemoryFilter(AgentBuilder builder, DynamicMemoryFilter filter)
     {
         builder.PromptFilters.Add(filter);
     }
@@ -1074,24 +1048,131 @@ public static class AgentBuilderMemoryExtensions
     }
 
     /// <summary>
+    /// Configures the agent's static knowledge base with FullTextInjection or IndexedRetrieval strategy.
+    /// This is read-only domain expertise (e.g., Python docs, design patterns, API references).
+    /// Different from DynamicMemory (which is dynamic and editable).
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="configure">Configuration action for agent knowledge settings</param>
+    /// <returns>The builder for method chaining</returns>
+    /// <example>
+    /// <code>
+    /// builder.WithKnowledge(opts => {
+    ///     opts.Strategy = AgentKnowledgeStrategy.FullTextInjection;
+    ///     opts.StorageDirectory = "./knowledge/python-expert";
+    ///     opts.MaxTokens = 8000;
+    ///     opts.AddDocument("./docs/python-best-practices.md");
+    ///     opts.AddDocument("./docs/fastapi-patterns.md");
+    /// });
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithStaticMemory(this AgentBuilder builder, Action<StaticMemoryOptions> configure)
+    {
+        var options = new StaticMemoryOptions();
+        configure(options);
+
+        // Determine the knowledge ID (priority: KnowledgeId > AgentName > builder.AgentName)
+        var knowledgeId = options.KnowledgeId ?? options.AgentName ?? builder.AgentName;
+
+        // Create store if not provided
+        if (options.Store == null)
+        {
+            var textExtractor = new HPD_Agent.TextExtraction.TextExtractionUtility();
+            options.Store = new JsonStaticMemoryStore(
+                options.StorageDirectory,
+                textExtractor,
+                builder.Logger?.CreateLogger<JsonStaticMemoryStore>());
+        }
+
+        // Add documents specified at build time
+        if (options.DocumentsToAdd.Any())
+        {
+            var store = options.Store;
+            // Synchronously add documents (blocking - consider async BuildAsync in future)
+            foreach (var doc in options.DocumentsToAdd)
+            {
+                if (store is JsonStaticMemoryStore jsonStore)
+                {
+                    if (doc.PathOrUrl.StartsWith("http://") || doc.PathOrUrl.StartsWith("https://"))
+                    {
+                        jsonStore.AddDocumentFromUrlAsync(knowledgeId, doc.PathOrUrl, doc.Description, doc.Tags).GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        jsonStore.AddDocumentFromFileAsync(knowledgeId, doc.PathOrUrl, doc.Description, doc.Tags).GetAwaiter().GetResult();
+                    }
+                }
+            }
+        }
+
+        // Only register filter for FullTextInjection strategy
+        if (options.Strategy == MemoryStrategy.FullTextInjection)
+        {
+            var filter = new StaticMemoryFilter(
+                options.Store,
+                knowledgeId,
+                options.MaxTokens,
+                builder.Logger?.CreateLogger<StaticMemoryFilter>());
+            RegisterStaticMemoryFilter(builder, filter);
+        }
+        else if (options.Strategy == MemoryStrategy.IndexedRetrieval)
+        {
+            // TODO: Future implementation for vector store integration
+            throw new NotImplementedException(
+                "IndexedRetrieval strategy is not yet implemented. " +
+                "Please use FullTextInjection for now.");
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers the knowledge filter directly with the builder's filter manager.
+    /// Avoids dependency on AgentBuilderFilterExtensions.
+    /// </summary>
+    private static void RegisterStaticMemoryFilter(AgentBuilder builder, StaticMemoryFilter filter)
+    {
+        builder.PromptFilters.Add(filter);
+    }
+
+    /// <summary>
     /// Enables plan mode for the agent, allowing it to create and manage execution plans.
     /// Plan mode provides AIFunctions for creating plans, updating steps, and tracking progress.
     /// </summary>
-    public static AgentBuilder WithPlanMode(this AgentBuilder builder, Action<PlanModeConfig>? configure = null)
+    public static AgentBuilder WithPlanMode(this AgentBuilder builder, Action<PlanModeOptions>? configure = null)
     {
-        var config = new PlanModeConfig();
-        configure?.Invoke(config);
+        var options = new PlanModeOptions();
+        configure?.Invoke(options);
 
-        // Set the config on the builder
-        builder.Config.PlanMode = config;
+        if (!options.Enabled)
+        {
+            return builder;
+        }
 
-        // Create the plan manager (shared singleton)
-        // Plans are conversation-scoped via AsyncLocal context
-        var manager = new AgentPlanManager();
+        // Determine which store to use
+        AgentPlanStore store;
+        if (options.Store != null)
+        {
+            // Use custom store provided by user
+            store = options.Store;
+        }
+        else if (options.EnablePersistence)
+        {
+            // Use JSON file-based storage for persistence
+            store = new JsonAgentPlanStore(
+                options.StorageDirectory,
+                builder.Logger?.CreateLogger<JsonAgentPlanStore>());
+        }
+        else
+        {
+            // Default to in-memory storage (non-persistent)
+            store = new InMemoryAgentPlanStore(
+                builder.Logger?.CreateLogger<InMemoryAgentPlanStore>());
+        }
 
-        // Create plugin and filter with manager
-        var plugin = new AgentPlanPlugin(manager);
-        var filter = new AgentPlanFilter(manager);
+        // Create plugin and filter with store
+        var plugin = new AgentPlanPlugin(store, builder.Logger?.CreateLogger<AgentPlanPlugin>());
+        var filter = new AgentPlanFilter(store, builder.Logger?.CreateLogger<AgentPlanFilter>());
 
         // Register plugin directly
         builder.PluginManager.RegisterPlugin(plugin);
@@ -1101,6 +1182,14 @@ public static class AgentBuilderMemoryExtensions
 
         // Register filter directly
         builder.PromptFilters.Add(filter);
+
+        // Update config for backwards compatibility
+        var config = new PlanModeConfig
+        {
+            Enabled = options.Enabled,
+            CustomInstructions = options.CustomInstructions
+        };
+        builder.Config.PlanMode = config;
 
         return builder;
     }

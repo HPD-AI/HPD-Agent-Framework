@@ -378,7 +378,7 @@ public class ProjectManager
             .WithLogging() // Global logging filter
             .WithProvider(ChatProvider.OpenRouter, "google/gemini-2.5-pro")
             .WithInstructions("You are a helpful AI assistant with memory, knowledge base, and web search capabilities.")
-            .WithInjectedMemory(opts => opts
+            .WithDynamicMemory(opts => opts
                 .WithStorageDirectory("./agent-memory-storage")
                 .WithMaxTokens(6000))
             .WithTavilyWebSearch()    

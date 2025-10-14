@@ -143,28 +143,46 @@ public class Conversation : AIAgent
         }
 
         // Extract workflow options and inject conversation context
-        var conversationContext = BuildConversationContext();
-        var chatOptions = ExtractAndMergeChatOptions(options, conversationContext);
+        var conversationContextDict = BuildConversationContext();
+        var chatOptions = ExtractAndMergeChatOptions(options, conversationContextDict);
 
-        // DIRECT CALL to Agent.ExecuteStreamingTurnAsync - no SendAsync wrapper!
-        var streamResult = await _agent.ExecuteStreamingTurnAsync(
-            targetThread.Messages,
-            chatOptions,
-            cancellationToken: cancellationToken);
-
-        // Consume stream (non-streaming path)
-        await foreach (var _ in streamResult.EventStream.WithCancellation(cancellationToken))
+        // Create ConversationExecutionContext for AsyncLocal context
+        var executionContext = new ConversationExecutionContext(Id)
         {
-            // Just consume events
+            AgentName = _agent.Name
+        };
+
+        // Set AsyncLocal context for plugins (e.g., PlanMode) to access
+        ConversationContext.Set(executionContext);
+
+        IReadOnlyList<ChatMessage> finalHistory;
+        try
+        {
+            // DIRECT CALL to Agent.ExecuteStreamingTurnAsync - no SendAsync wrapper!
+            var streamResult = await _agent.ExecuteStreamingTurnAsync(
+                targetThread.Messages,
+                chatOptions,
+                cancellationToken: cancellationToken);
+
+            // Consume stream (non-streaming path)
+            await foreach (var _ in streamResult.EventStream.WithCancellation(cancellationToken))
+            {
+                // Just consume events
+            }
+
+            // Get final history and apply reduction
+            finalHistory = await streamResult.FinalHistory;
+            var reductionMetadata = await streamResult.ReductionTask;
+
+            if (reductionMetadata != null)
+            {
+                targetThread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
+            }
         }
-
-        // Get final history and apply reduction
-        var finalHistory = await streamResult.FinalHistory;
-        var reductionMetadata = await streamResult.ReductionTask;
-
-        if (reductionMetadata != null)
+        finally
         {
-            targetThread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
+            // Clear context to prevent leaks
+            ConversationContext.Clear();
         }
 
         // Build response from final history
@@ -230,32 +248,50 @@ public class Conversation : AIAgent
         }
 
         // Extract workflow options and inject conversation context
-        var conversationContext = BuildConversationContext();
-        var chatOptions = ExtractAndMergeChatOptions(options, conversationContext);
+        var conversationContextDict = BuildConversationContext();
+        var chatOptions = ExtractAndMergeChatOptions(options, conversationContextDict);
 
-        // DIRECT CALL to Agent.ExecuteStreamingTurnAsync - no SendStreamingAsync wrapper!
-        var streamResult = await _agent.ExecuteStreamingTurnAsync(
-            targetThread.Messages,
-            chatOptions,
-            cancellationToken: cancellationToken);
-
-        // Convert BaseEvent stream to AgentRunResponseUpdate stream
-        await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+        // Create ConversationExecutionContext for AsyncLocal context
+        var executionContext = new ConversationExecutionContext(Id)
         {
-            var update = ConvertBaseEventToAgentRunResponseUpdate(evt);
-            if (update != null)
+            AgentName = _agent.Name
+        };
+
+        // Set AsyncLocal context for plugins (e.g., PlanMode) to access
+        ConversationContext.Set(executionContext);
+
+        IReadOnlyList<ChatMessage> finalHistory;
+        try
+        {
+            // DIRECT CALL to Agent.ExecuteStreamingTurnAsync - no SendStreamingAsync wrapper!
+            var streamResult = await _agent.ExecuteStreamingTurnAsync(
+                targetThread.Messages,
+                chatOptions,
+                cancellationToken: cancellationToken);
+
+            // Convert BaseEvent stream to AgentRunResponseUpdate stream
+            await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
             {
-                yield return update;
+                var update = ConvertBaseEventToAgentRunResponseUpdate(evt);
+                if (update != null)
+                {
+                    yield return update;
+                }
+            }
+
+            // Update thread with final history
+            finalHistory = await streamResult.FinalHistory;
+            var reductionMetadata = await streamResult.ReductionTask;
+
+            if (reductionMetadata != null)
+            {
+                targetThread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
             }
         }
-
-        // Update thread with final history
-        var finalHistory = await streamResult.FinalHistory;
-        var reductionMetadata = await streamResult.ReductionTask;
-
-        if (reductionMetadata != null)
+        finally
         {
-            targetThread.ApplyReduction(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount);
+            // Clear context to prevent leaks
+            ConversationContext.Clear();
         }
 
         foreach (var msg in finalHistory)

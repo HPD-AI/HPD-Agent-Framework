@@ -142,7 +142,7 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
             // "openai/o1" - OpenAI's reasoning model (expensive)
             // No ApiKey here - will use appsettings.json via ResolveApiKey
         },
-        InjectedMemory = new InjectedMemoryConfig
+        DynamicMemory = new DynamicMemoryConfig
         {
             StorageDirectory = "./agent-memory-storage",
             MaxTokens = 6000,
@@ -170,7 +170,7 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
         .WithAPIConfiguration(config) // Pass appsettings.json for API key resolution
         .WithTavilyWebSearch()
         .WithLogging()
-        .WithInjectedMemory(opts => opts
+        .WithDynamicMemory(opts => opts
             .WithStorageDirectory("./agent-memory-storage")
             .WithMaxTokens(6000))
         .WithPlanMode() // Plan mode enabled with defaults
@@ -195,7 +195,7 @@ var project = Project.Create("AI Chat Session");
     // ✨ Show config info
     Console.WriteLine($"✨ Agent created with config-first pattern!");
     Console.WriteLine($"📋 Config: {agentConfig.Name} - {agentConfig.Provider?.ModelName}");
-    Console.WriteLine($"🧠 Memory: {agentConfig.InjectedMemory?.StorageDirectory}");
+    Console.WriteLine($"🧠 Memory: {agentConfig.DynamicMemory?.StorageDirectory}");
     Console.WriteLine($"🔧 Max Function Call Turns: {agentConfig.MaxAgenticIterations}");
     
     return Task.FromResult((project, conversation, agent));

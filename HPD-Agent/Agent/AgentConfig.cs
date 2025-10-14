@@ -26,9 +26,14 @@ public class AgentConfig
     public ProviderConfig? Provider { get; set; }
 
     /// <summary>
-    /// Configuration for the agent's injected memory (Full Text Injection).
+    /// Configuration for the agent's Dynamic memory (Full Text Injection).
     /// </summary>
-    public InjectedMemoryConfig? InjectedMemory { get; set; }
+    public DynamicMemoryConfig? DynamicMemory { get; set; }
+
+    /// <summary>
+    /// Configuration for the agent's static knowledge base (read-only expertise).
+    /// </summary>
+    public StaticMemoryConfig? StaticMemory { get; set; }
 
     /// <summary>
     /// Configuration for the Model Context Protocol (MCP).
@@ -81,17 +86,17 @@ public class AgentConfig
 
 /// <summary>
 /// Configuration for the agent's dynamic, editable working memory.
-/// Mirrors properties from AgentInjectedMemoryOptions.
+/// Mirrors properties from AgentDynamicMemoryOptions.
 /// </summary>
-public class InjectedMemoryConfig
+public class DynamicMemoryConfig
 {
     /// <summary>
     /// The root directory where agent memories will be stored.
     /// </summary>
-    public string StorageDirectory { get; set; } = "./agent-injected-memory-storage";
+    public string StorageDirectory { get; set; } = "./agent-Dynamic-memory-storage";
 
     /// <summary>
-    /// The maximum number of tokens to include from the injected memory.
+    /// The maximum number of tokens to include from the Dynamic memory.
     /// </summary>
     public int MaxTokens { get; set; } = 4000;
 
@@ -104,6 +109,39 @@ public class InjectedMemoryConfig
     /// Token threshold for triggering auto-eviction (percentage).
     /// </summary>
     public int AutoEvictionThreshold { get; set; } = 85;
+}
+
+/// <summary>
+/// Configuration for the agent's static knowledge base.
+/// This is read-only domain expertise (e.g., Python docs, design patterns, API references).
+/// Mirrors properties from AgentKnowledgeOptions.
+/// </summary>
+public class StaticMemoryConfig
+{
+    /// <summary>
+    /// Strategy for handling agent knowledge (FullTextInjection or IndexedRetrieval).
+    /// </summary>
+    public MemoryStrategy Strategy { get; set; } = MemoryStrategy.FullTextInjection;
+
+    /// <summary>
+    /// Directory where knowledge documents are stored.
+    /// </summary>
+    public string StorageDirectory { get; set; } = "./agent-static-memory";
+
+    /// <summary>
+    /// Maximum tokens to inject when using FullTextInjection strategy.
+    /// </summary>
+    public int MaxTokens { get; set; } = 8000;
+
+    /// <summary>
+    /// Optional agent name for scoping knowledge storage.
+    /// </summary>
+    public string? AgentName { get; set; }
+
+    /// <summary>
+    /// List of document paths or URLs to add at agent build time.
+    /// </summary>
+    public List<string> DocumentPaths { get; set; } = new();
 }
 
 /// <summary>

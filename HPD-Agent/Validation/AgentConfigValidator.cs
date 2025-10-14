@@ -54,18 +54,18 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
             });
 
         // Memory configuration validation
-        When(config => config.InjectedMemory != null, () =>
+        When(config => config.DynamicMemory != null, () =>
         {
-            RuleFor(config => config.InjectedMemory!.MaxTokens)
+            RuleFor(config => config.DynamicMemory!.MaxTokens)
                 .GreaterThan(0)
                 .LessThanOrEqualTo(100000)
                 .WithMessage("InjectedMemory MaxTokens must be between 1 and 100,000.");
 
-            RuleFor(config => config.InjectedMemory!.AutoEvictionThreshold)
+            RuleFor(config => config.DynamicMemory!.AutoEvictionThreshold)
                 .InclusiveBetween(50, 95)
                 .WithMessage("AutoEvictionThreshold must be between 50 and 95 percent.");
 
-            RuleFor(config => config.InjectedMemory!.StorageDirectory)
+            RuleFor(config => config.DynamicMemory!.StorageDirectory)
                 .NotEmpty()
                 .WithMessage("InjectedMemory StorageDirectory must be specified.")
                 .Must(BeValidPath)
@@ -247,7 +247,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
     private static bool HaveReasonableResourceLimits(AgentConfig config)
     {
         // Check if the combination of settings might cause issues
-        var maxTokens = config.InjectedMemory?.MaxTokens ?? 0;
+        var maxTokens = config.DynamicMemory?.MaxTokens ?? 0;
         var maxFunctionCalls = config.MaxAgenticIterations;
         var maxHistory = config.HistoryReduction?.TargetMessageCount ?? 20;
 

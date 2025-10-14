@@ -1059,7 +1059,6 @@ Available functions:
 - update_plan_step(stepId, status, notes): Update step status (pending/in_progress/completed/blocked) and add notes
 - add_plan_step(description, afterStepId): Add a new step when you discover additional work needed
 - add_context_note(note): Record important discoveries, learnings, or context during execution
-- get_current_plan(): View the current plan and its status
 - complete_plan(): Mark the entire plan as complete when goal is achieved
 
 Best practices:

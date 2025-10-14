@@ -31,7 +31,7 @@ public class ProjectInfo
 /// <summary>
 /// Represents a project containing conversations and scoped memories.
 /// </summary>
-
+[Obsolete("Project class is being deprecated. Agent-level memory (DynamicMemory/StaticMemory) should be used instead.")]
 public class Project
 {
     /// <summary>Unique project identifier.</summary>
@@ -52,8 +52,8 @@ public class Project
     /// <summary>All conversations in this project.</summary>
     public List<Conversation> Conversations { get; } = new();
 
-    /// <summary>Scoped memory manager for this project.</summary>
-    public AgentInjectedMemoryManager AgentInjectedMemoryManager { get; }
+    // Note: AgentInjectedMemoryManager removed - use Agent-level DynamicMemory instead
+    // See AgentBuilder.WithDynamicMemory() and DynamicMemoryStore abstraction
 
     /// <summary>Document manager for this project</summary>
     public ProjectDocumentManager DocumentManager { get; }
@@ -85,8 +85,8 @@ public class Project
         LastActivity = CreatedAt;
 
         var directory = storageDirectory ?? "./injected-memory-storage";
-        AgentInjectedMemoryManager = new AgentInjectedMemoryManager(directory);
-        // Note: Project scope removed from memory system - memories are now scoped by agent name only
+        // Note: AgentInjectedMemoryManager removed - use Agent-level DynamicMemory instead
+        // See AgentBuilder.WithDynamicMemory() and DynamicMemoryStore abstraction
 
         // Initialize document manager with same directory structure
         var textExtractor = new TextExtractionUtility();

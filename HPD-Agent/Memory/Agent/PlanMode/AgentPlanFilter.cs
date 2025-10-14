@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using HPD_Agent.Memory.Agent.PlanMode;
 
 /// <summary>
 /// Prompt filter that injects the current plan into system messages.
@@ -10,16 +11,16 @@ using System.Threading.Tasks;
 /// </summary>
 public class AgentPlanFilter : IPromptFilter
 {
-    private readonly AgentPlanManager _manager;
+    private readonly AgentPlanStore _store;
     private readonly ILogger<AgentPlanFilter>? _logger;
 
-    public AgentPlanFilter(AgentPlanManager manager, ILogger<AgentPlanFilter>? logger = null)
+    public AgentPlanFilter(AgentPlanStore store, ILogger<AgentPlanFilter>? logger = null)
     {
-        _manager = manager;
+        _store = store;
         _logger = logger;
     }
 
-    public Task<IEnumerable<ChatMessage>> InvokeAsync(
+    public async Task<IEnumerable<ChatMessage>> InvokeAsync(
         PromptFilterContext context,
         Func<PromptFilterContext, Task<IEnumerable<ChatMessage>>> next)
     {
@@ -28,19 +29,19 @@ public class AgentPlanFilter : IPromptFilter
         if (string.IsNullOrEmpty(conversationId))
         {
             // No conversation ID available, skip plan injection
-            return next(context);
+            return await next(context);
         }
 
         // Only inject plan if one exists for this conversation
-        if (!_manager.HasPlan(conversationId))
+        if (!await _store.HasPlanAsync(conversationId))
         {
-            return next(context);
+            return await next(context);
         }
 
-        var planPrompt = _manager.BuildPlanPrompt(conversationId);
+        var planPrompt = await _store.BuildPlanPromptAsync(conversationId);
         if (string.IsNullOrEmpty(planPrompt))
         {
-            return next(context);
+            return await next(context);
         }
 
         // Inject plan as a system message
@@ -54,6 +55,6 @@ public class AgentPlanFilter : IPromptFilter
 
         _logger?.LogDebug("Injected plan into prompt for agent {AgentName}, conversation {ConversationId}", context.AgentName, conversationId);
 
-        return next(context);
+        return await next(context);
     }
 }
