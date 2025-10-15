@@ -412,7 +412,7 @@ await foreach (var evt in channel.Reader.ReadAllAsync())
 Events use System.Text.Json source generation for AOT compatibility:
 
 ```csharp
-var json = agent.SerializeEvent(aguiEvent);
+var json = EventSerialization.SerializeEvent(aguiEvent);
 // Properly serialized with polymorphic type handling
 ```
 
