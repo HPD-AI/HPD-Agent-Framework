@@ -38,6 +38,7 @@ public class Agent : IChatClient
     private readonly AGUIEventHandler _aguiEventHandler;
     private readonly AGUIEventConverter _aguiConverter;
     private readonly PluginScopingManager _pluginScopingManager;
+    private readonly HPD_Agent.Skills.SkillScopingManager? _skillScopingManager;
     private readonly PermissionManager _permissionManager;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
@@ -119,6 +120,7 @@ public class Agent : IChatClient
         ScopedFilterManager scopedFilterManager,
         HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
         IProviderRegistry providerRegistry, // New
+        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null, // New: Optional skill scoping
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null)
@@ -182,7 +184,8 @@ public class Agent : IChatClient
             config.AgenticLoop);  // NEW: Pass agentic loop config for TerminateOnUnknownCalls
         _agentTurn = new AgentTurn(_baseClient);
         _pluginScopingManager = new PluginScopingManager();
-        _toolScheduler = new ToolScheduler(_functionCallProcessor, _permissionManager, config, _pluginScopingManager);
+        _skillScopingManager = skillScopingManager; // Optional: null if skills not used
+        _toolScheduler = new ToolScheduler(_functionCallProcessor, _permissionManager, config, _pluginScopingManager, _skillScopingManager);
         _aguiConverter = new AGUIEventConverter();
         _aguiEventHandler = new AGUIEventHandler(this);
     }
@@ -584,6 +587,21 @@ public class Agent : IChatClient
         // Plugin scoping: Track expanded plugins (message-turn scoped)
         var expandedPlugins = new HashSet<string>();
 
+        // Skill scoping: Track expanded skills (message-turn scoped)
+        var expandedSkills = new HashSet<string>();
+
+        // Auto-expand skills marked with AutoExpand = true (replaces "always visible" use case)
+        if (_skillScopingManager != null)
+        {
+            foreach (var skill in _skillScopingManager.GetSkills())
+            {
+                if (skill.AutoExpand)
+                {
+                    expandedSkills.Add(skill.Name);
+                }
+            }
+        }
+
         // ConversationId history optimization (inspired by Microsoft's FunctionInvokingChatClient)
         // When the inner client manages history server-side (indicated by returning a ConversationId),
         // we only send NEW messages rather than the full history, significantly reducing token costs.
@@ -622,7 +640,7 @@ public class Agent : IChatClient
             bool reasoningStarted = false;
             bool reasoningMessageStarted = false;
 
-            // Plugin scoping: Apply scoping to tools for this agent turn (only if enabled)
+            // Plugin & Skill scoping: Apply scoping to tools for this agent turn (only if enabled)
             var scopedOptions = effectiveOptions;
             if (Config?.PluginScoping?.Enabled == true &&
                 effectiveOptions?.Tools is { Count: > 0 })
@@ -635,9 +653,79 @@ public class Agent : IChatClient
                     if (effectiveOptions.Tools[i] is AIFunction af)
                         aiFunctions.Add(af);
                 }
-                
+
+                // Get plugin-scoped functions (containers + non-plugin + expanded plugin functions)
                 var scopedFunctions = _pluginScopingManager.GetToolsForAgentTurn(aiFunctions, expandedPlugins);
-                
+
+                // Add skill-based functions if skill scoping is enabled
+                if (_skillScopingManager != null)
+                {
+                    // Skills-Only Mode: Hide ALL non-skill-referenced functions/plugins
+                    if (Config?.PluginScoping?.SkillsOnlyMode == true)
+                    {
+                        // Get all functions referenced by ANY skill
+                        var skillReferencedFunctions = _skillScopingManager.GetAllSkillReferencedFunctions();
+
+                        // Remove ALL plugin containers (skills become only interface)
+                        scopedFunctions.RemoveAll(f => _pluginScopingManager.IsContainer(f));
+
+                        // Remove all functions NOT referenced by any skill
+                        scopedFunctions.RemoveAll(f =>
+                            !_skillScopingManager.IsSkillContainer(f) &&
+                            f.Name != null &&
+                            !skillReferencedFunctions.Contains(f.Name));
+                    }
+                    else
+                    {
+                        // Normal mode: Selective suppression/hiding
+
+                        // Get plugin containers to suppress (skills with SuppressPluginContainers = true)
+                        var suppressedPlugins = _skillScopingManager.GetSuppressedPluginContainers();
+
+                        // Get functions hidden by Scoped skills
+                        var hiddenBySkills = _skillScopingManager.GetHiddenFunctionsBySkills(expandedSkills);
+
+                        // Filter out suppressed plugin containers
+                        if (suppressedPlugins.Count > 0)
+                        {
+                            scopedFunctions.RemoveAll(f =>
+                                _pluginScopingManager.IsContainer(f) &&
+                                suppressedPlugins.Contains(_pluginScopingManager.GetPluginName(f)));
+                        }
+
+                        // Filter out functions hidden by Scoped skills
+                        if (hiddenBySkills.Count > 0)
+                        {
+                            scopedFunctions.RemoveAll(f =>
+                                !_pluginScopingManager.IsContainer(f) &&
+                                !_skillScopingManager.IsSkillContainer(f) &&
+                                f.Name != null &&
+                                hiddenBySkills.Contains(f.Name));
+                        }
+                    }
+
+                    // Get unexpanded skill containers
+                    var skillContainers = _skillScopingManager.GetUnexpandedSkillContainers(expandedSkills);
+                    scopedFunctions.AddRange(skillContainers);
+
+                    // Get functions from expanded skills (with deduplication)
+                    var expandedSkillFunctions = _skillScopingManager.GetFunctionsForExpandedSkills(expandedSkills);
+
+                    // Deduplicate: remove any functions already in scopedFunctions
+                    var existingFunctionNames = new HashSet<string>(
+                        scopedFunctions.Where(f => f.Name != null).Select(f => f.Name!),
+                        StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var skillFunction in expandedSkillFunctions)
+                    {
+                        if (skillFunction.Name != null && !existingFunctionNames.Contains(skillFunction.Name))
+                        {
+                            scopedFunctions.Add(skillFunction);
+                            existingFunctionNames.Add(skillFunction.Name);
+                        }
+                    }
+                }
+
                 // Manual cast to AITool list (still better than LINQ Cast + ToList)
                 var scopedTools = new List<AITool>(scopedFunctions.Count);
                 for (int i = 0; i < scopedFunctions.Count; i++)
@@ -861,7 +949,7 @@ public class Agent : IChatClient
 
                 // Execute tools
                 var toolResultMessage = await _toolScheduler.ExecuteToolsAsync(
-                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, expandedPlugins, effectiveCancellationToken).ConfigureAwait(false);
+                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, expandedPlugins, expandedSkills, effectiveCancellationToken).ConfigureAwait(false);
 
                 // Filter out container expansion results from persistent history
                 // Container expansions are only relevant within the current message turn
@@ -2410,6 +2498,7 @@ public class ToolScheduler
     private readonly PermissionManager _permissionManager;
     private readonly AgentConfig? _config;
     private readonly PluginScopingManager _pluginScopingManager;
+    private readonly HPD_Agent.Skills.SkillScopingManager? _skillScopingManager;
 
     /// <summary>
     /// Initializes a new instance of ToolScheduler
@@ -2418,16 +2507,19 @@ public class ToolScheduler
     /// <param name="permissionManager">The permission manager for authorization checks</param>
     /// <param name="config">Agent configuration for execution settings</param>
     /// <param name="pluginScopingManager">Plugin scoping manager for container detection</param>
+    /// <param name="skillScopingManager">Optional skill scoping manager for skill container detection</param>
     public ToolScheduler(
-        FunctionCallProcessor functionCallProcessor, 
+        FunctionCallProcessor functionCallProcessor,
         PermissionManager permissionManager,
-        AgentConfig? config, 
-        PluginScopingManager pluginScopingManager)
+        AgentConfig? config,
+        PluginScopingManager pluginScopingManager,
+        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null)
     {
         _functionCallProcessor = functionCallProcessor ?? throw new ArgumentNullException(nameof(functionCallProcessor));
         _permissionManager = permissionManager ?? throw new ArgumentNullException(nameof(permissionManager));
         _config = config;
         _pluginScopingManager = pluginScopingManager ?? throw new ArgumentNullException(nameof(pluginScopingManager));
+        _skillScopingManager = skillScopingManager; // Optional: null if skills not used
     }
 
     /// <summary>
@@ -2438,6 +2530,8 @@ public class ToolScheduler
     /// <param name="options">Optional chat options containing tool definitions</param>
     /// <param name="agentRunContext">Agent run context for cross-call tracking</param>
     /// <param name="agentName">The name of the agent executing the tools</param>
+    /// <param name="expandedPlugins">Set of expanded plugin names (message-turn scoped)</param>
+    /// <param name="expandedSkills">Set of expanded skill names (message-turn scoped)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A chat message containing the tool execution results</returns>
     public async Task<ChatMessage> ExecuteToolsAsync(
@@ -2447,16 +2541,17 @@ public class ToolScheduler
         AgentRunContext agentRunContext,
         string? agentName,
         HashSet<string> expandedPlugins,
+        HashSet<string> expandedSkills,
         CancellationToken cancellationToken)
     {
         // For single tool calls, use sequential execution (no parallelization overhead)
         if (toolRequests.Count <= 1)
         {
-            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, cancellationToken).ConfigureAwait(false);
+            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, expandedSkills, cancellationToken).ConfigureAwait(false);
         }
 
         // For multiple tool calls, execute in parallel for better performance
-        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, cancellationToken).ConfigureAwait(false);
+        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, expandedSkills, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2469,27 +2564,39 @@ public class ToolScheduler
         AgentRunContext agentRunContext,
         string? agentName,
         HashSet<string> expandedPlugins,
+        HashSet<string> expandedSkills,
         CancellationToken cancellationToken)
     {
         var allContents = new List<AIContent>();
 
         // Track which tool requests are containers for expansion after invocation
-        var containerExpansions = new Dictionary<string, string>(); // callId -> pluginName
+        var pluginContainerExpansions = new Dictionary<string, string>(); // callId -> pluginName
+        var skillContainerExpansions = new Dictionary<string, string>(); // callId -> skillName
+
         foreach (var toolRequest in toolRequests)
         {
             // Find the function in the options to check if it's a container
             // PERFORMANCE: Use optimized helper instead of LINQ (O(n) direct vs O(n) with overhead)
             var function = FindFunctionInTools(toolRequest.Name, options?.Tools);
 
-            if (function != null && _pluginScopingManager.IsContainer(function))
+            if (function != null)
             {
-                // Track this container for expansion after invocation
-                var pluginName = function.AdditionalProperties
-                    ?.TryGetValue("PluginName", out var value) == true && value is string pn
-                    ? pn
-                    : toolRequest.Name;
+                // Check if it's a plugin container
+                if (_pluginScopingManager.IsContainer(function))
+                {
+                    var pluginName = function.AdditionalProperties
+                        ?.TryGetValue("PluginName", out var value) == true && value is string pn
+                        ? pn
+                        : toolRequest.Name;
 
-                containerExpansions[toolRequest.CallId] = pluginName;
+                    pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                }
+                // Check if it's a skill container
+                else if (_skillScopingManager != null && _skillScopingManager.IsSkillContainer(function))
+                {
+                    var skillName = _skillScopingManager.GetSkillName(function);
+                    skillContainerExpansions[toolRequest.CallId] = skillName;
+                }
             }
         }
 
@@ -2504,11 +2611,18 @@ public class ToolScheduler
             {
                 allContents.Add(content);
 
-                // If this result is for a container, mark the plugin as expanded
-                if (content is FunctionResultContent functionResult &&
-                    containerExpansions.TryGetValue(functionResult.CallId, out var pluginName))
+                // If this result is for a plugin container, mark the plugin as expanded
+                if (content is FunctionResultContent functionResult)
                 {
-                    expandedPlugins.Add(pluginName);
+                    if (pluginContainerExpansions.TryGetValue(functionResult.CallId, out var pluginName))
+                    {
+                        expandedPlugins.Add(pluginName);
+                    }
+                    // If this result is for a skill container, mark the skill as expanded
+                    else if (skillContainerExpansions.TryGetValue(functionResult.CallId, out var skillName))
+                    {
+                        expandedSkills.Add(skillName);
+                    }
                 }
             }
         }
@@ -2526,9 +2640,10 @@ public class ToolScheduler
         AgentRunContext agentRunContext,
         string? agentName,
         HashSet<string> expandedPlugins,
+        HashSet<string> expandedSkills,
         CancellationToken cancellationToken)
     {
-        // THREE-PHASE EXECUTION (inspired by Gemini CLI's CoreToolScheduler with plugin scoping)
+        // THREE-PHASE EXECUTION (inspired by Gemini CLI's CoreToolScheduler with plugin & skill scoping)
         // Phase 0: Separate container expansions from regular tools
         // Phase 1: Check permissions for ALL tools SEQUENTIALLY (prevents race conditions)
         // Phase 2: Execute ALL approved tools in PARALLEL (with optional throttling)
@@ -2536,22 +2651,33 @@ public class ToolScheduler
         var allContents = new List<AIContent>();
 
         // PHASE 0: Identify containers and track them for expansion after invocation
-        var containerExpansions = new Dictionary<string, string>(); // callId -> pluginName
+        var pluginContainerExpansions = new Dictionary<string, string>(); // callId -> pluginName
+        var skillContainerExpansions = new Dictionary<string, string>(); // callId -> skillName
+
         foreach (var toolRequest in toolRequests)
         {
             // Find the function in the options to check if it's a container
             // PERFORMANCE: Use optimized helper instead of LINQ (O(n) direct vs O(n) with overhead)
             var function = FindFunctionInTools(toolRequest.Name, options?.Tools);
 
-            if (function != null && _pluginScopingManager.IsContainer(function))
+            if (function != null)
             {
-                // Track this container for expansion after invocation
-                var pluginName = function.AdditionalProperties
-                    ?.TryGetValue("PluginName", out var value) == true && value is string pn
-                    ? pn
-                    : toolRequest.Name;
+                // Check if it's a plugin container
+                if (_pluginScopingManager.IsContainer(function))
+                {
+                    var pluginName = function.AdditionalProperties
+                        ?.TryGetValue("PluginName", out var value) == true && value is string pn
+                        ? pn
+                        : toolRequest.Name;
 
-                containerExpansions[toolRequest.CallId] = pluginName;
+                    pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                }
+                // Check if it's a skill container
+                else if (_skillScopingManager != null && _skillScopingManager.IsSkillContainer(function))
+                {
+                    var skillName = _skillScopingManager.GetSkillName(function);
+                    skillContainerExpansions[toolRequest.CallId] = skillName;
+                }
             }
         }
 
@@ -2607,10 +2733,15 @@ public class ToolScheduler
                     allContents.AddRange(message.Contents);
                 }
 
-                // If this was a container, mark the plugin as expanded
-                if (containerExpansions.TryGetValue(result.ToolRequest.CallId, out var pluginName))
+                // If this was a plugin container, mark the plugin as expanded
+                if (pluginContainerExpansions.TryGetValue(result.ToolRequest.CallId, out var pluginName))
                 {
                     expandedPlugins.Add(pluginName);
+                }
+                // If this was a skill container, mark the skill as expanded
+                else if (skillContainerExpansions.TryGetValue(result.ToolRequest.CallId, out var skillName))
+                {
+                    expandedSkills.Add(skillName);
                 }
             }
             else if (result.Error != null)

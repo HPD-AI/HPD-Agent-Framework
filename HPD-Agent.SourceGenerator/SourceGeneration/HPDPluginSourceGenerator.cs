@@ -460,19 +460,14 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         options.AppendLine($"                SchemaProvider = {schemaProviderCode},");
         options.AppendLine($"                ParameterDescriptions = {GenerateParameterDescriptions(function)},");
 
-        // Add ParentPlugin metadata if plugin is scoped
-        if (plugin.HasScopeAttribute)
-        {
-            options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
-            options.AppendLine("                {");
-            options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
-            options.AppendLine("                    [\"IsContainer\"] = false");
-            options.Append("                }");
-        }
-        else
-        {
-            options.Append("                AdditionalProperties = null");
-        }
+        // ALWAYS add ParentPlugin metadata (enables PluginReferences to work with any plugin)
+        // Note: Plugins without [PluginScope] remain "always visible" by default
+        // Skills can use PluginReferences to scope them on-demand
+        options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
+        options.AppendLine("                {");
+        options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
+        options.AppendLine("                    [\"IsContainer\"] = false");
+        options.Append("                }");
 
         return
 $@"HPDAIFunctionFactory.Create(

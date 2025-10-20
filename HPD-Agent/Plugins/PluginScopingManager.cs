@@ -28,6 +28,18 @@ public class PluginScopingManager
         var nonPluginFunctions = new List<AIFunction>();
         var expandedFunctions = new List<AIFunction>();
 
+        // First pass: collect all plugins that have containers (= scoped plugins)
+        var pluginsWithContainers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tool in allTools)
+        {
+            if (IsContainer(tool))
+            {
+                var pluginName = GetPluginName(tool);
+                pluginsWithContainers.Add(pluginName);
+            }
+        }
+
+        // Second pass: categorize functions based on scoping
         foreach (var tool in allTools)
         {
             if (IsContainer(tool))
@@ -42,9 +54,9 @@ public class PluginScopingManager
             else
             {
                 var parentPlugin = GetParentPlugin(tool);
-                if (parentPlugin != null)
+                if (parentPlugin != null && pluginsWithContainers.Contains(parentPlugin))
                 {
-                    // Plugin function - only show if parent is expanded
+                    // Plugin function from SCOPED plugin - only show if parent is expanded
                     if (expandedPlugins.Contains(parentPlugin))
                     {
                         expandedFunctions.Add(tool);
@@ -52,7 +64,10 @@ public class PluginScopingManager
                 }
                 else
                 {
-                    // Non-plugin function - always visible
+                    // Non-scoped function - always visible
+                    // This includes:
+                    // - Functions with no ParentPlugin metadata (old behavior)
+                    // - Functions with ParentPlugin but plugin has no [PluginScope] (new behavior)
                     nonPluginFunctions.Add(tool);
                 }
             }
@@ -84,7 +99,7 @@ public class PluginScopingManager
     /// </summary>
     /// <param name="function">The container function</param>
     /// <returns>The plugin name, or empty string if not found</returns>
-    private string GetPluginName(AIFunction function)
+    public string GetPluginName(AIFunction function)
     {
         return function.AdditionalProperties
             ?.TryGetValue("PluginName", out var value) == true

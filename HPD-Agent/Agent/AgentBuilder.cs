@@ -30,6 +30,8 @@ public class AgentBuilder
     internal IPluginMetadataContext? _defaultContext;
     // store individual plugin contexts
     internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
+    // Skills system fields
+    internal List<HPD_Agent.Skills.SkillDefinition>? _skillDefinitions;
     private readonly List<IAiFunctionFilter> _globalFilters = new();
     internal readonly ScopedFilterManager _scopedFilterManager = new();
     internal readonly BuilderScopeContext _scopeContext = new();
@@ -574,6 +576,36 @@ public class AgentBuilder
             }
         }
 
+        // Build and integrate skills if configured
+        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null;
+        if (_skillDefinitions != null && _skillDefinitions.Count > 0 && _config.PluginScoping?.Enabled == true)
+        {
+            try
+            {
+                var skillManager = new HPD_Agent.Skills.SkillManager(_logger?.CreateLogger<HPD_Agent.Skills.SkillManager>());
+                skillManager.RegisterSkills(_skillDefinitions)
+                           .Build(pluginFunctions); // Validate function references
+
+                var skillContainers = skillManager.GetSkillContainers();
+                pluginFunctions.AddRange(skillContainers);
+
+                skillScopingManager = skillManager.CreateScopingManager(pluginFunctions);
+
+                _logger?.CreateLogger<AgentBuilder>().LogInformation(
+                    "Successfully integrated {Count} skills into agent", _skillDefinitions.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger?.CreateLogger<AgentBuilder>().LogError(ex, "Failed to build skills: {Error}", ex.Message);
+                throw new InvalidOperationException("Failed to initialize skills system", ex);
+            }
+        }
+        else if (_skillDefinitions != null && _skillDefinitions.Count > 0)
+        {
+            _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                "Skills configured but plugin scoping is not enabled. Skills require plugin scoping to be enabled.");
+        }
+
         var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
 
@@ -586,6 +618,7 @@ public class AgentBuilder
             _scopedFilterManager,
             errorHandler,
             _providerRegistry,
+            skillScopingManager, // Pass skill scoping manager (null if not configured)
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters);
@@ -1373,6 +1406,70 @@ public static class AgentBuilderPluginExtensions
         var pluginName = pluginType.Name;
         builder.ScopeContext.SetPluginScope(pluginName);
         builder.PluginContexts[pluginName] = context;
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers all plugins from a shared PluginManager instance.
+    /// This allows you to create a plugin registry once and reuse it across multiple agents.
+    /// Particularly useful with Skills-Only Mode where plugins must be registered for validation
+    /// but you want to create multiple agents with different skill configurations.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="pluginManager">A PluginManager instance containing pre-registered plugins</param>
+    /// <param name="context">Optional execution context to apply to all plugins</param>
+    /// <returns>The builder for method chaining</returns>
+    /// <example>
+    /// <code>
+    /// // Create shared plugin registry
+    /// var sharedPlugins = new PluginManager()
+    ///     .RegisterPlugin&lt;FileSystemPlugin&gt;()
+    ///     .RegisterPlugin&lt;WebSearchPlugin&gt;()
+    ///     .RegisterPlugin&lt;DataAnalysisPlugin&gt;();
+    ///
+    /// // Reuse across multiple agents with different skills
+    /// var dataAgent = new AgentBuilder()
+    ///     .WithPlugins(sharedPlugins)
+    ///     .AddSkill("DataScience", skill =>
+    ///         skill.WithFunctionReferences("DataAnalysisPlugin.Analyze"))
+    ///     .EnableSkillsOnlyMode()
+    ///     .Build();
+    ///
+    /// var webAgent = new AgentBuilder()
+    ///     .WithPlugins(sharedPlugins)
+    ///     .AddSkill("WebResearch", skill =>
+    ///         skill.WithFunctionReferences("WebSearchPlugin.Search"))
+    ///     .EnableSkillsOnlyMode()
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithPlugins(this AgentBuilder builder, PluginManager pluginManager, IPluginMetadataContext? context = null)
+    {
+        if (pluginManager == null)
+            throw new ArgumentNullException(nameof(pluginManager));
+
+        // Get all registrations from the provided PluginManager
+        var registrations = pluginManager.GetPluginRegistrations();
+
+        // Register each plugin in the builder's internal PluginManager
+        foreach (var registration in registrations)
+        {
+            // Register the plugin (either by type or instance)
+            if (registration.IsInstance)
+            {
+                builder.PluginManager.RegisterPlugin(registration.GetOrCreateInstance());
+            }
+            else
+            {
+                builder.PluginManager.RegisterPlugin(registration.PluginType);
+            }
+
+            // Set up scope context and plugin context
+            var pluginName = registration.PluginType.Name;
+            builder.ScopeContext.SetPluginScope(pluginName);
+            builder.PluginContexts[pluginName] = context;
+        }
+
         return builder;
     }
 }
