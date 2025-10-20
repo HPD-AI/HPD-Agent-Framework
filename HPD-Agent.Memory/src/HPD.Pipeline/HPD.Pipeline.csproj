@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPD.Pipeline</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>HPD.Pipeline</PackageId>
+    <Version>1.0.0-beta</Version>
+    <Authors>Einstein Essibu</Authors>
+    <Description>Generic workflow orchestration infrastructure for .NET. Provides pipeline abstractions (IPipelineContext, IPipelineHandler, IPipelineOrchestrator) for building any kind of multi-step workflow. Domain-agnostic and extensible. Use this for RAG pipelines, video processing, trading systems, ETL, or any workflow automation.</Description>
+    <PackageTags>pipeline;workflow;orchestration;infrastructure;generic;handler;context;choreography</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-org/hpd-agent</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/your-org/hpd-agent</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ZERO dependencies on other packages -->
+    <!-- This is critical - pure infrastructure, no domain dependencies -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

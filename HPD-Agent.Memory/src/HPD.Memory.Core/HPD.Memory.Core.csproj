@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPDAgent.Memory.Core</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>HPD.Memory.Core</PackageId>
+    <Version>0.9.0-beta</Version>
+    <Authors>Einstein Essibu</Authors>
+    <Description>Core pipeline infrastructure for HPD-Agent.Memory. Includes InProcessOrchestrator, pipeline contexts, storage implementations, and dependency injection extensions. Build custom RAG pipelines with parallel execution, idempotency, and graph database support.</Description>
+    <PackageTags>rag;retrieval-augmented-generation;memory;ai;pipeline;orchestration;vector-search;graph-database</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-org/hpd-agent</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/your-org/hpd-agent</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference to generic pipeline infrastructure and RAG abstractions -->
+    <ProjectReference Include="..\HPD.Pipeline\HPD.Pipeline.csproj" />
+    <ProjectReference Include="..\HPD.Memory.Abstractions\HPD.Memory.Abstractions.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft Extensions -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="9.7.1" />
+    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="9.7.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

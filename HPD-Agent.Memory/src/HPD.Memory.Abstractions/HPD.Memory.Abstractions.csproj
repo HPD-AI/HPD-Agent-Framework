@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPDAgent.Memory.Abstractions</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>HPD.Memory.Abstractions</PackageId>
+    <Version>0.9.0-beta</Version>
+    <Authors>Einstein Essibu</Authors>
+    <Description>Core abstractions for HPD-Agent.Memory - a next-generation document memory and RAG framework. Includes IMemoryClient (universal RAG interface), pipeline abstractions, and storage interfaces. This package contains ONLY interfaces and contracts with zero implementation dependencies.</Description>
+    <PackageTags>rag;retrieval-augmented-generation;memory;ai;abstractions;interface;pipeline;vector-search;graph-rag</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-org/hpd-agent</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/your-org/hpd-agent</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Depends on generic pipeline infrastructure -->
+    <ProjectReference Include="..\HPD.Pipeline\HPD.Pipeline.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPDAgent.Memory.Client</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>HPD.Memory.Client</PackageId>
+    <Version>0.9.0-beta</Version>
+    <Authors>Einstein Essibu</Authors>
+    <Description>IMemoryClient implementations for HPD-Agent.Memory. Includes BasicMemoryClient (vector RAG), GraphMemoryClient (GraphRAG), and HybridMemoryClient (vector + graph). Simple, standard API for document ingestion, retrieval, and RAG generation.</Description>
+    <PackageTags>rag;retrieval-augmented-generation;memory;ai;client;vector-search;graph-rag;hybrid-search</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-org/hpd-agent</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/your-org/hpd-agent</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference to abstractions and core -->
+    <ProjectReference Include="..\HPD.Memory.Abstractions\HPD.Memory.Abstractions.csproj" />
+    <ProjectReference Include="..\HPD.Memory.Core\HPD.Memory.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft Extensions (for AI services) -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="9.7.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
