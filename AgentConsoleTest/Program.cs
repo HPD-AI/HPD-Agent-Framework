@@ -25,25 +25,25 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
     var agentConfig = new AgentConfig
     {
         Name = "AI Assistant",
-        SystemInstructions = "You are a helpful AI assistant with memory, knowledge base, and web search capabilities.",
-        MaxAgenticIterations = 10,
+        SystemInstructions = "You are an accountant agent. You can do sequential and parallel tool calls. You can also plan out stuff ebfore you start if the task requires sub steps",
+        MaxAgenticIterations = 50,
         HistoryReduction = new HistoryReductionConfig
         {
             Enabled = true,
             Strategy = HistoryReductionStrategy.MessageCounting,
-            TargetMessageCount = 20
+            TargetMessageCount = 50  // Increased from 20 to allow longer conversations
         },
         Provider = new ProviderConfig
         {
             ProviderKey = "openrouter",
-            ModelName = "google/gemini-2.5-pro", // 🧠 Reasoning model - FREE on OpenRouter!
+            ModelName = "z-ai/glm-4.6", // 🧠 Reasoning model - FREE on OpenRouter!
             // Alternative reasoning models:
             // "deepseek/deepseek-r1-distill-qwen-32b" - smaller/faster
             // "openai/o1" - OpenAI's reasoning model (expensive)
             // No ApiKey here - will use appsettings.json via ResolveApiKey
             DefaultChatOptions = new ChatOptions
             {
-                MaxOutputTokens = 4096, // ⚡ Prevents infinite reasoning loops
+                MaxOutputTokens = 10000, // ⚡ Prevents infinite reasoning loops
                 Temperature = 0.7f
             }
         },
@@ -73,22 +73,14 @@ static Task<(Project, Conversation, Agent)> CreateAIAssistant(IConfiguration con
     // ✨ BUILD AGENT FROM CONFIG + FLUENT PLUGINS/FILTERS
     var agent = new AgentBuilder(agentConfig)
         .WithAPIConfiguration(config) // Pass appsettings.json for API key resolution
-        .WithTavilyWebSearch()
         .WithLogging()
         .WithDynamicMemory(opts => opts
             .WithStorageDirectory("./agent-memory-storage")
             .WithMaxTokens(6000))
         .WithPlanMode() // Plan mode enabled with defaults
         .WithPlugin<ExpandMathPlugin>()
-        .WithPlugin(new FileSystemPlugin(new FileSystemContext(
-            workspaceRoot: Directory.GetCurrentDirectory(),
-            enableShell: true, // ✅ Enable shell execution
-            maxShellTimeoutSeconds: 60, // 1 minute max timeout
-            enableSearch: true,
-            respectGitIgnore: true
-        )))
+        .WithPlugin<FinancialAnalysisPlugin>()
         .WithConsolePermissions() // Function permissions only via ConsolePermissionFilter
-        .WithMCP(agentConfig.Mcp.ManifestPath)
         .Build();
 
 // 🎯 Project with smart defaults
@@ -114,6 +106,7 @@ static async Task RunInteractiveChat(Conversation conversation)
     Console.WriteLine("==========================================");
     Console.WriteLine("Commands:");
     Console.WriteLine("  • Type your message and press Enter");
+    Console.WriteLine("  • Press ESC during AI response to stop current turn");
     Console.WriteLine("  • 'exit' or 'quit' - End conversation");
     Console.WriteLine("------------------------------------------\n");
     
@@ -134,42 +127,128 @@ static async Task RunInteractiveChat(Conversation conversation)
         {
             Console.Write("AI: ");
             
+            // Create cancellation token source for this turn
+            using var cts = new CancellationTokenSource();
+            
+            // Start background task to listen for ESC key
+            var cancelTask = Task.Run(() =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    if (Console.KeyAvailable)
+                    {
+                        var key = Console.ReadKey(intercept: true);
+                        if (key.Key == ConsoleKey.Escape)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.Write("\n⚠️  Stopping current turn...");
+                            Console.ResetColor();
+                            cts.Cancel();
+                            break;
+                        }
+                    }
+                    Thread.Sleep(50); // Check every 50ms
+                }
+            });
+            
             // Create user message for streaming
             var userMessage = new ChatMessage(ChatRole.User, input);
             
-            // Use conversation.RunStreamingAsync to get streaming updates
-            await foreach (var update in conversation.RunStreamingAsync([userMessage]))
+            // Track state for better reasoning display
+            bool isFirstReasoningChunk = true;
+            bool isFirstTextChunk = true;
+            
+            try
             {
-                // Display different content types from the streaming updates
-                foreach (var content in update.Contents ?? [])
+                // Use conversation.RunStreamingAsync to get streaming updates
+                await foreach (var update in conversation.RunStreamingAsync([userMessage], cancellationToken: cts.Token))
                 {
-                    // Display text content (final answer)
-                    if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                    // Display different content types from the streaming updates
+                    foreach (var content in update.Contents ?? [])
                     {
-                        Console.Write(textContent.Text);
-                    }
-                    // Display reasoning content (thinking process) in gray
-                    else if (content is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
-                    {
-                        Console.ForegroundColor = ConsoleColor.DarkGray;
-                        Console.Write($"\n💭 {reasoningContent.Text}");
-                        Console.ResetColor();
-                    }
-                    // Display tool calls
-                    else if (content is FunctionCallContent toolCall)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Yellow;
-                        Console.Write($"\n🔧 Using tool: {toolCall.Name}");
-                        Console.ResetColor();
-                    }
-                    // Display tool results
-                    else if (content is FunctionResultContent toolResult)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Green;
-                        Console.Write($" ✓");
-                        Console.ResetColor();
+                        // Display reasoning content (thinking process) in gray - streams naturally
+                        // CHECK REASONING FIRST since TextReasoningContent derives from TextContent
+                        if (content is TextReasoningContent reasoningContent && !string.IsNullOrEmpty(reasoningContent.Text))
+                        {
+                            // If transitioning from text to reasoning, close text section
+                            if (!isFirstTextChunk)
+                            {
+                                Console.WriteLine(); // End text section
+                                Console.ResetColor();
+                                isFirstTextChunk = true; // Reset for next text block
+                            }
+                            
+                            // Show header when starting new reasoning section
+                            if (isFirstReasoningChunk)
+                            {
+                                Console.WriteLine(); // Add spacing
+                                Console.ForegroundColor = ConsoleColor.DarkGray;
+                                Console.Write("💭 Thinking: ");
+                                isFirstReasoningChunk = false;
+                            }
+                            
+                            // Stream reasoning text naturally
+                            Console.ForegroundColor = ConsoleColor.DarkGray;
+                            Console.Write(reasoningContent.Text);
+                        }
+                        // Display text content (final answer)
+                        else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                        {
+                            // If transitioning from reasoning to text, end reasoning section
+                            if (!isFirstReasoningChunk)
+                            {
+                                Console.WriteLine(); // End reasoning section
+                                Console.ResetColor();
+                                isFirstReasoningChunk = true; // Reset for next reasoning block
+                            }
+                            
+                            // Show text header on first text chunk
+                            if (isFirstTextChunk)
+                            {
+                                Console.WriteLine(); // Add spacing
+                                Console.Write("📝 Response: ");
+                                isFirstTextChunk = false;
+                            }
+                            
+                            Console.Write(textContent.Text);
+                        }
+                        // Display tool calls
+                        else if (content is FunctionCallContent toolCall)
+                        {
+                            // Close any open sections
+                            if (!isFirstReasoningChunk || !isFirstTextChunk)
+                            {
+                                Console.WriteLine(); // End section
+                                Console.ResetColor();
+                                isFirstReasoningChunk = true; // Reset for next reasoning block
+                                isFirstTextChunk = true; // Reset for next text block
+                            }
+                            
+                            Console.ForegroundColor = ConsoleColor.Yellow;
+                            Console.Write($"\n🔧 Using tool: {toolCall.Name}");
+                            Console.ResetColor();
+                        }
+                        // Display tool results
+                        else if (content is FunctionResultContent toolResult)
+                        {
+                            Console.ForegroundColor = ConsoleColor.Green;
+                            Console.Write($" ✓");
+                            Console.ResetColor();
+                        }
                     }
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("\n\n🛑 Turn stopped. You can continue the conversation.\n");
+                Console.ResetColor();
+            }
+            finally
+            {
+                // Signal cancellation task to stop and wait for it
+                cts.Cancel();
+                await cancelTask;
             }
             
             Console.WriteLine("\n"); // Add spacing after response

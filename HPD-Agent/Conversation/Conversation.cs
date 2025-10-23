@@ -312,6 +312,7 @@ public class Conversation : AIAgent
             ConversationContext.Clear();
         }
 
+        // Update thread with final history
         foreach (var msg in finalHistory)
         {
             if (!targetThread.Messages.Contains(msg))

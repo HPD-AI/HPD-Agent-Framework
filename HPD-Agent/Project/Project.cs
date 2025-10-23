@@ -31,7 +31,6 @@ public class ProjectInfo
 /// <summary>
 /// Represents a project containing conversations and scoped memories.
 /// </summary>
-[Obsolete("Project class is being deprecated. Agent-level memory (DynamicMemory/StaticMemory) should be used instead.")]
 public class Project
 {
     /// <summary>Unique project identifier.</summary>

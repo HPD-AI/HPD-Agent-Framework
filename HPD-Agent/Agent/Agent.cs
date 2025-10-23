@@ -941,8 +941,18 @@ public class Agent : IChatClient
 
                 // Create assistant message for history WITHOUT reasoning (save tokens)
                 var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
-                var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
-                turnHistory.Add(historyMessage);
+                
+                // FIX Bug #2: Only add to history if there's meaningful TEXT content (non-empty, non-whitespace)
+                // FunctionCallContent alone doesn't need a separate assistant message - it's just metadata
+                var hasNonEmptyText = historyContents
+                    .OfType<TextContent>()
+                    .Any(t => !string.IsNullOrWhiteSpace(t.Text));
+                
+                if (hasNonEmptyText)
+                {
+                    var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
+                    turnHistory.Add(historyMessage);
+                }
 
                 // Note: Tool call start/args events are now emitted immediately during streaming (see above)
                 // This ensures true streaming with zero latency for function call visibility
@@ -1101,13 +1111,9 @@ public class Agent : IChatClient
             else if (streamFinished)
             {
                 // No tools called and stream finished - we're done
-                if (assistantContents.Any())
-                {
-                    // Save to history WITHOUT reasoning (save tokens in future turns)
-                    var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
-                    var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
-                    turnHistory.Add(historyMessage);
-                }
+                // FIX Bug #1: Do NOT add message to turnHistory here
+                // The final message will be added after the loop from ConstructChatResponseFromUpdates
+                // This prevents duplicate final assistant messages
                 break;
             }
             else
@@ -1127,26 +1133,23 @@ public class Agent : IChatClient
         }
 
         // Build the complete history including the final assistant message
-        if (responseUpdates.Any())
+        // FIX Bug #1 & #2: Only add final message if NO tools were called in the entire turn
+        // When tools are called, assistant messages are already added to turnHistory inside the loop (line ~945)
+        // ConstructChatResponseFromUpdates merges ALL updates into ONE message, causing duplicates/wrong content
+        // So we only use it when there were NO iterations with tool calls (simple text-only response)
+        var hadAnyToolCalls = turnHistory.Any(m => m.Role == ChatRole.Tool);
+        
+        if (!hadAnyToolCalls && responseUpdates.Any())
         {
             var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
             if (finalResponse.Messages.Count > 0)
             {
                 var finalAssistantMessage = finalResponse.Messages[0];
 
+                // Only add final message if it has meaningful content
                 if (finalAssistantMessage.Contents.Count > 0)
                 {
-                    // FIX #5: Compare text-only content to avoid false negatives
-                    // ConstructChatResponseFromUpdates strips function calls, but history may have them
-                    // Comparing full contents with CanonicalizeContents causes duplicates
-                    var lastAssistant = turnHistory.LastOrDefault(m => m.Role == ChatRole.Assistant);
-                    var finalText = ExtractTextOnlyContent(finalAssistantMessage.Contents);
-                    var lastText = lastAssistant != null ? ExtractTextOnlyContent(lastAssistant.Contents) : string.Empty;
-                    
-                    if (!string.Equals(finalText, lastText, StringComparison.Ordinal))
-                    {
-                        turnHistory.Add(finalAssistantMessage);
-                    }
+                    turnHistory.Add(finalAssistantMessage);
                 }
             }
         }
