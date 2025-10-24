@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
@@ -1608,6 +1609,447 @@ Best practices:
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(data.ToArray());
         return Convert.ToHexString(hash);
+    }
+
+    #endregion
+
+    #region Thread-Aware Public API
+
+    /// <summary>
+    /// Creates a new conversation thread.
+    /// </summary>
+    /// <returns>A new ConversationThread instance</returns>
+    public ConversationThread CreateThread()
+    {
+        return new ConversationThread();
+    }
+
+    /// <summary>
+    /// Creates a new conversation thread within a project context.
+    /// The project reference is stored in the thread's metadata.
+    /// </summary>
+    /// <param name="project">The project to associate with this thread</param>
+    /// <returns>A new ConversationThread with project metadata</returns>
+    public ConversationThread CreateThread(Project project)
+    {
+        var thread = new ConversationThread();
+        thread.AddMetadata("Project", project);
+        return thread;
+    }
+
+    /// <summary>
+    /// Runs the agent with messages and an explicit thread for state management (non-streaming).
+    /// This is the primary method for agent execution.
+    /// </summary>
+    /// <param name="messages">Messages to process</param>
+    /// <param name="thread">Thread for conversation state</param>
+    /// <param name="options">Optional chat options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Chat response with final messages</returns>
+    public async Task<ChatResponse> RunAsync(
+        IEnumerable<ChatMessage> messages,
+        ConversationThread thread,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Add workflow messages to thread state
+        foreach (var msg in messages)
+        {
+            if (!thread.Messages.Contains(msg))
+            {
+                await thread.AddMessageAsync(msg, cancellationToken);
+            }
+        }
+
+        // Create ConversationExecutionContext for AsyncLocal context
+        var executionContext = new ConversationExecutionContext(thread.Id)
+        {
+            AgentName = this.Name
+        };
+
+        // Set AsyncLocal context for plugins (e.g., PlanMode) to access
+        ConversationContext.Set(executionContext);
+
+        IReadOnlyList<ChatMessage> finalHistory;
+        try
+        {
+            // Create RunAgentInput from current thread state
+            var aguiInput = new RunAgentInput
+            {
+                ThreadId = thread.Id,
+                RunId = Guid.NewGuid().ToString(),
+                State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
+                Messages = ConvertThreadToAGUIMessages(thread.Messages),
+                Tools = Array.Empty<Tool>(),
+                Context = Array.Empty<Context>(),
+                ForwardedProps = System.Text.Json.JsonDocument.Parse("{}").RootElement
+            };
+
+            // Execute turn
+            var streamResult = await this.ExecuteStreamingTurnAsync(aguiInput, cancellationToken);
+
+            // Consume stream (non-streaming path)
+            await foreach (var _ in streamResult.EventStream.WithCancellation(cancellationToken))
+            {
+                // Just consume events
+            }
+
+            // Get final history and apply reduction
+            finalHistory = await streamResult.FinalHistory;
+            var reductionMetadata = await streamResult.ReductionTask;
+
+            if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
+            {
+                await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
+            }
+        }
+        finally
+        {
+            // Clear context to prevent leaks
+            ConversationContext.Clear();
+        }
+
+        // Build response from final history
+        var response = new ChatResponse(finalHistory.ToList());
+
+        // Update thread with response messages
+        foreach (var msg in response.Messages)
+        {
+            if (!thread.Messages.Contains(msg))
+            {
+                await thread.AddMessageAsync(msg, cancellationToken);
+            }
+        }
+
+        return response;
+    }
+
+    /// <summary>
+    /// Runs the agent with messages and an explicit thread for state management (streaming).
+    /// This is the primary method for streaming agent execution.
+    /// </summary>
+    /// <param name="messages">Messages to process</param>
+    /// <param name="thread">Thread for conversation state</param>
+    /// <param name="options">Optional chat options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Streaming agent run response updates</returns>
+    public async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync(
+        IEnumerable<ChatMessage> messages,
+        ConversationThread thread,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Add workflow messages to thread state
+        foreach (var msg in messages)
+        {
+            if (!thread.Messages.Contains(msg))
+            {
+                await thread.AddMessageAsync(msg, cancellationToken);
+            }
+        }
+
+        // Create ConversationExecutionContext for AsyncLocal context
+        var executionContext = new ConversationExecutionContext(thread.Id)
+        {
+            AgentName = this.Name
+        };
+
+        // Set AsyncLocal context for plugins (e.g., PlanMode) to access
+        ConversationContext.Set(executionContext);
+
+        IReadOnlyList<ChatMessage> finalHistory;
+        try
+        {
+            // Create RunAgentInput from current thread state
+            var aguiInput = new RunAgentInput
+            {
+                ThreadId = thread.Id,
+                RunId = Guid.NewGuid().ToString(),
+                State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
+                Messages = ConvertThreadToAGUIMessages(thread.Messages),
+                Tools = Array.Empty<Tool>(),
+                Context = Array.Empty<Context>(),
+                ForwardedProps = System.Text.Json.JsonDocument.Parse("{}").RootElement
+            };
+
+            // Execute turn
+            var streamResult = await this.ExecuteStreamingTurnAsync(aguiInput, cancellationToken);
+
+            // Convert BaseEvent stream to AgentRunResponseUpdate stream
+            await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+            {
+                var update = ConvertBaseEventToStreamingUpdate(evt, thread.Id);
+                if (update != null)
+                {
+                    yield return update;
+                }
+            }
+
+            // Update thread with final history
+            finalHistory = await streamResult.FinalHistory;
+            var reductionMetadata = await streamResult.ReductionTask;
+
+            if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
+            {
+                await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
+            }
+        }
+        finally
+        {
+            // Clear context to prevent leaks
+            ConversationContext.Clear();
+        }
+
+        // Update thread with final messages
+        foreach (var msg in finalHistory)
+        {
+            if (!thread.Messages.Contains(msg))
+            {
+                await thread.AddMessageAsync(msg, cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the agent with AGUI protocol input (non-streaming).
+    /// This method is for direct AGUI protocol integration (e.g., frontend communication).
+    /// </summary>
+    /// <param name="aguiInput">AGUI protocol input containing thread, messages, tools, and context</param>
+    /// <param name="thread">Conversation thread for state management</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Chat response with final messages</returns>
+    public async Task<ChatResponse> RunAsync(
+        RunAgentInput aguiInput,
+        ConversationThread thread,
+        CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySource.StartActivity("agent.turn");
+        var startTime = DateTimeOffset.UtcNow;
+
+        activity?.SetTag("agent.id", thread.Id);
+        activity?.SetTag("agent.input_format", "agui");
+        activity?.SetTag("agent.thread_id", aguiInput.ThreadId);
+        activity?.SetTag("agent.run_id", aguiInput.RunId);
+
+        try
+        {
+            // Add the new user message from aguiInput to thread
+            var newUserMessage = aguiInput.Messages.LastOrDefault(m => m.Role == "user");
+            if (newUserMessage != null)
+            {
+                await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
+            }
+
+            // Create new RunAgentInput using server-side thread as source of truth
+            var serverSideInput = new RunAgentInput
+            {
+                ThreadId = aguiInput.ThreadId,
+                RunId = aguiInput.RunId,
+                State = aguiInput.State,
+                Messages = ConvertThreadToAGUIMessages(thread.Messages),
+                Tools = aguiInput.Tools,
+                Context = aguiInput.Context,
+                ForwardedProps = aguiInput.ForwardedProps
+            };
+
+            // Use agent's AGUI overload with server-side messages
+            var streamResult = await this.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+
+            // Consume stream (non-streaming path)
+            await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+            {
+                // Events consumed but not exposed in non-streaming path
+            }
+
+            // Wait for final history and check for reduction
+            var finalHistory = await streamResult.FinalHistory;
+            var reductionMetadata = await streamResult.ReductionTask;
+
+            // Apply reduction BEFORE adding new messages
+            if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
+            {
+                await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
+            }
+
+            // Build response from final history
+            var response = new ChatResponse(finalHistory.ToList());
+
+            // Update thread
+            foreach (var msg in response.Messages)
+            {
+                if (!thread.Messages.Contains(msg))
+                {
+                    await thread.AddMessageAsync(msg, cancellationToken);
+                }
+            }
+
+            var duration = DateTimeOffset.UtcNow - startTime;
+            activity?.SetTag("agent.duration_ms", duration.TotalMilliseconds);
+            activity?.SetTag("agent.success", true);
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            var duration = DateTimeOffset.UtcNow - startTime;
+            activity?.SetTag("agent.duration_ms", duration.TotalMilliseconds);
+            activity?.SetTag("agent.success", false);
+            activity?.SetTag("error.type", ex.GetType().Name);
+            activity?.SetTag("error.message", ex.Message);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Runs the agent with AGUI protocol input (streaming).
+    /// Returns full BaseEvent stream for AGUI frontend compatibility.
+    /// This method is for direct AGUI protocol integration (e.g., frontend communication).
+    /// </summary>
+    /// <param name="aguiInput">AGUI protocol input containing thread, messages, tools, and context</param>
+    /// <param name="thread">Conversation thread for state management</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Full stream of BaseEvent (AGUI protocol events)</returns>
+    public async IAsyncEnumerable<BaseEvent> RunStreamingAGUIAsync(
+        RunAgentInput aguiInput,
+        ConversationThread thread,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var activity = ActivitySource.StartActivity("agent.turn");
+        var startTime = DateTimeOffset.UtcNow;
+
+        activity?.SetTag("agent.id", thread.Id);
+        activity?.SetTag("agent.input_format", "agui");
+        activity?.SetTag("agent.thread_id", aguiInput.ThreadId);
+        activity?.SetTag("agent.run_id", aguiInput.RunId);
+
+        // Add the new user message from aguiInput to thread
+        var newUserMessage = aguiInput.Messages.LastOrDefault(m => m.Role == "user");
+        if (newUserMessage != null)
+        {
+            await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
+        }
+
+        // Create new RunAgentInput using server-side thread as source of truth
+        var serverSideInput = new RunAgentInput
+        {
+            ThreadId = aguiInput.ThreadId,
+            RunId = aguiInput.RunId,
+            State = aguiInput.State,
+            Messages = ConvertThreadToAGUIMessages(thread.Messages),
+            Tools = aguiInput.Tools,
+            Context = aguiInput.Context,
+            ForwardedProps = aguiInput.ForwardedProps
+        };
+
+        // Use agent's AGUI overload with server-side messages
+        var streamResult = await this.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+
+        // Stream ALL BaseEvent events (no filtering for AGUI protocol)
+        await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+        {
+            yield return evt;
+        }
+
+        // Wait for final history and check for reduction
+        var finalHistory = await streamResult.FinalHistory;
+        var reductionMetadata = await streamResult.ReductionTask;
+
+        // Apply reduction BEFORE adding new messages
+        if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
+        {
+            await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
+        }
+
+        // Update thread
+        foreach (var msg in finalHistory)
+        {
+            if (!thread.Messages.Contains(msg))
+            {
+                await thread.AddMessageAsync(msg, cancellationToken);
+            }
+        }
+
+        var duration = DateTimeOffset.UtcNow - startTime;
+        activity?.SetTag("agent.duration_ms", duration.TotalMilliseconds);
+        activity?.SetTag("agent.success", true);
+    }
+
+    /// <summary>
+    /// Converts BaseEvent to AgentRunResponseUpdate.
+    /// Maps AG-UI protocol events to Microsoft.Agents.AI streaming updates.
+    /// </summary>
+    private AgentRunResponseUpdate? ConvertBaseEventToStreamingUpdate(BaseEvent evt, string threadId)
+    {
+        return evt switch
+        {
+            // Text Content - Assistant's actual response
+            TextMessageContentEvent textEvent => new AgentRunResponseUpdate
+            {
+                AgentId = threadId,
+                AuthorName = this.Name,
+                Role = ChatRole.Assistant,
+                Contents = [new TextContent(textEvent.Delta)],
+                CreatedAt = DateTimeOffset.UtcNow,
+                MessageId = textEvent.MessageId
+            },
+
+            // Reasoning Content - Model's thinking/reasoning process
+            ReasoningMessageContentEvent reasoningEvent => new AgentRunResponseUpdate
+            {
+                AgentId = threadId,
+                AuthorName = this.Name,
+                Role = ChatRole.Assistant,
+                Contents = [new TextReasoningContent(reasoningEvent.Delta)],
+                CreatedAt = DateTimeOffset.UtcNow,
+                MessageId = reasoningEvent.MessageId
+            },
+
+            // Function Call - Tool invocation
+            ToolCallStartEvent toolStart => new AgentRunResponseUpdate
+            {
+                AgentId = threadId,
+                AuthorName = this.Name,
+                Role = ChatRole.Assistant,
+                Contents = [new FunctionCallContent(toolStart.ToolCallId, toolStart.ToolCallName)],
+                CreatedAt = DateTimeOffset.UtcNow,
+                MessageId = toolStart.ParentMessageId
+            },
+
+            // Function Result - Tool execution result
+            ToolCallResultEvent toolResult => new AgentRunResponseUpdate
+            {
+                AgentId = threadId,
+                AuthorName = this.Name,
+                Role = ChatRole.Tool,
+                Contents = [new FunctionResultContent(toolResult.ToolCallId, toolResult.Result)],
+                CreatedAt = DateTimeOffset.UtcNow,
+                MessageId = Guid.NewGuid().ToString("N")
+            },
+
+            // Filtered Events (Metadata/Boundaries - not message content)
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Converts Extensions.AI ChatMessage collection to AGUI BaseMessage collection.
+    /// Filters out tool-related messages since AG-UI handles tools via events, not message history.
+    /// </summary>
+    private static IReadOnlyList<BaseMessage> ConvertThreadToAGUIMessages(IEnumerable<ChatMessage> messages)
+    {
+        return messages
+            .Where(m => !HasToolContent(m)) // Skip messages with tool calls/results
+            .Select(AGUIEventConverter.ConvertChatMessageToBaseMessage)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Checks if a message contains tool-related content (FunctionCallContent or FunctionResultContent).
+    /// These messages should be excluded from AG-UI message history as tools are handled via events.
+    /// </summary>
+    private static bool HasToolContent(ChatMessage message)
+    {
+        return message.Contents.Any(c => c is FunctionCallContent or FunctionResultContent);
     }
 
     #endregion

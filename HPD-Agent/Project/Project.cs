@@ -100,37 +100,15 @@ public class Project
 
     /// <summary>
     /// Creates a new conversation thread within this project.
-    /// The conversation orchestrator (stateless) must be created separately.
-    /// </summary>
-    /// <param name="conversation">The stateless conversation orchestrator to use</param>
-    /// <returns>A new thread associated with this project</returns>
-    /// <remarks>
-    /// Usage:
-    /// <code>
-    /// var conversation = new Conversation(agent);
-    /// var thread = project.CreateThread(conversation);
-    /// await conversation.RunAsync(messages, thread);
-    /// </code>
-    /// </remarks>
-    public ConversationThread CreateThread(Conversation conversation)
-    {
-        var thread = conversation.GetNewThread(this);
-        Threads.Add(thread);
-        UpdateActivity();
-        return thread;
-    }
-
-    /// <summary>
-    /// Creates a new conversation thread within this project without a conversation instance.
-    /// Useful when you want to create the thread first and conversation later.
+    /// Thread is automatically added to the project's thread list.
     /// </summary>
     /// <returns>A new thread associated with this project</returns>
     /// <remarks>
     /// Usage:
     /// <code>
+    /// var agent = AgentBuilder.Create().Build();
     /// var thread = project.CreateThread();
-    /// var conversation = new Conversation(agent);
-    /// await conversation.RunAsync(messages, thread);
+    /// await agent.RunAsync(messages, thread);
     /// </code>
     /// </remarks>
     public ConversationThread CreateThread()

@@ -10,16 +10,16 @@ var config = new ConfigurationBuilder()
     .Build();
 
 // ✨ ONE-LINER: Create complete AI assistant
-var (project, conversation, thread, agent) = await CreateAIAssistant(config);
+var (project, thread, agent) = await CreateAIAssistant(config);
 
 Console.WriteLine($"✅ AI Assistant ready: {agent.Name}");
 Console.WriteLine($"📁 Project: {project.Name}\n");
 
 // 🎯 Interactive Chat Loop
-await RunInteractiveChat(conversation, thread);
+await RunInteractiveChat(agent, thread);
 
 // ✨ NEW CONFIG-FIRST APPROACH: Using AgentConfig pattern
-static Task<(Project, Conversation, ConversationThread, Agent)> CreateAIAssistant(IConfiguration config)
+static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfiguration config)
 {
     // ✨ CREATE AGENT CONFIG OBJECT FIRST
     var agentConfig = new AgentConfig
@@ -86,9 +86,8 @@ static Task<(Project, Conversation, ConversationThread, Agent)> CreateAIAssistan
     // 🎯 Project with smart defaults
     var project = Project.Create("AI Chat Session");
 
-    // 💬 Create stateless conversation and thread
-    var conversation = new Conversation(agent);
-    var thread = project.CreateThread(conversation);
+    // 💬 Create thread using agent directly
+    var thread = project.CreateThread();
 
     // ✨ Show config info
     Console.WriteLine($"✨ Agent created with config-first pattern!");
@@ -96,11 +95,11 @@ static Task<(Project, Conversation, ConversationThread, Agent)> CreateAIAssistan
     Console.WriteLine($"🧠 Memory: {agentConfig.DynamicMemory?.StorageDirectory}");
     Console.WriteLine($"🔧 Max Function Call Turns: {agentConfig.MaxAgenticIterations}");
 
-    return Task.FromResult((project, conversation, thread, agent));
+    return Task.FromResult((project, thread, agent));
 }
 
-// 🎯 Interactive Chat Loop using conversation.RunStreamingAsync
-static async Task RunInteractiveChat(Conversation conversation, ConversationThread thread)
+// 🎯 Interactive Chat Loop using agent.RunStreamingAsync
+static async Task RunInteractiveChat(Agent agent, ConversationThread thread)
 {
     Console.WriteLine("==========================================");
     Console.WriteLine("🤖 Interactive Chat Mode");
@@ -161,8 +160,8 @@ static async Task RunInteractiveChat(Conversation conversation, ConversationThre
             
             try
             {
-                // Use conversation.RunStreamingAsync with thread parameter
-                await foreach (var update in conversation.RunStreamingAsync([userMessage], thread, cancellationToken: cts.Token))
+                // Use agent.RunStreamingAsync with thread parameter
+                await foreach (var update in agent.RunStreamingAsync([userMessage], thread, cancellationToken: cts.Token))
                 {
                     // Display different content types from the streaming updates
                     foreach (var content in update.Contents ?? [])

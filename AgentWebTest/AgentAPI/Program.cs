@@ -114,23 +114,22 @@ projectsApi.MapDelete("/{projectId}/conversations/{conversationId}", (string pro
 // 🎯 CLEAN AGENT API
 var agentApi = app.MapGroup("/agent").WithTags("Agent");
 
-// ✨ SIMPLIFIED: Context-aware chat (stateless pattern)
+// ✨ SIMPLIFIED: Context-aware chat (agent direct pattern)
 agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/chat",
     async (string projectId, string conversationId, ChatRequest request, ProjectManager pm) =>
 {
     if (pm.GetThread(projectId, conversationId) is not { } thread)
         return Results.NotFound();
 
-    // Create stateless conversation for this request
+    // Create agent for this request
     var agent = pm.CreateAgent();
-    var conversation = new Conversation(agent);
 
-    // 🚀 Use AIAgent RunAsync interface with thread
+    // 🚀 Use agent RunAsync directly with thread
     var userMessage = new ChatMessage(ChatRole.User, request.Message);
-    var agentResponse = await conversation.RunAsync([userMessage], thread);
+    var response = await agent.RunAsync([userMessage], thread);
 
-    // Convert AgentRunResponse to our API response format
-    return Results.Ok(ToAgentResponse(agentResponse));
+    // Convert ChatResponse to our API response format
+    return Results.Ok(ToAgentResponse(response));
 });
 
 // ✨ NEW: AG-UI Protocol streaming endpoint (using RunAgentInput overload)
@@ -144,9 +143,8 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
         return;
     }
 
-    // Create stateless conversation for this request
+    // Create agent for this request
     var agent = pm.CreateAgent();
-    var conversation = new Conversation(agent);
 
     // Prepare SSE headers (CORS handled by middleware)
     context.Response.Headers.Append("Content-Type", "text/event-stream");
@@ -158,8 +156,8 @@ agentApi.MapPost("/projects/{projectId}/conversations/{conversationId}/stream",
 
     try
     {
-        // ✅ Use the new Conversation.RunStreamingAsync(RunAgentInput, thread) AGUI overload
-        await foreach (var update in conversation.RunStreamingAsync(aguiInput, thread, context.RequestAborted))
+        // ✅ Use agent.RunStreamingAGUIAsync directly with thread
+        await foreach (var update in agent.RunStreamingAGUIAsync(aguiInput, thread, context.RequestAborted))
         {
             // Serialize AgentRunResponseUpdate to JSON
             var serializerOptions = new JsonSerializerOptions
@@ -207,21 +205,20 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
 
         try
         {
-            // Create stateless conversation for this request
+            // Create agent for this request
             var agent = pm.CreateAgent();
-            var conversation = new Conversation(agent);
 
             // Wait for an initial message from the client to start the stream
             var buffer = new byte[1024 * 4];
             var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
             var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
 
-            // Use new AIAgent RunStreamingAsync interface with thread
+            // Use agent.RunStreamingAsync directly with thread
             var chatMessage = new ChatMessage(ChatRole.User, userMessage);
 
             bool isFinished = false;
             long totalTokens = 0;
-            await foreach (var update in conversation.RunStreamingAsync([chatMessage], thread, cancellationToken: CancellationToken.None))
+            await foreach (var update in agent.RunStreamingAsync([chatMessage], thread, cancellationToken: CancellationToken.None))
             {
                 // Extract text content from update
                 foreach (var content in update.Contents ?? [])
@@ -249,9 +246,9 @@ agentApi.MapGet("/projects/{projectId}/conversations/{conversationId}/ws",
             // Send final metadata as completion event
             var metadataResponse = new StreamMetadataResponse(
                 totalTokens,
-                0.0, // Duration not available from AgentRunResponseUpdate
-                conversation.Agent.Config?.Name ?? "AI Assistant",
-                null); // Cost not available from AgentRunResponseUpdate
+                0.0, // Duration not available from StreamingChatCompletionUpdate
+                agent.Config?.Name ?? "AI Assistant",
+                null); // Cost not available from StreamingChatCompletionUpdate
             var metadataMessage = System.Text.Json.JsonSerializer.Serialize(metadataResponse, AppJsonSerializerContext.Default.StreamMetadataResponse);
             var metadataBytes = System.Text.Encoding.UTF8.GetBytes(metadataMessage);
             await webSocket.SendAsync(
@@ -311,9 +308,9 @@ static ConversationWithMessagesDto ToThreadWithMessagesDto(ConversationThread t)
         ExtractTextFromMessage(msg),
         DateTime.UtcNow)).ToArray());
 
-static AgentChatResponse ToAgentResponse(AgentRunResponse response) => new(
-    Response: response.Text,  // ✨ Use built-in Text property from AgentRunResponse
-    Model: "google/gemini-2.5-pro", // ✨ AgentRunResponse doesn't expose ModelId, use default
+static AgentChatResponse ToAgentResponse(ChatResponse response) => new(
+    Response: response.Text,  // ✨ Use built-in Text property from ChatResponse
+    Model: "google/gemini-2.5-pro", // ✨ ChatResponse doesn't expose ModelId, use default
     Usage: new UsageInfo(
         response.Usage?.InputTokenCount ?? 0,
         response.Usage?.OutputTokenCount ?? 0,

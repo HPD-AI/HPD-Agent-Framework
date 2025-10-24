@@ -325,17 +325,17 @@ public class AGUIEventConverter
     }
 
     /// <summary>
-    /// Creates a RunAgentInput from conversation state, encapsulating the complex mapping logic.
-    /// This centralizes the conversion between Conversation/ChatMessage format and AGUI format.
+    /// Creates a RunAgentInput from thread state, encapsulating the complex mapping logic.
+    /// This centralizes the conversion between ConversationThread/ChatMessage format and AGUI format.
     /// </summary>
     public static RunAgentInput CreateRunAgentInput(
-        Conversation conversation, 
-        IReadOnlyList<ChatMessage> messages, 
+        string threadId,
+        IReadOnlyList<ChatMessage> messages,
         ChatOptions? options)
     {
         return new RunAgentInput
         {
-            ThreadId = conversation.Id,
+            ThreadId = threadId,
             RunId = Guid.NewGuid().ToString(),
             Messages = messages.Select(ConvertChatMessageToBaseMessage).ToList(),
             State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
