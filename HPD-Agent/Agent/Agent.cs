@@ -1673,31 +1673,61 @@ Best practices:
         IReadOnlyList<ChatMessage> finalHistory;
         try
         {
-            // Create RunAgentInput from current thread state
-            var aguiInput = new RunAgentInput
-            {
-                ThreadId = thread.Id,
-                RunId = Guid.NewGuid().ToString(),
-                State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
-                Messages = ConvertThreadToAGUIMessages(thread.Messages),
-                Tools = Array.Empty<Tool>(),
-                Context = Array.Empty<Context>(),
-                ForwardedProps = System.Text.Json.JsonDocument.Parse("{}").RootElement
-            };
+            // ✅ OPTIMIZATION: Call RunAgenticLoopInternal directly (no AGUI conversion!)
+            var turnHistory = new List<ChatMessage>();
+            var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Execute turn
-            var streamResult = await this.ExecuteStreamingTurnAsync(aguiInput, cancellationToken);
+            var internalStream = RunAgenticLoopInternal(
+                thread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+                options,
+                documentPaths: null,
+                turnHistory,
+                historyCompletionSource,
+                reductionCompletionSource,
+                cancellationToken);
 
             // Consume stream (non-streaming path)
-            await foreach (var _ in streamResult.EventStream.WithCancellation(cancellationToken))
+            await foreach (var _ in internalStream.WithCancellation(cancellationToken))
             {
                 // Just consume events
             }
 
-            // Get final history and apply reduction
-            finalHistory = await streamResult.FinalHistory;
-            var reductionMetadata = await streamResult.ReductionTask;
+            // Get final history and reduction
+            finalHistory = await historyCompletionSource.Task;
+            var reductionMetadata = await reductionCompletionSource.Task;
 
+            // Apply post-invoke filters (for memory extraction, learning, etc.)
+            try
+            {
+                await _messageProcessor.ApplyPostInvokeFiltersAsync(
+                    thread.Messages.ToList(),
+                    finalHistory.ToList(),
+                    null, // no exception
+                    options,
+                    Config?.Name ?? "Agent",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Log but don't fail - post-processing is best-effort
+            }
+
+            // Apply message turn filters after the turn completes
+            if (_messageTurnFilters.Any())
+            {
+                try
+                {
+                    var userMessage = thread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                    await ApplyMessageTurnFilters(userMessage, finalHistory, options, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Log but don't fail the turn if filters fail
+                }
+            }
+
+            // Apply reduction
             if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
             {
                 await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
@@ -1760,35 +1790,63 @@ Best practices:
         IReadOnlyList<ChatMessage> finalHistory;
         try
         {
-            // Create RunAgentInput from current thread state
-            var aguiInput = new RunAgentInput
-            {
-                ThreadId = thread.Id,
-                RunId = Guid.NewGuid().ToString(),
-                State = System.Text.Json.JsonDocument.Parse("{}").RootElement,
-                Messages = ConvertThreadToAGUIMessages(thread.Messages),
-                Tools = Array.Empty<Tool>(),
-                Context = Array.Empty<Context>(),
-                ForwardedProps = System.Text.Json.JsonDocument.Parse("{}").RootElement
-            };
+            // ✅ OPTIMIZATION: Call RunAgenticLoopInternal directly (no AGUI conversion!)
+            var turnHistory = new List<ChatMessage>();
+            var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // Execute turn
-            var streamResult = await this.ExecuteStreamingTurnAsync(aguiInput, cancellationToken);
+            var internalStream = RunAgenticLoopInternal(
+                thread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+                options,
+                documentPaths: null,
+                turnHistory,
+                historyCompletionSource,
+                reductionCompletionSource,
+                cancellationToken);
 
-            // Convert BaseEvent stream to AgentRunResponseUpdate stream
-            await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+            // ✅ Use EventStreamAdapter pattern for protocol conversion
+            var agentsAIStream = EventStreamAdapter.ToAgentsAI(internalStream, thread.Id, this.Name, cancellationToken);
+
+            await foreach (var update in agentsAIStream)
             {
-                var update = ConvertBaseEventToStreamingUpdate(evt, thread.Id);
-                if (update != null)
+                yield return update;
+            }
+
+            // Get final history and reduction
+            finalHistory = await historyCompletionSource.Task;
+            var reductionMetadata = await reductionCompletionSource.Task;
+
+            // Apply post-invoke filters (for memory extraction, learning, etc.)
+            try
+            {
+                await _messageProcessor.ApplyPostInvokeFiltersAsync(
+                    thread.Messages.ToList(),
+                    finalHistory.ToList(),
+                    null, // no exception
+                    options,
+                    Config?.Name ?? "Agent",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Log but don't fail - post-processing is best-effort
+            }
+
+            // Apply message turn filters after the turn completes
+            if (_messageTurnFilters.Any())
+            {
+                try
                 {
-                    yield return update;
+                    var userMessage = thread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                    await ApplyMessageTurnFilters(userMessage, finalHistory, options, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Log but don't fail the turn if filters fail
                 }
             }
 
-            // Update thread with final history
-            finalHistory = await streamResult.FinalHistory;
-            var reductionMetadata = await streamResult.ReductionTask;
-
+            // Apply reduction
             if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
             {
                 await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
@@ -1840,30 +1898,72 @@ Best practices:
                 await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
             }
 
-            // Create new RunAgentInput using server-side thread as source of truth
-            var serverSideInput = new RunAgentInput
-            {
-                ThreadId = aguiInput.ThreadId,
-                RunId = aguiInput.RunId,
-                State = aguiInput.State,
-                Messages = ConvertThreadToAGUIMessages(thread.Messages),
-                Tools = aguiInput.Tools,
-                Context = aguiInput.Context,
-                ForwardedProps = aguiInput.ForwardedProps
-            };
+            // ✅ OPTIMIZATION: Skip AGUI message conversion, call RunAgenticLoopInternal directly
+            // Build ChatOptions from AGUI tools (only convert tools, not messages!)
+            var chatOptions = _aguiConverter.ConvertToExtensionsAIChatOptions(
+                aguiInput,
+                Config?.Provider?.DefaultChatOptions,
+                Config?.PluginScoping?.ScopeFrontendTools ?? false,
+                Config?.PluginScoping?.MaxFunctionNamesInDescription ?? 10);
 
-            // Use agent's AGUI overload with server-side messages
-            var streamResult = await this.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+            chatOptions ??= new ChatOptions();
+            chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            chatOptions.AdditionalProperties["ConversationId"] = aguiInput.ThreadId;
+            chatOptions.AdditionalProperties["RunId"] = aguiInput.RunId;
+
+            // Call RunAgenticLoopInternal directly with Extensions.AI format (no message conversion!)
+            var turnHistory = new List<ChatMessage>();
+            var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var internalStream = RunAgenticLoopInternal(
+                thread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+                chatOptions,
+                documentPaths: null,
+                turnHistory,
+                historyCompletionSource,
+                reductionCompletionSource,
+                cancellationToken);
 
             // Consume stream (non-streaming path)
-            await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+            await foreach (var _ in internalStream.WithCancellation(cancellationToken))
             {
-                // Events consumed but not exposed in non-streaming path
+                // Just consume events
             }
 
-            // Wait for final history and check for reduction
-            var finalHistory = await streamResult.FinalHistory;
-            var reductionMetadata = await streamResult.ReductionTask;
+            // Get final history and reduction
+            var finalHistory = await historyCompletionSource.Task;
+            var reductionMetadata = await reductionCompletionSource.Task;
+
+            // Apply post-invoke filters (for memory extraction, learning, etc.)
+            try
+            {
+                await _messageProcessor.ApplyPostInvokeFiltersAsync(
+                    thread.Messages.ToList(),
+                    finalHistory.ToList(),
+                    null, // no exception
+                    chatOptions,
+                    Config?.Name ?? "Agent",
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Log but don't fail - post-processing is best-effort
+            }
+
+            // Apply message turn filters after the turn completes
+            if (_messageTurnFilters.Any())
+            {
+                try
+                {
+                    var userMessage = thread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                    await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Log but don't fail the turn if filters fail
+                }
+            }
 
             // Apply reduction BEFORE adding new messages
             if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
@@ -1929,30 +2029,78 @@ Best practices:
             await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
         }
 
-        // Create new RunAgentInput using server-side thread as source of truth
-        var serverSideInput = new RunAgentInput
-        {
-            ThreadId = aguiInput.ThreadId,
-            RunId = aguiInput.RunId,
-            State = aguiInput.State,
-            Messages = ConvertThreadToAGUIMessages(thread.Messages),
-            Tools = aguiInput.Tools,
-            Context = aguiInput.Context,
-            ForwardedProps = aguiInput.ForwardedProps
-        };
+        // ✅ OPTIMIZATION: Skip AGUI message conversion, call RunAgenticLoopInternal directly
+        // Build ChatOptions from AGUI tools (only convert tools, not messages!)
+        var chatOptions = _aguiConverter.ConvertToExtensionsAIChatOptions(
+            aguiInput,
+            Config?.Provider?.DefaultChatOptions,
+            Config?.PluginScoping?.ScopeFrontendTools ?? false,
+            Config?.PluginScoping?.MaxFunctionNamesInDescription ?? 10);
 
-        // Use agent's AGUI overload with server-side messages
-        var streamResult = await this.ExecuteStreamingTurnAsync(serverSideInput, cancellationToken);
+        chatOptions ??= new ChatOptions();
+        chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+        chatOptions.AdditionalProperties["ConversationId"] = aguiInput.ThreadId;
+        chatOptions.AdditionalProperties["RunId"] = aguiInput.RunId;
+
+        // Call RunAgenticLoopInternal directly with Extensions.AI format (no message conversion!)
+        var turnHistory = new List<ChatMessage>();
+        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var internalStream = RunAgenticLoopInternal(
+            thread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+            chatOptions,
+            documentPaths: null,
+            turnHistory,
+            historyCompletionSource,
+            reductionCompletionSource,
+            cancellationToken);
+
+        // Adapt internal events to AGUI protocol
+        var aguiStream = EventStreamAdapter.ToAGUI(internalStream, aguiInput.ThreadId, aguiInput.RunId, cancellationToken);
+
+        // Wrap with error handling
+        var errorHandledStream = EventStreamAdapter.WithErrorHandling(aguiStream, historyCompletionSource, cancellationToken);
 
         // Stream ALL BaseEvent events (no filtering for AGUI protocol)
-        await foreach (var evt in streamResult.EventStream.WithCancellation(cancellationToken))
+        await foreach (var evt in errorHandledStream.WithCancellation(cancellationToken))
         {
             yield return evt;
         }
 
         // Wait for final history and check for reduction
-        var finalHistory = await streamResult.FinalHistory;
-        var reductionMetadata = await streamResult.ReductionTask;
+        var finalHistory = await historyCompletionSource.Task;
+        var reductionMetadata = await reductionCompletionSource.Task;
+
+        // Apply post-invoke filters (for memory extraction, learning, etc.)
+        try
+        {
+            await _messageProcessor.ApplyPostInvokeFiltersAsync(
+                thread.Messages.ToList(),
+                finalHistory.ToList(),
+                null, // no exception
+                chatOptions,
+                Config?.Name ?? "Agent",
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Log but don't fail - post-processing is best-effort
+        }
+
+        // Apply message turn filters after the turn completes
+        if (_messageTurnFilters.Any())
+        {
+            try
+            {
+                var userMessage = thread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Log but don't fail the turn if filters fail
+            }
+        }
 
         // Apply reduction BEFORE adding new messages
         if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
@@ -1972,63 +2120,6 @@ Best practices:
         var duration = DateTimeOffset.UtcNow - startTime;
         activity?.SetTag("agent.duration_ms", duration.TotalMilliseconds);
         activity?.SetTag("agent.success", true);
-    }
-
-    /// <summary>
-    /// Converts BaseEvent to AgentRunResponseUpdate.
-    /// Maps AG-UI protocol events to Microsoft.Agents.AI streaming updates.
-    /// </summary>
-    private AgentRunResponseUpdate? ConvertBaseEventToStreamingUpdate(BaseEvent evt, string threadId)
-    {
-        return evt switch
-        {
-            // Text Content - Assistant's actual response
-            TextMessageContentEvent textEvent => new AgentRunResponseUpdate
-            {
-                AgentId = threadId,
-                AuthorName = this.Name,
-                Role = ChatRole.Assistant,
-                Contents = [new TextContent(textEvent.Delta)],
-                CreatedAt = DateTimeOffset.UtcNow,
-                MessageId = textEvent.MessageId
-            },
-
-            // Reasoning Content - Model's thinking/reasoning process
-            ReasoningMessageContentEvent reasoningEvent => new AgentRunResponseUpdate
-            {
-                AgentId = threadId,
-                AuthorName = this.Name,
-                Role = ChatRole.Assistant,
-                Contents = [new TextReasoningContent(reasoningEvent.Delta)],
-                CreatedAt = DateTimeOffset.UtcNow,
-                MessageId = reasoningEvent.MessageId
-            },
-
-            // Function Call - Tool invocation
-            ToolCallStartEvent toolStart => new AgentRunResponseUpdate
-            {
-                AgentId = threadId,
-                AuthorName = this.Name,
-                Role = ChatRole.Assistant,
-                Contents = [new FunctionCallContent(toolStart.ToolCallId, toolStart.ToolCallName)],
-                CreatedAt = DateTimeOffset.UtcNow,
-                MessageId = toolStart.ParentMessageId
-            },
-
-            // Function Result - Tool execution result
-            ToolCallResultEvent toolResult => new AgentRunResponseUpdate
-            {
-                AgentId = threadId,
-                AuthorName = this.Name,
-                Role = ChatRole.Tool,
-                Contents = [new FunctionResultContent(toolResult.ToolCallId, toolResult.Result)],
-                CreatedAt = DateTimeOffset.UtcNow,
-                MessageId = Guid.NewGuid().ToString("N")
-            },
-
-            // Filtered Events (Metadata/Boundaries - not message content)
-            _ => null
-        };
     }
 
     /// <summary>
@@ -3624,6 +3715,74 @@ internal static class EventStreamAdapter
                 InternalToolCallResultEvent toolResult => new ChatResponseUpdate
                 {
                     Contents = [new FunctionResultContent(toolResult.CallId, toolResult.Result)]
+                },
+
+                // Filter out: turn boundaries, message boundaries, tool args, tool end
+                _ => null
+            };
+
+            if (update != null)
+            {
+                yield return update;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Adapts internal events to Microsoft.Agents.AI protocol (AgentRunResponseUpdate).
+    /// Converts internal events to the Agents.AI protocol format used by A2A and other integrations.
+    /// </summary>
+    public static async IAsyncEnumerable<AgentRunResponseUpdate> ToAgentsAI(
+        IAsyncEnumerable<InternalAgentEvent> internalStream,
+        string threadId,
+        string agentName,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var internalEvent in internalStream.WithCancellation(cancellationToken))
+        {
+            AgentRunResponseUpdate? update = internalEvent switch
+            {
+                // Text content
+                InternalTextDeltaEvent text => new AgentRunResponseUpdate
+                {
+                    AgentId = threadId,
+                    AuthorName = agentName,
+                    Role = ChatRole.Assistant,
+                    Contents = [new TextContent(text.Text)],
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MessageId = text.MessageId
+                },
+
+                // Reasoning content (for o1, DeepSeek-R1, etc.)
+                InternalReasoningDeltaEvent reasoning => new AgentRunResponseUpdate
+                {
+                    AgentId = threadId,
+                    AuthorName = agentName,
+                    Role = ChatRole.Assistant,
+                    Contents = [new TextReasoningContent(reasoning.Text)],
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MessageId = reasoning.MessageId
+                },
+
+                // Tool call start
+                InternalToolCallStartEvent toolCall => new AgentRunResponseUpdate
+                {
+                    AgentId = threadId,
+                    AuthorName = agentName,
+                    Role = ChatRole.Assistant,
+                    Contents = [new FunctionCallContent(toolCall.CallId, toolCall.Name)],
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    MessageId = toolCall.MessageId
+                },
+
+                // Tool call result
+                InternalToolCallResultEvent toolResult => new AgentRunResponseUpdate
+                {
+                    AgentId = threadId,
+                    AuthorName = agentName,
+                    Role = ChatRole.Tool,
+                    Contents = [new FunctionResultContent(toolResult.CallId, toolResult.Result)],
+                    CreatedAt = DateTimeOffset.UtcNow
                 },
 
                 // Filter out: turn boundaries, message boundaries, tool args, tool end
