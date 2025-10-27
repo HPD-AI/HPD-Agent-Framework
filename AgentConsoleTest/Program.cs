@@ -221,6 +221,7 @@ static async Task RunInteractiveChat(Agent agent, ConversationThread thread)
                             perm.PermissionId!,
                             new InternalPermissionResponseEvent(
                                 perm.PermissionId!,
+                                "Console", // SourceName
                                 approved,
                                 approved ? null : "User denied permission",
                                 permChoice

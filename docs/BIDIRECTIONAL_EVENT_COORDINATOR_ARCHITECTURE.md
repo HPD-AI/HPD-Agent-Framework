@@ -1,8 +1,8 @@
 # BidirectionalEventCoordinator Architecture
 
 **Status**: ✅ Production Ready
-**Version**: v2.0
-**Last Updated**: 2025-01-26
+**Version**: v2.1
+**Last Updated**: 2025-01-27 (Simplified: Removed background drainer, direct channel polling)
 
 ---
 
@@ -54,7 +54,7 @@ public BidirectionalEventCoordinator()
     _eventChannel = Channel.CreateUnbounded<InternalAgentEvent>(new UnboundedChannelOptions
     {
         SingleWriter = false,  // Multiple filters/functions can emit concurrently
-        SingleReader = true,   // Only background drainer reads
+        SingleReader = true,   // Main loop polls via TryRead
         AllowSynchronousContinuations = false  // Performance & safety
     });
 }
@@ -63,7 +63,7 @@ public BidirectionalEventCoordinator()
 **Purpose**:
 - Unbounded to prevent blocking during event emission
 - Thread-safe for concurrent producers (filters, functions, nested agents)
-- Single consumer (background drainer task)
+- Single consumer (main loop polling via TryRead)
 
 ### 2. Response Coordination
 
@@ -115,9 +115,8 @@ public void Emit(InternalAgentEvent evt)
 **Flow**:
 1. Write event to local channel
 2. If parent coordinator exists, recursively emit to parent
-3. Background drainer reads from channel
-4. Drainer enqueues to `filterEventQueue`
-5. Main loop yields events to consumer (AGUI, Console, etc.)
+3. Main loop polls channel via TryRead (every 10ms during blocking operations)
+4. Main loop yields events to consumer (AGUI, Console, etc.)
 
 ### Response Waiting
 
@@ -173,29 +172,20 @@ Handler:         (Never receives event, can't send response)
                  ↓ DEADLOCK!
 ```
 
-### The Solution: Background Drainer + Polling
+### The Solution: Direct Channel Polling
 
 **See**: [BIDIRECTIONAL_FILTER_DEADLOCK_FIX.md](BIDIRECTIONAL_FILTER_DEADLOCK_FIX.md)
 
 ```csharp
 // In RunAgenticLoopInternal
 
-// Background drainer - continuously reads from coordinator
-var filterEventDrainTask = Task.Run(async () =>
-{
-    await foreach (var evt in _eventCoordinator.EventReader.ReadAllAsync(token))
-    {
-        filterEventQueue.Enqueue(evt);  // Thread-safe queue
-    }
-});
-
-// Main loop - polls queue WHILE tools execute
+// Main loop - polls channel directly WHILE tools execute
 while (!executeTask.IsCompleted)
 {
     await Task.WhenAny(executeTask, Task.Delay(10, token));
 
     // Yield events that accumulated during execution
-    while (filterEventQueue.TryDequeue(out var evt))
+    while (_eventCoordinator.EventReader.TryRead(out var evt))
     {
         yield return evt;  // ← USER SEES EVENTS IMMEDIATELY!
     }
@@ -203,10 +193,11 @@ while (!executeTask.IsCompleted)
 ```
 
 **Key Points**:
-- Background drainer runs concurrently with tool execution
-- Main loop polls every **10ms** to yield accumulated events
+- Main loop polls channel directly via TryRead (non-blocking)
+- Polls every **10ms** to yield accumulated events
 - Events stream to user **while function is blocked**
 - No deadlock possible
+- Simpler than previous background drainer approach (removed in v2.1)
 
 ---
 
@@ -323,11 +314,7 @@ public static AIFunction Create()
         │    ↓                                               │
         │    EventCoordinator._eventChannel.Writer.TryWrite()│
         │    ↓                                               │
-        │    Background drainer reads from channel           │
-        │    ↓                                               │
-        │    filterEventQueue.Enqueue(event)                 │
-        │    ↓                                               │
-        │    Main loop polling (line 939): TryDequeue()      │
+        │    Main loop polling: EventReader.TryRead()        │
         │    ↓                                               │
         │    yield return event ← USER SEES EVENT! ✅        │
         │                                                     │
@@ -384,17 +371,15 @@ User → Orchestrator → PlanningAgent → CodingAgent → returns question
                     ↓
     PlanningAgent.EventCoordinator.Emit(ClarificationRequest)
                     ↓
-    Local channel: PlanningAgent's background drainer
+    Local channel: PlanningAgent's event channel
                     ↓
     _parentCoordinator.Emit() ← AUTOMATIC BUBBLING!
                     ↓
     Orchestrator.EventCoordinator.Emit(same event)
                     ↓
-    Orchestrator's background drainer
+    Orchestrator's event channel
                     ↓
-    Orchestrator's filterEventQueue
-                    ↓
-    Orchestrator's main loop: yield return
+    Orchestrator's main loop: TryRead + yield return
                     ↓
     USER SEES: "[PlanningAgent] What database?"
 
@@ -475,9 +460,10 @@ User → Orchestrator → PlanningAgent → CodingAgent → returns question
 - No coordinator changes needed!
 
 ### 4. Performance
-- Single background drainer for all events
+- Direct polling eliminates intermediate buffering
 - Shared channel infrastructure
 - No per-filter/function overhead
+- Reduced memory footprint (no ConcurrentQueue)
 
 ---
 
@@ -526,23 +512,19 @@ Events are consumed once. If a handler crashes, events are lost (by design for s
 
 ```csharp
 var coordinator = new BidirectionalEventCoordinator();
-var emitted = new List<InternalAgentEvent>();
-
-// Background consumer
-_ = Task.Run(async () =>
-{
-    await foreach (var evt in coordinator.EventReader.ReadAllAsync())
-    {
-        emitted.Add(evt);
-    }
-});
 
 // Emit event
 coordinator.Emit(new TestEvent());
 
+// Poll channel directly
+var events = new List<InternalAgentEvent>();
+while (coordinator.EventReader.TryRead(out var evt))
+{
+    events.Add(evt);
+}
+
 // Assert
-await Task.Delay(100); // Wait for background processing
-Assert.Single(emitted);
+Assert.Single(events);
 ```
 
 ### Integration Test: Request/Response

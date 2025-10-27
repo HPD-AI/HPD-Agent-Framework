@@ -472,26 +472,6 @@ public class Agent : AIAgent
         // Track conversation ID consistently
         _conversationId = conversationId;
 
-        // NEW: Queue to buffer filter events from background drainer
-        var filterEventQueue = new System.Collections.Concurrent.ConcurrentQueue<InternalAgentEvent>();
-        var eventDrainCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveCancellationToken);
-
-        // NEW: Start background task to continuously drain filter events
-        var filterEventDrainTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var evt in _eventCoordinator.EventReader.ReadAllAsync(eventDrainCts.Token))
-                {
-                    filterEventQueue.Enqueue(evt);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when eventDrainCts is cancelled
-            }
-        }, eventDrainCts.Token);
-
         try
         {
             // Emit MESSAGE TURN started event
@@ -571,8 +551,8 @@ public class Agent : AIAgent
             // Emit AGENT TURN started event
             yield return new InternalAgentTurnStartedEvent(iteration);
 
-            // NEW: Yield any filter events that accumulated before iteration start
-            while (filterEventQueue.TryDequeue(out var filterEvt))
+            // Yield any filter events that accumulated before iteration start
+            while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
             {
                 yield return filterEvt;
             }
@@ -758,8 +738,8 @@ public class Agent : AIAgent
                     }
                 }
 
-                // NEW: Periodically yield filter events during LLM streaming
-                while (filterEventQueue.TryDequeue(out var filterEvt))
+                // Periodically yield filter events during LLM streaming
+                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
                 {
                     yield return filterEvt;
                 }
@@ -842,8 +822,8 @@ public class Agent : AIAgent
                 // Note: Tool call start/args events are now emitted immediately during streaming (see above)
                 // This ensures true streaming with zero latency for function call visibility
 
-                // NEW: Yield filter events before tool execution
-                while (filterEventQueue.TryDequeue(out var filterEvt))
+                // Yield filter events before tool execution
+                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
                 {
                     yield return filterEvt;
                 }
@@ -862,7 +842,7 @@ public class Agent : AIAgent
                     await Task.WhenAny(executeTask, delayTask).ConfigureAwait(false);
 
                     // Yield any events that accumulated during execution
-                    while (filterEventQueue.TryDequeue(out var filterEvt))
+                    while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
                     {
                         yield return filterEvt;
                     }
@@ -871,8 +851,8 @@ public class Agent : AIAgent
                 // Get the result (this won't block since task is complete)
                 var toolResultMessage = await executeTask.ConfigureAwait(false);
 
-                // NEW: Final drain - yield any remaining events after tool execution
-                while (filterEventQueue.TryDequeue(out var filterEvt))
+                // Final drain - yield any remaining events after tool execution
+                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
                 {
                     yield return filterEvt;
                 }
@@ -1073,8 +1053,8 @@ public class Agent : AIAgent
         // Note: TextMessageEnd is now emitted INSIDE the loop after each agent turn
         // This ensures proper event pairing per AGUI spec
 
-        // NEW: Final drain of filter events after loop
-        while (filterEventQueue.TryDequeue(out var filterEvt))
+        // Final drain of filter events after loop
+        while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
         {
             yield return filterEvt;
         }
@@ -1100,17 +1080,6 @@ public class Agent : AIAgent
         }
         finally
         {
-            // Signal event drainer to stop and wait for completion
-            eventDrainCts.Cancel();
-            try
-            {
-                await filterEventDrainTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-
             // Restore previous root agent (important for nested calls)
             // This ensures AsyncLocal state is properly cleaned up
             RootAgent = previousRootAgent;
