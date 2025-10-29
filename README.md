@@ -19,7 +19,7 @@ Microsoft created three excellent pieces for .NET AI agents:
 
 **HPD-Agent is an enhanced implementation of #2 - building on the same abstractions with additional production features.**
 
-![HPD-Agent Architecture Overview](docs/images/Pic1.png)
+![HPD-Agent Architecture Overview](docs/images/Pic2.jpg)
 
 **Both implement the same `AIAgent` spec. HPD just comes with batteries.**
 
