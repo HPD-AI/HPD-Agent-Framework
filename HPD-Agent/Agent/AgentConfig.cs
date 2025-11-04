@@ -424,34 +424,43 @@ public class HistoryReductionConfig
 
     /// <summary>
     /// Maximum token budget before triggering reduction (optional, FFI-friendly).
-    /// When set, this takes precedence over TargetMessageCount.
     ///
-    /// Token Tracking Approach:
-    /// - Assistant messages: Provider-reported output tokens (accurate)
-    /// - Tool messages: Character-based estimation (~±20% accuracy)
-    /// - User messages: Not tracked (API limitation)
+    /// ⚠️ CURRENTLY DISABLED - Token tracking is not implemented.
+    /// See docs/TOKEN_TRACKING_README.md for why this is architecturally impossible.
     ///
-    /// The estimation for tool messages uses character count / 3.5 (validated by Gemini CLI).
-    /// This provides sufficient accuracy for history reduction decisions without requiring
-    /// external tokenizer libraries. For conversations with minimal tool usage, accuracy
-    /// is high (90-95%). For tool-heavy workflows with large results, message-count
-    /// fallback (Priority 3) provides additional safety.
+    /// This setting exists for API compatibility but is IGNORED by the history reduction system.
+    /// History reduction uses message-count based strategy only (TargetMessageCount).
     ///
-    /// If null, uses message-based reduction (backward compatible).
+    /// Why token tracking doesn't work:
+    /// - Provider APIs report cumulative input tokens, not per-message breakdowns
+    /// - Prompt caching makes costs non-deterministic (cache hit = 90% cheaper)
+    /// - Ephemeral context (system prompts, RAG, memory) adds 50-200% overhead
+    /// - Reasoning tokens (o1, Gemini Thinking) can be 50x larger than visible output
+    ///
+    /// Industry context: LangChain, Semantic Kernel, and AutoGen all use message-count
+    /// reduction for the same reason. Even Gemini CLI (with privileged API access) uses
+    /// character estimation with ±20% acknowledged error.
+    ///
+    /// If null (recommended), uses message-based reduction.
     /// </summary>
     public int? MaxTokenBudget { get; set; } = null;
 
     /// <summary>
     /// Target token count after reduction (default: 4000).
-    /// Only used when MaxTokenBudget is set.
-    /// The reducer will aim to keep conversation around this token count.
+    ///
+    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    /// Only used when MaxTokenBudget is set (which is also disabled).
+    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int TargetTokenBudget { get; set; } = 4000;
 
     /// <summary>
     /// Token threshold for triggering reduction when using token budgets.
     /// Number of tokens allowed beyond TargetTokenBudget before reduction is triggered.
-    /// Only used when MaxTokenBudget is set. Default is 1000 tokens.
+    ///
+    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    /// Only used when MaxTokenBudget is set (which is also disabled).
+    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int TokenBudgetThreshold { get; set; } = 1000;
 
@@ -459,12 +468,10 @@ public class HistoryReductionConfig
     /// When set, uses percentage-based triggers instead of absolute token counts.
     /// Requires ContextWindowSize to be configured.
     /// Example: 0.7 = trigger reduction at 70% of context window.
-    /// Takes precedence over MaxTokenBudget when both are set.
     ///
-    /// Inspired by Gemini CLI's approach. Token counts include provider-reported
-    /// output tokens (accurate) and character-based estimates for tool messages (~±20%).
-    /// For tool-heavy workflows, consider using conservative percentages (e.g., 0.5-0.6)
-    /// to trigger earlier and avoid context overflow.
+    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    /// See MaxTokenBudget documentation for why token-based reduction doesn't work.
+    /// Use TargetMessageCount instead for reliable history reduction.
     /// </summary>
     public double? TokenBudgetTriggerPercentage { get; set; } = null;
 
@@ -472,15 +479,18 @@ public class HistoryReductionConfig
     /// Percentage of context window to preserve after reduction.
     /// Only used when TokenBudgetTriggerPercentage is set.
     /// Example: 0.3 = keep 30% of context window after compression.
-    /// Default is 0.3 (30% preservation).
+    ///
+    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public double TokenBudgetPreservePercentage { get; set; } = 0.3;
 
     /// <summary>
     /// Context window size for percentage calculations.
     /// Required when using TokenBudgetTriggerPercentage.
-    /// User must specify based on their model (e.g., 128000 for GPT-4).
-    /// No auto-detection to maintain library neutrality.
+    ///
+    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int? ContextWindowSize { get; set; } = null;
 

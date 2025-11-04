@@ -24,7 +24,7 @@ public class ObservabilityAiFunctionFilter : IAiFunctionFilter
         _toolCallErrorCounter = meter.CreateCounter<long>("agent.tool_calls.errors", description: "Number of failed tool calls.");
     }
 
-    public async Task InvokeAsync(AiFunctionContext context, Func<AiFunctionContext, Task> next)
+    public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {
         var functionName = context.ToolCallRequest?.FunctionName ?? "unknown_function";
         var tags = new TagList { { "gen_ai.tool.name", functionName } };

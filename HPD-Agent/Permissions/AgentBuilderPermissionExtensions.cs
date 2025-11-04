@@ -29,37 +29,6 @@ public static class AgentBuilderPermissionExtensions
     }
 
     /// <summary>
-    /// Adds a console-based permission filter for command-line applications.
-    /// DEPRECATED: Use WithPermissions() instead and handle InternalPermissionRequestEvent in your event loop.
-    /// This allows you to customize the permission prompt text and options.
-    /// </summary>
-    [Obsolete("Use WithPermissions() instead. See FILTER_EVENTS_USAGE.md for migration guide.", false)]
-    public static AgentBuilder WithConsolePermissions(
-        this AgentBuilder builder,
-        IPermissionStorage? permissionStorage = null)
-    {
-        var storage = permissionStorage ?? new InMemoryPermissionStorage();
-        var filter = new ConsolePermissionFilter(storage, builder.Config);
-        return builder.WithPermissionFilter(filter);
-    }
-
-    /// <summary>
-    /// Adds an AGUI-based permission filter for web applications.
-    /// DEPRECATED: Use WithPermissions() instead and convert InternalPermissionRequestEvent to AGUI format in your event handler.
-    /// This decouples the filter from the AGUI protocol and gives you control over event conversion.
-    /// </summary>
-    [Obsolete("Use WithPermissions() instead and handle event conversion in your AGUI adapter. See FILTER_EVENTS_USAGE.md for migration guide.", false)]
-    public static AgentBuilder WithAGUIPermissions(
-        this AgentBuilder builder,
-        IPermissionEventEmitter eventEmitter,
-        IPermissionStorage? permissionStorage = null)
-    {
-        var storage = permissionStorage ?? new InMemoryPermissionStorage();
-        var filter = new AGUIPermissionFilter(eventEmitter, storage, builder.Config);
-        return builder.WithPermissionFilter(filter);
-    }
-
-    /// <summary>
     /// Adds an auto-approve permission filter for testing and automation scenarios.
     /// </summary>
     public static AgentBuilder WithAutoApprovePermissions(this AgentBuilder builder)

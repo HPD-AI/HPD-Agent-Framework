@@ -30,7 +30,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfigurati
         Provider = new ProviderConfig
         {
             ProviderKey = "openrouter",
-            ModelName = "z-ai/glm-4.6", // 🧠 Reasoning model - FREE on OpenRouter!
+            ModelName = "minimax/minimax-m2", // 🧠 Reasoning model - FREE on OpenRouter!
             // Alternative reasoning models:
             // "deepseek/deepseek-r1-distill-qwen-32b" - smaller/faster
             // "openai/o1" - OpenAI's reasoning model (expensive)

@@ -18,8 +18,8 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
         _logger = loggerFactory?.CreateLogger<LoggingAiFunctionFilter>();
     }
     public async Task InvokeAsync(
-        AiFunctionContext context,
-        Func<AiFunctionContext, Task> next)
+        FunctionInvocationContext context,
+        Func<FunctionInvocationContext, Task> next)
     {
         // Pre-invocation logging
         var functionName = context.ToolCallRequest?.FunctionName ?? "<unknown>";

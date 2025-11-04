@@ -31,6 +31,7 @@ public class Agent : AIAgent
     private static readonly ActivitySource ActivitySource = new("HPD.Agent");
 
     // AsyncLocal storage for function invocation context (flows across async calls)
+    // Stores the full FunctionInvocationContext with all orchestration capabilities
     private static readonly AsyncLocal<FunctionInvocationContext?> _currentFunctionContext = new();
 
     // AsyncLocal storage for root agent tracking in nested agent calls
@@ -1323,7 +1324,7 @@ Best practices:
         var response = new ChatResponse(assistantMessages);
 
         // Collect agent function call metadata
-        var agentFunctionCalls = CollectAgentFunctionCalls(finalHistory);
+        var agentFunctionCalls = ContentExtractor.ExtractFunctionCallsFromHistory(finalHistory, _name);
 
         // Create filter context (convert AdditionalProperties to Dictionary if available)
         Dictionary<string, object>? metadata = null;
@@ -1345,52 +1346,6 @@ Best practices:
         Func<MessageTurnFilterContext, Task> finalAction = _ => Task.CompletedTask;
         var pipeline = FilterChain.BuildMessageTurnPipeline(_messageTurnFilters, finalAction);
         await pipeline(context).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Collects function call metadata from the message history.
-    /// PERFORMANCE: Replaces 5 LINQ operations with direct iteration (5-10x faster).
-    /// </summary>
-    private Dictionary<string, List<string>> CollectAgentFunctionCalls(IReadOnlyList<ChatMessage> history)
-    {
-        var metadata = new Dictionary<string, List<string>>();
-
-        foreach (var message in history)
-        {
-            if (message.Role != ChatRole.Assistant)
-                continue;
-
-            // Manual iteration instead of LINQ chain (OfType + Select + Where + ToList + Any)
-            List<string>? functionCalls = null;
-            for (int i = 0; i < message.Contents.Count; i++)
-            {
-                if (message.Contents[i] is FunctionCallContent fc && 
-                    !string.IsNullOrEmpty(fc.Name))
-                {
-                    (functionCalls ??= []).Add(fc.Name);
-                }
-            }
-
-            if (functionCalls is { Count: > 0 })
-            {
-                // Append to existing list instead of overwriting
-                if (!metadata.TryGetValue(_name, out var existingList))
-                {
-                    metadata[_name] = functionCalls;
-                }
-                else
-                {
-                    // Add unique function calls to avoid duplicates (manual loop instead of LINQ)
-                    foreach (var fc in functionCalls)
-                    {
-                        if (!existingList.Contains(fc))
-                            existingList.Add(fc);
-                    }
-                }
-            }
-        }
-
-        return metadata;
     }
 
     #endregion
@@ -1433,96 +1388,6 @@ Best practices:
         using var sha256 = SHA256.Create();
         var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(combined));
         return Convert.ToHexString(hashBytes);
-    }
-
-    /// <summary>
-    /// Creates a canonical string representation of message contents for comparison.
-    /// Avoids false negatives when comparing semantically identical content in different instances.
-    /// Covers all major content types to prevent duplicate message appending.
-    /// </summary>
-    private static string CanonicalizeContents(IList<AIContent> contents)
-    {
-        var sb = new StringBuilder();
-        foreach (var c in contents)
-        {
-            switch (c)
-            {
-                case TextReasoningContent r:
-                    // Check reasoning first since it derives from TextContent
-                    sb.Append("|R:").Append(r.Text);
-                    break;
-                case TextContent t:
-                    sb.Append("|T:").Append(t.Text);
-                    break;
-                case FunctionCallContent fc:
-                    sb.Append("|F:").Append(fc.Name).Append(":").Append(fc.CallId).Append(":");
-                    sb.Append(System.Text.Json.JsonSerializer.Serialize(
-                        fc.Arguments ?? new Dictionary<string, object?>(),
-                        AGUIJsonContext.Default.DictionaryStringObject));
-                    break;
-                case FunctionResultContent fr:
-                    sb.Append("|FR:").Append(fr.CallId).Append(":");
-                    sb.Append(fr.Result?.ToString() ?? "null");
-                    if (fr.Exception != null)
-                    {
-                        sb.Append(":EX:").Append(fr.Exception.Message);
-                    }
-                    break;
-                case DataContent data:
-                    // DataContent covers images, audio, and generic data
-                    sb.Append("|D:").Append(data.MediaType ?? "unknown").Append(":");
-                    if (data.Data.Length > 0)
-                    {
-                        // Use SHA-256 for deterministic, collision-resistant hashing
-                        // (GetHashCode() is not stable across processes)
-                        sb.Append(HashDataBytes(data.Data));
-                    }
-                    else if (data.Uri != null)
-                    {
-                        sb.Append(data.Uri.ToString());
-                    }
-                    break;
-                // Future-proof: capture type name for any unknown content types
-                default:
-                    sb.Append("|U:").Append(c.GetType().Name);
-                    break;
-            }
-        }
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Extracts only text content (TextContent and TextReasoningContent) from a message for comparison.
-    /// Used for dedupe logic to avoid false negatives when function calls are present in one message but not the other.
-    /// </summary>
-    private static string ExtractTextOnlyContent(IList<AIContent> contents)
-    {
-        var sb = new StringBuilder();
-        foreach (var c in contents)
-        {
-            switch (c)
-            {
-                case TextReasoningContent r:
-                    sb.Append(r.Text);
-                    break;
-                case TextContent t:
-                    sb.Append(t.Text);
-                    break;
-                // Ignore function calls, function results, and data content for text comparison
-            }
-        }
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// Computes a deterministic SHA-256 hash of byte data for content comparison.
-    /// Stable across processes and prevents collisions better than GetHashCode().
-    /// </summary>
-    private static string HashDataBytes(ReadOnlyMemory<byte> data)
-    {
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(data.ToArray());
-        return Convert.ToHexString(hash);
     }
 
     #endregion
@@ -1940,6 +1805,322 @@ Best practices:
 }
 
 
+#region Function Map Builder Utilities
+
+/// <summary>
+/// Builds O(1) lookup maps for AIFunctions from tool lists.
+/// Handles merging, priority, and efficient lookups.
+/// Eliminates duplication of function map building logic across FunctionCallProcessor,
+/// PermissionManager, and ToolScheduler.
+/// </summary>
+public static class FunctionMapBuilder
+{
+    /// <summary>
+    /// Builds map with server tools (low priority) and request tools (high priority).
+    /// Request tools can override server-configured tools.
+    /// </summary>
+    /// <param name="serverTools">Tools configured server-side (lower priority)</param>
+    /// <param name="requestTools">Tools provided in the request (higher priority, can override)</param>
+    /// <returns>Dictionary mapping function names to AIFunction instances, or null if no functions</returns>
+    public static Dictionary<string, AIFunction>? BuildMergedMap(
+        IList<AITool>? serverTools,
+        IList<AITool>? requestTools)
+    {
+        if (serverTools is not { Count: > 0 } && 
+            requestTools is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, AIFunction>(StringComparer.Ordinal);
+        
+        // Add server-configured tools first (lower priority)
+        if (serverTools is { Count: > 0 })
+        {
+            for (int i = 0; i < serverTools.Count; i++)
+            {
+                if (serverTools[i] is AIFunction af)
+                {
+                    map[af.Name] = af;
+                }
+            }
+        }
+        
+        // Add request tools second (higher priority, can override server-configured)
+        if (requestTools is { Count: > 0 })
+        {
+            for (int i = 0; i < requestTools.Count; i++)
+            {
+                if (requestTools[i] is AIFunction af)
+                {
+                    map[af.Name] = af; // Overwrites if exists
+                }
+            }
+        }
+        
+        return map.Count > 0 ? map : null;
+    }
+    
+    /// <summary>
+    /// Builds map from single tool source.
+    /// </summary>
+    /// <param name="tools">The tool list to build the map from</param>
+    /// <returns>Dictionary mapping function names to AIFunction instances, or null if no functions</returns>
+    public static Dictionary<string, AIFunction>? BuildMap(IList<AITool>? tools)
+    {
+        if (tools is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, AIFunction>(tools.Count, StringComparer.Ordinal);
+        
+        for (int i = 0; i < tools.Count; i++)
+        {
+            if (tools[i] is AIFunction af)
+            {
+                map[af.Name] = af;
+            }
+        }
+        
+        return map.Count > 0 ? map : null;
+    }
+    
+    /// <summary>
+    /// O(1) lookup in pre-built map.
+    /// </summary>
+    /// <param name="name">The function name to find</param>
+    /// <param name="map">Pre-built map of function names to AIFunction instances</param>
+    /// <returns>The AIFunction if found, null otherwise</returns>
+    public static AIFunction? FindFunction(
+        string name, 
+        Dictionary<string, AIFunction>? map)
+    {
+        return map?.TryGetValue(name, out var func) == true ? func : null;
+    }
+    
+    /// <summary>
+    /// O(n) search when no map available (fallback).
+    /// Use this when building a map is too expensive for single lookups.
+    /// </summary>
+    /// <param name="name">The function name to find</param>
+    /// <param name="tools">The tool list to search</param>
+    /// <returns>The AIFunction if found, null otherwise</returns>
+    public static AIFunction? FindFunctionInList(
+        string name, 
+        IList<AITool>? tools)
+    {
+        if (tools is not { Count: > 0 }) return null;
+        
+        for (int i = 0; i < tools.Count; i++)
+        {
+            if (tools[i] is AIFunction af && af.Name == name)
+                return af;
+        }
+        return null;
+    }
+}
+
+#endregion
+
+#region Content Extraction Utilities
+
+/// <summary>
+/// High-performance content extraction and filtering utilities.
+/// Optimized with manual iteration to avoid LINQ overhead.
+/// Eliminates duplication of content extraction logic across Agent, MessageProcessor,
+/// and AgentDocumentProcessor.
+/// </summary>
+public static class ContentExtractor
+{
+    /// <summary>
+    /// Creates canonical string for content comparison (deduplication).
+    /// Covers all major content types to prevent duplicate message appending.
+    /// </summary>
+    /// <param name="contents">The content list to canonicalize</param>
+    /// <returns>A deterministic string representation of the contents</returns>
+    public static string Canonicalize(IList<AIContent> contents)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in contents)
+        {
+            switch (c)
+            {
+                case TextReasoningContent r:
+                    // Check reasoning first since it derives from TextContent
+                    sb.Append("|R:").Append(r.Text);
+                    break;
+                case TextContent t:
+                    sb.Append("|T:").Append(t.Text);
+                    break;
+                case FunctionCallContent fc:
+                    sb.Append("|F:").Append(fc.Name).Append(":").Append(fc.CallId).Append(":");
+                    sb.Append(System.Text.Json.JsonSerializer.Serialize(
+                        fc.Arguments ?? new Dictionary<string, object?>(),
+                        AGUIJsonContext.Default.DictionaryStringObject));
+                    break;
+                case FunctionResultContent fr:
+                    sb.Append("|FR:").Append(fr.CallId).Append(":");
+                    sb.Append(fr.Result?.ToString() ?? "null");
+                    if (fr.Exception != null)
+                    {
+                        sb.Append(":EX:").Append(fr.Exception.Message);
+                    }
+                    break;
+                case DataContent data:
+                    // DataContent covers images, audio, and generic data
+                    sb.Append("|D:").Append(data.MediaType ?? "unknown").Append(":");
+                    if (!data.Data.IsEmpty)
+                    {
+                        sb.Append(HashDataBytes(data.Data));
+                    }
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Extracts only text content (ignores function calls, data, etc.).
+    /// Used for text-only comparison and deduplication.
+    /// </summary>
+    /// <param name="contents">The content list to extract text from</param>
+    /// <returns>Combined text from all TextContent and TextReasoningContent items</returns>
+    public static string ExtractTextOnly(IList<AIContent> contents)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in contents)
+        {
+            switch (c)
+            {
+                case TextReasoningContent r:
+                    sb.Append(r.Text);
+                    break;
+                case TextContent t:
+                    sb.Append(t.Text);
+                    break;
+                // Ignore function calls, function results, and data content for text comparison
+            }
+        }
+        return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Extracts text from a message (handles multiple TextContent items).
+    /// Uses LINQ for simplicity when performance is not critical.
+    /// </summary>
+    /// <param name="message">The message to extract text from</param>
+    /// <returns>Combined text from all non-empty TextContent items, space-separated</returns>
+    public static string ExtractText(ChatMessage message)
+    {
+        var textContents = message.Contents
+            .OfType<TextContent>()
+            .Select(tc => tc.Text)
+            .Where(text => !string.IsNullOrEmpty(text));
+
+        return string.Join(" ", textContents);
+    }
+    
+    /// <summary>
+    /// Extracts all function call names from contents (optimized).
+    /// Manual iteration to avoid LINQ overhead.
+    /// </summary>
+    /// <param name="contents">The content list to extract function names from</param>
+    /// <returns>List of function call names (may contain duplicates)</returns>
+    public static List<string> ExtractFunctionNames(IList<AIContent> contents)
+    {
+        var names = new List<string>();
+        for (int i = 0; i < contents.Count; i++)
+        {
+            if (contents[i] is FunctionCallContent fc && !string.IsNullOrEmpty(fc.Name))
+                names.Add(fc.Name);
+        }
+        return names;
+    }
+    
+    /// <summary>
+    /// Extracts all function call names from message history (optimized).
+    /// Returns a dictionary mapping agent names to their function calls.
+    /// </summary>
+    /// <param name="history">The message history to scan</param>
+    /// <param name="agentName">The agent name to attribute function calls to</param>
+    /// <returns>Dictionary mapping agent name to list of function call names</returns>
+    public static Dictionary<string, List<string>> ExtractFunctionCallsFromHistory(
+        IReadOnlyList<ChatMessage> history,
+        string agentName)
+    {
+        var metadata = new Dictionary<string, List<string>>();
+
+        foreach (var message in history)
+        {
+            if (message.Role != ChatRole.Assistant)
+                continue;
+
+            // Manual iteration instead of LINQ chain (OfType + Select + Where + ToList + Any)
+            List<string>? functionCalls = null;
+            for (int i = 0; i < message.Contents.Count; i++)
+            {
+                if (message.Contents[i] is FunctionCallContent fc && 
+                    !string.IsNullOrEmpty(fc.Name))
+                {
+                    (functionCalls ??= []).Add(fc.Name);
+                }
+            }
+
+            if (functionCalls is { Count: > 0 })
+            {
+                // Append to existing list instead of overwriting
+                if (!metadata.TryGetValue(agentName, out var existingList))
+                {
+                    metadata[agentName] = functionCalls;
+                }
+                else
+                {
+                    // Add unique function calls to avoid duplicates (manual loop instead of LINQ)
+                    foreach (var fc in functionCalls)
+                    {
+                        if (!existingList.Contains(fc))
+                            existingList.Add(fc);
+                    }
+                }
+            }
+        }
+
+        return metadata;
+    }
+    
+    /// <summary>
+    /// Filters out specific content types (e.g., remove reasoning to save tokens).
+    /// </summary>
+    /// <typeparam name="TExclude">The content type to exclude</typeparam>
+    /// <param name="contents">The content list to filter</param>
+    /// <returns>New list with excluded type removed</returns>
+    public static List<AIContent> FilterByType<TExclude>(
+        IList<AIContent> contents) where TExclude : AIContent
+    {
+        var filtered = new List<AIContent>(contents.Count);
+        for (int i = 0; i < contents.Count; i++)
+        {
+            if (contents[i] is not TExclude)
+                filtered.Add(contents[i]);
+        }
+        return filtered;
+    }
+    
+    /// <summary>
+    /// Computes a deterministic SHA-256 hash of byte data for content comparison.
+    /// Stable across processes and prevents collisions better than GetHashCode().
+    /// </summary>
+    private static string HashDataBytes(ReadOnlyMemory<byte> data)
+    {
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(data.ToArray());
+        return Convert.ToHexString(hash);
+    }
+}
+
+#endregion
+
 #region AGUI Event Handling
 
 /// <summary>
@@ -2047,7 +2228,7 @@ public class FunctionCallProcessor
         // Build function map per execution (Microsoft pattern for thread-safety)
         // This avoids shared mutable state and stale cache issues
         // Merge server-configured tools with request tools (request tools take precedence)
-        var functionMap = BuildFunctionMap(_serverConfiguredTools, options?.Tools);
+        var functionMap = FunctionMapBuilder.BuildMergedMap(_serverConfiguredTools, options?.Tools);
 
         // Process each function call through the filter pipeline
         foreach (var functionCall in functionCallContents)
@@ -2062,17 +2243,23 @@ public class FunctionCallProcessor
                 Arguments = functionCall.Arguments ?? new Dictionary<string, object?>()
             };
 
-            var context = new AiFunctionContext(toolCallRequest)
+            var context = new FunctionInvocationContext
             {
-                Function = FindFunctionInMap(functionCall.Name, functionMap),
+                ToolCallRequest = toolCallRequest,
+                Function = FunctionMapBuilder.FindFunction(functionCall.Name, functionMap),
+                Arguments = toolCallRequest.Arguments,
+                ArgumentsWrapper = new AIFunctionArguments(toolCallRequest.Arguments),
                 RunContext = agentRunContext,
                 AgentName = agentName,
-                // NEW: Point to Agent's shared channel for event emission
+                CallId = functionCall.CallId,
+                Iteration = agentRunContext.CurrentIteration,
+                TotalFunctionCallsInRun = agentRunContext.CompletedFunctions.Count,
+                // Point to Agent's shared channel for event emission
                 OutboundEvents = _agent.FilterEventWriter,
                 Agent = _agent
             };
 
-            // Pass the CallId through metadata for tracking
+            // Store CallId in metadata for extensibility
             context.Metadata["CallId"] = functionCall.CallId;
 
             // Check if function is unknown and TerminateOnUnknownCalls is enabled
@@ -2114,11 +2301,11 @@ public class FunctionCallProcessor
 
             // Permission approved - proceed with execution pipeline
             // The final step in the pipeline is the actual function invocation with retry logic.
-            Func<AiFunctionContext, Task> finalInvoke = async (ctx) =>
+            Func<FunctionInvocationContext, Task> finalInvoke = async (ctx) =>
             {
                 if (ctx.Function is null)
                 {
-                    ctx.Result = $"Function '{ctx.ToolCallRequest.FunctionName}' not found.";
+                    ctx.Result = $"Function '{ctx.FunctionName}' not found.";
                     return;
                 }
 
@@ -2169,17 +2356,16 @@ public class FunctionCallProcessor
     /// Executes a function with provider-aware retry logic and timeout enforcement.
     /// Delegates to FunctionRetryExecutor for consistent retry behavior.
     /// </summary>
-    private async Task ExecuteWithRetryAsync(AiFunctionContext context, CancellationToken cancellationToken)
+    private async Task ExecuteWithRetryAsync(FunctionInvocationContext context, CancellationToken cancellationToken)
     {
         if (context.Function is null)
         {
-            context.Result = $"Function '{context.ToolCallRequest.FunctionName}' not found.";
+            context.Result = $"Function '{context.ToolCallRequest?.FunctionName ?? "Unknown"}' not found.";
             return;
         }
 
         // Set AsyncLocal function invocation context for ambient access
-        // Store the full AiFunctionContext so plugins can access Emit() and WaitForResponseAsync()
-        // for human-in-the-loop interactions (permissions, clarifications, etc.)
+        // Store the full context so plugins can access ALL capabilities (Emit, WaitForResponseAsync, etc.)
         Agent.CurrentFunctionContext = context;
 
         var retryExecutor = new FunctionRetryExecutor(_errorHandlingConfig);
@@ -2188,19 +2374,19 @@ public class FunctionCallProcessor
         {
             context.Result = await retryExecutor.ExecuteWithRetryAsync(
                 context.Function,
-                context.ToolCallRequest.Arguments,
-                context.ToolCallRequest.FunctionName,
+                context.Arguments,
+                context.FunctionName,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (TimeoutException ex)
         {
             // Function-specific timeout
-            context.Result = FormatErrorForLLM(ex, context.ToolCallRequest.FunctionName);
+            context.Result = FormatErrorForLLM(ex, context.FunctionName);
         }
         catch (Exception ex)
         {
             // All retries exhausted or non-retryable error
-            context.Result = FormatErrorForLLM(ex, context.ToolCallRequest.FunctionName);
+            context.Result = FormatErrorForLLM(ex, context.FunctionName);
         }
         finally
         {
@@ -2226,70 +2412,6 @@ public class FunctionCallProcessor
             // Full exception still available via FunctionResultContent.Exception
             return $"Error: Function '{functionName}' failed.";
         }
-    }
-
-    /// <summary>
-    /// Builds a dictionary map of function name to AIFunction from multiple tool sources.
-    /// Built per-execution to avoid shared mutable state and cache staleness.
-    /// </summary>
-    /// <param name="serverConfiguredTools">Tools configured server-side (lower priority)</param>
-    /// <param name="requestTools">Tools provided in the request (higher priority, can override)</param>
-    /// <returns>Dictionary mapping function names to AIFunction instances, or null if no functions</returns>
-    private static Dictionary<string, AIFunction>? BuildFunctionMap(
-        IList<AITool>? serverConfiguredTools,
-        IList<AITool>? requestTools)
-    {
-        if (serverConfiguredTools is not { Count: > 0 } && 
-            requestTools is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        var map = new Dictionary<string, AIFunction>(StringComparer.Ordinal);
-        
-        // Add server-configured tools first (lower priority)
-        if (serverConfiguredTools is { Count: > 0 })
-        {
-            for (int i = 0; i < serverConfiguredTools.Count; i++)
-            {
-                if (serverConfiguredTools[i] is AIFunction af)
-                {
-                    map[af.Name] = af;
-                }
-            }
-        }
-        
-        // Add request tools second (higher priority, can override server-configured)
-        if (requestTools is { Count: > 0 })
-        {
-            for (int i = 0; i < requestTools.Count; i++)
-            {
-                if (requestTools[i] is AIFunction af)
-                {
-                    map[af.Name] = af; // Overwrites if exists
-                }
-            }
-        }
-        
-        return map.Count > 0 ? map : null;
-    }
-
-    /// <summary>
-    /// Finds a function by name in the pre-built function map.
-    /// O(1) dictionary lookup.
-    /// </summary>
-    /// <param name="functionName">The name of the function to find</param>
-    /// <param name="functionMap">Pre-built map of function names to AIFunction instances</param>
-    /// <returns>The AIFunction if found, null otherwise</returns>
-    private static AIFunction? FindFunctionInMap(string functionName, Dictionary<string, AIFunction>? functionMap)
-    {
-        if (functionMap == null)
-        {
-            return null;
-        }
-        
-        functionMap.TryGetValue(functionName, out var function);
-        return function;
     }
 
     /// <summary>
@@ -2903,7 +3025,7 @@ public class ToolScheduler
         {
             // Find the function in the options to check if it's a container
             // PERFORMANCE: Use optimized helper instead of LINQ (O(n) direct vs O(n) with overhead)
-            var function = FindFunctionInTools(toolRequest.Name, options?.Tools);
+            var function = FunctionMapBuilder.FindFunctionInList(toolRequest.Name, options?.Tools);
 
             if (function != null)
             {
@@ -2985,7 +3107,7 @@ public class ToolScheduler
         {
             // Find the function in the options to check if it's a container
             // PERFORMANCE: Use optimized helper instead of LINQ (O(n) direct vs O(n) with overhead)
-            var function = FindFunctionInTools(toolRequest.Name, options?.Tools);
+            var function = FunctionMapBuilder.FindFunctionInList(toolRequest.Name, options?.Tools);
 
             if (function != null)
             {
@@ -3105,18 +3227,6 @@ public class ToolScheduler
     /// </summary>
     /// <param name="functionName">The name of the function to find</param>
     /// <param name="tools">The list of available tools</param>
-    /// <returns>The AIFunction if found, null otherwise</returns>
-    private static AIFunction? FindFunctionInTools(string functionName, IList<AITool>? tools)
-    {
-        if (tools is not { Count: > 0 }) return null;
-        
-        for (int i = 0; i < tools.Count; i++)
-        {
-            if (tools[i] is AIFunction af && af.Name == functionName)
-                return af;
-        }
-        return null;
-    }
 }
 
 #endregion
@@ -3191,7 +3301,7 @@ internal static class AgentDocumentProcessor
         }
 
         var lastUserMessage = messagesList[lastUserMessageIndex];
-        var originalText = ExtractTextFromMessage(lastUserMessage);
+        var originalText = ContentExtractor.ExtractText(lastUserMessage);
 
         // Format message with documents
         var formattedMessage = ConversationDocumentHelper.FormatMessageWithDocuments(
@@ -3212,19 +3322,6 @@ internal static class AgentDocumentProcessor
         messagesList[lastUserMessageIndex] = newMessage;
 
         return messagesList;
-    }
-
-    /// <summary>
-    /// Extracts text content from a ChatMessage
-    /// </summary>
-    private static string ExtractTextFromMessage(ChatMessage message)
-    {
-        var textContents = message.Contents
-            .OfType<TextContent>()
-            .Select(tc => tc.Text)
-            .Where(text => !string.IsNullOrEmpty(text));
-
-        return string.Join(" ", textContents);
     }
 }
 
@@ -3302,16 +3399,24 @@ public class PermissionManager
             return PermissionResult.Denied("No permission filter configured for function requiring permission");
         
         // Build and execute permission filter pipeline
-        var context = new AiFunctionContext(new ToolCallRequest
+        var toolCallRequest = new ToolCallRequest
         {
             FunctionName = functionCall.Name,
             Arguments = functionCall.Arguments ?? new Dictionary<string, object?>()
-        })
+        };
+        
+        var context = new FunctionInvocationContext
         {
+            ToolCallRequest = toolCallRequest,
             Function = function,
+            Arguments = toolCallRequest.Arguments,
+            ArgumentsWrapper = new AIFunctionArguments(toolCallRequest.Arguments),
             RunContext = agentRunContext,
             AgentName = agentName,
-            // ✅ FIX: Set OutboundEvents and Agent for permission event emission
+            CallId = functionCall.CallId,
+            Iteration = agentRunContext.CurrentIteration,
+            TotalFunctionCallsInRun = agentRunContext.CompletedFunctions.Count,
+            // Set OutboundEvents and Agent for permission event emission
             OutboundEvents = agent.FilterEventWriter,
             Agent = agent
         };
@@ -3348,13 +3453,12 @@ public class PermissionManager
         var denied = new List<(FunctionCallContent Tool, string Reason)>();
         
         // Build function map ONCE per batch (not per request)
-        var functionMap = BuildFunctionMapFromTools(options?.Tools);
+        var functionMap = FunctionMapBuilder.BuildMap(options?.Tools);
         
         foreach (var toolRequest in toolRequests)
         {
             // O(1) lookup instead of O(n) LINQ scan
-            AIFunction? function = null;
-            functionMap?.TryGetValue(toolRequest.Name ?? string.Empty, out function);
+            var function = FunctionMapBuilder.FindFunction(toolRequest.Name ?? string.Empty, functionMap);
             
             var result = await CheckPermissionAsync(
                 toolRequest, function, agentRunContext, agentName, agent, cancellationToken).ConfigureAwait(false);
@@ -3369,38 +3473,14 @@ public class PermissionManager
     }
     
     /// <summary>
-    /// Builds a function name-to-AIFunction map from tools list.
-    /// Replicates Microsoft's CreateToolsMap pattern for O(1) lookups.
-    /// </summary>
-    private static Dictionary<string, AIFunction>? BuildFunctionMapFromTools(IList<AITool>? tools)
-    {
-        if (tools is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        var map = new Dictionary<string, AIFunction>(tools.Count, StringComparer.Ordinal);
-        
-        for (int i = 0; i < tools.Count; i++)
-        {
-            if (tools[i] is AIFunction af)
-            {
-                map[af.Name] = af;
-            }
-        }
-        
-        return map.Count > 0 ? map : null;
-    }
-    
-    /// <summary>
     /// Executes the permission filter pipeline (single responsibility)
     /// </summary>
     private async Task ExecutePermissionPipeline(
-        AiFunctionContext context, 
+        FunctionInvocationContext context, 
         CancellationToken cancellationToken)
     {
         // Build and execute the permission filter pipeline using FilterChain
-        Func<AiFunctionContext, Task> finalAction = _ => Task.CompletedTask;
+        Func<FunctionInvocationContext, Task> finalAction = _ => Task.CompletedTask;
         var pipeline = FilterChain.BuildPermissionPipeline(_permissionFilters, finalAction);
         await pipeline(context).ConfigureAwait(false);
     }
@@ -4599,9 +4679,9 @@ internal static class FilterChain
     /// <param name="filters">The filters to apply, in the order they should execute</param>
     /// <param name="finalAction">The final action to execute after all filters</param>
     /// <returns>A function that executes the complete pipeline</returns>
-    public static Func<AiFunctionContext, Task> BuildAiFunctionPipeline(
+    public static Func<FunctionInvocationContext, Task> BuildAiFunctionPipeline(
         IEnumerable<IAiFunctionFilter> filters,
-        Func<AiFunctionContext, Task> finalAction)
+        Func<FunctionInvocationContext, Task> finalAction)
     {
         if (finalAction == null)
             throw new ArgumentNullException(nameof(finalAction));
@@ -4651,9 +4731,9 @@ internal static class FilterChain
     /// <param name="filters">The filters to apply, in the order they should execute</param>
     /// <param name="finalAction">The final action (typically a no-op for permission checks)</param>
     /// <returns>A function that executes the complete pipeline</returns>
-    public static Func<AiFunctionContext, Task> BuildPermissionPipeline(
+    public static Func<FunctionInvocationContext, Task> BuildPermissionPipeline(
         IEnumerable<IPermissionFilter> filters,
-        Func<AiFunctionContext, Task> finalAction)
+        Func<FunctionInvocationContext, Task> finalAction)
     {
         if (finalAction == null)
             throw new ArgumentNullException(nameof(finalAction));
@@ -5447,31 +5527,40 @@ public class ErrorEventData
 #region Function Invocation Context
 
 /// <summary>
-/// Provides ambient context about the currently executing function.
-/// Flows across async calls via AsyncLocal storage in Agent class.
+/// Unified function invocation context for HPD-Agent.
+/// Provides ambient context (via AsyncLocal) AND rich orchestration capabilities.
+/// Consolidates all function execution metadata, event coordination, and bidirectional communication.
 /// </summary>
 /// <remarks>
-/// This enables plugins and filters to access function invocation metadata
-/// without explicit parameter passing. Inspired by Microsoft.Extensions.AI's
-/// FunctionInvokingChatClient pattern but adapted for HPD-Agent's architecture.
-/// 
+/// This class serves dual purposes:
+/// 1. AMBIENT CONTEXT: Flows across async calls via AsyncLocal in Agent.CurrentFunctionContext
+/// 2. ORCHESTRATION CONTEXT: Passed through filter pipelines with rich coordination features
+///
+/// Key capabilities:
+/// - Function metadata (name, description, arguments, CallId)
+/// - Agent context (AgentName, RunContext, Iteration tracking)
+/// - Bidirectional communication (Emit, WaitForResponseAsync)
+/// - Event coordination and bubbling (Agent reference, OutboundEvents)
+/// - Filter pipeline control (IsTerminated, Result)
+///
 /// Use cases:
-/// - Logging which agent/iteration called the function
-/// - Cancellation propagation based on iteration limits
-/// - Telemetry correlation via CallId
-/// - Security auditing (know which agent invoked sensitive functions)
+/// - Plugins accessing execution context via Agent.CurrentFunctionContext
+/// - Filters emitting events and waiting for user responses
+/// - Permission/clarification workflows (human-in-the-loop)
+/// - Telemetry, logging, and security auditing
+/// - Nested agent coordination and event bubbling
 /// </remarks>
 public class FunctionInvocationContext
 {
     /// <summary>
-    /// The function being invoked.
+    /// The AI function being invoked.
     /// </summary>
-    public AIFunction Function { get; init; } = null!;
+    public AIFunction? Function { get; set; }
 
     /// <summary>
     /// Name of the function being invoked.
     /// </summary>
-    public string FunctionName => Function?.Name ?? string.Empty;
+    public string FunctionName => Function?.Name ?? ToolCallRequest?.FunctionName ?? string.Empty;
 
     /// <summary>
     /// Description of the function being invoked.
@@ -5479,39 +5568,157 @@ public class FunctionInvocationContext
     public string? FunctionDescription => Function?.Description;
 
     /// <summary>
-    /// Arguments being passed to the function.
+    /// Arguments being passed to the function (structured access).
+    /// For filter pipeline: Use this for AIFunctionArguments wrapper.
+    /// For ambient access: Use Arguments property for raw dictionary.
     /// </summary>
-    public IDictionary<string, object?> Arguments { get; init; } = new Dictionary<string, object?>();
+    public AIFunctionArguments? ArgumentsWrapper { get; set; }
+
+    /// <summary>
+    /// Arguments being passed to the function (raw dictionary access).
+    /// </summary>
+    public IDictionary<string, object?> Arguments { get; set; } = new Dictionary<string, object?>();
 
     /// <summary>
     /// Unique identifier for this function call (for correlation).
     /// </summary>
-    public string CallId { get; init; } = string.Empty;
+    public string CallId { get; set; } = string.Empty;
 
     /// <summary>
     /// Name of the agent that initiated this function call.
     /// </summary>
-    public string? AgentName { get; init; }
+    public string? AgentName { get; set; }
 
     /// <summary>
     /// Current iteration number in the agent's execution loop.
     /// </summary>
-    public int Iteration { get; init; }
+    public int Iteration { get; set; }
 
     /// <summary>
     /// Total number of function calls made in this agent run so far.
     /// </summary>
-    public int TotalFunctionCallsInRun { get; init; }
+    public int TotalFunctionCallsInRun { get; set; }
 
     /// <summary>
-    /// The agent run context (if available).
+    /// Context about the current agent run/turn
     /// </summary>
-    public AgentRunContext? RunContext { get; init; }
+    public AgentRunContext? RunContext { get; set; }
 
     /// <summary>
     /// Extensible metadata dictionary for custom data.
     /// </summary>
-    public Dictionary<string, object> Metadata { get; init; } = new();
+    public Dictionary<string, object> Metadata { get; set; } = new();
+
+    /// <summary>
+    /// The raw tool call request from the Language Model (for filter pipeline).
+    /// </summary>
+    public ToolCallRequest? ToolCallRequest { get; set; }
+
+    /// <summary>
+    /// A flag to allow a filter to terminate the pipeline.
+    /// </summary>
+    public bool IsTerminated { get; set; } = false;
+
+    /// <summary>
+    /// The result of the function invocation, to be set by the final step.
+    /// </summary>
+    public object? Result { get; set; }
+
+    /// <summary>
+    /// Channel writer for emitting events during filter execution.
+    /// Points to Agent's shared channel - events are immediately visible to background drainer.
+    ///
+    /// Thread-safety: Multiple filters in the pipeline can emit concurrently.
+    /// Event ordering: FIFO within each filter, interleaved across filters.
+    /// Lifetime: Valid for entire filter execution.
+    /// </summary>
+    internal System.Threading.Channels.ChannelWriter<InternalAgentEvent>? OutboundEvents { get; set; }
+
+    /// <summary>
+    /// Reference to the agent for response coordination.
+    /// Lifetime: Set by ProcessFunctionCallsAsync, valid for entire filter execution.
+    /// </summary>
+    internal Agent? Agent { get; set; }
+
+    /// <summary>
+    /// Emits an event that will be yielded by RunAgenticLoopInternal.
+    /// Events are delivered immediately to background drainer (not batched).
+    /// Automatically bubbles events to parent agent if this is a nested agent call.
+    ///
+    /// Thread-safety: Safe to call from any filter in the pipeline.
+    /// Performance: Non-blocking write (unbounded channel).
+    /// Event ordering: Guaranteed FIFO per filter, interleaved across filters.
+    /// Real-time visibility: Handler sees event WHILE filter is executing (not after).
+    /// Event bubbling: If Agent.RootAgent is set, events bubble to orchestrator.
+    /// </summary>
+    /// <param name="evt">The event to emit</param>
+    /// <exception cref="ArgumentNullException">If event is null</exception>
+    /// <exception cref="InvalidOperationException">If Agent reference is not configured</exception>
+    public void Emit(InternalAgentEvent evt)
+    {
+        if (evt == null)
+            throw new ArgumentNullException(nameof(evt));
+
+        if (Agent == null)
+            throw new InvalidOperationException("Agent reference not configured for this context");
+
+        // Emit to local agent's coordinator
+        Agent.EventCoordinator.Emit(evt);
+
+        // If we're a nested agent (RootAgent is set and different from us), bubble to root
+        // RootAgent is a static property on the global Agent class
+        var rootAgent = global::Agent.RootAgent;
+        if (rootAgent != null && rootAgent != Agent)
+        {
+            rootAgent.EventCoordinator.Emit(evt);
+        }
+    }
+
+    /// <summary>
+    /// Emits an event and returns immediately (async version for bounded channels if needed).
+    /// Current implementation uses unbounded channels, so this is identical to Emit().
+    /// Kept for future extensibility if bounded channels are introduced.
+    /// </summary>
+    public async Task EmitAsync(InternalAgentEvent evt, CancellationToken cancellationToken = default)
+    {
+        if (evt == null)
+            throw new ArgumentNullException(nameof(evt));
+
+        if (OutboundEvents == null)
+            throw new InvalidOperationException("Event emission not configured for this context");
+
+        await OutboundEvents.WriteAsync(evt, cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits for a response event with automatic timeout and cancellation handling.
+    /// Used for request/response patterns in interactive filters (permissions, approvals, etc.)
+    ///
+    /// Thread-safety: Safe to call from any filter.
+    /// Cancellation: Respects both timeout and external cancellation token.
+    /// Type safety: Validates response type and throws clear error on mismatch.
+    /// Cleanup: Automatically removes TCS from waiters dictionary on completion/timeout/cancellation.
+    /// </summary>
+    /// <typeparam name="T">Type of response event to wait for</typeparam>
+    /// <param name="requestId">Unique identifier for this request</param>
+    /// <param name="timeout">Maximum time to wait for response (default: 5 minutes)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The response event</returns>
+    /// <exception cref="TimeoutException">Thrown if no response received within timeout</exception>
+    /// <exception cref="OperationCanceledException">Thrown if cancellation requested</exception>
+    /// <exception cref="InvalidOperationException">Thrown if Agent reference not set or response type mismatch</exception>
+    public async Task<T> WaitForResponseAsync<T>(
+        string requestId,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default) where T : InternalAgentEvent
+    {
+        if (Agent == null)
+            throw new InvalidOperationException("Agent reference not configured for this context");
+
+        var effectiveTimeout = timeout ?? TimeSpan.FromMinutes(5);
+
+        return await Agent.WaitForFilterResponseAsync<T>(requestId, effectiveTimeout, cancellationToken);
+    }
 
     /// <summary>
     /// Gets a string representation for logging/debugging.

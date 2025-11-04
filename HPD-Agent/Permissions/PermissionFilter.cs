@@ -25,7 +25,7 @@ public class PermissionFilter : IPermissionFilter
         _filterName = filterName ?? "PermissionFilter";
     }
 
-    public async Task InvokeAsync(AiFunctionContext context, Func<AiFunctionContext, Task> next)
+    public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {
         // First check: Continuation permission if we're approaching limits
         if (context.RunContext != null && ShouldCheckContinuation(context.RunContext))
@@ -189,7 +189,7 @@ public class PermissionFilter : IPermissionFilter
     /// <summary>
     /// Requests continuation permission via events.
     /// </summary>
-    private async Task<bool> RequestContinuationPermissionAsync(AiFunctionContext context)
+    private async Task<bool> RequestContinuationPermissionAsync(FunctionInvocationContext context)
     {
         var continuationId = Guid.NewGuid().ToString();
 

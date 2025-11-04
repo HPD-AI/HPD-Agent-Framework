@@ -12,10 +12,15 @@ REPOS=(
     "https://github.com/pydantic/pydantic-ai.git"
     "https://github.com/strands-agents/sdk-python.git"
     "https://github.com/ag-ui-protocol/ag-ui.git"
-    "https://github.com/google-gemini/gemini-cli.git"
     "https://github.com/openai/codex.git"
+    "https://github.com/langchain-ai/langchain.git"
+    "https://github.com/microsoft/vscode-copilot-chat.git"
+    "https://github.com/Aider-AI/aider.git"
     "https://github.com/microsoft/kernel-memory.git"
-    "https://github.com/HKUDS/LightRAG.git"
+    "https://github.com/openai/openai-agents-python.git"
+    "https://github.com/lsiddiquee/SemanticPluginForge.git"
+    "https://github.com/anthropic-experimental/sandbox-runtime.git"
+    
 
     # Add more repo URLs as needed
 )

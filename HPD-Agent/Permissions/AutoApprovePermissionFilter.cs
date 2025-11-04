@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 /// </summary>
 public class AutoApprovePermissionFilter : IPermissionFilter
 {
-    public async Task InvokeAsync(AiFunctionContext context, Func<AiFunctionContext, Task> next)
+    public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {
         // Check if function requires permission
         if (context.Function is not HPDAIFunctionFactory.HPDAIFunction hpdFunction ||
