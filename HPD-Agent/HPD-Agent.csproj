@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HPD-Agent.FFI" />
+    <InternalsVisibleTo Include="HPD-Agent.Tests" />
   </ItemGroup>
 
   <ItemGroup>

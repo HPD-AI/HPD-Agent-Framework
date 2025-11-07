@@ -166,13 +166,21 @@ public class PermissionFilter : IPermissionFilter
         }
         else
         {
+            // Use user-provided denial reason, or fall back to configured default message
+            // The user's reason takes priority; if not provided, use the configurable default
+            var denialReason = response.Reason
+                ?? _config?.Messages?.PermissionDeniedDefault
+                ?? "Permission denied by user.";
+
             // Emit denial event for observability
             context.Emit(new InternalPermissionDeniedEvent(
                 permissionId,
                 _filterName,
-                response.Reason ?? "User denied permission"));
+                denialReason));
 
-            context.Result = response.Reason ?? $"Execution of '{functionName}' was denied by the user.";
+            // Set result to denial reason - will be sent to LLM as tool result
+            // Priority: user's custom reason > configured default > hardcoded fallback
+            context.Result = denialReason;
             context.IsTerminated = true;
         }
     }

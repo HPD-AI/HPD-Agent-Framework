@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,34 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
     private string FormatResult(object? result)
     {
         if (result == null) return "<null>";
-        return result.ToString() ?? "<unknown>";
+        
+        // If it's a ValidationErrorResponse, serialize it to JSON for readability
+        if (result is ValidationErrorResponse validationError)
+        {
+            try
+            {
+                return JsonSerializer.Serialize(validationError, HPDJsonContext.Default.ValidationErrorResponse);
+            }
+            catch
+            {
+                return result.ToString() ?? "<unknown>";
+            }
+        }
+        
+        // For other objects, try JSON serialization first, fall back to ToString()
+        try
+        {
+            // Attempt to serialize to JSON for better visibility
+            return JsonSerializer.Serialize(result, new JsonSerializerOptions 
+            { 
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+        }
+        catch
+        {
+            // Fall back to ToString() if serialization fails
+            return result.ToString() ?? "<unknown>";
+        }
     }
 }

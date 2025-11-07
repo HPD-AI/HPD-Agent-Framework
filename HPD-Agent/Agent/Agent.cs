@@ -552,6 +552,15 @@ public class Agent : AIAgent
             // Emit AGENT TURN started event
             yield return new InternalAgentTurnStartedEvent(iteration);
 
+            // Emit state snapshot for testing/debugging (captures state at start of iteration)
+            yield return new InternalStateSnapshotEvent(
+                CurrentIteration: agentRunContext.CurrentIteration,
+                MaxIterations: agentRunContext.MaxIterations,
+                IsTerminated: agentRunContext.IsTerminated,
+                TerminationReason: agentRunContext.TerminationReason,
+                ConsecutiveErrorCount: agentRunContext.ConsecutiveErrorCount,
+                CompletedFunctions: new List<string>(agentRunContext.CompletedFunctions));
+
             // Yield any filter events that accumulated before iteration start
             while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
             {
@@ -943,7 +952,9 @@ public class Agent : AIAgent
 
                         if (consecutiveCountPerTool[toolName] >= maxConsecutive)
                         {
-                            var errorMessage = $"⚠️ Circuit breaker triggered: Function '{toolRequest.Name}' with same arguments called {consecutiveCountPerTool[toolName]} times consecutively. Stopping to prevent infinite loop.";
+                            // Use configurable message template for circuit breaker
+                            var errorMessage = (Config.Messages ?? new AgentMessagesConfig())
+                                .FormatCircuitBreakerTriggered(toolRequest.Name, consecutiveCountPerTool[toolName]);
                             yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
 
                             agentRunContext.IsTerminated = true;
@@ -966,10 +977,10 @@ public class Agent : AIAgent
                     var maxConsecutiveErrors = Config?.ErrorHandling?.MaxRetries ?? 3;
                     if (agentRunContext.HasExceededErrorLimit(maxConsecutiveErrors))
                     {
-                        // Emit error event and terminate
-                        yield return new InternalTextDeltaEvent(
-                            $"⚠️ Maximum consecutive errors ({maxConsecutiveErrors}) exceeded. Stopping execution to prevent infinite error loop.",
-                            assistantMessageId);
+                        // Use configurable message template for max consecutive errors
+                        var errorMessage = (Config.Messages ?? new AgentMessagesConfig())
+                            .FormatMaxConsecutiveErrors(maxConsecutiveErrors);
+                        yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
 
                         agentRunContext.IsTerminated = true;
                         agentRunContext.TerminationReason = $"Exceeded maximum consecutive errors ({maxConsecutiveErrors})";
@@ -1032,6 +1043,27 @@ public class Agent : AIAgent
             // FIX: Increment exactly once per loop iteration in a single place
             // This ensures circuit breaker and error limits work correctly
             iteration++;
+        }
+
+        // Check if we exited because max iterations was reached
+        if (iteration >= agentRunContext.MaxIterations && !agentRunContext.IsTerminated)
+        {
+            // Generate a message ID for the termination message
+            var terminationMessageId = $"msg_{Guid.NewGuid()}";
+
+            // Emit termination message using configurable message template
+            var terminationMessage = (Config.Messages ?? new AgentMessagesConfig()).FormatMaxIterationsReached(agentRunContext.MaxIterations);
+
+            yield return new InternalTextMessageStartEvent(terminationMessageId, "assistant");
+            yield return new InternalTextDeltaEvent(terminationMessage, terminationMessageId);
+            yield return new InternalTextMessageEndEvent(terminationMessageId);
+
+            // Add termination message to history
+            turnHistory.Add(new ChatMessage(ChatRole.Assistant, terminationMessage));
+
+            // Mark as terminated
+            agentRunContext.IsTerminated = true;
+            agentRunContext.TerminationReason = $"Maximum iterations reached ({agentRunContext.MaxIterations})";
         }
 
         // Build the complete history including the final assistant message
@@ -1388,6 +1420,41 @@ Best practices:
         using var sha256 = SHA256.Create();
         var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(combined));
         return Convert.ToHexString(hashBytes);
+    }
+
+    #endregion
+
+    #region Testing and Advanced API
+
+    /// <summary>
+    /// Runs the agentic loop and streams internal agent events (for testing and advanced scenarios).
+    /// This exposes the raw internal event stream without protocol conversion.
+    /// Use this for testing to verify event sequences and agent behavior.
+    /// </summary>
+    /// <param name="messages">The conversation messages</param>
+    /// <param name="options">Chat options including tools</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of internal agent events</returns>
+    public async IAsyncEnumerable<InternalAgentEvent> RunAgenticLoopAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var turnHistory = new List<ChatMessage>();
+        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await foreach (var evt in RunAgenticLoopInternal(
+            messages,
+            options,
+            documentPaths: null,
+            turnHistory,
+            historyCompletionSource,
+            reductionCompletionSource,
+            cancellationToken))
+        {
+            yield return evt;
+        }
     }
 
     #endregion
@@ -4832,6 +4899,18 @@ public record InternalAgentTurnStartedEvent(int Iteration) : InternalAgentEvent;
 /// </summary>
 public record InternalAgentTurnFinishedEvent(int Iteration) : InternalAgentEvent;
 
+/// <summary>
+/// Emitted during agent execution to expose internal state for testing/debugging.
+/// NOT intended for production use - only for characterization tests and debugging.
+/// </summary>
+public record InternalStateSnapshotEvent(
+    int CurrentIteration,
+    int MaxIterations,
+    bool IsTerminated,
+    string? TerminationReason,
+    int ConsecutiveErrorCount,
+    List<string> CompletedFunctions) : InternalAgentEvent;
+
 #endregion
 
 #region Content Events (Within an Agent Turn)
@@ -5632,7 +5711,7 @@ public class FunctionInvocationContext
     /// Event ordering: FIFO within each filter, interleaved across filters.
     /// Lifetime: Valid for entire filter execution.
     /// </summary>
-    internal System.Threading.Channels.ChannelWriter<InternalAgentEvent>? OutboundEvents { get; set; }
+    internal ChannelWriter<InternalAgentEvent>? OutboundEvents { get; set; }
 
     /// <summary>
     /// Reference to the agent for response coordination.

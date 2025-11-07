@@ -1,0 +1,255 @@
+using HPD_Agent.Tests.Infrastructure;
+using Microsoft.Extensions.AI;
+using Xunit;
+using FluentAssertions;
+
+namespace HPD_Agent.Tests.Phase0_Characterization;
+
+/// <summary>
+/// Phase 0: Container Expansion Characterization Tests
+///
+/// These tests capture the CURRENT behavior of container expansion before refactoring.
+/// Container expansion is the mechanism where plugins are lazy-loaded via two-turn flow:
+/// - Turn 1: Container function is visible and called
+/// - Turn 2: Container is hidden, individual functions become visible
+///
+/// Note: These tests validate high-level behavior without deep introspection
+/// into tool visibility at each iteration. Tool visibility is internal to the agent loop.
+/// </summary>
+public class ContainerExpansionTests : AgentTestBase
+{
+    /// <summary>
+    /// Test 1: Basic container expansion flow.
+    /// Verifies that container is called, then member functions become available.
+    /// </summary>
+    [Fact]
+    public async Task CurrentBehavior_ContainerExpansion_TwoTurnFlow()
+    {
+        // Arrange
+        var fakeLLM = new FakeChatClient();
+
+        // Turn 1: LLM calls the container
+        fakeLLM.EnqueueToolCall(
+            functionName: "MathPlugin",
+            callId: "call_container",
+            args: new Dictionary<string, object?>());
+
+        // Turn 2: LLM calls an individual function from the expanded plugin
+        fakeLLM.EnqueueToolCall(
+            functionName: "Add",
+            callId: "call_add",
+            args: new Dictionary<string, object?>());
+
+        // Turn 3: LLM provides final response
+        fakeLLM.EnqueueTextResponse("Math operation completed successfully");
+
+        // Create scoped plugin with container and members
+        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+            "MathPlugin",
+            "Mathematical operations",
+            ScopedPluginTestHelper.MemberFunc("Add", "Adds numbers", () => "Sum: 42"),
+            ScopedPluginTestHelper.MemberFunc("Multiply", "Multiplies numbers", () => "Product: 100"));
+
+        // Note: We need plugin scoping enabled for container expansion to work
+        var config = DefaultConfig();
+        config.PluginScoping = new PluginScopingConfig
+        {
+            Enabled = true
+        };
+        config.Provider ??= new ProviderConfig();
+        config.Provider.ProviderKey = "test";
+        config.Provider.ModelName = "test-model";
+
+        // Register both container and member functions
+        var allFunctions = new List<AIFunction> { container };
+        allFunctions.AddRange(members);
+
+        var agent = CreateAgent(
+            config: config,
+            client: fakeLLM,
+            tools: allFunctions.ToArray());
+
+        var messages = CreateSimpleConversation("Use math operations");
+
+        var capturedEvents = new List<InternalAgentEvent>();
+
+        // Act
+        await foreach (var evt in agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken))
+        {
+            capturedEvents.Add(evt);
+        }
+
+        // Assert - CURRENT behavior
+        // Should have multiple iterations (container call + member function call + final response)
+        var agentTurnStarts = capturedEvents.OfType<InternalAgentTurnStartedEvent>().ToList();
+        agentTurnStarts.Should().HaveCountGreaterOrEqualTo(2, "should have at least 2 iterations for two-turn expansion");
+
+        // Should have tool call events for both container and member
+        var toolCalls = capturedEvents.OfType<InternalToolCallStartEvent>().ToList();
+        toolCalls.Should().HaveCountGreaterOrEqualTo(2, "should call container and at least one member function");
+
+        // Container should be called
+        toolCalls.Should().Contain(e => e.Name == "MathPlugin", "container should be invoked");
+
+        // Member function should be called
+        toolCalls.Should().Contain(e => e.Name == "Add", "member function should be invoked after expansion");
+
+        // Tool results should exist
+        var toolResults = capturedEvents.OfType<InternalToolCallResultEvent>().ToList();
+        toolResults.Should().HaveCountGreaterOrEqualTo(2, "should have results for both tool calls");
+
+        // Final text response
+        var textDeltas = capturedEvents.OfType<InternalTextDeltaEvent>().ToList();
+        var finalText = string.Concat(textDeltas.Select(e => e.Text));
+        finalText.Should().NotBeEmpty("should have final text response");
+    }
+
+    /// <summary>
+    /// Test 2: Multiple member function calls after expansion.
+    /// Verifies that once expanded, multiple member functions can be called.
+    /// </summary>
+    [Fact]
+    public async Task CurrentBehavior_ContainerExpansion_MultipleMembers()
+    {
+        // Arrange
+        var fakeLLM = new FakeChatClient();
+
+        // Turn 1: Expand container
+        fakeLLM.EnqueueToolCall(
+            functionName: "StringPlugin",
+            callId: "call_container",
+            args: new Dictionary<string, object?>());
+
+        // Turn 2: Call first member
+        fakeLLM.EnqueueToolCall(
+            functionName: "Uppercase",
+            callId: "call_upper",
+            args: new Dictionary<string, object?>());
+
+        // Turn 3: Call second member
+        fakeLLM.EnqueueToolCall(
+            functionName: "Lowercase",
+            callId: "call_lower",
+            args: new Dictionary<string, object?>());
+
+        // Turn 4: Final response
+        fakeLLM.EnqueueTextResponse("String operations completed");
+
+        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+            "StringPlugin",
+            "String operations",
+            ScopedPluginTestHelper.MemberFunc("Uppercase", "Convert to uppercase", () => "HELLO"),
+            ScopedPluginTestHelper.MemberFunc("Lowercase", "Convert to lowercase", () => "hello"));
+
+        var config = DefaultConfig();
+        config.PluginScoping = new PluginScopingConfig { Enabled = true };
+        config.Provider ??= new ProviderConfig();
+        config.Provider.ProviderKey = "test";
+        config.Provider.ModelName = "test-model";
+
+        var allFunctions = new List<AIFunction> { container };
+        allFunctions.AddRange(members);
+
+        var agent = CreateAgent(
+            config: config,
+            client: fakeLLM,
+            tools: allFunctions.ToArray());
+
+        var messages = CreateSimpleConversation("Transform text");
+
+        var capturedEvents = new List<InternalAgentEvent>();
+
+        // Act
+        await foreach (var evt in agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken))
+        {
+            capturedEvents.Add(evt);
+        }
+
+        // Assert - Multiple member calls after single expansion
+        var toolCalls = capturedEvents.OfType<InternalToolCallStartEvent>().ToList();
+        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "container + 2 member functions");
+
+        // Container called once
+        toolCalls.Where(e => e.Name == "StringPlugin").Should().ContainSingle("container should be called once");
+
+        // Both members called
+        toolCalls.Should().Contain(e => e.Name == "Uppercase", "Uppercase member should be called");
+        toolCalls.Should().Contain(e => e.Name == "Lowercase", "Lowercase member should be called");
+    }
+
+    /// <summary>
+    /// Test 3: Non-scoped functions remain visible alongside containers.
+    /// Verifies that regular (non-scoped) functions coexist with scoped plugins.
+    /// </summary>
+    [Fact]
+    public async Task CurrentBehavior_ContainerExpansion_MixedScopedAndNonScoped()
+    {
+        // Arrange
+        var fakeLLM = new FakeChatClient();
+
+        // Call a non-scoped function (should work immediately)
+        fakeLLM.EnqueueToolCall(
+            functionName: "GetTime",
+            callId: "call_time",
+            args: new Dictionary<string, object?>());
+
+        // Then expand a container
+        fakeLLM.EnqueueToolCall(
+            functionName: "UtilsPlugin",
+            callId: "call_container",
+            args: new Dictionary<string, object?>());
+
+        // Then call a member from the expanded plugin
+        fakeLLM.EnqueueToolCall(
+            functionName: "Echo",
+            callId: "call_echo",
+            args: new Dictionary<string, object?>());
+
+        // Final response
+        fakeLLM.EnqueueTextResponse("Operations completed");
+
+        // Create non-scoped function
+        var getTime = ScopedPluginTestHelper.CreateSimpleFunction(
+            "GetTime",
+            "Gets current time",
+            () => DateTime.UtcNow.ToString("O"));
+
+        // Create scoped plugin
+        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+            "UtilsPlugin",
+            "Utility functions",
+            ScopedPluginTestHelper.MemberFunc("Echo", "Echoes input", () => "Echo: test"));
+
+        var config = DefaultConfig();
+        config.PluginScoping = new PluginScopingConfig { Enabled = true };
+        config.Provider ??= new ProviderConfig();
+        config.Provider.ProviderKey = "test";
+        config.Provider.ModelName = "test-model";
+
+        var allFunctions = new List<AIFunction> { getTime, container };
+        allFunctions.AddRange(members);
+
+        var agent = CreateAgent(
+            config: config,
+            client: fakeLLM,
+            tools: allFunctions.ToArray());
+
+        var messages = CreateSimpleConversation("Use utilities");
+
+        var capturedEvents = new List<InternalAgentEvent>();
+
+        // Act
+        await foreach (var evt in agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken))
+        {
+            capturedEvents.Add(evt);
+        }
+
+        // Assert - All three tools should be called
+        var toolCalls = capturedEvents.OfType<InternalToolCallStartEvent>().ToList();
+        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "non-scoped + container + member");
+
+        toolCalls.Should().Contain(e => e.Name == "GetTime", "non-scoped function should be callable");
+        toolCalls.Should().Contain(e => e.Name == "UtilsPlugin", "container should be callable");
+        toolCalls.Should().Contain(e => e.Name == "Echo", "member should be callable after expansion");
+    }
+}

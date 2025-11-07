@@ -73,6 +73,12 @@ public class AgentConfig
     public AgenticLoopConfig? AgenticLoop { get; set; }
 
     /// <summary>
+    /// Configuration for agent system messages (termination messages, error messages, etc.).
+    /// Allows customization for internationalization, branding, or context-specific needs.
+    /// </summary>
+    public AgentMessagesConfig Messages { get; set; } = new();
+
+    /// <summary>
     /// Configuration for tool selection behavior (how the LLM chooses which tools to use).
     /// </summary>
     public ToolSelectionConfig? ToolSelection { get; set; }

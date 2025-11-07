@@ -20,6 +20,8 @@ REPOS=(
     "https://github.com/openai/openai-agents-python.git"
     "https://github.com/lsiddiquee/SemanticPluginForge.git"
     "https://github.com/anthropic-experimental/sandbox-runtime.git"
+    "https://github.com/praeclarum/CrossIntelligence.git"
+
     
 
     # Add more repo URLs as needed
