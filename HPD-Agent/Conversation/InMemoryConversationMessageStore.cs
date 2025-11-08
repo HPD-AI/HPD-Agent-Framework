@@ -91,3 +91,25 @@ public sealed class InMemoryConversationMessageStore : ConversationMessageStore
 
     #endregion
 }
+
+/// <summary>
+/// Factory for creating InMemoryConversationMessageStore instances from serialized state.
+/// Enables AOT-friendly deserialization without reflection.
+/// </summary>
+/// <remarks>
+/// Register this factory at application startup:
+/// <code>
+/// ConversationThread.RegisterStoreFactory(new InMemoryConversationMessageStoreFactory());
+/// </code>
+/// </remarks>
+public sealed class InMemoryConversationMessageStoreFactory : IConversationMessageStoreFactory
+{
+    /// <inheritdoc/>
+    public string StoreTypeName => typeof(InMemoryConversationMessageStore).AssemblyQualifiedName!;
+
+    /// <inheritdoc/>
+    public ConversationMessageStore CreateFromSnapshot(JsonElement state, JsonSerializerOptions? options)
+    {
+        return new InMemoryConversationMessageStore(state, options);
+    }
+}

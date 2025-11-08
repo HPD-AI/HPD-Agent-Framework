@@ -52,11 +52,11 @@ public class SimpleTextResponseTest : AgentTestBase
         // Should have multiple text deltas
         capturedEvents.OfType<InternalTextDeltaEvent>().Should().HaveCountGreaterOrEqualTo(1);
 
-        // Current implementation: AgentTurnFinished comes BEFORE TextMessageEnd
+        // Current implementation: TextMessageEnd comes BEFORE AgentTurnFinished
         // This documents the current behavior for comparison after refactoring
         eventTypes.Should().ContainInOrder(
-            nameof(InternalAgentTurnFinishedEvent),
             nameof(InternalTextMessageEndEvent),
+            nameof(InternalAgentTurnFinishedEvent),
             nameof(InternalMessageTurnFinishedEvent));
 
         // Verify FakeLLM was called

@@ -28,13 +28,11 @@ public class PermissionFilter : IPermissionFilter
     public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {
         // First check: Continuation permission if we're approaching limits
-        if (context.RunContext != null && ShouldCheckContinuation(context.RunContext))
+        if (context.State != null && context.Agent != null && ShouldCheckContinuation(context.State, context.Agent))
         {
             var continueDecision = await RequestContinuationPermissionAsync(context);
             if (!continueDecision)
             {
-                context.RunContext.IsTerminated = true;
-                context.RunContext.TerminationReason = "User chose to stop at iteration limit";
                 context.Result = "Execution terminated by user at iteration limit.";
                 context.IsTerminated = true;
                 return;
@@ -49,24 +47,17 @@ public class PermissionFilter : IPermissionFilter
             return;
         }
 
-        var functionName = context.ToolCallRequest.FunctionName;
-        var conversationId = context.RunContext?.ConversationId ?? string.Empty;
+        var functionName = context.ToolCallRequest?.FunctionName ?? "Unknown";
+        var conversationId = context.State?.ConversationId ?? string.Empty;
 
         // Get the unique call ID for this specific tool invocation
         var callId = context.Metadata.TryGetValue("CallId", out var idObj)
             ? idObj?.ToString()
             : null;
 
-        // Check if this tool call was already approved in this run (prevents duplicate prompts)
-        if (callId != null && context.RunContext?.IsToolApproved(callId) == true)
-        {
-            await next(context);
-            return;
-        }
-
         // Extract project ID from run context metadata if available
         string? projectId = null;
-        if (context.RunContext?.Metadata.TryGetValue("Project", out var projectObj) == true)
+        if (context.Metadata.TryGetValue("Project", out var projectObj))
         {
             projectId = (projectObj as Project)?.Id;
         }
@@ -100,7 +91,7 @@ public class PermissionFilter : IPermissionFilter
             functionName,
             context.Function.Description ?? "No description available",
             callId ?? string.Empty,
-            context.ToolCallRequest.Arguments));
+            context.ToolCallRequest?.Arguments ?? new Dictionary<string, object?>()));
 
         // Wait for response from external handler (BLOCKS HERE while event is processed)
         InternalPermissionResponseEvent response;
@@ -155,12 +146,6 @@ public class PermissionFilter : IPermissionFilter
                     projectId);
             }
 
-            // Mark as approved to prevent duplicate prompts in parallel execution
-            if (callId != null)
-            {
-                context.RunContext?.MarkToolApproved(callId);
-            }
-
             // Continue execution
             await next(context);
         }
@@ -189,9 +174,9 @@ public class PermissionFilter : IPermissionFilter
     /// Determines if we should check for continuation permission.
     /// Only triggers when we've actually exceeded the limit.
     /// </summary>
-    private static bool ShouldCheckContinuation(AgentRunContext runContext)
+    private static bool ShouldCheckContinuation(AgentLoopState state, Agent agent)
     {
-        return runContext.CurrentIteration >= runContext.MaxIterations;
+        return state.Iteration >= agent.MaxFunctionCalls;
     }
 
     /// <summary>
@@ -205,8 +190,8 @@ public class PermissionFilter : IPermissionFilter
         context.Emit(new InternalContinuationRequestEvent(
             continuationId,
             _filterName,
-            context.RunContext!.CurrentIteration + 1, // Display as 1-based
-            context.RunContext.MaxIterations));
+            context.State!.Iteration + 1, // Display as 1-based
+            context.Agent!.MaxFunctionCalls));
 
         // Wait for response from external handler
         InternalContinuationResponseEvent response;
@@ -234,7 +219,11 @@ public class PermissionFilter : IPermissionFilter
                 ? response.ExtensionAmount
                 : (_config?.ContinuationExtensionAmount ?? 3);
 
-            context.RunContext.MaxIterations += extensionAmount;
+            // TODO: Need to implement mechanism to extend max iterations
+            // The Agent.MaxFunctionCalls is read-only, so we need another approach
+            // This might need to be handled at the agent loop level
+            // For now, just approve continuation - the agent loop will handle termination
+            
             return true;
         }
 

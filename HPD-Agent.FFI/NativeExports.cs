@@ -1143,7 +1143,8 @@ public static partial class NativeExports
             var conversation = ObjectManager.Get<Conversation>(conversationHandle);
             if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
 
-            return conversation.Thread.Messages.Count;
+            // Use internal sync method for FFI (cannot be async)
+            return conversation.Thread.GetMessageCountSync();
         }
         catch (Exception)
         {
@@ -1164,7 +1165,8 @@ public static partial class NativeExports
             var conversation = ObjectManager.Get<Conversation>(conversationHandle);
             if (conversation == null) throw new InvalidOperationException("Conversation handle is invalid.");
 
-            var messages = conversation.Thread.Messages.Select(m => new
+            // Use internal sync method for FFI (cannot be async)
+            var messages = conversation.Thread.GetMessagesSync().Select(m => new
             {
                 role = m.Role.ToString(),
                 text = m.Text,
@@ -1212,7 +1214,7 @@ public static partial class NativeExports
                 threadId = conversation.Id,
                 createdAt = conversation.Thread.CreatedAt.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
                 lastActivity = conversation.Thread.LastActivity.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                messageCount = conversation.Thread.Messages.Count,
+                messageCount = conversation.Thread.GetMessageCountSync(),
                 metadata = conversation.Thread.Metadata
             };
 

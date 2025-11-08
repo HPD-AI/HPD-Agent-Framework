@@ -311,7 +311,12 @@ static async Task RunInteractiveChat(Agent agent, ConversationThread thread)
                 await cancelTask;
             }
             
-            Console.WriteLine("\n"); // Add spacing after response
+            // Display message count after each turn
+            var messageCount = await thread.GetMessageCountAsync();
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"\n💬 Messages in thread: {messageCount}");
+            Console.ResetColor();
+            Console.WriteLine(); // Add spacing after response
         }
         catch (Exception ex)
         {

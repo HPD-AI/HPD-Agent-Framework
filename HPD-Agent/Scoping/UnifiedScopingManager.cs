@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using System.Collections.Immutable;
 
 namespace HPD_Agent.Scoping;
 
@@ -37,8 +38,8 @@ public class UnifiedScopingManager
     /// </summary>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
-        HashSet<string> expandedPlugins,
-        HashSet<string> expandedSkills)
+        ImmutableHashSet<string> expandedPlugins,
+        ImmutableHashSet<string> expandedSkills)
     {
         var pluginContainers = new List<AIFunction>();
         var skillContainers = new List<AIFunction>();
@@ -136,7 +137,7 @@ public class UnifiedScopingManager
     /// <summary>
     /// Gets functions referenced by expanded skills (deduplicated).
     /// </summary>
-    private List<AIFunction> GetFunctionsForExpandedSkills(HashSet<string> expandedSkills, List<AIFunction> allTools)
+    private List<AIFunction> GetFunctionsForExpandedSkills(ImmutableHashSet<string> expandedSkills, List<AIFunction> allTools)
     {
         var uniqueReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -176,7 +177,7 @@ public class UnifiedScopingManager
     /// <summary>
     /// Gets functions that should be hidden by non-expanded scoped skills.
     /// </summary>
-    private HashSet<string> GetHiddenFunctionsBySkills(HashSet<string> expandedSkills)
+    private HashSet<string> GetHiddenFunctionsBySkills(ImmutableHashSet<string> expandedSkills)
     {
         var hiddenFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

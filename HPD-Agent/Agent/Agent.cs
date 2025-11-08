@@ -8,13 +8,15 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Collections.Concurrent;
-
+using System.Collections.Immutable;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 /// <summary>
 /// Agent facade that delegates to specialized components for clean separation of concerns.
 /// Supports traditional chat, AGUI streaming protocols, and extended capabilities.
 /// AIAgent (stateless, and stateful with threads) for maximum compatibility.
 /// </summary>
-public class Agent : AIAgent
+public partial class Agent : AIAgent
 {
     private readonly IChatClient _baseClient;
     private readonly string _name;
@@ -228,7 +230,7 @@ public class Agent : AIAgent
         // Initialize Microsoft.Extensions.AI compliance metadata
         _metadata = new ChatClientMetadata(
             providerName: config.Provider?.ProviderKey,
-            providerUri: null, 
+            providerUri: null,
             defaultModelId: config.Provider?.ModelName
         );
 
@@ -313,6 +315,798 @@ public class Agent : AIAgent
     /// Scoped filter manager for applying filters based on function/plugin scope
     /// </summary>
     public ScopedFilterManager? ScopedFilterManager => _scopedFilterManager;
+
+    #region internal loop
+    /// <summary>
+    /// Protocol-agnostic core agentic loop that emits internal events.
+    /// This method contains all the agent logic without any protocol-specific concerns.
+    /// Adapters convert internal events to protocol-specific formats (AGUI, IChatClient, etc.).
+    /// 
+    /// ARCHITECTURE:
+    /// - Uses AgentDecisionEngine (pure, testable) for all decision logic
+    /// - Executes decisions INLINE to preserve real-time streaming
+    /// - State managed via immutable AgentLoopState for testability
+    /// 
+    /// This hybrid approach delivers:
+    /// - Testable decision logic (unit tests in microseconds)
+    /// - Real-time streaming (no buffering overhead)
+    /// - Clear separation of concerns (decisions vs execution)
+    /// </summary>
+    private async IAsyncEnumerable<InternalAgentEvent> RunAgenticLoopInternal(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options,
+        string[]? documentPaths,
+        List<ChatMessage> turnHistory,
+        TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
+        TaskCompletionSource<ReductionMetadata?> reductionCompletionSource,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Create orchestration activity to group all agent turns and function calls
+        using var orchestrationActivity = ActivitySource.StartActivity(
+            "agent.orchestration",
+            ActivityKind.Internal);
+
+        orchestrationActivity?.SetTag("agent.name", _name);
+        orchestrationActivity?.SetTag("agent.max_iterations", _maxFunctionCalls);
+        orchestrationActivity?.SetTag("agent.provider", ProviderKey);
+        orchestrationActivity?.SetTag("agent.model", ModelId);
+
+        // Track root agent for event bubbling across nested agent calls
+        var previousRootAgent = RootAgent;
+        RootAgent ??= this;
+
+        // Process documents if provided
+        if (documentPaths?.Length > 0)
+        {
+            messages = await AgentDocumentProcessor.ProcessDocumentsAsync(messages, documentPaths, Config, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Create linked cancellation token for turn timeout
+        using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (Config?.AgenticLoop?.MaxTurnDuration is { } turnTimeout)
+        {
+            turnCts.CancelAfter(turnTimeout);
+        }
+        var effectiveCancellationToken = turnCts.Token;
+
+        // Generate IDs for this message turn
+        var messageTurnId = Guid.NewGuid().ToString();
+
+        // Extract conversation ID from options or generate new one
+        string conversationId;
+        if (options?.AdditionalProperties?.TryGetValue("ConversationId", out var convIdObj) == true && convIdObj is string convId)
+        {
+            conversationId = convId;
+        }
+        else
+        {
+            conversationId = Guid.NewGuid().ToString();
+        }
+
+        _conversationId = conversationId;
+
+        try
+        {
+            // Emit MESSAGE TURN started event
+            yield return new InternalMessageTurnStartedEvent(messageTurnId, conversationId);
+
+            // Prepare messages using MessageProcessor
+            ReductionMetadata? reductionMetadata = null;
+            IEnumerable<ChatMessage> effectiveMessages;
+            ChatOptions? effectiveOptions;
+
+            try
+            {
+                var prep = await _messageProcessor.PrepareMessagesAsync(
+                    messages, options, _name, effectiveCancellationToken).ConfigureAwait(false);
+                (effectiveMessages, effectiveOptions, reductionMetadata) = prep;
+            }
+            catch (Exception ex)
+            {
+                reductionCompletionSource.TrySetException(ex);
+                historyCompletionSource.TrySetException(ex);
+                throw;
+            }
+
+            // Set reduction metadata immediately
+            reductionCompletionSource.TrySetResult(reductionMetadata);
+
+            // ═══════════════════════════════════════════════════════
+            // CREATE IMMUTABLE STATE & DECISION ENGINE
+            // ═══════════════════════════════════════════════════════
+
+            var state = AgentLoopState.Initial(effectiveMessages.ToList(), messageTurnId, conversationId, this.Name);
+            var decisionEngine = new AgentDecisionEngine();
+            var config = BuildDecisionConfiguration(effectiveOptions);
+
+            ChatResponse? lastResponse = null;
+
+            // Track expanded plugins/skills (message-turn scoped)
+            // Note: These are now tracked in state.ExpandedPlugins and state.ExpandedSkills
+            
+            // Collect all response updates to build final history
+            var responseUpdates = new List<ChatResponseUpdate>();
+
+            // ═══════════════════════════════════════════════════════
+            // MAIN AGENTIC LOOP (Hybrid: Pure Decisions + Inline Execution)
+            // ═══════════════════════════════════════════════════════
+
+            while (!state.IsTerminated && state.Iteration < config.MaxIterations)
+            {
+                // Generate message ID for this iteration
+                var assistantMessageId = Guid.NewGuid().ToString();
+
+                // Emit iteration start
+                yield return new InternalAgentTurnStartedEvent(state.Iteration);
+
+                // Emit state snapshot for testing/debugging
+                yield return new InternalStateSnapshotEvent(
+                    CurrentIteration: state.Iteration,
+                    MaxIterations: _maxFunctionCalls,
+                    IsTerminated: state.IsTerminated,
+                    TerminationReason: state.TerminationReason,
+                    ConsecutiveErrorCount: state.ConsecutiveFailures,
+                    CompletedFunctions: new List<string>(state.CompletedFunctions));
+
+                // Drain filter events before decision
+                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                    yield return filterEvt;
+
+                // ═══════════════════════════════════════════════════
+                // FUNCTIONAL CORE: Pure Decision (No I/O)
+                // ═══════════════════════════════════════════════════
+
+                var decision = decisionEngine.DecideNextAction(state, lastResponse, config);
+
+                // Drain filter events after decision-making, before execution
+                // CRITICAL: Ensures events emitted during decision logic are yielded before LLM streaming starts
+                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                    yield return filterEvt;
+
+                // ═══════════════════════════════════════════════════════════════
+                // ARCHITECTURAL DECISION: Inline Execution for Zero-Latency Streaming
+                // ═══════════════════════════════════════════════════════════════
+                //
+                // LLM calls and tool execution happen INLINE (not extracted to methods)
+                // to preserve real-time streaming. Extracting would add 200-3000ms latency
+                // due to buffering events before returning them.
+                //
+                // Why inline?
+                // - Zero latency: Events yielded immediately as they arrive from LLM
+                // - True streaming: No buffering overhead between method boundaries
+                // - Testability: Decision logic extracted to AgentDecisionEngine (pure & fast)
+                //
+                // Trade-offs:
+                // - Longer main method (~800 lines vs ~200 if extracted)
+                // - Execution logic tested via integration tests (not unit tests)
+                //
+                // See: Proposals/Urgent/TESTABILITY_REFACTORING_PROPOSAL.md
+                //      Section: "Event Streaming Architecture Deep Dive" for full analysis
+                // ═══════════════════════════════════════════════════════════════
+
+                // ═══════════════════════════════════════════════════
+                // IMPERATIVE SHELL: Execute Decision INLINE with Real-time Streaming
+                // ═══════════════════════════════════════════════════
+
+                if (decision is AgentDecision.CallLLM)
+                {
+                    // ═══════════════════════════════════════════════════════
+                    // EXECUTE LLM CALL (INLINE - NOT EXTRACTED)
+                    // ═══════════════════════════════════════════════════════
+
+                    // History optimization: Only send new messages if server manages history
+                    IEnumerable<ChatMessage> messagesToSend;
+                    if (state.InnerClientTracksHistory && state.Iteration > 0)
+                    {
+                        messagesToSend = state.CurrentMessages.Skip(state.MessagesSentToInnerClient);
+                    }
+                    else
+                    {
+                        messagesToSend = state.CurrentMessages;
+                    }
+
+                    // Apply plugin scoping if enabled
+                    var scopedOptions = effectiveOptions;
+                    if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
+                    {
+                        scopedOptions = ApplyPluginScoping(effectiveOptions, state.ExpandedPlugins, state.ExpandedSkills);
+                    }
+                    else if (state.InnerClientTracksHistory && scopedOptions != null && scopedOptions.ConversationId != _conversationId)
+                    {
+                        scopedOptions = new ChatOptions
+                        {
+                            ModelId = scopedOptions.ModelId,
+                            Tools = scopedOptions.Tools,
+                            ToolMode = scopedOptions.ToolMode,
+                            Temperature = scopedOptions.Temperature,
+                            MaxOutputTokens = scopedOptions.MaxOutputTokens,
+                            TopP = scopedOptions.TopP,
+                            FrequencyPenalty = scopedOptions.FrequencyPenalty,
+                            PresencePenalty = scopedOptions.PresencePenalty,
+                            StopSequences = scopedOptions.StopSequences,
+                            ResponseFormat = scopedOptions.ResponseFormat,
+                            AdditionalProperties = scopedOptions.AdditionalProperties,
+                            ConversationId = _conversationId
+                        };
+                    }
+
+                    // Streaming state
+                    var assistantContents = new List<AIContent>();
+                    var toolRequests = new List<FunctionCallContent>();
+                    bool messageStarted = false;
+                    bool reasoningStarted = false;
+                    bool reasoningMessageStarted = false;
+
+                    // Stream LLM response with IMMEDIATE event yielding
+                    await foreach (var update in _agentTurn.RunAsync(messagesToSend, scopedOptions, effectiveCancellationToken))
+                    {
+                        // Store update for building final history
+                        responseUpdates.Add(update);
+
+                        // Process contents and emit internal events
+                        if (update.Contents != null)
+                        {
+                            foreach (var content in update.Contents)
+                            {
+                                if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                                {
+                                    if (!reasoningStarted)
+                                    {
+                                        yield return new InternalReasoningStartEvent(assistantMessageId);
+                                        reasoningStarted = true;
+                                    }
+
+                                    if (!reasoningMessageStarted)
+                                    {
+                                        yield return new InternalReasoningMessageStartEvent(assistantMessageId, "assistant");
+                                        reasoningMessageStarted = true;
+                                    }
+
+                                    yield return new InternalReasoningDeltaEvent(reasoning.Text, assistantMessageId);
+                                    assistantContents.Add(reasoning);
+                                }
+                                else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                                {
+                                    if (reasoningMessageStarted)
+                                    {
+                                        yield return new InternalReasoningMessageEndEvent(assistantMessageId);
+                                        reasoningMessageStarted = false;
+                                    }
+                                    if (reasoningStarted)
+                                    {
+                                        yield return new InternalReasoningEndEvent(assistantMessageId);
+                                        reasoningStarted = false;
+                                    }
+
+                                    if (!messageStarted)
+                                    {
+                                        yield return new InternalTextMessageStartEvent(assistantMessageId, "assistant");
+                                        messageStarted = true;
+                                    }
+
+                                    assistantContents.Add(textContent);
+                                    yield return new InternalTextDeltaEvent(textContent.Text, assistantMessageId);
+                                }
+                                else if (content is FunctionCallContent functionCall)
+                                {
+                                    if (!messageStarted)
+                                    {
+                                        yield return new InternalTextMessageStartEvent(assistantMessageId, "assistant");
+                                        messageStarted = true;
+                                    }
+
+                                    yield return new InternalToolCallStartEvent(
+                                        functionCall.CallId,
+                                        functionCall.Name ?? string.Empty,
+                                        assistantMessageId);
+
+                                    if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
+                                    {
+                                        var argsJson = System.Text.Json.JsonSerializer.Serialize(
+                                            functionCall.Arguments,
+                                            AGUIJsonContext.Default.DictionaryStringObject);
+
+                                        yield return new InternalToolCallArgsEvent(functionCall.CallId, argsJson);
+                                    }
+
+                                    toolRequests.Add(functionCall);
+                                    assistantContents.Add(functionCall);
+                                }
+                            }
+                        }
+
+                        // Periodically yield filter events during LLM streaming
+                        while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                        {
+                            yield return filterEvt;
+                        }
+
+                        // Check for stream completion
+                        if (update.FinishReason != null)
+                        {
+                            if (reasoningMessageStarted)
+                            {
+                                yield return new InternalReasoningMessageEndEvent(assistantMessageId);
+                                reasoningMessageStarted = false;
+                            }
+                            if (reasoningStarted)
+                            {
+                                yield return new InternalReasoningEndEvent(assistantMessageId);
+                                reasoningStarted = false;
+                            }
+                        }
+                    }
+
+                    // Capture ConversationId from the agent turn response
+                    if (_agentTurn.LastResponseConversationId != null)
+                    {
+                        _conversationId = _agentTurn.LastResponseConversationId;
+                    }
+                    else if (state.InnerClientTracksHistory)
+                    {
+                        // Service stopped returning ConversationId - disable tracking
+                        state = state.DisableHistoryTracking();
+                    }
+
+                    // Close the message if we started one
+                    if (messageStarted)
+                    {
+                        yield return new InternalTextMessageEndEvent(assistantMessageId);
+                    }
+
+                    // If there are tool requests, execute them immediately
+                    if (toolRequests.Count > 0)
+                    {
+                        // Create assistant message with tool calls
+                        var assistantMessage = new ChatMessage(ChatRole.Assistant, assistantContents);
+                        var currentMessages = state.CurrentMessages.ToList();
+                        currentMessages.Add(assistantMessage);
+
+                        // ✅ FIXED: Update state immediately after modifying messages
+                        state = state.WithMessages(currentMessages);
+
+                        // ✅ FIXED: Update history tracking with count AFTER adding assistant message
+                        if (_agentTurn.LastResponseConversationId != null)
+                        {
+                            state = state.EnableHistoryTracking(currentMessages.Count);
+                        }
+
+                        // Create assistant message for history WITHOUT reasoning
+                        var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
+                        var hasNonEmptyText = historyContents
+                            .OfType<TextContent>()
+                            .Any(t => !string.IsNullOrWhiteSpace(t.Text));
+
+                        if (hasNonEmptyText)
+                        {
+                            var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
+                            turnHistory.Add(historyMessage);
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // TOOL EXECUTION (Inline - NOT via decision engine)
+                        // ═══════════════════════════════════════════════════════
+
+                        // Apply plugin scoping if enabled
+                        var effectiveOptionsForTools = effectiveOptions;
+                        if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
+                        {
+                            effectiveOptionsForTools = ApplyPluginScoping(effectiveOptions, state.ExpandedPlugins, state.ExpandedSkills);
+                        }
+
+                        // Yield filter events before tool execution
+                        while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                        {
+                            yield return filterEvt;
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // CIRCUIT BREAKER: Check BEFORE execution (prevent the call)
+                        // ═══════════════════════════════════════════════════════
+                        if (Config?.AgenticLoop?.MaxConsecutiveFunctionCalls is { } maxConsecutiveCalls)
+                        {
+                            bool circuitBreakerTriggered = false;
+                            
+                            foreach (var toolRequest in toolRequests)
+                            {
+                                var signature = GetFunctionSignature(toolRequest);
+                                var toolName = toolRequest.Name ?? "_unknown";
+                                
+                                // Calculate what the count WOULD BE if we execute this tool
+                                var lastSig = state.LastSignaturePerTool.GetValueOrDefault(toolName);
+                                var isIdentical = !string.IsNullOrEmpty(lastSig) && signature == lastSig;
+                                
+                                var countAfterExecution = isIdentical 
+                                    ? state.ConsecutiveCountPerTool.GetValueOrDefault(toolName, 0) + 1
+                                    : 1;
+
+                                // Check if executing this tool would exceed the limit
+                                if (countAfterExecution >= maxConsecutiveCalls)
+                                {
+                                    var errorMessage = $"⚠️ Circuit breaker triggered: Function '{toolRequest.Name}' " +
+                                        $"with same arguments would be called {countAfterExecution} times consecutively. " +
+                                        $"Stopping to prevent infinite loop.";
+                                    
+                                    yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
+                                    
+                                    var terminationReason = $"Circuit breaker: '{toolRequest.Name}' " +
+                                        $"with same arguments would be called {countAfterExecution} times consecutively";
+                                    state = state.Terminate(terminationReason);
+                                    circuitBreakerTriggered = true;
+                                    break;
+                                }
+                            }
+
+                            if (circuitBreakerTriggered)
+                            {
+                                break; // Exit the main loop WITHOUT executing tools
+                            }
+                        }
+
+                        // Execute tools with event polling (CRITICAL for permissions)
+                        var executeTask = _toolScheduler.ExecuteToolsAsync(
+                            currentMessages,
+                            toolRequests,
+                            effectiveOptionsForTools,
+                            state,
+                            effectiveCancellationToken);
+
+                        // Poll for filter events while tool execution is in progress
+                        while (!executeTask.IsCompleted)
+                        {
+                            var delayTask = Task.Delay(10, effectiveCancellationToken);
+                            await Task.WhenAny(executeTask, delayTask).ConfigureAwait(false);
+
+                            while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                            {
+                                yield return filterEvt;
+                            }
+                        }
+
+                        var (toolResultMessage, pluginExpansions, skillExpansions, successfulFunctions) = await executeTask.ConfigureAwait(false);
+
+                        // Final drain
+                        while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                        {
+                            yield return filterEvt;
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // ERROR TRACKING (AFTER tool execution, BEFORE container updates)
+                        // ✅ FIXED: Enhanced error detection to reduce false positives
+                        bool hasErrors = toolResultMessage.Contents
+                            .OfType<FunctionResultContent>()
+                            .Any(r => 
+                            {
+                                // Primary signal: Exception present
+                                if (r.Exception != null) return true;
+                                
+                                // Secondary signal: Result contains error indicators
+                                var resultStr = r.Result?.ToString();
+                                if (string.IsNullOrEmpty(resultStr)) return false;
+                                
+                                // Check for definitive error patterns (case-insensitive)
+                                return resultStr.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.StartsWith("Failed:", StringComparison.OrdinalIgnoreCase) ||
+                                       // More precise exception matching - look for error context
+                                       resultStr.Contains("exception occurred", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.Contains("unhandled exception", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.Contains("exception was thrown", StringComparison.OrdinalIgnoreCase) ||
+                                       // More precise rate limit matching - look for error context
+                                       resultStr.Contains("rate limit exceeded", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.Contains("rate limited", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.Contains("quota exceeded", StringComparison.OrdinalIgnoreCase) ||
+                                       resultStr.Contains("quota reached", StringComparison.OrdinalIgnoreCase);
+                            });
+
+                        if (hasErrors)
+                        {
+                            state = state.WithFailure();
+
+                            var maxConsecutiveErrors = Config?.ErrorHandling?.MaxRetries ?? 3;
+                            if (state.ConsecutiveFailures >= maxConsecutiveErrors)
+                            {
+                                var errorMessage = $"⚠️ Maximum consecutive errors ({maxConsecutiveErrors}) exceeded. " +
+                                    "Stopping execution to prevent infinite error loop.";
+                                
+                                yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
+
+                                var terminationReason = $"Exceeded maximum consecutive errors ({maxConsecutiveErrors})";
+                                state = state.Terminate(terminationReason);
+                                break;  // ✅ EXIT LOOP
+                            }
+                        }
+                        else
+                        {
+                            state = state.WithSuccess();
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // UPDATE STATE WITH CONTAINER EXPANSIONS
+                        // ═══════════════════════════════════════════════════════
+                        foreach (var pluginName in pluginExpansions)
+                        {
+                            state = state.WithExpandedPlugin(pluginName);
+                        }
+                        foreach (var skillName in skillExpansions)
+                        {
+                            state = state.WithExpandedSkill(skillName);
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // UPDATE STATE WITH COMPLETED FUNCTIONS  
+                        // ═══════════════════════════════════════════════════════
+                        foreach (var functionName in successfulFunctions)
+                        {
+                            state = state.CompleteFunction(functionName);
+                        }
+
+
+
+                        // ═══════════════════════════════════════════════════════
+                        // FILTER CONTAINER EXPANSIONS
+                        // ═══════════════════════════════════════════════════════
+                        var nonContainerResults = FilterContainerResults(
+                            toolResultMessage.Contents,
+                            toolRequests,
+                            effectiveOptionsForTools);
+
+                        // Add filtered results to persistent history
+                        if (nonContainerResults.Count > 0)
+                        {
+                            var filteredMessage = new ChatMessage(ChatRole.Tool, nonContainerResults);
+                            currentMessages.Add(filteredMessage);
+                        }
+
+                        // Add ALL results (including container expansions) to turn history
+                        turnHistory.Add(toolResultMessage);
+
+                        // ═══════════════════════════════════════════════════════
+                        // EMIT TOOL RESULT EVENTS
+                        // ═══════════════════════════════════════════════════════
+                        foreach (var content in toolResultMessage.Contents)
+                        {
+                            if (content is FunctionResultContent result)
+                            {
+                                yield return new InternalToolCallEndEvent(result.CallId);
+                                yield return new InternalToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null");
+                            }
+                        }
+
+                        // ═══════════════════════════════════════════════════════
+                        // CIRCUIT BREAKER: Update state after execution
+                        // ═══════════════════════════════════════════════════════
+                        foreach (var toolRequest in toolRequests)
+                        {
+                            var signature = GetFunctionSignature(toolRequest);
+                            state = state.RecordToolCall(toolRequest.Name ?? "_unknown", signature);
+                        }
+
+                        // Note: Actual circuit breaker CHECK happens BEFORE execution (above)
+                        // This just updates the state for the next iteration
+
+                        // Update state with new messages
+                        state = state.WithMessages(currentMessages);
+
+                        // Build ChatResponse for decision engine (after execution)
+                        lastResponse = new ChatResponse(currentMessages.Where(m => m.Role == ChatRole.Assistant).ToList());
+                        
+                        // ✅ FIXED: Clear responseUpdates AFTER building the response
+                        responseUpdates.Clear();
+                    }
+                    else
+                    {
+                        // No tools called - we're done
+                        var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
+                        lastResponse = finalResponse;
+                        
+                        // ✅ FIXED: Clear responseUpdates AFTER constructing final response
+                        responseUpdates.Clear();
+                        
+                        // ✅ FIXED: Update history tracking if we have ConversationId (no assistant message added in this path)
+                        if (_agentTurn.LastResponseConversationId != null)
+                        {
+                            // For non-tool responses, use current message count (no new assistant message added)
+                            state = state.EnableHistoryTracking(state.CurrentMessages.Count);
+                        }
+                        
+                        state = state.Terminate("Completed successfully");
+                    }
+                }
+                else if (decision is AgentDecision.Complete complete)
+                {
+                    // Completion - extract final message if needed
+                    lastResponse = complete.FinalResponse;
+                    state = state.Terminate("Completed successfully");
+                }
+                else if (decision is AgentDecision.Terminate terminate)
+                {
+                    state = state.Terminate(terminate.Reason);
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Unknown decision type: {decision.GetType().Name}");
+                }
+
+                // Emit iteration end
+                yield return new InternalAgentTurnFinishedEvent(state.Iteration);
+
+                // Advance to next iteration
+                state = state.NextIteration();
+            }
+
+            // ═══════════════════════════════════════════════════════
+            // FINALIZATION
+            // ═══════════════════════════════════════════════════════
+
+            // Check if we exited because max iterations was reached
+            if (state.Iteration >= _maxFunctionCalls && !state.IsTerminated)
+            {
+                var terminationMessageId = $"msg_{Guid.NewGuid()}";
+                var terminationMessage = (Config?.Messages ?? new AgentMessagesConfig()).FormatMaxIterationsReached(_maxFunctionCalls);
+
+                yield return new InternalTextMessageStartEvent(terminationMessageId, "assistant");
+                yield return new InternalTextDeltaEvent(terminationMessage, terminationMessageId);
+                yield return new InternalTextMessageEndEvent(terminationMessageId);
+
+                turnHistory.Add(new ChatMessage(ChatRole.Assistant, terminationMessage));
+
+                var terminationReason = $"Maximum iterations reached ({_maxFunctionCalls})";
+                state = state.Terminate(terminationReason);
+            }
+
+            // Build the complete history including the final assistant message
+            var hadAnyToolCalls = turnHistory.Any(m => m.Role == ChatRole.Tool);
+
+            if (!hadAnyToolCalls && responseUpdates.Any())
+            {
+                var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
+                if (finalResponse.Messages.Count > 0)
+                {
+                    var finalAssistantMessage = finalResponse.Messages[0];
+
+                    if (finalAssistantMessage.Contents.Count > 0)
+                    {
+                        turnHistory.Add(finalAssistantMessage);
+                    }
+                }
+            }
+
+            // Final drain of filter events after loop
+            while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                yield return filterEvt;
+
+            // Emit MESSAGE TURN finished event
+            yield return new InternalMessageTurnFinishedEvent(messageTurnId, conversationId);
+
+            // Record orchestration telemetry metrics
+            orchestrationActivity?.SetTag("agent.total_iterations", state.Iteration);
+            orchestrationActivity?.SetTag("agent.total_function_calls", state.CompletedFunctions.Count);
+            orchestrationActivity?.SetTag("agent.termination_reason", state.TerminationReason ?? "completed");
+            orchestrationActivity?.SetTag("agent.was_terminated", state.IsTerminated);
+
+            if (reductionMetadata != null)
+            {
+                orchestrationActivity?.SetTag("agent.history_reduction_occurred", true);
+                orchestrationActivity?.SetTag("agent.history_messages_removed", reductionMetadata.MessagesRemovedCount);
+            }
+
+            historyCompletionSource.TrySetResult(turnHistory);
+        }
+        finally
+        {
+            RootAgent = previousRootAgent;
+        }
+    }
+
+    /// <summary>
+    /// Applies plugin scoping to limit which tools are visible to the LLM.
+    /// Preserves expanded plugins/skills from previous iterations.
+    /// </summary>
+    private ChatOptions? ApplyPluginScoping(
+        ChatOptions? options,
+        ImmutableHashSet<string> expandedPlugins,
+        ImmutableHashSet<string> expandedSkills)
+    {
+        if (options?.Tools == null || Config?.PluginScoping == null)
+            return options;
+
+        // PERFORMANCE: Single-pass extraction using manual loop
+        var aiFunctions = new List<AIFunction>(options.Tools.Count);
+        for (int i = 0; i < options.Tools.Count; i++)
+        {
+            if (options.Tools[i] is AIFunction af)
+                aiFunctions.Add(af);
+        }
+
+        // Get plugin-scoped functions
+        var scopedFunctions = _scopingManager.GetToolsForAgentTurn(
+            aiFunctions,
+            expandedPlugins,
+            expandedSkills);
+
+        // Manual cast to AITool list
+        var scopedTools = new List<AITool>(scopedFunctions.Count);
+        for (int i = 0; i < scopedFunctions.Count; i++)
+        {
+            scopedTools.Add(scopedFunctions[i]);
+        }
+
+        return new ChatOptions
+        {
+            ModelId = options.ModelId,
+            Tools = scopedTools,
+            ToolMode = options.ToolMode,
+            Temperature = options.Temperature,
+            MaxOutputTokens = options.MaxOutputTokens,
+            TopP = options.TopP,
+            FrequencyPenalty = options.FrequencyPenalty,
+            PresencePenalty = options.PresencePenalty,
+            StopSequences = options.StopSequences,
+            ResponseFormat = options.ResponseFormat,
+            AdditionalProperties = options.AdditionalProperties,
+            ConversationId = _conversationId
+        };
+    }
+
+    /// <summary>
+    /// Filters out container expansion results from history.
+    /// Container expansions are temporary - only relevant within the current turn.
+    /// Persistent history should NOT contain "ExpandPlugin" or "ExpandSkill" results.
+    /// </summary>
+    /// <param name="contents">All tool result contents</param>
+    /// <param name="toolRequests">Original tool call requests</param>
+    /// <param name="options">Chat options containing tool metadata</param>
+    /// <returns>Filtered contents (non-container results only)</returns>
+    private static List<AIContent> FilterContainerResults(
+        IList<AIContent> contents,
+        IList<FunctionCallContent> toolRequests,
+        ChatOptions? options)
+    {
+        var nonContainerResults = new List<AIContent>(contents.Count);
+
+        foreach (var content in contents)
+        {
+            if (content is FunctionResultContent result)
+            {
+                // Check if this result is from a container function
+                var isContainerResult = IsContainerResult(result, toolRequests, options);
+
+                if (!isContainerResult)
+                {
+                    nonContainerResults.Add(content);
+                }
+            }
+            else
+            {
+                // Non-function-result content always passes through
+                nonContainerResults.Add(content);
+            }
+        }
+
+        return nonContainerResults;
+    }
+
+    /// <summary>
+    /// Checks if a function result is from a container expansion.
+    /// </summary>
+    /// <param name="result">The function result to check</param>
+    /// <param name="toolRequests">Original tool call requests</param>
+    /// <param name="options">Chat options containing tool metadata</param>
+    /// <returns>True if this result is from a container function</returns>
+    private static bool IsContainerResult(
+        FunctionResultContent result,
+        IList<FunctionCallContent> toolRequests,
+        ChatOptions? options)
+    {
+        return toolRequests.Any(tr =>
+            tr.CallId == result.CallId &&
+            options?.Tools?.OfType<AIFunction>()
+                .FirstOrDefault(t => t.Name == tr.Name)
+                ?.AdditionalProperties?.TryGetValue("IsContainer", out var isContainer) == true &&
+            isContainer is bool isCont && isCont);
+    }
+    #endregion
 
     #region IChatClient Implementation
 
@@ -414,715 +1208,6 @@ public class Agent : AIAgent
     /// This method contains all the agent logic without any protocol-specific concerns.
     /// Adapters convert internal events to protocol-specific formats (AGUI, IChatClient, etc.).
     /// </summary>
-    private async IAsyncEnumerable<InternalAgentEvent> RunAgenticLoopInternal(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        string[]? documentPaths,
-        List<ChatMessage> turnHistory,
-        TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
-        TaskCompletionSource<ReductionMetadata?> reductionCompletionSource,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        // Create orchestration activity to group all agent turns and function calls
-        // This provides better observability in distributed tracing systems (OpenTelemetry)
-        using var orchestrationActivity = ActivitySource.StartActivity(
-            "agent.orchestration",
-            ActivityKind.Internal);
-
-        orchestrationActivity?.SetTag("agent.name", _name);
-        orchestrationActivity?.SetTag("agent.max_iterations", _maxFunctionCalls);
-        orchestrationActivity?.SetTag("agent.provider", ProviderKey);
-        orchestrationActivity?.SetTag("agent.model", ModelId);
-
-        // Track root agent for event bubbling across nested agent calls
-        // If RootAgent is null, this is the top-level agent - set ourselves as root
-        // If RootAgent is already set, we're nested - keep the existing root
-        var previousRootAgent = RootAgent;
-        RootAgent ??= this;
-
-        // Process documents if provided (protocol-agnostic feature)
-        if (documentPaths?.Length > 0)
-        {
-            messages = await AgentDocumentProcessor.ProcessDocumentsAsync(messages, documentPaths, Config, cancellationToken).ConfigureAwait(false);
-        }
-
-        // Create linked cancellation token for turn timeout
-        using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (Config?.AgenticLoop?.MaxTurnDuration is { } turnTimeout)
-        {
-            turnCts.CancelAfter(turnTimeout);
-        }
-        var effectiveCancellationToken = turnCts.Token;
-
-        // Generate IDs for this message turn
-        var messageTurnId = Guid.NewGuid().ToString();
-
-        // Extract conversation ID from options or generate new one
-        string conversationId;
-        if (options?.AdditionalProperties?.TryGetValue("ConversationId", out var convIdObj) == true && convIdObj is string convId)
-        {
-            conversationId = convId;
-        }
-        else
-        {
-            conversationId = Guid.NewGuid().ToString();
-        }
-
-        var messageId = Guid.NewGuid().ToString();
-
-        // Track conversation ID consistently
-        _conversationId = conversationId;
-
-        try
-        {
-            // Emit MESSAGE TURN started event
-            yield return new InternalMessageTurnStartedEvent(messageTurnId, conversationId);
-
-            // Collect all response updates to build final history
-            var responseUpdates = new List<ChatResponseUpdate>();
-
-        // Prepare messages using MessageProcessor
-        ReductionMetadata? reductionMetadata = null;
-        IEnumerable<ChatMessage> effectiveMessages;
-        ChatOptions? effectiveOptions;
-
-        try
-        {
-            var prep = await _messageProcessor.PrepareMessagesAsync(
-                messages, options, _name, effectiveCancellationToken).ConfigureAwait(false);
-            (effectiveMessages, effectiveOptions, reductionMetadata) = prep;
-        }
-        catch (Exception ex)
-        {
-            // FIX #8: ALWAYS complete both tasks to prevent hanging callers
-            // Following Microsoft's pattern: guarantee completion on all paths
-            reductionCompletionSource.TrySetException(ex);
-            historyCompletionSource.TrySetException(ex);
-            throw;
-        }
-
-        // Set reduction metadata immediately
-        reductionCompletionSource.TrySetResult(reductionMetadata);
-
-        var currentMessages = effectiveMessages.ToList();
-
-        // Track LAST message ID for cleanup outside loop (not per-iteration state)
-        string? lastAssistantMessageId = null;
-
-        // Create agent run context for tracking across all function calls
-        var agentRunContext = new AgentRunContext(messageTurnId, conversationId, _maxFunctionCalls, this.Name);
-
-        // Track consecutive same-function calls for circuit breaker
-        var lastSignaturePerTool = new Dictionary<string, string>();
-        var consecutiveCountPerTool = new Dictionary<string, int>();
-
-        // Plugin scoping: Track expanded plugins (message-turn scoped)
-        var expandedPlugins = new HashSet<string>();
-
-        // Skill scoping: Track expanded skills (message-turn scoped)
-        var expandedSkills = new HashSet<string>();
-
-        // Auto-expand skills marked with AutoExpand = true will be handled by UnifiedScopingManager
-
-        // ConversationId history optimization (inspired by Microsoft's FunctionInvokingChatClient)
-        // When the inner client manages history server-side (indicated by returning a ConversationId),
-        // we only send NEW messages rather than the full history, significantly reducing token costs.
-        // Beneficial for: OpenAI Assistants API, Anthropic threads, Azure AI services with conversation tracking
-        bool innerClientTracksHistory = false; // whether the service returned a ConversationId in last iteration
-        int messagesSentToInnerClient = 0; // how many messages from currentMessages we've sent to the inner client
-
-        // Main agentic loop - use while loop to allow dynamic limit extension
-        int iteration = 0;
-        while (iteration < agentRunContext.MaxIterations)
-        {
-            agentRunContext.CurrentIteration = iteration;
-
-            // Check if run has been terminated early
-            if (agentRunContext.IsTerminated)
-            {
-                break;
-            }
-
-            // FIX #4: Generate NEW message ID per agent turn (not per message turn)
-            // Following Microsoft's pattern: new ID for each assistant segment
-            // Prevents protocol violations where multiple responses share same ID
-            var assistantMessageId = Guid.NewGuid().ToString();
-            lastAssistantMessageId = assistantMessageId; // Track for cleanup outside loop
-
-            // Emit AGENT TURN started event
-            yield return new InternalAgentTurnStartedEvent(iteration);
-
-            // Emit state snapshot for testing/debugging (captures state at start of iteration)
-            yield return new InternalStateSnapshotEvent(
-                CurrentIteration: agentRunContext.CurrentIteration,
-                MaxIterations: agentRunContext.MaxIterations,
-                IsTerminated: agentRunContext.IsTerminated,
-                TerminationReason: agentRunContext.TerminationReason,
-                ConsecutiveErrorCount: agentRunContext.ConsecutiveErrorCount,
-                CompletedFunctions: new List<string>(agentRunContext.CompletedFunctions));
-
-            // Yield any filter events that accumulated before iteration start
-            while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-            {
-                yield return filterEvt;
-            }
-
-            var toolRequests = new List<FunctionCallContent>();
-            var assistantContents = new List<AIContent>();
-            bool streamFinished = false;
-
-            // Track thinking/reasoning/message state PER AGENT TURN (reset for each iteration)
-            // CRITICAL: messageStarted MUST reset per iteration to emit TextMessageStart for each assistant message
-            bool messageStarted = false;
-            bool reasoningStarted = false;
-            bool reasoningMessageStarted = false;
-
-            // Plugin & Skill scoping: Apply scoping to tools for this agent turn (only if enabled)
-            var scopedOptions = effectiveOptions;
-            if (Config?.PluginScoping?.Enabled == true &&
-                effectiveOptions?.Tools is { Count: > 0 })
-            {
-                // PERFORMANCE: Single-pass extraction using manual loop
-                // Replaces: OfType<AIFunction>().ToList() + Cast<AITool>().ToList()
-                var aiFunctions = new List<AIFunction>(effectiveOptions.Tools.Count);
-                for (int i = 0; i < effectiveOptions.Tools.Count; i++)
-                {
-                    if (effectiveOptions.Tools[i] is AIFunction af)
-                        aiFunctions.Add(af);
-                }
-
-                // Get plugin-scoped functions (containers + non-plugin + expanded plugin functions)
-                // Use unified scoping manager that handles both plugins and skills
-                var scopedFunctions = _scopingManager.GetToolsForAgentTurn(aiFunctions, expandedPlugins, expandedSkills);
-
-                // Manual cast to AITool list (still better than LINQ Cast + ToList)
-                var scopedTools = new List<AITool>(scopedFunctions.Count);
-                for (int i = 0; i < scopedFunctions.Count; i++)
-                {
-                    scopedTools.Add(scopedFunctions[i]);
-                }
-
-                scopedOptions = new ChatOptions
-                {
-                    ModelId = effectiveOptions.ModelId,
-                    Tools = scopedTools,
-                    ToolMode = effectiveOptions.ToolMode,
-                    Temperature = effectiveOptions.Temperature,
-                    MaxOutputTokens = effectiveOptions.MaxOutputTokens,
-                    TopP = effectiveOptions.TopP,
-                    FrequencyPenalty = effectiveOptions.FrequencyPenalty,
-                    PresencePenalty = effectiveOptions.PresencePenalty,
-                    StopSequences = effectiveOptions.StopSequences,
-                    ResponseFormat = effectiveOptions.ResponseFormat,
-                    AdditionalProperties = effectiveOptions.AdditionalProperties,
-                    ConversationId = innerClientTracksHistory ? conversationId : effectiveOptions.ConversationId
-                };
-            }
-            else if (innerClientTracksHistory && (scopedOptions == null || scopedOptions.ConversationId != conversationId))
-            {
-                // Need to add ConversationId to options (when not doing plugin scoping)
-                scopedOptions = scopedOptions == null 
-                    ? new ChatOptions { ConversationId = conversationId }
-                    : new ChatOptions
-                    {
-                        ModelId = scopedOptions.ModelId,
-                        Tools = scopedOptions.Tools,
-                        ToolMode = scopedOptions.ToolMode,
-                        Temperature = scopedOptions.Temperature,
-                        MaxOutputTokens = scopedOptions.MaxOutputTokens,
-                        TopP = scopedOptions.TopP,
-                        FrequencyPenalty = scopedOptions.FrequencyPenalty,
-                        PresencePenalty = scopedOptions.PresencePenalty,
-                        StopSequences = scopedOptions.StopSequences,
-                        ResponseFormat = scopedOptions.ResponseFormat,
-                        AdditionalProperties = scopedOptions.AdditionalProperties,
-                        ConversationId = conversationId
-                    };
-            }
-
-            // ConversationId history optimization: Determine which messages to send
-            // If the service tracks history (has ConversationId), only send NEW messages
-            IEnumerable<ChatMessage> messagesToSend;
-            if (innerClientTracksHistory && iteration > 0)
-            {
-                // Service manages history server-side, only send messages added since last iteration
-                messagesToSend = currentMessages.Skip(messagesSentToInnerClient);
-            }
-            else
-            {
-                // Either first iteration or service doesn't track history - send all messages
-                messagesToSend = currentMessages;
-            }
-
-            // Track how many messages we're sending for next iteration
-            int messageCountBeforeThisTurn = currentMessages.Count;
-
-            // Run agent turn (single LLM call)
-            await foreach (var update in _agentTurn.RunAsync(messagesToSend, scopedOptions, effectiveCancellationToken))
-            {
-                // Store update for building final history
-                responseUpdates.Add(update);
-
-                // Process contents and emit internal events
-                if (update.Contents != null)
-                {
-                    foreach (var content in update.Contents)
-                    {
-                        if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
-                        {
-                            // Emit reasoning start event ONLY on first reasoning chunk
-                            if (!reasoningStarted)
-                            {
-                                yield return new InternalReasoningStartEvent(assistantMessageId);
-                                reasoningStarted = true;
-                            }
-
-                            if (!reasoningMessageStarted)
-                            {
-                                yield return new InternalReasoningMessageStartEvent(assistantMessageId, "assistant");
-                                reasoningMessageStarted = true;
-                            }
-
-                            // Emit reasoning delta
-                            yield return new InternalReasoningDeltaEvent(reasoning.Text, assistantMessageId);
-
-                            // Add reasoning to assistantContents for history
-                            assistantContents.Add(reasoning);
-                        }
-                        else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
-                        {
-                            // If we were in reasoning mode, finish the reasoning events
-                            if (reasoningMessageStarted)
-                            {
-                                yield return new InternalReasoningMessageEndEvent(assistantMessageId);
-                                reasoningMessageStarted = false;
-                            }
-                            if (reasoningStarted)
-                            {
-                                yield return new InternalReasoningEndEvent(assistantMessageId);
-                                reasoningStarted = false;
-                            }
-
-                            // Emit message start if this is the first text content (for THIS agent turn)
-                            if (!messageStarted)
-                            {
-                                yield return new InternalTextMessageStartEvent(assistantMessageId, "assistant");
-                                messageStarted = true;
-                            }
-
-                            // Regular text content - add to history
-                            assistantContents.Add(textContent);
-
-                            // Emit text delta event
-                            yield return new InternalTextDeltaEvent(textContent.Text, assistantMessageId);
-                        }
-                        else if (content is FunctionCallContent functionCall)
-                        {
-                            // Emit message start if this is the first content (for THIS agent turn)
-                            if (!messageStarted)
-                            {
-                                yield return new InternalTextMessageStartEvent(assistantMessageId, "assistant");
-                                messageStarted = true;
-                            }
-
-                            // ✨ TRUE STREAMING: Emit function call events immediately
-                            yield return new InternalToolCallStartEvent(
-                                functionCall.CallId,
-                                functionCall.Name ?? string.Empty,
-                                assistantMessageId);
-
-                            // Emit tool call arguments immediately
-                            if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
-                            {
-                                var argsJson = System.Text.Json.JsonSerializer.Serialize(
-                                    functionCall.Arguments,
-                                    AGUIJsonContext.Default.DictionaryStringObject);
-
-                                yield return new InternalToolCallArgsEvent(functionCall.CallId, argsJson);
-                            }
-
-                            // Still buffer for execution (unchanged)
-                            toolRequests.Add(functionCall);
-                            assistantContents.Add(functionCall);
-                        }
-                    }
-                }
-
-                // Periodically yield filter events during LLM streaming
-                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-                {
-                    yield return filterEvt;
-                }
-
-                // Check for stream completion
-                if (update.FinishReason != null)
-                {
-                    streamFinished = true;
-
-                    // If reasoning is still active when stream ends, finish it
-                    if (reasoningMessageStarted)
-                    {
-                        yield return new InternalReasoningMessageEndEvent(assistantMessageId);
-                        reasoningMessageStarted = false;
-                    }
-                    if (reasoningStarted)
-                    {
-                        yield return new InternalReasoningEndEvent(assistantMessageId);
-                        reasoningStarted = false;
-                    }
-                }
-            }
-
-            // Capture ConversationId from the agent turn response (if available)
-            // This enables server-side history optimization for OpenAI Assistants, Anthropic threads, etc.
-            if (_agentTurn.LastResponseConversationId != null)
-            {
-                // Service returned a ConversationId - it's managing history server-side
-                conversationId = _agentTurn.LastResponseConversationId;
-                
-                if (!innerClientTracksHistory)
-                {
-                    // First time seeing a ConversationId - switch to optimized mode
-                    innerClientTracksHistory = true;
-                }
-                
-                // Update our tracking of how many messages we've sent
-                // This will be used in the next iteration to only send NEW messages
-                messagesSentToInnerClient = messageCountBeforeThisTurn;
-            }
-            else if (innerClientTracksHistory)
-            {
-                // Edge case: Service STOPPED returning ConversationId mid-conversation
-                // This is rare but possible - need to reset and send full history next time
-                innerClientTracksHistory = false;
-                messagesSentToInnerClient = 0;
-            }
-
-            // Emit AGENT TURN finished event
-            yield return new InternalAgentTurnFinishedEvent(iteration);
-
-            // Close the message if we started one in this iteration
-            if (messageStarted)
-            {
-                yield return new InternalTextMessageEndEvent(assistantMessageId);
-            }
-
-            // If there are tool requests, execute them
-            if (toolRequests.Count > 0)
-            {
-                // Create assistant message with tool calls
-                var assistantMessage = new ChatMessage(ChatRole.Assistant, assistantContents);
-                currentMessages.Add(assistantMessage);
-
-                // Create assistant message for history WITHOUT reasoning (save tokens)
-                var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
-
-                // FIX Bug #2: Only add to history if there's meaningful TEXT content (non-empty, non-whitespace)
-                // FunctionCallContent alone doesn't need a separate assistant message - it's just metadata
-                var hasNonEmptyText = historyContents
-                    .OfType<TextContent>()
-                    .Any(t => !string.IsNullOrWhiteSpace(t.Text));
-
-                if (hasNonEmptyText)
-                {
-                    var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
-                    turnHistory.Add(historyMessage);
-                }
-
-                // Clear responseUpdates after processing this tool-calling iteration
-                // Prevents accumulating updates from multiple iterations (responseUpdates is declared outside loop)
-                // Must be outside the hasNonEmptyText check to handle tool-only responses
-                responseUpdates.Clear();
-
-                // Note: Tool call start/args events are now emitted immediately during streaming (see above)
-                // This ensures true streaming with zero latency for function call visibility
-
-                // Yield filter events before tool execution
-                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-                {
-                    yield return filterEvt;
-                }
-
-                // Execute tools with periodic event draining to prevent deadlock
-                // This allows permission events to be yielded WHILE waiting for approval
-                var executeTask = _toolScheduler.ExecuteToolsAsync(
-                    currentMessages, toolRequests, effectiveOptions, agentRunContext, _name, expandedPlugins, expandedSkills, effectiveCancellationToken);
-
-                // Poll for filter events while tool execution is in progress
-                // This is CRITICAL for bidirectional filters (permissions, etc.)
-                while (!executeTask.IsCompleted)
-                {
-                    // Wait for either task completion or a short delay
-                    var delayTask = Task.Delay(10, effectiveCancellationToken);
-                    await Task.WhenAny(executeTask, delayTask).ConfigureAwait(false);
-
-                    // Yield any events that accumulated during execution
-                    while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-                    {
-                        yield return filterEvt;
-                    }
-                }
-
-                // Get the result (this won't block since task is complete)
-                var toolResultMessage = await executeTask.ConfigureAwait(false);
-
-                // Final drain - yield any remaining events after tool execution
-                while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-                {
-                    yield return filterEvt;
-                }
-
-                // Filter out container expansion results from persistent history
-                // Container expansions are only relevant within the current message turn
-                // since expansion state resets after each message turn (expandedPlugins is local variable)
-                // Without filtering, expansion messages accumulate in history but become stale/useless
-                var nonContainerResults = new List<AIContent>();
-                foreach (var content in toolResultMessage.Contents)
-                {
-                    if (content is FunctionResultContent result)
-                    {
-                        // Check if this result is from a container function
-                        var isContainerResult = toolRequests.Any(tr =>
-                            tr.CallId == result.CallId &&
-                            effectiveOptions?.Tools?.OfType<AIFunction>()
-                                .FirstOrDefault(t => t.Name == tr.Name)
-                                ?.AdditionalProperties?.TryGetValue("IsContainer", out var isContainer) == true &&
-                            isContainer is bool isCont && isCont);
-
-                        if (!isContainerResult)
-                        {
-                            nonContainerResults.Add(content);
-                        }
-                    }
-                    else
-                    {
-                        nonContainerResults.Add(content);
-                    }
-                }
-
-                // Add filtered results to persistent history (excluding container expansions)
-                // This keeps history clean and avoids accumulating stale expansion messages
-                if (nonContainerResults.Count > 0)
-                {
-                    var filteredMessage = new ChatMessage(ChatRole.Tool, nonContainerResults);
-                    currentMessages.Add(filteredMessage);
-                }
-
-                // Add ALL results (including container expansions) to turn history
-                // The LLM needs to see container expansions within the current turn to know what functions are available
-                turnHistory.Add(toolResultMessage);
-
-                // Check for errors in tool results
-                bool hasErrors = false;
-                foreach (var content in toolResultMessage.Contents)
-                {
-                    if (content is FunctionResultContent result)
-                    {
-                        yield return new InternalToolCallEndEvent(result.CallId);
-
-                        // Emit tool call result event
-                        yield return new InternalToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null");
-
-                        // Check if this result represents an error
-                        if (result.Exception != null ||
-                            (result.Result?.ToString()?.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ?? false))
-                        {
-                            hasErrors = true;
-                        }
-                    }
-                }
-
-                // Circuit breaker: Check for consecutive same-function calls
-                if (toolRequests.Count > 0 && Config?.AgenticLoop?.MaxConsecutiveFunctionCalls is { } maxConsecutive)
-                {
-                    foreach (var toolRequest in toolRequests)
-                    {
-                        var currentSignature = GetFunctionSignature(toolRequest);
-                        var toolName = toolRequest.Name ?? "_unknown";
-
-                        if (lastSignaturePerTool.TryGetValue(toolName, out var lastSignature) && currentSignature == lastSignature)
-                        {
-                            consecutiveCountPerTool[toolName] = consecutiveCountPerTool.GetValueOrDefault(toolName, 0) + 1;
-                        }
-                        else
-                        {
-                            lastSignaturePerTool[toolName] = currentSignature;
-                            consecutiveCountPerTool[toolName] = 1;
-                        }
-
-                        if (consecutiveCountPerTool[toolName] >= maxConsecutive)
-                        {
-                            // Use configurable message template for circuit breaker
-                            var errorMessage = (Config.Messages ?? new AgentMessagesConfig())
-                                .FormatCircuitBreakerTriggered(toolRequest.Name, consecutiveCountPerTool[toolName]);
-                            yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
-
-                            agentRunContext.IsTerminated = true;
-                            agentRunContext.TerminationReason = $"Circuit breaker: '{toolRequest.Name}' with same arguments called {consecutiveCountPerTool[toolName]} times consecutively";
-                            break;
-                        }
-                    }
-
-                    if (agentRunContext.IsTerminated)
-                    {
-                        break;
-                    }
-                }
-
-                // Track consecutive errors across iterations
-                if (hasErrors)
-                {
-                    agentRunContext.RecordError();
-
-                    var maxConsecutiveErrors = Config?.ErrorHandling?.MaxRetries ?? 3;
-                    if (agentRunContext.HasExceededErrorLimit(maxConsecutiveErrors))
-                    {
-                        // Use configurable message template for max consecutive errors
-                        var errorMessage = (Config.Messages ?? new AgentMessagesConfig())
-                            .FormatMaxConsecutiveErrors(maxConsecutiveErrors);
-                        yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
-
-                        agentRunContext.IsTerminated = true;
-                        agentRunContext.TerminationReason = $"Exceeded maximum consecutive errors ({maxConsecutiveErrors})";
-                        break;
-                    }
-                }
-                else
-                {
-                    // Reset error count on successful iteration
-                    agentRunContext.RecordSuccess();
-                }
-
-                // FIX #7: Clone AdditionalProperties to prevent cross-iteration mutation
-                // Following Microsoft's pattern: avoid aliasing mutable dictionaries
-                var clonedProperties = effectiveOptions?.AdditionalProperties is null
-                    ? null
-                    : new AdditionalPropertiesDictionary(effectiveOptions.AdditionalProperties);
-
-                // Update options for next iteration
-                effectiveOptions = effectiveOptions == null
-                    ? new ChatOptions { ToolMode = ChatToolMode.Auto }
-                    : new ChatOptions
-                    {
-                        Tools = effectiveOptions.Tools,
-                        ToolMode = ChatToolMode.Auto,
-                        AllowMultipleToolCalls = effectiveOptions.AllowMultipleToolCalls,
-                        MaxOutputTokens = effectiveOptions.MaxOutputTokens,
-                        Temperature = effectiveOptions.Temperature,
-                        TopP = effectiveOptions.TopP,
-                        FrequencyPenalty = effectiveOptions.FrequencyPenalty,
-                        PresencePenalty = effectiveOptions.PresencePenalty,
-                        ResponseFormat = effectiveOptions.ResponseFormat,
-                        Seed = effectiveOptions.Seed,
-                        StopSequences = effectiveOptions.StopSequences,
-                        ModelId = effectiveOptions.ModelId,
-                        AdditionalProperties = clonedProperties
-                    };
-
-                // FIX: Do NOT increment here - moved to single location at loop end
-            }
-            else if (streamFinished)
-            {
-                // No tools called and stream finished - we're done
-                // FIX Bug #1: Do NOT add message to turnHistory here
-                // The final message will be added after the loop from ConstructChatResponseFromUpdates
-                // This prevents duplicate final assistant messages
-                break;
-            }
-            else
-            {
-                // Guard: If stream ended and there are no tools to run, exit
-                if (toolRequests.Count == 0)
-                {
-                    break;
-                }
-
-                // FIX: Do NOT increment here - moved to single location at loop end
-            }
-
-            // FIX: Increment exactly once per loop iteration in a single place
-            // This ensures circuit breaker and error limits work correctly
-            iteration++;
-        }
-
-        // Check if we exited because max iterations was reached
-        if (iteration >= agentRunContext.MaxIterations && !agentRunContext.IsTerminated)
-        {
-            // Generate a message ID for the termination message
-            var terminationMessageId = $"msg_{Guid.NewGuid()}";
-
-            // Emit termination message using configurable message template
-            var terminationMessage = (Config.Messages ?? new AgentMessagesConfig()).FormatMaxIterationsReached(agentRunContext.MaxIterations);
-
-            yield return new InternalTextMessageStartEvent(terminationMessageId, "assistant");
-            yield return new InternalTextDeltaEvent(terminationMessage, terminationMessageId);
-            yield return new InternalTextMessageEndEvent(terminationMessageId);
-
-            // Add termination message to history
-            turnHistory.Add(new ChatMessage(ChatRole.Assistant, terminationMessage));
-
-            // Mark as terminated
-            agentRunContext.IsTerminated = true;
-            agentRunContext.TerminationReason = $"Maximum iterations reached ({agentRunContext.MaxIterations})";
-        }
-
-        // Build the complete history including the final assistant message
-        // FIX Bug #1 & #2: Only add final message if NO tools were called in the entire turn
-        // When tools are called, assistant messages are already added to turnHistory inside the loop (line ~945)
-        // ConstructChatResponseFromUpdates merges ALL updates into ONE message, causing duplicates/wrong content
-        // So we only use it when there were NO iterations with tool calls (simple text-only response)
-        var hadAnyToolCalls = turnHistory.Any(m => m.Role == ChatRole.Tool);
-        
-        if (!hadAnyToolCalls && responseUpdates.Any())
-        {
-            var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
-            if (finalResponse.Messages.Count > 0)
-            {
-                var finalAssistantMessage = finalResponse.Messages[0];
-
-                // Only add final message if it has meaningful content
-                if (finalAssistantMessage.Contents.Count > 0)
-                {
-                    turnHistory.Add(finalAssistantMessage);
-                }
-            }
-        }
-
-        // Note: TextMessageEnd is now emitted INSIDE the loop after each agent turn
-        // This ensures proper event pairing per AGUI spec
-
-        // Final drain of filter events after loop
-        while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
-        {
-            yield return filterEvt;
-        }
-
-        // Emit MESSAGE TURN finished event
-        yield return new InternalMessageTurnFinishedEvent(messageTurnId, conversationId);
-
-        // Record orchestration telemetry metrics
-        orchestrationActivity?.SetTag("agent.total_iterations", iteration);
-        orchestrationActivity?.SetTag("agent.total_function_calls", agentRunContext.CompletedFunctions.Count);
-        orchestrationActivity?.SetTag("agent.termination_reason", agentRunContext.TerminationReason ?? "completed");
-        orchestrationActivity?.SetTag("agent.was_terminated", agentRunContext.IsTerminated);
-        
-        if (reductionMetadata != null)
-        {
-            orchestrationActivity?.SetTag("agent.history_reduction_occurred", true);
-            orchestrationActivity?.SetTag("agent.history_messages_removed", reductionMetadata.MessagesRemovedCount);
-        }
-
-            // FIX #8: ALWAYS complete history task to prevent hanging
-            // This is guaranteed to be called even if exceptions occur during enumeration
-            historyCompletionSource.TrySetResult(turnHistory);
-        }
-        finally
-        {
-            // Restore previous root agent (important for nested calls)
-            // This ensures AsyncLocal state is properly cleaned up
-            RootAgent = previousRootAgent;
-        }
-    }
 
     /// <summary>
     /// Constructs a final ChatResponse from collected streaming updates
@@ -1284,7 +1369,7 @@ Best practices:
         {
             var providerConfig = historyConfig.SummarizerProvider;
             var providerKey = providerConfig.ProviderKey;
-            
+
             if (!string.IsNullOrEmpty(providerKey) && _providerRegistry.GetProvider(providerKey) is { } providerFeatures)
             {
                 try
@@ -1422,6 +1507,32 @@ Best practices:
         return Convert.ToHexString(hashBytes);
     }
 
+    /// <summary>
+    /// Builds lightweight configuration for decision engine from full agent config.
+    /// </summary>
+    /// <param name="options">Chat options containing tool list</param>
+    /// <returns>Configuration with only fields needed for decision-making</returns>
+    private AgentConfiguration BuildDecisionConfiguration(ChatOptions? options)
+    {
+        // Extract available tool names from options
+        var availableTools = new HashSet<string>(StringComparer.Ordinal);
+
+        if (options?.Tools != null)
+        {
+            foreach (var tool in options.Tools)
+            {
+                if (tool is AIFunction func && !string.IsNullOrEmpty(func.Name))
+                    availableTools.Add(func.Name);
+            }
+        }
+
+        // Build configuration from AgentConfig fields
+        return AgentConfiguration.FromAgentConfig(
+            Config,
+            _maxFunctionCalls,
+            availableTools);
+    }
+
     #endregion
 
     #region Testing and Advanced API
@@ -1505,14 +1616,20 @@ Best practices:
         // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
         var chatOptions = options != null ? new ChatOptions() : null;
 
+        // Get current messages once
+        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+
         // Add workflow messages to thread state
         foreach (var msg in messages)
         {
-            if (!conversationThread.Messages.Contains(msg))
+            if (!currentMessages.Contains(msg))
             {
                 await conversationThread.AddMessageAsync(msg, cancellationToken);
             }
         }
+
+        // Refresh messages after adding new ones
+        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
 
         // Note: ConversationContext is set in RunAgenticLoopInternal when agentRunContext is created
 
@@ -1525,7 +1642,7 @@ Best practices:
             var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             var internalStream = RunAgenticLoopInternal(
-                conversationThread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+                currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
                 chatOptions,
                 documentPaths: null,
                 turnHistory,
@@ -1547,7 +1664,7 @@ Best practices:
             try
             {
                 await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                    conversationThread.Messages.ToList(),
+                    currentMessages.ToList(),
                     finalHistory.ToList(),
                     null, // no exception
                     chatOptions,
@@ -1564,7 +1681,7 @@ Best practices:
             {
                 try
                 {
-                    var userMessage = conversationThread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                    var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
                     await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception)
@@ -1584,10 +1701,13 @@ Best practices:
             // Context is cleared automatically per function call in Agent.CurrentFunctionContext
         }
 
+        // Refresh messages after turn completes and before checking final history
+        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+
         // Update thread with final messages
         foreach (var msg in finalHistory)
         {
-            if (!conversationThread.Messages.Contains(msg))
+            if (!currentMessages.Contains(msg))
             {
                 await conversationThread.AddMessageAsync(msg, cancellationToken);
             }
@@ -1624,14 +1744,20 @@ Best practices:
         // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
         var chatOptions = options != null ? new ChatOptions() : null;
 
+        // Get current messages once
+        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+
         // Add workflow messages to thread state
         foreach (var msg in messages)
         {
-            if (!conversationThread.Messages.Contains(msg))
+            if (!currentMessages.Contains(msg))
             {
                 await conversationThread.AddMessageAsync(msg, cancellationToken);
             }
         }
+
+        // Refresh messages after adding new ones
+        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
 
         // Note: ConversationContext is set in RunAgenticLoopInternal when agentRunContext is created
 
@@ -1644,7 +1770,7 @@ Best practices:
             var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             var internalStream = RunAgenticLoopInternal(
-                conversationThread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+                currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
                 chatOptions,
                 documentPaths: null,
                 turnHistory,
@@ -1668,7 +1794,7 @@ Best practices:
             try
             {
                 await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                    conversationThread.Messages.ToList(),
+                    currentMessages.ToList(),
                     finalHistory.ToList(),
                     null, // no exception
                     chatOptions,
@@ -1685,7 +1811,7 @@ Best practices:
             {
                 try
                 {
-                    var userMessage = conversationThread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                    var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
                     await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception)
@@ -1705,10 +1831,13 @@ Best practices:
             // Context is cleared automatically per function call in Agent.CurrentFunctionContext
         }
 
+        // Refresh messages after turn completes and before checking final history
+        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+
         // Update thread with final messages
         foreach (var msg in finalHistory)
         {
-            if (!conversationThread.Messages.Contains(msg))
+            if (!currentMessages.Contains(msg))
             {
                 await conversationThread.AddMessageAsync(msg, cancellationToken);
             }
@@ -1745,6 +1874,9 @@ Best practices:
             await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
         }
 
+        // Get current messages once
+        var currentMessages = await thread.GetMessagesAsync(cancellationToken);
+
         // ✅ OPTIMIZATION: Skip AGUI message conversion, call RunAgenticLoopInternal directly
         // Build ChatOptions from AGUI tools (only convert tools, not messages!)
         var chatOptions = _aguiConverter.ConvertToExtensionsAIChatOptions(
@@ -1764,7 +1896,7 @@ Best practices:
         var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var internalStream = RunAgenticLoopInternal(
-            thread.Messages,  // ✅ ChatMessage[] - NO CONVERSION!
+            currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
             chatOptions,
             documentPaths: null,
             turnHistory,
@@ -1792,7 +1924,7 @@ Best practices:
         try
         {
             await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                thread.Messages.ToList(),
+                currentMessages.ToList(),
                 finalHistory.ToList(),
                 null, // no exception
                 chatOptions,
@@ -1809,7 +1941,7 @@ Best practices:
         {
             try
             {
-                var userMessage = thread.Messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
+                var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
                 await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception)
@@ -1824,10 +1956,13 @@ Best practices:
             await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
         }
 
+        // Refresh messages after reduction and before checking final history
+        currentMessages = await thread.GetMessagesAsync(cancellationToken);
+
         // Update thread
         foreach (var msg in finalHistory)
         {
-            if (!thread.Messages.Contains(msg))
+            if (!currentMessages.Contains(msg))
             {
                 await thread.AddMessageAsync(msg, cancellationToken);
             }
@@ -1871,6 +2006,760 @@ Best practices:
 
 }
 
+#region Agent Decision Engine
+/// <summary>
+/// Pure decision engine for agent execution loop.
+/// Contains ZERO I/O operations - all decisions are deterministic and testable.
+/// This is the "Functional Core" of the agent architecture.
+/// </summary>
+/// <remarks>
+/// Key principles:
+/// - Pure functions: Same inputs always produce same outputs
+/// - No side effects: Doesn't modify external state
+/// - No I/O: Doesn't call LLM, execute tools, or access network/disk
+/// - Synchronous: All operations complete immediately
+/// - Testable: Can be tested in microseconds without mocking
+///
+/// Design rationale:
+/// By extracting decision logic from I/O operations, we achieve:
+/// - Easy to reason about (pure state in, decision out)
+/// - Property-based testing possible
+/// </remarks>
+public sealed class AgentDecisionEngine
+{
+    /// <summary>
+    /// Decides what the agent should do next based on current state.
+    /// This is a pure function - same inputs always produce same output.
+    /// </summary>
+    /// <param name="state">Current immutable state</param>
+    /// <param name="lastResponse">Response from last LLM call (null on first iteration)</param>
+    /// <param name="config">Agent configuration (max iterations, circuit breaker settings, etc.)</param>
+    /// <returns>Decision for what action to take next</returns>
+    /// <remarks>
+    /// Decision priority (checked in this order):
+    /// 1. Termination conditions (already terminated, max iterations, too many failures)
+    /// 2. First iteration (must call LLM)
+    /// 3. Extract tool requests from LLM response
+    /// 4. No tools = completion
+    /// 5. Circuit breaker check (prevent infinite loops)
+    /// 6. Unknown tools check (optional)
+    /// 7. Execute tools
+    /// </remarks>
+    public AgentDecision DecideNextAction(
+        AgentLoopState state,
+        ChatResponse? lastResponse,
+        AgentConfiguration config)
+    {
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 1: TERMINATION CONDITIONS
+        // These checks happen first - most important
+        // ═══════════════════════════════════════════════════════
+
+        // Check: Already terminated by external source (e.g., permission filter, manual termination)
+        if (state.IsTerminated)
+            return new AgentDecision.Terminate(state.TerminationReason ?? "Terminated");
+
+        // Check: Max iterations exceeded
+        if (state.Iteration >= config.MaxIterations)
+            return new AgentDecision.Terminate(
+                $"Maximum iterations ({config.MaxIterations}) reached");
+
+        // Check: Too many consecutive errors
+        if (state.ConsecutiveFailures >= config.MaxConsecutiveFailures)
+            return new AgentDecision.Terminate(
+                $"Maximum consecutive failures ({config.MaxConsecutiveFailures}) exceeded");
+
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 2: FIRST ITERATION
+        // If no response yet, must call LLM
+        // ═══════════════════════════════════════════════════════
+
+        if (lastResponse == null)
+            return AgentDecision.CallLLM.Instance;
+
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 3: CHECK IF RESPONSE IS COMPLETE
+        // If last response has no tool calls, we're done
+        // ═══════════════════════════════════════════════════════
+
+        // Check if response has any tool calls
+        bool hasToolCalls = lastResponse.Messages
+            .Any(m => m.Contents.OfType<FunctionCallContent>().Any());
+
+        if (!hasToolCalls)
+            return new AgentDecision.Complete(lastResponse);
+
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 4: CIRCUIT BREAKER CHECK
+        // Prevent infinite loops from repeated identical tool calls
+        // ═══════════════════════════════════════════════════════
+
+        if (config.MaxConsecutiveFunctionCalls.HasValue)
+        {
+            var toolRequests = ExtractToolRequestsFromResponse(lastResponse);
+
+            foreach (var toolRequest in toolRequests)
+            {
+                var signature = ComputeFunctionSignature(toolRequest);
+
+                // Check if this function signature has been called too many times consecutively
+                if (state.ConsecutiveCountPerTool.TryGetValue(toolRequest.Name, out var count) &&
+                    count >= config.MaxConsecutiveFunctionCalls.Value)
+                {
+                    return new AgentDecision.Terminate(
+                        $"Circuit breaker triggered: function '{toolRequest.Name}' called {count} consecutive times with identical arguments");
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 5: UNKNOWN TOOLS CHECK
+        // Check if all requested tools are available (optional)
+        // ═══════════════════════════════════════════════════════
+
+        if (config.TerminateOnUnknownCalls && config.AvailableTools != null)
+        {
+            var toolRequests = ExtractToolRequestsFromResponse(lastResponse);
+            var unknownTools = toolRequests
+                .Where(req => !config.AvailableTools.Contains(req.Name))
+                .Select(req => req.Name)
+                .ToList();
+
+            if (unknownTools.Count > 0)
+            {
+                return new AgentDecision.Terminate(
+                    $"Unknown tools requested: {string.Join(", ", unknownTools)}");
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // PRIORITY 6: CALL LLM AGAIN
+        // If response had tool calls, they will be executed inline
+        // and we need to call the LLM again with the results
+        // ═══════════════════════════════════════════════════════
+
+        return AgentDecision.CallLLM.Instance;
+    }
+
+    /// <summary>
+    /// Extracts tool/function call requests from LLM response.
+    /// Searches all messages and all contents for FunctionCallContent.
+    /// </summary>
+    /// <param name="response">LLM response to parse</param>
+    /// <returns>List of tool requests (empty if none found)</returns>
+    private static IReadOnlyList<AgentToolCallRequest> ExtractToolRequestsFromResponse(
+        ChatResponse response)
+    {
+        var requests = new List<AgentToolCallRequest>();
+
+        foreach (var message in response.Messages)
+        {
+            foreach (var content in message.Contents)
+            {
+                if (content is FunctionCallContent fcc && !string.IsNullOrEmpty(fcc.Name))
+                {
+                    var immutableArgs = (fcc.Arguments ?? new Dictionary<string, object?>())
+                        .ToImmutableDictionary();
+
+                    requests.Add(new AgentToolCallRequest(
+                        fcc.Name,
+                        fcc.CallId,
+                        immutableArgs));
+                }
+            }
+        }
+
+        return requests;
+    }
+
+    /// <summary>
+    /// Computes deterministic signature for a function call.
+    /// Used by circuit breaker to detect identical repeated calls.
+    /// </summary>
+    /// <param name="request">Tool call request</param>
+    /// <returns>Signature in format: "FunctionName(arg1=value1,arg2=value2,...)" with sorted args</returns>
+    /// <remarks>
+    /// Signature generation:
+    /// - Arguments are sorted alphabetically by key for determinism
+    /// - Values are JSON-serialized for correct comparison (handles nested objects, arrays)
+    /// - Example: "get_weather(city="Seattle",units="celsius")"
+    ///
+    /// Why JSON serialization?
+    /// - Handles complex types (nested objects, arrays)
+    /// - Deterministic (same object always produces same JSON)
+    /// - Type-safe (distinguishes between "42" string and 42 number)
+    /// </remarks>
+    public static string ComputeFunctionSignature(AgentToolCallRequest request)
+    {
+        var sortedArgs = string.Join(",",
+            request.Arguments
+                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                .Select(kvp =>
+                {
+                    var value = SerializeArgumentValue(kvp.Value);
+                    return $"{kvp.Key}={value}";
+                }));
+
+        return $"{request.Name}({sortedArgs})";
+    }
+
+    /// <summary>
+    /// Serializes an argument value to a deterministic string representation.
+    /// Handles all edge cases: nested objects, arrays, nulls, type differences.
+    /// </summary>
+    /// <param name="value">Argument value (can be any type)</param>
+    /// <returns>Deterministic string representation</returns>
+    private static string SerializeArgumentValue(object? value)
+    {
+        if (value == null)
+            return "null";
+
+        // Use JSON serialization for determinism
+        // This handles nested objects, arrays, and all edge cases correctly
+        try
+        {
+            return JsonSerializer.Serialize(value, SerializationOptions);
+        }
+        catch (JsonException)
+        {
+            // Fallback for non-serializable types (very rare)
+            // Use type name + hash code for uniqueness
+            return $"\"{value.GetType().Name}:{value.GetHashCode()}\"";
+        }
+    }
+
+    /// <summary>
+    /// JSON serialization options for deterministic function signature generation.
+    /// </summary>
+    private static readonly JsonSerializerOptions SerializationOptions = new()
+    {
+        WriteIndented = false,                                     // Compact (no whitespace)
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never,        // Include nulls
+        PropertyNamingPolicy = null,                               // Preserve casing
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,    // Readable (no excessive escaping)
+        MaxDepth = 64                                              // Prevent deep recursion attacks
+    };
+}
+
+/// <summary>
+/// Discriminated union representing all possible agent decisions.
+/// The decision engine returns one of these sealed record types.
+/// Pattern matching ensures exhaustive handling of all cases.
+/// </summary>
+/// <remarks>
+/// This is a sealed hierarchy - no new decision types can be added outside this file.
+/// This ensures the decision logic is complete and all cases are handled.
+///
+/// Example usage:
+/// <code>
+/// var decision = decisionEngine.DecideNextAction(state, lastResponse, config);
+/// var result = decision switch
+/// {
+///     AgentDecision.CallLLM => await ExecuteCallLLMAsync(...),
+///     AgentDecision.ExecuteTools et => await ExecuteToolsAsync(et.Tools, ...),
+///     AgentDecision.Complete c => ExecutionResult.Completed(state, c.FinalResponse),
+///     AgentDecision.Terminate t => ExecutionResult.Terminated(state, t.Reason),
+///     _ => throw new InvalidOperationException($"Unknown decision: {decision}")
+/// };
+/// </code>
+/// </remarks>
+public abstract record AgentDecision
+{
+    /// <summary>
+    /// Decision: Call the LLM with current conversation messages.
+    /// This is the default action when starting a new iteration or after tool execution.
+    /// </summary>
+    public sealed record CallLLM : AgentDecision
+    {
+        // Singleton pattern - only one instance needed
+        public static readonly CallLLM Instance = new();
+        private CallLLM() { }
+    }
+
+    /// <summary>
+    /// Decision: Agent completed successfully (no more tools to execute).
+    /// The LLM provided a text response without requesting any tool calls.
+    /// </summary>
+    /// <param name="FinalResponse">The final response from the LLM</param>
+    public sealed record Complete(ChatResponse FinalResponse) : AgentDecision;
+
+    /// <summary>
+    /// Decision: Terminate agent execution with specified reason.
+    /// Can be triggered by:
+    /// - Max iterations reached
+    /// - Circuit breaker triggered
+    /// - Too many consecutive errors
+    /// - External termination (e.g., permission denied)
+    /// </summary>
+    /// <param name="Reason">Human-readable termination reason</param>
+    public sealed record Terminate(string Reason) : AgentDecision;
+
+    // Private constructor prevents external inheritance
+    private AgentDecision() { }
+}
+
+/// <summary>
+/// Represents a request to invoke a tool/function.
+/// Contains all information needed to execute the tool.
+/// </summary>
+/// <param name="Name">Name of the tool to invoke</param>
+/// <param name="CallId">Unique identifier for this specific invocation (for correlation)</param>
+/// <param name="Arguments">Dictionary of argument names to values</param>
+public sealed record AgentToolCallRequest(
+    string Name,
+    string CallId,
+    IReadOnlyDictionary<string, object?> Arguments)
+{
+    /// <summary>
+    /// Creates a ToolCallRequest with immutable arguments dictionary.
+    /// </summary>
+    public static AgentToolCallRequest Create(string name, string callId, IDictionary<string, object?>? arguments = null)
+    {
+        var immutableArgs = arguments != null
+            ? arguments.ToImmutableDictionary()
+            : ImmutableDictionary<string, object?>.Empty;
+
+        return new AgentToolCallRequest(name, callId, immutableArgs);
+    }
+}
+
+/// <summary>
+/// Immutable snapshot of agent execution loop state.
+/// Consolidates all 11 state variables that were scattered in RunAgenticLoopInternal.
+/// Thread-safe and testable - enables pure decision-making logic.
+/// </summary>
+/// <remarks>
+/// This record is the foundation of the "Functional Core" pattern.
+/// All state transitions create new instances via 'with' expressions,
+/// making state changes explicit and testable.
+/// </remarks>
+public sealed record AgentLoopState
+{
+    // ═══════════════════════════════════════════════════════
+    // CORE STATE
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Unique identifier for this agent run/turn.
+    /// </summary>
+    public required string RunId { get; init; }
+
+    /// <summary>
+    /// Conversation ID this run belongs to.
+    /// </summary>
+    public required string ConversationId { get; init; }
+
+    /// <summary>
+    /// Name of the agent executing this run.
+    /// </summary>
+    public required string AgentName { get; init; }
+
+    /// <summary>
+    /// When this agent run started (UTC).
+    /// </summary>
+    public required DateTime StartTime { get; init; }
+
+    /// <summary>
+    /// Messages in the current conversation context (full history).
+    /// This is the complete conversation that gets sent to the LLM.
+    /// </summary>
+    public required IReadOnlyList<ChatMessage> CurrentMessages { get; init; }
+
+    /// <summary>
+    /// Messages accumulated during this agent turn (for response history).
+    /// These messages represent what was added during this RunAsync call.
+    /// </summary>
+    public required IReadOnlyList<ChatMessage> TurnHistory { get; init; }
+
+    /// <summary>
+    /// Current iteration number (0-based).
+    /// Each iteration represents one LLM call + tool execution cycle.
+    /// </summary>
+    public required int Iteration { get; init; }
+
+    /// <summary>
+    /// Whether the loop has been terminated (by any mechanism).
+    /// Once true, the loop will exit on next check.
+    /// </summary>
+    public required bool IsTerminated { get; init; }
+
+    /// <summary>
+    /// Human-readable reason for termination (if terminated).
+    /// Examples: "Max iterations reached", "Circuit breaker triggered", etc.
+    /// </summary>
+    public string? TerminationReason { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // ERROR TRACKING
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Number of consecutive iterations with errors.
+    /// Reset to 0 on any successful iteration.
+    /// Triggers termination if it reaches MaxConsecutiveFailures.
+    /// </summary>
+    public required int ConsecutiveFailures { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // CIRCUIT BREAKER STATE
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Last function signature per tool (for detecting infinite loops).
+    /// Key: Tool name
+    /// Value: Signature (FunctionName(arg1=val1,arg2=val2,...))
+    /// </summary>
+    public required ImmutableDictionary<string, string> LastSignaturePerTool { get; init; }
+
+    /// <summary>
+    /// Consecutive identical call count per tool.
+    /// Key: Tool name
+    /// Value: Number of times called consecutively with identical arguments
+    /// Triggers circuit breaker when threshold is exceeded.
+    /// </summary>
+    public required ImmutableDictionary<string, int> ConsecutiveCountPerTool { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // PLUGIN/SKILL SCOPING STATE
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Plugins that have been expanded in this turn.
+    /// Used for container expansion pattern - once a container is expanded,
+    /// its member functions become available.
+    /// </summary>
+    public required ImmutableHashSet<string> ExpandedPlugins { get; init; }
+
+    /// <summary>
+    /// Skills that have been expanded in this turn.
+    /// Used for container expansion pattern (skills version).
+    /// </summary>
+    public required ImmutableHashSet<string> ExpandedSkills { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // FUNCTION TRACKING
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Functions completed in this run (for telemetry and deduplication).
+    /// Tracks which functions have been successfully executed.
+    /// </summary>
+    public required ImmutableHashSet<string> CompletedFunctions { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // HISTORY OPTIMIZATION STATE
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Whether the LLM service manages conversation history server-side.
+    /// When true, we only send delta messages (significant token savings).
+    /// Detected automatically when service returns a ConversationId.
+    /// </summary>
+    public required bool InnerClientTracksHistory { get; init; }
+
+    /// <summary>
+    /// Number of messages already sent to the server (for delta sending).
+    /// Used to calculate which messages to send when InnerClientTracksHistory is true.
+    /// </summary>
+    public required int MessagesSentToInnerClient { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // STREAMING STATE
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Last assistant message ID (for event correlation).
+    /// Used to link events (text deltas, reasoning, etc.) to specific messages.
+    /// </summary>
+    public string? LastAssistantMessageId { get; init; }
+
+    /// <summary>
+    /// Accumulated streaming updates (for final response construction).
+    /// Collected during LLM streaming to build complete ChatResponse.
+    /// </summary>
+    public required IReadOnlyList<ChatResponseUpdate> ResponseUpdates { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // FACTORY METHOD
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Creates initial state for a new agent execution.
+    /// All collections are empty, counters are zero.
+    /// </summary>
+    /// <param name="messages">Initial conversation messages</param>
+    /// <param name="runId">Unique identifier for this run</param>
+    /// <param name="conversationId">Conversation identifier</param>
+    /// <param name="agentName">Name of the agent</param>
+    /// <returns>Fresh state ready for first iteration</returns>
+    public static AgentLoopState Initial(IReadOnlyList<ChatMessage> messages, string runId, string conversationId, string agentName) => new()
+    {
+        RunId = runId,
+        ConversationId = conversationId,
+        AgentName = agentName,
+        StartTime = DateTime.UtcNow,
+        CurrentMessages = messages,
+        TurnHistory = ImmutableList<ChatMessage>.Empty,
+        Iteration = 0,
+        IsTerminated = false,
+        TerminationReason = null,
+        ConsecutiveFailures = 0,
+        LastSignaturePerTool = ImmutableDictionary<string, string>.Empty,
+        ConsecutiveCountPerTool = ImmutableDictionary<string, int>.Empty,
+        ExpandedPlugins = ImmutableHashSet<string>.Empty,
+        ExpandedSkills = ImmutableHashSet<string>.Empty,
+        CompletedFunctions = ImmutableHashSet<string>.Empty,
+        InnerClientTracksHistory = false,
+        MessagesSentToInnerClient = 0,
+        LastAssistantMessageId = null,
+        ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty
+    };
+
+    // ═══════════════════════════════════════════════════════
+    // STATE TRANSITIONS (Immutable Updates)
+    // All methods return NEW instances - never mutate existing state
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Advances to the next iteration.
+    /// </summary>
+    public AgentLoopState NextIteration() =>
+        this with { Iteration = Iteration + 1 };
+
+    /// <summary>
+    /// Updates the current conversation messages.
+    /// Used after adding new messages from LLM or tool results.
+    /// </summary>
+    public AgentLoopState WithMessages(IReadOnlyList<ChatMessage> messages) =>
+        this with { CurrentMessages = messages };
+
+    /// <summary>
+    /// Appends a message to the turn history.
+    /// Turn history tracks what was added during this RunAsync call.
+    /// </summary>
+    public AgentLoopState AppendToTurnHistory(ChatMessage message)
+    {
+        var updatedHistory = new List<ChatMessage>(TurnHistory) { message };
+        return this with { TurnHistory = updatedHistory };
+    }
+
+    /// <summary>
+    /// Resets consecutive failure counter (after successful iteration).
+    /// </summary>
+    public AgentLoopState WithSuccess() =>
+        this with { ConsecutiveFailures = 0 };
+
+    /// <summary>
+    /// Increments consecutive failure counter.
+    /// </summary>
+    public AgentLoopState WithFailure() =>
+        this with { ConsecutiveFailures = ConsecutiveFailures + 1 };
+
+    /// <summary>
+    /// Terminates the loop with the specified reason.
+    /// </summary>
+    public AgentLoopState Terminate(string reason) =>
+        this with { IsTerminated = true, TerminationReason = reason };
+
+    /// <summary>
+    /// Records that a plugin container has been expanded.
+    /// </summary>
+    public AgentLoopState WithExpandedPlugin(string pluginName) =>
+        this with { ExpandedPlugins = ExpandedPlugins.Add(pluginName) };
+
+    /// <summary>
+    /// Records that a skill container has been expanded.
+    /// </summary>
+    public AgentLoopState WithExpandedSkill(string skillName) =>
+        this with { ExpandedSkills = ExpandedSkills.Add(skillName) };
+
+    /// <summary>
+    /// Records a function completion for telemetry tracking (successful calls only).
+    /// 
+    /// NOTE: This is part of a dual tracking system:
+    /// - RecordToolCall: Tracks ALL attempted function calls for circuit breaker detection
+    /// - CompleteFunction: Tracks only SUCCESSFUL function calls for telemetry/analytics
+    /// </summary>
+    /// <param name="functionName">Name of the completed function</param>
+    /// <returns>New state with updated function tracking</returns>
+    public AgentLoopState CompleteFunction(string functionName) =>
+        this with { CompletedFunctions = CompletedFunctions.Add(functionName) };
+
+    /// <summary>
+    /// Records a tool call for circuit breaker tracking (all attempted calls).
+    /// Compares signature with last call to detect identical consecutive calls.
+    /// 
+    /// NOTE: This is part of a dual tracking system:
+    /// - RecordToolCall: Tracks ALL attempted function calls for circuit breaker detection
+    /// - CompleteFunction: Tracks only SUCCESSFUL function calls for telemetry/analytics
+    /// </summary>
+    /// <param name="toolName">Name of the tool being called</param>
+    /// <param name="signature">Deterministic signature (name + sorted args)</param>
+    /// <returns>New state with updated circuit breaker tracking</returns>
+    public AgentLoopState RecordToolCall(string toolName, string signature)
+    {
+        var lastSig = LastSignaturePerTool.GetValueOrDefault(toolName);
+        var isIdentical = !string.IsNullOrEmpty(lastSig) && signature == lastSig;
+
+        return this with
+        {
+            LastSignaturePerTool = LastSignaturePerTool.SetItem(toolName, signature),
+            ConsecutiveCountPerTool = isIdentical
+                ? ConsecutiveCountPerTool.SetItem(toolName, ConsecutiveCountPerTool.GetValueOrDefault(toolName, 0) + 1)
+                : ConsecutiveCountPerTool.SetItem(toolName, 1)
+        };
+    }
+
+    /// <summary>
+    /// Enables server-side history tracking after detecting ConversationId in response.
+    /// Significant token savings for multi-turn conversations.
+    /// </summary>
+    /// <param name="messageCount">Number of messages sent to server</param>
+    public AgentLoopState EnableHistoryTracking(int messageCount) =>
+        this with
+        {
+            InnerClientTracksHistory = true,
+            MessagesSentToInnerClient = messageCount
+        };
+
+    /// <summary>
+    /// Disables server-side history tracking (fall back to sending full history).
+    /// </summary>
+    public AgentLoopState DisableHistoryTracking() =>
+        this with
+        {
+            InnerClientTracksHistory = false,
+            MessagesSentToInnerClient = 0
+        };
+
+    /// <summary>
+    /// Sets the last assistant message ID (for event correlation).
+    /// </summary>
+    public AgentLoopState WithLastAssistantMessageId(string messageId) =>
+        this with { LastAssistantMessageId = messageId };
+
+    /// <summary>
+    /// Accumulates a streaming response update.
+    /// Used during LLM streaming to collect all deltas.
+    /// </summary>
+    public AgentLoopState AccumulateResponseUpdate(ChatResponseUpdate update)
+    {
+        var updatedUpdates = new List<ChatResponseUpdate>(ResponseUpdates) { update };
+        return this with { ResponseUpdates = updatedUpdates };
+    }
+
+    /// <summary>
+    /// Clears accumulated response updates (after building final response).
+    /// </summary>
+    public AgentLoopState ClearResponseUpdates() =>
+        this with { ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty };
+}
+
+/// <summary>
+/// Configuration data for the agent decision engine (pure data, no behavior).
+/// Contains all settings needed for decision-making logic.
+/// Immutable and easily testable.
+/// </summary>
+/// <remarks>
+/// This is intentionally separate from AgentConfig (the full agent configuration).
+/// AgentConfiguration contains ONLY what the decision engine needs, making it:
+/// - Easy to test (no complex dependencies)
+/// - Easy to understand (minimal surface area)
+/// - Easy to evolve (changes don't ripple through the system)
+/// </remarks>
+public sealed record AgentConfiguration
+{
+    /// <summary>
+    /// Maximum iterations before forced termination.
+    /// Each iteration = one LLM call + tool execution cycle.
+    /// Prevents runaway loops and excessive costs.
+    /// </summary>
+    public required int MaxIterations { get; init; }
+
+    /// <summary>
+    /// Maximum consecutive failures before termination.
+    /// Failures = iterations where all tool executions failed.
+    /// Prevents infinite retry loops.
+    /// </summary>
+    public required int MaxConsecutiveFailures { get; init; }
+
+    /// <summary>
+    /// Whether to terminate on unknown tool requests (vs. pass through for multi-agent scenarios).
+    ///
+    /// When true: If LLM requests a tool that doesn't exist, terminate immediately.
+    /// When false: Unknown tools are passed through (enables multi-agent handoffs).
+    /// </summary>
+    public required bool TerminateOnUnknownCalls { get; init; }
+
+    /// <summary>
+    /// Set of tool names available for execution.
+    /// Used to detect unknown tool requests when TerminateOnUnknownCalls is true.
+    /// </summary>
+    public required IReadOnlySet<string> AvailableTools { get; init; }
+
+    /// <summary>
+    /// Maximum times a function can be called consecutively with identical arguments.
+    /// Null = no circuit breaker (not recommended).
+    ///
+    /// Circuit breaker prevents infinite loops where the LLM repeatedly calls
+    /// the same tool with identical arguments (e.g., failed API calls).
+    ///
+    /// Example: If set to 3, and the LLM calls "get_weather(city=Seattle)"
+    /// three times in a row, the circuit breaker triggers and terminates.
+    /// </summary>
+    public int? MaxConsecutiveFunctionCalls { get; init; }
+
+    /// <summary>
+    /// Factory method: Create configuration from AgentConfig.
+    /// Extracts only the fields needed for decision-making.
+    /// </summary>
+    /// <param name="config">Full agent configuration</param>
+    /// <param name="maxIterations">Max iterations (from Agent constructor parameter)</param>
+    /// <param name="availableTools">Set of available tool names</param>
+    /// <returns>Lightweight configuration for decision engine</returns>
+    public static AgentConfiguration FromAgentConfig(
+        AgentConfig? config,
+        int maxIterations,
+        IReadOnlySet<string> availableTools)
+    {
+        return new AgentConfiguration
+        {
+            MaxIterations = maxIterations,
+            MaxConsecutiveFailures = config?.ErrorHandling?.MaxRetries ?? 3,
+            TerminateOnUnknownCalls = config?.AgenticLoop?.TerminateOnUnknownCalls ?? false,
+            AvailableTools = availableTools,
+            MaxConsecutiveFunctionCalls = config?.AgenticLoop?.MaxConsecutiveFunctionCalls
+        };
+    }
+
+    /// <summary>
+    /// Factory method: Create default configuration for testing.
+    /// </summary>
+    /// <param name="maxIterations">Maximum iterations (default: 10)</param>
+    /// <param name="maxConsecutiveFailures">Max consecutive failures (default: 3)</param>
+    /// <param name="maxConsecutiveFunctionCalls">Circuit breaker threshold (default: 5)</param>
+    /// <param name="availableTools">Available tool names (default: empty)</param>
+    /// <param name="terminateOnUnknownCalls">Whether to terminate on unknown tools (default: false)</param>
+    /// <returns>Configuration with sensible defaults for testing</returns>
+    public static AgentConfiguration Default(
+        int maxIterations = 10,
+        int maxConsecutiveFailures = 3,
+        int? maxConsecutiveFunctionCalls = 5,
+        IReadOnlySet<string>? availableTools = null,
+        bool terminateOnUnknownCalls = false)
+    {
+        return new AgentConfiguration
+        {
+            MaxIterations = maxIterations,
+            MaxConsecutiveFailures = maxConsecutiveFailures,
+            TerminateOnUnknownCalls = terminateOnUnknownCalls,
+            AvailableTools = availableTools ?? new HashSet<string>(),
+            MaxConsecutiveFunctionCalls = maxConsecutiveFunctionCalls
+        };
+    }
+}
+
+#endregion
 
 #region Function Map Builder Utilities
 
@@ -1893,14 +2782,14 @@ public static class FunctionMapBuilder
         IList<AITool>? serverTools,
         IList<AITool>? requestTools)
     {
-        if (serverTools is not { Count: > 0 } && 
+        if (serverTools is not { Count: > 0 } &&
             requestTools is not { Count: > 0 })
         {
             return null;
         }
 
         var map = new Dictionary<string, AIFunction>(StringComparer.Ordinal);
-        
+
         // Add server-configured tools first (lower priority)
         if (serverTools is { Count: > 0 })
         {
@@ -1912,7 +2801,7 @@ public static class FunctionMapBuilder
                 }
             }
         }
-        
+
         // Add request tools second (higher priority, can override server-configured)
         if (requestTools is { Count: > 0 })
         {
@@ -1924,10 +2813,10 @@ public static class FunctionMapBuilder
                 }
             }
         }
-        
+
         return map.Count > 0 ? map : null;
     }
-    
+
     /// <summary>
     /// Builds map from single tool source.
     /// </summary>
@@ -1941,7 +2830,7 @@ public static class FunctionMapBuilder
         }
 
         var map = new Dictionary<string, AIFunction>(tools.Count, StringComparer.Ordinal);
-        
+
         for (int i = 0; i < tools.Count; i++)
         {
             if (tools[i] is AIFunction af)
@@ -1949,10 +2838,10 @@ public static class FunctionMapBuilder
                 map[af.Name] = af;
             }
         }
-        
+
         return map.Count > 0 ? map : null;
     }
-    
+
     /// <summary>
     /// O(1) lookup in pre-built map.
     /// </summary>
@@ -1960,12 +2849,12 @@ public static class FunctionMapBuilder
     /// <param name="map">Pre-built map of function names to AIFunction instances</param>
     /// <returns>The AIFunction if found, null otherwise</returns>
     public static AIFunction? FindFunction(
-        string name, 
+        string name,
         Dictionary<string, AIFunction>? map)
     {
         return map?.TryGetValue(name, out var func) == true ? func : null;
     }
-    
+
     /// <summary>
     /// O(n) search when no map available (fallback).
     /// Use this when building a map is too expensive for single lookups.
@@ -1974,11 +2863,11 @@ public static class FunctionMapBuilder
     /// <param name="tools">The tool list to search</param>
     /// <returns>The AIFunction if found, null otherwise</returns>
     public static AIFunction? FindFunctionInList(
-        string name, 
+        string name,
         IList<AITool>? tools)
     {
         if (tools is not { Count: > 0 }) return null;
-        
+
         for (int i = 0; i < tools.Count; i++)
         {
             if (tools[i] is AIFunction af && af.Name == name)
@@ -2286,8 +3175,7 @@ public class FunctionCallProcessor
         List<ChatMessage> messages,
         ChatOptions? options,
         List<FunctionCallContent> functionCallContents,
-        AgentRunContext agentRunContext,
-        string? agentName,
+        AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
         var resultMessages = new List<ChatMessage>();
@@ -2316,11 +3204,11 @@ public class FunctionCallProcessor
                 Function = FunctionMapBuilder.FindFunction(functionCall.Name, functionMap),
                 Arguments = toolCallRequest.Arguments,
                 ArgumentsWrapper = new AIFunctionArguments(toolCallRequest.Arguments),
-                RunContext = agentRunContext,
-                AgentName = agentName,
+                State = agentLoopState,  // Use AgentLoopState as single source of truth
+                AgentName = agentLoopState.AgentName,  // ✅ Get from state
                 CallId = functionCall.CallId,
-                Iteration = agentRunContext.CurrentIteration,
-                TotalFunctionCallsInRun = agentRunContext.CompletedFunctions.Count,
+                Iteration = agentLoopState.Iteration,
+                TotalFunctionCallsInRun = agentLoopState.CompletedFunctions.Count,
                 // Point to Agent's shared channel for event emission
                 OutboundEvents = _agent.FilterEventWriter,
                 Agent = _agent
@@ -2335,8 +3223,6 @@ public class FunctionCallProcessor
                 // Terminate the loop - don't process this or any remaining functions
                 // The function call will be returned to the caller for handling (e.g., multi-agent handoff)
                 context.IsTerminated = true;
-                agentRunContext.IsTerminated = true;
-                agentRunContext.TerminationReason = $"Unknown function requested: '{functionCall.Name}'";
                 
                 // Don't add any result message - let the caller handle the unknown function
                 break;
@@ -2346,8 +3232,7 @@ public class FunctionCallProcessor
             var permissionResult = await _permissionManager.CheckPermissionAsync(
                 functionCall,
                 context.Function,
-                agentRunContext,
-                agentName,
+                agentLoopState,
                 _agent,
                 cancellationToken).ConfigureAwait(false);
 
@@ -2357,8 +3242,7 @@ public class FunctionCallProcessor
                 context.Result = permissionResult.DenialReason ?? "Permission denied";
                 context.IsTerminated = true;
                 
-                // Mark function as completed (even though denied)
-                agentRunContext.CompleteFunction(functionCall.Name);
+                // Note: Function completion tracking is handled by caller using state updates
 
                 var denialResult = new FunctionResultContent(functionCall.CallId, context.Result);
                 var denialMessage = new ChatMessage(ChatRole.Tool, new AIContent[] { denialResult });
@@ -2408,8 +3292,7 @@ public class FunctionCallProcessor
                 context.Result = $"Error executing function '{functionCall.Name}': {ex.Message}";
             }
 
-            // Mark function as completed in run context (even if failed - prevents infinite loops)
-            agentRunContext.CompleteFunction(functionCall.Name);
+            // Note: Function completion tracking is handled by caller using state updates
 
             var functionResult = new FunctionResultContent(functionCall.CallId, context.Result);
             var functionMessage = new ChatMessage(ChatRole.Tool, new AIContent[] { functionResult });
@@ -3049,37 +3932,31 @@ public class ToolScheduler
     /// <param name="expandedSkills">Set of expanded skill names (message-turn scoped)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A chat message containing the tool execution results</returns>
-    public async Task<ChatMessage> ExecuteToolsAsync(
+    public async Task<(ChatMessage Message, HashSet<string> PluginExpansions, HashSet<string> SkillExpansions, HashSet<string> SuccessfulFunctions)> ExecuteToolsAsync(
         List<ChatMessage> currentHistory,
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
-        AgentRunContext agentRunContext,
-        string? agentName,
-        HashSet<string> expandedPlugins,
-        HashSet<string> expandedSkills,
+        AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
         // For single tool calls, use sequential execution (no parallelization overhead)
         if (toolRequests.Count <= 1)
         {
-            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, expandedSkills, cancellationToken).ConfigureAwait(false);
+            return await ExecuteSequentiallyAsync(currentHistory, toolRequests, options, agentLoopState, cancellationToken).ConfigureAwait(false);
         }
 
         // For multiple tool calls, execute in parallel for better performance
-        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentRunContext, agentName, expandedPlugins, expandedSkills, cancellationToken).ConfigureAwait(false);
+        return await ExecuteInParallelAsync(currentHistory, toolRequests, options, agentLoopState, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Executes tools sequentially (used for single tools or as fallback)
     /// </summary>
-    private async Task<ChatMessage> ExecuteSequentiallyAsync(
+    private async Task<(ChatMessage Message, HashSet<string> PluginExpansions, HashSet<string> SkillExpansions, HashSet<string> SuccessfulFunctions)> ExecuteSequentiallyAsync(
         List<ChatMessage> currentHistory,
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
-        AgentRunContext agentRunContext,
-        string? agentName,
-        HashSet<string> expandedPlugins,
-        HashSet<string> expandedSkills,
+        AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
         var allContents = new List<AIContent>();
@@ -3087,6 +3964,16 @@ public class ToolScheduler
         // Track which tool requests are containers for expansion after invocation
         var pluginContainerExpansions = new Dictionary<string, string>(); // callId -> pluginName
         var skillContainerExpansions = new Dictionary<string, string>(); // callId -> skillName
+
+        // ✅ Track ALL attempted functions BEFORE execution
+        var successfulFunctions = new HashSet<string>();
+        foreach (var toolRequest in toolRequests)
+        {
+            if (!string.IsNullOrEmpty(toolRequest.Name))
+            {
+                successfulFunctions.Add(toolRequest.Name);
+            }
+        }
 
         foreach (var toolRequest in toolRequests)
         {
@@ -3118,45 +4005,47 @@ public class ToolScheduler
 
         // Process ALL tools (containers + regular) through the existing processor
         var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
-            currentHistory, options, toolRequests, agentRunContext, agentName, cancellationToken).ConfigureAwait(false);
+            currentHistory, options, toolRequests, agentLoopState, cancellationToken).ConfigureAwait(false);
 
-        // Combine results and mark containers as expanded
+        // Combine results
         foreach (var message in resultMessages)
         {
             foreach (var content in message.Contents)
             {
                 allContents.Add(content);
+            }
+        }
 
-                // If this result is for a plugin container, mark the plugin as expanded
-                if (content is FunctionResultContent functionResult)
+        // Extract plugin expansions from results
+        var pluginExpansions = new HashSet<string>();
+        var skillExpansions = new HashSet<string>();
+
+        foreach (var content in allContents)
+        {
+            if (content is FunctionResultContent functionResult)
+            {
+                if (pluginContainerExpansions.TryGetValue(functionResult.CallId, out var pluginName))
                 {
-                    if (pluginContainerExpansions.TryGetValue(functionResult.CallId, out var pluginName))
-                    {
-                        expandedPlugins.Add(pluginName);
-                    }
-                    // If this result is for a skill container, mark the skill as expanded
-                    else if (skillContainerExpansions.TryGetValue(functionResult.CallId, out var skillName))
-                    {
-                        expandedSkills.Add(skillName);
-                    }
+                    pluginExpansions.Add(pluginName);
+                }
+                else if (skillContainerExpansions.TryGetValue(functionResult.CallId, out var skillName))
+                {
+                    skillExpansions.Add(skillName);
                 }
             }
         }
 
-        return new ChatMessage(ChatRole.Tool, allContents);
+        return (new ChatMessage(ChatRole.Tool, allContents), pluginExpansions, skillExpansions, successfulFunctions);
     }
 
     /// <summary>
     /// Executes tools in parallel for improved performance with multiple independent tools
     /// </summary>
-    private async Task<ChatMessage> ExecuteInParallelAsync(
+    private async Task<(ChatMessage Message, HashSet<string> PluginExpansions, HashSet<string> SkillExpansions, HashSet<string> SuccessfulFunctions)> ExecuteInParallelAsync(
         List<ChatMessage> currentHistory,
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
-        AgentRunContext agentRunContext,
-        string? agentName,
-        HashSet<string> expandedPlugins,
-        HashSet<string> expandedSkills,
+        AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
         // THREE-PHASE EXECUTION (inspired by Gemini CLI's CoreToolScheduler with plugin & skill scoping)
@@ -3200,10 +4089,20 @@ public class ToolScheduler
 
         // PHASE 1: Permission checking (sequential to prevent race conditions)
         var permissionResult = await _permissionManager.CheckPermissionsAsync(
-            toolRequests, options, agentRunContext, agentName, _agent, cancellationToken).ConfigureAwait(false);
+            toolRequests, options, agentLoopState, _agent, cancellationToken).ConfigureAwait(false);
 
         var approvedTools = permissionResult.Approved;
         var deniedTools = permissionResult.Denied;
+
+        // ✅ Track ALL approved functions BEFORE execution
+        var successfulFunctions = new HashSet<string>();
+        foreach (var toolRequest in approvedTools)
+        {
+            if (!string.IsNullOrEmpty(toolRequest.Name))
+            {
+                successfulFunctions.Add(toolRequest.Name);
+            }
+        }
 
         // PHASE 2: Execute approved tools in parallel with optional throttling
         // SAFETY: Default to bounded parallelism (following Microsoft's conservative approach)
@@ -3219,7 +4118,7 @@ public class ToolScheduler
                 // Execute each approved tool call through the processor
                 var singleToolList = new List<FunctionCallContent> { toolRequest };
                 var resultMessages = await _functionCallProcessor.ProcessFunctionCallsAsync(
-                    currentHistory, options, singleToolList, agentRunContext, agentName, cancellationToken).ConfigureAwait(false);
+                    currentHistory, options, singleToolList, agentLoopState, cancellationToken).ConfigureAwait(false);
 
                 return (Success: true, Messages: resultMessages, Error: (Exception?)null, ToolRequest: toolRequest);
             }
@@ -3240,6 +4139,10 @@ public class ToolScheduler
         // Aggregate results and handle errors
         var errors = new List<Exception>();
 
+        // Extract plugin expansions from results
+        var pluginExpansions = new HashSet<string>();
+        var skillExpansions = new HashSet<string>();
+
         // Add results from approved tools
         foreach (var result in results)
         {
@@ -3250,15 +4153,20 @@ public class ToolScheduler
                     allContents.AddRange(message.Contents);
                 }
 
-                // If this was a plugin container, mark the plugin as expanded
-                if (pluginContainerExpansions.TryGetValue(result.ToolRequest.CallId, out var pluginName))
+                // Check if this was a container and track expansion
+                foreach (var content in result.Messages.SelectMany(m => m.Contents))
                 {
-                    expandedPlugins.Add(pluginName);
-                }
-                // If this was a skill container, mark the skill as expanded
-                else if (skillContainerExpansions.TryGetValue(result.ToolRequest.CallId, out var skillName))
-                {
-                    expandedSkills.Add(skillName);
+                    if (content is FunctionResultContent functionResult)
+                    {
+                        if (pluginContainerExpansions.TryGetValue(functionResult.CallId, out var pluginName))
+                        {
+                            pluginExpansions.Add(pluginName);
+                        }
+                        else if (skillContainerExpansions.TryGetValue(functionResult.CallId, out var skillName))
+                        {
+                            skillExpansions.Add(skillName);
+                        }
+                    }
                 }
             }
             else if (result.Error != null)
@@ -3284,7 +4192,7 @@ public class ToolScheduler
             allContents.Add(new TextContent($"⚠️ Tool Execution Errors: {errorMessage}"));
         }
 
-        return new ChatMessage(ChatRole.Tool, allContents);
+        return (new ChatMessage(ChatRole.Tool, allContents), pluginExpansions, skillExpansions, successfulFunctions);
     }
 
     /// <summary>
@@ -3444,8 +4352,7 @@ public class PermissionManager
     public async Task<PermissionResult> CheckPermissionAsync(
         FunctionCallContent functionCall,
         AIFunction? function,
-        AgentRunContext agentRunContext,
-        string? agentName,
+        AgentLoopState state,
         Agent agent,
         CancellationToken cancellationToken)
     {
@@ -3478,11 +4385,11 @@ public class PermissionManager
             Function = function,
             Arguments = toolCallRequest.Arguments,
             ArgumentsWrapper = new AIFunctionArguments(toolCallRequest.Arguments),
-            RunContext = agentRunContext,
-            AgentName = agentName,
+            State = state,  // Use AgentLoopState as single source of truth
+            AgentName = state.AgentName,
             CallId = functionCall.CallId,
-            Iteration = agentRunContext.CurrentIteration,
-            TotalFunctionCallsInRun = agentRunContext.CompletedFunctions.Count,
+            Iteration = state.Iteration,
+            TotalFunctionCallsInRun = state.CompletedFunctions.Count,
             // Set OutboundEvents and Agent for permission event emission
             OutboundEvents = agent.FilterEventWriter,
             Agent = agent
@@ -3511,8 +4418,7 @@ public class PermissionManager
     public async Task<PermissionBatchResult> CheckPermissionsAsync(
         IEnumerable<FunctionCallContent> toolRequests,
         ChatOptions? options,
-        AgentRunContext agentRunContext,
-        string? agentName,
+        AgentLoopState state,
         Agent agent,
         CancellationToken cancellationToken)
     {
@@ -3528,7 +4434,7 @@ public class PermissionManager
             var function = FunctionMapBuilder.FindFunction(toolRequest.Name ?? string.Empty, functionMap);
             
             var result = await CheckPermissionAsync(
-                toolRequest, function, agentRunContext, agentName, agent, cancellationToken).ConfigureAwait(false);
+                toolRequest, function, state, agent, cancellationToken).ConfigureAwait(false);
             
             if (result.IsApproved)
                 approved.Add(toolRequest);
@@ -5679,9 +6585,9 @@ public class FunctionInvocationContext
     public int TotalFunctionCallsInRun { get; set; }
 
     /// <summary>
-    /// Context about the current agent run/turn
+    /// Current agent loop state (immutable state tracking)
     /// </summary>
-    public AgentRunContext? RunContext { get; set; }
+    public AgentLoopState? State { get; set; }
 
     /// <summary>
     /// Extensible metadata dictionary for custom data.

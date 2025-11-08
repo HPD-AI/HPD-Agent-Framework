@@ -223,8 +223,17 @@ public class Project
     /// <returns>Project activity summary</returns>
     public async Task<ProjectSummary> GetSummaryAsync()
     {
-        var totalMessages = Threads.Sum(t => t.Messages.Count);
-        var activeThreads = Threads.Count(t => t.Messages.Any());
+        // Calculate total messages across all threads
+        var totalMessages = 0;
+        var activeThreads = 0;
+        foreach (var thread in Threads)
+        {
+            var count = await thread.GetMessageCountAsync();
+            totalMessages += count;
+            if (count > 0)
+                activeThreads++;
+        }
+        
         var documents = await DocumentManager.GetDocumentsAsync();
         
         return new ProjectSummary
@@ -251,7 +260,12 @@ public class Project
         return Threads.OrderByDescending(t => t.LastActivity).FirstOrDefault();
     }
 
-
+    // TODO: Implement SearchThreads with proper async access to messages
+    // This requires either:
+    // 1. Making it internal (if only used by framework)
+    // 2. Creating a specialized search API that doesn't expose messages directly
+    // 3. Using a search index rather than scanning all messages
+    /*
     /// <summary>
     /// PHASE 2: Searches conversation threads in this project by text content.
     /// Simple text-based search across conversation messages.
@@ -259,19 +273,27 @@ public class Project
     /// <param name="searchTerm">Term to search for</param>
     /// <param name="maxResults">Maximum number of results to return (default 10)</param>
     /// <returns>Conversation threads containing the search term</returns>
-    public IEnumerable<ConversationThread> SearchThreads(string searchTerm, int maxResults = 10)
+    public async Task<IEnumerable<ConversationThread>> SearchThreadsAsync(string searchTerm, int maxResults = 10, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(searchTerm))
             return Enumerable.Empty<ConversationThread>();
 
-        var results = Threads
-            .Where(c => c.Messages.Any(m => 
-                m.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true))
+        var matchingThreads = new List<ConversationThread>();
+        
+        foreach (var thread in Threads)
+        {
+            var messages = await thread.GetMessagesAsync(cancellationToken); // Requires internal access
+            if (messages.Any(m => m.Text?.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) == true))
+            {
+                matchingThreads.Add(thread);
+            }
+        }
+        
+        return matchingThreads
             .OrderByDescending(c => c.LastActivity)
             .Take(maxResults);
-            
-        return results;
     }
+    */
     
     /// <summary>
     /// PHASE 2: Updates the last activity timestamp.
