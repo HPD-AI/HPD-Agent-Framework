@@ -1,9 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.AI;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 /// <summary>
 /// Prompt filter that injects project documents into system context
@@ -27,7 +23,10 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
         PromptFilterContext context,
         Func<PromptFilterContext, Task<IEnumerable<ChatMessage>>> next)
     {
-        if (context.Properties.TryGetValue("Project", out var proj) && proj is Project project)
+        // Get project from context properties (populated via ChatOptions.AdditionalProperties)
+        var project = context.GetProject();
+        
+        if (project != null)
         {
             var now = DateTime.UtcNow;
             string documentTag = string.Empty;
@@ -51,7 +50,7 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
             if (!useCache)
             {
                 var documents = await mgr.GetDocumentsAsync();
-                documentTag = BuildDocumentTag(documents);
+                documentTag = BuildDocumentTag(documents, project);
 
                 lock (_cacheLock)
                 {
@@ -77,17 +76,20 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
         }
     }
 
-    private string BuildDocumentTag(List<ProjectDocument> documents)
+    private string BuildDocumentTag(List<ProjectDocument> documents, Project project)
     {
         if (!documents.Any())
             return string.Empty;
+
+        // Use project-specific options instead of constructor options
+        var options = project.DocumentInjectionOptions;
 
         var tag = "[PROJECT_DOCUMENTS_START]";
         foreach (var doc in documents)
         {
             if (!string.IsNullOrEmpty(doc.ExtractedText))
             {
-                var formattedContent = string.Format(_options.DocumentTagFormat, doc.FileName, doc.ExtractedText);
+                var formattedContent = string.Format(options.DocumentTagFormat, doc.FileName, doc.ExtractedText);
                 tag += formattedContent;
             }
         }

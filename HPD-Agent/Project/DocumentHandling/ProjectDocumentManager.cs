@@ -158,6 +158,56 @@ public class ProjectDocumentManager
         InvokeInvalidation();
     }
 
+    /// <summary>
+    /// Uploads all files from a directory (non-recursive) to the project
+    /// </summary>
+    /// <param name="directoryPath">Path to the directory containing files to upload</param>
+    /// <param name="description">Optional description prefix for all documents</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of uploaded documents</returns>
+    public async Task<List<ProjectDocument>> UploadDirectoryAsync(
+        string directoryPath,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            throw new DirectoryNotFoundException($"Directory not found: {directoryPath}");
+        }
+
+        var files = Directory.GetFiles(directoryPath);
+        var uploadedDocuments = new List<ProjectDocument>();
+        
+        _logger?.LogInformation("Uploading {Count} files from directory: {Directory}", files.Length, directoryPath);
+
+        foreach (var filePath in files)
+        {
+            try
+            {
+                var fileName = Path.GetFileName(filePath);
+                var documentDescription = string.IsNullOrEmpty(description) 
+                    ? fileName 
+                    : $"{description} - {fileName}";
+                
+                _logger?.LogInformation("Uploading file: {FileName}", fileName);
+                var document = await UploadDocumentAsync(filePath, documentDescription, cancellationToken);
+                uploadedDocuments.Add(document);
+                
+                _logger?.LogInformation("Successfully uploaded: {FileName} (ID: {DocumentId})", fileName, document.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to upload file: {FilePath}", filePath);
+                // Continue with other files even if one fails
+            }
+        }
+
+        _logger?.LogInformation("Bulk upload completed: {Successful}/{Total} files uploaded", 
+            uploadedDocuments.Count, files.Length);
+            
+        return uploadedDocuments;
+    }
+
     public async Task<string> GetCombinedDocumentTextAsync(int maxTokens, CancellationToken cancellationToken = default)
     {
         var documents = await GetDocumentsAsync(cancellationToken);

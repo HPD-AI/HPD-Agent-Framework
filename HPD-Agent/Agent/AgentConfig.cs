@@ -28,6 +28,11 @@ public class AgentConfig
     public ProviderConfig? Provider { get; set; }
 
     /// <summary>
+    /// Configuration for provider validation behavior during agent building.
+    /// </summary>
+    public ValidationConfig? Validation { get; set; }
+
+    /// <summary>
     /// Configuration for the agent's Dynamic memory (Full Text Injection).
     /// </summary>
     public DynamicMemoryConfig? DynamicMemory { get; set; }
@@ -217,13 +222,6 @@ public class ProviderConfig
     /// </summary>
     public string ProviderKey { get; set; } = string.Empty;
 
-    /// <summary>
-    /// DEPRECATED: Use ProviderKey instead. Kept for backward compatibility.
-    /// </summary>
-    [Obsolete("Use ProviderKey instead for better extensibility")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public ChatProvider Provider { get; set; }
-
     public string ModelName { get; set; } = string.Empty;
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
@@ -240,6 +238,54 @@ public class ProviderConfig
     /// - Ollama: { "NumCtx": 8192, "KeepAlive": "5m" }
     /// </summary>
     public Dictionary<string, object>? AdditionalProperties { get; set; }
+
+    /// <summary>
+    /// Deserializes AdditionalProperties to a strongly-typed configuration class.
+    /// This method is available to all providers (built-in and external) for consistent configuration parsing.
+    /// 
+    /// Usage in providers:
+    /// <code>
+    /// var myConfig = config.GetProviderConfig&lt;MyProviderConfig&gt;();
+    /// </code>
+    /// </summary>
+    /// <typeparam name="T">The strongly-typed configuration class</typeparam>
+    /// <returns>Parsed configuration object, or null if AdditionalProperties is empty</returns>
+    /// <exception cref="InvalidOperationException">Thrown when configuration parsing fails</exception>
+    public T? GetProviderConfig<T>() where T : class
+    {
+        if (AdditionalProperties == null || AdditionalProperties.Count == 0)
+            return null;
+
+        try
+        {
+            // Convert dictionary to JSON, then deserialize to strongly-typed class
+            // This handles all the complex type conversion automatically
+            var json = System.Text.Json.JsonSerializer.Serialize(AdditionalProperties, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = false,
+                PropertyNameCaseInsensitive = true
+            });
+            
+            return System.Text.Json.JsonSerializer.Deserialize<T>(json, new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                AllowTrailingCommas = true,
+                ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip
+            });
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to parse provider configuration for {typeof(T).Name}. " +
+                $"Please check that your AdditionalProperties match the expected structure. " +
+                $"Error: {ex.Message}", ex);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Unexpected error parsing provider configuration for {typeof(T).Name}: {ex.Message}", ex);
+        }
+    }
 }
 
 /// <summary>
@@ -267,6 +313,37 @@ public class WebSearchConfig
     /// Configuration for Bing web search provider.
     /// </summary>
     public BingConfig? Bing { get; set; }
+}
+
+/// <summary>
+/// Configuration for provider validation behavior during agent building.
+/// </summary>
+public class ValidationConfig
+{
+    /// <summary>
+    /// Whether to perform async validation (network calls) during agent building.
+    /// 
+    /// ⚡ Performance Impact:
+    /// - true: Validates API keys and credits via network calls (2-5+ seconds)
+    /// - false: Skip network validation for instant builds (recommended for development)
+    /// 
+    /// 💡 Recommended Usage:
+    /// - Development/Testing: false (fast iteration)
+    /// - Production/CI: true (catch issues early)
+    /// </summary>
+    public bool EnableAsyncValidation { get; set; } = false;
+
+    /// <summary>
+    /// Timeout for async validation operations in milliseconds.
+    /// Only applies when EnableAsyncValidation is true.
+    /// </summary>
+    public int TimeoutMs { get; set; } = 3000; // 3 seconds
+
+    /// <summary>
+    /// Whether to fail agent building if validation fails.
+    /// When false, validation failures are logged but don't prevent building.
+    /// </summary>
+    public bool FailOnValidationError { get; set; } = false;
 }
 
 /// <summary>
@@ -357,7 +434,7 @@ public class ErrorHandlingConfig
     public Dictionary<HPD.Agent.ErrorHandling.ErrorCategory, int>? MaxRetriesByCategory { get; set; }
 
     /// <summary>
-    /// Provider-specific error handler. If null, auto-detects based on ChatProvider.
+    /// Provider-specific error handler. If null, auto-detects based on ProviderKey.
     /// Set this to customize error parsing for specific providers or use custom handlers.
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]

@@ -44,11 +44,23 @@ public interface IProviderFeatures
     ProviderMetadata GetMetadata();
 
     /// <summary>
-    /// Validate provider-specific configuration.
+    /// Validate provider-specific configuration (synchronous).
     /// </summary>
     /// <param name="config">Configuration to validate</param>
     /// <returns>Validation result with error messages if invalid</returns>
     ProviderValidationResult ValidateConfiguration(ProviderConfig config);
+
+    /// <summary>
+    /// Validate provider-specific configuration asynchronously with live API testing.
+    /// This method can perform network requests to validate API keys, check credit balances,
+    /// test model availability, etc. Providers that don't support async validation should
+    /// return null (default implementation).
+    /// </summary>
+    /// <param name="config">Configuration to validate</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Validation result, or null if async validation is not supported</returns>
+    Task<ProviderValidationResult>? ValidateConfigurationAsync(ProviderConfig config, CancellationToken cancellationToken = default)
+        => null; // Default implementation - providers can override
 }
 
 /// <summary>
@@ -77,7 +89,29 @@ public class ProviderValidationResult
     public List<string> Warnings { get; init; } = new();
 
     public static ProviderValidationResult Success() => new() { IsValid = true };
-    
-    public static ProviderValidationResult Failure(params string[] errors) => 
+
+    public static ProviderValidationResult Failure(params string[] errors) =>
         new() { IsValid = false, Errors = new List<string>(errors) };
+}
+
+/// <summary>
+/// Optional interface for providers that support advanced features like credit management,
+/// usage tracking, or other provider-specific capabilities beyond the core IProviderFeatures.
+/// </summary>
+public interface IProviderExtendedFeatures : IProviderFeatures
+{
+    /// <summary>
+    /// Check if the provider supports credit/usage management.
+    /// </summary>
+    bool SupportsCreditManagement => false;
+
+    /// <summary>
+    /// Check if the provider supports attribution headers (e.g., HTTP-Referer, X-Title).
+    /// </summary>
+    bool SupportsAttribution => false;
+
+    /// <summary>
+    /// Check if the provider supports model routing/fallbacks.
+    /// </summary>
+    bool SupportsModelRouting => false;
 }

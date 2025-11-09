@@ -115,6 +115,18 @@ internal class OpenRouterUsage
     public int TotalTokens { get; set; }
 }
 
+internal class OpenRouterError
+{
+    [JsonPropertyName("code")]
+    public object? Code { get; set; } // Can be string or number
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
+
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object?>? Metadata { get; set; }
+}
+
 // Streaming response models
 internal class OpenRouterStreamingResponse
 {
@@ -129,6 +141,12 @@ internal class OpenRouterStreamingResponse
 
     [JsonPropertyName("choices")]
     public List<OpenRouterStreamingChoice> Choices { get; set; } = new();
+
+    [JsonPropertyName("error")]
+    public OpenRouterError? Error { get; set; }
+
+    [JsonPropertyName("usage")]
+    public OpenRouterUsage? Usage { get; set; }
 }
 
 internal class OpenRouterStreamingChoice
@@ -188,6 +206,9 @@ internal class OpenRouterChatRequest
     [JsonPropertyName("model")]
     public string Model { get; set; } = string.Empty;
 
+    [JsonPropertyName("models")]
+    public List<string>? Models { get; set; }
+
     [JsonPropertyName("messages")]
     public List<OpenRouterRequestMessage> Messages { get; set; } = new();
 
@@ -217,6 +238,39 @@ internal class OpenRouterChatRequest
 
     [JsonPropertyName("reasoning")]
     public OpenRouterReasoningConfig? Reasoning { get; set; }
+
+    [JsonPropertyName("stream_options")]
+    public OpenRouterStreamOptions? StreamOptions { get; set; }
+
+    [JsonPropertyName("verbosity")]
+    public string? Verbosity { get; set; } // "low", "medium", "high"
+
+    [JsonPropertyName("min_p")]
+    public float? MinP { get; set; }
+
+    [JsonPropertyName("top_a")]
+    public float? TopA { get; set; }
+
+    [JsonPropertyName("repetition_penalty")]
+    public float? RepetitionPenalty { get; set; }
+
+    [JsonPropertyName("top_k")]
+    public int? TopK { get; set; }
+
+    [JsonPropertyName("seed")]
+    public int? Seed { get; set; }
+
+    [JsonPropertyName("logprobs")]
+    public bool? Logprobs { get; set; }
+
+    [JsonPropertyName("top_logprobs")]
+    public int? TopLogprobs { get; set; }
+
+    [JsonPropertyName("plugins")]
+    public List<OpenRouterPlugin>? Plugins { get; set; }
+
+    [JsonPropertyName("provider")]
+    public OpenRouterProviderPreferences? Provider { get; set; }
 }
 
 internal class OpenRouterReasoningConfig
@@ -234,13 +288,19 @@ internal class OpenRouterReasoningConfig
     public bool? Exclude { get; set; }
 }
 
+internal class OpenRouterStreamOptions
+{
+    [JsonPropertyName("include_usage")]
+    public bool? IncludeUsage { get; set; }
+}
+
 internal class OpenRouterRequestMessage
 {
     [JsonPropertyName("role")]
     public string Role { get; set; } = string.Empty;
 
     [JsonPropertyName("content")]
-    public string? Content { get; set; }
+    public string? Content { get; set; } // JSON string that can represent string or array
 
     [JsonPropertyName("tool_calls")]
     public List<OpenRouterRequestToolCall>? ToolCalls { get; set; }
@@ -292,4 +352,181 @@ internal class OpenRouterRequestToolFunction
 
     [JsonPropertyName("parameters")]
     public JsonElement Parameters { get; set; }
+}
+
+internal class OpenRouterPlugin
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("pdf")]
+    public OpenRouterPdfConfig? Pdf { get; set; }
+}
+
+internal class OpenRouterPdfConfig
+{
+    [JsonPropertyName("engine")]
+    public string Engine { get; set; } = "mistral-ocr"; // "mistral-ocr", "pdf-text", "native"
+}
+
+internal class OpenRouterProviderPreferences
+{
+    [JsonPropertyName("order")]
+    public List<string>? Order { get; set; }
+
+    [JsonPropertyName("allow_fallbacks")]
+    public bool? AllowFallbacks { get; set; }
+
+    [JsonPropertyName("require_parameters")]
+    public bool? RequireParameters { get; set; }
+
+    [JsonPropertyName("data_collection")]
+    public string? DataCollection { get; set; } // "allow" | "deny"
+
+    [JsonPropertyName("zdr")]
+    public bool? Zdr { get; set; }
+
+    [JsonPropertyName("enforce_distillable_text")]
+    public bool? EnforceDistillableText { get; set; }
+
+    [JsonPropertyName("only")]
+    public List<string>? Only { get; set; }
+
+    [JsonPropertyName("ignore")]
+    public List<string>? Ignore { get; set; }
+
+    [JsonPropertyName("quantizations")]
+    public List<string>? Quantizations { get; set; }
+
+    [JsonPropertyName("sort")]
+    public string? Sort { get; set; } // "price" | "throughput" | "latency"
+
+    [JsonPropertyName("max_price")]
+    public OpenRouterMaxPrice? MaxPrice { get; set; }
+}
+
+internal class OpenRouterMaxPrice
+{
+    [JsonPropertyName("prompt")]
+    public float? Prompt { get; set; }
+
+    [JsonPropertyName("completion")]
+    public float? Completion { get; set; }
+
+    [JsonPropertyName("request")]
+    public float? Request { get; set; }
+
+    [JsonPropertyName("image")]
+    public float? Image { get; set; }
+}
+
+internal class OpenRouterContentPart
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty; // "text", "image_url", "file", "input_audio", "input_video"
+
+    [JsonPropertyName("text")]
+    public string? Text { get; set; }
+
+    [JsonPropertyName("image_url")]
+    public OpenRouterImageUrl? ImageUrl { get; set; }
+
+    [JsonPropertyName("file")]
+    public OpenRouterFile? File { get; set; }
+
+    [JsonPropertyName("input_audio")]
+    public OpenRouterInputAudio? InputAudio { get; set; }
+
+    [JsonPropertyName("video_url")]
+    public OpenRouterVideoUrl? VideoUrl { get; set; }
+
+    [JsonPropertyName("cache_control")]
+    public OpenRouterCacheControl? CacheControl { get; set; }
+}
+
+internal class OpenRouterImageUrl
+{
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = string.Empty;
+}
+
+internal class OpenRouterFile
+{
+    [JsonPropertyName("filename")]
+    public string Filename { get; set; } = string.Empty;
+
+    [JsonPropertyName("file_data")]
+    public string FileData { get; set; } = string.Empty; // base64 data URI
+}
+
+internal class OpenRouterInputAudio
+{
+    [JsonPropertyName("data")]
+    public string Data { get; set; } = string.Empty; // base64 audio data
+
+    [JsonPropertyName("format")]
+    public string Format { get; set; } = string.Empty; // "wav", "mp3", etc.
+}
+
+internal class OpenRouterVideoUrl
+{
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = string.Empty;
+}
+
+internal class OpenRouterCacheControl
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "ephemeral"; // Currently only "ephemeral" supported
+}
+
+internal class OpenRouterKeyInfo
+{
+    [JsonPropertyName("data")]
+    public OpenRouterKeyData Data { get; set; } = new();
+}
+
+internal class OpenRouterKeyData
+{
+    [JsonPropertyName("label")]
+    public string Label { get; set; } = string.Empty;
+
+    [JsonPropertyName("limit")]
+    public float? Limit { get; set; } // Credit limit for the key, or null if unlimited
+
+    [JsonPropertyName("limit_reset")]
+    public string? LimitReset { get; set; } // Type of limit reset for the key, or null if never resets
+
+    [JsonPropertyName("limit_remaining")]
+    public float? LimitRemaining { get; set; } // Remaining credits for the key, or null if unlimited
+
+    [JsonPropertyName("include_byok_in_limit")]
+    public bool IncludeByokInLimit { get; set; } // Whether to include external BYOK usage in the credit limit
+
+    [JsonPropertyName("usage")]
+    public float Usage { get; set; } // Number of credits used (all time)
+
+    [JsonPropertyName("usage_daily")]
+    public float UsageDaily { get; set; } // Number of credits used (current UTC day)
+
+    [JsonPropertyName("usage_weekly")]
+    public float UsageWeekly { get; set; } // ... (current UTC week, starting Monday)
+
+    [JsonPropertyName("usage_monthly")]
+    public float UsageMonthly { get; set; } // ... (current UTC month)
+
+    [JsonPropertyName("byok_usage")]
+    public float ByokUsage { get; set; } // Same for external BYOK usage
+
+    [JsonPropertyName("byok_usage_daily")]
+    public float ByokUsageDaily { get; set; }
+
+    [JsonPropertyName("byok_usage_weekly")]
+    public float ByokUsageWeekly { get; set; }
+
+    [JsonPropertyName("byok_usage_monthly")]
+    public float ByokUsageMonthly { get; set; }
+
+    [JsonPropertyName("is_free_tier")]
+    public bool IsFreeTier { get; set; } // Whether the user has paid for credits before
 }

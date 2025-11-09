@@ -60,6 +60,9 @@ public class Project
     /// <summary>Document manager for this project</summary>
     public ProjectDocumentManager DocumentManager { get; }
 
+    /// <summary>Document injection configuration for this project</summary>
+    public ProjectInjectedMemoryOptions DocumentInjectionOptions { get; private set; }
+
 
     // Static factory methods for progressive disclosure
 
@@ -71,6 +74,20 @@ public class Project
     {
         var project = new Project(name, storageDirectory);
         project._documentStrategy = ProjectDocumentHandling.FullTextInjection;
+        return project;
+    }
+
+    /// <summary>
+    /// Creates a new project with configurable document injection options.
+    /// </summary>
+    public static Project Create(string name, Action<ProjectInjectedMemoryOptions> configureInjection)
+    {
+        var project = new Project(name);
+        project._documentStrategy = ProjectDocumentHandling.FullTextInjection;
+        
+        // Apply custom injection configuration
+        configureInjection(project.DocumentInjectionOptions);
+        
         return project;
     }
 
@@ -87,6 +104,15 @@ public class Project
         LastActivity = CreatedAt;
 
         var directory = storageDirectory ?? "./injected-memory-storage";
+        
+        // Initialize default document injection options
+        DocumentInjectionOptions = new ProjectInjectedMemoryOptions
+        {
+            MaxTokens = 8000,
+            StorageDirectory = directory,
+            DocumentTagFormat = "\n[PROJECT_DOCUMENT: {0}]\n{1}\n[/PROJECT_DOCUMENT]\n"
+        };
+        
         // Note: AgentInjectedMemoryManager removed - use Agent-level DynamicMemory instead
         // See AgentBuilder.WithDynamicMemory() and DynamicMemoryStore abstraction
 
@@ -208,6 +234,25 @@ public class Project
             case ProjectDocumentHandling.FullTextInjection:
                 // Use the existing ProjectDocumentManager to handle the upload and storage for injection
                 return await DocumentManager.UploadDocumentFromUrlAsync(url, description, cancellationToken);
+            
+            default:
+                throw new InvalidOperationException($"Invalid document strategy configured for the project: {_documentStrategy}");
+        }
+    }
+
+    /// <summary>
+    /// Uploads all files from a directory to the project using the configured strategy.
+    /// </summary>
+    /// <param name="directoryPath">Path to the directory containing files to upload</param>
+    /// <param name="description">Optional description prefix for all documents</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of uploaded project documents</returns>
+    public async Task<List<ProjectDocument>> UploadDirectoryAsync(string directoryPath, string? description = null, CancellationToken cancellationToken = default)
+    {
+        switch (_documentStrategy)
+        {
+            case ProjectDocumentHandling.FullTextInjection:
+                return await DocumentManager.UploadDirectoryAsync(directoryPath, description, cancellationToken);
             
             default:
                 throw new InvalidOperationException($"Invalid document strategy configured for the project: {_documentStrategy}");

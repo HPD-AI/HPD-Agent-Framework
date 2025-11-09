@@ -22,44 +22,31 @@ internal class OpenRouterErrorHandler : IProviderErrorHandler
 
             // Try to parse JSON error body from message
             // OpenRouter format: {"error": {"code": 402, "message": "...", "metadata": {...}}}
+            // Mid-stream format: {"id":"cmpl-123","error":{"code":"server_error","message":"..."},"choices":[...]}
             var jsonMatch = Regex.Match(message, @"\{.*""error"".*\}", RegexOptions.Singleline);
             if (jsonMatch.Success)
             {
                 try
                 {
                     using var doc = JsonDocument.Parse(jsonMatch.Value);
-                    if (doc.RootElement.TryGetProperty("error", out var errorElement))
+                    
+                    // Handle mid-stream error format (has "choices" array)
+                    if (doc.RootElement.TryGetProperty("choices", out var choicesElement) &&
+                        doc.RootElement.TryGetProperty("error", out var errorElement))
                     {
-                        // Extract error message
-                        if (errorElement.TryGetProperty("message", out var msgElement))
+                        // Mid-stream error format
+                        ParseErrorElement(errorElement, ref message, ref errorCode, rawDetails);
+                        
+                        // Extract response ID for mid-stream errors
+                        if (doc.RootElement.TryGetProperty("id", out var idElement))
                         {
-                            message = msgElement.GetString() ?? message;
+                            requestId = idElement.GetString();
                         }
-
-                        // Extract error code (string like "insufficient_credits")
-                        if (errorElement.TryGetProperty("code", out var codeElement))
-                        {
-                            errorCode = codeElement.ValueKind == JsonValueKind.String
-                                ? codeElement.GetString()
-                                : codeElement.GetInt32().ToString();
-                        }
-
-                        // Extract metadata (provider info, moderation flags, etc.)
-                        if (errorElement.TryGetProperty("metadata", out var metadataElement))
-                        {
-                            if (metadataElement.TryGetProperty("provider_name", out var providerElement))
-                            {
-                                rawDetails["provider_name"] = providerElement.GetString() ?? "";
-                            }
-                            if (metadataElement.TryGetProperty("flagged_input", out var flaggedElement))
-                            {
-                                rawDetails["flagged_input"] = flaggedElement.GetString() ?? "";
-                            }
-                            if (metadataElement.TryGetProperty("reasons", out var reasonsElement))
-                            {
-                                rawDetails["moderation_reasons"] = reasonsElement.ToString();
-                            }
-                        }
+                    }
+                    // Handle standard error format
+                    else if (doc.RootElement.TryGetProperty("error", out errorElement))
+                    {
+                        ParseErrorElement(errorElement, ref message, ref errorCode, rawDetails);
                     }
                 }
                 catch
@@ -141,26 +128,54 @@ internal class OpenRouterErrorHandler : IProviderErrorHandler
         // Check error code first (more specific than status)
         if (!string.IsNullOrEmpty(errorCode))
         {
+            // Credit-related errors (terminal - don't retry)
             if (errorCode.Contains("insufficient_credit", StringComparison.OrdinalIgnoreCase) ||
                 errorCode.Contains("no_credit", StringComparison.OrdinalIgnoreCase))
             {
-                return ErrorCategory.RateLimitTerminal; // Don't retry - need to add credits
+                return ErrorCategory.RateLimitTerminal;
             }
 
+            // Rate limiting (retryable)
             if (errorCode.Contains("rate_limit", StringComparison.OrdinalIgnoreCase))
             {
                 return ErrorCategory.RateLimitRetryable;
             }
 
-            if (errorCode.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+            // Timeout-related (retryable)
+            if (errorCode.Contains("timeout", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("request_timeout", StringComparison.OrdinalIgnoreCase))
             {
                 return ErrorCategory.Transient;
             }
 
+            // Content moderation (don't retry)
             if (errorCode.Contains("moderation", StringComparison.OrdinalIgnoreCase) ||
                 errorCode.Contains("content_filter", StringComparison.OrdinalIgnoreCase))
             {
-                return ErrorCategory.ClientError; // Don't retry - content was flagged
+                return ErrorCategory.ClientError;
+            }
+
+            // Server/provider errors (retryable)
+            if (errorCode.Contains("server_error", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("provider_error", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("model_unavailable", StringComparison.OrdinalIgnoreCase))
+            {
+                return ErrorCategory.ServerError;
+            }
+
+            // Authentication errors
+            if (errorCode.Contains("invalid_api_key", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("unauthorized", StringComparison.OrdinalIgnoreCase))
+            {
+                return ErrorCategory.AuthError;
+            }
+
+            // Client errors (don't retry)
+            if (errorCode.Contains("invalid_", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("bad_request", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("invalid_prompt", StringComparison.OrdinalIgnoreCase))
+            {
+                return ErrorCategory.ClientError;
             }
         }
 
@@ -180,5 +195,100 @@ internal class OpenRouterErrorHandler : IProviderErrorHandler
             >= 500 and < 600 => ErrorCategory.ServerError, // Other server errors (retryable)
             _ => ErrorCategory.Unknown
         };
+    }
+
+    /// <summary>
+    /// Checks if an error is due to insufficient credits (402 error).
+    /// </summary>
+    /// <param name="details">The error details to check.</param>
+    /// <returns>True if this is a credit exhaustion error.</returns>
+    public static bool IsInsufficientCreditsError(ProviderErrorDetails details)
+    {
+        return details.StatusCode == 402 || 
+               details.ErrorCode?.Contains("insufficient_credit", StringComparison.OrdinalIgnoreCase) == true ||
+               details.ErrorCode?.Contains("no_credit", StringComparison.OrdinalIgnoreCase) == true ||
+               details.Message.Contains("insufficient credits", StringComparison.OrdinalIgnoreCase) ||
+               details.Message.Contains("negative credit balance", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Checks if an error is due to free tier limits.
+    /// </summary>
+    /// <param name="details">The error details to check.</param>
+    /// <returns>True if this is a free tier rate limit error.</returns>
+    public static bool IsFreeTierLimitError(ProviderErrorDetails details)
+    {
+        return details.StatusCode == 429 &&
+               (details.Message.Contains("free model", StringComparison.OrdinalIgnoreCase) ||
+                details.Message.Contains(":free", StringComparison.OrdinalIgnoreCase) ||
+                details.ErrorCode?.Contains("free_tier_limit", StringComparison.OrdinalIgnoreCase) == true);
+    }
+
+    private static void ParseErrorElement(JsonElement errorElement, ref string message, ref string? errorCode, Dictionary<string, object> rawDetails)
+    {
+        // Extract error message
+        if (errorElement.TryGetProperty("message", out var msgElement))
+        {
+            message = msgElement.GetString() ?? message;
+        }
+
+        // Extract error code (string like "insufficient_credits" or number)
+        if (errorElement.TryGetProperty("code", out var codeElement))
+        {
+            errorCode = codeElement.ValueKind == JsonValueKind.String
+                ? codeElement.GetString()
+                : codeElement.GetInt32().ToString();
+        }
+
+        // Extract metadata (provider info, moderation flags, etc.)
+        if (errorElement.TryGetProperty("metadata", out var metadataElement))
+        {
+            if (metadataElement.TryGetProperty("provider_name", out var providerElement))
+            {
+                rawDetails["provider_name"] = providerElement.GetString() ?? "";
+            }
+            if (metadataElement.TryGetProperty("flagged_input", out var flaggedElement))
+            {
+                rawDetails["flagged_input"] = flaggedElement.GetString() ?? "";
+            }
+            if (metadataElement.TryGetProperty("reasons", out var reasonsElement))
+            {
+                rawDetails["moderation_reasons"] = reasonsElement.ToString();
+            }
+            // Handle provider error metadata
+            if (metadataElement.TryGetProperty("raw", out var rawElement))
+            {
+                rawDetails["provider_raw_error"] = rawElement.ToString();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Determines if an SSE line is an OpenRouter processing comment that should be ignored.
+    /// OpenRouter sends comments like ": OPENROUTER PROCESSING" to prevent connection timeouts.
+    /// </summary>
+    /// <param name="line">The SSE line to check</param>
+    /// <returns>True if this is a processing comment that should be ignored</returns>
+    public static bool IsProcessingComment(string line)
+    {
+        return !string.IsNullOrEmpty(line) && 
+               line.StartsWith(": OPENROUTER", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Enhanced error classification that handles OpenRouter-specific error patterns
+    /// including Responses API transformations where certain errors become successful responses.
+    /// </summary>
+    /// <param name="errorCode">The error code from OpenRouter</param>
+    /// <returns>True if this error should be transformed to a successful response with appropriate finish_reason</returns>
+    public static bool ShouldTransformToSuccess(string? errorCode)
+    {
+        if (string.IsNullOrEmpty(errorCode)) return false;
+
+        // Based on OpenRouter docs: certain errors in Responses API become successful responses
+        return errorCode.Contains("context_length_exceeded", StringComparison.OrdinalIgnoreCase) ||
+               errorCode.Contains("max_tokens_exceeded", StringComparison.OrdinalIgnoreCase) ||
+               errorCode.Contains("token_limit_exceeded", StringComparison.OrdinalIgnoreCase) ||
+               errorCode.Contains("string_too_long", StringComparison.OrdinalIgnoreCase);
     }
 }

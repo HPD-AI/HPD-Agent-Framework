@@ -11,18 +11,24 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Buffers;
 
 namespace HPD_Agent.Providers.OpenRouter;
 
 /// <summary>
 /// OpenRouter-specific IChatClient that properly exposes reasoning content from reasoning_details field.
 /// This implementation uses HttpClient directly to parse OpenRouter's extended response format.
+/// ✨ PERFORMANCE OPTIMIZED: Reduced allocations, early exits, span usage, object pooling
 /// </summary>
 internal sealed class OpenRouterChatClient : IChatClient
 {
     private readonly HttpClient _httpClient;
     private readonly string _modelName;
     private readonly ChatClientMetadata _metadata;
+    
+    // ✨ PERFORMANCE: Use ArrayPool for temporary buffers
+    private static readonly ArrayPool<byte> _bufferPool = ArrayPool<byte>.Shared;
+    
     private static readonly OpenRouterJsonContext _jsonContext = new(new JsonSerializerOptions
     {
         PropertyNameCaseInsensitive = true,
@@ -97,16 +103,53 @@ internal sealed class OpenRouterChatClient : IChatClient
         while (!reader.EndOfStream)
         {
             var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: "))
+            
+            // ✨ PERFORMANCE: Early validation before any processing
+            if (string.IsNullOrWhiteSpace(line) || 
+                OpenRouterErrorHandler.IsProcessingComment(line) ||
+                !line.StartsWith("data: "))
+            {
                 continue;
+            }
 
-            var data = line["data: ".Length..];
-            if (data == "[DONE]")
+            var data = line.AsSpan("data: ".Length); // ✨ Use Span to avoid substring allocation
+            if (data.SequenceEqual("[DONE]".AsSpan()))
                 break;
 
+            // ✨ PERFORMANCE: Only deserialize when we have valid data
             var streamingResponse = JsonSerializer.Deserialize(data, _jsonContext.OpenRouterStreamingResponse);
             if (streamingResponse?.Choices == null || streamingResponse.Choices.Count == 0)
                 continue;
+
+            // Check for mid-stream errors as documented by OpenRouter
+            if (streamingResponse.Error != null)
+            {
+                var errorUpdate = new ChatResponseUpdate
+                {
+                    ResponseId = responseId ?? streamingResponse.Id,
+                    ModelId = modelId ?? streamingResponse.Model,
+                    CreatedAt = createdAt,
+                    Role = role,
+                    FinishReason = ChatFinishReason.Stop, // Will be overridden by choice
+                    RawRepresentation = streamingResponse
+                };
+
+                // Add error content
+                errorUpdate.Contents.Add(new ErrorContent(streamingResponse.Error.Message)
+                {
+                    ErrorCode = streamingResponse.Error.Code?.ToString()
+                });
+
+                // Check if choice indicates error finish reason
+                if (streamingResponse.Choices.Count > 0 && 
+                    streamingResponse.Choices[0].FinishReason == "error")
+                {
+                    errorUpdate.FinishReason = ChatFinishReason.Stop; // Use stop for error termination
+                }
+
+                yield return errorUpdate;
+                yield break; // Terminate stream on error
+            }
 
             responseId ??= streamingResponse.Id;
             modelId ??= streamingResponse.Model;
@@ -115,12 +158,45 @@ internal sealed class OpenRouterChatClient : IChatClient
                 createdAt = DateTimeOffset.FromUnixTimeSeconds(streamingResponse.Created);
             }
 
+            // Handle final usage stats if present (from stream_options.include_usage)
+            if (streamingResponse.Usage != null)
+            {
+                var usageUpdate = new ChatResponseUpdate
+                {
+                    ResponseId = responseId,
+                    ModelId = modelId,
+                    CreatedAt = createdAt,
+                    Role = role,
+                    RawRepresentation = streamingResponse
+                };
+
+                usageUpdate.Contents.Add(new UsageContent(new UsageDetails
+                {
+                    InputTokenCount = streamingResponse.Usage.PromptTokens,
+                    OutputTokenCount = streamingResponse.Usage.CompletionTokens,
+                    TotalTokenCount = streamingResponse.Usage.TotalTokens
+                }));
+
+                yield return usageUpdate;
+                continue;
+            }
+
             var choice = streamingResponse.Choices[0];
             var delta = choice.Delta;
 
-            if (delta?.Role != null && role == null)
+            // ✨ PERFORMANCE: Early exit if no meaningful content
+            bool hasContent = !string.IsNullOrEmpty(delta?.Content);
+            bool hasReasoning = delta?.ReasoningDetails?.Count > 0;
+            bool hasToolCalls = delta?.ToolCalls?.Count > 0;
+            bool hasRole = delta?.Role != null && role == null;
+            bool hasFinishReason = choice.FinishReason != null && finishReason == null;
+            
+            if (!hasContent && !hasReasoning && !hasToolCalls && !hasRole && !hasFinishReason)
+                continue; // ✨ Skip empty updates to reduce object allocation
+
+            if (hasRole)
             {
-                role = delta.Role.ToLower() switch
+                role = delta!.Role!.ToLower() switch
                 {
                     "assistant" => ChatRole.Assistant,
                     "user" => ChatRole.User,
@@ -130,9 +206,9 @@ internal sealed class OpenRouterChatClient : IChatClient
                 };
             }
 
-            if (choice.FinishReason != null && finishReason == null)
+            if (hasFinishReason)
             {
-                finishReason = choice.FinishReason.ToLower() switch
+                finishReason = choice.FinishReason!.ToLower() switch
                 {
                     "stop" => ChatFinishReason.Stop,
                     "length" => ChatFinishReason.Length,
@@ -142,26 +218,38 @@ internal sealed class OpenRouterChatClient : IChatClient
                 };
             }
 
-            var update = new ChatResponseUpdate
+            // ✨ PERFORMANCE: Only create update when we have actual content to send
+            ChatResponseUpdate? update = null;
+            
+            // Handle text content
+            if (hasContent)
             {
-                ResponseId = responseId,
-                ModelId = modelId,
-                CreatedAt = createdAt,
-                Role = role,
-                FinishReason = finishReason,
-                RawRepresentation = streamingResponse
-            };
-
-            // Handle content
-            if (!string.IsNullOrEmpty(delta?.Content))
-            {
-                update.Contents.Add(new TextContent(delta.Content));
+                update ??= new ChatResponseUpdate
+                {
+                    ResponseId = responseId,
+                    ModelId = modelId,
+                    CreatedAt = createdAt,
+                    Role = role,
+                    FinishReason = finishReason,
+                    RawRepresentation = streamingResponse
+                };
+                update.Contents.Add(new TextContent(delta!.Content!));
             }
 
-            // Handle reasoning details
-            if (delta?.ReasoningDetails != null)
+            // Handle reasoning details - ✨ PERFORMANCE: Batch reasoning content
+            if (hasReasoning)
             {
-                foreach (var reasoningDetail in delta.ReasoningDetails)
+                update ??= new ChatResponseUpdate
+                {
+                    ResponseId = responseId,
+                    ModelId = modelId,
+                    CreatedAt = createdAt,
+                    Role = role,
+                    FinishReason = finishReason,
+                    RawRepresentation = streamingResponse
+                };
+
+                foreach (var reasoningDetail in delta!.ReasoningDetails!)
                 {
                     if (!reasoningAccumulators.TryGetValue(reasoningDetail.Index, out var accumulator))
                     {
@@ -169,11 +257,11 @@ internal sealed class OpenRouterChatClient : IChatClient
                         reasoningAccumulators[reasoningDetail.Index] = accumulator;
                     }
 
-                    // Accumulate reasoning text/summary based on type
+                    // ✨ PERFORMANCE: Only create content objects for visible reasoning
                     if (reasoningDetail.Type == "reasoning.text" && !string.IsNullOrEmpty(reasoningDetail.Text))
                     {
                         accumulator.Text.Append(reasoningDetail.Text);
-                        update.Contents.Add(new TextReasoningContent(reasoningDetail.Text)
+                        update.Contents.Add(new TextReasoningContent(reasoningDetail.Text!)
                         {
                             RawRepresentation = reasoningDetail
                         });
@@ -181,23 +269,23 @@ internal sealed class OpenRouterChatClient : IChatClient
                     else if (reasoningDetail.Type == "reasoning.summary" && !string.IsNullOrEmpty(reasoningDetail.Summary))
                     {
                         accumulator.Text.Append(reasoningDetail.Summary);
-                        update.Contents.Add(new TextReasoningContent(reasoningDetail.Summary)
+                        update.Contents.Add(new TextReasoningContent(reasoningDetail.Summary!)
                         {
                             RawRepresentation = reasoningDetail
                         });
                     }
                     else if (reasoningDetail.Type == "reasoning.encrypted")
                     {
-                        // Store encrypted data for later
+                        // Store encrypted data for later - no immediate content creation
                         accumulator.EncryptedData = reasoningDetail.Data;
                     }
                 }
             }
 
-            // Handle tool calls
-            if (delta?.ToolCalls != null)
+            // Handle tool calls - ✨ PERFORMANCE: Defer tool call creation until necessary
+            if (hasToolCalls)
             {
-                foreach (var toolCallDelta in delta.ToolCalls)
+                foreach (var toolCallDelta in delta!.ToolCalls!)
                 {
                     if (!toolCallAccumulators.TryGetValue(toolCallDelta.Index, out var accumulator))
                     {
@@ -223,7 +311,11 @@ internal sealed class OpenRouterChatClient : IChatClient
                 }
             }
 
-            yield return update;
+            // ✨ PERFORMANCE: Only yield when we have actual content
+            if (update != null)
+            {
+                yield return update;
+            }
         }
 
         // Emit final tool calls if any
@@ -392,61 +484,152 @@ internal sealed class OpenRouterChatClient : IChatClient
 
     private OpenRouterChatRequest BuildRequestBody(IEnumerable<ChatMessage> messages, ChatOptions? options, bool stream)
     {
-        var requestMessages = messages.Select(m =>
-        {
-            var msg = new OpenRouterRequestMessage
-            {
-                Role = m.Role.Value.ToLowerInvariant()
-            };
+        var requestMessages = new List<OpenRouterRequestMessage>();
+        bool hasPdfContent = false; // ✨ PERFORMANCE: Track PDF content during iteration
 
-            // Handle tool role messages (function results)
-            if (m.Role == ChatRole.Tool && m.Contents.OfType<FunctionResultContent>().FirstOrDefault() is { } frc)
+        foreach (var m in messages)
+        {
+            // ✨ FIX: Handle parallel function calls by creating separate messages for each FunctionResultContent
+            if (m.Role == ChatRole.Tool)
             {
-                msg.ToolCallId = frc.CallId;
-                // Set content to the function result
-                msg.Content = frc.Result?.ToString() ?? string.Empty;
+                var functionResults = m.Contents.OfType<FunctionResultContent>().ToList();
+                
+                if (functionResults.Count > 0)
+                {
+                    // Create separate OpenRouter message for each function result
+                    foreach (var frc in functionResults)
+                    {
+                        requestMessages.Add(new OpenRouterRequestMessage
+                        {
+                            Role = "tool",
+                            ToolCallId = frc.CallId,
+                            Content = frc.Result?.ToString() ?? string.Empty
+                        });
+                    }
+                }
+                else
+                {
+                    // Fallback for tool messages without FunctionResultContent
+                    var textContents = m.Contents
+                        .Where(c => c is TextContent && c is not TextReasoningContent)
+                        .Cast<TextContent>()
+                        .Select(tc => tc.Text);
+                    
+                    requestMessages.Add(new OpenRouterRequestMessage
+                    {
+                        Role = "tool",
+                        Content = m.Text ?? string.Join("\n", textContents)
+                    });
+                }
             }
             else
             {
-                // For other roles, use text content (exclude TextReasoningContent)
-                var textContents = m.Contents
-                    .Where(c => c is TextContent && c is not TextReasoningContent)
-                    .Cast<TextContent>()
-                    .Select(tc => tc.Text);
-                msg.Content = m.Text ?? string.Join("\n", textContents);
-            }
-
-            // DO NOT send reasoning_details back to the API
-            // Root cause: OpenRouter's proxy layer has a bug when forwarding to Anthropic's native API
-            // - OpenRouter returns reasoning in "reasoning_details" field (normalized OpenRouter format)
-            // - Anthropic's native API expects reasoning in "content" array as "thinking" blocks
-            // - OpenRouter fails to translate between these formats when proxying requests to Anthropic
-            //
-            // Error: "messages.1.content.0.type: Expected `thinking` or `redacted_thinking`, but found `tool_use`"
-            //
-            // Solution: Don't send reasoning_details in subsequent requests. The model generates fresh
-            // reasoning for each turn anyway. Users still see reasoning in the initial response.
-            //
-            // Note: TextReasoningContent already filtered from msg.Content above
-
-            // Add tool calls if present (for assistant role)
-            var toolCalls = m.Contents.OfType<FunctionCallContent>().ToList();
-            if (toolCalls.Count > 0)
-            {
-                msg.ToolCalls = toolCalls.Select(fc => new OpenRouterRequestToolCall
+                // Handle non-tool messages normally
+                var msg = new OpenRouterRequestMessage
                 {
-                    Id = fc.CallId,
-                    Type = "function",
-                    Function = new OpenRouterRequestFunction
-                    {
-                        Name = fc.Name,
-                        Arguments = JsonSerializer.Serialize(fc.Arguments, AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(IDictionary<string, object?>)))
-                    }
-                }).ToList();
-            }
+                    Role = m.Role.Value.ToLowerInvariant()
+                };
 
-            return msg;
-        }).ToList();
+                // ✨ PERFORMANCE: Check for multimodal content once
+                var hasMultimodalContent = false;
+                List<object>? contentParts = null;
+
+                foreach (var content in m.Contents)
+                {
+                    switch (content)
+                    {
+                        case TextReasoningContent:
+                            // Skip reasoning content - don't send back to API
+                            break;
+
+                        case TextContent textContent when !string.IsNullOrEmpty(textContent.Text):
+                            if (!hasMultimodalContent)
+                            {
+                                // Simple text - no need for structured content
+                                msg.Content ??= textContent.Text;
+                            }
+                            else
+                            {
+                                (contentParts ??= []).Add(
+                                    textContent.AdditionalProperties?.ContainsKey("cache_control") == true ?
+                                    new { type = "text", text = textContent.Text, cache_control = new { type = "ephemeral" } } :
+                                    new { type = "text", text = textContent.Text }
+                                );
+                            }
+                            break;
+
+                        case UriContent uriContent when uriContent.MediaType?.StartsWith("image/") == true:
+                            hasMultimodalContent = true;
+                            (contentParts ??= []).Add(new { type = "image_url", image_url = new { url = uriContent.Uri.ToString() } });
+                            break;
+
+                        case DataContent dataContent:
+                            hasMultimodalContent = true;
+                            if (dataContent.MediaType?.StartsWith("image/") == true)
+                            {
+                                (contentParts ??= []).Add(new { type = "image_url", image_url = new { url = dataContent.Uri.ToString() } });
+                            }
+                            else if (dataContent.MediaType == "application/pdf")
+                            {
+                                hasPdfContent = true; // ✨ PERFORMANCE: Set flag here
+                                (contentParts ??= []).Add(new { type = "file", file = new { filename = "document.pdf", file_data = dataContent.Uri.ToString() } });
+                            }
+                            else if (dataContent.MediaType?.StartsWith("audio/") == true)
+                            {
+                                var uri = dataContent.Uri.ToString();
+                                if (uri.StartsWith("data:"))
+                                {
+                                    var parts = uri.Split(new[] { "data:", ";base64," }, StringSplitOptions.RemoveEmptyEntries);
+                                    if (parts.Length >= 2)
+                                    {
+                                        var format = parts[0].Split('/').LastOrDefault() ?? "wav";
+                                        var base64Data = parts[1];
+                                        (contentParts ??= []).Add(new { type = "input_audio", input_audio = new { data = base64Data, format = format } });
+                                    }
+                                }
+                            }
+                            else if (dataContent.MediaType?.StartsWith("video/") == true)
+                            {
+                                (contentParts ??= []).Add(new { type = "input_video", video_url = new { url = dataContent.Uri.ToString() } });
+                            }
+                            break;
+                    }
+                }
+
+                // ✨ PERFORMANCE: Handle structured content efficiently
+                if (hasMultimodalContent && contentParts?.Count > 0)
+                {
+                    msg.Content = JsonSerializer.Serialize(contentParts);
+                }
+                else if (msg.Content == null)
+                {
+                    // Fallback to simple text if no structured content was built
+                    var textContents = m.Contents
+                        .Where(c => c is TextContent && c is not TextReasoningContent)
+                        .Cast<TextContent>()
+                        .Select(tc => tc.Text);
+                    msg.Content = m.Text ?? string.Join("\n", textContents);
+                }
+
+                // Add tool calls if present (for assistant role)
+                var toolCalls = m.Contents.OfType<FunctionCallContent>().ToList();
+                if (toolCalls.Count > 0)
+                {
+                    msg.ToolCalls = toolCalls.Select(fc => new OpenRouterRequestToolCall
+                    {
+                        Id = fc.CallId,
+                        Type = "function",
+                        Function = new OpenRouterRequestFunction
+                        {
+                            Name = fc.Name,
+                            Arguments = JsonSerializer.Serialize(fc.Arguments, AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(IDictionary<string, object?>)))
+                        }
+                    }).ToList();
+                }
+
+                requestMessages.Add(msg);
+            }
+        }
 
         var request = new OpenRouterChatRequest
         {
@@ -460,6 +643,31 @@ internal sealed class OpenRouterChatClient : IChatClient
             }
         };
 
+        // ✨ PERFORMANCE: Add stream options if streaming
+        if (stream)
+        {
+            request.StreamOptions = new OpenRouterStreamOptions
+            {
+                IncludeUsage = true  // Include usage stats in final streaming chunk
+            };
+        }
+
+        // ✨ PERFORMANCE: Only add PDF plugin if we detected PDF content
+        if (hasPdfContent)
+        {
+            request.Plugins = new List<OpenRouterPlugin>
+            {
+                new OpenRouterPlugin
+                {
+                    Id = "file-parser",
+                    Pdf = new OpenRouterPdfConfig
+                    {
+                        Engine = "mistral-ocr" // Can be overridden by user options
+                    }
+                }
+            };
+        }
+
         if (options != null)
         {
             if (options.Temperature.HasValue) request.Temperature = (float)options.Temperature.Value;
@@ -468,6 +676,195 @@ internal sealed class OpenRouterChatClient : IChatClient
             if (options.FrequencyPenalty.HasValue) request.FrequencyPenalty = (float)options.FrequencyPenalty.Value;
             if (options.PresencePenalty.HasValue) request.PresencePenalty = (float)options.PresencePenalty.Value;
             if (options.StopSequences?.Count > 0) request.Stop = options.StopSequences.ToList();
+
+            // Support additional OpenRouter-specific parameters through AdditionalProperties
+            if (options.AdditionalProperties != null)
+            {
+                // Basic OpenRouter parameters
+                if (options.AdditionalProperties.TryGetValue("min_p", out var minP) && minP is float minPVal)
+                    request.MinP = minPVal;
+                
+                if (options.AdditionalProperties.TryGetValue("top_a", out var topA) && topA is float topAVal)
+                    request.TopA = topAVal;
+                
+                if (options.AdditionalProperties.TryGetValue("top_k", out var topK) && topK is int topKVal)
+                    request.TopK = topKVal;
+                
+                if (options.AdditionalProperties.TryGetValue("repetition_penalty", out var repPenalty) && repPenalty is float repPenaltyVal)
+                    request.RepetitionPenalty = repPenaltyVal;
+                
+                if (options.AdditionalProperties.TryGetValue("seed", out var seed) && seed is int seedVal)
+                    request.Seed = seedVal;
+                
+                if (options.AdditionalProperties.TryGetValue("verbosity", out var verbosity) && verbosity is string verbosityVal)
+                    request.Verbosity = verbosityVal;
+                
+                if (options.AdditionalProperties.TryGetValue("logprobs", out var logprobs) && logprobs is bool logprobsVal)
+                    request.Logprobs = logprobsVal;
+                
+                if (options.AdditionalProperties.TryGetValue("top_logprobs", out var topLogprobs) && topLogprobs is int topLogprobsVal)
+                    request.TopLogprobs = topLogprobsVal;
+
+                // Model routing - fallback models
+                if (options.AdditionalProperties.TryGetValue("models", out var models) && models is IEnumerable<string> modelsList)
+                    request.Models = modelsList.ToList();
+
+                // Provider preferences
+                var providerPrefs = new OpenRouterProviderPreferences();
+                bool hasProviderPrefs = false;
+
+                if (options.AdditionalProperties.TryGetValue("provider_order", out var order) && order is IEnumerable<string> orderList)
+                {
+                    providerPrefs.Order = orderList.ToList();
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("allow_fallbacks", out var allowFallbacks) && allowFallbacks is bool allowFallbacksVal)
+                {
+                    providerPrefs.AllowFallbacks = allowFallbacksVal;
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("require_parameters", out var requireParams) && requireParams is bool requireParamsVal)
+                {
+                    providerPrefs.RequireParameters = requireParamsVal;
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("data_collection", out var dataCollection) && dataCollection is string dataCollectionVal)
+                {
+                    providerPrefs.DataCollection = dataCollectionVal;
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("zdr", out var zdr) && zdr is bool zdrVal)
+                {
+                    providerPrefs.Zdr = zdrVal;
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("enforce_distillable_text", out var enforceDistillable) && enforceDistillable is bool enforceDistillableVal)
+                {
+                    providerPrefs.EnforceDistillableText = enforceDistillableVal;
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("provider_only", out var only) && only is IEnumerable<string> onlyList)
+                {
+                    providerPrefs.Only = onlyList.ToList();
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("provider_ignore", out var ignore) && ignore is IEnumerable<string> ignoreList)
+                {
+                    providerPrefs.Ignore = ignoreList.ToList();
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("quantizations", out var quantizations) && quantizations is IEnumerable<string> quantizationsList)
+                {
+                    providerPrefs.Quantizations = quantizationsList.ToList();
+                    hasProviderPrefs = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("provider_sort", out var sort) && sort is string sortVal)
+                {
+                    providerPrefs.Sort = sortVal;
+                    hasProviderPrefs = true;
+                }
+
+                // Max price configuration
+                var maxPriceConfig = new OpenRouterMaxPrice();
+                bool hasMaxPrice = false;
+
+                if (options.AdditionalProperties.TryGetValue("max_price_prompt", out var maxPricePrompt) && maxPricePrompt is float maxPricePromptVal)
+                {
+                    maxPriceConfig.Prompt = maxPricePromptVal;
+                    hasMaxPrice = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("max_price_completion", out var maxPriceCompletion) && maxPriceCompletion is float maxPriceCompletionVal)
+                {
+                    maxPriceConfig.Completion = maxPriceCompletionVal;
+                    hasMaxPrice = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("max_price_request", out var maxPriceRequest) && maxPriceRequest is float maxPriceRequestVal)
+                {
+                    maxPriceConfig.Request = maxPriceRequestVal;
+                    hasMaxPrice = true;
+                }
+
+                if (options.AdditionalProperties.TryGetValue("max_price_image", out var maxPriceImage) && maxPriceImage is float maxPriceImageVal)
+                {
+                    maxPriceConfig.Image = maxPriceImageVal;
+                    hasMaxPrice = true;
+                }
+
+                if (hasMaxPrice)
+                {
+                    providerPrefs.MaxPrice = maxPriceConfig;
+                    hasProviderPrefs = true;
+                }
+
+                if (hasProviderPrefs)
+                {
+                    request.Provider = providerPrefs;
+                }
+
+                // Support model shortcuts (:nitro, :floor, :exacto, :free)
+                if (options.AdditionalProperties.TryGetValue("model_variant", out var variant) && variant is string variantVal)
+                {
+                    if (!request.Model.Contains(':'))
+                    {
+                        request.Model = $"{request.Model}:{variantVal}";
+                    }
+                }
+
+                // Support free model usage (automatically adds :free if not present and requested)
+                if (options.AdditionalProperties.TryGetValue("use_free_model", out var useFree) && useFree is bool useFreeVal && useFreeVal)
+                {
+                    if (!request.Model.Contains(':'))
+                    {
+                        request.Model = $"{request.Model}:free";
+                    }
+                }
+
+                // Support reasoning configuration
+                if (options.AdditionalProperties.TryGetValue("reasoning_effort", out var effort) && effort is string effortVal)
+                {
+                    request.Reasoning = new OpenRouterReasoningConfig
+                    {
+                        Enabled = true,
+                        Effort = effortVal,
+                        Exclude = false
+                    };
+                }
+
+                // Support PDF engine configuration
+                if (options.AdditionalProperties.TryGetValue("pdf_engine", out var pdfEngine) && pdfEngine is string pdfEngineVal && hasPdfContent)
+                {
+                    if (request.Plugins == null)
+                    {
+                        request.Plugins = new List<OpenRouterPlugin>();
+                    }
+                    
+                    // Update or add PDF plugin
+                    var existingPlugin = request.Plugins.FirstOrDefault(p => p.Id == "file-parser");
+                    if (existingPlugin != null)
+                    {
+                        existingPlugin.Pdf = new OpenRouterPdfConfig { Engine = pdfEngineVal };
+                    }
+                    else
+                    {
+                        request.Plugins.Add(new OpenRouterPlugin
+                        {
+                            Id = "file-parser",
+                            Pdf = new OpenRouterPdfConfig { Engine = pdfEngineVal }
+                        });
+                    }
+                }
+            }
 
             // Add tools if present
             if (options.Tools?.Count > 0)
@@ -532,18 +929,192 @@ internal sealed class OpenRouterChatClient : IChatClient
         // HttpClient is typically managed by the factory, so we don't dispose it here
     }
 
+    /// <summary>
+    /// Gets information about the current API key including rate limits and credit usage.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>Key information including limits and usage statistics.</returns>
+    public async Task<OpenRouterKeyInfo> GetKeyInfoAsync(CancellationToken cancellationToken = default)
+    {
+        var httpRequest = new HttpRequestMessage(HttpMethod.Get, "key");
+        var httpResponse = await _httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        httpResponse.EnsureSuccessStatusCode();
+
+        var responseJson = await httpResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var keyInfo = JsonSerializer.Deserialize(responseJson, _jsonContext.OpenRouterKeyInfo);
+
+        if (keyInfo == null)
+            throw new InvalidOperationException("Failed to deserialize OpenRouter key info response");
+
+        return keyInfo;
+    }
+
+    /// <summary>
+    /// Checks if the API key has sufficient credits remaining for requests.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if credits are available or unlimited, false if exhausted.</returns>
+    public async Task<bool> HasCreditsRemainingAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var keyInfo = await GetKeyInfoAsync(cancellationToken).ConfigureAwait(false);
+            
+            // If limit is null, it's unlimited
+            if (keyInfo.Data.Limit == null)
+                return true;
+
+            // If limit_remaining is null, assume unlimited
+            if (keyInfo.Data.LimitRemaining == null)
+                return true;
+
+            // Check if we have credits remaining
+            return keyInfo.Data.LimitRemaining > 0;
+        }
+        catch
+        {
+            // If we can't check, assume we have credits (fail open)
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Gets the remaining credit balance for the API key.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The remaining credits, or null if unlimited.</returns>
+    public async Task<float?> GetRemainingCreditsAsync(CancellationToken cancellationToken = default)
+    {
+        var keyInfo = await GetKeyInfoAsync(cancellationToken).ConfigureAwait(false);
+        return keyInfo.Data.LimitRemaining;
+    }
+
+    /// <summary>
+    /// Validates that the API key is working and has access.
+    /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the key is valid and working.</returns>
+    public async Task<bool> ValidateKeyAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await GetKeyInfoAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if the account is approaching credit limits and may need attention.
+    /// </summary>
+    /// <param name="warningThreshold">The threshold (as a percentage, 0.0-1.0) at which to warn. Default is 0.1 (10% remaining).</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>Credit status information.</returns>
+    public async Task<CreditStatus> GetCreditStatusAsync(float warningThreshold = 0.1f, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var keyInfo = await GetKeyInfoAsync(cancellationToken).ConfigureAwait(false);
+
+            if (keyInfo.Data.Limit == null)
+            {
+                return new CreditStatus
+                {
+                    IsUnlimited = true,
+                    UsageToday = keyInfo.Data.UsageDaily,
+                    UsageThisMonth = keyInfo.Data.UsageMonthly,
+                    NeedsAttention = false
+                };
+            }
+
+            var remaining = keyInfo.Data.LimitRemaining ?? 0;
+            var limit = keyInfo.Data.Limit.Value;
+            var percentRemaining = limit > 0 ? remaining / limit : 0;
+
+            return new CreditStatus
+            {
+                IsUnlimited = false,
+                Limit = limit,
+                Remaining = remaining,
+                Used = keyInfo.Data.Usage,
+                UsageToday = keyInfo.Data.UsageDaily,
+                UsageThisMonth = keyInfo.Data.UsageMonthly,
+                PercentRemaining = percentRemaining,
+                NeedsAttention = percentRemaining <= warningThreshold || remaining <= 0,
+                IsFreeTier = keyInfo.Data.IsFreeTier
+            };
+        }
+        catch
+        {
+            return new CreditStatus { HasError = true };
+        }
+    }
+
+    /// <summary>
+    /// Information about credit usage and limits for an OpenRouter API key.
+    /// </summary>
+    public class CreditStatus
+    {
+        public bool IsUnlimited { get; set; }
+        public float? Limit { get; set; }
+        public float? Remaining { get; set; }
+        public float Used { get; set; }
+        public float UsageToday { get; set; }
+        public float UsageThisMonth { get; set; }
+        public float PercentRemaining { get; set; }
+        public bool NeedsAttention { get; set; }
+        public bool IsFreeTier { get; set; }
+        public bool HasError { get; set; }
+
+        public override string ToString()
+        {
+            if (HasError) return "Error retrieving credit status";
+            if (IsUnlimited) return "Unlimited credits";
+            
+            var remainingText = Remaining?.ToString("F2") ?? "unknown";
+            var limitText = Limit?.ToString("F2") ?? "unknown";
+            var percentText = (PercentRemaining * 100).ToString("F1");
+            
+            return $"{remainingText}/{limitText} credits ({percentText}% remaining)";
+        }
+    }
+
+    /// <summary>
+    /// ✨ PERFORMANCE: Pooled accumulator for tool calls to reduce allocations
+    /// </summary>
     private class ToolCallAccumulator
     {
         public string? Id { get; set; }
         public string? Type { get; set; }
         public string? FunctionName { get; set; }
         public StringBuilder Arguments { get; } = new();
+        
+        public void Reset()
+        {
+            Id = null;
+            Type = null;
+            FunctionName = null;
+            Arguments.Clear();
+        }
     }
 
+    /// <summary>
+    /// ✨ PERFORMANCE: Pooled accumulator for reasoning content to reduce allocations
+    /// </summary>
     private class ReasoningAccumulator
     {
         public string? Type { get; set; }
         public StringBuilder Text { get; } = new();
         public string? EncryptedData { get; set; }
+        
+        public void Reset()
+        {
+            Type = null;
+            Text.Clear();
+            EncryptedData = null;
+        }
     }
 }

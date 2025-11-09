@@ -13,6 +13,8 @@ using System.Text.Json;
 
 using HPD_Agent.Memory.Agent.PlanMode;
 
+// NOTE: Project filter classes are defined in the global namespace with the Project class
+
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
 /// This is your equivalent of the AgentBuilder from Semantic Kernel, but for the new architecture
@@ -408,15 +410,48 @@ public class AgentBuilder
         return this;
     }
 
+    /// <summary>
+    /// Configures validation behavior for provider configuration during agent building.
+    /// </summary>
+    /// <param name="enableAsync">Whether to perform async validation (network calls)</param>
+    public AgentBuilder WithValidation(bool enableAsync)
+    {
+        _config.Validation = new ValidationConfig
+        {
+            EnableAsyncValidation = enableAsync
+        };
+        return this;
+    }
+
 
 
 
 
     /// <summary>
-    /// Builds the dual interface agent
+    /// Builds the dual interface agent asynchronously.
+    /// Validation behavior is controlled by the ValidationConfig (see WithValidation()).
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for async operations</param>
+    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
+    public async Task<Agent> BuildAsync(CancellationToken cancellationToken = default)
+    {
+        return await BuildCoreAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the dual interface agent synchronously (blocks thread until complete).
+    /// Always uses sync validation for performance.
     /// </summary>
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
     public Agent Build()
+    {
+        return BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Core build logic shared between sync and async paths
+    /// </summary>
+    private async Task<Agent> BuildCoreAsync(CancellationToken cancellationToken)
     {
         // === START: VALIDATION LOGIC ===
         var agentConfigValidator = new AgentConfigValidator();
@@ -472,7 +507,46 @@ public class AgentBuilder
         }
 
         // Validate provider-specific configuration
-        var validation = providerFeatures.ValidateConfiguration(_config.Provider);
+        ProviderValidationResult validation;
+
+        // Check if async validation is enabled in configuration
+        var enableAsyncValidation = _config.Validation?.EnableAsyncValidation ?? false;
+
+        // Try async validation first if enabled and supported
+        if (enableAsyncValidation)
+        {
+            var asyncValidationTask = providerFeatures.ValidateConfigurationAsync(_config.Provider, cancellationToken);
+
+            // If provider supports async validation (returns non-null Task)
+            if (asyncValidationTask != null)
+            {
+                var asyncValidation = await asyncValidationTask.ConfigureAwait(false);
+
+                // If async validation returned a result, use it; otherwise fall back to sync
+                if (asyncValidation != null)
+                {
+                    validation = asyncValidation;
+                    _logger?.CreateLogger<AgentBuilder>().LogDebug(
+                        "Used async validation for provider '{ProviderKey}'", providerKey);
+                }
+                else
+                {
+                    // Async task completed but returned null, use sync
+                    validation = providerFeatures.ValidateConfiguration(_config.Provider);
+                }
+            }
+            else
+            {
+                // Provider doesn't support async validation (returns null Task), use sync
+                validation = providerFeatures.ValidateConfiguration(_config.Provider);
+            }
+        }
+        else
+        {
+            // Async validation disabled, use sync only
+            validation = providerFeatures.ValidateConfiguration(_config.Provider);
+        }
+
         if (!validation.IsValid)
         {
             throw new InvalidOperationException(
@@ -551,17 +625,19 @@ public class AgentBuilder
                     // Check if this is actually content vs path based on if it starts with '{'
                     if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
                     {
-                        mcpTools = McpClientManager.LoadToolsFromManifestContentAsync(
+                        mcpTools = await McpClientManager.LoadToolsFromManifestContentAsync(
                             _config.Mcp.ManifestPath,
                             enableMCPScoping,
-                            maxFunctionNames).GetAwaiter().GetResult();
+                            maxFunctionNames,
+                            cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        mcpTools = McpClientManager.LoadToolsFromManifestAsync(
+                        mcpTools = await McpClientManager.LoadToolsFromManifestAsync(
                             _config.Mcp.ManifestPath,
                             enableMCPScoping,
-                            maxFunctionNames).GetAwaiter().GetResult();
+                            maxFunctionNames,
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
                 else
@@ -611,6 +687,16 @@ public class AgentBuilder
 
         var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
+        // Auto-register ProjectInjectedMemoryFilter for project document injection
+        // Note: The filter will read project-specific options from the project itself
+        var defaultProjectFilterOptions = new ProjectInjectedMemoryOptions
+        {
+            MaxTokens = 8000,
+            StorageDirectory = "./injected-memory-storage",
+            DocumentTagFormat = "\n[PROJECT_DOCUMENT: {0}]\n{1}\n[/PROJECT_DOCUMENT]\n"
+        };
+        var projectFilter = new ProjectInjectedMemoryFilter(defaultProjectFilterOptions, _logger?.CreateLogger<ProjectInjectedMemoryFilter>());
+        _promptFilters.Add(projectFilter);
 
         // Create agent using the new, cleaner constructor with AgentConfig
         var agent = new Agent(
@@ -1283,7 +1369,7 @@ public static class AgentBuilderMemoryExtensions
     /// Use a cheaper/faster model for summaries while keeping your main model for responses.
     /// </summary>
     /// <param name="builder">The agent builder instance</param>
-    /// <param name="provider">The provider to use for summarization (e.g., OpenAI, Anthropic)</param>
+    /// <param name="providerKey">The provider key to use for summarization (e.g., "openai", "anthropic")</param>
     /// <param name="modelName">The model name (e.g., "gpt-4o-mini", "claude-3-haiku-20240307")</param>
     /// <param name="apiKey">Optional API key (uses main provider's key if not specified)</param>
     /// <returns>The builder for method chaining</returns>
@@ -1292,16 +1378,16 @@ public static class AgentBuilderMemoryExtensions
     /// builder
     ///     .WithOpenAI(apiKey, "gpt-4") // Main agent uses GPT-4
     ///     .WithSummarizingReduction()
-    ///     .WithSummarizerProvider(ChatProvider.OpenAI, "gpt-4o-mini"); // Summaries use mini
+    ///     .WithSummarizerProvider("openai", "gpt-4o-mini"); // Summaries use mini
     /// </code>
     /// </example>
-    public static AgentBuilder WithSummarizerProvider(this AgentBuilder builder, ChatProvider provider, string modelName, string? apiKey = null)
+    public static AgentBuilder WithSummarizerProvider(this AgentBuilder builder, string providerKey, string modelName, string? apiKey = null)
     {
         var config = builder.Config.HistoryReduction ?? new HistoryReductionConfig { Enabled = true };
 
         config.SummarizerProvider = new ProviderConfig
         {
-            Provider = provider,
+            ProviderKey = providerKey,
             ModelName = modelName,
             ApiKey = apiKey ?? builder.Config.Provider?.ApiKey
         };
@@ -1322,7 +1408,7 @@ public static class AgentBuilderMemoryExtensions
     /// builder
     ///     .WithSummarizingReduction()
     ///     .WithSummarizerProvider(config => {
-    ///         config.Provider = ChatProvider.Ollama;
+    ///         config.ProviderKey = "ollama";
     ///         config.ModelName = "llama3.2";
     ///         config.Endpoint = "http://localhost:11434";
     ///     });
@@ -1622,9 +1708,9 @@ public class ErrorHandlingPolicy
     /// Normalizes an exception into a consistent ErrorContent format
     /// </summary>
     /// <param name="ex">The exception to normalize</param>
-    /// <param name="provider">The provider that generated the exception</param>
+    /// <param name="providerKey">The provider key that generated the exception (e.g., "openai", "openrouter")</param>
     /// <returns>Normalized ErrorContent</returns>
-    public ErrorContent NormalizeError(Exception ex, ChatProvider provider)
+    public ErrorContent NormalizeError(Exception ex, string providerKey)
     {
         if (!NormalizeProviderErrors)
         {
@@ -1635,42 +1721,42 @@ public class ErrorHandlingPolicy
         var errorCode = "UnknownError";
 
         // Provider-specific error normalization
-        switch (provider)
+        switch (providerKey?.ToLowerInvariant())
         {
-            case ChatProvider.OpenAI:
+            case "openai":
                 (normalizedMessage, errorCode) = NormalizeOpenAIError(ex);
                 break;
-            case ChatProvider.OpenRouter:
+            case "openrouter":
                 (normalizedMessage, errorCode) = NormalizeOpenRouterError(ex);
                 break;
-            case ChatProvider.AzureOpenAI:
+            case "azureopenai":
                 (normalizedMessage, errorCode) = NormalizeAzureError(ex);
                 break;
-            case ChatProvider.AzureAIInference:
+            case "azureaiinference":
                 (normalizedMessage, errorCode) = NormalizeAzureAIInferenceError(ex);
                 break;
-            case ChatProvider.Anthropic:
+            case "anthropic":
                 (normalizedMessage, errorCode) = NormalizeAnthropicError(ex);
                 break;
-            case ChatProvider.Ollama:
+            case "ollama":
                 (normalizedMessage, errorCode) = NormalizeOllamaError(ex);
                 break;
-            case ChatProvider.GoogleAI:
+            case "googleai":
                 (normalizedMessage, errorCode) = NormalizeGoogleAIError(ex);
                 break;
-            case ChatProvider.VertexAI:
+            case "vertexai":
                 (normalizedMessage, errorCode) = NormalizeVertexAIError(ex);
                 break;
-            case ChatProvider.HuggingFace:
+            case "huggingface":
                 (normalizedMessage, errorCode) = NormalizeHuggingFaceError(ex);
                 break;
-            case ChatProvider.Bedrock:
+            case "bedrock":
                 (normalizedMessage, errorCode) = NormalizeBedrockError(ex);
                 break;
-            case ChatProvider.OnnxRuntime:
+            case "onnxruntime":
                 (normalizedMessage, errorCode) = NormalizeOnnxRuntimeError(ex);
                 break;
-            case ChatProvider.Mistral:
+            case "mistral":
                 (normalizedMessage, errorCode) = NormalizeMistralError(ex);
                 break;
             default:
@@ -1688,7 +1774,7 @@ public class ErrorHandlingPolicy
         if (IncludeProviderDetails)
         {
             errorContent.AdditionalProperties ??= new();
-            errorContent.AdditionalProperties["Provider"] = provider.ToString();
+            errorContent.AdditionalProperties["Provider"] = providerKey ?? "Unknown";
             errorContent.AdditionalProperties["OriginalMessage"] = ex.Message;
             errorContent.AdditionalProperties["ExceptionType"] = ex.GetType().Name;
         }
@@ -1700,9 +1786,9 @@ public class ErrorHandlingPolicy
     /// Determines if an error is transient and should be retried
     /// </summary>
     /// <param name="ex">The exception to check</param>
-    /// <param name="provider">The provider that generated the exception</param>
+    /// <param name="providerKey">The provider key that generated the exception (e.g., "openai", "openrouter")</param>
     /// <returns>True if the error is transient</returns>
-    public bool IsTransientError(Exception ex, ChatProvider provider)
+    public bool IsTransientError(Exception ex, string providerKey)
     {
         var message = ex.Message.ToLowerInvariant();
 
@@ -1718,20 +1804,20 @@ public class ErrorHandlingPolicy
         }
 
         // Provider-specific transient patterns
-        return provider switch
+        return providerKey?.ToLowerInvariant() switch
         {
-            ChatProvider.OpenAI => message.Contains("overloaded") || message.Contains("429"),
-            ChatProvider.OpenRouter => message.Contains("queue") || message.Contains("busy"),
-            ChatProvider.AzureOpenAI => message.Contains("deployment busy") || message.Contains("throttling"),
-            ChatProvider.AzureAIInference => message.Contains("throttling") || message.Contains("resource busy"),
-            ChatProvider.Anthropic => message.Contains("overloaded") || message.Contains("rate_limit"),
-            ChatProvider.Ollama => message.Contains("loading") || message.Contains("busy"),
-            ChatProvider.GoogleAI => message.Contains("quota exceeded") || message.Contains("backend error"),
-            ChatProvider.VertexAI => message.Contains("quota exceeded") || message.Contains("backend error"),
-            ChatProvider.HuggingFace => message.Contains("model loading") || message.Contains("estimated_time"),
-            ChatProvider.Bedrock => message.Contains("throttling") || message.Contains("model busy"),
-            ChatProvider.OnnxRuntime => message.Contains("model loading") || message.Contains("initialization"),
-            ChatProvider.Mistral => message.Contains("rate limit") || message.Contains("overloaded"),
+            "openai" => message.Contains("overloaded") || message.Contains("429"),
+            "openrouter" => message.Contains("queue") || message.Contains("busy"),
+            "azureopenai" => message.Contains("deployment busy") || message.Contains("throttling"),
+            "azureaiinference" => message.Contains("throttling") || message.Contains("resource busy"),
+            "anthropic" => message.Contains("overloaded") || message.Contains("rate_limit"),
+            "ollama" => message.Contains("loading") || message.Contains("busy"),
+            "googleai" => message.Contains("quota exceeded") || message.Contains("backend error"),
+            "vertexai" => message.Contains("quota exceeded") || message.Contains("backend error"),
+            "huggingface" => message.Contains("model loading") || message.Contains("estimated_time"),
+            "bedrock" => message.Contains("throttling") || message.Contains("model busy"),
+            "onnxruntime" => message.Contains("model loading") || message.Contains("initialization"),
+            "mistral" => message.Contains("rate limit") || message.Contains("overloaded"),
             _ => false
         };
     }

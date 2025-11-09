@@ -48,7 +48,7 @@ using Microsoft.Extensions.AI;
 // --- Agent configuration types ---
 [JsonSerializable(typeof(AgentConfig))]
 [JsonSerializable(typeof(ProviderConfig))]
-[JsonSerializable(typeof(ChatProvider))]
+[JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(McpConfig))]
 [JsonSerializable(typeof(WebSearchConfig))]

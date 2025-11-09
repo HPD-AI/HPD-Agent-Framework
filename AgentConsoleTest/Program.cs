@@ -13,7 +13,27 @@ var config = new ConfigurationBuilder()
 var (project, thread, agent) = await CreateAIAssistant(config);
 
 Console.WriteLine($"✅ AI Assistant ready: {agent.Name}");
-Console.WriteLine($"📁 Project: {project.Name}\n");
+Console.WriteLine($"📁 Project: {project.Name}");
+
+// 📄 Upload documents from FY25q4-zip folder to project
+try
+{
+    Console.WriteLine("� Uploading all documents from FY25q4-zip folder to project...");
+    var documents = await project.UploadDirectoryAsync(
+        "/Users/einsteinessibu/Documents/HPD-Agent/AgentConsoleTest/FY25q4-zip"
+    );
+    Console.WriteLine($"✅ {documents.Count} documents uploaded successfully:");
+    foreach (var doc in documents)
+    {
+        Console.WriteLine($"   📄 {doc.FileName} (ID: {doc.Id})");
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ Failed to upload documents: {ex.Message}");
+}
+
+Console.WriteLine();
 
 // 🎯 Interactive Chat Loop
 await RunInteractiveChat(agent, thread);
@@ -30,7 +50,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfigurati
         Provider = new ProviderConfig
         {
             ProviderKey = "openrouter",
-            ModelName = "minimax/minimax-m2", // 🧠 Reasoning model - FREE on OpenRouter!
+            ModelName = "moonshotai/kimi-k2-thinking", // 🧠 Reasoning model - FREE on OpenRouter!
             // Alternative reasoning models:
             // "deepseek/deepseek-r1-distill-qwen-32b" - smaller/faster
             // "openai/o1" - OpenAI's reasoning model (expensive)

@@ -42,6 +42,10 @@ public partial class Agent : AIAgent
     // Flows automatically through AsyncLocal propagation across nested async calls
     private static readonly AsyncLocal<Agent?> _rootAgent = new();
 
+    // AsyncLocal storage for current conversation thread (flows across async calls)
+    // Provides access to thread context (project, documents, etc.) throughout the agent execution
+    private static readonly AsyncLocal<ConversationThread?> _currentThread = new();
+
     // Specialized component fields for delegation
     private readonly MessageProcessor _messageProcessor;
     private readonly FunctionCallProcessor _functionCallProcessor;
@@ -117,6 +121,20 @@ public partial class Agent : AIAgent
     {
         get => _rootAgent.Value;
         internal set => _rootAgent.Value = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the current conversation thread in the execution context.
+    /// This flows across async calls and provides access to thread context throughout agent execution.
+    /// </summary>
+    /// <remarks>
+    /// This property enables filters and other components to access thread-specific context
+    /// such as project information, conversation history, and thread metadata.
+    /// </remarks>
+    public static ConversationThread? CurrentThread
+    {
+        get => _currentThread.Value;
+        internal set => _currentThread.Value = value;
     }
 
     /// <summary>
@@ -1741,10 +1759,27 @@ Best practices:
         // Create thread if not provided, cast to ConversationThread
         var conversationThread = (thread as ConversationThread) ?? new ConversationThread();
 
-        // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
-        var chatOptions = options != null ? new ChatOptions() : null;
+        // Set current thread context for AsyncLocal access throughout the operation
+        var previousThread = CurrentThread;
+        CurrentThread = conversationThread;
 
-        // Get current messages once
+        try
+        {
+            // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
+            var chatOptions = options != null ? new ChatOptions() : null;
+
+            // Add project context to ChatOptions.AdditionalProperties for filter access
+            var project = conversationThread.GetProject();
+            if (project != null)
+            {
+                chatOptions ??= new ChatOptions();
+                chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+                chatOptions.AdditionalProperties["Project"] = project;
+                chatOptions.AdditionalProperties["ConversationId"] = conversationThread.Id;
+                chatOptions.AdditionalProperties["Thread"] = conversationThread;
+            }
+
+            // Get current messages once
         var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
 
         // Add workflow messages to thread state
@@ -1841,6 +1876,12 @@ Best practices:
             {
                 await conversationThread.AddMessageAsync(msg, cancellationToken);
             }
+        }
+        }
+        finally
+        {
+            // Restore previous thread context
+            CurrentThread = previousThread;
         }
     }
 
@@ -3625,7 +3666,7 @@ public class MessageProcessor
             }
         }
 
-        // Build and execute the prompt filter pipeline using FilterChain
+        // Build and execute the prompt filt er pipeline using FilterChain
         Func<PromptFilterContext, Task<IEnumerable<ChatMessage>>> finalAction = ctx => Task.FromResult(ctx.Messages);
         var pipeline = FilterChain.BuildPromptPipeline(_promptFilters, finalAction);
         return await pipeline(context).ConfigureAwait(false);

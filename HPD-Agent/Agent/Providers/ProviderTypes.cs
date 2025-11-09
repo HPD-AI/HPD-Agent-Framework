@@ -1,27 +1,4 @@
 /// <summary>
-/// Chat providers for Microsoft.Extensions.AI IChatClient (used in AgentBuilder)
-/// </summary>
-public enum ChatProvider
-{
-    // Native Extensions.AI support
-    OpenAI,
-    AzureOpenAI,
-    AzureAIInference, // For the unified Azure AI endpoint
-    
-    // Custom implementations for Extensions.AI
-    OpenRouter,
-    Anthropic,
-    // AppleIntelligence removed
-    Ollama,
-    GoogleAI,   // For the simple Gemini API via API Key
-    VertexAI,   // For Google Cloud Vertex AI via ADC
-    HuggingFace, // For Serverless Inference API
-    Bedrock,     // For AWS Bedrock
-    OnnxRuntime, // For local ONNX models
-    Mistral      // For Mistral AI API
-}
-
-/// <summary>
 /// Embedding providers for Microsoft.Extensions.AI IEmbeddingGenerator
 /// </summary>
 public enum EmbeddingProvider

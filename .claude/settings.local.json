@@ -11,7 +11,9 @@
       "Bash(perl:*)",
       "Bash(dotnet add:*)",
       "Bash(dotnet build:*)",
-      "Bash(dotnet test:*)"
+      "Bash(dotnet test:*)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet list:*)"
     ],
     "deny": [],
     "ask": []

@@ -29,7 +29,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
                     .WithMessage("Provider model name must be specified.");
 
                 // Provider-specific validation
-                When(config => config.Provider!.Provider == ChatProvider.AzureOpenAI, () =>
+                When(config => config.Provider!.ProviderKey?.ToLowerInvariant() == "azureopenai", () =>
                 {
                     RuleFor(config => config.Provider!.Endpoint)
                         .NotEmpty()
@@ -38,7 +38,7 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
                         .WithMessage("Azure OpenAI endpoint must be a valid URI.");
                 });
 
-                When(config => config.Provider!.Provider == ChatProvider.Ollama, () =>
+                When(config => config.Provider!.ProviderKey?.ToLowerInvariant() == "ollama", () =>
                 {
                     RuleFor(config => config.Provider!.ModelName)
                         .Must(modelName => !string.IsNullOrEmpty(modelName) && !modelName.Contains("/"))
@@ -210,12 +210,12 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
     {
         if (config.Provider == null) return true; // Already validated above
 
-        return config.Provider.Provider switch
+        return config.Provider.ProviderKey?.ToLowerInvariant() switch
         {
-            ChatProvider.OpenAI => IsValidOpenAIModel(config.Provider.ModelName),
-            ChatProvider.OpenRouter => IsValidOpenRouterModel(config.Provider.ModelName),
-            ChatProvider.AzureOpenAI => IsValidAzureModel(config.Provider.ModelName),
-            ChatProvider.Ollama => IsValidOllamaModel(config.Provider.ModelName),
+            "openai" => IsValidOpenAIModel(config.Provider.ModelName),
+            "openrouter" => IsValidOpenRouterModel(config.Provider.ModelName),
+            "azureopenai" => IsValidAzureModel(config.Provider.ModelName),
+            "ollama" => IsValidOllamaModel(config.Provider.ModelName),
             _ => true // Unknown providers are allowed
         };
     }
