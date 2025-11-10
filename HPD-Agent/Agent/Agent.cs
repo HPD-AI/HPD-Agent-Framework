@@ -24,12 +24,11 @@ namespace HPD.Agent;
 /// </summary>
 internal sealed class Agent
 {
-    private IChatClient _baseClient; // Mutable for runtime provider switching
+    private readonly IChatClient _baseClient;
     private readonly string _name;
     private readonly ScopedFilterManager? _scopedFilterManager;
     private readonly int _maxFunctionCalls;
-    private readonly IProviderRegistry _providerRegistry;
-    private readonly IServiceProvider? _serviceProvider; // Store for runtime provider switching
+    private readonly IServiceProvider? _serviceProvider; // Used for middleware dependency injection
 
     // Microsoft.Extensions.AI compliance fields
     private readonly ChatClientMetadata _metadata;
@@ -56,14 +55,14 @@ internal sealed class Agent
     // Specialized component fields for delegation
     private readonly MessageProcessor _messageProcessor;
     private readonly FunctionCallProcessor _functionCallProcessor;
-    private AgentTurn _agentTurn; // Mutable for runtime provider switching
+    private readonly AgentTurn _agentTurn;
     private readonly ToolScheduler _toolScheduler;
     private readonly HPD_Agent.Scoping.UnifiedScopingManager _scopingManager;
     private readonly PermissionManager _permissionManager;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
-    private HPD.Agent.ErrorHandling.IProviderErrorHandler _providerErrorHandler; // Mutable for runtime provider switching
+    private readonly HPD.Agent.ErrorHandling.IProviderErrorHandler _providerErrorHandler;
 
     // Observability components (following component delegation pattern)
     private readonly AgentTelemetryService? _telemetryService;
@@ -237,12 +236,11 @@ internal sealed class Agent
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
         HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
-        IProviderRegistry providerRegistry, // New
-        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null, // New: Optional skill scoping
+        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
-        IServiceProvider? serviceProvider = null) // NEW: Optional service provider for observability
+        IServiceProvider? serviceProvider = null)
     {
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
@@ -250,8 +248,8 @@ internal sealed class Agent
         _scopedFilterManager = scopedFilterManager ?? throw new ArgumentNullException(nameof(scopedFilterManager));
         _maxFunctionCalls = config.MaxAgenticIterations;
         _providerErrorHandler = providerErrorHandler;
-        _providerRegistry = providerRegistry; // New
-        _serviceProvider = serviceProvider; // Store for runtime provider switching
+        // Used for middleware dependency injection (e.g., ILoggerFactory)
+        _serviceProvider = serviceProvider;
 
         // TEMPORARY: Inject the resolved handler into the config object
         // so that FunctionCallProcessor can access it without changing its signature yet.
@@ -374,117 +372,6 @@ internal sealed class Agent
     /// Scoped filter manager for applying filters based on function/plugin scope
     /// </summary>
     public ScopedFilterManager? ScopedFilterManager => _scopedFilterManager;
-
-    /// <summary>
-    /// Switches the agent to use a different LLM provider at runtime.
-    /// This allows dynamic provider switching without rebuilding the agent.
-    /// </summary>
-    /// <param name="providerKey">Provider identifier (e.g., "openai", "anthropic", "ollama")</param>
-    /// <param name="modelName">Model name to use with the provider</param>
-    /// <param name="apiKey">Optional API key (uses existing key from config if not provided)</param>
-    /// <param name="endpoint">Optional custom endpoint (for providers like Azure OpenAI or self-hosted models)</param>
-    /// <exception cref="ArgumentException">Thrown when provider key or model name is empty</exception>
-    /// <exception cref="InvalidOperationException">Thrown when provider is not found or configuration is invalid</exception>
-    /// <example>
-    /// <code>
-    /// var agent = new AgentBuilder()
-    ///     .WithProvider("openai", "gpt-4", "sk-...")
-    ///     .Build();
-    ///
-    /// // Use with OpenAI
-    /// await agent.RunAsync(messages);
-    ///
-    /// // Switch to Anthropic at runtime
-    /// agent.SwitchProvider("anthropic", "claude-3-sonnet-20240229", "sk-ant-...");
-    ///
-    /// // Continue using with Claude
-    /// await agent.RunAsync(messages);
-    /// </code>
-    /// </example>
-    public void SwitchProvider(
-        string providerKey,
-        string modelName,
-        string? apiKey = null,
-        string? endpoint = null)
-    {
-        if (string.IsNullOrWhiteSpace(providerKey))
-            throw new ArgumentException("Provider key cannot be empty", nameof(providerKey));
-
-        if (string.IsNullOrWhiteSpace(modelName))
-            throw new ArgumentException("Model name cannot be empty", nameof(modelName));
-
-        // Get provider from registry
-        var provider = _providerRegistry.GetProvider(providerKey);
-        if (provider == null)
-        {
-            var available = _providerRegistry.GetRegisteredProviders();
-            throw new InvalidOperationException(
-                $"Provider '{providerKey}' not found. Available providers: {string.Join(", ", available)}. " +
-                $"Make sure you've added the provider package (e.g., HPD-Agent.Providers.{char.ToUpper(providerKey[0])}{providerKey.Substring(1)}).");
-        }
-
-        // Create new provider config
-        var newConfig = new ProviderConfig
-        {
-            ProviderKey = providerKey,
-            ModelName = modelName,
-            ApiKey = apiKey ?? Config?.Provider?.ApiKey, // Use existing key if not provided
-            Endpoint = endpoint ?? Config?.Provider?.Endpoint,
-            // Preserve existing default options
-            DefaultChatOptions = Config?.Provider?.DefaultChatOptions
-        };
-
-        // Validate configuration
-        var validation = provider.ValidateConfiguration(newConfig);
-        if (!validation.IsValid)
-        {
-            throw new InvalidOperationException(
-                $"Invalid configuration for provider '{providerKey}': {string.Join(", ", validation.Errors)}");
-        }
-
-        // Create new chat client
-        IChatClient newClient;
-        try
-        {
-            newClient = provider.CreateChatClient(newConfig, _serviceProvider);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Failed to create chat client for provider '{providerKey}': {ex.Message}", ex);
-        }
-
-        if (newClient == null)
-            throw new InvalidOperationException($"Provider '{providerKey}' returned null chat client");
-
-        // Create new error handler
-        var newErrorHandler = provider.CreateErrorHandler();
-        if (newErrorHandler == null)
-            throw new InvalidOperationException($"Provider '{providerKey}' returned null error handler");
-
-        // Update agent state
-        _baseClient = newClient;
-        _providerErrorHandler = newErrorHandler;
-
-        // Recreate AgentTurn with new client (middleware is preserved automatically!)
-        _agentTurn = new AgentTurn(
-            _baseClient,
-            Config?.ConfigureOptions,
-            Config?.ChatClientMiddleware,
-            _serviceProvider);
-
-        // Update config
-        if (Config != null)
-        {
-            Config.Provider = newConfig;
-
-            // Update error handling config with new provider handler
-            if (Config.ErrorHandling != null)
-            {
-                Config.ErrorHandling.ProviderHandler = _providerErrorHandler;
-            }
-        }
-    }
 
     #region internal loop
     /// <summary>
@@ -1523,26 +1410,9 @@ Best practices:
     /// </summary>
     private SummarizingChatReducer CreateSummarizingReducer(IChatClient baseClient, HistoryReductionConfig historyConfig, AgentConfig agentConfig)
     {
-        // Determine which client to use for summarization
-        IChatClient summarizerClient = baseClient; // Default to main client
-
-        if (historyConfig.SummarizerProvider != null)
-        {
-            var providerConfig = historyConfig.SummarizerProvider;
-            var providerKey = providerConfig.ProviderKey;
-
-            if (!string.IsNullOrEmpty(providerKey) && _providerRegistry.GetProvider(providerKey) is { } providerFeatures)
-            {
-                try
-                {
-                    summarizerClient = providerFeatures.CreateChatClient(providerConfig, null);
-                }
-                catch (Exception)
-                {
-                    // Log warning about failing to create summarizer client, will use base client
-                }
-            }
-        }
+        // Use the base client for summarization
+        // Note: Custom summarizer provider configuration has been removed
+        IChatClient summarizerClient = baseClient;
 
         var reducer = new SummarizingChatReducer(
             summarizerClient,

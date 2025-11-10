@@ -812,12 +812,11 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager,
             buildData.ErrorHandler,
-            _providerRegistry,
             buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
-            _serviceProvider); // Pass service provider for observability
+            _serviceProvider);
 
         return agent;
     }

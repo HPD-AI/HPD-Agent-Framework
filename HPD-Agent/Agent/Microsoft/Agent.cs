@@ -27,11 +27,11 @@ public sealed class Agent : AIAgent
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
         HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
-        IProviderRegistry providerRegistry,
         HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
-        IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null)
+        IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
+        IServiceProvider? serviceProvider = null)
     {
         _core = new CoreAgent(
             config,
@@ -40,11 +40,11 @@ public sealed class Agent : AIAgent
             promptFilters,
             scopedFilterManager,
             providerErrorHandler,
-            providerRegistry,
             skillScopingManager,
             permissionFilters,
             aiFunctionFilters,
-            messageTurnFilters);
+            messageTurnFilters,
+            serviceProvider);
     }
 
     /// <summary>
@@ -61,23 +61,6 @@ public sealed class Agent : AIAgent
     /// Default chat options (delegated to core)
     /// </summary>
     public ChatOptions? DefaultOptions => _core.DefaultOptions;
-
-    /// <summary>
-    /// Switches the agent to use a different LLM provider at runtime.
-    /// Delegates to the core agent for provider switching.
-    /// </summary>
-    /// <param name="providerKey">Provider identifier (e.g., "openai", "anthropic", "ollama")</param>
-    /// <param name="modelName">Model name to use with the provider</param>
-    /// <param name="apiKey">Optional API key (uses existing key from config if not provided)</param>
-    /// <param name="endpoint">Optional custom endpoint (for providers like Azure OpenAI or self-hosted models)</param>
-    public void SwitchProvider(
-        string providerKey,
-        string modelName,
-        string? apiKey = null,
-        string? endpoint = null)
-    {
-        _core.SwitchProvider(providerKey, modelName, apiKey, endpoint);
-    }
 
     /// <summary>
     /// Runs the agent with messages and an explicit thread for state management (non-streaming).
