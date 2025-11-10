@@ -12,6 +12,7 @@ public static class AgentBuilderWebSearchExtensions
 {
     // Store connectors and default provider preferences
     private static readonly Dictionary<AgentBuilder, List<IWebSearchConnector>> _pendingConnectors = new();
+    private static readonly Dictionary<AgentBuilder, List<Func<IConfiguration?, IWebSearchConnector>>> _pendingBuilders = new();
     private static readonly Dictionary<AgentBuilder, string?> _defaultProviders = new();
     
     /// <summary>
@@ -34,18 +35,21 @@ public static class AgentBuilderWebSearchExtensions
     }
 
     /// <summary>
-    /// Configures Tavily web search provider with default settings
+    /// Configures Tavily web search provider with default settings.
+    /// The API key will be automatically resolved from configuration when the agent is built.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <returns>The agent builder for chaining</returns>
     public static AgentBuilder WithTavilyWebSearch(this AgentBuilder builder)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
-        
-        var tavilyBuilder = new TavilyWebSearchBuilder(builder.Configuration);
-        var connector = ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)tavilyBuilder).Build();
-        
-        return AddWebSearchConnector(builder, connector);
+
+        // Defer building until FinalizeWebSearch() when configuration is available
+        return AddWebSearchBuilder(builder, (config) =>
+        {
+            var tavilyBuilder = new TavilyWebSearchBuilder(config);
+            return ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)tavilyBuilder).Build();
+        });
     }
     
     /// <summary>
@@ -130,8 +134,26 @@ public static class AgentBuilderWebSearchExtensions
         {
             _pendingConnectors[builder] = new List<IWebSearchConnector>();
         }
-        
+
         _pendingConnectors[builder].Add(connector);
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a deferred web search builder that will be built when configuration is available
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <param name="builderFunc">Function that creates the connector when given configuration</param>
+    /// <returns>The agent builder for chaining</returns>
+    private static AgentBuilder AddWebSearchBuilder(AgentBuilder builder, Func<IConfiguration?, IWebSearchConnector> builderFunc)
+    {
+        // Store the builder function for later execution
+        if (!_pendingBuilders.ContainsKey(builder))
+        {
+            _pendingBuilders[builder] = new List<Func<IConfiguration?, IWebSearchConnector>>();
+        }
+
+        _pendingBuilders[builder].Add(builderFunc);
         return builder;
     }
     
@@ -163,28 +185,46 @@ public static class AgentBuilderWebSearchExtensions
     internal static AgentBuilder FinalizeWebSearch(this AgentBuilder builder)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
-        
-        // Collect all registered connectors for this builder
-        if (!_pendingConnectors.TryGetValue(builder, out var connectors) || !connectors.Any())
+
+        var connectors = new List<IWebSearchConnector>();
+
+        // Build any deferred builders with the current configuration
+        if (_pendingBuilders.TryGetValue(builder, out var builders))
         {
-            // No web search providers configured - just return silently
+            foreach (var builderFunc in builders)
+            {
+                var connector = builderFunc(builder.Configuration);
+                connectors.Add(connector);
+            }
+        }
+
+        // Add any already-built connectors
+        if (_pendingConnectors.TryGetValue(builder, out var existingConnectors))
+        {
+            connectors.AddRange(existingConnectors);
+        }
+
+        // If no connectors at all, return silently
+        if (!connectors.Any())
+        {
             return builder;
         }
-        
+
         // Get the default provider preference (if set)
         _defaultProviders.TryGetValue(builder, out var defaultProvider);
-        
+
         // Create the WebSearchContext with all connectors
         var context = new WebSearchContext(connectors, defaultProvider);
-        
+
         // Register the WebSearchPlugin with the context
         var plugin = new WebSearchPlugin(context);
         builder.WithPlugin(plugin, context);
-        
+
         // Clean up the temporary storage
         _pendingConnectors.Remove(builder);
+        _pendingBuilders.Remove(builder);
         _defaultProviders.Remove(builder);
-        
+
         return builder;
     }
 
@@ -195,6 +235,7 @@ public static class AgentBuilderWebSearchExtensions
     internal static void CleanupWebSearchStorage(AgentBuilder builder)
     {
         _pendingConnectors.Remove(builder);
+        _pendingBuilders.Remove(builder);
         _defaultProviders.Remove(builder);
     }
 }

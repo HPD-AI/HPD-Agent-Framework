@@ -5,13 +5,9 @@ using HPD.Agent;
 using HPD.Agent.Microsoft;
 Console.WriteLine("🚀 HPD-Agent Console Test");
 
-// ✨ Load configuration from appsettings.json
-var config = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-    .Build();
-
 // ✨ ONE-LINER: Create complete AI assistant
-var (project, thread, agent) = await CreateAIAssistant(config);
+// No need to manually create config - agent auto-loads from appsettings.json, env vars, and user secrets!
+var (project, thread, agent) = await CreateAIAssistant();
 
 Console.WriteLine($"✅ AI Assistant ready: {agent.Name}");
 Console.WriteLine($"📁 Project: {project.Name}");
@@ -39,8 +35,8 @@ Console.WriteLine();
 // 🎯 Interactive Chat Loop
 await RunInteractiveChat(agent, thread);
 
-// ✨ NEW CONFIG-FIRST APPROACH: Using AgentConfig pattern
-static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfiguration config)
+// ✨ CONFIG-FIRST APPROACH: Using AgentConfig pattern with AUTO-CONFIGURATION
+static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
 {
     // ✨ CREATE AGENT CONFIG OBJECT FIRST
     var agentConfig = new AgentConfig
@@ -55,7 +51,13 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfigurati
             // Alternative reasoning models:
             // "deepseek/deepseek-r1-distill-qwen-32b" - smaller/faster
             // "openai/o1" - OpenAI's reasoning model (expensive)
-            // No ApiKey here - will use appsettings.json via ResolveApiKey
+
+            // ✨ NO API KEY NEEDED HERE!
+            // AgentBuilder automatically resolves from (in priority order):
+            // 1. ConnectionStrings:Agent (appsettings.json) - NEW Microsoft pattern
+            // 2. OpenRouter:ApiKey (appsettings.json) - Legacy pattern
+            // 3. OPENROUTER_API_KEY (environment variable)
+            // 4. User secrets (dotnet user-secrets)
         },
         DynamicMemory = new DynamicMemoryConfig
         {
@@ -80,9 +82,9 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfigurati
         }
     };
 
-    // ✨ BUILD AGENT FROM CONFIG + FLUENT PLUGINS/FILTERS
+    // ✨ BUILD AGENT - NO .WithAPIConfiguration() NEEDED!
+    // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
-        .WithAPIConfiguration(config) // Pass appsettings.json for API key resolution
         .WithLogging()
         .WithTavilyWebSearch()
         .WithDynamicMemory(opts => opts

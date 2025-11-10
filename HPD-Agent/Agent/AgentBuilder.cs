@@ -834,29 +834,73 @@ public class AgentBuilder
         if (_config.Provider == null)
             throw new InvalidOperationException("Provider configuration is required.");
 
-        // Resolve API key from configuration if not set
+        // ✨ AUTO-CONFIGURE: If no configuration provided, create default configuration
+        // Automatically loads from appsettings.json in the current directory
+        if (_configuration == null)
+        {
+            try
+            {
+                _configuration = new ConfigurationBuilder()
+                    .SetBasePath(Directory.GetCurrentDirectory())
+                    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                    .Build();
+            }
+            catch (Exception ex)
+            {
+                // If auto-configuration fails, we'll continue without it
+                // and provide helpful error message later if API key is missing
+                Console.WriteLine($"[AgentBuilder] Auto-configuration warning: {ex.Message}");
+            }
+        }
+
+        // ✨ PRIORITY 1: Try to resolve from connection string first (Microsoft pattern)
+        if (_configuration != null)
+        {
+            // Try standard ConnectionStrings section first
+            var connectionString = _configuration.GetConnectionString("Agent")
+                                ?? _configuration.GetConnectionString("ChatClient")
+                                ?? _configuration.GetConnectionString("Provider");
+
+            if (!string.IsNullOrEmpty(connectionString) && ProviderConnectionInfo.TryParse(connectionString, out var connInfo))
+            {
+                // Apply connection string values (only if not already set in code)
+                if (!string.IsNullOrEmpty(connInfo.Provider) && string.IsNullOrEmpty(_config.Provider.ProviderKey))
+                    _config.Provider.ProviderKey = connInfo.Provider;
+
+                if (!string.IsNullOrEmpty(connInfo.AccessKey) && string.IsNullOrEmpty(_config.Provider.ApiKey))
+                    _config.Provider.ApiKey = connInfo.AccessKey;
+
+                if (!string.IsNullOrEmpty(connInfo.Model) && string.IsNullOrEmpty(_config.Provider.ModelName))
+                    _config.Provider.ModelName = connInfo.Model;
+
+                if (connInfo.Endpoint != null && string.IsNullOrEmpty(_config.Provider.Endpoint))
+                    _config.Provider.Endpoint = connInfo.Endpoint.ToString();
+            }
+        }
+
+        // ✨ PRIORITY 2: Resolve from individual configuration keys (backward compatibility)
         if (string.IsNullOrEmpty(_config.Provider.ApiKey) && _configuration != null)
         {
             var providerKeyForConfig = _config.Provider.ProviderKey;
             if (string.IsNullOrEmpty(providerKeyForConfig))
                 providerKeyForConfig = "openai"; // fallback default
-            
+
             // Try multiple configuration patterns
-            var apiKey = _configuration[$"{providerKeyForConfig}:ApiKey"] 
+            var apiKey = _configuration[$"{providerKeyForConfig}:ApiKey"]
                       ?? _configuration[$"{Capitalize(providerKeyForConfig)}:ApiKey"]
                       ?? Environment.GetEnvironmentVariable($"{providerKeyForConfig.ToUpperInvariant()}_API_KEY");
-            
+
             if (!string.IsNullOrEmpty(apiKey))
             {
                 _config.Provider.ApiKey = apiKey;
             }
-            
+
             // Also try to resolve endpoint if not set
             if (string.IsNullOrEmpty(_config.Provider.Endpoint))
             {
-                var endpoint = _configuration[$"{providerKeyForConfig}:Endpoint"] 
+                var endpoint = _configuration[$"{providerKeyForConfig}:Endpoint"]
                             ?? _configuration[$"{Capitalize(providerKeyForConfig)}:Endpoint"];
-                
+
                 if (!string.IsNullOrEmpty(endpoint))
                 {
                     _config.Provider.Endpoint = endpoint;
@@ -923,8 +967,35 @@ public class AgentBuilder
 
         if (!validation.IsValid)
         {
-            throw new InvalidOperationException(
-                $"Provider configuration for '{providerKey}' is invalid:\n- {string.Join("\n- ", validation.Errors)}");
+            // Check if this is an API key issue and provide helpful guidance
+            var hasApiKeyError = validation.Errors.Any(e =>
+                e.Contains("API key", StringComparison.OrdinalIgnoreCase) ||
+                e.Contains("ApiKey", StringComparison.OrdinalIgnoreCase) ||
+                e.Contains("AccessKey", StringComparison.OrdinalIgnoreCase));
+
+            var errorMessage = $"Provider configuration for '{providerKey}' is invalid:\n- {string.Join("\n- ", validation.Errors)}";
+
+            if (hasApiKeyError)
+            {
+                var providerUpper = providerKey.ToUpperInvariant();
+                var providerCapitalized = Capitalize(providerKey);
+
+                errorMessage += $"\n\n💡 Configure your API key using any of these methods:\n\n" +
+                    $"1️⃣  CONNECTION STRING (recommended):\n" +
+                    $"   appsettings.json → \"ConnectionStrings\": {{\n" +
+                    $"     \"Agent\": \"Provider={providerKey};AccessKey=your-api-key;Model=your-model\"\n" +
+                    $"   }}\n\n" +
+                    $"2️⃣  CONFIGURATION FILE:\n" +
+                    $"   appsettings.json → \"{providerCapitalized}\": {{ \"ApiKey\": \"your-api-key\" }}\n\n" +
+                    $"3️⃣  ENVIRONMENT VARIABLE:\n" +
+                    $"   {providerUpper}_API_KEY=your-api-key\n\n" +
+                    $"4️⃣  USER SECRETS (development only):\n" +
+                    $"   dotnet user-secrets set \"{providerCapitalized}:ApiKey\" \"your-api-key\"\n\n" +
+                    $"5️⃣  CODE (for testing only, not recommended):\n" +
+                    $"   Provider = new ProviderConfig {{ ApiKey = \"your-api-key\", ... }}";
+            }
+
+            throw new InvalidOperationException(errorMessage);
         }
 
         // Create chat client and error handler via provider factories
@@ -2380,7 +2451,29 @@ public class ErrorHandlingPolicy
 public static class AgentBuilderConfigExtensions
 {
     /// <summary>
-    /// Sets the configuration source for reading API keys and other settings
+    /// Sets a custom configuration source for reading API keys and other settings.
+    ///
+    /// ⚠️ OPTIONAL: AgentBuilder automatically loads configuration from:
+    ///    - appsettings.json (in current directory)
+    ///    - Environment variables
+    ///    - User secrets (development only)
+    ///
+    /// 💡 Only use this method if you need to:
+    ///    - Load from a non-standard location
+    ///    - Use custom configuration sources
+    ///    - Override the default configuration behavior
+    ///
+    /// Example (custom configuration):
+    /// <code>
+    /// var customConfig = new ConfigurationBuilder()
+    ///     .AddJsonFile("custom.json")
+    ///     .AddEnvironmentVariables("MY_APP_")
+    ///     .Build();
+    ///
+    /// var agent = new AgentBuilder(config)
+    ///     .WithAPIConfiguration(customConfig)  // Override default
+    ///     .Build();
+    /// </code>
     /// </summary>
     /// <param name="builder">The agent builder.</param>
     /// <param name="configuration">Configuration instance (e.g., from appsettings.json)</param>
@@ -2391,7 +2484,18 @@ public static class AgentBuilderConfigExtensions
     }
 
     /// <summary>
-    /// Sets the configuration source for reading API keys and other settings from a JSON file
+    /// Sets a custom configuration source from a specific JSON file.
+    ///
+    /// ⚠️ OPTIONAL: AgentBuilder automatically loads appsettings.json from the current directory.
+    ///
+    /// 💡 Only use this method if you need to load from a different file or location.
+    ///
+    /// Example:
+    /// <code>
+    /// var agent = new AgentBuilder(config)
+    ///     .WithAPIConfiguration("config/production.json")
+    ///     .Build();
+    /// </code>
     /// </summary>
     /// <param name="builder">The agent builder.</param>
     /// <param name="jsonFilePath">Path to the JSON configuration file (e.g., appsettings.json)</param>
