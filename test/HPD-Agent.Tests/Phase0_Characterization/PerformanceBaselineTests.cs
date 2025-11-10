@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using Xunit;
 using FluentAssertions;
 using System.Diagnostics;
-
+using HPD.Agent;
 namespace HPD_Agent.Tests.Phase0_Characterization;
 
 /// <summary>

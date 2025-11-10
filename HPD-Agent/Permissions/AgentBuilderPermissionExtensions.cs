@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using HPD.Agent;
 using System.Collections.Concurrent;
 
 public static class AgentBuilderPermissionExtensions

@@ -1,4 +1,6 @@
 using System.Threading.Channels;
+using HPD.Agent;
+
 
 namespace HPD_Agent.Tests.Infrastructure;
 

@@ -1,4 +1,5 @@
 using A2A;
+using HPD.Agent;
 using Microsoft.Extensions.AI;
 using System;
 using System.Collections.Concurrent;
@@ -6,17 +7,18 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MicrosoftAgent = HPD.Agent.Microsoft.Agent;
 
 
 public class A2AHandler
 {
-    private readonly Agent _agent;
+    private readonly MicrosoftAgent _agent;
     private readonly ITaskManager _taskManager;
 
     // This dictionary will map an A2A taskId to an HPD-Agent Thread (agent is stateless and reusable)
     private readonly ConcurrentDictionary<string, ConversationThread> _activeThreads = new();
 
-    public A2AHandler(Agent agent, ITaskManager taskManager)
+    public A2AHandler(MicrosoftAgent agent, ITaskManager taskManager)
     {
         _agent = agent;
         _taskManager = taskManager;

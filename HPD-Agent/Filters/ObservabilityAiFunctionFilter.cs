@@ -2,12 +2,13 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using HPD.Agent;
 
 /// <summary>
 /// Creates detailed OpenTelemetry spans (Activities) and metrics for each AI function call.
 /// This provides both qualitative traces and quantitative metrics for the agent's tool execution process.
 /// </summary>
-public class ObservabilityAiFunctionFilter : IAiFunctionFilter
+internal class ObservabilityAiFunctionFilter : IAiFunctionFilter
 {
     private readonly ActivitySource _activitySource;
     private readonly Counter<long> _toolCallCounter;
@@ -24,7 +25,7 @@ public class ObservabilityAiFunctionFilter : IAiFunctionFilter
         _toolCallErrorCounter = meter.CreateCounter<long>("agent.tool_calls.errors", description: "Number of failed tool calls.");
     }
 
-    public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
+    public async Task InvokeAsync(HPD.Agent.FunctionInvocationContext context, Func<HPD.Agent.FunctionInvocationContext, Task> next)
     {
         var functionName = context.ToolCallRequest?.FunctionName ?? "unknown_function";
         var tags = new TagList { { "gen_ai.tool.name", functionName } };

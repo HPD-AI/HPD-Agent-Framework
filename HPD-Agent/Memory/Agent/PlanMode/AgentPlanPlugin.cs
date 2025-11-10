@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Threading.Tasks;
 using System.Linq;
 using HPD_Agent.Memory.Agent.PlanMode;
+using HPD.Agent;
 
 /// <summary>
 /// HPD-Agent AI plugin for Plan Mode management.

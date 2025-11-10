@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using Xunit;
 using FluentAssertions;
 using HPD.Agent.Providers;
-
+using HPD.Agent;
 namespace HPD_Agent.Tests.Phase0_Characterization;
 
 /// <summary>
@@ -28,7 +28,7 @@ public class PermissionTests : AgentTestBase
 
         var builder = new AgentBuilder(config, new TestProviderRegistry(client));
         builder.WithPermissions(); // Enable permission filtering
-        return builder.Build();
+        return builder.BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using HPD.Agent;
 using System.Threading.Tasks;
 
 /// <summary>
@@ -6,7 +7,7 @@ using System.Threading.Tasks;
 /// Emits standardized permission events that can be handled by application-specific UI code.
 /// Replaces both ConsolePermissionFilter and AGUIPermissionFilter with a single, protocol-agnostic implementation.
 /// </summary>
-public class PermissionFilter : IPermissionFilter
+internal class PermissionFilter : IPermissionFilter
 {
     private readonly IPermissionStorage? _storage;
     private readonly AgentConfig? _config;

@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using HPD.Agent;
 
 /// <summary>
 /// Simple logging filter for orchestration-level AI function calls. Logs input arguments before execution and result after execution.
@@ -19,8 +20,8 @@ public class LoggingAiFunctionFilter : IAiFunctionFilter
         _logger = loggerFactory?.CreateLogger<LoggingAiFunctionFilter>();
     }
     public async Task InvokeAsync(
-        FunctionInvocationContext context,
-        Func<FunctionInvocationContext, Task> next)
+        HPD.Agent.FunctionInvocationContext context,
+        Func<HPD.Agent.FunctionInvocationContext, Task> next)
     {
         // Pre-invocation logging
         var functionName = context.ToolCallRequest?.FunctionName ?? "<unknown>";

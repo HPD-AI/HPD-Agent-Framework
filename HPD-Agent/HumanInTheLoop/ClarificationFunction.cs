@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
+using HPD.Agent;
 
 /// <summary>
 /// Provides a clarification function that enables parent/orchestrator agents to ask users for

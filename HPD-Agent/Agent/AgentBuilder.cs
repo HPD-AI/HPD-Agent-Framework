@@ -13,7 +13,18 @@ using System.Text.Json;
 
 using HPD_Agent.Memory.Agent.PlanMode;
 
+namespace HPD.Agent;
+
 // NOTE: Project filter classes are defined in the global namespace with the Project class
+
+/// <summary>
+/// Dependencies needed for agent construction
+/// </summary>
+internal record AgentBuildDependencies(
+    IChatClient ClientToUse,
+    ChatOptions? MergedOptions,
+    HPD.Agent.ErrorHandling.IProviderErrorHandler ErrorHandler,
+    HPD_Agent.Skills.SkillScopingManager? SkillScopingManager);
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -430,28 +441,129 @@ public class AgentBuilder
     /// <summary>
     /// Builds the dual interface agent asynchronously.
     /// Validation behavior is controlled by the ValidationConfig (see WithValidation()).
+    /// Returns HPD.Agent.Microsoft.Agent for Microsoft protocol compatibility.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for async operations</param>
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    public async Task<Agent> BuildAsync(CancellationToken cancellationToken = default)
+    public async Task<Microsoft.Agent> BuildAsync(CancellationToken cancellationToken = default)
     {
-        return await BuildCoreAsync(cancellationToken).ConfigureAwait(false);
+        var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
+        
+        // Wrap in Microsoft protocol adapter
+        return new Microsoft.Agent(
+            _config!,
+            buildData.ClientToUse,
+            buildData.MergedOptions,
+            _promptFilters,
+            _scopedFilterManager!,
+            buildData.ErrorHandler,
+            _providerRegistry!,
+            buildData.SkillScopingManager,
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
     }
 
     /// <summary>
     /// Builds the dual interface agent synchronously (blocks thread until complete).
     /// Always uses sync validation for performance.
+    /// Returns HPD.Agent.Microsoft.Agent by default for backwards compatibility.
     /// </summary>
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    public Agent Build()
+    public Microsoft.Agent Build()
     {
-        return BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+        var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+        // Wrap in Microsoft protocol adapter
+        return new Microsoft.Agent(
+            _config!,
+            buildData.ClientToUse,
+            buildData.MergedOptions,
+            _promptFilters,
+            _scopedFilterManager!,
+            buildData.ErrorHandler,
+            _providerRegistry!,
+            buildData.SkillScopingManager,
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
+    }
+
+    /// <summary>
+    /// Builds the AGUI protocol agent asynchronously.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for async operations</param>
+    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
+    public async Task<AGUI.Agent> BuildAGUIAsync(CancellationToken cancellationToken = default)
+    {
+        var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
+        
+        // Wrap in AGUI protocol adapter
+        return new AGUI.Agent(
+            _config!,
+            buildData.ClientToUse,
+            buildData.MergedOptions,
+            _promptFilters,
+            _scopedFilterManager!,
+            buildData.ErrorHandler,
+            _providerRegistry!,
+            buildData.SkillScopingManager,
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
+    }
+
+    /// <summary>
+    /// Builds the AGUI protocol agent synchronously.
+    /// </summary>
+    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
+    public AGUI.Agent BuildAGUI()
+    {
+        var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+        // Wrap in AGUI protocol adapter  
+        return new AGUI.Agent(
+            _config!,
+            buildData.ClientToUse,
+            buildData.MergedOptions,
+            _promptFilters,
+            _scopedFilterManager!,
+            buildData.ErrorHandler,
+            _providerRegistry!,
+            buildData.SkillScopingManager,
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
     }
 
     /// <summary>
     /// Core build logic shared between sync and async paths
     /// </summary>
-    private async Task<Agent> BuildCoreAsync(CancellationToken cancellationToken)
+    internal async Task<Agent> BuildCoreAsync(CancellationToken cancellationToken)
+    {
+        var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
+        
+        // Create agent using the new, cleaner constructor with AgentConfig
+        var agent = new Agent(
+            _config,
+            buildData.ClientToUse,
+            buildData.MergedOptions,
+            _promptFilters,
+            _scopedFilterManager,
+            buildData.ErrorHandler,
+            _providerRegistry,
+            buildData.SkillScopingManager,
+            _permissionFilters,
+            _globalFilters,
+            _messageTurnFilters);
+
+        return agent;
+    }
+
+    /// <summary>
+    /// Builds all dependencies needed for agent construction
+    /// </summary>
+    private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
         // === START: VALIDATION LOGIC ===
         var agentConfigValidator = new AgentConfigValidator();
@@ -698,21 +810,12 @@ public class AgentBuilder
         var projectFilter = new ProjectInjectedMemoryFilter(defaultProjectFilterOptions, _logger?.CreateLogger<ProjectInjectedMemoryFilter>());
         _promptFilters.Add(projectFilter);
 
-        // Create agent using the new, cleaner constructor with AgentConfig
-        var agent = new Agent(
-            _config,
+        // Return dependencies instead of creating agent
+        return new AgentBuildDependencies(
             clientToUse,
-            mergedOptions, // Pass the merged options directly
-            _promptFilters,
-            _scopedFilterManager,
+            mergedOptions,
             errorHandler,
-            _providerRegistry,
-            skillScopingManager, // Pass skill scoping manager (null if not configured)
-            _permissionFilters,
-            _globalFilters,
-            _messageTurnFilters);
-
-        return agent;
+            skillScopingManager);
     }
 
     #region Helper Methods

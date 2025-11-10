@@ -1,6 +1,7 @@
 using FluentValidation;
 using System;
 using System.Linq;
+using HPD.Agent;
 
 public class AgentConfigValidator : AbstractValidator<AgentConfig>
 {

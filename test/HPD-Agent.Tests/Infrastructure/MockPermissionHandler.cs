@@ -1,5 +1,5 @@
 namespace HPD_Agent.Tests.Infrastructure;
-
+using HPD.Agent;
 /// <summary>
 /// Mock permission handler that automatically responds to permission requests during tests.
 /// Allows programmatic control over approval/denial decisions.
@@ -24,7 +24,7 @@ public sealed class MockPermissionHandler : IDisposable
         string? DenialReason = null,
         PermissionChoice Choice = PermissionChoice.Ask);
 
-    public MockPermissionHandler(Agent agent, IAsyncEnumerable<InternalAgentEvent> eventStream)
+        internal MockPermissionHandler(Agent agent, IAsyncEnumerable<InternalAgentEvent> eventStream)
     {
         _agent = agent;
         _handlerTask = Task.Run(async () => await HandleEventsAsync(eventStream));

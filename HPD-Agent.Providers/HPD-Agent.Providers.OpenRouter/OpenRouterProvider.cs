@@ -9,7 +9,7 @@ using System.Linq;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
-
+using HPD.Agent;
 namespace HPD_Agent.Providers.OpenRouter;
 
 internal class OpenRouterProvider : IProviderExtendedFeatures

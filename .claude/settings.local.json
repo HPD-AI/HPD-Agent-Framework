@@ -13,7 +13,8 @@
       "Bash(dotnet build:*)",
       "Bash(dotnet test:*)",
       "Bash(dotnet nuget:*)",
-      "Bash(dotnet list:*)"
+      "Bash(dotnet list:*)",
+      "Bash(awk:*)"
     ],
     "deny": [],
     "ask": []

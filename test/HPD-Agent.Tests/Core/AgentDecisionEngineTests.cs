@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
 using Xunit;
-
+using HPD.Agent;
 namespace HPD_Agent.Tests.Core;
 
 /// <summary>

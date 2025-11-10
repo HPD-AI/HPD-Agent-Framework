@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using HPD.Agent.Providers;
+using HPD.Agent;
 
 namespace HPD_Agent.Tests.Infrastructure;
 
@@ -16,7 +17,7 @@ public static class TestAgentFactory
     /// <param name="chatClient">Optional chat client (uses FakeChatClient if not provided)</param>
     /// <param name="tools">Optional tools to register</param>
     /// <returns>Configured Agent instance ready for testing</returns>
-    public static Agent Create(
+    internal static Agent Create(
         AgentConfig? config = null,
         IChatClient? chatClient = null,
         params AIFunction[] tools)
@@ -36,8 +37,9 @@ public static class TestAgentFactory
             config.Provider.DefaultChatOptions.Tools = tools.Cast<Microsoft.Extensions.AI.AITool>().ToList();
         }
 
-        // Build and return agent
-        return builder.Build();
+        // Build and return core agent (not protocol-wrapped)
+        // Use the internal BuildCoreAsync method to get the core agent directly
+        return builder.BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>

@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.AI;
-using Microsoft.Agents.AI;
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
@@ -11,12 +10,16 @@ using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+
+namespace HPD.Agent;
+
 /// <summary>
-/// Agent facade that delegates to specialized components for clean separation of concerns.
-/// Supports traditional chat, AGUI streaming protocols, and extended capabilities.
-/// AIAgent (stateless, and stateful with threads) for maximum compatibility.
+/// Protocol-agnostic agent execution engine.
+/// Provides a pure, composable core for building AI agents without framework dependencies.
+/// Delegates to specialized components for clean separation of concerns.
+/// INTERNAL: Use HPD.Agent.Microsoft.Agent or HPD.Agent.AGUI.Agent for protocol-specific APIs.
 /// </summary>
-public partial class Agent : AIAgent
+internal sealed class Agent
 {
     private readonly IChatClient _baseClient;
     private readonly string _name;
@@ -51,8 +54,6 @@ public partial class Agent : AIAgent
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
     private readonly ToolScheduler _toolScheduler;
-    private readonly AGUIEventHandler _aguiEventHandler;
-    private readonly AGUIEventConverter _aguiConverter;
     private readonly HPD_Agent.Scoping.UnifiedScopingManager _scopingManager;
     private readonly PermissionManager _permissionManager;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
@@ -182,7 +183,7 @@ public partial class Agent : AIAgent
 
     /// <summary>
     /// Sends a response to a filter waiting for a specific request.
-    /// Called by external handlers (AGUI, Console, etc.) when user provides input.
+    /// Called by external handlers when user provides input.
     /// Thread-safe: Can be called from any thread.
     /// Delegates to the event coordinator.
     /// </summary>
@@ -300,14 +301,12 @@ public partial class Agent : AIAgent
         _scopingManager = new HPD_Agent.Scoping.UnifiedScopingManager(skills, initialTools, null);
 
         _toolScheduler = new ToolScheduler(this, _functionCallProcessor, _permissionManager, config, _scopingManager);
-        _aguiConverter = new AGUIEventConverter();
-        _aguiEventHandler = new AGUIEventHandler(this);
     }
 
     /// <summary>
     /// Agent name
     /// </summary>
-    public override string Name => _name;
+    public string Name => _name;
 
     /// <summary>
     /// System instructions/persona
@@ -338,7 +337,7 @@ public partial class Agent : AIAgent
     /// <summary>
     /// Protocol-agnostic core agentic loop that emits internal events.
     /// This method contains all the agent logic without any protocol-specific concerns.
-    /// Adapters convert internal events to protocol-specific formats (AGUI, IChatClient, etc.).
+    /// Adapters convert internal events to protocol-specific formats as needed.
     /// 
     /// ARCHITECTURE:
     /// - Uses AgentDecisionEngine (pure, testable) for all decision logic
@@ -1131,100 +1130,9 @@ public partial class Agent : AIAgent
 
 
     /// <summary>
-    /// Executes a streaming turn with AGUI protocol input.
-    /// Converts RunAgentInput to Extensions.AI format internally and streams BaseEvent results.
-    /// This eliminates the need for a separate AGUIEventHandler - AGUI support is built directly into Agent.
-    /// </summary>
-    /// <param name="aguiInput">The AGUI protocol input containing thread, messages, tools, and context</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>StreamingTurnResult containing the BaseEvent stream and final conversation history</returns>
-    public async Task<StreamingTurnResult> ExecuteStreamingTurnAsync(
-        RunAgentInput aguiInput,
-        CancellationToken cancellationToken = default)
-    {
-        // Convert AGUI input to Extensions.AI format using the shared converter instance
-        var messages = _aguiConverter.ConvertToExtensionsAI(aguiInput);
-        var chatOptions = _aguiConverter.ConvertToExtensionsAIChatOptions(
-            aguiInput,
-            Config?.Provider?.DefaultChatOptions,
-            Config?.PluginScoping?.ScopeFrontendTools ?? false,
-            Config?.PluginScoping?.MaxFunctionNamesInDescription ?? 10);
-
-        // Add AGUI metadata to chat options for tracking
-        chatOptions ??= new ChatOptions();
-        chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-        chatOptions.AdditionalProperties["ConversationId"] = aguiInput.ThreadId;
-        chatOptions.AdditionalProperties["RunId"] = aguiInput.RunId;
-
-        // Use the new protocol-agnostic internal core
-        var turnHistory = new List<ChatMessage>();
-        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var internalStream = RunAgenticLoopInternal(
-            messages,
-            chatOptions,
-            documentPaths: null,
-            turnHistory,
-            historyCompletionSource,
-            reductionCompletionSource,
-            cancellationToken);
-
-        // Adapt internal events to AGUI protocol
-        var aguiStream = EventStreamAdapter.ToAGUI(internalStream, aguiInput.ThreadId, aguiInput.RunId, cancellationToken);
-
-        // Wrap with error handling
-        var errorHandledStream = EventStreamAdapter.WithErrorHandling(aguiStream, historyCompletionSource, cancellationToken);
-
-        // Wrap the final history task to apply post-processing when complete
-        var wrappedHistoryTask = historyCompletionSource.Task.ContinueWith(async task =>
-        {
-            Exception? invocationException = task.IsFaulted ? task.Exception?.InnerException : null;
-            var history = task.IsCompletedSuccessfully ? await task : new List<ChatMessage>();
-
-            // Apply post-invoke filters (for memory extraction, learning, etc.)
-            try
-            {
-                await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                    messages.ToList(),
-                    task.IsCompletedSuccessfully ? history : null,
-                    invocationException,
-                    chatOptions,
-                    Config?.Name ?? "Agent",
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Log but don't fail - post-processing is best-effort
-            }
-
-            // Apply message turn filters after the turn completes
-            if (task.IsCompletedSuccessfully && _messageTurnFilters.Any())
-            {
-                try
-                {
-                    var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
-                    await ApplyMessageTurnFilters(userMessage, history, chatOptions, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // Log but don't fail the turn if filters fail
-                }
-            }
-
-            return history;
-        }, cancellationToken).Unwrap();
-
-        // Return the result containing stream, history, and reduction metadata
-        return new StreamingTurnResult(errorHandledStream, wrappedHistoryTask, reductionCompletionSource.Task);
-    }
-
-
-
-    /// <summary>
     /// Protocol-agnostic core agentic loop that emits internal events.
     /// This method contains all the agent logic without any protocol-specific concerns.
-    /// Adapters convert internal events to protocol-specific formats (AGUI, IChatClient, etc.).
+    /// Adapters convert internal events to protocol-specific formats as needed.
     /// </summary>
 
     /// <summary>
@@ -1614,433 +1522,35 @@ Best practices:
     }
 
     /// <summary>
-    /// Runs the agent with messages and an explicit thread for state management (non-streaming).
-    /// This is the primary method for agent execution.
+    /// Runs the agent with messages (streaming). Returns the internal event stream.
+    /// This is the primary public API method for agent execution.
     /// </summary>
     /// <param name="messages">Messages to process</param>
-    /// <param name="thread">Thread for conversation state</param>
     /// <param name="options">Optional chat options</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Chat response with final messages</returns>
-    public override async Task<AgentRunResponse> RunAsync(
+    /// <returns>Stream of internal agent events</returns>
+    public async IAsyncEnumerable<InternalAgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
-        AgentThread? thread = null,
-        AgentRunOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        // Create thread if not provided, cast to ConversationThread
-        var conversationThread = (thread as ConversationThread) ?? new ConversationThread();
-
-        // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
-        var chatOptions = options != null ? new ChatOptions() : null;
-
-        // Get current messages once
-        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Add workflow messages to thread state
-        foreach (var msg in messages)
-        {
-            if (!currentMessages.Contains(msg))
-            {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
-            }
-        }
-
-        // Refresh messages after adding new ones
-        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Note: ConversationContext is set in RunAgenticLoopInternal when agentRunContext is created
-
-        IReadOnlyList<ChatMessage> finalHistory;
-        try
-        {
-            // ✅ OPTIMIZATION: Call RunAgenticLoopInternal directly (no AGUI conversion!)
-            var turnHistory = new List<ChatMessage>();
-            var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            var internalStream = RunAgenticLoopInternal(
-                currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
-                chatOptions,
-                documentPaths: null,
-                turnHistory,
-                historyCompletionSource,
-                reductionCompletionSource,
-                cancellationToken);
-
-            // Consume stream (non-streaming path)
-            await foreach (var _ in internalStream.WithCancellation(cancellationToken))
-            {
-                // Just consume events
-            }
-
-            // Get final history and reduction
-            finalHistory = await historyCompletionSource.Task;
-            var reductionMetadata = await reductionCompletionSource.Task;
-
-            // Apply post-invoke filters (for memory extraction, learning, etc.)
-            try
-            {
-                await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                    currentMessages.ToList(),
-                    finalHistory.ToList(),
-                    null, // no exception
-                    chatOptions,
-                    Config?.Name ?? "Agent",
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Log but don't fail - post-processing is best-effort
-            }
-
-            // Apply message turn filters after the turn completes
-            if (_messageTurnFilters.Any())
-            {
-                try
-                {
-                    var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
-                    await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // Log but don't fail the turn if filters fail
-                }
-            }
-
-            // Apply reduction
-            if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
-            {
-                await conversationThread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
-            }
-        }
-        finally
-        {
-            // Context is cleared automatically per function call in Agent.CurrentFunctionContext
-        }
-
-        // Refresh messages after turn completes and before checking final history
-        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Update thread with final messages
-        foreach (var msg in finalHistory)
-        {
-            if (!currentMessages.Contains(msg))
-            {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
-            }
-        }
-
-        // Convert to AgentRunResponse
-        var response = new AgentRunResponse();
-        foreach (var msg in finalHistory)
-        {
-            response.Messages.Add(msg);
-        }
-
-        return response;
-    }
-
-    /// <summary>
-    /// Runs the agent with messages and an explicit thread for state management (streaming).
-    /// This is the primary method for streaming agent execution.
-    /// </summary>
-    /// <param name="messages">Messages to process</param>
-    /// <param name="thread">Thread for conversation state</param>
-    /// <param name="options">Optional chat options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Streaming agent run response updates (extended with HPD-specific event data)</returns>
-    public override async IAsyncEnumerable<ExtendedAgentRunResponseUpdate> RunStreamingAsync(
-        IEnumerable<ChatMessage> messages,
-        AgentThread? thread = null,
-        AgentRunOptions? options = null,
+        ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Create thread if not provided, cast to ConversationThread
-        var conversationThread = (thread as ConversationThread) ?? new ConversationThread();
-
-        // Set current thread context for AsyncLocal access throughout the operation
-        var previousThread = CurrentThread;
-        CurrentThread = conversationThread;
-
-        try
-        {
-            // Convert AgentRunOptions to ChatOptions (for now, create empty ChatOptions)
-            var chatOptions = options != null ? new ChatOptions() : null;
-
-            // Add project context to ChatOptions.AdditionalProperties for filter access
-            var project = conversationThread.GetProject();
-            if (project != null)
-            {
-                chatOptions ??= new ChatOptions();
-                chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-                chatOptions.AdditionalProperties["Project"] = project;
-                chatOptions.AdditionalProperties["ConversationId"] = conversationThread.Id;
-                chatOptions.AdditionalProperties["Thread"] = conversationThread;
-            }
-
-            // Get current messages once
-        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Add workflow messages to thread state
-        foreach (var msg in messages)
-        {
-            if (!currentMessages.Contains(msg))
-            {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
-            }
-        }
-
-        // Refresh messages after adding new ones
-        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Note: ConversationContext is set in RunAgenticLoopInternal when agentRunContext is created
-
-        IReadOnlyList<ChatMessage> finalHistory;
-        try
-        {
-            // ✅ OPTIMIZATION: Call RunAgenticLoopInternal directly (no AGUI conversion!)
-            var turnHistory = new List<ChatMessage>();
-            var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            var internalStream = RunAgenticLoopInternal(
-                currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
-                chatOptions,
-                documentPaths: null,
-                turnHistory,
-                historyCompletionSource,
-                reductionCompletionSource,
-                cancellationToken);
-
-            // ✅ Use EventStreamAdapter pattern for protocol conversion
-            var agentsAIStream = EventStreamAdapter.ToAgentsAI(internalStream, conversationThread.Id, this.Name, cancellationToken);
-
-            await foreach (var update in agentsAIStream)
-            {
-                yield return update;
-            }
-
-            // Get final history and reduction
-            finalHistory = await historyCompletionSource.Task;
-            var reductionMetadata = await reductionCompletionSource.Task;
-
-            // Apply post-invoke filters (for memory extraction, learning, etc.)
-            try
-            {
-                await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                    currentMessages.ToList(),
-                    finalHistory.ToList(),
-                    null, // no exception
-                    chatOptions,
-                    Config?.Name ?? "Agent",
-                    cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Log but don't fail - post-processing is best-effort
-            }
-
-            // Apply message turn filters after the turn completes
-            if (_messageTurnFilters.Any())
-            {
-                try
-                {
-                    var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
-                    await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
-                    // Log but don't fail the turn if filters fail
-                }
-            }
-
-            // Apply reduction
-            if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
-            {
-                await conversationThread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
-            }
-        }
-        finally
-        {
-            // Context is cleared automatically per function call in Agent.CurrentFunctionContext
-        }
-
-        // Refresh messages after turn completes and before checking final history
-        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
-
-        // Update thread with final messages
-        foreach (var msg in finalHistory)
-        {
-            if (!currentMessages.Contains(msg))
-            {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
-            }
-        }
-        }
-        finally
-        {
-            // Restore previous thread context
-            CurrentThread = previousThread;
-        }
-    }
-
-
-    /// <summary>
-    /// Runs the agent with AGUI protocol input (streaming).
-    /// Returns full BaseEvent stream for AGUI frontend compatibility.
-    /// This method is for direct AGUI protocol integration (e.g., frontend communication).
-    /// </summary>
-    /// <param name="aguiInput">AGUI protocol input containing thread, messages, tools, and context</param>
-    /// <param name="thread">Conversation thread for state management</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Full stream of BaseEvent (AGUI protocol events)</returns>
-    public async IAsyncEnumerable<BaseEvent> RunStreamingAGUIAsync(
-        RunAgentInput aguiInput,
-        ConversationThread thread,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        using var activity = ActivitySource.StartActivity("agent.turn");
-        var startTime = DateTimeOffset.UtcNow;
-
-        activity?.SetTag("agent.id", thread.Id);
-        activity?.SetTag("agent.input_format", "agui");
-        activity?.SetTag("agent.thread_id", aguiInput.ThreadId);
-        activity?.SetTag("agent.run_id", aguiInput.RunId);
-
-        // Add the new user message from aguiInput to thread
-        var newUserMessage = aguiInput.Messages.LastOrDefault(m => m.Role == "user");
-        if (newUserMessage != null)
-        {
-            await thread.AddMessageAsync(new ChatMessage(ChatRole.User, newUserMessage.Content ?? ""), cancellationToken);
-        }
-
-        // Get current messages once
-        var currentMessages = await thread.GetMessagesAsync(cancellationToken);
-
-        // ✅ OPTIMIZATION: Skip AGUI message conversion, call RunAgenticLoopInternal directly
-        // Build ChatOptions from AGUI tools (only convert tools, not messages!)
-        var chatOptions = _aguiConverter.ConvertToExtensionsAIChatOptions(
-            aguiInput,
-            Config?.Provider?.DefaultChatOptions,
-            Config?.PluginScoping?.ScopeFrontendTools ?? false,
-            Config?.PluginScoping?.MaxFunctionNamesInDescription ?? 10);
-
-        chatOptions ??= new ChatOptions();
-        chatOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
-        chatOptions.AdditionalProperties["ConversationId"] = aguiInput.ThreadId;
-        chatOptions.AdditionalProperties["RunId"] = aguiInput.RunId;
-
-        // Call RunAgenticLoopInternal directly with Extensions.AI format (no message conversion!)
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var internalStream = RunAgenticLoopInternal(
-            currentMessages,  // ✅ ChatMessage[] - NO CONVERSION!
-            chatOptions,
+            messages.ToList(),
+            options,
             documentPaths: null,
             turnHistory,
             historyCompletionSource,
             reductionCompletionSource,
             cancellationToken);
 
-        // Adapt internal events to AGUI protocol
-        var aguiStream = EventStreamAdapter.ToAGUI(internalStream, aguiInput.ThreadId, aguiInput.RunId, cancellationToken);
-
-        // Wrap with error handling
-        var errorHandledStream = EventStreamAdapter.WithErrorHandling(aguiStream, historyCompletionSource, cancellationToken);
-
-        // Stream ALL BaseEvent events (no filtering for AGUI protocol)
-        await foreach (var evt in errorHandledStream.WithCancellation(cancellationToken))
+        await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
             yield return evt;
         }
-
-        // Wait for final history and check for reduction
-        var finalHistory = await historyCompletionSource.Task;
-        var reductionMetadata = await reductionCompletionSource.Task;
-
-        // Apply post-invoke filters (for memory extraction, learning, etc.)
-        try
-        {
-            await _messageProcessor.ApplyPostInvokeFiltersAsync(
-                currentMessages.ToList(),
-                finalHistory.ToList(),
-                null, // no exception
-                chatOptions,
-                Config?.Name ?? "Agent",
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            // Log but don't fail - post-processing is best-effort
-        }
-
-        // Apply message turn filters after the turn completes
-        if (_messageTurnFilters.Any())
-        {
-            try
-            {
-                var userMessage = currentMessages.LastOrDefault(m => m.Role == ChatRole.User) ?? new ChatMessage(ChatRole.User, string.Empty);
-                await ApplyMessageTurnFilters(userMessage, finalHistory, chatOptions, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Log but don't fail the turn if filters fail
-            }
-        }
-
-        // Apply reduction BEFORE adding new messages
-        if (reductionMetadata != null && reductionMetadata.SummaryMessage != null)
-        {
-            await thread.ApplyReductionAsync(reductionMetadata.SummaryMessage, reductionMetadata.MessagesRemovedCount, cancellationToken);
-        }
-
-        // Refresh messages after reduction and before checking final history
-        currentMessages = await thread.GetMessagesAsync(cancellationToken);
-
-        // Update thread
-        foreach (var msg in finalHistory)
-        {
-            if (!currentMessages.Contains(msg))
-            {
-                await thread.AddMessageAsync(msg, cancellationToken);
-            }
-        }
-
-        var duration = DateTimeOffset.UtcNow - startTime;
-        activity?.SetTag("agent.duration_ms", duration.TotalMilliseconds);
-        activity?.SetTag("agent.success", true);
-    }
-
-    #endregion
-
-    #region AIAgent Abstract Method Implementations
-
-    /// <summary>
-    /// Creates a new conversation thread compatible with this agent.
-    /// </summary>
-    /// <returns>A new ConversationThread instance.</returns>
-    public override AgentThread GetNewThread()
-    {
-        return new ConversationThread();
-    }
-
-    /// <summary>
-    /// Deserializes a conversation thread from its JSON representation.
-    /// </summary>
-    /// <param name="serializedThread">The JSON element containing the serialized thread state.</param>
-    /// <param name="jsonSerializerOptions">Optional JSON serialization options.</param>
-    /// <returns>A restored ConversationThread instance.</returns>
-    public override AgentThread DeserializeThread(System.Text.Json.JsonElement serializedThread, System.Text.Json.JsonSerializerOptions? jsonSerializerOptions = null)
-    {
-        var snapshot = System.Text.Json.JsonSerializer.Deserialize<ConversationThreadSnapshot>(serializedThread, jsonSerializerOptions);
-        if (snapshot == null)
-        {
-            throw new System.Text.Json.JsonException("Failed to deserialize ConversationThreadSnapshot from JSON.");
-        }
-        return ConversationThread.Deserialize(snapshot);
     }
 
     #endregion
@@ -2066,7 +1576,7 @@ Best practices:
 /// - Easy to reason about (pure state in, decision out)
 /// - Property-based testing possible
 /// </remarks>
-public sealed class AgentDecisionEngine
+internal sealed class AgentDecisionEngine
 {
     /// <summary>
     /// Decides what the agent should do next based on current state.
@@ -2304,7 +1814,7 @@ public sealed class AgentDecisionEngine
 /// };
 /// </code>
 /// </remarks>
-public abstract record AgentDecision
+internal abstract record AgentDecision
 {
     /// <summary>
     /// Decision: Call the LLM with current conversation messages.
@@ -2346,7 +1856,7 @@ public abstract record AgentDecision
 /// <param name="Name">Name of the tool to invoke</param>
 /// <param name="CallId">Unique identifier for this specific invocation (for correlation)</param>
 /// <param name="Arguments">Dictionary of argument names to values</param>
-public sealed record AgentToolCallRequest(
+internal sealed record AgentToolCallRequest(
     string Name,
     string CallId,
     IReadOnlyDictionary<string, object?> Arguments)
@@ -2708,7 +2218,7 @@ public sealed record AgentLoopState
 /// - Easy to understand (minimal surface area)
 /// - Easy to evolve (changes don't ripple through the system)
 /// </remarks>
-public sealed record AgentConfiguration
+internal sealed record AgentConfiguration
 {
     /// <summary>
     /// Maximum iterations before forced termination.
@@ -2810,7 +2320,7 @@ public sealed record AgentConfiguration
 /// Eliminates duplication of function map building logic across FunctionCallProcessor,
 /// PermissionManager, and ToolScheduler.
 /// </summary>
-public static class FunctionMapBuilder
+internal static class FunctionMapBuilder
 {
     /// <summary>
     /// Builds map with server tools (low priority) and request tools (high priority).
@@ -2928,7 +2438,7 @@ public static class FunctionMapBuilder
 /// Eliminates duplication of content extraction logic across Agent, MessageProcessor,
 /// and AgentDocumentProcessor.
 /// </summary>
-public static class ContentExtractor
+internal static class ContentExtractor
 {
     /// <summary>
     /// Creates canonical string for content comparison (deduplication).
@@ -3118,66 +2628,12 @@ public static class ContentExtractor
 
 #endregion
 
-#region AGUI Event Handling
-
-/// <summary>
-/// Thin wrapper that implements IAGUIAgent interface for backward compatibility.
-/// Delegates directly to Agent.ExecuteStreamingTurnAsync(RunAgentInput) overload.
-/// For new code, prefer calling Agent.ExecuteStreamingTurnAsync(RunAgentInput) directly.
-///
-/// MIGRATION NOTE: This is a temporary adapter for the custom AGUI protocol implementation.
-/// When the official AGUIDotnet library is released with AOT support:
-/// 1. This class will be updated to implement AGUIDotnet.Agent.IAGUIAgent
-/// 2. Or may be deprecated in favor of the official library's implementation
-/// 3. The underlying Agent.ExecuteStreamingTurnAsync(RunAgentInput) will remain stable
-///
-/// Current implementation provides AGUI protocol compatibility without external dependencies.
-/// </summary>
-public class AGUIEventHandler : IAGUIAgent
-{
-    private readonly Agent _agent;
-
-    public AGUIEventHandler(Agent agent)
-    {
-        _agent = agent ?? throw new ArgumentNullException(nameof(agent));
-    }
-
-    /// <summary>
-    /// Runs the agent in AGUI streaming mode, emitting events to the provided channel.
-    /// This is now a thin wrapper around Agent.ExecuteStreamingTurnAsync(RunAgentInput).
-    /// </summary>
-    public async Task RunAsync(
-        RunAgentInput input,
-        ChannelWriter<BaseEvent> events,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Delegate to the new Agent overload that handles AGUI input directly
-            var streamResult = await _agent.ExecuteStreamingTurnAsync(input, cancellationToken).ConfigureAwait(false);
-
-            // Forward events to the channel
-            await foreach (var baseEvent in streamResult.EventStream.WithCancellation(cancellationToken))
-            {
-                await events.WriteAsync(baseEvent, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            // Always complete the channel, even on error
-            events.Complete();
-        }
-    }
-}
-
-#endregion
-
 #region FunctionCallProcessor
 
 /// <summary>
 /// Handles all function calling logic, including multi-turn execution and filter pipelines.
 /// </summary>
-public class FunctionCallProcessor
+internal class FunctionCallProcessor
 {
     private readonly Agent _agent; // NEW: Reference to agent for filter event coordination
     private readonly ScopedFilterManager? _scopedFilterManager;
@@ -3417,7 +2873,7 @@ public class FunctionCallProcessor
 /// <summary>
 /// Handles all pre-processing of chat messages and options before sending to the LLM.
 /// </summary>
-public class MessageProcessor
+internal class MessageProcessor
 {
     private readonly IReadOnlyList<IPromptFilter> _promptFilters;
     private readonly string? _systemInstructions;
@@ -3753,7 +3209,7 @@ public class MessageProcessor
 /// <summary>
 /// Manages a single streaming call to the LLM and translates the raw output into TurnEvents
 /// </summary>
-public class AgentTurn
+internal class AgentTurn
 {
     private readonly IChatClient _baseClient;
 
@@ -3868,7 +3324,7 @@ public class AgentTurn
 /// Metadata about history reduction that occurred during a turn.
 /// Contains information needed by Conversation to apply the reduction to storage.
 /// </summary>
-public record ReductionMetadata
+internal record ReductionMetadata
 {
     /// <summary>
     /// The summary message that should be inserted into conversation history.
@@ -3887,7 +3343,7 @@ public record ReductionMetadata
 /// Updated to stream BaseEvent instead of ChatResponseUpdate.
 /// This is a breaking change for v0.
 /// </summary>
-public class StreamingTurnResult
+internal class StreamingTurnResult
 {
     /// <summary>
     /// BREAKING: Change from ChatResponseUpdate to BaseEvent
@@ -3930,7 +3386,7 @@ public class StreamingTurnResult
 /// <summary>
 /// Responsible for executing tools and running the associated IAiFunctionFilter pipeline
 /// </summary>
-public class ToolScheduler
+internal class ToolScheduler
 {
     private readonly Agent _agent;
     private readonly FunctionCallProcessor _functionCallProcessor;
@@ -4348,7 +3804,7 @@ internal static class AgentDocumentProcessor
 /// <summary>
 /// Strongly-typed permission result (replaces bool return)
 /// </summary>
-public record PermissionResult(
+internal record PermissionResult(
     bool IsApproved, 
     string? DenialReason = null,
     bool IsAutoApproved = false)
@@ -4361,7 +3817,7 @@ public record PermissionResult(
 /// <summary>
 /// Result of batch permission checking
 /// </summary>
-public record PermissionBatchResult(
+internal record PermissionBatchResult(
     List<FunctionCallContent> Approved,
     List<(FunctionCallContent Tool, string Reason)> Denied);
 
@@ -4369,7 +3825,7 @@ public record PermissionBatchResult(
 /// Centralized manager for all permission-related logic.
 /// Eliminates duplication and provides single source of truth for permission decisions.
 /// </summary>
-public class PermissionManager
+internal class PermissionManager
 {
     private readonly IReadOnlyList<IPermissionFilter> _permissionFilters;
     
@@ -4507,592 +3963,14 @@ public class PermissionManager
 /// <summary>
 /// Adapts protocol-agnostic internal agent events to specific protocol formats.
 /// Eliminates duplication of event adaptation logic across the Agent codebase.
-/// 
+///
 /// Supported protocols:
-/// - AGUI: Full event streaming with Run/Step/Tool lifecycle
-/// - IChatClient: Simplified content-only streaming (Microsoft.Extensions.AI)
+/// - Full event streaming with Run/Step/Tool lifecycle
+/// - Simplified content-only streaming (Microsoft.Extensions.AI)
 /// - Error handling wrapper for all protocols
 /// </summary>
 internal static class EventStreamAdapter
 {
-    /// <summary>
-    /// Adapts internal events to AGUI protocol format.
-    /// Maps internal events to AGUI lifecycle events (Run, Step, Tool, Content).
-    /// </summary>
-    public static async IAsyncEnumerable<BaseEvent> ToAGUI(
-        IAsyncEnumerable<InternalAgentEvent> internalStream,
-        string threadId,
-        string runId,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        await foreach (var internalEvent in internalStream.WithCancellation(cancellationToken))
-        {
-            BaseEvent? aguiEvent = internalEvent switch
-            {
-                // MESSAGE TURN → RUN events
-                InternalMessageTurnStartedEvent => EventSerialization.CreateRunStarted(threadId, runId),
-                InternalMessageTurnFinishedEvent => EventSerialization.CreateRunFinished(threadId, runId),
-                InternalMessageTurnErrorEvent e => EventSerialization.CreateRunError(e.Message),
-
-                // AGENT TURN → STEP events
-                InternalAgentTurnStartedEvent e => EventSerialization.CreateStepStarted(
-                    stepId: $"step_{e.Iteration}",
-                    stepName: $"Iteration {e.Iteration}",
-                    description: null),
-                InternalAgentTurnFinishedEvent e => EventSerialization.CreateStepFinished(
-                    stepId: $"step_{e.Iteration}",
-                    stepName: $"Iteration {e.Iteration}",
-                    result: null),
-
-                // TEXT CONTENT events
-                InternalTextMessageStartEvent e => EventSerialization.CreateTextMessageStart(e.MessageId, e.Role),
-                InternalTextDeltaEvent e => EventSerialization.CreateTextMessageContent(e.MessageId, e.Text),
-                InternalTextMessageEndEvent e => EventSerialization.CreateTextMessageEnd(e.MessageId),
-
-                // REASONING events
-                InternalReasoningStartEvent e => EventSerialization.CreateReasoningStart(e.MessageId),
-                InternalReasoningMessageStartEvent e => EventSerialization.CreateReasoningMessageStart(e.MessageId, e.Role),
-                InternalReasoningDeltaEvent e => EventSerialization.CreateReasoningMessageContent(e.MessageId, e.Text),
-                InternalReasoningMessageEndEvent e => EventSerialization.CreateReasoningMessageEnd(e.MessageId),
-                InternalReasoningEndEvent e => EventSerialization.CreateReasoningEnd(e.MessageId),
-
-                // TOOL events
-                InternalToolCallStartEvent e => EventSerialization.CreateToolCallStart(e.CallId, e.Name, e.MessageId),
-                InternalToolCallArgsEvent e => EventSerialization.CreateToolCallArgs(e.CallId, e.ArgsJson),
-                InternalToolCallEndEvent e => EventSerialization.CreateToolCallEnd(e.CallId),
-                InternalToolCallResultEvent e => EventSerialization.CreateToolCallResult(e.CallId, e.Result),
-
-                _ => null // Unknown event type
-            };
-
-            if (aguiEvent != null)
-            {
-                yield return aguiEvent;
-            }
-        }
-    }
-
-
-    /// <summary>
-    /// Adapts internal events to Microsoft.Agents.AI protocol (ExtendedAgentRunResponseUpdate).
-    /// Converts internal events to the Agents.AI protocol format, preserving all HPD-specific event data.
-    /// Returns ExtendedAgentRunResponseUpdate which includes turn boundaries, permissions, filters, etc.
-    /// </summary>
-    public static async IAsyncEnumerable<ExtendedAgentRunResponseUpdate> ToAgentsAI(
-        IAsyncEnumerable<InternalAgentEvent> internalStream,
-        string threadId,
-        string agentName,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        await foreach (var internalEvent in internalStream.WithCancellation(cancellationToken))
-        {
-            ExtendedAgentRunResponseUpdate? update = internalEvent switch
-            {
-                // Text content
-                InternalTextDeltaEvent text => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    Role = ChatRole.Assistant,
-                    Contents = [new TextContent(text.Text)],
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MessageId = text.MessageId,
-                    OriginalInternalEvent = text
-                },
-
-                // Reasoning content (for o1, DeepSeek-R1, etc.)
-                InternalReasoningDeltaEvent reasoning => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    Role = ChatRole.Assistant,
-                    Contents = [new TextReasoningContent(reasoning.Text)],
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MessageId = reasoning.MessageId,
-                    OriginalInternalEvent = reasoning
-                },
-
-                // Tool call start
-                InternalToolCallStartEvent toolCall => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    Role = ChatRole.Assistant,
-                    Contents = [new FunctionCallContent(toolCall.CallId, toolCall.Name)],
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MessageId = toolCall.MessageId,
-                    OriginalInternalEvent = toolCall
-                },
-
-                // Tool call arguments
-                InternalToolCallArgsEvent toolArgs => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ToolData = new ToolCallData
-                    {
-                        CallId = toolArgs.CallId,
-                        ArgsJson = toolArgs.ArgsJson
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalToolCallArgsEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = toolArgs
-                },
-
-                // Tool call end
-                InternalToolCallEndEvent toolEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ToolData = new ToolCallData
-                    {
-                        CallId = toolEnd.CallId,
-                        IsToolEnd = true
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalToolCallEndEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = toolEnd
-                },
-
-                // Tool call result
-                InternalToolCallResultEvent toolResult => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    Role = ChatRole.Tool,
-                    Contents = [new FunctionResultContent(toolResult.CallId, toolResult.Result)],
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    OriginalInternalEvent = toolResult
-                },
-
-                // Message turn started
-                InternalMessageTurnStartedEvent msgTurnStart => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    TurnBoundary = new TurnBoundaryData
-                    {
-                        Type = TurnBoundaryType.MessageTurnStart,
-                        MessageTurnId = msgTurnStart.MessageTurnId,
-                        ConversationId = msgTurnStart.ConversationId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalMessageTurnStartedEvent),
-                        MessageTurnId = msgTurnStart.MessageTurnId,
-                        ConversationId = msgTurnStart.ConversationId,
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = msgTurnStart
-                },
-
-                // Message turn finished
-                InternalMessageTurnFinishedEvent msgTurnEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    TurnBoundary = new TurnBoundaryData
-                    {
-                        Type = TurnBoundaryType.MessageTurnEnd,
-                        MessageTurnId = msgTurnEnd.MessageTurnId,
-                        ConversationId = msgTurnEnd.ConversationId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalMessageTurnFinishedEvent),
-                        MessageTurnId = msgTurnEnd.MessageTurnId,
-                        ConversationId = msgTurnEnd.ConversationId,
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = msgTurnEnd
-                },
-
-                // Message turn error
-                InternalMessageTurnErrorEvent msgTurnError => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ErrorData = new ErrorEventData
-                    {
-                        Message = msgTurnError.Message,
-                        Exception = msgTurnError.Exception,
-                        ExceptionType = msgTurnError.Exception?.GetType().Name,
-                        StackTrace = msgTurnError.Exception?.StackTrace
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalMessageTurnErrorEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = msgTurnError
-                },
-
-                // Agent turn started
-                InternalAgentTurnStartedEvent agentTurnStart => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    TurnBoundary = new TurnBoundaryData
-                    {
-                        Type = TurnBoundaryType.AgentTurnStart,
-                        Iteration = agentTurnStart.Iteration
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalAgentTurnStartedEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = agentTurnStart
-                },
-
-                // Agent turn finished
-                InternalAgentTurnFinishedEvent agentTurnEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    TurnBoundary = new TurnBoundaryData
-                    {
-                        Type = TurnBoundaryType.AgentTurnEnd,
-                        Iteration = agentTurnEnd.Iteration
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalAgentTurnFinishedEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = agentTurnEnd
-                },
-
-                // Text message start
-                InternalTextMessageStartEvent textStart => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.TextMessageStart,
-                        MessageId = textStart.MessageId,
-                        Role = textStart.Role
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalTextMessageStartEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = textStart
-                },
-
-                // Text message end
-                InternalTextMessageEndEvent textEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.TextMessageEnd,
-                        MessageId = textEnd.MessageId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalTextMessageEndEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = textEnd
-                },
-
-                // Reasoning start
-                InternalReasoningStartEvent reasoningStart => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.ReasoningStart,
-                        MessageId = reasoningStart.MessageId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalReasoningStartEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = reasoningStart
-                },
-
-                // Reasoning message start
-                InternalReasoningMessageStartEvent reasoningMsgStart => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.ReasoningMessageStart,
-                        MessageId = reasoningMsgStart.MessageId,
-                        Role = reasoningMsgStart.Role
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalReasoningMessageStartEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = reasoningMsgStart
-                },
-
-                // Reasoning message end
-                InternalReasoningMessageEndEvent reasoningMsgEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.ReasoningMessageEnd,
-                        MessageId = reasoningMsgEnd.MessageId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalReasoningMessageEndEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = reasoningMsgEnd
-                },
-
-                // Reasoning end
-                InternalReasoningEndEvent reasoningEnd => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    MessageBoundary = new MessageBoundaryData
-                    {
-                        Type = MessageBoundaryType.ReasoningEnd,
-                        MessageId = reasoningEnd.MessageId
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalReasoningEndEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = reasoningEnd
-                },
-
-                // Permission request
-                InternalPermissionRequestEvent permReq => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    PermissionData = new PermissionEventData
-                    {
-                        Type = PermissionEventType.Request,
-                        PermissionId = permReq.PermissionId,
-                        FunctionName = permReq.FunctionName,
-                        Description = permReq.Description,
-                        CallId = permReq.CallId,
-                        Arguments = permReq.Arguments
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalPermissionRequestEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = permReq
-                },
-
-                // Permission response
-                InternalPermissionResponseEvent permResp => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    PermissionData = new PermissionEventData
-                    {
-                        Type = PermissionEventType.Response,
-                        PermissionId = permResp.PermissionId,
-                        Approved = permResp.Approved,
-                        Reason = permResp.Reason,
-                        Choice = permResp.Choice
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalPermissionResponseEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = permResp
-                },
-
-                // Permission approved
-                InternalPermissionApprovedEvent permApproved => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    PermissionData = new PermissionEventData
-                    {
-                        Type = PermissionEventType.Approved,
-                        PermissionId = permApproved.PermissionId,
-                        Approved = true
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalPermissionApprovedEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = permApproved
-                },
-
-                // Permission denied
-                InternalPermissionDeniedEvent permDenied => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    PermissionData = new PermissionEventData
-                    {
-                        Type = PermissionEventType.Denied,
-                        PermissionId = permDenied.PermissionId,
-                        Approved = false,
-                        Reason = permDenied.Reason
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalPermissionDeniedEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = permDenied
-                },
-
-                // Continuation request
-                InternalContinuationRequestEvent contReq => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ContinuationData = new ContinuationEventData
-                    {
-                        Type = ContinuationEventType.Request,
-                        ContinuationId = contReq.ContinuationId,
-                        CurrentIteration = contReq.CurrentIteration,
-                        MaxIterations = contReq.MaxIterations
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalContinuationRequestEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = contReq
-                },
-
-                // Continuation response
-                InternalContinuationResponseEvent contResp => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ContinuationData = new ContinuationEventData
-                    {
-                        Type = ContinuationEventType.Response,
-                        ContinuationId = contResp.ContinuationId,
-                        Approved = contResp.Approved,
-                        ExtensionAmount = contResp.ExtensionAmount
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalContinuationResponseEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = contResp
-                },
-
-                // Clarification request
-                InternalClarificationRequestEvent clarReq => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ClarificationData = new ClarificationEventData
-                    {
-                        Type = ClarificationEventType.Request,
-                        RequestId = clarReq.RequestId,
-                        AgentName = clarReq.AgentName,
-                        Question = clarReq.Question,
-                        Options = clarReq.Options
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalClarificationRequestEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = clarReq
-                },
-
-                // Clarification response
-                InternalClarificationResponseEvent clarResp => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    ClarificationData = new ClarificationEventData
-                    {
-                        Type = ClarificationEventType.Response,
-                        RequestId = clarResp.RequestId,
-                        Question = clarResp.Question,
-                        Answer = clarResp.Answer
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalClarificationResponseEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = clarResp
-                },
-
-                // Filter progress
-                InternalFilterProgressEvent filterProgress => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    FilterData = new FilterEventData
-                    {
-                        Type = FilterEventType.Progress,
-                        SourceName = filterProgress.SourceName,
-                        ProgressMessage = filterProgress.Message,
-                        PercentComplete = filterProgress.PercentComplete
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalFilterProgressEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = filterProgress
-                },
-
-                // Filter error
-                InternalFilterErrorEvent filterError => new ExtendedAgentRunResponseUpdate
-                {
-                    AgentId = threadId,
-                    AuthorName = agentName,
-                    FilterData = new FilterEventData
-                    {
-                        Type = FilterEventType.Error,
-                        SourceName = filterError.SourceName,
-                        ErrorMessage = filterError.ErrorMessage,
-                        Exception = filterError.Exception
-                    },
-                    EventMetadata = new EventMetadata
-                    {
-                        EventType = nameof(InternalFilterErrorEvent),
-                        Timestamp = DateTimeOffset.UtcNow
-                    },
-                    OriginalInternalEvent = filterError
-                },
-
-                // Unknown event types - return null to filter out
-                _ => null
-            };
-
-            if (update != null)
-            {
-                yield return update;
-            }
-        }
-    }
-
     /// <summary>
     /// Wraps an event stream with error handling.
     /// Catches exceptions during enumeration and converts them to structured error events.
@@ -5203,7 +4081,7 @@ internal static class EventStreamAdapter
 /// - Multiple filters can emit concurrently
 /// - Event channel supports multiple producers, single consumer
 /// </remarks>
-public class BidirectionalEventCoordinator : IDisposable
+internal class BidirectionalEventCoordinator : IDisposable
 {
     /// <summary>
     /// Shared event channel for all events.
@@ -5313,7 +4191,7 @@ public class BidirectionalEventCoordinator : IDisposable
 
     /// <summary>
     /// Sends a response to a filter waiting for a specific request.
-    /// Called by external handlers (AGUI, Console, etc.) when user provides input.
+    /// Called by external handlers when user provides input.
     /// Thread-safe: Can be called from any thread.
     /// </summary>
     /// <param name="requestId">The unique identifier for the request</param>
@@ -5797,7 +4675,7 @@ internal static class FilterChain
 /// <summary>
 /// Protocol-agnostic internal events emitted by the agent core.
 /// These events represent what actually happened during agent execution,
-/// independent of any specific protocol (AGUI, IChatClient, etc.).
+/// independent of any specific protocol.
 ///
 /// KEY CONCEPTS:
 /// - MESSAGE TURN: The entire user interaction (user sends message → agent responds)
@@ -5805,9 +4683,7 @@ internal static class FilterChain
 /// - AGENT TURN: A single call to the LLM (one iteration in the agentic loop)
 ///   Multiple agent turns happen within one message turn when using tools
 ///
-/// Adapters convert these to protocol-specific formats:
-/// - AGUI: MessageTurn → Run, AgentTurn → Step
-/// - IChatClient: Only cares about final result, ignores turn boundaries
+/// Adapters convert these to protocol-specific formats as needed.
 /// </summary>
 public abstract record InternalAgentEvent;
 
@@ -5982,7 +4858,7 @@ public record InternalPermissionRequestEvent(
 
 /// <summary>
 /// Response to permission request.
-/// Sent by external handler (AGUI, Console) back to waiting filter.
+/// Sent by external handler back to waiting filter.
 /// </summary>
 public record InternalPermissionResponseEvent(
     string PermissionId,
@@ -6070,7 +4946,7 @@ public record InternalClarificationRequestEvent(
 
 /// <summary>
 /// Response to clarification request.
-/// Sent by external handler (AGUI, Console) back to waiting agent/plugin.
+/// Sent by external handler back to waiting agent/plugin.
 /// </summary>
 public record InternalClarificationResponseEvent(
     string RequestId,
@@ -6095,458 +4971,6 @@ public record InternalFilterErrorEvent(
     Exception? Exception = null) : InternalAgentEvent, IBidirectionalEvent;
 
 #endregion
-
-#endregion
-
-#region Extended Agent Response Classes
-
-/// <summary>
-/// Extended version of AgentRunResponseUpdate that preserves all internal event data.
-/// This allows streaming consumers to access rich event metadata that would otherwise
-/// be filtered out when converting to the standard Microsoft.Agents.AI protocol.
-/// </summary>
-/// <remarks>
-/// The base AgentRunResponseUpdate only supports basic content types (text, tool calls, etc.).
-/// HPD-Agent emits many additional event types for turn boundaries, permissions, filters, etc.
-/// This extended class preserves that data while remaining compatible with the base protocol.
-/// </remarks>
-public class ExtendedAgentRunResponseUpdate : AgentRunResponseUpdate
-{
-    /// <summary>
-    /// Metadata about the event itself (type, conversation ID, turn ID)
-    /// </summary>
-    public EventMetadata? EventMetadata { get; set; }
-
-    /// <summary>
-    /// Turn boundary information (start/end of agent turns and message turns)
-    /// </summary>
-    public TurnBoundaryData? TurnBoundary { get; set; }
-
-    /// <summary>
-    /// Message boundary information (start/end of text/reasoning messages)
-    /// </summary>
-    public MessageBoundaryData? MessageBoundary { get; set; }
-
-    /// <summary>
-    /// Tool call details (arguments JSON, completion markers)
-    /// </summary>
-    public ToolCallData? ToolData { get; set; }
-
-    /// <summary>
-    /// Permission-related event data (requests, approvals, denials)
-    /// </summary>
-    public PermissionEventData? PermissionData { get; set; }
-
-    /// <summary>
-    /// Continuation-related event data (iteration limit requests)
-    /// </summary>
-    public ContinuationEventData? ContinuationData { get; set; }
-
-    /// <summary>
-    /// Clarification-related event data (requests and responses)
-    /// </summary>
-    public ClarificationEventData? ClarificationData { get; set; }
-
-    /// <summary>
-    /// Filter-related event data (progress, errors, custom events)
-    /// </summary>
-    public FilterEventData? FilterData { get; set; }
-
-    /// <summary>
-    /// Error information (from InternalMessageTurnErrorEvent)
-    /// </summary>
-    public ErrorEventData? ErrorData { get; set; }
-
-    /// <summary>
-    /// The original internal event that generated this update (for debugging/diagnostics)
-    /// </summary>
-    [JsonIgnore]
-    public InternalAgentEvent? OriginalInternalEvent { get; set; }
-
-    /// <summary>
-    /// Helper property to check if this update represents a turn boundary
-    /// </summary>
-    [JsonIgnore]
-    public bool IsTurnBoundary => TurnBoundary != null;
-
-    /// <summary>
-    /// Helper property to check if this update represents a message boundary
-    /// </summary>
-    [JsonIgnore]
-    public bool IsMessageBoundary => MessageBoundary != null;
-
-    /// <summary>
-    /// Helper property to check if this update contains permission data
-    /// </summary>
-    [JsonIgnore]
-    public bool IsPermissionEvent => PermissionData != null;
-
-    /// <summary>
-    /// Helper property to check if this update contains filter data
-    /// </summary>
-    [JsonIgnore]
-    public bool IsFilterEvent => FilterData != null;
-
-    /// <summary>
-    /// Helper property to check if this update contains error data
-    /// </summary>
-    [JsonIgnore]
-    public bool IsErrorEvent => ErrorData != null;
-}
-
-/// <summary>
-/// Metadata about the event itself
-/// </summary>
-public class EventMetadata
-{
-    /// <summary>
-    /// The type of internal event that generated this update
-    /// </summary>
-    public string? EventType { get; set; }
-
-    /// <summary>
-    /// The conversation ID (for message turn events)
-    /// </summary>
-    public string? ConversationId { get; set; }
-
-    /// <summary>
-    /// The message turn ID (for message turn events)
-    /// </summary>
-    public string? MessageTurnId { get; set; }
-
-    /// <summary>
-    /// Timestamp when the event occurred
-    /// </summary>
-    public DateTimeOffset Timestamp { get; set; } = DateTimeOffset.UtcNow;
-}
-
-/// <summary>
-/// Turn boundary information
-/// </summary>
-public class TurnBoundaryData
-{
-    /// <summary>
-    /// Type of turn boundary (MessageTurnStart, MessageTurnEnd, AgentTurnStart, AgentTurnEnd)
-    /// </summary>
-    public TurnBoundaryType Type { get; set; }
-
-    /// <summary>
-    /// The iteration number (for agent turn events)
-    /// </summary>
-    public int? Iteration { get; set; }
-
-    /// <summary>
-    /// The message turn ID (for message turn events)
-    /// </summary>
-    public string? MessageTurnId { get; set; }
-
-    /// <summary>
-    /// The conversation ID (for message turn events)
-    /// </summary>
-    public string? ConversationId { get; set; }
-}
-
-/// <summary>
-/// Types of turn boundaries
-/// </summary>
-public enum TurnBoundaryType
-{
-    MessageTurnStart,
-    MessageTurnEnd,
-    AgentTurnStart,
-    AgentTurnEnd
-}
-
-/// <summary>
-/// Message boundary information
-/// </summary>
-public class MessageBoundaryData
-{
-    /// <summary>
-    /// Type of message boundary (TextStart, TextEnd, ReasoningStart, ReasoningEnd, etc.)
-    /// </summary>
-    public MessageBoundaryType Type { get; set; }
-
-    /// <summary>
-    /// The message ID
-    /// </summary>
-    public string? MessageId { get; set; }
-
-    /// <summary>
-    /// The role of the message (for start events)
-    /// </summary>
-    public string? Role { get; set; }
-}
-
-/// <summary>
-/// Types of message boundaries
-/// </summary>
-public enum MessageBoundaryType
-{
-    TextMessageStart,
-    TextMessageEnd,
-    ReasoningStart,
-    ReasoningMessageStart,
-    ReasoningMessageEnd,
-    ReasoningEnd
-}
-
-/// <summary>
-/// Tool call details
-/// </summary>
-public class ToolCallData
-{
-    /// <summary>
-    /// The tool call ID
-    /// </summary>
-    public string? CallId { get; set; }
-
-    /// <summary>
-    /// The tool arguments as JSON (from InternalToolCallArgsEvent)
-    /// </summary>
-    public string? ArgsJson { get; set; }
-
-    /// <summary>
-    /// Whether this represents a tool call end event
-    /// </summary>
-    public bool IsToolEnd { get; set; }
-}
-
-/// <summary>
-/// Permission event data
-/// </summary>
-public class PermissionEventData
-{
-    /// <summary>
-    /// Type of permission event
-    /// </summary>
-    public PermissionEventType Type { get; set; }
-
-    /// <summary>
-    /// The permission ID
-    /// </summary>
-    public string? PermissionId { get; set; }
-
-    /// <summary>
-    /// The function name requiring permission
-    /// </summary>
-    public string? FunctionName { get; set; }
-
-    /// <summary>
-    /// Description of what the permission is for
-    /// </summary>
-    public string? Description { get; set; }
-
-    /// <summary>
-    /// The tool call ID
-    /// </summary>
-    public string? CallId { get; set; }
-
-    /// <summary>
-    /// The function arguments
-    /// </summary>
-    public IDictionary<string, object?>? Arguments { get; set; }
-
-    /// <summary>
-    /// Whether permission was approved (for response/approved/denied events)
-    /// </summary>
-    public bool? Approved { get; set; }
-
-    /// <summary>
-    /// Reason for approval/denial
-    /// </summary>
-    public string? Reason { get; set; }
-
-    /// <summary>
-    /// The permission choice (Ask, Allow, Deny)
-    /// </summary>
-    public PermissionChoice? Choice { get; set; }
-}
-
-/// <summary>
-/// Types of permission events
-/// </summary>
-public enum PermissionEventType
-{
-    Request,
-    Response,
-    Approved,
-    Denied
-}
-
-/// <summary>
-/// Clarification event data for UI handlers
-/// </summary>
-public class ClarificationEventData
-{
-    /// <summary>
-    /// Type of clarification event
-    /// </summary>
-    public ClarificationEventType Type { get; set; }
-
-    /// <summary>
-    /// The unique request ID
-    /// </summary>
-    public string? RequestId { get; set; }
-
-    /// <summary>
-    /// The name of the agent asking for clarification
-    /// </summary>
-    public string? AgentName { get; set; }
-
-    /// <summary>
-    /// The question being asked
-    /// </summary>
-    public string? Question { get; set; }
-
-    /// <summary>
-    /// Optional list of suggested answers/options
-    /// </summary>
-    public string[]? Options { get; set; }
-
-    /// <summary>
-    /// The user's answer (for response events)
-    /// </summary>
-    public string? Answer { get; set; }
-}
-
-/// <summary>
-/// Types of clarification events
-/// </summary>
-public enum ClarificationEventType
-{
-    Request,
-    Response
-}
-
-/// <summary>
-/// Continuation event data
-/// </summary>
-public class ContinuationEventData
-{
-    /// <summary>
-    /// Type of continuation event
-    /// </summary>
-    public ContinuationEventType Type { get; set; }
-
-    /// <summary>
-    /// The continuation ID
-    /// </summary>
-    public string? ContinuationId { get; set; }
-
-    /// <summary>
-    /// Current iteration number
-    /// </summary>
-    public int? CurrentIteration { get; set; }
-
-    /// <summary>
-    /// Maximum iterations allowed
-    /// </summary>
-    public int? MaxIterations { get; set; }
-
-    /// <summary>
-    /// Whether continuation was approved
-    /// </summary>
-    public bool? Approved { get; set; }
-
-    /// <summary>
-    /// How many additional iterations were granted
-    /// </summary>
-    public int? ExtensionAmount { get; set; }
-}
-
-/// <summary>
-/// Types of continuation events
-/// </summary>
-public enum ContinuationEventType
-{
-    Request,
-    Response
-}
-
-/// <summary>
-/// Filter event data
-/// </summary>
-public class FilterEventData
-{
-    /// <summary>
-    /// Type of filter event
-    /// </summary>
-    public FilterEventType Type { get; set; }
-
-    /// <summary>
-    /// The filter name
-    /// </summary>
-    public string? SourceName { get; set; }
-
-    /// <summary>
-    /// Progress message (for progress events)
-    /// </summary>
-    public string? ProgressMessage { get; set; }
-
-    /// <summary>
-    /// Percent complete (0-100, for progress events)
-    /// </summary>
-    public int? PercentComplete { get; set; }
-
-    /// <summary>
-    /// Error message (for error events)
-    /// </summary>
-    public string? ErrorMessage { get; set; }
-
-    /// <summary>
-    /// Exception details (for error events)
-    /// </summary>
-    [JsonIgnore]
-    public Exception? Exception { get; set; }
-
-    /// <summary>
-    /// Custom event type (for custom events)
-    /// </summary>
-    public string? CustomEventType { get; set; }
-
-    /// <summary>
-    /// Custom event data (for custom events)
-    /// </summary>
-    public IDictionary<string, object?>? CustomData { get; set; }
-}
-
-/// <summary>
-/// Types of filter events
-/// </summary>
-public enum FilterEventType
-{
-    Progress,
-    Error,
-    Custom
-}
-
-/// <summary>
-/// Error event data
-/// </summary>
-public class ErrorEventData
-{
-    /// <summary>
-    /// Error message
-    /// </summary>
-    public string? Message { get; set; }
-
-    /// <summary>
-    /// Exception details
-    /// </summary>
-    [JsonIgnore]
-    public Exception? Exception { get; set; }
-
-    /// <summary>
-    /// Exception type name
-    /// </summary>
-    public string? ExceptionType { get; set; }
-
-    /// <summary>
-    /// Exception stack trace
-    /// </summary>
-    public string? StackTrace { get; set; }
-}
 
 #endregion
 
@@ -6692,8 +5116,8 @@ public class FunctionInvocationContext
         Agent.EventCoordinator.Emit(evt);
 
         // If we're a nested agent (RootAgent is set and different from us), bubble to root
-        // RootAgent is a static property on the global Agent class
-        var rootAgent = global::Agent.RootAgent;
+        // RootAgent is a static property on the Agent class
+        var rootAgent = HPD.Agent.Agent.RootAgent;
         if (rootAgent != null && rootAgent != Agent)
         {
             rootAgent.EventCoordinator.Emit(evt);

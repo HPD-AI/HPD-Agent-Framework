@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using Xunit;
-
+using HPD.Agent;
 namespace HPD_Agent.Tests.Infrastructure;
 
 /// <summary>
@@ -19,7 +19,7 @@ public abstract class AgentTestBase : IAsyncDisposable, IDisposable
     /// Creates an agent with default configuration.
     /// All operations use TestCancellationToken for clean shutdown.
     /// </summary>
-    protected Agent CreateAgent(
+    internal Agent CreateAgent(
         AgentConfig? config = null,
         IChatClient? client = null,
         params AIFunction[] tools)

@@ -8,8 +8,8 @@ using Microsoft.Extensions.AI;
 public interface IAiFunctionFilter
 {
     Task InvokeAsync(
-        FunctionInvocationContext context,
-        Func<FunctionInvocationContext, Task> next);
+        HPD.Agent.FunctionInvocationContext context,
+        Func<HPD.Agent.FunctionInvocationContext, Task> next);
 }
 
 /// <summary>

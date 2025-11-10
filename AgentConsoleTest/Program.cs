@@ -1,7 +1,8 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using HPD.Agent.Plugins.FileSystem;
-
+using HPD.Agent;
+using HPD.Agent.Microsoft;
 Console.WriteLine("🚀 HPD-Agent Console Test");
 
 // ✨ Load configuration from appsettings.json
@@ -108,7 +109,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(IConfigurati
     return Task.FromResult((project, thread, agent));
 }
 
-// 🎯 Interactive Chat Loop using agent.RunStreamingAsync
+// 🎯 Interactive Chat Loop using Microsoft agent.RunStreamingAsync
 static async Task RunInteractiveChat(Agent agent, ConversationThread thread)
 {
     Console.WriteLine("==========================================");

@@ -2,6 +2,8 @@ using System;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 
+namespace HPD.Agent;
+
 /// A data-centric class that holds all the serializable configuration
 /// for creating a new agent.
 /// </summary>

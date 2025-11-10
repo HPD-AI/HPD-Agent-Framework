@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
-
+using HPD.Agent;
 namespace HPD_Agent.Tests.Infrastructure;
 
 /// <summary>
