@@ -23,47 +23,9 @@ public class ProjectInjectedMemoryFilter : IPromptFilter
         PromptFilterContext context,
         Func<PromptFilterContext, Task<IEnumerable<ChatMessage>>> next)
     {
-        // Get project from context properties (populated via ChatOptions.AdditionalProperties)
-        var project = context.GetProject();
-        
-        if (project != null)
-        {
-            var now = DateTime.UtcNow;
-            string documentTag = string.Empty;
-            var mgr = project.DocumentManager;
-            mgr.RegisterCacheInvalidationCallback(InvalidateCache);
-
-            bool useCache;
-            lock (_cacheLock)
-            {
-                if (_cachedDocumentContext != null && (now - _lastCacheTime) < _cacheValidTime)
-                {
-                    documentTag = _cachedDocumentContext;
-                    useCache = true;
-                }
-                else
-                {
-                    useCache = false;
-                }
-            }
-
-            if (!useCache)
-            {
-                var documents = await mgr.GetDocumentsAsync();
-                documentTag = BuildDocumentTag(documents, project);
-
-                lock (_cacheLock)
-                {
-                    _cachedDocumentContext = documentTag;
-                    _lastCacheTime = now;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(documentTag))
-            {
-                context.Messages = InjectDocuments(context.Messages, documentTag);
-            }
-        }
+        // NOTE: This filter is no longer automatically registered with agents.
+        // Project-Agent integration has been removed in favor of using Agent Memory (DynamicMemory).
+        // This filter is kept for backward compatibility but does nothing unless manually configured.
 
         return await next(context);
     }

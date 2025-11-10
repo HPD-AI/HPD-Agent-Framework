@@ -7,13 +7,6 @@
 public static class PromptFilterContextKeys
 {
     /// <summary>
-    /// Key for accessing the current Project instance.
-    /// Type: Project?
-    /// Available when the conversation is associated with a project.
-    /// </summary>
-    public const string Project = "Project";
-
-    /// <summary>
     /// Key for accessing the conversation thread ID.
     /// Type: string?
     /// Available for all conversations.

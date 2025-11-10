@@ -8,29 +8,6 @@ using System.Collections.Generic;
 /// </summary>
 public static class PromptFilterContextExtensions
 {
-    /// <summary>
-    /// Gets the current Project from the filter context, if available.
-    /// </summary>
-    /// <param name="context">The prompt filter context</param>
-    /// <returns>The project instance, or null if no project is associated with this conversation</returns>
-    public static Project? GetProject(this PromptFilterContext context)
-    {
-        return context.Properties.TryGetValue(PromptFilterContextKeys.Project, out var value) 
-            ? value as Project 
-            : null;
-    }
-
-    /// <summary>
-    /// Gets the current Project from the post-invoke context, if available.
-    /// </summary>
-    /// <param name="context">The post-invoke context</param>
-    /// <returns>The project instance, or null if no project is associated with this conversation</returns>
-    public static Project? GetProject(this PostInvokeContext context)
-    {
-        return context.Properties.TryGetValue(PromptFilterContextKeys.Project, out var value) 
-            ? value as Project 
-            : null;
-    }
 
     /// <summary>
     /// Gets the conversation ID from the filter context, if available.

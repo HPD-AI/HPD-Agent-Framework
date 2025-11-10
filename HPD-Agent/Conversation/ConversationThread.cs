@@ -89,17 +89,6 @@ public interface IConversationMessageStoreFactory
 /// </code>
 /// </para>
 /// <para>
-/// ✅ <b>Associate with a project for document context:</b>
-/// <code>
-/// var project = new Project("Financial Analysis");
-/// var thread = new ConversationThread();
-/// thread.SetProject(project);
-/// 
-/// // Thread now has access to project documents
-/// await agent.RunAsync("Analyze the balance sheet", thread);
-/// </code>
-/// </para>
-/// <para>
 /// ✅ <b>Check message count for UI:</b>
 /// <code>
 /// var count = await thread.GetMessageCountAsync();
@@ -123,7 +112,6 @@ public class ConversationThread : AgentThread
 {
     // Metadata key constants
     private const string METADATA_KEY_DISPLAY_NAME = "DisplayName";
-    private const string METADATA_KEY_PROJECT = "Project";
 
     // AOT-friendly factory registration
     private static readonly Dictionary<string, IConversationMessageStoreFactory> _storeFactories = new();
@@ -416,52 +404,6 @@ public class ConversationThread : AgentThread
 
         _metadata[key] = value;
         LastActivity = DateTime.UtcNow;
-    }
-
-    #endregion
-
-    #region Project Association
-
-    /// <summary>
-    /// Associates this thread with a project, enabling shared document context.
-    /// The thread will automatically receive documents uploaded to the project via ProjectInjectedMemoryFilter.
-    /// </summary>
-    /// <param name="project">The project to associate with this thread</param>
-    /// <remarks>
-    /// This method provides flexibility for "thread-first, project-later" workflows.
-    /// The thread is automatically added to the project's thread list.
-    ///
-    /// Usage:
-    /// <code>
-    /// var thread = new ConversationThread();
-    /// thread.SetProject(myProject); // Thread now receives project documents
-    /// await agent.RunAsync("Hello", thread);
-    /// </code>
-    /// </remarks>
-    public void SetProject(Project project)
-    {
-        ArgumentNullException.ThrowIfNull(project);
-
-        // Store project in metadata (used by filters)
-        AddMetadata(METADATA_KEY_PROJECT, project);
-
-        // Register thread with project if not already present
-        if (!project.Threads.Contains(this))
-        {
-            project.Threads.Add(this);
-        }
-
-        project.UpdateActivity();
-    }
-
-    /// <summary>
-    /// Gets the project associated with this thread, if any.
-    /// </summary>
-    /// <returns>The associated project, or null if thread is not part of a project</returns>
-    public Project? GetProject()
-    {
-        _metadata.TryGetValue(METADATA_KEY_PROJECT, out var proj);
-        return proj as Project;
     }
 
     #endregion

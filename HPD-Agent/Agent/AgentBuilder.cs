@@ -1121,17 +1121,6 @@ public class AgentBuilder
 
         var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
-        // Auto-register ProjectInjectedMemoryFilter for project document injection
-        // Note: The filter will read project-specific options from the project itself
-        var defaultProjectFilterOptions = new ProjectInjectedMemoryOptions
-        {
-            MaxTokens = 8000,
-            StorageDirectory = "./injected-memory-storage",
-            DocumentTagFormat = "\n[PROJECT_DOCUMENT: {0}]\n{1}\n[/PROJECT_DOCUMENT]\n"
-        };
-        var projectFilter = new ProjectInjectedMemoryFilter(defaultProjectFilterOptions, _logger?.CreateLogger<ProjectInjectedMemoryFilter>());
-        _promptFilters.Add(projectFilter);
-
         // Return dependencies instead of creating agent
         return new AgentBuildDependencies(
             clientToUse,

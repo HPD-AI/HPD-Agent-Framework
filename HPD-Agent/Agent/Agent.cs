@@ -224,7 +224,7 @@ internal sealed class Agent
     /// Preserves workflow-provided tools (e.g., handoff functions) while injecting conversation context.
     /// </summary>
     /// <param name="workflowOptions">Options from workflow (may contain handoff tools)</param>
-    /// <param name="conversationContext">Additional context to inject (e.g., ConversationId, Project)</param>
+    /// <param name="conversationContext">Additional context to inject (e.g., ConversationId)</param>
     /// <returns>Merged ChatOptions ready for agent execution</returns>
     /// <summary>
     /// Initializes a new Agent instance from an AgentConfig object
@@ -1612,19 +1612,6 @@ Best practices:
         return new ConversationThread();
     }
 
-    /// <summary>
-    /// Creates a new conversation thread within a project context.
-    /// The project reference is stored in the thread's metadata and the thread
-    /// is automatically added to the project's thread list.
-    /// </summary>
-    /// <param name="project">The project to associate with this thread</param>
-    /// <returns>A new ConversationThread with project metadata</returns>
-    public ConversationThread CreateThread(Project project)
-    {
-        var thread = new ConversationThread();
-        thread.SetProject(project);
-        return thread;
-    }
 
     /// <summary>
     /// Runs the agent with messages (streaming). Returns the internal event stream.

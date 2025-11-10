@@ -140,7 +140,7 @@ public class Project
     public ConversationThread CreateThread()
     {
         var thread = new ConversationThread();
-        thread.SetProject(this); // Use the new SetProject method
+        Threads.Add(thread);
         UpdateActivity();
         return thread;
     }
@@ -152,7 +152,6 @@ public class Project
     /// </summary>
     /// <param name="thread">The thread to add to this project</param>
     /// <remarks>
-    /// The thread will automatically receive project documents via ProjectInjectedMemoryFilter.
     /// If the thread is already associated with this project, this is a no-op.
     ///
     /// Usage:
@@ -165,7 +164,10 @@ public class Project
     public void AddThread(ConversationThread thread)
     {
         ArgumentNullException.ThrowIfNull(thread);
-        thread.SetProject(this);
+        if (!Threads.Contains(thread))
+        {
+            Threads.Add(thread);
+        }
         UpdateActivity();
     }
 
