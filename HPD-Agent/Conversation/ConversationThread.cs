@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Text.Json;
 using Microsoft.Agents.AI;
+using HPD.Agent;
 
 /// <summary>
 /// Factory interface for creating ConversationMessageStore instances from serialized state.
@@ -225,6 +226,35 @@ public class ConversationThread : AgentThread
     /// </remarks>
     [System.Text.Json.Serialization.JsonIgnore]  // Don't serialize the instance, only its state
     public AIContextProvider? AIContextProvider { get; set; }
+
+    /// <summary>
+    /// Current agent execution state for checkpointing and resumption.
+    /// Null when thread is idle (no agent run in progress).
+    /// This directly serializes the immutable AgentLoopState from the agent's main loop.
+    /// PROTOCOL-AGNOSTIC: Works for Microsoft.Agents.AI, AGUI, and all future protocols.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This property enables durable agent execution with crash recovery:
+    /// <code>
+    /// // Agent runs and checkpoints state automatically
+    /// await agent.RunAsync(messages, thread);
+    /// // ... crash/restart ...
+    ///
+    /// // Resume from checkpoint (pass empty messages)
+    /// var loadedThread = await checkpointer.LoadThreadAsync(threadId);
+    /// if (loadedThread?.ExecutionState != null)
+    /// {
+    ///     await agent.RunAsync(Array.Empty&lt;ChatMessage&gt;(), loadedThread);
+    /// }
+    /// </code>
+    /// </para>
+    /// <para>
+    /// The state is automatically set by the agent during execution when a checkpointer is configured.
+    /// After completion (or explicit termination), you can clear it: <c>thread.ExecutionState = null;</c>
+    /// </para>
+    /// </remarks>
+    public AgentLoopState? ExecutionState { get; set; }
 
     /// <summary>
     /// Creates a new conversation thread with default in-memory storage.
@@ -499,7 +529,8 @@ public class ConversationThread : AgentThread
             CreatedAt = CreatedAt,
             LastActivity = LastActivity,
             ServiceThreadId = ServiceThreadId,
-            AIContextProviderState = AIContextProvider?.Serialize(jsonSerializerOptions)
+            AIContextProviderState = AIContextProvider?.Serialize(jsonSerializerOptions),
+            ExecutionStateJson = ExecutionState?.Serialize()
         };
 
         // Use source-generated JSON context for AOT compatibility
@@ -615,6 +646,12 @@ public class ConversationThread : AgentThread
                 options);
         }
 
+        // Restore ExecutionState if present
+        if (!string.IsNullOrEmpty(snapshot.ExecutionStateJson))
+        {
+            thread.ExecutionState = AgentLoopState.Deserialize(snapshot.ExecutionStateJson);
+        }
+
         return thread;
     }
 
@@ -682,4 +719,12 @@ public record ConversationThreadSnapshot
     /// Null if thread doesn't use an AIContextProvider.
     /// </summary>
     public JsonElement? AIContextProviderState { get; init; }
+
+    /// <summary>
+    /// Serialized AgentLoopState JSON (if mid-execution).
+    /// Null when thread is idle (no agent run in progress).
+    /// Contains complete execution context including iteration count, completed functions,
+    /// consecutive failures, plugin/skill expansion state, and message references.
+    /// </summary>
+    public string? ExecutionStateJson { get; init; }
 }

@@ -29,7 +29,7 @@ public sealed class Agent : AIAgent
         ChatOptions? mergedOptions,
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
-        HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
+        ErrorHandling.IProviderErrorHandler providerErrorHandler,
         HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
@@ -91,6 +91,9 @@ public sealed class Agent : AIAgent
         IList<ChatMessage>? aiContextMessages = null;
         Exception? invokeException = null;
 
+        // Convert messages to list to ensure it's not null (fix CS8602)
+        var messagesList = messages?.ToList() ?? new List<ChatMessage>();
+
         // ══════════════════════════════════════════════════════════════════════════
         // STEP 1: AIContextProvider Pre-Invocation (Microsoft-specific enrichment)
         // ══════════════════════════════════════════════════════════════════════════
@@ -99,7 +102,7 @@ public sealed class Agent : AIAgent
             try
             {
                 // Provider sees only NEW input messages (matches Microsoft's pattern)
-                var invokingContext = new AIContextProvider.InvokingContext(messages);
+                var invokingContext = new AIContextProvider.InvokingContext(messagesList);
                 var aiContext = await conversationThread.AIContextProvider.InvokingAsync(
                     invokingContext,
                     cancellationToken);
@@ -108,7 +111,7 @@ public sealed class Agent : AIAgent
                 if (aiContext.Messages is { Count: > 0 })
                 {
                     aiContextMessages = aiContext.Messages;
-                    messages = aiContext.Messages.Concat(messages).ToList();
+                    messagesList = aiContext.Messages.Concat(messagesList).ToList();
                 }
 
                 // Merge tools
@@ -138,32 +141,74 @@ public sealed class Agent : AIAgent
         }
 
         // ══════════════════════════════════════════════════════════════════════════
-        // STEP 2: Add enriched messages to thread
+        // STEP 2: Checkpoint Loading & Validation (Durable Execution Support)
         // ══════════════════════════════════════════════════════════════════════════
-        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
 
-        // Add workflow messages to thread state (now includes provider messages if any)
-        foreach (var msg in messages)
+        // Load checkpoint if checkpointer is configured and thread has an ID but no execution state yet
+        var config = _core.Config;
+        if (config?.Checkpointer != null && conversationThread.ExecutionState == null)
         {
-            if (!currentMessages.Contains(msg))
+            var loadedThread = await config.Checkpointer.LoadThreadAsync(
+                conversationThread.Id, cancellationToken);
+
+            if (loadedThread?.ExecutionState != null)
             {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
+                conversationThread = loadedThread;
             }
         }
 
-        // Refresh messages after adding new ones
-        currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+        // Validate resume semantics
+        var hasMessages = messagesList.Any();
+        var hasCheckpoint = conversationThread.ExecutionState != null;
+
+        if (hasCheckpoint && hasMessages)
+        {
+            throw new InvalidOperationException(
+                $"Cannot add new messages when resuming mid-execution. " +
+                $"Thread '{conversationThread.Id}' is at iteration {conversationThread.ExecutionState?.Iteration ?? 0}.\n\n" +
+                $"To resume execution:\n" +
+                $"  await agent.RunAsync(Array.Empty<ChatMessage>(), thread);");
+        }
 
         // ══════════════════════════════════════════════════════════════════════════
-        // STEP 3: Call core agent (receives enriched messages - doesn't know they're special!)
+        // STEP 3: Add enriched messages to thread (Skip if resuming)
+        // ══════════════════════════════════════════════════════════════════════════
+        var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+
+        if (!hasCheckpoint)
+        {
+            // Fresh run - add workflow messages to thread state (now includes provider messages if any)
+            foreach (var msg in messagesList)
+            {
+                if (!currentMessages.Contains(msg))
+                {
+                    await conversationThread.AddMessageAsync(msg, cancellationToken);
+                }
+            }
+
+            // Refresh messages after adding new ones
+            currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
+        }
+        else
+        {
+            // Resuming - validate consistency
+            if (conversationThread.ExecutionState != null)
+            {
+                conversationThread.ExecutionState.ValidateConsistency(currentMessages.Count);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // STEP 4: Call core agent (receives enriched messages - doesn't know they're special!)
         // ══════════════════════════════════════════════════════════════════════════
         IReadOnlyList<ChatMessage> turnMessages;
         try
         {
-            // Call core agent and collect messages from events
+            // Call core agent with thread support (enables checkpointing)
             var internalStream = _core.RunAsync(
                 currentMessages,
                 chatOptions,
+                conversationThread,
                 cancellationToken);
 
             // Track messages built from events
@@ -290,7 +335,7 @@ public sealed class Agent : AIAgent
                 try
                 {
                     await conversationThread.AIContextProvider.InvokedAsync(
-                        new AIContextProvider.InvokedContext(messages)
+                        new AIContextProvider.InvokedContext(messagesList)
                         {
                             ResponseMessages = null,
                             InvokeException = invokeException
@@ -323,7 +368,7 @@ public sealed class Agent : AIAgent
                     .ToList();
 
                 await conversationThread.AIContextProvider.InvokedAsync(
-                    new AIContextProvider.InvokedContext(messages)
+                    new AIContextProvider.InvokedContext(messagesList)
                     {
                         ResponseMessages = responseMessages,
                         InvokeException = null

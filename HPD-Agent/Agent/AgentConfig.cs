@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
+using HPD.Agent.Conversation.Checkpointing;
 
 namespace HPD.Agent;
 
@@ -114,6 +115,85 @@ public class AgentConfig
     /// Requires IDistributedCache to be registered via AgentBuilder.WithServiceProvider().
     /// </summary>
     public CachingConfig? Caching { get; set; }
+
+    /// <summary>
+    /// Optional thread checkpointer for durable execution and crash recovery.
+    /// When set, agent execution state is persisted according to CheckpointFrequency.
+    /// Use InMemoryThreadCheckpointer for development/testing or PostgresThreadCheckpointer for production.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Example - In-Memory Checkpointing (Development):</b>
+    /// <code>
+    /// var config = new AgentConfig
+    /// {
+    ///     Checkpointer = new InMemoryThreadCheckpointer(),
+    ///     CheckpointFrequency = CheckpointFrequency.PerIteration
+    /// };
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Example - Resume After Crash:</b>
+    /// <code>
+    /// var thread = await checkpointer.LoadThreadAsync(threadId);
+    /// if (thread?.ExecutionState != null)
+    /// {
+    ///     // Resume from checkpoint (pass empty messages)
+    ///     await agent.RunAsync(Array.Empty&lt;ChatMessage&gt;(), thread);
+    /// }
+    /// </code>
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public IThreadCheckpointer? Checkpointer { get; set; }
+
+    /// <summary>
+    /// Checkpoint frequency (per turn, per iteration, or manual).
+    /// Default: PerTurn (checkpoint after each message turn completes).
+    /// PerIteration is more durable but has higher overhead.
+    /// </summary>
+    public CheckpointFrequency CheckpointFrequency { get; set; } = CheckpointFrequency.PerTurn;
+
+    /// <summary>
+    /// Enable pending writes support for partial failure recovery in parallel function execution.
+    /// When true, successful function call results are saved immediately before the iteration checkpoint completes.
+    /// This allows the system to resume from partial failures without re-executing successful operations.
+    /// Default: false (opt-in for backward compatibility).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>What are pending writes?</b>
+    /// When multiple functions execute in parallel and some fail, pending writes allow the system to:
+    /// - Save successful function results immediately (before iteration completes)
+    /// - Resume from checkpoint without re-running successful functions
+    /// - Only re-execute the failed operations
+    /// </para>
+    /// <para>
+    /// <b>When to enable:</b>
+    /// - Parallel function execution with expensive operations (API calls, database queries, file I/O)
+    /// - Long-running functions where re-execution would be costly
+    /// - Scenarios where partial progress should be preserved across crashes
+    /// </para>
+    /// <para>
+    /// <b>Overhead:</b>
+    /// Each successful function call triggers a fire-and-forget storage operation.
+    /// Pending writes are small (typically 50-500 bytes per function result) and are automatically
+    /// cleaned up after the iteration checkpoint succeeds.
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// // 3 parallel function calls
+    /// GetWeather() → Success → Saved as pending write
+    /// GetNews() → Success → Saved as pending write
+    /// AnalyzeData() → CRASH ❌
+    ///
+    /// // On resume: GetWeather and GetNews results restored from pending writes
+    /// // Only AnalyzeData() is re-executed
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public bool EnablePendingWrites { get; set; } = false;
 
     /// <summary>
     /// Tools that the agent can invoke but are NOT sent to the LLM in each request.

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
+using HPD.Agent.Providers;
 namespace HPD_Agent.Tests.Infrastructure;
 
 /// <summary>
@@ -50,6 +51,11 @@ public abstract class AgentTestBase : IAsyncDisposable, IDisposable
     {
         Name = "TestAgent",
         MaxAgenticIterations = 50,
+        Provider = new ProviderConfig
+        {
+            ProviderKey = "test",  // Required by validation
+            ModelName = "test-model"
+        },
         AgenticLoop = new AgenticLoopConfig
         {
             MaxConsecutiveFunctionCalls = 5,

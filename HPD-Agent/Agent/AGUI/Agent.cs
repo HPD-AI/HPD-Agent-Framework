@@ -3,6 +3,8 @@ using HPD.Agent.Internal.Filters;
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
 using HPD.Agent.Providers;
+using HPD.Agent.Conversation;
+using HPD.Agent.Conversation.Checkpointing;
 using CoreAgent = HPD.Agent.Agent;
 
 namespace HPD.Agent.AGUI;
@@ -68,8 +70,9 @@ public sealed class Agent
     {
         try
         {
-            // Convert AGUI input to Extensions.AI format
-            var messages = _converter.ConvertToExtensionsAI(input);
+            // Convert AGUI input to Extensions.AI format (ensure non-null)
+            var messageList = _converter.ConvertToExtensionsAI(input);
+            var messages = messageList != null ? messageList.ToList() : new List<ChatMessage>();
 
             // Convert AGUI tools to ChatOptions (if needed)
             var chatOptions = _converter.ConvertToExtensionsAIChatOptions(
@@ -77,11 +80,53 @@ public sealed class Agent
                 existingOptions: null,
                 enableFrontendToolScoping: false);
 
-            // Call core agent and stream internal events
-            var internalStream = _core.RunAsync(
-                messages,
-                chatOptions,
-                cancellationToken);
+            // ═══════════════════════════════════════════════════════
+            // ✅ CHECKPOINT SUPPORT: Create/load conversation thread
+            // ═══════════════════════════════════════════════════════
+
+            ConversationThread? conversationThread = null;
+            IAsyncEnumerable<InternalAgentEvent> internalStream;
+
+            var config = _core.Config;
+            if (config?.Checkpointer != null)
+            {
+                // Load thread from checkpointer (may have checkpoint)
+                conversationThread = await config.Checkpointer.LoadThreadAsync(
+                    input.ThreadId, cancellationToken);
+
+                // Create new thread if not found
+                if (conversationThread == null)
+                {
+                    conversationThread = new ConversationThread();
+                }
+
+                // Validate resume semantics
+                var hasMessages = messages?.Any() ?? false;
+                var hasCheckpoint = conversationThread.ExecutionState != null;
+
+                if (hasCheckpoint && hasMessages)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot add new messages when resuming mid-execution. " +
+                        $"Thread '{input.ThreadId}' is at iteration {conversationThread.ExecutionState?.Iteration ?? 0}.\n\n" +
+                        $"To resume execution, send RunAgentInput with empty Messages array.");
+                }
+
+                // Call core agent with thread support
+                internalStream = _core.RunAsync(
+                    messages ?? new List<ChatMessage>(),
+                    chatOptions,
+                    conversationThread,
+                    cancellationToken);
+            }
+            else
+            {
+                // No checkpointer - use original code path
+                internalStream = _core.RunAsync(
+                    messages ?? new List<ChatMessage>(),
+                    chatOptions,
+                    cancellationToken);
+            }
 
             // Convert internal events to AGUI protocol using EventStreamAdapter
             var aguiStream = EventStreamAdapter.ToAGUI(
