@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using HPD.Agent.Plugins.FileSystem;
 using HPD.Agent;
 using HPD.Agent.Microsoft;
+using AgentConsoleTest.Skills;
 Console.WriteLine("🚀 HPD-Agent Console Test");
 
 // ✨ ONE-LINER: Create complete AI assistant
@@ -42,7 +43,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
     var agentConfig = new AgentConfig
     {
         Name = "AI Assistant",
-        SystemInstructions = "You are an accountant agent. You can do sequential and parallel tool calls. You can also plan out stuff ebfore you start if the task requires sub steps",
+        SystemInstructions = "You are an accountant agent. You can do sequential and parallel tool calls. You can also plan out stuff ebfore you start if the task requires sub steps. If you open a skill, it will give you instrcutions of how to use the skill and what to read.",
         MaxAgenticIterations = 20,  // Reduced from 50 to avoid rate limits
         Provider = new ProviderConfig
         {
@@ -86,8 +87,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
     // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
         .WithLogging()
-        .WithPlugin<FinancialAnalysisPlugin>()  // ✨ Financial analysis plugin (explicitly registered)
-        .WithPlugin<FinancialAnalysisSkills>()  // ✨ Financial analysis skills (that reference the plugin)
+        .WithPlugin<MathPlugin>()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
         .Build();
 

@@ -14,6 +14,8 @@ using System.Threading;
 [Generator]
 public class HPDPluginSourceGenerator : IIncrementalGenerator
 {
+    private static readonly System.Collections.Generic.List<string> _diagnosticMessages = new();
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var pluginClasses = context.SyntaxProvider
@@ -31,10 +33,17 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         if (node is not ClassDeclarationSyntax classDecl)
             return false;
 
+        var className = classDecl.Identifier.ValueText;
+        System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator] Checking class: {className}");
+
         if (!classDecl.Modifiers.Any(SyntaxKind.PublicKeyword))
+        {
+            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} is not public, skipping");
             return false;
+        }
 
         var methods = classDecl.Members.OfType<MethodDeclarationSyntax>().ToList();
+        System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has {methods.Count} methods");
 
         // Check for [AIFunction] methods (traditional plugins)
         var hasAIFunctionMethods = methods.Any(method => method.AttributeLists
@@ -42,16 +51,45 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             .Any(attr => attr.Name.ToString().Contains("AIFunction")));
 
         if (hasAIFunctionMethods)
+        {
+            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has [AIFunction] methods - SELECTED");
             return true;
+        }
 
         // Check for skill methods with [Skill] attribute (Phase 3+)
-        // We need to do a simple check here without semantic model
-        // Full validation happens in GetPluginDeclaration
+        // DIAGNOSTIC: Collect detailed info for ALL methods
+        var diagnosticInfo = new System.Text.StringBuilder();
+        diagnosticInfo.AppendLine($"Class: {className}");
+        diagnosticInfo.AppendLine($"Methods: {methods.Count}");
+
+        foreach (var method in methods)
+        {
+            var methodName = method.Identifier.ValueText;
+            var isPublic = method.Modifiers.Any(SyntaxKind.PublicKeyword);
+            var returnType = method.ReturnType.ToString();
+            var returnTypeKind = method.ReturnType.Kind();
+            var hasSkillAttr = method.AttributeLists.SelectMany(al => al.Attributes)
+                .Any(attr => attr.Name.ToString().Contains("Skill"));
+
+            diagnosticInfo.AppendLine($"  Method: {methodName}");
+            diagnosticInfo.AppendLine($"    isPublic: {isPublic}");
+            diagnosticInfo.AppendLine($"    returnType: '{returnType}'");
+            diagnosticInfo.AppendLine($"    returnTypeKind: {returnTypeKind}");
+            diagnosticInfo.AppendLine($"    returnType.Contains('Skill'): {returnType.Contains("Skill")}");
+            diagnosticInfo.AppendLine($"    hasSkillAttr: {hasSkillAttr}");
+            diagnosticInfo.AppendLine($"    MATCHES: {isPublic && returnType.Contains("Skill") && hasSkillAttr}");
+        }
+
+        // Store diagnostic info
+        _diagnosticMessages.Add(diagnosticInfo.ToString());
+
         var hasSkillMethods = methods.Any(method =>
             method.Modifiers.Any(SyntaxKind.PublicKeyword) &&
             method.ReturnType.ToString().Contains("Skill") &&
             method.AttributeLists.SelectMany(al => al.Attributes)
                 .Any(attr => attr.Name.ToString().Contains("Skill")));
+
+        diagnosticInfo.AppendLine($"RESULT: {(hasSkillMethods ? "SELECTED" : "SKIPPED")}");
 
         return hasSkillMethods;
     }
@@ -113,7 +151,23 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
     
     private static void GeneratePluginRegistrations(SourceProductionContext context, ImmutableArray<PluginInfo?> plugins)
     {
-        context.AddSource("_SourceGeneratorTest.g.cs", "// Source generator is running!");
+        // DIAGNOSTIC: Generate detailed diagnostic report
+        var reportLines = string.Join("\\n", _diagnosticMessages.Select(m => m.Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "")));
+        var diagnosticCode = $@"
+// HPD Source Generator Diagnostic Report
+// Generated at: {DateTime.Now}
+// Plugins found: {plugins.Length}
+namespace HPD_Agent.Diagnostics {{
+    public static class SourceGeneratorDiagnostic {{
+        public const string Message = ""Source generator executed successfully"";
+        public const int PluginsFound = {plugins.Length};
+        public const string DetailedReport = @""{reportLines}"";
+    }}
+}}";
+        context.AddSource("_SourceGeneratorDiagnostic.g.cs", diagnosticCode);
+
+        // Clear for next compilation
+        _diagnosticMessages.Clear();
 
         // Group plugins by name+namespace to handle partial classes
         var pluginGroups = plugins

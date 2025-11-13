@@ -1,0 +1,28 @@
+using System;
+using System.Reflection;
+
+namespace AgentConsoleTest;
+
+public class ViewDiagnostics
+{
+    public static void Main(string[] args)
+    {
+        var asm = Assembly.GetExecutingAssembly();
+        var diagnosticType = asm.GetType("HPD_Agent.Diagnostics.SourceGeneratorDiagnostic");
+
+        if (diagnosticType != null)
+        {
+            var pluginsFound = diagnosticType.GetField("PluginsFound")?.GetValue(null);
+            var report = diagnosticType.GetField("DetailedReport")?.GetValue(null);
+
+            Console.WriteLine("=== SOURCE GENERATOR DIAGNOSTIC REPORT ===\n");
+            Console.WriteLine($"Plugins Found: {pluginsFound}\n");
+            Console.WriteLine("Detailed Report:");
+            Console.WriteLine(report);
+        }
+        else
+        {
+            Console.WriteLine("❌ Diagnostic class not found");
+        }
+    }
+}

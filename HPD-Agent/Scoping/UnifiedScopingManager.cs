@@ -29,16 +29,6 @@ public class UnifiedScopingManager
         _logger = logger;
         _explicitlyRegisteredPlugins = explicitlyRegisteredPlugins ?? ImmutableHashSet<string>.Empty;
         _allFunctionsByReference = BuildFunctionLookup(allFunctions);
-        
-        // DEBUG: Log explicitly registered plugins
-        if (_explicitlyRegisteredPlugins.Count > 0)
-        {
-            Console.WriteLine($"[UnifiedScopingManager] 🔍 Explicitly Registered Plugins: {string.Join(", ", _explicitlyRegisteredPlugins)}");
-        }
-        else
-        {
-            Console.WriteLine($"[UnifiedScopingManager] ⚠️ No explicitly registered plugins!");
-        }
     }
 
     /// <summary>
@@ -76,8 +66,6 @@ public class UnifiedScopingManager
         var skillsReferencingFunction = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         var pluginsWithScopedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         
-        Console.WriteLine($"[UnifiedScopingManager] 🔍 First Pass - Analyzing {allTools.Count} tools");
-        
         foreach (var tool in allTools)
         {
             if (IsScopeContainer(tool))
@@ -85,17 +73,14 @@ public class UnifiedScopingManager
                 // Class-level scope container (groups multiple skills)
                 var scopeName = tool.Name ?? string.Empty;
                 skillClassesWithScope.Add(scopeName);
-                Console.WriteLine($"   📦 Scope Container: {scopeName}");
             }
             else if (IsPluginContainer(tool))
             {
                 var pluginName = GetPluginName(tool);
                 pluginsWithContainers.Add(pluginName);
-                Console.WriteLine($"   🔌 Plugin Container: {pluginName}");
             }
             else if (IsSkillContainer(tool))
             {
-                Console.WriteLine($"   🎯 Skill Container: {tool.Name}");
                 // Track which functions this skill references
                 var skillName = GetSkillName(tool);
                 var referencedFunctions = GetReferencedFunctions(tool);
@@ -153,7 +138,6 @@ public class UnifiedScopingManager
                     if (!expandedSkills.Contains(skillName))
                     {
                         skillContainers.Add(tool);
-                        Console.WriteLine($"   ✅ Showing skill (no parent): {skillName}");
                     }
                 }
                 else if (!skillClassesWithScope.Contains(parentScope))
@@ -162,7 +146,6 @@ public class UnifiedScopingManager
                     if (!expandedSkills.Contains(skillName))
                     {
                         skillContainers.Add(tool);
-                        Console.WriteLine($"   ✅ Showing skill (parent doesn't exist): {skillName}");
                     }
                 }
                 else if (expandedSkills.Contains(parentScope))
@@ -171,12 +154,10 @@ public class UnifiedScopingManager
                     if (!expandedSkills.Contains(skillName))
                     {
                         skillContainers.Add(tool);
-                        Console.WriteLine($"   ✅ Showing skill (parent expanded): {skillName}");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"   ❌ Hiding skill (parent not expanded): {skillName}");
                 }
                 // Otherwise hide (parent scope not expanded)
             }
@@ -196,11 +177,6 @@ public class UnifiedScopingManager
                 var parentPlugin = GetParentPlugin(tool);
 
                 // DEBUG: Log parent plugin info
-                if (functionName == "CalculateCurrentRatio" || functionName == "ComprehensiveBalanceSheetAnalysis")
-                {
-                    Console.WriteLine($"[UnifiedScopingManager] 🔍 {functionName}: parentPlugin='{parentPlugin}', in explicit set? {(parentPlugin != null ? _explicitlyRegisteredPlugins.Contains(parentPlugin) : false)}");
-                }
-
                 // PRIORITY 1: If plugin has [Scope] container, hide functions until expanded
                 // (This applies even if plugin is explicitly registered)
                 if (parentPlugin != null && pluginsWithContainers.Contains(parentPlugin))
@@ -208,19 +184,13 @@ public class UnifiedScopingManager
                     // Scoped plugin function - only show if parent expanded
                     if (expandedPlugins.Contains(parentPlugin))
                     {
-                        Console.WriteLine($"[UnifiedScopingManager] ✅ Showing '{functionName}' (scoped plugin expanded: {parentPlugin})");
                         expandedPluginFunctions.Add(tool);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[UnifiedScopingManager] ⏸️ Hiding '{functionName}' (scoped plugin not expanded: {parentPlugin})");
                     }
                 }
                 // PRIORITY 2: If plugin is explicitly registered (and NOT scoped), show all its functions
                 else if (parentPlugin != null && _explicitlyRegisteredPlugins.Contains(parentPlugin))
                 {
                     // Explicitly registered plugin - always show functions
-                    Console.WriteLine($"[UnifiedScopingManager] ✅ Showing '{functionName}' (explicit plugin: {parentPlugin})");
                     nonScopedFunctions.Add(tool);
                 }
                 // Check if this function is referenced by any skills
@@ -242,7 +212,6 @@ public class UnifiedScopingManager
                     // This function is in a plugin that was auto-registered via scoped skills
                     // BUT this function is NOT referenced by any skill (it's an orphan)
                     // Hide it - don't add to any list
-                    Console.WriteLine($"[UnifiedScopingManager] ❌ Hiding orphan '{functionName}' (plugin '{parentPlugin}' auto-registered via skills)");
                 }
                 else
                 {
@@ -263,13 +232,6 @@ public class UnifiedScopingManager
             .Concat(expandedSkillFunctions.OrderBy(f => f.Name))
             .DistinctBy(f => f.Name)
             .ToList();
-        
-        // DEBUG: Show what's actually returned
-        Console.WriteLine($"[UnifiedScopingManager] 🎯 Returning {result.Count} tools:");
-        foreach (var tool in result)
-        {
-            Console.WriteLine($"   - {tool.Name}");
-        }
         
         return result;
     }

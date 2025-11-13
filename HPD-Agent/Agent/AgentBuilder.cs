@@ -890,6 +890,21 @@ public class AgentBuilder
     /// </summary>
     private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
+        // === PHASE 1: PROCESS SKILL DOCUMENTS (Before provider validation) ===
+        // This happens early so documents can be uploaded even if provider config is invalid
+        // Matches the StaticMemory pattern where documents are uploaded during WithStaticMemory()
+        // See: Comparison with StaticMemory in architecture docs
+        await ProcessSkillDocumentsAsync(cancellationToken).ConfigureAwait(false);
+
+        // Auto-register document retrieval plugin if document store is present
+        if (_documentStore != null)
+        {
+            _pluginManager.RegisterPlugin<HPD_Agent.Skills.DocumentStore.DocumentRetrievalPlugin>();
+        }
+
+        // Auto-register plugins referenced by skills
+        AutoRegisterPluginsFromSkills();
+
         // === TESTING BYPASS: If BaseClient is already set, skip provider resolution ===
         // This allows tests to inject fake clients without configuring a real provider
         if (_baseClient != null)
@@ -902,7 +917,7 @@ public class AgentBuilder
                 _config.Provider?.DefaultChatOptions,
                 testErrorHandler);
         }
-        
+
         // === START: VALIDATION LOGIC ===
         var agentConfigValidator = new AgentConfigValidator();
         agentConfigValidator.ValidateAndThrow(_config);
@@ -1095,18 +1110,6 @@ public class AgentBuilder
         // Automatically finalize web search configuration if providers were configured
         AgentBuilderWebSearchExtensions.FinalizeWebSearch(this);
 
-        // Auto-register plugins referenced by skills
-        AutoRegisterPluginsFromSkills();
-
-        // Phase 5: Process skill documents (creates default store if needed)
-        await ProcessSkillDocumentsAsync(cancellationToken).ConfigureAwait(false);
-
-        // Phase 6: Auto-register document retrieval plugin if document store is present
-        if (_documentStore != null)
-        {
-            _pluginManager.RegisterPlugin<HPD_Agent.Skills.DocumentStore.DocumentRetrievalPlugin>();
-        }
-
         // Create plugin functions using per-plugin contexts and merge with default options
         var pluginFunctions = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())
@@ -1196,6 +1199,9 @@ public class AgentBuilder
     {
         var logger = _logger?.CreateLogger<AgentBuilder>();
 
+        Console.WriteLine("[ProcessSkillDocuments] Starting document processing...");
+        logger?.LogInformation("Starting skill document processing");
+
         // Create default document store if not provided
         if (_documentStore == null)
         {
@@ -1205,9 +1211,14 @@ public class AgentBuilder
             _documentStore = new HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore(
                 storeLogger,
                 defaultPath);
+            Console.WriteLine($"[ProcessSkillDocuments] Created default store at: {defaultPath}");
             logger?.LogInformation(
                 "No document store configured. Using default FileSystemInstructionStore at: {Path}",
                 defaultPath);
+        }
+        else
+        {
+            Console.WriteLine("[ProcessSkillDocuments] Using provided document store");
         }
 
         // Get all skill containers from registered plugins
@@ -1251,21 +1262,21 @@ public class AgentBuilder
             {
                 foreach (var upload in uploadsArray)
                 {
-                    // Extract properties from anonymous object
-                    var uploadType = upload.GetType();
-                    var filePathProp = uploadType.GetProperty("FilePath");
-                    var documentIdProp = uploadType.GetProperty("DocumentId");
-                    var descriptionProp = uploadType.GetProperty("Description");
-
-                    if (filePathProp != null && documentIdProp != null && descriptionProp != null)
+                    // Source generator creates Dictionary<string, string> for uploads
+                    if (upload is Dictionary<string, string> uploadDict)
                     {
-                        var filePath = filePathProp.GetValue(upload) as string;
-                        var documentId = documentIdProp.GetValue(upload) as string;
-                        var description = descriptionProp.GetValue(upload) as string;
-
-                        if (!string.IsNullOrEmpty(filePath) && !string.IsNullOrEmpty(documentId) &&
+                        if (uploadDict.TryGetValue("FilePath", out var filePath) &&
+                            uploadDict.TryGetValue("DocumentId", out var documentId) &&
+                            uploadDict.TryGetValue("Description", out var description) &&
+                            !string.IsNullOrEmpty(filePath) &&
                             !string.IsNullOrEmpty(description))
                         {
+                            // If documentId is empty, auto-derive from filePath
+                            if (string.IsNullOrEmpty(documentId))
+                            {
+                                documentId = DeriveDocumentId(filePath);
+                            }
+
                             documentUploads.Add((skillName, documentId, filePath, description));
                         }
                     }
@@ -1278,8 +1289,11 @@ public class AgentBuilder
         // The store only cares about content and where to persist it.
         var uploadedDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        Console.WriteLine($"[ProcessSkillDocuments] Found {documentUploads.Count} document uploads to process");
+
         foreach (var (skillName, documentId, filePath, description) in documentUploads)
         {
+            Console.WriteLine($"[ProcessSkillDocuments] Processing: {documentId} from {filePath}");
             // Skip duplicates (same document ID from multiple skills)
             if (uploadedDocuments.Contains(documentId))
             {
@@ -1349,17 +1363,13 @@ public class AgentBuilder
             {
                 foreach (var reference in refsArray)
                 {
-                    var refType = reference.GetType();
-                    var documentIdProp = refType.GetProperty("DocumentId");
-                    var descriptionOverrideProp = refType.GetProperty("DescriptionOverride");
-
-                    if (documentIdProp != null)
+                    // Source generator creates Dictionary<string, string> for references
+                    if (reference is Dictionary<string, string> refDict)
                     {
-                        var documentId = documentIdProp.GetValue(reference) as string;
-                        var descriptionOverride = descriptionOverrideProp?.GetValue(reference) as string;
-
-                        if (!string.IsNullOrEmpty(documentId))
+                        if (refDict.TryGetValue("DocumentId", out var documentId) &&
+                            !string.IsNullOrEmpty(documentId))
                         {
+                            refDict.TryGetValue("DescriptionOverride", out var descriptionOverride);
                             documentReferences.Add((skillName, documentId, descriptionOverride));
                         }
                     }
@@ -1467,6 +1477,20 @@ public class AgentBuilder
         var resolvedPath = Path.GetFullPath(filePath);
 
         return resolvedPath;
+    }
+
+    /// <summary>
+    /// Derives a document ID from a file path (matches SkillOptions.DeriveDocumentId)
+    /// </summary>
+    private static string DeriveDocumentId(string filePath)
+    {
+        // "./docs/debugging-workflow.md" -> "debugging-workflow"
+        var fileName = Path.GetFileNameWithoutExtension(filePath);
+
+        // Normalize to lowercase-kebab-case
+        return fileName.ToLowerInvariant()
+            .Replace(" ", "-")
+            .Replace("_", "-");
     }
 
     public bool IsProviderRegistered(string providerKey) => _providerRegistry.IsRegistered(providerKey);

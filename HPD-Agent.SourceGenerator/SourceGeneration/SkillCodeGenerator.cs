@@ -146,6 +146,31 @@ internal static class SkillCodeGenerator
         var functionList = string.Join(", ", skill.ResolvedFunctionReferences);
         var returnMessage = $"{skill.Name} skill activated. Available functions: {functionList}";
 
+        // Add document information if documents are referenced
+        if (skill.Options.DocumentReferences.Any() || skill.Options.DocumentUploads.Any())
+        {
+            returnMessage += "\n\n📚 Available Documents:";
+
+            // Document uploads
+            foreach (var upload in skill.Options.DocumentUploads)
+            {
+                // Auto-derive document ID if not provided (same logic as SkillOptions)
+                var docId = string.IsNullOrEmpty(upload.DocumentId)
+                    ? DeriveDocumentIdFromPath(upload.FilePath)
+                    : upload.DocumentId;
+                returnMessage += $"\n- {docId}: {upload.Description}";
+            }
+
+            // Document references
+            foreach (var reference in skill.Options.DocumentReferences)
+            {
+                var description = reference.DescriptionOverride ?? "[Use read_skill_document to view]";
+                returnMessage += $"\n- {reference.DocumentId}: {description}";
+            }
+
+            returnMessage += "\n\nUse read_skill_document(documentId) to retrieve document content.";
+        }
+
         if (!string.IsNullOrEmpty(skill.Instructions))
         {
             returnMessage += $"\n\n{skill.Instructions}";
@@ -292,6 +317,20 @@ internal static class SkillCodeGenerator
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Derives document ID from file path (matches SkillOptions logic)
+    /// </summary>
+    private static string DeriveDocumentIdFromPath(string filePath)
+    {
+        // "./docs/debugging-workflow.md" -> "debugging-workflow"
+        var fileName = System.IO.Path.GetFileNameWithoutExtension(filePath);
+
+        // Normalize to lowercase-kebab-case
+        return fileName.ToLowerInvariant()
+            .Replace(" ", "-")
+            .Replace("_", "-");
     }
 
     /// <summary>

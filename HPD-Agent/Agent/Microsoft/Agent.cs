@@ -169,16 +169,16 @@ public sealed class Agent : AIAgent
         }
 
         // ══════════════════════════════════════════════════════════════════════════
-        // STEP 3: Call core agent (pass only NEW messages, core handles adding to thread)
+        // STEP 3: Call core agent (with thread for full context)
         // ══════════════════════════════════════════════════════════════════════════
-        // NOTE: We pass messagesList (NEW messages only), not ALL messages from thread.
-        // The core agent will internally call thread.MessagesReceivedAsync() to add them.
-        // This prevents duplication and respects the "push" API pattern.
+        // NOTE: We pass NEW messages only, but the core agent will automatically
+        // load the thread's message history and merge it with the new messages.
+        // This gives the LLM full conversation context while respecting the API pattern.
         IReadOnlyList<ChatMessage> turnMessages;
         try
         {
-            // Call core agent with thread support (enables checkpointing)
-            // Pass NEW messages only - core agent handles adding to thread
+            // Call core agent with thread support (enables checkpointing + history)
+            // Core agent will load thread history and merge with new messages
             var internalStream = _core.RunAsync(
                 messagesList,  // NEW messages only (includes provider-enriched messages)
                 chatOptions,
@@ -438,8 +438,8 @@ public sealed class Agent : AIAgent
         // STEP 2: Call core agent and stream events (pass only NEW messages)
         // ══════════════════════════════════════════════════════════════════════════
         // NOTE: We pass messages (NEW messages only), not ALL messages from thread.
-        // The core agent will internally call thread.MessagesReceivedAsync() to add them.
-        // This prevents duplication and respects the "push" API pattern.
+        // The core agent will automatically load thread history and merge it with new messages.
+        // This gives the LLM full conversation context while respecting the API pattern.
 
         // Track the message count BEFORE the turn so we can identify new messages
         var currentMessages = await conversationThread.GetMessagesAsync(cancellationToken);
@@ -449,7 +449,7 @@ public sealed class Agent : AIAgent
         Exception? streamingException = null;
 
         // Call core agent and adapt events to Microsoft protocol
-        // Pass NEW messages only - core agent handles adding to thread
+        // Core agent will load thread history and merge with new messages
         var internalStream = _core.RunAsync(
             messages,  // NEW messages only (includes provider-enriched messages)
             chatOptions,
@@ -459,10 +459,56 @@ public sealed class Agent : AIAgent
         // Use EventStreamAdapter pattern for protocol conversion
         var agentsAIStream = EventStreamAdapter.ToAgentsAI(internalStream, conversationThread.Id, _core.Name, cancellationToken);
 
+        // Track assistant messages to add to thread after streaming
+        var assistantMessagesToAdd = new List<ChatMessage>();
+        var assistantContents = new List<AIContent>();
+
         // Stream events (cannot use try-catch with yield)
         await foreach (var update in agentsAIStream.WithCancellation(cancellationToken))
         {
+            // Collect content from updates to rebuild assistant messages for thread persistence
+            foreach (var content in update.Contents ?? [])
+            {
+                if (content is TextContent || content is TextReasoningContent || content is FunctionCallContent)
+                {
+                    assistantContents.Add(content);
+                }
+            }
+
+            // When we get a message boundary end event, finalize the message
+            if (update.IsMessageBoundary && update.MessageBoundary?.Type == MessageBoundaryType.TextMessageEnd)
+            {
+                if (assistantContents.Count > 0)
+                {
+                    // Create assistant message from collected content
+                    ChatMessage assistantMsg;
+                    if (assistantContents.Count == 1 && assistantContents[0] is TextContent tc)
+                    {
+                        assistantMsg = new ChatMessage(ChatRole.Assistant, tc.Text);
+                    }
+                    else
+                    {
+                        assistantMsg = new ChatMessage(ChatRole.Assistant, assistantContents.ToList());
+                    }
+                    assistantMessagesToAdd.Add(assistantMsg);
+                    assistantContents.Clear();
+                }
+            }
+
             yield return update;
+        }
+
+        // Add collected assistant messages to thread
+        if (assistantMessagesToAdd.Count > 0)
+        {
+            try
+            {
+                await conversationThread.AddMessagesAsync(assistantMessagesToAdd, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // Ignore errors - message persistence is not critical to streaming
+            }
         }
 
         // Get turn messages after streaming completes (only NEW messages from this turn)

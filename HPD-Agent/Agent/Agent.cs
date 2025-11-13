@@ -580,6 +580,23 @@ internal sealed class Agent
                 state = AgentLoopState.Initial(effectiveMessages.ToList(), messageTurnId, conversationId, this.Name);
             }
 
+            // ═══════════════════════════════════════════════════════
+            // PERSISTENCE: Add input messages to thread for history tracking
+            // ═══════════════════════════════════════════════════════
+            if (thread != null && messages.Any())
+            {
+                try
+                {
+                    // Add user input messages to thread so they appear in history
+                    // This ensures thread history includes all messages (user + assistant)
+                    await thread.AddMessagesAsync(messages, effectiveCancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // Ignore errors - message persistence is not critical to execution
+                }
+            }
+
             ChatResponse? lastResponse = null;
 
             // Track expanded plugins/skills (message-turn scoped)
@@ -2014,18 +2031,43 @@ Best practices:
             thread.ExecutionState?.ValidateConsistency(currentMessageCount);
         }
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // BUILD COMPLETE MESSAGE LIST: Thread history + New messages
+        // ═══════════════════════════════════════════════════════════════════════════
+        // Load all messages from thread history to send to LLM (enables context awareness)
+        var threadMessages = await thread.GetMessagesAsync(cancellationToken);
+        var allMessages = new List<ChatMessage>(threadMessages);
+        
+        // Append new input messages (for fresh runs or adding context)
+        if (hasMessages)
+        {
+            allMessages.AddRange(messages!);
+        }
+
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
         var reductionCompletionSource = new TaskCompletionSource<ReductionMetadata?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CRITICAL: Call RunAgenticLoopInternal directly with the thread parameter
+        // ═══════════════════════════════════════════════════════════════════════════
+        // We pass the thread so that:
+        // 1. Input messages are persisted to thread.MessageStore
+        // 2. ExecutionState checkpoints are saved after each iteration
+        // 3. Pending writes are loaded/saved with thread scope
+        // 
+        // By calling RunAgenticLoopInternal directly (not RunAsync), we:
+        // - Bypass the standard RunAsync(messages, options) overload which doesn't know about thread
+        // - Ensure thread participation in ALL aspects (persistence, checkpointing, pending writes)
+        // - Maintain the separation: standard RunAsync for stateless calls, thread-aware for durable execution
         var internalStream = RunAgenticLoopInternal(
-            (messages ?? Array.Empty<ChatMessage>()).ToList(),
+            allMessages,  // FULL history: thread messages + new input
             options,
             documentPaths: null,
             turnHistory,
             historyCompletionSource,
             reductionCompletionSource,
-            thread,
+            thread: thread,  // ← CRITICAL: Pass thread for persistence and checkpointing
             cancellationToken);
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))

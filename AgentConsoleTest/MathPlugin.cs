@@ -1,6 +1,6 @@
 using System;
 using System.ComponentModel;
-
+using HPD_Agent.Skills;
 /// <summary>
 /// Simple math plugin for testing plugin registration and invocation.
 /// </summary>
@@ -36,8 +36,8 @@ public class MathPluginMetadataContext : IPluginMetadataContext
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
 
-
-public class ExpandMathPlugin
+[Scope("Math Operations")]
+public class MathPlugin
 {
     [AIFunction<MathPluginMetadataContext>]
     [AIDescription("Adds two numbers and returns the sum.")]
@@ -83,4 +83,6 @@ public class ExpandMathPlugin
         [AIDescription("First value.")] long a,
         [AIDescription("Second value.")] long b)
         => Math.Min(a, b);
+
+
 }

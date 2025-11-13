@@ -29,28 +29,70 @@ internal static class SkillAnalyzer
     /// </summary>
     public static bool IsSkillMethod(MethodDeclarationSyntax method, SemanticModel semanticModel)
     {
+        var methodName = method.Identifier.ValueText;
+        System.Diagnostics.Debug.WriteLine($"[IsSkillMethod] Checking: {methodName}");
+
         // Must have [Skill] attribute
-        var hasSkillAttribute = method.AttributeLists
-            .SelectMany(al => al.Attributes)
-            .Any(attr =>
+        // CROSS-ASSEMBLY FIX: Also check by namespace for attributes from referenced assemblies
+        var hasSkillAttribute = false;
+        foreach (var attr in method.AttributeLists.SelectMany(al => al.Attributes))
+        {
+            var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol?.ContainingType;
+            System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   Attribute: {attr.Name}, Symbol: {attrSymbol?.ToDisplayString() ?? "NULL"}");
+
+            if (attrSymbol == null)
+                continue;
+
+            // Check both simple name and fully qualified name
+            if (attrSymbol.Name == "SkillAttribute" ||
+                attrSymbol.Name == "Skill" ||
+                attrSymbol.ToDisplayString() == "HPD_Agent.Skills.SkillAttribute" ||
+                (attrSymbol.Name == "SkillAttribute" &&
+                 attrSymbol.ContainingNamespace?.ToDisplayString() == "HPD_Agent.Skills"))
             {
-                var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol?.ContainingType;
-                return attrSymbol?.Name == "SkillAttribute" ||
-                       attrSymbol?.Name == "Skill";
-            });
+                hasSkillAttribute = true;
+                System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ✅ Found [Skill] attribute");
+                break;
+            }
+        }
 
         if (!hasSkillAttribute)
+        {
+            System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ❌ No [Skill] attribute found");
             return false;
+        }
 
         // Must be public
         if (!method.Modifiers.Any(SyntaxKind.PublicKeyword))
+        {
+            System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ❌ Not public");
             return false;
+        }
 
         // Must return Skill type
+        // CROSS-ASSEMBLY FIX: Check both Name and Namespace to handle cases where
+        // Skill type is in a referenced assembly (e.g., consumer projects referencing HPD-Agent)
         var returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType).Type;
-        if (returnTypeSymbol?.Name != "Skill")
-            return false;
+        System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   Return type symbol: {returnTypeSymbol?.ToDisplayString() ?? "NULL"}");
 
+        if (returnTypeSymbol == null)
+        {
+            System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ❌ Return type symbol is NULL");
+            return false;
+        }
+
+        // Check if return type is HPD_Agent.Skills.Skill
+        var isSkillType = returnTypeSymbol.Name == "Skill" &&
+                          (returnTypeSymbol.ContainingNamespace?.ToDisplayString() == "HPD_Agent.Skills" ||
+                           returnTypeSymbol.ToString() == "HPD_Agent.Skills.Skill");
+
+        if (!isSkillType)
+        {
+            System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ❌ Return type is not Skill: {returnTypeSymbol.ToDisplayString()}");
+            return false;
+        }
+
+        System.Diagnostics.Debug.WriteLine($"[IsSkillMethod]   ✅ ALL CHECKS PASSED");
         return true;
     }
 
@@ -62,6 +104,10 @@ internal static class SkillAnalyzer
         SemanticModel semanticModel,
         GeneratorSyntaxContext context)
     {
+        // DIAGNOSTIC: Log method being analyzed
+        var methodName = method.Identifier.ValueText;
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Analyzing method: {methodName}");
+
         // Find SkillFactory.Create() invocation in method body
         var invocation = method.Body?.DescendantNodes()
             .OfType<InvocationExpressionSyntax>()
@@ -77,10 +123,14 @@ internal static class SkillAnalyzer
 
         if (invocation == null)
         {
+            // DIAGNOSTIC: No SkillFactory.Create found
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] No SkillFactory.Create() found in {methodName}");
             // Missing SkillFactory.Create() call - diagnostics will be reported by main generator
             // For now, just return null
             return null;
         }
+
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Found SkillFactory.Create() in {methodName}");
 
         var arguments = invocation.ArgumentList.Arguments;
 
@@ -100,8 +150,6 @@ internal static class SkillAnalyzer
             return null; // TODO: Report diagnostic in Phase 2.5
         }
 
-        var methodName = method.Identifier.ValueText;
-
         // Find SkillOptions argument (optional, can be at position 3 or named)
         SkillOptionsInfo? options = null;
         int referencesStartIndex = 3;
@@ -114,6 +162,7 @@ internal static class SkillAnalyzer
             // Check if named parameter "options"
             if (thirdArg.NameColon?.Name.Identifier.ValueText == "options")
             {
+                System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Found named 'options' parameter in {methodName}");
                 options = ExtractSkillOptions(thirdArg.Expression, semanticModel);
                 referencesStartIndex = 4;
             }
@@ -123,10 +172,29 @@ internal static class SkillAnalyzer
                 var thirdArgType = semanticModel.GetTypeInfo(thirdArg.Expression).Type;
                 if (thirdArgType?.Name == "SkillOptions")
                 {
+                    System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Found SkillOptions at position 3 in {methodName}");
                     options = ExtractSkillOptions(thirdArg.Expression, semanticModel);
                     referencesStartIndex = 4;
                 }
             }
+        }
+
+        // DIAGNOSTIC: Log document uploads found
+        if (options != null && options.DocumentUploads.Any())
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Found {options.DocumentUploads.Count} document uploads in {methodName}:");
+            foreach (var upload in options.DocumentUploads)
+            {
+                System.Diagnostics.Debug.WriteLine($"  - {upload.FilePath} -> {upload.DocumentId}");
+            }
+        }
+        else if (options != null)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] SkillOptions found but no document uploads in {methodName}");
+        }
+        else
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] No SkillOptions found in {methodName}");
         }
 
         // Extract function/skill references (remaining arguments)
@@ -314,20 +382,28 @@ internal static class SkillAnalyzer
 
         // Phase 3: Handle fluent API method chains (new SkillOptions().AddDocument(...).AddDocumentFromFile(...))
         // Walk up the expression tree to find all chained method calls
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] ExtractSkillOptions() - Walking method chain");
         var currentExpr = expression;
+        int chainDepth = 0;
         while (currentExpr != null)
         {
+            chainDepth++;
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Chain depth {chainDepth}: {currentExpr.GetType().Name}");
+
             if (currentExpr is InvocationExpressionSyntax invocation)
             {
                 var methodSymbol = semanticModel.GetSymbolInfo(invocation.Expression).Symbol as IMethodSymbol;
                 var methodName = methodSymbol?.Name;
+                System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Method: {methodName}");
 
                 if (methodName == "AddDocument")
                 {
+                    System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Found AddDocument() call");
                     ExtractAddDocumentCall(invocation, semanticModel, options);
                 }
                 else if (methodName == "AddDocumentFromFile")
                 {
+                    System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Found AddDocumentFromFile() call");
                     ExtractAddDocumentFromFileCall(invocation, semanticModel, options);
                 }
 
@@ -337,6 +413,7 @@ internal static class SkillAnalyzer
             else
             {
                 // Reached the end of the chain
+                System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Reached end of chain");
                 break;
             }
         }
@@ -379,14 +456,25 @@ internal static class SkillAnalyzer
         SemanticModel semanticModel,
         SkillOptionsInfo options)
     {
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] ExtractAddDocumentFromFileCall() called");
+
         var args = invocation.ArgumentList.Arguments;
-        if (args.Count < 2) return;
+        if (args.Count < 2)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] AddDocumentFromFile has < 2 args, skipping");
+            return;
+        }
 
         var filePath = ExtractStringLiteral(args[0].Expression, semanticModel);
         var description = ExtractStringLiteral(args[1].Expression, semanticModel);
 
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Extracted: filePath='{filePath}', description='{description}'");
+
         if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(description))
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] FilePath or description is empty, skipping");
             return;
+        }
 
         string? documentId = null;
         if (args.Count >= 3)
@@ -396,12 +484,15 @@ internal static class SkillAnalyzer
 
         // If documentId not provided, it will be auto-derived at runtime
         // For source generation, we store the explicit ID if provided
-        options.DocumentUploads.Add(new DocumentUploadInfo
+        var uploadInfo = new DocumentUploadInfo
         {
             FilePath = filePath,
             DocumentId = documentId ?? string.Empty,  // Empty means auto-derive
             Description = description
-        });
+        };
+
+        options.DocumentUploads.Add(uploadInfo);
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Added DocumentUpload: {filePath} -> {uploadInfo.DocumentId}");
     }
 
     /// <summary>
