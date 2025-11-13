@@ -244,14 +244,20 @@ internal static class SkillCodeGenerator
 
         var sb = new StringBuilder();
 
-        var skillList = string.Join(", ", plugin.Skills.Select(s => s.Name));
+        // Combine both AI functions and skills
+        var allCapabilities = plugin.Functions.Select(f => f.FunctionName)
+            .Concat(plugin.Skills.Select(s => s.Name))
+            .ToList();
+        var capabilitiesList = string.Join(", ", allCapabilities);
+        var totalCount = plugin.Functions.Count + plugin.Skills.Count;
+
         var description = !string.IsNullOrEmpty(plugin.ScopeDescription)
             ? plugin.ScopeDescription
             : plugin.Description;
-        var fullDescription = $"{description}. Contains {plugin.Skills.Count} skills: {skillList}";
+        var fullDescription = $"{description}. Contains {totalCount} functions: {capabilitiesList}";
 
         // Build the return message with optional post-expansion instructions
-        var returnMessage = $"{plugin.Name} expanded. Available skills: {skillList}";
+        var returnMessage = $"{plugin.Name} expanded. Available functions: {capabilitiesList}";
         if (!string.IsNullOrEmpty(plugin.PostExpansionInstructions))
         {
             returnMessage += $"\n\n{plugin.PostExpansionInstructions}";
@@ -279,8 +285,8 @@ internal static class SkillCodeGenerator
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
         sb.AppendLine("                        [\"IsScope\"] = true,");
-        sb.AppendLine($"                        [\"SkillNames\"] = new string[] {{ {string.Join(", ", plugin.Skills.Select(s => $"\"{s.Name}\""))} }},");
-        sb.AppendLine($"                        [\"SkillCount\"] = {plugin.Skills.Count}");
+        sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
+        sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount}");
         sb.AppendLine("                    }");
         sb.AppendLine("                });");
         sb.AppendLine("        }");

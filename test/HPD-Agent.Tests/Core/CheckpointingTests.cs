@@ -76,7 +76,7 @@ public class CheckpointingTests : AgentTestBase
         Assert.Equal(originalState.ConversationId, restoredState.ConversationId);
         Assert.Equal(originalState.AgentName, restoredState.AgentName);
         Assert.Equal(originalState.CurrentMessages.Count, restoredState.CurrentMessages.Count);
-        Assert.Equal(originalState.ExpandedPlugins.Count, restoredState.ExpandedPlugins.Count);
+        Assert.Equal(originalState.expandedScopedPluginContainers.Count, restoredState.expandedScopedPluginContainers.Count);
         Assert.NotNull(restoredState.ETag);
     }
 
@@ -335,7 +335,7 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(loadedThread);
         Assert.NotNull(loadedThread.ExecutionState);
         Assert.Equal(0, loadedThread.ExecutionState.Iteration);
-        Assert.Empty(loadedThread.ExecutionState.ExpandedPlugins);
+        Assert.Empty(loadedThread.ExecutionState.expandedScopedPluginContainers);
     }
 
     [Fact]
@@ -485,7 +485,7 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(restoredThread.ExecutionState);
         Assert.Equal(originalState.Iteration, restoredThread.ExecutionState.Iteration);
         Assert.Equal(originalState.AgentName, restoredThread.ExecutionState.AgentName);
-        Assert.Equal(originalState.ExpandedPlugins.Count, restoredThread.ExecutionState.ExpandedPlugins.Count);
+        Assert.Equal(originalState.expandedScopedPluginContainers.Count, restoredThread.ExecutionState.expandedScopedPluginContainers.Count);
     }
 
     // ═══════════════════════════════════════════════════════

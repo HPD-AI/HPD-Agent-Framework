@@ -290,12 +290,8 @@ public sealed class Agent : AIAgent
                 turnMessageList.AddRange(currentToolResults);
             }
 
-            // Add collected messages to thread
-            foreach (var msg in turnMessageList)
-            {
-                await conversationThread.AddMessageAsync(msg, cancellationToken);
-            }
-
+            // Note: Core agent now handles ALL message persistence (including assistant/tool messages)
+            // We only need to track turnMessages for the response
             turnMessages = turnMessageList;
         }
         catch (Exception ex)
@@ -498,18 +494,8 @@ public sealed class Agent : AIAgent
             yield return update;
         }
 
-        // Add collected assistant messages to thread
-        if (assistantMessagesToAdd.Count > 0)
-        {
-            try
-            {
-                await conversationThread.AddMessagesAsync(assistantMessagesToAdd, cancellationToken);
-            }
-            catch (Exception)
-            {
-                // Ignore errors - message persistence is not critical to streaming
-            }
-        }
+        // Note: Core agent now handles ALL message persistence (including assistant messages)
+        // We don't need to add messages here anymore
 
         // Get turn messages after streaming completes (only NEW messages from this turn)
         var allMessages = await conversationThread.GetMessagesAsync(cancellationToken);

@@ -1202,7 +1202,26 @@ public class AgentBuilder
         Console.WriteLine("[ProcessSkillDocuments] Starting document processing...");
         logger?.LogInformation("Starting skill document processing");
 
-        // ========== PHASE 1: Collect skill containers ==========
+        // Create default document store if not provided
+        if (_documentStore == null)
+        {
+            var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "agent-skills", "skill-documents");
+            var storeLogger = _logger?.CreateLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>()
+                ?? NullLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
+            _documentStore = new HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore(
+                storeLogger,
+                defaultPath);
+            Console.WriteLine($"[ProcessSkillDocuments] Created default store at: {defaultPath}");
+            logger?.LogInformation(
+                "No document store configured. Using default FileSystemInstructionStore at: {Path}",
+                defaultPath);
+        }
+        else
+        {
+            Console.WriteLine("[ProcessSkillDocuments] Using provided document store");
+        }
+
+        // Get all skill containers from registered plugins
         var skillContainers = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())
         {
@@ -1227,19 +1246,17 @@ public class AgentBuilder
 
         if (skillContainers.Count == 0)
         {
-            logger?.LogDebug("No skills found");
+            logger?.LogDebug("No skills with documents found");
             return;
         }
 
-        // ========== PHASE 2: Collect document uploads and references ==========
+        // Phase 1: Collect all document uploads (AddDocumentFromFile)
         var documentUploads = new List<(string SkillName, string DocumentId, string FilePath, string Description)>();
-        var documentReferences = new List<(string SkillName, string DocumentId, string? DescriptionOverride)>();
 
         foreach (var skillContainer in skillContainers)
         {
             var skillName = skillContainer.Name ?? "Unknown";
 
-            // Collect document uploads (AddDocumentFromFile)
             if (skillContainer.AdditionalProperties?.TryGetValue("DocumentUploads", out var uploadsObj) == true &&
                 uploadsObj is Array uploadsArray)
             {
@@ -1265,63 +1282,14 @@ public class AgentBuilder
                     }
                 }
             }
-
-            // Collect document references (AddDocument)
-            if (skillContainer.AdditionalProperties?.TryGetValue("DocumentReferences", out var refsObj) == true &&
-                refsObj is Array refsArray)
-            {
-                foreach (var reference in refsArray)
-                {
-                    // Source generator creates Dictionary<string, string> for references
-                    if (reference is Dictionary<string, string> refDict)
-                    {
-                        if (refDict.TryGetValue("DocumentId", out var documentId) &&
-                            !string.IsNullOrEmpty(documentId))
-                        {
-                            refDict.TryGetValue("DescriptionOverride", out var descriptionOverride);
-                            documentReferences.Add((skillName, documentId, descriptionOverride));
-                        }
-                    }
-                }
-            }
         }
 
-        // ========== CRITICAL CHECK: Do we have ANY documents? ==========
-        if (documentUploads.Count == 0 && documentReferences.Count == 0)
-        {
-            logger?.LogDebug("No documents found in any skills - document store not needed");
-            Console.WriteLine("[ProcessSkillDocuments] No documents found - skipping document store creation");
-            // IMPORTANT: Leave _documentStore as null so DocumentRetrievalPlugin is NOT registered
-            return;
-        }
-
-        Console.WriteLine($"[ProcessSkillDocuments] Found {documentUploads.Count} uploads and {documentReferences.Count} references");
-
-        // ========== PHASE 3: NOW create document store (only if needed) ==========
-        if (_documentStore == null)
-        {
-            var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "agent-skills", "skill-documents");
-            var storeLogger = _logger?.CreateLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>()
-                ?? NullLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
-            _documentStore = new HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore(
-                storeLogger,
-                defaultPath);
-            Console.WriteLine($"[ProcessSkillDocuments] Created default store at: {defaultPath}");
-            logger?.LogInformation(
-                "No document store configured. Using default FileSystemInstructionStore at: {Path}",
-                defaultPath);
-        }
-        else
-        {
-            Console.WriteLine("[ProcessSkillDocuments] Using provided document store");
-        }
-
-        // ========== PHASE 4: Upload documents with deduplication ==========
+        // Phase 2: Upload documents with deduplication
         // IMPORTANT: This is where we read files from the OS filesystem (not in the store!)
         // The store only cares about content and where to persist it.
         var uploadedDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        Console.WriteLine($"[ProcessSkillDocuments] Processing {documentUploads.Count} document uploads");
+        Console.WriteLine($"[ProcessSkillDocuments] Found {documentUploads.Count} document uploads to process");
 
         foreach (var (skillName, documentId, filePath, description) in documentUploads)
         {
@@ -1383,7 +1351,33 @@ public class AgentBuilder
             }
         }
 
-        // ========== PHASE 5: Validate document references ==========
+        // Phase 3: Collect all document references (AddDocument) and validate
+        var documentReferences = new List<(string SkillName, string DocumentId, string? DescriptionOverride)>();
+
+        foreach (var skillContainer in skillContainers)
+        {
+            var skillName = skillContainer.Name ?? "Unknown";
+
+            if (skillContainer.AdditionalProperties?.TryGetValue("DocumentReferences", out var refsObj) == true &&
+                refsObj is Array refsArray)
+            {
+                foreach (var reference in refsArray)
+                {
+                    // Source generator creates Dictionary<string, string> for references
+                    if (reference is Dictionary<string, string> refDict)
+                    {
+                        if (refDict.TryGetValue("DocumentId", out var documentId) &&
+                            !string.IsNullOrEmpty(documentId))
+                        {
+                            refDict.TryGetValue("DescriptionOverride", out var descriptionOverride);
+                            documentReferences.Add((skillName, documentId, descriptionOverride));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate all references exist in store
         foreach (var (skillName, documentId, descriptionOverride) in documentReferences)
         {
             var exists = await _documentStore!.DocumentExistsAsync(documentId, cancellationToken)
@@ -1401,7 +1395,7 @@ public class AgentBuilder
             logger?.LogDebug("Validated document reference {DocumentId} for skill {SkillName}", documentId, skillName);
         }
 
-        // ========== PHASE 6: Link documents to skills in the store ==========
+        // Phase 4: Link documents to skills in the store
         foreach (var skillContainer in skillContainers)
         {
             var skillName = skillContainer.Name ?? "Unknown";

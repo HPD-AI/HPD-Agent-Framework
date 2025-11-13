@@ -14,6 +14,9 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.Conversation.Checkpointing;
+using HPD_Agent.Scoping;
+
+
 
 namespace HPD.Agent;
 
@@ -84,12 +87,12 @@ internal sealed class Agent
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
     private readonly ToolScheduler _toolScheduler;
-    private readonly HPD_Agent.Scoping.UnifiedScopingManager _scopingManager;
+    private readonly UnifiedScopingManager _scopingManager;
     private readonly PermissionManager _permissionManager;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
-    private readonly HPD.Agent.ErrorHandling.IProviderErrorHandler _providerErrorHandler;
+    private readonly ErrorHandling.IProviderErrorHandler _providerErrorHandler;
 
     // Observability components (following component delegation pattern)
     private readonly AgentTelemetryService? _telemetryService;
@@ -334,15 +337,14 @@ internal sealed class Agent
         // Initialize unified scoping manager (without deprecated SkillDefinitions)
         var initialTools = (mergedOptions ?? config.Provider?.DefaultChatOptions)?.Tools?
             .OfType<AIFunction>().ToList() ?? new List<AIFunction>();
-        
+
         // Get explicitly registered plugins from config
-        var explicitlyRegisteredPlugins = config.ExplicitlyRegisteredPlugins ?? 
+        var explicitlyRegisteredPlugins = config.ExplicitlyRegisteredPlugins ??
             ImmutableHashSet<string>.Empty;
-        
-        _scopingManager = new HPD_Agent.Scoping.UnifiedScopingManager(
-            initialTools, 
-            explicitlyRegisteredPlugins,
-            null);
+
+        _scopingManager = new UnifiedScopingManager(
+            initialTools,
+            explicitlyRegisteredPlugins);
 
         _toolScheduler = new ToolScheduler(this, _functionCallProcessor, _permissionManager, config, _scopingManager);
 
@@ -600,7 +602,7 @@ internal sealed class Agent
             ChatResponse? lastResponse = null;
 
             // Track expanded plugins/skills (message-turn scoped)
-            // Note: These are now tracked in state.ExpandedPlugins and state.ExpandedSkills
+            // Note: These are now tracked in state.expandedScopedPluginContainers and state.ExpandedSkillContainers
 
             // Collect all response updates to build final history
             var responseUpdates = new List<ChatResponseUpdate>();
@@ -744,7 +746,7 @@ internal sealed class Agent
                     var scopedOptions = effectiveOptions;
                     if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
                     {
-                        scopedOptions = ApplyPluginScoping(effectiveOptions, state.ExpandedPlugins, state.ExpandedSkills);
+                        scopedOptions = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
                     }
                     else if (state.InnerClientTracksHistory && scopedOptions != null && scopedOptions.ConversationId != thread?.ConversationId)
                     {
@@ -929,7 +931,7 @@ internal sealed class Agent
                         var effectiveOptionsForTools = effectiveOptions;
                         if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
                         {
-                            effectiveOptionsForTools = ApplyPluginScoping(effectiveOptions, state.ExpandedPlugins, state.ExpandedSkills);
+                            effectiveOptionsForTools = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
                         }
 
                         // Yield filter events before tool execution
@@ -944,17 +946,17 @@ internal sealed class Agent
                         if (Config?.AgenticLoop?.MaxConsecutiveFunctionCalls is { } maxConsecutiveCalls)
                         {
                             bool circuitBreakerTriggered = false;
-                            
+
                             foreach (var toolRequest in toolRequests)
                             {
                                 var signature = ComputeFunctionSignatureFromContent(toolRequest);
                                 var toolName = toolRequest.Name ?? "_unknown";
-                                
+
                                 // Calculate what the count WOULD BE if we execute this tool
                                 var lastSig = state.LastSignaturePerTool.GetValueOrDefault(toolName);
                                 var isIdentical = !string.IsNullOrEmpty(lastSig) && signature == lastSig;
-                                
-                                var countAfterExecution = isIdentical 
+
+                                var countAfterExecution = isIdentical
                                     ? state.ConsecutiveCountPerTool.GetValueOrDefault(toolName, 0) + 1
                                     : 1;
 
@@ -964,9 +966,9 @@ internal sealed class Agent
                                     var errorMessage = $"⚠️ Circuit breaker triggered: Function '{toolRequest.Name}' " +
                                         $"with same arguments would be called {countAfterExecution} times consecutively. " +
                                         $"Stopping to prevent infinite loop.";
-                                    
+
                                     yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
-                                    
+
                                     var terminationReason = $"Circuit breaker: '{toolRequest.Name}' " +
                                         $"with same arguments would be called {countAfterExecution} times consecutively";
                                     state = state.Terminate(terminationReason);
@@ -1025,15 +1027,15 @@ internal sealed class Agent
                         // ✅ FIXED: Enhanced error detection to reduce false positives
                         bool hasErrors = toolResultMessage.Contents
                             .OfType<FunctionResultContent>()
-                            .Any(r => 
+                            .Any(r =>
                             {
                                 // Primary signal: Exception present
                                 if (r.Exception != null) return true;
-                                
+
                                 // Secondary signal: Result contains error indicators
                                 var resultStr = r.Result?.ToString();
                                 if (string.IsNullOrEmpty(resultStr)) return false;
-                                
+
                                 // Check for definitive error patterns (case-insensitive)
                                 return resultStr.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ||
                                        resultStr.StartsWith("Failed:", StringComparison.OrdinalIgnoreCase) ||
@@ -1057,7 +1059,7 @@ internal sealed class Agent
                             {
                                 var errorMessage = $"⚠️ Maximum consecutive errors ({maxConsecutiveErrors}) exceeded. " +
                                     "Stopping execution to prevent infinite error loop.";
-                                
+
                                 yield return new InternalTextDeltaEvent(errorMessage, assistantMessageId);
 
                                 var terminationReason = $"Exceeded maximum consecutive errors ({maxConsecutiveErrors})";
@@ -1139,7 +1141,7 @@ internal sealed class Agent
 
                         // Build ChatResponse for decision engine (after execution)
                         lastResponse = new ChatResponse(currentMessages.Where(m => m.Role == ChatRole.Assistant).ToList());
-                        
+
                         // ✅ FIXED: Clear responseUpdates AFTER building the response
                         responseUpdates.Clear();
                     }
@@ -1148,17 +1150,17 @@ internal sealed class Agent
                         // No tools called - we're done
                         var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
                         lastResponse = finalResponse;
-                        
+
                         // ✅ FIXED: Clear responseUpdates AFTER constructing final response
                         responseUpdates.Clear();
-                        
+
                         // ✅ FIXED: Update history tracking if we have ConversationId (no assistant message added in this path)
                         if (_agentTurn.LastResponseConversationId != null)
                         {
                             // For non-tool responses, use current message count (no new assistant message added)
                             state = state.EnableHistoryTracking(state.CurrentMessages.Count);
                         }
-                        
+
                         state = state.Terminate("Completed successfully");
                     }
                 }
@@ -1371,6 +1373,29 @@ internal sealed class Agent
                 }
             }
 
+            // ═══════════════════════════════════════════════════════
+            // PERSISTENCE: Add turn messages to thread for history tracking
+            // ═══════════════════════════════════════════════════════
+            if (thread != null && turnHistory.Count > 0)
+            {
+                try
+                {
+                    // Filter out user messages (already added at line 594)
+                    var messagesToAdd = turnHistory
+                        .Where(m => m.Role != ChatRole.User)
+                        .ToList();
+                    
+                    if (messagesToAdd.Count > 0)
+                    {
+                        await thread.AddMessagesAsync(messagesToAdd, effectiveCancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Ignore errors - message persistence is not critical to execution
+                }
+            }
+
             historyCompletionSource.TrySetResult(turnHistory);
         }
         finally
@@ -1385,8 +1410,8 @@ internal sealed class Agent
     /// </summary>
     private ChatOptions? ApplyPluginScoping(
         ChatOptions? options,
-        ImmutableHashSet<string> expandedPlugins,
-        ImmutableHashSet<string> expandedSkills)
+        ImmutableHashSet<string> expandedScopedPluginContainers,
+        ImmutableHashSet<string> ExpandedSkillContainers)
     {
         if (options?.Tools == null || Config?.PluginScoping?.Enabled != true)
             return options;
@@ -1402,8 +1427,8 @@ internal sealed class Agent
         // Get plugin-scoped functions
         var scopedFunctions = _scopingManager.GetToolsForAgentTurn(
             aiFunctions,
-            expandedPlugins,
-            expandedSkills);
+            expandedScopedPluginContainers,
+            ExpandedSkillContainers);
 
         // Manual cast to AITool list
         var scopedTools = new List<AITool>(scopedFunctions.Count);
@@ -1473,23 +1498,44 @@ internal sealed class Agent
     }
 
     /// <summary>
-    /// Checks if a function result is from a container expansion.
+    /// Checks if a function result is from a scope/plugin container expansion.
+    /// Skill containers are NOT filtered because their results should be returned to the LLM
+    /// so it knows which functions are available after skill expansion.
     /// </summary>
     /// <param name="result">The function result to check</param>
     /// <param name="toolRequests">Original tool call requests</param>
     /// <param name="options">Chat options containing tool metadata</param>
-    /// <returns>True if this result is from a container function</returns>
+    /// <returns>True if this result is from a scope/plugin container (NOT skill container)</returns>
     private static bool IsContainerResult(
         FunctionResultContent result,
         IList<FunctionCallContent> toolRequests,
         ChatOptions? options)
     {
         return toolRequests.Any(tr =>
-            tr.CallId == result.CallId &&
-            options?.Tools?.OfType<AIFunction>()
-                .FirstOrDefault(t => t.Name == tr.Name)
-                ?.AdditionalProperties?.TryGetValue("IsContainer", out var isContainer) == true &&
-            isContainer is bool isCont && isCont);
+        {
+            if (tr.CallId != result.CallId)
+                return false;
+
+            var function = options?.Tools?.OfType<AIFunction>()
+                .FirstOrDefault(t => t.Name == tr.Name);
+
+            if (function?.AdditionalProperties == null)
+                return false;
+
+            // Check if it's a container
+            var isContainer = function.AdditionalProperties.TryGetValue("IsContainer", out var containerVal) == true
+                && containerVal is bool isCont && isCont;
+
+            if (!isContainer)
+                return false;
+
+            // Exclude skill containers (they have IsSkill=true)
+            // Only filter scope/plugin containers
+            var isSkillContainer = function.AdditionalProperties.TryGetValue("IsSkill", out var skillVal) == true
+                && skillVal is bool isSkill && isSkill;
+
+            return !isSkillContainer; // Filter scope/plugin containers, but NOT skill containers
+        });
     }
 
     /// <summary>
@@ -2037,7 +2083,7 @@ Best practices:
         // Load all messages from thread history to send to LLM (enables context awareness)
         var threadMessages = await thread.GetMessagesAsync(cancellationToken);
         var allMessages = new List<ChatMessage>(threadMessages);
-        
+
         // Append new input messages (for fresh runs or adding context)
         if (hasMessages)
         {
@@ -2502,13 +2548,13 @@ public sealed record AgentLoopState
     /// Used for container expansion pattern - once a container is expanded,
     /// its member functions become available.
     /// </summary>
-    public required ImmutableHashSet<string> ExpandedPlugins { get; init; }
+    public required ImmutableHashSet<string> expandedScopedPluginContainers { get; init; }
 
     /// <summary>
     /// Skills that have been expanded in this turn.
     /// Used for container expansion pattern (skills version).
     /// </summary>
-    public required ImmutableHashSet<string> ExpandedSkills { get; init; }
+    public required ImmutableHashSet<string> ExpandedSkillContainers { get; init; }
 
     // ═══════════════════════════════════════════════════════
     // FUNCTION TRACKING
@@ -2580,8 +2626,8 @@ public sealed record AgentLoopState
         ConsecutiveFailures = 0,
         LastSignaturePerTool = ImmutableDictionary<string, string>.Empty,
         ConsecutiveCountPerTool = ImmutableDictionary<string, int>.Empty,
-        ExpandedPlugins = ImmutableHashSet<string>.Empty,
-        ExpandedSkills = ImmutableHashSet<string>.Empty,
+        expandedScopedPluginContainers = ImmutableHashSet<string>.Empty,
+        ExpandedSkillContainers = ImmutableHashSet<string>.Empty,
         CompletedFunctions = ImmutableHashSet<string>.Empty,
         InnerClientTracksHistory = false,
         MessagesSentToInnerClient = 0,
@@ -2646,13 +2692,13 @@ public sealed record AgentLoopState
     /// Records that a plugin container has been expanded.
     /// </summary>
     public AgentLoopState WithExpandedPlugin(string pluginName) =>
-        this with { ExpandedPlugins = ExpandedPlugins.Add(pluginName) };
+        this with { expandedScopedPluginContainers = expandedScopedPluginContainers.Add(pluginName) };
 
     /// <summary>
     /// Records that a skill container has been expanded.
     /// </summary>
     public AgentLoopState WithExpandedSkill(string skillName) =>
-        this with { ExpandedSkills = ExpandedSkills.Add(skillName) };
+        this with { ExpandedSkillContainers = ExpandedSkillContainers.Add(skillName) };
 
     /// <summary>
     /// Adds a pending write for a completed function call.
@@ -3197,7 +3243,7 @@ internal static class ContentExtractor
         }
         return sb.ToString();
     }
-    
+
     /// <summary>
     /// Extracts only text content (ignores function calls, data, etc.).
     /// Used for text-only comparison and deduplication.
@@ -3217,12 +3263,12 @@ internal static class ContentExtractor
                 case TextContent t:
                     sb.Append(t.Text);
                     break;
-                // Ignore function calls, function results, and data content for text comparison
+                    // Ignore function calls, function results, and data content for text comparison
             }
         }
         return sb.ToString();
     }
-    
+
     /// <summary>
     /// Extracts text from a message (handles multiple TextContent items).
     /// Uses LINQ for simplicity when performance is not critical.
@@ -3238,7 +3284,7 @@ internal static class ContentExtractor
 
         return string.Join(" ", textContents);
     }
-    
+
     /// <summary>
     /// Extracts all function call names from contents (optimized).
     /// Manual iteration to avoid LINQ overhead.
@@ -3255,7 +3301,7 @@ internal static class ContentExtractor
         }
         return names;
     }
-    
+
     /// <summary>
     /// Extracts all function call names from message history (optimized).
     /// Returns a dictionary mapping agent names to their function calls.
@@ -3278,7 +3324,7 @@ internal static class ContentExtractor
             List<string>? functionCalls = null;
             for (int i = 0; i < message.Contents.Count; i++)
             {
-                if (message.Contents[i] is FunctionCallContent fc && 
+                if (message.Contents[i] is FunctionCallContent fc &&
                     !string.IsNullOrEmpty(fc.Name))
                 {
                     (functionCalls ??= []).Add(fc.Name);
@@ -3306,7 +3352,7 @@ internal static class ContentExtractor
 
         return metadata;
     }
-    
+
     /// <summary>
     /// Filters out specific content types (e.g., remove reasoning to save tokens).
     /// </summary>
@@ -3324,7 +3370,7 @@ internal static class ContentExtractor
         }
         return filtered;
     }
-    
+
     /// <summary>
     /// Computes a deterministic SHA-256 hash of byte data for content comparison.
     /// Stable across processes and prevents collisions better than GetHashCode().
@@ -3431,7 +3477,7 @@ internal class FunctionCallProcessor
                 // Terminate the loop - don't process this or any remaining functions
                 // The function call will be returned to the caller for handling (e.g., multi-agent handoff)
                 context.IsTerminated = true;
-                
+
                 // Don't add any result message - let the caller handle the unknown function
                 break;
             }
@@ -3449,7 +3495,7 @@ internal class FunctionCallProcessor
             {
                 context.Result = permissionResult.DenialReason ?? "Permission denied";
                 context.IsTerminated = true;
-                
+
                 // Note: Function completion tracking is handled by caller using state updates
 
                 var denialResult = new FunctionResultContent(functionCall.CallId, context.Result);
@@ -3527,7 +3573,7 @@ internal class FunctionCallProcessor
         Agent.CurrentFunctionContext = context;
 
         var retryExecutor = new FunctionRetryExecutor(_errorHandlingConfig);
-        
+
         try
         {
             context.Result = await retryExecutor.ExecuteWithRetryAsync(
@@ -4137,7 +4183,7 @@ internal class ToolScheduler
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly PermissionManager _permissionManager;
     private readonly AgentConfig? _config;
-    private readonly HPD_Agent.Scoping.UnifiedScopingManager _scopingManager;
+    private readonly UnifiedScopingManager _scopingManager;
 
     /// <summary>
     /// Initializes a new instance of ToolScheduler
@@ -4152,7 +4198,7 @@ internal class ToolScheduler
         FunctionCallProcessor functionCallProcessor,
         PermissionManager permissionManager,
         AgentConfig? config,
-        HPD_Agent.Scoping.UnifiedScopingManager scopingManager)
+        UnifiedScopingManager scopingManager)
     {
         _agent = agent ?? throw new ArgumentNullException(nameof(agent));
         _functionCallProcessor = functionCallProcessor ?? throw new ArgumentNullException(nameof(functionCallProcessor));
@@ -4242,8 +4288,8 @@ internal class ToolScheduler
     /// <param name="options">Optional chat options containing tool definitions</param>
     /// <param name="agentRunContext">Agent run context for cross-call tracking</param>
     /// <param name="agentName">The name of the agent executing the tools</param>
-    /// <param name="expandedPlugins">Set of expanded plugin names (message-turn scoped)</param>
-    /// <param name="expandedSkills">Set of expanded skill names (message-turn scoped)</param>
+    /// <param name="expandedScopedPluginContainers">Set of expanded plugin names (message-turn scoped)</param>
+    /// <param name="ExpandedSkillContainers">Set of expanded skill names (message-turn scoped)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A chat message containing the tool execution results</returns>
     public async Task<(ChatMessage Message, HashSet<string> PluginExpansions, HashSet<string> SkillExpansions, HashSet<string> SuccessfulFunctions)> ExecuteToolsAsync(
@@ -4291,9 +4337,9 @@ internal class ToolScheduler
                 if (function.AdditionalProperties?.TryGetValue("IsContainer", out var isCont) == true && isCont is bool isC && isC)
                 {
                     // Check if it's a skill container (has both IsContainer=true AND IsSkill=true)
-                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true 
+                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true
                         && isSkillValue is bool isS && isS;
-                    
+
                     if (isSkill)
                     {
                         // Skill container
@@ -4385,9 +4431,9 @@ internal class ToolScheduler
                 if (function.AdditionalProperties?.TryGetValue("IsContainer", out var isCont) == true && isCont is bool isC && isC)
                 {
                     // Check if it's a skill container (has both IsContainer=true AND IsSkill=true)
-                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true 
+                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true
                         && isSkillValue is bool isS && isS;
-                    
+
                     if (isSkill)
                     {
                         // Skill container
@@ -4607,7 +4653,7 @@ internal static class AgentDocumentProcessor
         {
             newMessage.AdditionalProperties = new AdditionalPropertiesDictionary(lastUserMessage.AdditionalProperties);
         }
-        
+
         messagesList[lastUserMessageIndex] = newMessage;
 
         return messagesList;
@@ -4622,7 +4668,7 @@ internal static class AgentDocumentProcessor
 /// Strongly-typed permission result (replaces bool return)
 /// </summary>
 internal record PermissionResult(
-    bool IsApproved, 
+    bool IsApproved,
     string? DenialReason = null,
     bool IsAutoApproved = false)
 {
@@ -4645,21 +4691,21 @@ internal record PermissionBatchResult(
 internal class PermissionManager
 {
     private readonly IReadOnlyList<IPermissionFilter> _permissionFilters;
-    
+
     public PermissionManager(IReadOnlyList<IPermissionFilter>? permissionFilters)
     {
         _permissionFilters = permissionFilters ?? Array.Empty<IPermissionFilter>();
     }
-    
+
     /// <summary>
     /// Checks if a function requires permission (metadata check only)
     /// </summary>
     public bool RequiresPermission(AIFunction function)
     {
-        return function is HPDAIFunctionFactory.HPDAIFunction hpdFunction 
+        return function is HPDAIFunctionFactory.HPDAIFunction hpdFunction
             && hpdFunction.HPDOptions.RequiresPermission;
     }
-    
+
     /// <summary>
     /// Executes permission check for a single function call
     /// </summary>
@@ -4673,26 +4719,26 @@ internal class PermissionManager
         // Null checks
         if (string.IsNullOrEmpty(functionCall.Name))
             return PermissionResult.Denied("Function name is empty");
-            
+
         if (function == null)
             return PermissionResult.Denied($"Function '{functionCall.Name}' not found");
-        
+
         // Check if permission is required
         if (!RequiresPermission(function))
             return PermissionResult.AutoApproved();
-        
+
         // If no permission filters are configured, auto-deny functions requiring permission
         // This is a safety measure - functions with [RequiresPermission] should not auto-approve
         if (_permissionFilters.Count == 0)
             return PermissionResult.Denied("No permission filter configured for function requiring permission");
-        
+
         // Build and execute permission filter pipeline
         var toolCallRequest = new ToolCallRequest
         {
             FunctionName = functionCall.Name,
             Arguments = functionCall.Arguments ?? new Dictionary<string, object?>()
         };
-        
+
         var context = new FunctionInvocationContext
         {
             ToolCallRequest = toolCallRequest,
@@ -4710,20 +4756,20 @@ internal class PermissionManager
         };
 
         context.Metadata["CallId"] = functionCall.CallId;
-        
+
         await ExecutePermissionPipeline(context, cancellationToken).ConfigureAwait(false);
-        
+
         // If filter terminated the context, permission was denied
         if (context.IsTerminated)
         {
             var denialReason = context.Result?.ToString() ?? "Permission denied by filter";
             return PermissionResult.Denied(denialReason);
         }
-        
+
         // If filter did not terminate, permission was approved
         return PermissionResult.Approved();
     }
-    
+
     /// <summary>
     /// Batch permission check for multiple tools (optimized for parallel execution)
     /// FIX #14: Build O(1) function map to avoid O(n×m) LINQ scans
@@ -4738,32 +4784,32 @@ internal class PermissionManager
     {
         var approved = new List<FunctionCallContent>();
         var denied = new List<(FunctionCallContent Tool, string Reason)>();
-        
+
         // Build function map ONCE per batch (not per request)
         var functionMap = FunctionMapBuilder.BuildMap(options?.Tools);
-        
+
         foreach (var toolRequest in toolRequests)
         {
             // O(1) lookup instead of O(n) LINQ scan
             var function = FunctionMapBuilder.FindFunction(toolRequest.Name ?? string.Empty, functionMap);
-            
+
             var result = await CheckPermissionAsync(
                 toolRequest, function, state, agent, cancellationToken).ConfigureAwait(false);
-            
+
             if (result.IsApproved)
                 approved.Add(toolRequest);
             else
                 denied.Add((toolRequest, result.DenialReason ?? "Unknown"));
         }
-        
+
         return new PermissionBatchResult(approved, denied);
     }
-    
+
     /// <summary>
     /// Executes the permission filter pipeline (single responsibility)
     /// </summary>
     private async Task ExecutePermissionPipeline(
-        FunctionInvocationContext context, 
+        FunctionInvocationContext context,
         CancellationToken cancellationToken)
     {
         // Build and execute the permission filter pipeline using FilterChain
@@ -4801,7 +4847,7 @@ internal static class EventStreamAdapter
         var enumerator = innerStream.GetAsyncEnumerator(cancellationToken);
         Exception? caughtError = null;
         bool runFinishedEmitted = false;
-        
+
         // Capture IDs from RunStartedEvent to use in error scenarios
         string? threadId = null;
         string? runId = null;
@@ -4820,7 +4866,7 @@ internal static class EventStreamAdapter
                     if (hasNext)
                     {
                         currentEvent = enumerator.Current;
-                        
+
                         // Capture IDs from RunStartedEvent for error correlation
                         if (currentEvent is RunStartedEvent runStarted)
                         {
@@ -4846,7 +4892,7 @@ internal static class EventStreamAdapter
                     var errorMessage = caughtError is OperationCanceledException
                         ? "Turn was canceled or timed out."
                         : caughtError.Message;
-                    
+
                     yield return EventSerialization.CreateRunError(errorMessage);
                     break;
                 }
@@ -4863,7 +4909,7 @@ internal static class EventStreamAdapter
             if (caughtError != null && !runFinishedEmitted)
             {
                 yield return EventSerialization.CreateRunFinished(
-                    threadId ?? string.Empty, 
+                    threadId ?? string.Empty,
                     runId ?? string.Empty);
             }
         }
@@ -5519,6 +5565,10 @@ internal static class FilterChain
 
 #endregion
 
+
+
+
+
 #region Internal Events
 /// <summary>
 /// Protocol-agnostic internal events emitted by the agent core.
@@ -6065,7 +6115,7 @@ internal sealed class AgentLoggingService
             state.Iteration,
             decision.GetType().Name,
             state.ConsecutiveFailures,
-            state.ExpandedPlugins.Count,
+            state.expandedScopedPluginContainers.Count,
             state.CompletedFunctions.Count);
     }
 
@@ -6279,7 +6329,7 @@ internal sealed class AgentTelemetryService : IDisposable
             // State snapshot at decision point
             activity
                 .AddTag($"agent.iteration.{state.Iteration}.consecutive_failures", state.ConsecutiveFailures)
-                .AddTag($"agent.iteration.{state.Iteration}.expanded_plugins", state.ExpandedPlugins.Count)
+                .AddTag($"agent.iteration.{state.Iteration}.expanded_plugins", state.expandedScopedPluginContainers.Count)
                 .AddTag($"agent.iteration.{state.Iteration}.completed_functions", state.CompletedFunctions.Count);
 
             // Circuit breaker proximity warning

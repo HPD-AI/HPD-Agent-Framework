@@ -87,7 +87,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
     // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
         .WithLogging()
-        .WithPlugin<MathPlugin>()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
+        .WithPlugin<FinancialAnalysisSkills>()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
         .Build();
 

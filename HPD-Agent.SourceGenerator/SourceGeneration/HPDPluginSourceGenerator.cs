@@ -280,8 +280,8 @@ namespace HPD_Agent.Diagnostics {{
         sb.AppendLine("    {");
         sb.AppendLine("        var functions = new List<AIFunction>();");
 
-        // Add container function first if plugin is scoped
-        if (plugin.HasScopeAttribute)
+        // Add container function first if plugin is scoped (but NOT if it has skills - SkillCodeGenerator handles that)
+        if (plugin.HasScopeAttribute && !plugin.Skills.Any())
         {
             sb.AppendLine();
             sb.AppendLine("        // Container function for plugin scoping");
@@ -1556,14 +1556,20 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     {
         var sb = new StringBuilder();
 
-        var functionList = string.Join(", ", plugin.Functions.Select(f => f.FunctionName));
+        // Combine both AI functions and skills
+        var allCapabilities = plugin.Functions.Select(f => f.FunctionName)
+            .Concat(plugin.Skills.Select(s => s.Name))
+            .ToList();
+        var capabilitiesList = string.Join(", ", allCapabilities);
+        var totalCount = plugin.Functions.Count + plugin.Skills.Count;
+
         var description = !string.IsNullOrEmpty(plugin.ScopeDescription)
             ? plugin.ScopeDescription
             : plugin.Description;
-        var fullDescription = $"{description}. Contains {plugin.Functions.Count} functions: {functionList}";
+        var fullDescription = $"{description}. Contains {totalCount} functions: {capabilitiesList}";
 
         // Build the return message with optional post-expansion instructions
-        var returnMessage = $"{plugin.Name} expanded. Available functions: {functionList}";
+        var returnMessage = $"{plugin.Name} expanded. Available functions: {capabilitiesList}";
         if (!string.IsNullOrEmpty(plugin.PostExpansionInstructions))
         {
             returnMessage += $"\n\n{plugin.PostExpansionInstructions}";
@@ -1592,8 +1598,8 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
         sb.AppendLine($"                        [\"PluginName\"] = \"{plugin.Name}\",");
-        sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", plugin.Functions.Select(f => $"\"{f.FunctionName}\""))} }},");
-        sb.AppendLine($"                        [\"FunctionCount\"] = {plugin.Functions.Count}");
+        sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
+        sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount}");
         sb.AppendLine("                    }");
         sb.AppendLine("                });");
         sb.AppendLine("        }");

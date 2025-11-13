@@ -84,5 +84,20 @@ public class MathPlugin
         [AIDescription("Second value.")] long b)
         => Math.Min(a, b);
 
-
+    [Skill]
+    public Skill SolveQuadratic(SkillOptions? options = null)
+    {
+        return SkillFactory.Create(
+            name: "SolveQuadratic",
+            description: "Solves quadratic equations (ax² + bx + c = 0)",
+            instructions: @"
+                    Step 1: Calculate discriminant (b² - 4ac)
+                    Step 2: Calculate square root using sqrt function
+                    Step 3: Calculate two solutions using Add/Subtract",
+            options: options,
+            "MathPlugin.Multiply",
+            "MathPlugin.Add",
+            "MathPlugin.Subtract"
+        );
+    }
 }
