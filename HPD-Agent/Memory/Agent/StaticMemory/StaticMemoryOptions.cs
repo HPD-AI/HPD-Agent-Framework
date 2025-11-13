@@ -30,9 +30,10 @@ public class StaticMemoryOptions
 
     /// <summary>
     /// Maximum tokens to inject when using FullTextInjection strategy.
-    /// Default: 8000 tokens (~32K characters)
+    /// Default: int.MaxValue (no limit) - injects all static memory content
+    /// Set explicitly to limit injection size
     /// </summary>
-    public int MaxTokens { get; set; } = 8000;
+    public int MaxTokens { get; set; } = int.MaxValue;
 
     /// <summary>
     /// Optional knowledge identifier for scoping knowledge storage.

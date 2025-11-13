@@ -44,14 +44,14 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         if (hasAIFunctionMethods)
             return true;
 
-        // Check for skill methods (public static Skill MethodName(...))
+        // Check for skill methods with [Skill] attribute (Phase 3+)
         // We need to do a simple check here without semantic model
         // Full validation happens in GetPluginDeclaration
         var hasSkillMethods = methods.Any(method =>
             method.Modifiers.Any(SyntaxKind.PublicKeyword) &&
-            method.Modifiers.Any(SyntaxKind.StaticKeyword) &&
             method.ReturnType.ToString().Contains("Skill") &&
-            !method.AttributeLists.Any()); // Skills don't have attributes
+            method.AttributeLists.SelectMany(al => al.Attributes)
+                .Any(attr => attr.Name.ToString().Contains("Skill")));
 
         return hasSkillMethods;
     }
@@ -82,8 +82,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
 
         var namespaceName = GetNamespace(classDecl);
 
-        // Check for [PluginScope] attribute
-        var (hasScopeAttribute, scopeDescription, postExpansionInstructions) = GetPluginScopeAttribute(classDecl);
+        // Check for [Scope] attribute
+        var (hasScopeAttribute, scopeDescription, postExpansionInstructions) = GetScopeAttribute(classDecl);
 
         // Build description
         var description = BuildPluginDescription(functions.Count, skills.Count);
@@ -306,10 +306,12 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         sb.AppendLine($"    public static partial class {plugin.Name}Registration");
         sb.AppendLine("    {");
 
-        // Generate GetReferencedPlugins() if there are skills
+        // Generate GetReferencedPlugins() and GetReferencedFunctions() if there are skills
         if (plugin.Skills.Any())
         {
             sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedPluginsMethod(plugin));
+            sb.AppendLine();
+            sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedFunctionsMethod(plugin));
             sb.AppendLine();
         }
 
@@ -518,12 +520,27 @@ $@"    /// <summary>
         }
         schemaProviderCode += " }";
 
+        // Check if the return type is void
+        bool isVoidReturn = function.ReturnType == "void" || function.ReturnType == "System.Void";
+
         string invocationLogic;
         if (relevantParams.Any())
         {
-            string returnStatement = function.IsAsync 
-                ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
-                : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
+            string returnStatement;
+            if (isVoidReturn)
+            {
+                // For void methods, call the method and return null
+                returnStatement = function.IsAsync
+                    ? $"{awaitKeyword} instance.{function.Name}({invocationArgs}); return null;"
+                    : $"instance.{function.Name}({invocationArgs}); return null;";
+            }
+            else
+            {
+                // For non-void methods, return the result as object
+                returnStatement = function.IsAsync 
+                    ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
+                    : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
+            }
                 
             invocationLogic = 
 $@"({asyncKeyword} (arguments, cancellationToken) =>
@@ -535,9 +552,21 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         }
         else
         {
-            string returnStatement = function.IsAsync 
-                ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
-                : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
+            string returnStatement;
+            if (isVoidReturn)
+            {
+                // For void methods, call the method and return null
+                returnStatement = function.IsAsync
+                    ? $"{awaitKeyword} instance.{function.Name}({invocationArgs}); return null;"
+                    : $"instance.{function.Name}({invocationArgs}); return null;";
+            }
+            else
+            {
+                // For non-void methods, return the result as object
+                returnStatement = function.IsAsync 
+                    ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
+                    : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
+            }
                 
             invocationLogic = 
 $@"({asyncKeyword} (arguments, cancellationToken) =>
@@ -555,7 +584,7 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         options.AppendLine($"                ParameterDescriptions = {GenerateParameterDescriptions(function)},");
 
         // ALWAYS add ParentPlugin metadata (enables PluginReferences to work with any plugin)
-        // Note: Plugins without [PluginScope] remain "always visible" by default
+        // Note: Plugins without [Scope] remain "always visible" by default
         // Skills can use PluginReferences to scope them on-demand
         options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
         options.AppendLine("                {");
@@ -1260,13 +1289,13 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     }
 
     /// <summary>
-    /// Detects [PluginScope] attribute on a class and extracts its description and post-expansion instructions.
+    /// Detects [Scope] attribute on a class and extracts its description and post-expansion instructions.
     /// </summary>
-    private static (bool hasScopeAttribute, string? scopeDescription, string? postExpansionInstructions) GetPluginScopeAttribute(ClassDeclarationSyntax classDecl)
+    private static (bool hasScopeAttribute, string? scopeDescription, string? postExpansionInstructions) GetScopeAttribute(ClassDeclarationSyntax classDecl)
     {
         var scopeAttributes = classDecl.AttributeLists
             .SelectMany(attrList => attrList.Attributes)
-            .Where(attr => attr.Name.ToString().Contains("PluginScope"));
+            .Where(attr => attr.Name.ToString() == "Scope");
 
         foreach (var attr in scopeAttributes)
         {
@@ -1457,7 +1486,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine("            {");
         sb.AppendLine($"                Name = \"{plugin.Name}\",");
         sb.AppendLine($"                Description = \"{description}\",");
-        sb.AppendLine($"                FunctionNames = new[] {{ {functionNamesArray} }},");
+        sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
         sb.AppendLine($"                FunctionCount = {plugin.Functions.Count},");
         sb.AppendLine($"                HasScopeAttribute = {plugin.HasScopeAttribute.ToString().ToLower()}");
         sb.AppendLine("            };");
@@ -1509,7 +1538,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
         sb.AppendLine($"                        [\"PluginName\"] = \"{plugin.Name}\",");
-        sb.AppendLine($"                        [\"FunctionNames\"] = new[] {{ {string.Join(", ", plugin.Functions.Select(f => $"\"{f.FunctionName}\""))} }},");
+        sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", plugin.Functions.Select(f => $"\"{f.FunctionName}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {plugin.Functions.Count}");
         sb.AppendLine("                    }");
         sb.AppendLine("                });");

@@ -2,9 +2,6 @@ using Microsoft.Extensions.AI;
 using HPD.Agent.Internal.Filters;
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
-using HPD.Agent.Providers;
-using HPD.Agent.Conversation;
-using HPD.Agent.Conversation.Checkpointing;
 using CoreAgent = HPD.Agent.Agent;
 
 namespace HPD.Agent.AGUI;
@@ -29,7 +26,6 @@ public sealed class Agent
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
         HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
-        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
@@ -42,7 +38,6 @@ public sealed class Agent
             promptFilters,
             scopedFilterManager,
             providerErrorHandler,
-            skillScopingManager,
             permissionFilters,
             aiFunctionFilters,
             messageTurnFilters,

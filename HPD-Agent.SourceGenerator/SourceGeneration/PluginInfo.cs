@@ -34,18 +34,18 @@ internal class PluginInfo
     public bool RequiresContext => Functions.Any(f => f.RequiresContext);
 
     /// <summary>
-    /// Whether this plugin has the [PluginScope] attribute
+    /// Whether this container has the [Scope] attribute
     /// </summary>
     public bool HasScopeAttribute { get; set; }
 
     /// <summary>
-    /// Description from [PluginScope] attribute (if present)
+    /// Description from [Scope] attribute (if present)
     /// </summary>
     public string? ScopeDescription { get; set; }
 
     /// <summary>
-    /// Post-expansion instructions from [PluginScope] attribute (if present)
-    /// These instructions are shown to the agent after the plugin is expanded.
+    /// Post-expansion instructions from [Scope] attribute (if present)
+    /// These instructions are shown to the agent after the container is expanded.
     /// </summary>
     public string? PostExpansionInstructions { get; set; }
 }

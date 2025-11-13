@@ -24,11 +24,17 @@ public class PluginRegistration
     public bool IsInstance => Instance != null;
 
     /// <summary>
+    /// Optional function filter - if set, only these functions will be registered.
+    /// Phase 4.5: Used for selective function registration from skills.
+    /// </summary>
+    public string[]? FunctionFilter { get; }
+
+    /// <summary>
     /// Factory method to register a plugin by type (will be instantiated when needed).
     /// </summary>
     public static PluginRegistration FromType<T>() where T : class, new()
     {
-        return new PluginRegistration(typeof(T), null);
+        return new PluginRegistration(typeof(T), null, null);
     }
 
     /// <summary>
@@ -36,7 +42,7 @@ public class PluginRegistration
     /// </summary>
     public static PluginRegistration FromType(Type pluginType)
     {
-        return new PluginRegistration(pluginType, null);
+        return new PluginRegistration(pluginType, null, null);
     }
 
     /// <summary>
@@ -45,16 +51,28 @@ public class PluginRegistration
     public static PluginRegistration FromInstance<T>(T instance) where T : class
     {
         if (instance == null) throw new ArgumentNullException(nameof(instance));
-        return new PluginRegistration(typeof(T), instance);
+        return new PluginRegistration(typeof(T), instance, null);
+    }
+
+    /// <summary>
+    /// Factory method to register specific functions from a plugin by type.
+    /// Phase 4.5: Used for selective function registration from skills.
+    /// </summary>
+    public static PluginRegistration FromTypeFunctions(Type pluginType, string[] functionNames)
+    {
+        if (functionNames == null || functionNames.Length == 0)
+            throw new ArgumentException("Function names cannot be null or empty", nameof(functionNames));
+        return new PluginRegistration(pluginType, null, functionNames);
     }
 
     /// <summary>
     /// Internal constructor to ensure valid state.
     /// </summary>
-    private PluginRegistration(Type pluginType, object? instance)
+    private PluginRegistration(Type pluginType, object? instance, string[]? functionFilter)
     {
         PluginType = pluginType ?? throw new ArgumentNullException(nameof(pluginType));
         Instance = instance;
+        FunctionFilter = functionFilter;
 
         // If instance is provided, validate it matches the type
         if (instance != null && !pluginType.IsInstanceOfType(instance))
@@ -117,8 +135,32 @@ public class PluginRegistration
 
         try
         {
-            var result = createPluginMethod.Invoke(null, new[] { instance, context });
-            return result as List<AIFunction> ?? new List<AIFunction>();
+            // Check parameter count to handle skill-only containers (1 param) vs regular plugins (2 params)
+            var parameters = createPluginMethod.GetParameters();
+            object? result;
+            
+            if (parameters.Length == 1)
+            {
+                // Skill-only container: CreatePlugin(IPluginMetadataContext? context)
+                result = createPluginMethod.Invoke(null, new[] { context });
+            }
+            else
+            {
+                // Regular plugin: CreatePlugin(TPlugin instance, IPluginMetadataContext? context)
+                result = createPluginMethod.Invoke(null, new[] { instance, context });
+            }
+            
+            var allFunctions = result as List<AIFunction> ?? new List<AIFunction>();
+
+            // Phase 4.5: Filter functions if FunctionFilter is set
+            if (FunctionFilter != null && FunctionFilter.Length > 0)
+            {
+                allFunctions = allFunctions
+                    .Where(f => FunctionFilter.Contains(f.Name))
+                    .ToList();
+            }
+
+            return allFunctions;
         }
         catch (Exception ex)
         {
@@ -156,6 +198,16 @@ public class PluginManager
     public PluginManager RegisterPlugin<T>(T instance) where T : class
     {
         _registrations.Add(PluginRegistration.FromInstance(instance));
+        return this;
+    }
+
+    /// <summary>
+    /// Registers specific functions from a plugin by type.
+    /// Phase 4.5: Used for selective function registration from skills.
+    /// </summary>
+    public PluginManager RegisterPluginFunctions(Type pluginType, string[] functionNames)
+    {
+        _registrations.Add(PluginRegistration.FromTypeFunctions(pluginType, functionNames));
         return this;
     }
 

@@ -1,11 +1,9 @@
 ﻿using Microsoft.Extensions.AI;
-using System.Threading;
 using System.Threading.Channels;
 using HPD.Agent.Internal.Filters;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using HPD.Agent.Providers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -260,7 +258,6 @@ internal sealed class Agent
         List<IPromptFilter> promptFilters,
         ScopedFilterManager scopedFilterManager,
         HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
-        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
@@ -334,11 +331,18 @@ internal sealed class Agent
             config.ChatClientMiddleware,
             serviceProvider);
 
-        // Initialize unified scoping manager
-        var skills = skillScopingManager?.GetSkills() ?? Enumerable.Empty<HPD_Agent.Skills.SkillDefinition>();
+        // Initialize unified scoping manager (without deprecated SkillDefinitions)
         var initialTools = (mergedOptions ?? config.Provider?.DefaultChatOptions)?.Tools?
             .OfType<AIFunction>().ToList() ?? new List<AIFunction>();
-        _scopingManager = new HPD_Agent.Scoping.UnifiedScopingManager(skills, initialTools, null);
+        
+        // Get explicitly registered plugins from config
+        var explicitlyRegisteredPlugins = config.ExplicitlyRegisteredPlugins ?? 
+            ImmutableHashSet<string>.Empty;
+        
+        _scopingManager = new HPD_Agent.Scoping.UnifiedScopingManager(
+            initialTools, 
+            explicitlyRegisteredPlugins,
+            null);
 
         _toolScheduler = new ToolScheduler(this, _functionCallProcessor, _permissionManager, config, _scopingManager);
 
@@ -1367,7 +1371,7 @@ internal sealed class Agent
         ImmutableHashSet<string> expandedPlugins,
         ImmutableHashSet<string> expandedSkills)
     {
-        if (options?.Tools == null || Config?.PluginScoping == null)
+        if (options?.Tools == null || Config?.PluginScoping?.Enabled != true)
             return options;
 
         // PERFORMANCE: Single-pass extraction using manual loop
@@ -4100,8 +4104,7 @@ internal class ToolScheduler
     /// <param name="functionCallProcessor">The function call processor to use for tool execution</param>
     /// <param name="permissionManager">The permission manager for authorization checks</param>
     /// <param name="config">Agent configuration for execution settings</param>
-    /// <param name="pluginScopingManager">Plugin scoping manager for container detection</param>
-    /// <param name="skillScopingManager">Optional skill scoping manager for skill container detection</param>
+    /// <param name="scopingManager">Unified scoping manager for plugin and skill container detection</param>
     public ToolScheduler(
         Agent agent,
         FunctionCallProcessor functionCallProcessor,
@@ -4242,23 +4245,30 @@ internal class ToolScheduler
 
             if (function != null)
             {
-                // Check if it's a plugin container
+                // Check if it's a container (plugin or skill)
                 if (function.AdditionalProperties?.TryGetValue("IsContainer", out var isCont) == true && isCont is bool isC && isC)
                 {
-                    var pluginName = function.AdditionalProperties
-                        ?.TryGetValue("PluginName", out var value) == true && value is string pn
-                        ? pn
-                        : toolRequest.Name;
+                    // Check if it's a skill container (has both IsContainer=true AND IsSkill=true)
+                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true 
+                        && isSkillValue is bool isS && isS;
+                    
+                    if (isSkill)
+                    {
+                        // Skill container
+                        var skillName = function.Name ?? toolRequest.Name;
+                        skillContainerExpansions[toolRequest.CallId] = skillName;
+                    }
+                    else
+                    {
+                        // Plugin container
+                        var pluginName = function.AdditionalProperties
+                            ?.TryGetValue("PluginName", out var value) == true && value is string pn
+                            ? pn
+                            : toolRequest.Name;
 
-                    pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                        pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                    }
                 }
-                // Check if it's a skill container
-                // Skill container expansion tracking removed - handled by UnifiedScopingManager
-                // else if (_scopingManager.IsSkillContainer(function))
-                // {
-                //     var skillName = function.Name;
-                //     skillContainerExpansions[toolRequest.CallId] = skillName;
-                // }
             }
         }
 
@@ -4329,23 +4339,30 @@ internal class ToolScheduler
 
             if (function != null)
             {
-                // Check if it's a plugin container
+                // Check if it's a container (plugin or skill)
                 if (function.AdditionalProperties?.TryGetValue("IsContainer", out var isCont) == true && isCont is bool isC && isC)
                 {
-                    var pluginName = function.AdditionalProperties
-                        ?.TryGetValue("PluginName", out var value) == true && value is string pn
-                        ? pn
-                        : toolRequest.Name;
+                    // Check if it's a skill container (has both IsContainer=true AND IsSkill=true)
+                    var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true 
+                        && isSkillValue is bool isS && isS;
+                    
+                    if (isSkill)
+                    {
+                        // Skill container
+                        var skillName = function.Name ?? toolRequest.Name;
+                        skillContainerExpansions[toolRequest.CallId] = skillName;
+                    }
+                    else
+                    {
+                        // Plugin container
+                        var pluginName = function.AdditionalProperties
+                            ?.TryGetValue("PluginName", out var value) == true && value is string pn
+                            ? pn
+                            : toolRequest.Name;
 
-                    pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                        pluginContainerExpansions[toolRequest.CallId] = pluginName;
+                    }
                 }
-                // Check if it's a skill container
-                // Skill container expansion tracking removed - handled by UnifiedScopingManager
-                // else if (_scopingManager.IsSkillContainer(function))
-                // {
-                //     var skillName = function.Name;
-                //     skillContainerExpansions[toolRequest.CallId] = skillName;
-                // }
             }
         }
 

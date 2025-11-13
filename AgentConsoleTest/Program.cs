@@ -61,7 +61,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
         },
         DynamicMemory = new DynamicMemoryConfig
         {
-            StorageDirectory = "./agent-memory-storage",
+            StorageDirectory = "./agent-dynamic-memory",
             MaxTokens = 6000,
             EnableAutoEviction = true,
             AutoEvictionThreshold = 85
@@ -86,13 +86,8 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant()
     // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
         .WithLogging()
-        .WithTavilyWebSearch()
-        .WithDynamicMemory(opts => opts
-            .WithStorageDirectory("./agent-memory-storage")
-            .WithMaxTokens(6000))
-        .WithPlanMode() // Plan mode enabled with defaults
-        .WithPlugin<ExpandMathPlugin>()
-        .WithPlugin<FinancialAnalysisPlugin>()
+        .WithPlugin<FinancialAnalysisPlugin>()  // ✨ Financial analysis plugin (explicitly registered)
+        .WithPlugin<FinancialAnalysisSkills>()  // ✨ Financial analysis skills (that reference the plugin)
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
         .Build();
 

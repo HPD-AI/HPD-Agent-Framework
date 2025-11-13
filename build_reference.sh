@@ -21,7 +21,7 @@ REPOS=(
     "https://github.com/lsiddiquee/SemanticPluginForge.git"
     "https://github.com/anthropic-experimental/sandbox-runtime.git"
     "https://github.com/praeclarum/CrossIntelligence.git"
-
+    "https://github.com/anthropics/skills.git"
     
 
     # Add more repo URLs as needed

@@ -2,6 +2,7 @@ using System;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using HPD.Agent.Conversation.Checkpointing;
+using System.Collections.Immutable;
 
 namespace HPD.Agent;
 
@@ -96,6 +97,13 @@ public class AgentConfig
     /// When enabled, plugin functions are hidden behind container functions, reducing initial tool list by up to 87.5%.
     /// </summary>
     public PluginScopingConfig? PluginScoping { get; set; }
+
+    /// <summary>
+    /// Internal: Set of explicitly registered plugin names (for scoping manager).
+    /// This is set by the builder and used to distinguish explicit vs implicit plugin registration.
+    /// </summary>
+    [JsonIgnore]
+    public ImmutableHashSet<string> ExplicitlyRegisteredPlugins { get; set; } = ImmutableHashSet<string>.Empty;
 
     /// <summary>
     /// Configuration for OpenTelemetry distributed tracing and metrics.

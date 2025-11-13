@@ -6,11 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
+using System.Collections.Immutable;
 using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Text.Json;
 using HPD_Agent.Memory.Agent.PlanMode;
 using Microsoft.Agents.AI;
@@ -25,8 +25,7 @@ namespace HPD.Agent;
 internal record AgentBuildDependencies(
     IChatClient ClientToUse,
     ChatOptions? MergedOptions,
-    HPD.Agent.ErrorHandling.IProviderErrorHandler ErrorHandler,
-    HPD_Agent.Skills.SkillScopingManager? SkillScopingManager);
+    HPD.Agent.ErrorHandling.IProviderErrorHandler ErrorHandler);
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -45,8 +44,10 @@ public class AgentBuilder
     internal IPluginMetadataContext? _defaultContext;
     // store individual plugin contexts
     internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
-    // Skills system fields
-    internal List<HPD_Agent.Skills.SkillDefinition>? _skillDefinitions;
+    // Phase 5: Document store for skill instruction documents
+    internal HPD_Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
+    // Track explicitly registered plugins (for scoping manager)
+    internal readonly HashSet<string> _explicitlyRegisteredPlugins = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IAiFunctionFilter> _globalFilters = new();
     internal readonly ScopedFilterManager _scopedFilterManager = new();
     internal readonly BuilderScopeContext _scopeContext = new();
@@ -66,25 +67,24 @@ public class AgentBuilder
 
     /// <summary>
     /// Creates a new builder with default configuration.
-    /// Automatically discovers and registers all loaded provider packages.
+    /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly loading uses reflection in non-AOT scenarios")]
     public AgentBuilder()
     {
         _config = new AgentConfig();
         _providerRegistry = new ProviderRegistry();
-        DiscoverAndRegisterProviders();
+        RegisterDiscoveredProviders();
     }
 
     /// <summary>
     /// Creates a builder from existing configuration.
+    /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly loading uses reflection in non-AOT scenarios")]
     public AgentBuilder(AgentConfig config)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _providerRegistry = new ProviderRegistry();
-        DiscoverAndRegisterProviders();
+        RegisterDiscoveredProviders();
     }
 
     /// <summary>
@@ -97,17 +97,11 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Discovers all provider packages via ProviderDiscovery and registers them.
+    /// Registers all providers that were discovered by ProviderAutoDiscovery ModuleInitializer.
+    /// Provider assemblies are loaded and their ModuleInitializers run before this is called.
     /// </summary>
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly loading uses reflection in non-AOT scenarios")]
-    private void DiscoverAndRegisterProviders()
+    private void RegisterDiscoveredProviders()
     {
-#if !NATIVE_AOT
-        // In non-AOT scenarios, automatically load all provider assemblies
-        // This triggers their ModuleInitializers to register themselves
-        TryLoadProviderAssemblies();
-#endif
-
         foreach (var factory in ProviderDiscovery.GetFactories())
         {
             try
@@ -121,50 +115,6 @@ public class AgentBuilder
             }
         }
     }
-
-#if !NATIVE_AOT
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly loading uses reflection in non-AOT scenarios")]
-    private void TryLoadProviderAssemblies()
-    {
-        try
-        {
-            // Scan the application directory for provider DLLs
-            var currentAssembly = System.Reflection.Assembly.GetEntryAssembly() 
-                               ?? System.Reflection.Assembly.GetExecutingAssembly();
-            var appDirectory = System.IO.Path.GetDirectoryName(currentAssembly.Location);
-            
-            if (!string.IsNullOrEmpty(appDirectory))
-            {
-                var providerDlls = System.IO.Directory.GetFiles(appDirectory, "HPD-Agent.Providers.*.dll");
-                
-                foreach (var dllPath in providerDlls)
-                {
-                    try
-                    {
-                        var assemblyName = System.Reflection.AssemblyName.GetAssemblyName(dllPath);
-                        var loadedAssembly = System.Reflection.Assembly.Load(assemblyName);
-                        
-                        // Force module initializers to run by executing RunModuleConstructor
-                        // This is the only reliable way to trigger ModuleInitializers in .NET
-                        var moduleHandle = loadedAssembly.ManifestModule.ModuleHandle;
-                        System.Runtime.CompilerServices.RuntimeHelpers.RunModuleConstructor(moduleHandle);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log but don't fail - provider might not be needed
-                        _logger?.CreateLogger<AgentBuilder>().LogWarning(ex, 
-                            "Failed to load provider assembly {Assembly}", System.IO.Path.GetFileName(dllPath));
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            // Provider loading is optional - don't fail the build if it doesn't work
-            _logger?.CreateLogger<AgentBuilder>().LogWarning(ex, "Provider assembly discovery failed");
-        }
-    }
-#endif
 
     /// <summary>
     /// Creates a new builder from a JSON configuration file.
@@ -190,7 +140,7 @@ public class AgentBuilder
             _config = JsonSerializer.Deserialize<AgentConfig>(jsonContent, HPDJsonContext.Default.AgentConfig)
                 ?? throw new JsonException("Failed to deserialize AgentConfig from JSON - result was null.");
             
-            DiscoverAndRegisterProviders();
+            RegisterDiscoveredProviders();
         }
         catch (JsonException)
         {
@@ -222,6 +172,18 @@ public class AgentBuilder
     public AgentBuilder WithInstructions(string instructions)
     {
         _config.SystemInstructions = instructions ?? throw new ArgumentNullException(nameof(instructions));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the document store for skill instruction documents.
+    /// Phase 5: Required for skills that use AddDocument() or AddDocumentFromFile().
+    /// Documents are uploaded and validated during Build().
+    /// </summary>
+    /// <param name="documentStore">Document store implementation (InMemoryInstructionStore, FileSystemInstructionStore, etc.)</param>
+    public AgentBuilder WithDocumentStore(HPD_Agent.Skills.DocumentStore.IInstructionDocumentStore documentStore)
+    {
+        _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
         return this;
     }
 
@@ -807,7 +769,6 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager!,
             buildData.ErrorHandler,
-            buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
@@ -825,6 +786,10 @@ public class AgentBuilder
     {
         var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
 
+        // Set explicitly registered plugins in config for scoping manager
+        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
+            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
         // Wrap in Microsoft protocol adapter
         return new Microsoft.Agent(
             _config!,
@@ -833,7 +798,6 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager!,
             buildData.ErrorHandler,
-            buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
@@ -850,6 +814,10 @@ public class AgentBuilder
     {
         var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
         
+        // Set explicitly registered plugins in config for scoping manager
+        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
+            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+        
         // Wrap in AGUI protocol adapter
         return new AGUI.Agent(
             _config!,
@@ -858,7 +826,6 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager!,
             buildData.ErrorHandler,
-            buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
@@ -873,6 +840,10 @@ public class AgentBuilder
     {
         var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
 
+        // Set explicitly registered plugins in config for scoping manager
+        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
+            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+
         // Wrap in AGUI protocol adapter  
         return new AGUI.Agent(
             _config!,
@@ -881,7 +852,6 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager!,
             buildData.ErrorHandler,
-            buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
@@ -895,6 +865,10 @@ public class AgentBuilder
     {
         var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
         
+        // Set explicitly registered plugins in config for scoping manager
+        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
+            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
+        
         // Create agent using the new, cleaner constructor with AgentConfig
         var agent = new Agent(
             _config,
@@ -903,7 +877,6 @@ public class AgentBuilder
             _promptFilters,
             _scopedFilterManager,
             buildData.ErrorHandler,
-            buildData.SkillScopingManager,
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
@@ -923,14 +896,11 @@ public class AgentBuilder
         {
             // Use generic error handler for testing
             var testErrorHandler = new HPD.Agent.ErrorHandling.GenericErrorHandler();
-            
-            // For testing, we don't need skill scoping (tests can't resolve functions yet)
-            // If tests need skill scoping, they should configure a proper provider
+
             return new AgentBuildDependencies(
                 _baseClient,
                 _config.Provider?.DefaultChatOptions,
-                testErrorHandler,
-                null);  // skillScopingManager
+                testErrorHandler);
         }
         
         // === START: VALIDATION LOGIC ===
@@ -1128,6 +1098,15 @@ public class AgentBuilder
         // Auto-register plugins referenced by skills
         AutoRegisterPluginsFromSkills();
 
+        // Phase 5: Process skill documents (creates default store if needed)
+        await ProcessSkillDocumentsAsync(cancellationToken).ConfigureAwait(false);
+
+        // Phase 6: Auto-register document retrieval plugin if document store is present
+        if (_documentStore != null)
+        {
+            _pluginManager.RegisterPlugin<HPD_Agent.Skills.DocumentStore.DocumentRetrievalPlugin>();
+        }
+
         // Create plugin functions using per-plugin contexts and merge with default options
         var pluginFunctions = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())
@@ -1196,35 +1175,8 @@ public class AgentBuilder
             }
         }
 
-        // Build and integrate skills if configured
-        HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null;
-        if (_skillDefinitions != null && _skillDefinitions.Count > 0 && _config.PluginScoping?.Enabled == true)
-        {
-            try
-            {
-                var skillManager = new HPD_Agent.Skills.SkillManager(_logger?.CreateLogger<HPD_Agent.Skills.SkillManager>());
-                skillManager.RegisterSkills(_skillDefinitions)
-                           .Build(pluginFunctions); // Validate function references
-
-                var skillContainers = skillManager.GetSkillContainers();
-                pluginFunctions.AddRange(skillContainers);
-
-                skillScopingManager = skillManager.CreateScopingManager(pluginFunctions);
-
-                _logger?.CreateLogger<AgentBuilder>().LogInformation(
-                    "Successfully integrated {Count} skills into agent", _skillDefinitions.Count);
-            }
-            catch (Exception ex)
-            {
-                _logger?.CreateLogger<AgentBuilder>().LogError(ex, "Failed to build skills: {Error}", ex.Message);
-                throw new InvalidOperationException("Failed to initialize skills system", ex);
-            }
-        }
-        else if (_skillDefinitions != null && _skillDefinitions.Count > 0)
-        {
-            _logger?.CreateLogger<AgentBuilder>().LogWarning(
-                "Skills configured but plugin scoping is not enabled. Skills require plugin scoping to be enabled.");
-        }
+        // Note: Old SkillDefinition-based skills have been removed in favor of type-safe Skill class.
+        // Skills are now registered via plugins and auto-discovered by the source generator.
 
         var mergedOptions = MergePluginFunctions(_config.Provider?.DefaultChatOptions, pluginFunctions);
 
@@ -1232,11 +1184,290 @@ public class AgentBuilder
         return new AgentBuildDependencies(
             clientToUse,
             mergedOptions,
-            errorHandler,
-            skillScopingManager);
+            errorHandler);
+    }
+
+    /// <summary>
+    /// Phase 5: Process skill documents - upload files and validate references.
+    /// Extracts document metadata from skill containers and processes them.
+    /// If no document store is configured, creates a default FileSystemInstructionStore.
+    /// </summary>
+    private async Task ProcessSkillDocumentsAsync(CancellationToken cancellationToken)
+    {
+        var logger = _logger?.CreateLogger<AgentBuilder>();
+
+        // Create default document store if not provided
+        if (_documentStore == null)
+        {
+            var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "agent-skills", "skill-documents");
+            var storeLogger = _logger?.CreateLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>()
+                ?? NullLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
+            _documentStore = new HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore(
+                storeLogger,
+                defaultPath);
+            logger?.LogInformation(
+                "No document store configured. Using default FileSystemInstructionStore at: {Path}",
+                defaultPath);
+        }
+
+        // Get all skill containers from registered plugins
+        var skillContainers = new List<AIFunction>();
+        foreach (var registration in _pluginManager.GetPluginRegistrations())
+        {
+            try
+            {
+                _pluginContexts.TryGetValue(registration.PluginType.Name, out var ctx);
+                var functions = registration.ToAIFunctions(ctx ?? _defaultContext);
+
+                // Filter to only skill containers
+                var skills = functions.Where(f =>
+                    f.AdditionalProperties?.TryGetValue("IsSkill", out var isSkill) == true &&
+                    isSkill is bool isSkillBool && isSkillBool);
+
+                skillContainers.AddRange(skills);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to extract skill containers from plugin {PluginType}",
+                    registration.PluginType.Name);
+            }
+        }
+
+        if (skillContainers.Count == 0)
+        {
+            logger?.LogDebug("No skills with documents found");
+            return;
+        }
+
+        // Phase 1: Collect all document uploads (AddDocumentFromFile)
+        var documentUploads = new List<(string SkillName, string DocumentId, string FilePath, string Description)>();
+
+        foreach (var skillContainer in skillContainers)
+        {
+            var skillName = skillContainer.Name ?? "Unknown";
+
+            if (skillContainer.AdditionalProperties?.TryGetValue("DocumentUploads", out var uploadsObj) == true &&
+                uploadsObj is Array uploadsArray)
+            {
+                foreach (var upload in uploadsArray)
+                {
+                    // Extract properties from anonymous object
+                    var uploadType = upload.GetType();
+                    var filePathProp = uploadType.GetProperty("FilePath");
+                    var documentIdProp = uploadType.GetProperty("DocumentId");
+                    var descriptionProp = uploadType.GetProperty("Description");
+
+                    if (filePathProp != null && documentIdProp != null && descriptionProp != null)
+                    {
+                        var filePath = filePathProp.GetValue(upload) as string;
+                        var documentId = documentIdProp.GetValue(upload) as string;
+                        var description = descriptionProp.GetValue(upload) as string;
+
+                        if (!string.IsNullOrEmpty(filePath) && !string.IsNullOrEmpty(documentId) &&
+                            !string.IsNullOrEmpty(description))
+                        {
+                            documentUploads.Add((skillName, documentId, filePath, description));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Upload documents with deduplication
+        // IMPORTANT: This is where we read files from the OS filesystem (not in the store!)
+        // The store only cares about content and where to persist it.
+        var uploadedDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (skillName, documentId, filePath, description) in documentUploads)
+        {
+            // Skip duplicates (same document ID from multiple skills)
+            if (uploadedDocuments.Contains(documentId))
+            {
+                logger?.LogDebug("Skipping duplicate upload for document {DocumentId} (already uploaded)", documentId);
+                continue;
+            }
+
+            try
+            {
+                // ✅ Step 1: Resolve the file path with proper error handling
+                var resolvedPath = ResolveDocumentPath(filePath, skillName);
+
+                // ✅ Step 2: Read file content (this is AgentBuilder's responsibility)
+                string content;
+                try
+                {
+                    content = await File.ReadAllTextAsync(resolvedPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (FileNotFoundException)
+                {
+                    throw new FileNotFoundException(
+                        $"Document file '{filePath}' not found for skill '{skillName}'. " +
+                        $"Searched at: {resolvedPath}. " +
+                        $"Current working directory: {Directory.GetCurrentDirectory()}",
+                        filePath);
+                }
+                catch (Exception fileEx) when (fileEx is not OperationCanceledException)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read document file '{filePath}' for skill '{skillName}': {fileEx.Message}",
+                        fileEx);
+                }
+
+                // ✅ Step 3: Pass content (not path) to store
+                var metadata = new HPD_Agent.Skills.DocumentStore.DocumentMetadata
+                {
+                    Name = documentId,
+                    Description = description
+                };
+
+                await _documentStore!.UploadFromContentAsync(documentId, metadata, content, cancellationToken)
+                    .ConfigureAwait(false);
+
+                uploadedDocuments.Add(documentId);
+                logger?.LogInformation(
+                    "Uploaded document {DocumentId} from {FilePath} (resolved to {ResolvedPath}) for skill {SkillName}",
+                    documentId, filePath, resolvedPath, skillName);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var message = $"Failed to upload document '{documentId}' from '{filePath}' for skill '{skillName}': {ex.Message}";
+                logger?.LogError(ex, message);
+                throw new InvalidOperationException(message, ex);
+            }
+        }
+
+        // Phase 3: Collect all document references (AddDocument) and validate
+        var documentReferences = new List<(string SkillName, string DocumentId, string? DescriptionOverride)>();
+
+        foreach (var skillContainer in skillContainers)
+        {
+            var skillName = skillContainer.Name ?? "Unknown";
+
+            if (skillContainer.AdditionalProperties?.TryGetValue("DocumentReferences", out var refsObj) == true &&
+                refsObj is Array refsArray)
+            {
+                foreach (var reference in refsArray)
+                {
+                    var refType = reference.GetType();
+                    var documentIdProp = refType.GetProperty("DocumentId");
+                    var descriptionOverrideProp = refType.GetProperty("DescriptionOverride");
+
+                    if (documentIdProp != null)
+                    {
+                        var documentId = documentIdProp.GetValue(reference) as string;
+                        var descriptionOverride = descriptionOverrideProp?.GetValue(reference) as string;
+
+                        if (!string.IsNullOrEmpty(documentId))
+                        {
+                            documentReferences.Add((skillName, documentId, descriptionOverride));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Validate all references exist in store
+        foreach (var (skillName, documentId, descriptionOverride) in documentReferences)
+        {
+            var exists = await _documentStore!.DocumentExistsAsync(documentId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!exists)
+            {
+                var message = $"Document '{documentId}' referenced by skill '{skillName}' does not exist in store. " +
+                    "Either upload it with AddDocumentFromFile() in another skill, upload externally via CLI/API, " +
+                    "or ensure the skill that uploads it is registered.";
+                logger?.LogError(message);
+                throw new HPD_Agent.Skills.DocumentStore.DocumentNotFoundException(message, documentId);
+            }
+
+            logger?.LogDebug("Validated document reference {DocumentId} for skill {SkillName}", documentId, skillName);
+        }
+
+        // Phase 4: Link documents to skills in the store
+        foreach (var skillContainer in skillContainers)
+        {
+            var skillName = skillContainer.Name ?? "Unknown";
+            var skillNamespace = $"{skillContainer.AdditionalProperties?["ParentSkillContainer"]}";
+
+            // Collect all documents for this skill (uploads + references)
+            var skillDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Add uploads
+            foreach (var (sn, docId, _, _) in documentUploads.Where(u => u.SkillName == skillName))
+            {
+                skillDocuments.Add(docId);
+            }
+
+            // Add references
+            foreach (var (sn, docId, _) in documentReferences.Where(r => r.SkillName == skillName))
+            {
+                skillDocuments.Add(docId);
+            }
+
+            // Link each document to the skill
+            foreach (var documentId in skillDocuments)
+            {
+                try
+                {
+                    // Find description override for this skill-document pair
+                    var descriptionOverride = documentReferences
+                        .FirstOrDefault(r => r.SkillName == skillName && r.DocumentId == documentId)
+                        .DescriptionOverride;
+
+                    // Get default description from store
+                    var docMetadata = await _documentStore!.GetDocumentMetadataAsync(documentId, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var skillDocMetadata = new HPD_Agent.Skills.DocumentStore.SkillDocumentMetadata
+                    {
+                        Description = descriptionOverride ?? docMetadata?.Description ?? "No description"
+                    };
+
+                    await _documentStore!.LinkDocumentToSkillAsync(
+                        skillNamespace,
+                        documentId,
+                        skillDocMetadata,
+                        cancellationToken).ConfigureAwait(false);
+
+                    logger?.LogDebug("Linked document {DocumentId} to skill {SkillName}", documentId, skillName);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to link document {DocumentId} to skill {SkillName}",
+                        documentId, skillName);
+                }
+            }
+        }
+
+        logger?.LogInformation(
+            "Successfully processed skill documents: {UploadCount} uploads, {ReferenceCount} references, {SkillCount} skills",
+            uploadedDocuments.Count, documentReferences.Count, skillContainers.Count);
     }
 
     #region Helper Methods
+
+    /// <summary>
+    /// Resolves a document file path relative to the current working directory.
+    /// This separates concerns: AgentBuilder resolves paths, Store handles persistence.
+    /// </summary>
+    private string ResolveDocumentPath(string filePath, string skillName)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            throw new ArgumentException("File path cannot be empty.", nameof(filePath));
+
+        // If absolute path, use as-is
+        if (Path.IsPathRooted(filePath))
+        {
+            return filePath;
+        }
+
+        // Resolve relative to current working directory
+        var resolvedPath = Path.GetFullPath(filePath);
+
+        return resolvedPath;
+    }
 
     public bool IsProviderRegistered(string providerKey) => _providerRegistry.IsRegistered(providerKey);
     
@@ -1986,10 +2217,25 @@ public static class AgentBuilderMemoryExtensions
         if (options.DocumentsToAdd.Any())
         {
             var store = options.Store;
+            // Get existing documents to avoid re-extracting
+            var existingDocs = store.GetDocumentsAsync(knowledgeId).GetAwaiter().GetResult();
+            
             foreach (var doc in options.DocumentsToAdd)
             {
                 if (store is JsonStaticMemoryStore jsonStore)
                 {
+                    // Check if document with this path already exists
+                    var fileName = Path.GetFileName(doc.PathOrUrl);
+                    var alreadyExists = existingDocs.Any(d => 
+                        d.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase) ||
+                        d.OriginalPath.Equals(doc.PathOrUrl, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (alreadyExists)
+                    {
+                        // Skip - document already extracted and stored
+                        continue;
+                    }
+                    
                     if (doc.PathOrUrl.StartsWith("http") || doc.PathOrUrl.StartsWith("https"))
                     {
                         jsonStore.AddDocumentFromUrlAsync(knowledgeId, doc.PathOrUrl, doc.Description, doc.Tags).GetAwaiter().GetResult();
@@ -2101,6 +2347,7 @@ public static class AgentBuilderPluginExtensions
 {
     /// <summary>
     /// Registers a plugin by type with optional execution context.
+    /// Phase 4: Auto-registers referenced plugins from skills via GetReferencedPlugins().
     /// </summary>
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadataContext? context = null) where T : class, new()
     {
@@ -2108,11 +2355,19 @@ public static class AgentBuilderPluginExtensions
         var pluginName = typeof(T).Name;
         builder.ScopeContext.SetPluginScope(pluginName);
         builder.PluginContexts[pluginName] = context;
+        
+        // Track this as explicitly registered
+        builder._explicitlyRegisteredPlugins.Add(pluginName);
+
+        // Phase 4: Auto-register referenced plugins
+        AutoRegisterReferencedPlugins(builder, typeof(T));
+
         return builder;
     }
 
     /// <summary>
     /// Registers a plugin using an instance with optional execution context.
+    /// Phase 4: Auto-registers referenced plugins from skills via GetReferencedPlugins().
     /// </summary>
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadataContext? context = null) where T : class
     {
@@ -2120,11 +2375,19 @@ public static class AgentBuilderPluginExtensions
         var pluginName = typeof(T).Name;
         builder.ScopeContext.SetPluginScope(pluginName);
         builder.PluginContexts[pluginName] = context;
+        
+        // Track this as explicitly registered
+        builder._explicitlyRegisteredPlugins.Add(pluginName);
+
+        // Phase 4: Auto-register referenced plugins
+        AutoRegisterReferencedPlugins(builder, typeof(T));
+
         return builder;
     }
 
     /// <summary>
     /// Registers a plugin by Type with optional execution context.
+    /// Phase 4: Auto-registers referenced plugins from skills via GetReferencedPlugins().
     /// </summary>
     public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadataContext? context = null)
     {
@@ -2132,6 +2395,13 @@ public static class AgentBuilderPluginExtensions
         var pluginName = pluginType.Name;
         builder.ScopeContext.SetPluginScope(pluginName);
         builder.PluginContexts[pluginName] = context;
+        
+        // Track this as explicitly registered
+        builder._explicitlyRegisteredPlugins.Add(pluginName);
+
+        // Phase 4: Auto-register referenced plugins
+        AutoRegisterReferencedPlugins(builder, pluginType);
+
         return builder;
     }
 
@@ -2197,6 +2467,161 @@ public static class AgentBuilderPluginExtensions
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// Phase 4: Auto-registers plugins referenced by skills via GetReferencedPlugins() method.
+    /// Uses reflection to discover the static GetReferencedPlugins() method generated by the source generator.
+    /// Recursively registers referenced plugins to ensure all dependencies are available.
+    /// </summary>
+    /// <param name="builder">The agent builder instance</param>
+    /// <param name="pluginType">The plugin type to check for skill references</param>
+    private static void AutoRegisterReferencedPlugins(AgentBuilder builder, Type pluginType)
+    {
+        // Use a HashSet to track plugins being processed to prevent infinite loops
+        var processingStack = new HashSet<string>();
+        AutoRegisterReferencedPluginsRecursive(builder, pluginType, processingStack);
+    }
+
+    /// <summary>
+    /// Recursive implementation of auto-registration with circular reference detection.
+    /// </summary>
+    private static void AutoRegisterReferencedPluginsRecursive(
+        AgentBuilder builder,
+        Type pluginType,
+        HashSet<string> processingStack)
+    {
+        var pluginTypeName = pluginType.Name;
+
+        // Detect circular references
+        if (processingStack.Contains(pluginTypeName))
+        {
+            // Circular reference detected, but this is not an error - just skip
+            return;
+        }
+
+        // Add to processing stack
+        processingStack.Add(pluginTypeName);
+
+        try
+        {
+            // Phase 4.5: Try to get function-specific references first
+            var referencedFunctionsMethod = pluginType.GetMethod(
+                "GetReferencedFunctions",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+            Dictionary<string, string[]>? functionMap = null;
+            if (referencedFunctionsMethod != null)
+            {
+                functionMap = referencedFunctionsMethod.Invoke(null, null) as Dictionary<string, string[]>;
+            }
+
+            // Check if plugin has GetReferencedPlugins() method
+            var method = pluginType.GetMethod(
+                "GetReferencedPlugins",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+            if (method == null)
+            {
+                // No GetReferencedPlugins() method - this plugin has no skill references
+                return;
+            }
+
+            // Invoke GetReferencedPlugins() to get referenced plugin type names
+            var referencedPluginNames = method.Invoke(null, null) as string[];
+
+            if (referencedPluginNames == null || referencedPluginNames.Length == 0)
+            {
+                // No referenced plugins
+                return;
+            }
+
+            // Get currently registered plugin types for deduplication
+            var registeredTypes = builder.PluginManager.GetRegisteredPluginTypes();
+
+            // Register each referenced plugin
+            foreach (var referencedPluginName in referencedPluginNames)
+            {
+                // Check if already registered by name
+                if (registeredTypes.Any(t => t.Name == referencedPluginName))
+                {
+                    // Already registered, skip
+                    continue;
+                }
+
+                // Resolve type from name
+                var referencedPluginType = ResolvePluginType(pluginType, referencedPluginName);
+
+                if (referencedPluginType == null)
+                {
+                    // Could not resolve type - log warning but don't fail
+                    // In production, you might want to use ILogger here
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Warning: Could not resolve referenced plugin type '{referencedPluginName}' " +
+                        $"from plugin '{pluginTypeName}'. Ensure the plugin type is accessible.");
+                    continue;
+                }
+
+                // Phase 4.5: Register with function filter if available
+                if (functionMap != null && functionMap.TryGetValue(referencedPluginName, out var functionNames))
+                {
+                    // Register only specific functions
+                    builder.PluginManager.RegisterPluginFunctions(referencedPluginType, functionNames);
+                }
+                else
+                {
+                    // Fallback: register entire plugin
+                    builder.PluginManager.RegisterPlugin(referencedPluginType);
+                }
+
+                // Recursively register plugins referenced by this plugin
+                AutoRegisterReferencedPluginsRecursive(builder, referencedPluginType, processingStack);
+            }
+        }
+        finally
+        {
+            // Remove from processing stack
+            processingStack.Remove(pluginTypeName);
+        }
+    }
+
+    /// <summary>
+    /// Resolves a plugin type name to a Type object.
+    /// Searches in the same assembly and namespace as the source plugin.
+    /// </summary>
+    private static Type? ResolvePluginType(Type sourcePluginType, string pluginTypeName)
+    {
+        // Try 1: Same assembly, same namespace
+        var sourceNamespace = sourcePluginType.Namespace;
+        var fullTypeName = string.IsNullOrEmpty(sourceNamespace)
+            ? pluginTypeName
+            : $"{sourceNamespace}.{pluginTypeName}";
+
+        var resolvedType = sourcePluginType.Assembly.GetType(fullTypeName);
+        if (resolvedType != null)
+            return resolvedType;
+
+        // Try 2: Same assembly, no namespace (short name)
+        resolvedType = sourcePluginType.Assembly.GetType(pluginTypeName);
+        if (resolvedType != null)
+            return resolvedType;
+
+        // Try 3: Search all types in the assembly
+        resolvedType = sourcePluginType.Assembly.GetTypes()
+            .FirstOrDefault(t => t.Name == pluginTypeName);
+        if (resolvedType != null)
+            return resolvedType;
+
+        // Try 4: Search all loaded assemblies (last resort)
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            resolvedType = assembly.GetTypes()
+                .FirstOrDefault(t => t.Name == pluginTypeName);
+            if (resolvedType != null)
+                return resolvedType;
+        }
+
+        return null;
     }
 }
 

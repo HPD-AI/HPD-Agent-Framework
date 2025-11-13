@@ -726,8 +726,8 @@ Complete list of diagnostic codes emitted by the source generator.
 | Code | Severity | Message |
 |------|----------|---------|
 | HPD001 | Error | Skill method '{0}' must return 'Skill' type |
-| HPD002 | Error | Skill method '{0}' must be public static |
-| HPD003 | Error | Skill method '{0}' must have signature: public static Skill MethodName(SkillOptions? options = null) |
+| HPD002 | Error | Skill method '{0}' must be public |
+| HPD003 | Error | Skill method '{0}' must have signature: [Skill] public Skill MethodName(SkillOptions? options = null) |
 | HPD004 | Error | Skill method '{0}' is missing SkillFactory.Create() call |
 | HPD005 | Error | Skill '{0}': Name cannot be empty |
 | HPD006 | Error | Skill '{0}': Description cannot be empty |

@@ -7,6 +7,7 @@ using System.Linq;
 /// Advanced financial analysis plugin for balance sheet analysis, common-sizing, and ratio calculations.
 /// Designed to solve textbook problems and real-world financial statement analysis.
 /// </summary>
+
 public class FinancialAnalysisPluginMetadataContext : IPluginMetadataContext
 {
     private readonly Dictionary<string, object> _properties = new();
@@ -48,11 +49,11 @@ public class FinancialAnalysisPluginMetadataContext : IPluginMetadataContext
     public bool HasProperty(string propertyName) => _properties.ContainsKey(propertyName);
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
-
+[Scope("Financial Analysis Plugin", "Provides advanced financial analysis functions for balance sheet analysis, common-sizing, and ratio calculations.")]
 public class FinancialAnalysisPlugin
 {
     // ==================== COMMON-SIZE ANALYSIS ====================
-    
+
     [AIFunction<FinancialAnalysisPluginMetadataContext>]
     [AIDescription("Calculates common-size percentage: (line item / base amount) * 100. Essential for Question 11 type analysis.")]
     public string CalculateCommonSizePercentage(
@@ -62,7 +63,7 @@ public class FinancialAnalysisPlugin
     {
         if (baseAmount == 0)
             return "ERROR: Base amount cannot be zero";
-        
+
         decimal percentage = (lineItemAmount / baseAmount) * 100;
         return $"{Math.Round(percentage, decimalPlaces)}%";
     }

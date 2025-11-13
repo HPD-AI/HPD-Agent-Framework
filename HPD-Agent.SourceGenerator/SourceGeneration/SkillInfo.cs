@@ -18,6 +18,16 @@ internal class SkillInfo
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// Category from [Skill(Category = "...")] attribute (Phase 3)
+    /// </summary>
+    public string? Category { get; set; }
+
+    /// <summary>
+    /// Priority from [Skill(Priority = N)] attribute (Phase 3)
+    /// </summary>
+    public int Priority { get; set; } = 0;
+
+    /// <summary>
     /// Description shown before activation
     /// </summary>
     public string Description { get; set; } = string.Empty;
@@ -70,7 +80,7 @@ internal class SkillInfo
 internal class SkillOptionsInfo
 {
     /// <summary>
-    /// Scoping mode: InstructionOnly or Scoped
+    /// Scoping mode: InstructionOnly or Scoped (OLD - kept for backwards compatibility)
     /// </summary>
     public string ScopingMode { get; set; } = "InstructionOnly";
 
@@ -80,14 +90,61 @@ internal class SkillOptionsInfo
     public bool AutoExpand { get; set; } = false;
 
     /// <summary>
-    /// Optional instruction document paths
+    /// Optional instruction document paths (OLD - kept for backwards compatibility)
     /// </summary>
     public List<string> InstructionDocuments { get; set; } = new();
 
     /// <summary>
-    /// Base directory for instruction documents
+    /// Base directory for instruction documents (OLD - kept for backwards compatibility)
     /// </summary>
-    public string InstructionDocumentBaseDirectory { get; set; } = "skills/documents/";
+    public string InstructionDocumentBaseDirectory { get; set; } = "agent-skills/documents/";
+
+    /// <summary>
+    /// Document references (Phase 3: from AddDocument calls)
+    /// </summary>
+    public List<DocumentReferenceInfo> DocumentReferences { get; set; } = new();
+
+    /// <summary>
+    /// Document uploads (Phase 3: from AddDocumentFromFile calls)
+    /// </summary>
+    public List<DocumentUploadInfo> DocumentUploads { get; set; } = new();
+}
+
+/// <summary>
+/// Information about a document reference (from AddDocument call)
+/// </summary>
+internal class DocumentReferenceInfo
+{
+    /// <summary>
+    /// Document ID
+    /// </summary>
+    public string DocumentId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional description override
+    /// </summary>
+    public string? DescriptionOverride { get; set; }
+}
+
+/// <summary>
+/// Information about a document upload (from AddDocumentFromFile call)
+/// </summary>
+internal class DocumentUploadInfo
+{
+    /// <summary>
+    /// File path to upload
+    /// </summary>
+    public string FilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Document ID (auto-derived or explicit)
+    /// </summary>
+    public string DocumentId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Document description
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
 }
 
 /// <summary>

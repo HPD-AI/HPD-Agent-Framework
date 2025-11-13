@@ -39,17 +39,22 @@ public static Skill FileDebugging()
 
 ---
 
-### Error: "Skill method must be public static" (HPD002)
+### Error: "Skill method must be public" (HPD002)
 
 **Problem:**
 ```csharp
-private static Skill FileDebugging() { ... } // Error: private
-public Skill FileDebugging() { ... }         // Error: not static
+private Skill FileDebugging() { ... } // Error: private
 ```
 
 **Solution:**
-Make method `public static`:
+Make method `public` (static is optional):
 ```csharp
+public Skill FileDebugging()
+{
+    return SkillFactory.Create(...);
+}
+
+// Or static for shared definitions:
 public static Skill FileDebugging()
 {
     return SkillFactory.Create(...);

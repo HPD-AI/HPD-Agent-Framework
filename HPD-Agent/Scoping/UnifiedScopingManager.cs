@@ -5,73 +5,131 @@ using System.Collections.Immutable;
 namespace HPD_Agent.Scoping;
 
 /// <summary>
-/// Unified scoping manager that handles both plugin and skill scoping.
-/// Merges the functionality of PluginScopingManager and SkillScopingManager.
+/// Unified scoping manager that handles plugin and skill scoping.
+/// Skills are handled via the type-safe Skill class and plugin system.
 /// </summary>
 public class UnifiedScopingManager
 {
     private readonly ILogger<UnifiedScopingManager>? _logger;
     private readonly Dictionary<string, AIFunction> _allFunctionsByReference;
-    private readonly Dictionary<string, HPD_Agent.Skills.SkillDefinition> _skillsByName;
+    private readonly ImmutableHashSet<string> _explicitlyRegisteredPlugins;
 
     public UnifiedScopingManager(
-        IEnumerable<HPD_Agent.Skills.SkillDefinition> skills,
         IEnumerable<AIFunction> allFunctions,
+        ILogger<UnifiedScopingManager>? logger = null)
+        : this(allFunctions, ImmutableHashSet<string>.Empty, logger)
+    {
+    }
+
+    public UnifiedScopingManager(
+        IEnumerable<AIFunction> allFunctions,
+        ImmutableHashSet<string> explicitlyRegisteredPlugins,
         ILogger<UnifiedScopingManager>? logger = null)
     {
         _logger = logger;
+        _explicitlyRegisteredPlugins = explicitlyRegisteredPlugins ?? ImmutableHashSet<string>.Empty;
         _allFunctionsByReference = BuildFunctionLookup(allFunctions);
-        _skillsByName = skills.ToDictionary(s => s.Name, s => s);
+        
+        // DEBUG: Log explicitly registered plugins
+        if (_explicitlyRegisteredPlugins.Count > 0)
+        {
+            Console.WriteLine($"[UnifiedScopingManager] 🔍 Explicitly Registered Plugins: {string.Join(", ", _explicitlyRegisteredPlugins)}");
+        }
+        else
+        {
+            Console.WriteLine($"[UnifiedScopingManager] ⚠️ No explicitly registered plugins!");
+        }
     }
 
     /// <summary>
     /// Gets tools visible for the current agent turn based on expansion state.
-    /// Handles both plugin containers and skill containers.
+    /// Handles plugin containers and type-safe Skill containers.
     ///
     /// Ordering strategy:
-    /// 1. Plugin containers (collapsed plugins with [PluginScope])
-    /// 2. Skill containers (collapsed skills with ScopingMode.Scoped)
-    /// 3. Non-scoped functions (always visible)
-    /// 4. Skills (InstructionOnly mode - always visible)
+    /// 1. Scope containers (skill class containers with [Scope])
+    /// 2. Plugin containers (collapsed plugins with [Scope])
+    /// 3. Skill containers (type-safe Skills with IsContainer=true)
+    /// 4. Non-scoped functions (always visible)
     /// 5. Expanded plugin functions
     /// 6. Expanded skill functions
+    /// 
+    /// Key insight: Functions in plugins that are ONLY referenced by scoped skills
+    /// are hidden until their parent skill is expanded. This prevents "orphan" functions
+    /// from appearing when the skill class scope is not expanded.
     /// </summary>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
         ImmutableHashSet<string> expandedPlugins,
         ImmutableHashSet<string> expandedSkills)
     {
+        var scopeContainers = new List<AIFunction>();
         var pluginContainers = new List<AIFunction>();
         var skillContainers = new List<AIFunction>();
         var nonScopedFunctions = new List<AIFunction>();
-        var instructionOnlySkills = new List<AIFunction>();
         var expandedPluginFunctions = new List<AIFunction>();
         var expandedSkillFunctions = new List<AIFunction>();
 
-        // Get hidden functions from non-expanded scoped skills
-        var hiddenFunctions = GetHiddenFunctionsBySkills(expandedSkills);
-
-        // First pass: identify scoped plugins
+        // First pass: identify scoped items and parent-child relationships
         var pluginsWithContainers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skillClassesWithScope = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var functionsReferencedBySkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var skillsReferencingFunction = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var pluginsWithScopedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
+        Console.WriteLine($"[UnifiedScopingManager] 🔍 First Pass - Analyzing {allTools.Count} tools");
+        
         foreach (var tool in allTools)
         {
-            if (IsPluginContainer(tool))
+            if (IsScopeContainer(tool))
+            {
+                // Class-level scope container (groups multiple skills)
+                var scopeName = tool.Name ?? string.Empty;
+                skillClassesWithScope.Add(scopeName);
+                Console.WriteLine($"   📦 Scope Container: {scopeName}");
+            }
+            else if (IsPluginContainer(tool))
             {
                 var pluginName = GetPluginName(tool);
                 pluginsWithContainers.Add(pluginName);
+                Console.WriteLine($"   🔌 Plugin Container: {pluginName}");
+            }
+            else if (IsSkillContainer(tool))
+            {
+                Console.WriteLine($"   🎯 Skill Container: {tool.Name}");
+                // Track which functions this skill references
+                var skillName = GetSkillName(tool);
+                var referencedFunctions = GetReferencedFunctions(tool);
+                var referencedPlugins = GetReferencedPlugins(tool);
+                
+                // Mark plugins as having scoped skills
+                foreach (var pluginName in referencedPlugins)
+                {
+                    pluginsWithScopedSkills.Add(pluginName);
+                }
+                
+                foreach (var funcRef in referencedFunctions)
+                {
+                    // Extract function name from "PluginName.FunctionName" format
+                    var funcName = ExtractFunctionName(funcRef);
+                    functionsReferencedBySkills.Add(funcName);
+                    
+                    if (!skillsReferencingFunction.ContainsKey(funcName))
+                        skillsReferencingFunction[funcName] = new List<string>();
+                    
+                    skillsReferencingFunction[funcName].Add(skillName);
+                }
             }
         }
 
         // Second pass: categorize all tools
         foreach (var tool in allTools)
         {
-            // Skip functions hidden by scoped skills
-            if (!IsContainer(tool) && !IsSkill(tool) && hiddenFunctions.Contains(tool.Name))
+            if (IsScopeContainer(tool))
             {
-                continue;
+                // Skill class scope container - always show (parent of skills)
+                scopeContainers.Add(tool);
             }
-
-            if (IsPluginContainer(tool))
+            else if (IsPluginContainer(tool))
             {
                 // Plugin container - show if not expanded
                 var pluginName = GetPluginName(tool);
@@ -82,121 +140,138 @@ public class UnifiedScopingManager
             }
             else if (IsSkillContainer(tool))
             {
-                // Skill container (Scoped mode) - show if not expanded
+                // Skill container - show only if:
+                // 1. No parent scope (standalone skill), OR
+                // 2. Parent scope doesn't exist as a scope container (was removed), OR
+                // 3. Parent scope is expanded
                 var skillName = GetSkillName(tool);
-                if (!expandedSkills.Contains(skillName))
+                var parentScope = GetParentScopeContainer(tool);
+                
+                if (string.IsNullOrEmpty(parentScope))
                 {
-                    skillContainers.Add(tool);
+                    // No parent scope - treat like regular skill
+                    if (!expandedSkills.Contains(skillName))
+                    {
+                        skillContainers.Add(tool);
+                        Console.WriteLine($"   ✅ Showing skill (no parent): {skillName}");
+                    }
                 }
+                else if (!skillClassesWithScope.Contains(parentScope))
+                {
+                    // Parent scope doesn't exist - treat like standalone skill
+                    if (!expandedSkills.Contains(skillName))
+                    {
+                        skillContainers.Add(tool);
+                        Console.WriteLine($"   ✅ Showing skill (parent doesn't exist): {skillName}");
+                    }
+                }
+                else if (expandedSkills.Contains(parentScope))
+                {
+                    // Parent scope is expanded - show this skill
+                    if (!expandedSkills.Contains(skillName))
+                    {
+                        skillContainers.Add(tool);
+                        Console.WriteLine($"   ✅ Showing skill (parent expanded): {skillName}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"   ❌ Hiding skill (parent not expanded): {skillName}");
+                }
+                // Otherwise hide (parent scope not expanded)
             }
             else if (IsSkill(tool))
             {
-                // Skill (InstructionOnly mode) - always visible if parent container expanded
+                // Type-safe Skill - handle based on expansion state
                 var parentContainer = GetParentSkillContainer(tool);
                 if (string.IsNullOrEmpty(parentContainer) || expandedSkills.Contains(parentContainer))
                 {
-                    instructionOnlySkills.Add(tool);
+                    expandedSkillFunctions.Add(tool);
                 }
             }
             else
             {
                 // Regular function
+                var functionName = tool.Name ?? string.Empty;
                 var parentPlugin = GetParentPlugin(tool);
 
+                // DEBUG: Log parent plugin info
+                if (functionName == "CalculateCurrentRatio" || functionName == "ComprehensiveBalanceSheetAnalysis")
+                {
+                    Console.WriteLine($"[UnifiedScopingManager] 🔍 {functionName}: parentPlugin='{parentPlugin}', in explicit set? {(parentPlugin != null ? _explicitlyRegisteredPlugins.Contains(parentPlugin) : false)}");
+                }
+
+                // PRIORITY 1: If plugin has [Scope] container, hide functions until expanded
+                // (This applies even if plugin is explicitly registered)
                 if (parentPlugin != null && pluginsWithContainers.Contains(parentPlugin))
                 {
                     // Scoped plugin function - only show if parent expanded
                     if (expandedPlugins.Contains(parentPlugin))
                     {
+                        Console.WriteLine($"[UnifiedScopingManager] ✅ Showing '{functionName}' (scoped plugin expanded: {parentPlugin})");
                         expandedPluginFunctions.Add(tool);
                     }
+                    else
+                    {
+                        Console.WriteLine($"[UnifiedScopingManager] ⏸️ Hiding '{functionName}' (scoped plugin not expanded: {parentPlugin})");
+                    }
+                }
+                // PRIORITY 2: If plugin is explicitly registered (and NOT scoped), show all its functions
+                else if (parentPlugin != null && _explicitlyRegisteredPlugins.Contains(parentPlugin))
+                {
+                    // Explicitly registered plugin - always show functions
+                    Console.WriteLine($"[UnifiedScopingManager] ✅ Showing '{functionName}' (explicit plugin: {parentPlugin})");
+                    nonScopedFunctions.Add(tool);
+                }
+                // Check if this function is referenced by any skills
+                else if (functionsReferencedBySkills.Contains(functionName))
+                {
+                    // Function is referenced by skill(s)
+                    // Only show if at least one referencing skill is expanded
+                    var referencingSkills = skillsReferencingFunction.GetValueOrDefault(functionName, new List<string>());
+                    bool anySkillExpanded = referencingSkills.Any(s => expandedSkills.Contains(s));
+                    
+                    if (anySkillExpanded)
+                    {
+                        expandedSkillFunctions.Add(tool);
+                    }
+                    // If no skills expanded, function is hidden
+                }
+                else if (parentPlugin != null && pluginsWithScopedSkills.Contains(parentPlugin))
+                {
+                    // This function is in a plugin that was auto-registered via scoped skills
+                    // BUT this function is NOT referenced by any skill (it's an orphan)
+                    // Hide it - don't add to any list
+                    Console.WriteLine($"[UnifiedScopingManager] ❌ Hiding orphan '{functionName}' (plugin '{parentPlugin}' auto-registered via skills)");
                 }
                 else
                 {
                     // Non-scoped function - always visible
+                    // (This includes functions in plugins referenced by skills but not scoped)
                     nonScopedFunctions.Add(tool);
                 }
             }
         }
 
-        // Get functions from expanded skills
-        var expandedSkillReferencedFunctions = GetFunctionsForExpandedSkills(expandedSkills, allTools);
-        expandedSkillFunctions.AddRange(expandedSkillReferencedFunctions);
-
         // Combine and deduplicate
-        return pluginContainers.OrderBy(c => c.Name)
+        // Order: scope containers -> plugin containers -> skill containers -> non-scoped -> expanded functions
+        var result = scopeContainers.OrderBy(c => c.Name)
+            .Concat(pluginContainers.OrderBy(c => c.Name))
             .Concat(skillContainers.OrderBy(c => c.Name))
             .Concat(nonScopedFunctions.OrderBy(f => f.Name))
-            .Concat(instructionOnlySkills.OrderBy(s => s.Name))
             .Concat(expandedPluginFunctions.OrderBy(f => f.Name))
             .Concat(expandedSkillFunctions.OrderBy(f => f.Name))
             .DistinctBy(f => f.Name)
             .ToList();
-    }
-
-    /// <summary>
-    /// Gets functions referenced by expanded skills (deduplicated).
-    /// </summary>
-    private List<AIFunction> GetFunctionsForExpandedSkills(ImmutableHashSet<string> expandedSkills, List<AIFunction> allTools)
-    {
-        var uniqueReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var skillName in expandedSkills)
+        
+        // DEBUG: Show what's actually returned
+        Console.WriteLine($"[UnifiedScopingManager] 🎯 Returning {result.Count} tools:");
+        foreach (var tool in result)
         {
-            if (_skillsByName.TryGetValue(skillName, out var skill))
-            {
-                foreach (var reference in skill.ResolvedFunctionReferences)
-                {
-                    uniqueReferences.Add(reference);
-                }
-            }
+            Console.WriteLine($"   - {tool.Name}");
         }
-
-        // Find actual AIFunction objects
-        var functions = new List<AIFunction>();
-        foreach (var reference in uniqueReferences)
-        {
-            if (_allFunctionsByReference.TryGetValue(reference, out var function))
-            {
-                functions.Add(function);
-            }
-            else
-            {
-                // Try extracting just the function name
-                var functionName = ExtractFunctionName(reference);
-                if (_allFunctionsByReference.TryGetValue(functionName, out var funcByName))
-                {
-                    functions.Add(funcByName);
-                }
-            }
-        }
-
-        return functions;
-    }
-
-    /// <summary>
-    /// Gets functions that should be hidden by non-expanded scoped skills.
-    /// </summary>
-    private HashSet<string> GetHiddenFunctionsBySkills(ImmutableHashSet<string> expandedSkills)
-    {
-        var hiddenFunctions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var skill in _skillsByName.Values)
-        {
-            // Only hide functions if skill is NOT expanded AND has Scoped mode
-            if (!expandedSkills.Contains(skill.Name) &&
-                !skill.AutoExpand &&
-                skill.ScopingMode == HPD_Agent.Skills.SkillScopingMode.Scoped)
-            {
-                foreach (var reference in skill.ResolvedFunctionReferences)
-                {
-                    var functionName = ExtractFunctionName(reference);
-                    hiddenFunctions.Add(functionName);
-                }
-            }
-        }
-
-        return hiddenFunctions;
+        
+        return result;
     }
 
     /// <summary>
@@ -231,13 +306,19 @@ public class UnifiedScopingManager
     private bool IsContainer(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("IsContainer", out var v) == true && v is bool b && b;
 
+    private bool IsScopeContainer(AIFunction function) =>
+        IsContainer(function) &&
+        function.AdditionalProperties?.TryGetValue("IsScope", out var v) == true && v is bool b && b;
+
     private bool IsPluginContainer(AIFunction function) =>
         IsContainer(function) &&
-        !(function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b);
+        !(function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b) &&
+        !(function.AdditionalProperties?.TryGetValue("IsScope", out var v2) == true && v2 is bool b2 && b2);
 
     private bool IsSkillContainer(AIFunction function) =>
         IsContainer(function) &&
-        function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b;
+        function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b &&
+        !(function.AdditionalProperties?.TryGetValue("IsScope", out var v2) == true && v2 is bool b2 && b2);
 
     private bool IsSkill(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b &&
@@ -254,6 +335,23 @@ public class UnifiedScopingManager
 
     private string? GetParentSkillContainer(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
+
+    private string? GetParentScopeContainer(AIFunction function) =>
+        function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
+
+    private string[] GetReferencedFunctions(AIFunction skillContainer)
+    {
+        if (skillContainer.AdditionalProperties?.TryGetValue("ReferencedFunctions", out var v) == true && v is string[] refs)
+            return refs;
+        return Array.Empty<string>();
+    }
+
+    private string[] GetReferencedPlugins(AIFunction skillContainer)
+    {
+        if (skillContainer.AdditionalProperties?.TryGetValue("ReferencedPlugins", out var v) == true && v is string[] plugins)
+            return plugins;
+        return Array.Empty<string>();
+    }
 
     private string ExtractFunctionName(string reference)
     {

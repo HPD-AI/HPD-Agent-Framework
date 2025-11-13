@@ -45,6 +45,7 @@ public class JsonStaticMemoryStore : StaticMemoryStore
     public override async Task<List<StaticMemoryDocument>> GetDocumentsAsync(string agentName, CancellationToken cancellationToken = default)
     {
         var file = GetFilePath(agentName);
+        
         if (!File.Exists(file))
         {
             return new List<StaticMemoryDocument>();
@@ -176,7 +177,9 @@ public class JsonStaticMemoryStore : StaticMemoryStore
             var docTokens = doc.ExtractedText.Length / 4;
 
             if (currentTokens + docTokens > maxTokens)
+            {
                 break;
+            }
 
             combinedText.AppendLine($"\n[KNOWLEDGE: {doc.FileName}]");
             combinedText.AppendLine(doc.ExtractedText);
@@ -263,7 +266,9 @@ public class JsonStaticMemoryStore : StaticMemoryStore
     private string GetFilePath(string agentName)
     {
         // Sanitize agent name for file system
-        var safeAgentName = string.Join("_", agentName.Split(Path.GetInvalidFileNameChars()));
+        // Replace invalid chars AND spaces with underscores for consistency
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var safeAgentName = string.Join("_", agentName.Split(invalidChars.Append(' ').ToArray()));
         return Path.Combine(_storageDirectory, $"knowledge_{safeAgentName}.json");
     }
 

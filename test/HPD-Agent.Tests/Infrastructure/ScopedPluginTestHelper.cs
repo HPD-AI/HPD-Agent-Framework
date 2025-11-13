@@ -10,7 +10,7 @@ public static class ScopedPluginTestHelper
 {
     /// <summary>
     /// Creates a container function for a scoped plugin.
-    /// This simulates what the source generator creates for [PluginScope] attributes.
+    /// This simulates what the source generator creates for [Scope] attributes.
     /// </summary>
     public static AIFunction CreateContainerFunction(
         string pluginName,

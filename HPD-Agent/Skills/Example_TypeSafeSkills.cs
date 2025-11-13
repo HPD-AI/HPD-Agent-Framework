@@ -6,6 +6,13 @@ namespace HPD_Agent.Skills;
 ///
 /// NOTE: These are template examples showing the pattern.
 /// Actual skills will be created in Phase 2 after source generator implementation.
+///
+/// IMPORTANT: Skill methods can be:
+/// - Static: For shared, reusable skill definitions (recommended)
+/// - Instance: For contextual skills with dependency injection
+/// 
+/// Both patterns require: [Skill] attribute, public, and return type Skill
+/// Static is NOT required - use whichever fits your use case.
 /// </summary>
 public static class Example_TypeSafeSkills
 {
