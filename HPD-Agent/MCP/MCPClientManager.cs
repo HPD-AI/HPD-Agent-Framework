@@ -48,13 +48,19 @@ public class MCPClientManager : IDisposable
             {
                 var tools = await LoadServerToolsAsync(serverConfig, cancellationToken);
 
-                if (enableScoping && tools.Count > 0)
+                // Determine scoping for this specific server
+                // Per-server setting takes precedence over global setting
+                var enableScopingForThisServer = serverConfig.EnableScoping ?? enableScoping;
+
+                if (enableScopingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
                     var (container, scopedTools) = ExternalToolScopingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
-                        maxFunctionNamesInDescription);
+                        maxFunctionNamesInDescription,
+                        postExpansionInstructions: null,
+                        customDescription: serverConfig.Description);
 
                     allTools.Add(container);
                     allTools.AddRange(scopedTools);
@@ -116,13 +122,19 @@ public class MCPClientManager : IDisposable
             {
                 var tools = await LoadServerToolsAsync(serverConfig, cancellationToken);
 
-                if (enableScoping && tools.Count > 0)
+                // Determine scoping for this specific server
+                // Per-server setting takes precedence over global setting
+                var enableScopingForThisServer = serverConfig.EnableScoping ?? enableScoping;
+
+                if (enableScopingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
                     var (container, scopedTools) = ExternalToolScopingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
-                        maxFunctionNamesInDescription);
+                        maxFunctionNamesInDescription,
+                        postExpansionInstructions: null,
+                        customDescription: serverConfig.Description);
 
                     allTools.Add(container);
                     allTools.AddRange(scopedTools);
@@ -214,6 +226,12 @@ public class MCPClientManager : IDisposable
     {
         var client = await GetOrCreateClientAsync(serverConfig, cancellationToken);
 
+        // Try to extract server description from MCP serverInfo if not provided in config
+        if (string.IsNullOrWhiteSpace(serverConfig.Description))
+        {
+            serverConfig.Description = TryExtractServerDescription(client, serverConfig.Name);
+        }
+
         // ListToolsAsync returns McpClientTool[], which inherit from AIFunction
         var mcpTools = await client.ListToolsAsync(cancellationToken: cancellationToken);
 
@@ -238,7 +256,7 @@ public class MCPClientManager : IDisposable
                 {
                     Name = originalAIFunction.Name,
                     Description = originalAIFunction.Description,
-                    RequiresPermission = true,
+                    RequiresPermission = serverConfig.RequiresPermission,
                     // MCP tools don't have validation since they're external - just pass through
                     Validator = _ => new List<ValidationError>()
                 };
@@ -338,9 +356,58 @@ public class MCPClientManager : IDisposable
         
         var client = await McpClientFactory.CreateAsync(transport);
         _clients[serverConfig.Name] = client;
-        
+
+        // Log server info if available
+        try
+        {
+            var serverInfo = client.GetType().GetProperty("ServerInfo")?.GetValue(client);
+            if (serverInfo != null)
+            {
+                _logger.LogDebug("MCP server '{ServerName}' info: {ServerInfo}", serverConfig.Name, serverInfo);
+            }
+        }
+        catch
+        {
+            // Ignore if ServerInfo not available
+        }
+
         _logger.LogDebug("Successfully created MCP client for server '{ServerName}'", serverConfig.Name);
         return client;
+    }
+
+    /// <summary>
+    /// Attempts to extract description from MCP server metadata via reflection
+    /// (since the C# MCP library might expose ServerInfo but we don't know the exact type)
+    /// </summary>
+    private string? TryExtractServerDescription(IMcpClient client, string serverName)
+    {
+        try
+        {
+            // Try to get ServerInfo property
+            var serverInfoProp = client.GetType().GetProperty("ServerInfo");
+            if (serverInfoProp == null) return null;
+
+            var serverInfo = serverInfoProp.GetValue(client);
+            if (serverInfo == null) return null;
+
+            // Try to get Description property from ServerInfo
+            var descriptionProp = serverInfo.GetType().GetProperty("Description");
+            if (descriptionProp == null) return null;
+
+            var description = descriptionProp.GetValue(serverInfo) as string;
+            if (!string.IsNullOrWhiteSpace(description))
+            {
+                _logger.LogDebug("Extracted description from MCP server '{ServerName}': {Description}",
+                    serverName, description);
+                return description;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not extract description from MCP server '{ServerName}' - using fallback", serverName);
+        }
+
+        return null;
     }
 
     /// <summary>

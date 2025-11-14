@@ -744,7 +744,7 @@ internal sealed class Agent
 
                     // Apply plugin scoping if enabled
                     var scopedOptions = effectiveOptions;
-                    if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
+                    if (Config?.Scoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
                     {
                         scopedOptions = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
                     }
@@ -929,7 +929,7 @@ internal sealed class Agent
 
                         // Apply plugin scoping if enabled
                         var effectiveOptionsForTools = effectiveOptions;
-                        if (Config?.PluginScoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
+                        if (Config?.Scoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
                         {
                             effectiveOptionsForTools = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
                         }
@@ -1413,7 +1413,7 @@ internal sealed class Agent
         ImmutableHashSet<string> expandedScopedPluginContainers,
         ImmutableHashSet<string> ExpandedSkillContainers)
     {
-        if (options?.Tools == null || Config?.PluginScoping?.Enabled != true)
+        if (options?.Tools == null || Config?.Scoping?.Enabled != true)
             return options;
 
         // PERFORMANCE: Single-pass extraction using manual loop
@@ -1498,14 +1498,18 @@ internal sealed class Agent
     }
 
     /// <summary>
-    /// Checks if a function result is from a scope/plugin container expansion.
-    /// Skill containers are NOT filtered because their results should be returned to the LLM
-    /// so it knows which functions are available after skill expansion.
+    /// Checks if a function result is from ANY container expansion (scoped plugin OR skill).
+    /// All container activation messages are filtered from persistent history because:
+    /// 1. They're only relevant within the current message turn
+    /// 2. They prevent history pollution across message turns
+    /// 3. Containers re-collapse at the start of each new turn
+    ///
+    /// Container results are still added to turnHistory (visible within turn) but not currentMessages (persistent).
     /// </summary>
     /// <param name="result">The function result to check</param>
     /// <param name="toolRequests">Original tool call requests</param>
     /// <param name="options">Chat options containing tool metadata</param>
-    /// <returns>True if this result is from a scope/plugin container (NOT skill container)</returns>
+    /// <returns>True if this result is from any container (scoped plugin or skill)</returns>
     private static bool IsContainerResult(
         FunctionResultContent result,
         IList<FunctionCallContent> toolRequests,
@@ -1526,15 +1530,10 @@ internal sealed class Agent
             var isContainer = function.AdditionalProperties.TryGetValue("IsContainer", out var containerVal) == true
                 && containerVal is bool isCont && isCont;
 
-            if (!isContainer)
-                return false;
-
-            // Exclude skill containers (they have IsSkill=true)
-            // Only filter scope/plugin containers
-            var isSkillContainer = function.AdditionalProperties.TryGetValue("IsSkill", out var skillVal) == true
-                && skillVal is bool isSkill && isSkill;
-
-            return !isSkillContainer; // Filter scope/plugin containers, but NOT skill containers
+            // Filter ALL containers (both scoped plugins AND skills) from persistent history
+            // Container activation messages are only relevant within the current turn
+            // and should not pollute the persistent chat history across message turns
+            return isContainer;
         });
     }
 

@@ -222,10 +222,9 @@ internal static class SkillCodeGenerator
         {
             var docUploads = string.Join(", ", skill.Options.DocumentUploads.Select(du =>
                 $"(object)new Dictionary<string, string> {{ [\"FilePath\"] = \"{du.FilePath}\", [\"DocumentId\"] = \"{du.DocumentId}\", [\"Description\"] = \"{du.Description}\" }}"));
-            sb.AppendLine($"                        [\"DocumentUploads\"] = new object[] {{ {docUploads} }},");
+            sb.AppendLine($"                        [\"DocumentUploads\"] = new object[] {{ {docUploads} }}");
         }
 
-        sb.AppendLine($"                        [\"AutoExpand\"] = {skill.Options.AutoExpand.ToString().ToLower()}");
         sb.AppendLine("                    }");
         sb.AppendLine("                });");
         sb.AppendLine("        }");

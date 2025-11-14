@@ -20,16 +20,39 @@ public class MCPServerConfig
     
     [JsonPropertyName("command")]
     public string Command { get; set; } = string.Empty;
-    
+
     [JsonPropertyName("arguments")]
     public List<string> Arguments { get; set; } = new();
-    
+
+    /// <summary>
+    /// Optional description for the MCP server container.
+    /// If not provided, will attempt to extract from server's ServerInfo metadata.
+    /// If both are unavailable, will auto-generate from function names.
+    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
-    
+
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
-    
+
+    /// <summary>
+    /// Enable scoping for this MCP server's tools.
+    /// When true, tools are grouped behind a container (e.g., MCP_filesystem).
+    /// When false, tools are exposed directly (e.g., filesystem_read_file).
+    /// If not specified, defaults to false (no scoping).
+    /// </summary>
+    [JsonPropertyName("enableScoping")]
+    public bool? EnableScoping { get; set; }
+
+    /// <summary>
+    /// Whether tools from this MCP server require user permission before execution.
+    /// When true, all tools from this server will trigger permission requests.
+    /// When false, tools execute without permission prompts (use for read-only servers).
+    /// If not specified, defaults to true (require permission for safety).
+    /// </summary>
+    [JsonPropertyName("requiresPermission")]
+    public bool RequiresPermission { get; set; } = true;
+
     [JsonPropertyName("timeout")]
     public int TimeoutMs { get; set; } = 30000;
     

@@ -352,12 +352,6 @@ internal static class SkillAnalyzer
                                 options.ScopingMode = scopingValue;
                             break;
 
-                        case "AutoExpand":
-                            var autoExpandValue = semanticModel.GetConstantValue(value);
-                            if (autoExpandValue.HasValue && autoExpandValue.Value is bool autoExpand)
-                                options.AutoExpand = autoExpand;
-                            break;
-
                         case "InstructionDocuments":
                             // Extract array of strings
                             if (value is ArrayCreationExpressionSyntax arrayCreation &&

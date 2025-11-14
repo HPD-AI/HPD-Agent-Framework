@@ -8,12 +8,6 @@ namespace HPD_Agent.Skills;
 public class SkillOptions
 {
     /// <summary>
-    /// If true, skill auto-expands at conversation start.
-    /// Default: false (skill must be explicitly invoked by agent).
-    /// </summary>
-    public bool AutoExpand { get; set; } = false;
-
-    /// <summary>
     /// Document references for this skill (document IDs from store)
     /// </summary>
     internal List<DocumentReference> DocumentReferences { get; set; } = new();

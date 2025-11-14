@@ -85,11 +85,6 @@ internal class SkillOptionsInfo
     public string ScopingMode { get; set; } = "InstructionOnly";
 
     /// <summary>
-    /// Whether skill should auto-expand at conversation start
-    /// </summary>
-    public bool AutoExpand { get; set; } = false;
-
-    /// <summary>
     /// Optional instruction document paths (OLD - kept for backwards compatibility)
     /// </summary>
     public List<string> InstructionDocuments { get; set; } = new();

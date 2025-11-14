@@ -44,7 +44,8 @@ public class Phase1ApiTests
     public void SkillFactory_Create_WithOptions_CreatesSkill()
     {
         // Arrange
-        var options = new SkillOptions { AutoExpand = true };
+        var options = new SkillOptions();
+        options.AddDocument("test-doc", "Test document description");
 
         // Act
         var skill = SkillFactory.Create(
@@ -59,7 +60,7 @@ public class Phase1ApiTests
         // Assert
         Assert.Equal("TestSkill", skill.Name);
         Assert.Equal(2, skill.References.Length);
-        Assert.True(skill.Options.AutoExpand);
+        Assert.Single(skill.Options.DocumentReferences);
     }
 
     [Fact]

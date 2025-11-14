@@ -18,12 +18,14 @@ public static class ExternalToolScopingWrapper
     /// <param name="tools">Tools from this MCP server</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
     /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
+    /// <param name="customDescription">Optional custom description from JSON config. If provided, replaces auto-generated description.</param>
     /// <returns>Container function and scoped tools with metadata</returns>
     public static (AIFunction container, List<AIFunction> scopedTools) WrapMCPServerTools(
         string serverName,
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
-        string? postExpansionInstructions = null)
+        string? postExpansionInstructions = null,
+        string? customDescription = null)
     {
         if (string.IsNullOrEmpty(serverName))
             throw new ArgumentException("Server name cannot be null or empty", nameof(serverName));
@@ -34,14 +36,27 @@ public static class ExternalToolScopingWrapper
         var containerName = $"MCP_{serverName}";
         var allFunctionNames = tools.Select(t => t.Name).ToList();
 
-        // Generate template description with function names
+        // Build function list suffix (used for all description types)
         var displayedNames = allFunctionNames.Take(maxFunctionNamesInDescription);
         var functionNamesList = string.Join(", ", displayedNames);
         var moreCount = allFunctionNames.Count > maxFunctionNamesInDescription
             ? $" and {allFunctionNames.Count - maxFunctionNamesInDescription} more"
             : "";
+        var functionSuffix = $"Contains {allFunctionNames.Count} functions: {functionNamesList}{moreCount}";
 
-        var description = $"MCP Server '{serverName}'. Contains {allFunctionNames.Count} functions: {functionNamesList}{moreCount}";
+        // Build description: user-provided or auto-generated, always with function list
+        string description;
+        if (!string.IsNullOrWhiteSpace(customDescription))
+        {
+            // User-provided description from JSON config + function list
+            description = $"{customDescription}. {functionSuffix}";
+        }
+        else
+        {
+            // Auto-generated description with function list
+            description = $"MCP Server '{serverName}'. {functionSuffix}";
+        }
+
         var fullFunctionList = string.Join(", ", allFunctionNames);
 
         // Build return message with optional post-expansion instructions

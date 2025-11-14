@@ -93,10 +93,10 @@ public class AgentConfig
     public ToolSelectionConfig? ToolSelection { get; set; }
 
     /// <summary>
-    /// Configuration for plugin scoping - hierarchical organization of plugin functions to reduce token usage.
-    /// When enabled, plugin functions are hidden behind container functions, reducing initial tool list by up to 87.5%.
+    /// Configuration for scoping - hierarchical organization of functions to reduce token usage.
+    /// When enabled, functions are hidden behind container functions, reducing initial tool list by up to 87.5%.
     /// </summary>
-    public PluginScopingConfig? PluginScoping { get; set; }
+    public ScopingConfig? Scoping { get; set; }
 
     /// <summary>
     /// Internal: Set of explicitly registered plugin names (for scoping manager).
@@ -900,23 +900,16 @@ public class MistralSettings
 }
 
 /// <summary>
-/// Configuration for plugin scoping feature.
-/// Controls hierarchical organization of plugin functions to reduce token usage.
+/// Configuration for scoping feature.
+/// Controls hierarchical organization of functions to reduce token usage.
 /// </summary>
-public class PluginScopingConfig
+public class ScopingConfig
 {
     /// <summary>
-    /// Enable plugin scoping for C# plugins. When true, plugin functions are hidden behind container functions.
+    /// Enable scoping for C# plugins. When true, plugin functions are hidden behind container functions.
     /// Default: false (disabled - all functions visible immediately).
     /// </summary>
     public bool Enabled { get; set; } = false;
-
-    /// <summary>
-    /// Enable scoping for MCP tools. When true, tools from each MCP server are grouped behind a container.
-    /// Example: MCP_filesystem container contains ReadFile, WriteFile, etc.
-    /// Default: false (MCP tools always visible).
-    /// </summary>
-    public bool ScopeMCPTools { get; set; } = false;
 
     /// <summary>
     /// Enable scoping for Frontend (AGUI) tools. When true, all frontend tools are grouped in a FrontendTools container.

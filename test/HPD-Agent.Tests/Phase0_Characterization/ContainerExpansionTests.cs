@@ -50,9 +50,9 @@ public class ContainerExpansionTests : AgentTestBase
             ScopedPluginTestHelper.MemberFunc("Add", "Adds numbers", () => "Sum: 42"),
             ScopedPluginTestHelper.MemberFunc("Multiply", "Multiplies numbers", () => "Product: 100"));
 
-        // Note: We need plugin scoping enabled for container expansion to work
+        // Note: We need scoping enabled for container expansion to work
         var config = DefaultConfig();
-        config.PluginScoping = new PluginScopingConfig
+        config.Scoping = new ScopingConfig
         {
             Enabled = true
         };
@@ -142,7 +142,7 @@ public class ContainerExpansionTests : AgentTestBase
             ScopedPluginTestHelper.MemberFunc("Lowercase", "Convert to lowercase", () => "hello"));
 
         var config = DefaultConfig();
-        config.PluginScoping = new PluginScopingConfig { Enabled = true };
+        config.Scoping = new ScopingConfig { Enabled = true };
         config.Provider ??= new ProviderConfig();
         config.Provider.ProviderKey = "test";
         config.Provider.ModelName = "test-model";
@@ -221,7 +221,7 @@ public class ContainerExpansionTests : AgentTestBase
             ScopedPluginTestHelper.MemberFunc("Echo", "Echoes input", () => "Echo: test"));
 
         var config = DefaultConfig();
-        config.PluginScoping = new PluginScopingConfig { Enabled = true };
+        config.Scoping = new ScopingConfig { Enabled = true };
         config.Provider ??= new ProviderConfig();
         config.Provider.ProviderKey = "test";
         config.Provider.ModelName = "test-model";

@@ -51,7 +51,7 @@ public class Phase1ApiTest
             instructions: "Follow step-by-step methodology for complex issues",
             options: new SkillOptions
             {
-                AutoExpand = false
+                // AutoExpand removed - no longer needed with container pattern
             },
             "MockFileSystemPlugin.ReadFile",
             "MockFileSystemPlugin.WriteFile",
