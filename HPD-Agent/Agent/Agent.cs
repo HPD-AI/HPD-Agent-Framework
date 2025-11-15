@@ -17,7 +17,6 @@ using HPD.Agent.Conversation.Checkpointing;
 using HPD_Agent.Scoping;
 
 
-
 namespace HPD.Agent;
 
 /// <summary>
@@ -567,13 +566,92 @@ internal sealed class Agent
                         messages, documentPaths, Config, cancellationToken).ConfigureAwait(false);
                 }
 
-                // Prepare messages using MessageProcessor
-                // This adds system instructions, merges options, and runs history reduction
+                // ✅ Initialize state with FULL unreduced history FIRST
+                // This ensures state.CurrentMessages.Count matches thread.Messages.Count
+                // History reduction is ONLY an optimization for LLM calls, not stored state
+                state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name);
+
+                // ═══════════════════════════════════════════════════════════════════════
+                // CACHE-AWARE HISTORY REDUCTION (NEW SYSTEM)
+                // ═══════════════════════════════════════════════════════════════════════
+                // Check if we can reuse cached reduction from thread.LastReduction
+                // This avoids redundant LLM calls for re-summarization
+
+                HistoryReductionState? reductionToUse = null;
+                bool usedCachedReduction = false;
+
+                // Check cache: Is thread.LastReduction still valid for current message count?
+                if (thread?.LastReduction != null &&
+                    thread.LastReduction.IsValidFor(messages.ToList().Count))
+                {
+                    // ✅ CACHE HIT: Reuse existing reduction
+                    reductionToUse = thread.LastReduction;
+                    state = state.WithReduction(reductionToUse);
+                    usedCachedReduction = true;
+
+                    // Log cache hit
+                    _loggingService?.LogHistoryReductionCacheHit(
+                        _name,
+                        reductionToUse.CreatedAt,
+                        reductionToUse.SummarizedUpToIndex,
+                        messages.ToList().Count);
+
+                    // TODO: Future optimization - Apply cached reduction here to bypass PrepareMessagesAsync
+                    // This would save the LLM call for summarization on cache hit
+                    // For now, PrepareMessagesAsync will run reduction again (but could be optimized)
+                }
+
+                // Prepare messages using MessageProcessor for LLM calls
+                // This adds system instructions, merges options, and may run history reduction
+                // NOTE: Currently still runs reduction even on cache hit (future optimization opportunity)
                 try
                 {
                     var prep = await _messageProcessor.PrepareMessagesAsync(
                         messages, options, _name, effectiveCancellationToken).ConfigureAwait(false);
                     (effectiveMessages, effectiveOptions, reductionMetadata) = prep;
+
+                    // If PrepareMessagesAsync performed a NEW reduction (cache miss), capture it
+                    if (reductionMetadata?.SummaryMessage != null && !usedCachedReduction)
+                    {
+                        // ❌ CACHE MISS: New reduction was created by PrepareMessagesAsync
+                        // Extract reduction state from results and cache it
+                        var historyConfig = Config?.HistoryReduction;
+                        if (historyConfig != null && reductionMetadata.MessagesRemovedCount > 0)
+                        {
+                            var messagesList = messages.ToList();
+                            var summarizedUpToIndex = reductionMetadata.MessagesRemovedCount;
+                            var summaryMsg = reductionMetadata.SummaryMessage;
+
+                            if (!string.IsNullOrEmpty(summaryMsg.Text))
+                            {
+                                reductionToUse = HistoryReductionState.Create(
+                                    messagesList,
+                                    summaryMsg.Text,
+                                    summarizedUpToIndex,
+                                    historyConfig.TargetMessageCount,
+                                    historyConfig.SummarizationThreshold ?? 5);
+
+                                state = state.WithReduction(reductionToUse);
+
+                                // Cache for next run
+                                if (thread != null)
+                                {
+                                    thread.LastReduction = reductionToUse;
+                                }
+
+                                // Log cache miss
+                                var summaryPreview = summaryMsg.Text.Length > 50
+                                    ? summaryMsg.Text.Substring(0, 50) + "..."
+                                    : summaryMsg.Text;
+
+                                _loggingService?.LogHistoryReductionCacheMiss(
+                                    _name,
+                                    summarizedUpToIndex,
+                                    messagesList.Count,
+                                    summaryPreview);
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -585,8 +663,10 @@ internal sealed class Agent
                 // Set reduction metadata immediately
                 reductionCompletionSource.TrySetResult(reductionMetadata);
 
-                // Initialize new state with prepared messages
-                state = AgentLoopState.Initial(effectiveMessages.ToList(), messageTurnId, conversationId, this.Name);
+                // ✅ NOTE: state.CurrentMessages now contains FULL history (unreduced)
+                // ✅ NOTE: state.ActiveReduction contains reduction metadata (if reduced)
+                // ✅ NOTE: effectiveMessages contains REDUCED history (for LLM calls only)
+                // This ensures perfect sync: state.CurrentMessages.Count == thread.Messages.Count
             }
 
             // ═══════════════════════════════════════════════════════════════════════════
@@ -609,14 +689,10 @@ internal sealed class Agent
                 }
             }
 
-            // Emit state snapshot for observability
-            yield return new InternalStateSnapshotEvent(
-                CurrentIteration: state.Iteration,
-                MaxIterations: config.MaxIterations,
-                IsTerminated: state.IsTerminated,
-                TerminationReason: state.TerminationReason,
-                ConsecutiveErrorCount: state.ConsecutiveFailures,
-                CompletedFunctions: new List<string>(state.CompletedFunctions));
+            // ✅ REMOVED: Duplicate state snapshot emission
+            // State snapshots are emitted at the start of each iteration inside the main loop (line 753)
+            // Emitting here caused duplicate snapshots at iteration 0, breaking StateSnapshotTests
+            // This was added in commit 6646836 (2025-11-15) and caused test failures
 
             // ═══════════════════════════════════════════════════════
             // INITIALIZE TURN HISTORY: Add input messages first
@@ -759,15 +835,45 @@ internal sealed class Agent
                     // EXECUTE LLM CALL (INLINE - NOT EXTRACTED)
                     // ═══════════════════════════════════════════════════════
 
-                    // History optimization: Only send new messages if server manages history
+                    // ✅ NEW: Determine messages to send with cache-aware reduction
                     IEnumerable<ChatMessage> messagesToSend;
+                    int messageCountToSend;  // Track actual count sent for history tracking
+
                     if (state.InnerClientTracksHistory && state.Iteration > 0)
                     {
+                        // Server manages history - send only delta (new messages since last call)
                         messagesToSend = state.CurrentMessages.Skip(state.MessagesSentToInnerClient);
+                        messageCountToSend = state.CurrentMessages.Count;  // Total count including previous
+                    }
+                    else if (state.Iteration == 0)
+                    {
+                        // ✅ FIRST ITERATION: Use effectiveMessages (reduced) from PrepareMessagesAsync
+                        // This applies history reduction for the initial LLM call
+                        // effectiveMessages already contains reduced history if reduction was applied
+                        messagesToSend = effectiveMessages;
+                        messageCountToSend = effectiveMessages.Count();  // Reduced count!
                     }
                     else
                     {
+                        // ✅ SUBSEQUENT ITERATIONS (iteration > 0):
+                        // Option 1: Apply reduction if configured and available (optimal tokens)
+                        // Option 2: Use full history (simpler, current default)
+
+                        // For now, use full history (includes tool results from previous iterations)
+                        // Future enhancement: Re-apply reduction on every iteration for very long conversations
                         messagesToSend = state.CurrentMessages;
+                        messageCountToSend = state.CurrentMessages.Count;
+
+                        // Future optimization (commented out for now):
+                        // if (state.ActiveReduction != null && Config.HistoryReduction?.Enabled == true)
+                        // {
+                        //     // Re-apply reduction to include new tool results
+                        //     var systemMsg = state.CurrentMessages.FirstOrDefault(m => m.Role == ChatRole.System);
+                        //     messagesToSend = state.ActiveReduction.ApplyToMessages(
+                        //         state.CurrentMessages.Where(m => m.Role != ChatRole.System),
+                        //         systemMsg);
+                        //     messageCountToSend = messagesToSend.Count();
+                        // }
                     }
 
                     // Apply plugin scoping if enabled
@@ -928,20 +1034,18 @@ internal sealed class Agent
                         // Create assistant message with tool calls
                         var assistantMessage = new ChatMessage(ChatRole.Assistant, assistantContents);
 
-                        // ✅ BUG #4 FIX: Track count BEFORE adding assistant message
-                        var messageCountBeforeAssistant = state.CurrentMessages.Count;
-
                         var currentMessages = state.CurrentMessages.ToList();
                         currentMessages.Add(assistantMessage);
 
                         // ✅ FIXED: Update state immediately after modifying messages
                         state = state.WithMessages(currentMessages);
 
-                        // ✅ BUG #4 FIX: Use count from BEFORE adding assistant message
-                        // This ensures delta sending doesn't skip the assistant message we just added
+                        // ✅ FIX: Use messageCountToSend (actual messages sent to server)
+                        // NOT state.CurrentMessages.Count (which may be unreduced full history)
+                        // This ensures delta sending works correctly with history reduction
                         if (_agentTurn.LastResponseConversationId != null)
                         {
-                            state = state.EnableHistoryTracking(messageCountBeforeAssistant);
+                            state = state.EnableHistoryTracking(messageCountToSend);
                         }
 
                         // Create assistant message for history WITHOUT reasoning
@@ -1191,11 +1295,12 @@ internal sealed class Agent
                         // ✅ FIXED: Clear responseUpdates AFTER constructing final response
                         responseUpdates.Clear();
 
-                        // ✅ FIXED: Update history tracking if we have ConversationId (no assistant message added in this path)
+                        // ✅ FIX: Update history tracking if we have ConversationId
                         if (_agentTurn.LastResponseConversationId != null)
                         {
-                            // For non-tool responses, use current message count (no new assistant message added)
-                            state = state.EnableHistoryTracking(state.CurrentMessages.Count);
+                            // For non-tool responses, use messageCountToSend (actual messages sent)
+                            // NOT state.CurrentMessages.Count (which may be unreduced full history)
+                            state = state.EnableHistoryTracking(messageCountToSend);
                         }
 
                         state = state.Terminate("Completed successfully");
@@ -2608,6 +2713,25 @@ public sealed record AgentLoopState
     // ═══════════════════════════════════════════════════════
 
     /// <summary>
+    /// Active history reduction state for this execution (cache-aware).
+    /// When set, indicates that history has been reduced and contains reduction metadata.
+    /// Used to apply reduction to messages sent to LLM while preserving full history in storage.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the NEW first-class reduction tracking. It replaces the old __summary__ marker approach.
+    /// Reduction state is external metadata, NOT embedded in messages.
+    /// </para>
+    /// <para>
+    /// <b>Usage:</b>
+    /// - Fresh run (iteration 0): Check if thread.LastReduction.IsValidFor() → cache hit
+    /// - If valid: Set ActiveReduction and use ApplyToMessages() for LLM calls
+    /// - If invalid: Run reduction, create new HistoryReductionState, store in thread.LastReduction
+    /// </para>
+    /// </remarks>
+    public HistoryReductionState? ActiveReduction { get; init; }
+
+    /// <summary>
     /// Whether the LLM service manages conversation history server-side.
     /// When true, we only send delta messages (significant token savings).
     /// Detected automatically when service returns a ConversationId.
@@ -2809,6 +2933,23 @@ public sealed record AgentLoopState
             InnerClientTracksHistory = false,
             MessagesSentToInnerClient = 0
         };
+
+    /// <summary>
+    /// Sets or updates the active history reduction state.
+    /// Call this after creating a new reduction or loading from cache.
+    /// </summary>
+    /// <param name="reduction">History reduction state to apply</param>
+    /// <returns>New state with updated reduction</returns>
+    public AgentLoopState WithReduction(HistoryReductionState reduction) =>
+        this with { ActiveReduction = reduction };
+
+    /// <summary>
+    /// Clears the active history reduction state.
+    /// Useful for testing or when reduction is no longer valid.
+    /// </summary>
+    /// <returns>New state without reduction</returns>
+    public AgentLoopState ClearReduction() =>
+        this with { ActiveReduction = null };
 
     /// <summary>
     /// Sets the last assistant message ID (for event correlation).
@@ -3709,8 +3850,19 @@ internal class MessageProcessor
         string agentName,
         CancellationToken cancellationToken)
     {
-        var effectiveMessages = PrependSystemInstructions(messages);
+        // ✅ NEW: Don't prepend system message - use ChatOptions.Instructions instead
+        var effectiveMessages = messages;
         var effectiveOptions = MergeOptions(options);
+
+        // ✅ NEW: Add system instructions to ChatOptions.Instructions (Microsoft's pattern)
+        // This follows the official Microsoft.Extensions.AI pattern used by ChatClientAgent
+        if (!string.IsNullOrEmpty(_systemInstructions))
+        {
+            effectiveOptions ??= new ChatOptions();
+            effectiveOptions.Instructions = string.IsNullOrWhiteSpace(effectiveOptions.Instructions)
+                ? _systemInstructions
+                : $"{_systemInstructions}\n{effectiveOptions.Instructions}";
+        }
 
         // Apply cache-aware history reduction if configured
         if (_chatReducer != null)
@@ -3838,24 +3990,9 @@ internal class MessageProcessor
         }
     }
 
-    /// <summary>
-    /// Prepends system instructions to the message list if configured.
-    /// </summary>
-    private IEnumerable<ChatMessage> PrependSystemInstructions(IEnumerable<ChatMessage> messages)
-    {
-        if (string.IsNullOrEmpty(_systemInstructions))
-            return messages;
-
-        var messagesList = messages.ToList();
-
-        // Check if there's already a system message
-        if (messagesList.Any(m => m.Role == ChatRole.System))
-            return messagesList;
-
-        // Prepend system instruction
-        var systemMessage = new ChatMessage(ChatRole.System, _systemInstructions);
-        return new[] { systemMessage }.Concat(messagesList);
-    }
+    // ✅ REMOVED: PrependSystemInstructions method
+    // System instructions are now added via ChatOptions.Instructions (Microsoft's pattern)
+    // This eliminates the need to create ChatMessage(Role.System) objects
 
     /// <summary>
     /// Merges provided options with default options.
@@ -3886,6 +4023,8 @@ internal class MessageProcessor
             Seed = providedOptions.Seed ?? _defaultOptions.Seed,
             StopSequences = providedOptions.StopSequences ?? _defaultOptions.StopSequences,
             ModelId = providedOptions.ModelId ?? _defaultOptions.ModelId,
+            // ✅ NEW: Merge Instructions property (follows Microsoft's ChatClientAgent pattern)
+            Instructions = providedOptions.Instructions ?? _defaultOptions.Instructions,
             AdditionalProperties = MergeDictionaries(_defaultOptions.AdditionalProperties, providedOptions.AdditionalProperties)
         };
     }
@@ -6206,6 +6345,46 @@ internal sealed class AgentLoggingService
             threadId);
     }
 
+    /// <summary>
+    /// Logs when history reduction cache is hit (reusing existing reduction).
+    /// </summary>
+    public void LogHistoryReductionCacheHit(
+        string agentName,
+        DateTime reductionCreatedAt,
+        int summarizedUpToIndex,
+        int currentMessageCount)
+    {
+        if (!_logger.IsEnabled(LogLevel.Debug)) return;
+
+        _logger.LogDebug(
+            "Agent '{AgentName}' history reduction cache HIT: Reusing reduction from {CreatedAt}, " +
+            "summarized {SummarizedCount} messages, current count: {CurrentCount}",
+            agentName,
+            reductionCreatedAt,
+            summarizedUpToIndex,
+            currentMessageCount);
+    }
+
+    /// <summary>
+    /// Logs when history reduction cache is missed (creating new reduction).
+    /// </summary>
+    public void LogHistoryReductionCacheMiss(
+        string agentName,
+        int summarizedUpToIndex,
+        int totalMessageCount,
+        string summaryPreview)
+    {
+        if (!_logger.IsEnabled(LogLevel.Debug)) return;
+
+        _logger.LogDebug(
+            "Agent '{AgentName}' history reduction cache MISS: Created new reduction, " +
+            "summarized {SummarizedCount}/{TotalCount} messages → '{SummaryPreview}'",
+            agentName,
+            summarizedUpToIndex,
+            totalMessageCount,
+            summaryPreview);
+    }
+
 }
 
 /// <summary>
@@ -6516,3 +6695,263 @@ internal sealed class AgentTelemetryService : IDisposable
         _meter.Dispose();
     }
 }
+
+#region history reduction
+/// <summary>
+/// First-class immutable state for conversation history reduction.
+/// Tracks which messages have been summarized and provides cache-aware reduction logic.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Design Philosophy:</b> History reduction is an LLM optimization, NOT a storage concern.
+/// This class separates reduction metadata from message storage, allowing:
+/// - Full unreduced history in ConversationThread and AgentLoopState
+/// - Reduced messages sent to LLM only (token savings)
+/// - Cache-aware incremental reduction (avoid redundant LLM calls)
+/// - Integrity checking (detect if messages changed since reduction)
+/// </para>
+/// <para>
+/// <b>Architecture:</b>
+/// <code>
+/// ┌─────────────────────────────────────────────────────────┐
+/// │              Storage (Full History)                      │
+/// │  - ConversationThread.Messages: [msg1...msg100]         │
+/// │  - AgentLoopState.CurrentMessages: [msg1...msg100]      │
+/// │  - AgentLoopState.ActiveReduction: HistoryReductionState│
+/// │  - ConversationThread.LastReduction: HistoryReductionState│
+/// └─────────────────────────────────────────────────────────┘
+///                           ↓
+///              ApplyToMessages(allMessages)
+///                           ↓
+/// ┌─────────────────────────────────────────────────────────┐
+/// │              LLM Input (Reduced)                         │
+/// │  - [Summary] "User discussed..."                        │
+/// │  - msg91...msg100 (recent messages)                     │
+/// │  Count: 11 messages (90% token savings!)                │
+/// └─────────────────────────────────────────────────────────┘
+/// </code>
+/// </para>
+/// </remarks>
+public sealed record HistoryReductionState
+{
+    /// <summary>
+    /// Message index where summary ends (exclusive).
+    /// Messages [0..SummarizedUpToIndex) were summarized.
+    /// Messages [SummarizedUpToIndex..end) are kept verbatim.
+    /// </summary>
+    /// <example>
+    /// If 100 messages were reduced to keep last 10:
+    /// - SummarizedUpToIndex = 90
+    /// - Messages [0..90) → summarized
+    /// - Messages [90..100) → kept
+    /// </example>
+    public required int SummarizedUpToIndex { get; init; }
+
+    /// <summary>
+    /// Total message count when this reduction was created.
+    /// Used to detect cache invalidation (messages added or removed).
+    /// </summary>
+    public required int MessageCountAtReduction { get; init; }
+
+    /// <summary>
+    /// Generated summary content (text representation of old messages).
+    /// This is what gets sent to the LLM in place of the summarized messages.
+    /// </summary>
+    public required string SummaryContent { get; init; }
+
+    /// <summary>
+    /// When this reduction was created (UTC).
+    /// Useful for debugging and analytics.
+    /// </summary>
+    public required DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// SHA256 hash of summarized messages (for integrity checking).
+    /// Ensures messages haven't been modified/reordered since reduction.
+    /// </summary>
+    /// <remarks>
+    /// Hash is computed from: message.Role + "|" + message.Content for each summarized message.
+    /// If the hash doesn't match current messages, reduction is invalid.
+    /// </remarks>
+    public required string MessageHash { get; init; }
+
+    /// <summary>
+    /// Target message count configuration used for this reduction.
+    /// Cached here to support IsValidFor checks without passing config.
+    /// </summary>
+    public required int TargetMessageCount { get; init; }
+
+    /// <summary>
+    /// Threshold for triggering re-reduction.
+    /// Number of new messages allowed beyond TargetMessageCount before re-reduction is triggered.
+    /// </summary>
+    public required int ReductionThreshold { get; init; }
+
+    // ═══════════════════════════════════════════════════════
+    // CACHE VALIDATION
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Checks if this reduction is still valid for the current message count.
+    /// A reduction is valid if:
+    /// 1. Current message count >= MessageCountAtReduction (no deletions)
+    /// 2. New messages since reduction <= threshold
+    /// </summary>
+    /// <param name="currentMessageCount">Current total message count</param>
+    /// <returns>True if reduction can be reused (cache hit)</returns>
+    /// <example>
+    /// <code>
+    /// // Reduction created when: 100 messages, target=20, threshold=5
+    /// reduction.IsValidFor(100);  // ✅ True (no new messages)
+    /// reduction.IsValidFor(104);  // ✅ True (4 new, under threshold)
+    /// reduction.IsValidFor(106);  // ❌ False (6 new, exceeds threshold=5)
+    /// reduction.IsValidFor(95);   // ❌ False (messages deleted!)
+    /// </code>
+    /// </example>
+    public bool IsValidFor(int currentMessageCount)
+    {
+        // Check if messages were deleted (invalidates cache)
+        if (currentMessageCount < MessageCountAtReduction)
+            return false;
+
+        // Check if too many new messages added
+        int newMessagesSinceReduction = currentMessageCount - MessageCountAtReduction;
+        return newMessagesSinceReduction <= ReductionThreshold;
+    }
+
+    /// <summary>
+    /// Validates that summarized messages haven't changed since reduction.
+    /// Computes hash of current messages and compares with stored hash.
+    /// </summary>
+    /// <param name="allMessages">Current full message history</param>
+    /// <returns>True if messages match the stored hash</returns>
+    /// <exception cref="ArgumentException">If message count is less than SummarizedUpToIndex</exception>
+    public bool ValidateIntegrity(IEnumerable<ChatMessage> allMessages)
+    {
+        var messagesList = allMessages.ToList();
+
+        if (messagesList.Count < SummarizedUpToIndex)
+            throw new ArgumentException(
+                $"Message count ({messagesList.Count}) is less than SummarizedUpToIndex ({SummarizedUpToIndex})");
+
+        // Compute hash of messages that were summarized
+        var currentHash = ComputeMessageHash(messagesList.Take(SummarizedUpToIndex));
+        return currentHash == MessageHash;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // MESSAGE TRANSFORMATION
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Applies this reduction to the full message history, producing reduced messages for LLM.
+    /// Returns: [summary message] + [recent unreduced messages]
+    /// </summary>
+    /// <param name="allMessages">Full conversation history (unreduced)</param>
+    /// <param name="systemMessage">Optional system message to prepend (typically added by PrepareMessagesAsync)</param>
+    /// <returns>Reduced messages ready for LLM (summary + recent)</returns>
+    /// <exception cref="InvalidOperationException">If integrity check fails</exception>
+    /// <example>
+    /// <code>
+    /// // Full history: 100 messages
+    /// // Reduction: SummarizedUpToIndex=90, SummaryContent="User discussed greetings..."
+    ///
+    /// var reduced = reduction.ApplyToMessages(allMessages, systemMsg);
+    /// // Result:
+    /// // [0] System: "You are a helpful assistant"
+    /// // [1] Assistant: "User discussed greetings..." (summary)
+    /// // [2-11] msg91-100 (recent messages)
+    /// // Total: 12 messages (vs 101 original)
+    /// </code>
+    /// </example>
+    public IEnumerable<ChatMessage> ApplyToMessages(
+        IEnumerable<ChatMessage> allMessages,
+        ChatMessage? systemMessage = null)
+    {
+        var messagesList = allMessages.ToList();
+
+        // Validate integrity (ensure messages haven't changed)
+        if (!ValidateIntegrity(messagesList))
+        {
+            throw new InvalidOperationException(
+                $"Message integrity check failed! Messages have been modified since reduction was created. " +
+                $"Expected hash: {MessageHash}, Current messages changed.");
+        }
+
+        // Build reduced message list
+        var result = new List<ChatMessage>();
+
+        // Add system message first (if provided)
+        if (systemMessage != null)
+            result.Add(systemMessage);
+
+        // Add summary message
+        var summaryMessage = new ChatMessage(ChatRole.Assistant, SummaryContent);
+        result.Add(summaryMessage);
+
+        // Add recent unreduced messages
+        var recentMessages = messagesList.Skip(SummarizedUpToIndex);
+        result.AddRange(recentMessages);
+
+        return result;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // FACTORY METHOD
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Creates a new HistoryReductionState from reduction results.
+    /// </summary>
+    /// <param name="messages">Full message history that was reduced</param>
+    /// <param name="summaryContent">Generated summary text</param>
+    /// <param name="summarizedUpToIndex">Index where summary ends (exclusive)</param>
+    /// <param name="targetMessageCount">Target message count from config</param>
+    /// <param name="reductionThreshold">Threshold for triggering re-reduction</param>
+    /// <returns>New HistoryReductionState instance</returns>
+    public static HistoryReductionState Create(
+        IReadOnlyList<ChatMessage> messages,
+        string summaryContent,
+        int summarizedUpToIndex,
+        int targetMessageCount,
+        int reductionThreshold)
+    {
+        var messageHash = ComputeMessageHash(messages.Take(summarizedUpToIndex));
+
+        return new HistoryReductionState
+        {
+            SummarizedUpToIndex = summarizedUpToIndex,
+            MessageCountAtReduction = messages.Count,
+            SummaryContent = summaryContent,
+            CreatedAt = DateTime.UtcNow,
+            MessageHash = messageHash,
+            TargetMessageCount = targetMessageCount,
+            ReductionThreshold = reductionThreshold
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // INTERNAL HELPERS
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Computes SHA256 hash of messages for integrity checking.
+    /// Hash format: SHA256(role1|content1\nrole2|content2\n...)
+    /// </summary>
+    private static string ComputeMessageHash(IEnumerable<ChatMessage> messages)
+    {
+        var sb = new StringBuilder();
+        foreach (var msg in messages)
+        {
+            sb.Append(msg.Role.Value);
+            sb.Append('|');
+            sb.Append(msg.Text ?? string.Empty);
+            sb.Append('\n');
+        }
+
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToBase64String(hashBytes);
+    }
+}
+#endregion

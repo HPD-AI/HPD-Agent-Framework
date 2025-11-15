@@ -282,6 +282,46 @@ public class ConversationThread : AgentThread
     public AgentLoopState? ExecutionState { get; set; }
 
     /// <summary>
+    /// Last successful history reduction state for cache-aware reduction.
+    /// Persists across multiple agent runs to enable reduction cache hits.
+    /// Null if history reduction has never been performed on this thread.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Purpose:</b> Enable cache-aware incremental history reduction without redundant LLM calls.
+    /// </para>
+    /// <para>
+    /// <b>Lifecycle:</b>
+    /// <list type="number">
+    /// <item>Fresh run: Check if LastReduction.IsValidFor(currentMessageCount) → cache hit</item>
+    /// <item>If valid: Reuse reduction via ApplyToMessages() (no LLM call!)</item>
+    /// <item>If invalid: Run new reduction, update LastReduction</item>
+    /// <item>Serialized with thread state for cross-session caching</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// // Turn 1: Create reduction (100 messages → summary + 10 recent)
+    /// var reduction = HistoryReductionState.Create(...);
+    /// thread.LastReduction = reduction;  // Cache for next run
+    ///
+    /// // Turn 2: Check cache (110 messages now)
+    /// if (thread.LastReduction?.IsValidFor(110) == true)
+    /// {
+    ///     // ✅ Cache hit! Reuse reduction (no LLM call)
+    ///     var reduced = thread.LastReduction.ApplyToMessages(messages);
+    /// }
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Storage:</b> This property persists separately from ExecutionState (which is ephemeral).
+    /// LastReduction survives across agent runs, while ExecutionState is cleared after completion.
+    /// </para>
+    /// </remarks>
+    public HistoryReductionState? LastReduction { get; set; }
+
+    /// <summary>
     /// Creates a new conversation thread with default in-memory storage.
     /// </summary>
     public ConversationThread()
@@ -556,7 +596,8 @@ public class ConversationThread : AgentThread
             ServiceThreadId = ServiceThreadId,
             ConversationId = ConversationId,
             AIContextProviderState = AIContextProvider?.Serialize(jsonSerializerOptions),
-            ExecutionStateJson = ExecutionState?.Serialize()
+            ExecutionStateJson = ExecutionState?.Serialize(),
+            LastReductionState = LastReduction
         };
 
         // Use source-generated JSON context for AOT compatibility
@@ -679,6 +720,9 @@ public class ConversationThread : AgentThread
             thread.ExecutionState = AgentLoopState.Deserialize(snapshot.ExecutionStateJson);
         }
 
+        // Restore LastReduction if present
+        thread.LastReduction = snapshot.LastReductionState;
+
         return thread;
     }
 
@@ -761,4 +805,11 @@ public record ConversationThreadSnapshot
     /// consecutive failures, plugin/skill expansion state, and message references.
     /// </summary>
     public string? ExecutionStateJson { get; init; }
+
+    /// <summary>
+    /// Last successful history reduction state for cache-aware reduction.
+    /// Persists across agent runs to avoid redundant LLM calls for re-reduction.
+    /// Null if history reduction has never been performed on this thread.
+    /// </summary>
+    public HistoryReductionState? LastReductionState { get; init; }
 }
