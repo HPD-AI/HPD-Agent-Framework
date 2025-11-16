@@ -3802,7 +3802,11 @@ internal class FunctionCallProcessor
             {
                 if (ctx.Function is null)
                 {
-                    ctx.Result = $"Function '{ctx.FunctionName}' not found.";
+                    // Generate a more descriptive error message if this is a scoped function
+                    ctx.Result = GenerateFunctionNotFoundMessage(
+                        ctx.FunctionName,
+                        ctx.State?.expandedScopedPluginContainers ?? ImmutableHashSet<string>.Empty,
+                        ctx.State?.ExpandedSkillContainers ?? ImmutableHashSet<string>.Empty);
                     return;
                 }
 
@@ -3949,6 +3953,74 @@ internal class FunctionCallProcessor
             // Full exception still available via FunctionResultContent.Exception
             return $"Error: Function '{functionName}' failed.";
         }
+    }
+
+    /// <summary>
+    /// Generates a descriptive error message when a function is not found.
+    /// If the function belongs to a scoped plugin or skill that hasn't been expanded, provides guidance to call the container first.
+    /// Handles the case where a function can belong to BOTH a plugin container AND a skill container.
+    /// </summary>
+    private string GenerateFunctionNotFoundMessage(
+        string functionName,
+        ImmutableHashSet<string> expandedPlugins,
+        ImmutableHashSet<string> expandedSkills)
+    {
+        // Check if this function belongs to a scoped plugin by searching all registered tools
+        if (_serverConfiguredTools != null)
+        {
+            foreach (var tool in _serverConfiguredTools)
+            {
+                if (tool is AIFunction func &&
+                    string.Equals(func.Name, functionName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Found the function in registered tools
+                    // A function can belong to BOTH a plugin container AND a skill container
+                    var unexpandedContainers = new List<string>();
+
+                    // Check if it belongs to a scoped plugin
+                    if (func.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginObj) == true &&
+                        parentPluginObj is string parentPlugin &&
+                        !string.IsNullOrEmpty(parentPlugin))
+                    {
+                        // Check if this plugin has already been expanded
+                        if (!expandedPlugins.Contains(parentPlugin))
+                        {
+                            unexpandedContainers.Add(parentPlugin);
+                        }
+                    }
+
+                    // Check if it belongs to a skill container (ParentSkillContainer)
+                    if (func.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var skillContainerObj) == true &&
+                        skillContainerObj is string skillContainer &&
+                        !string.IsNullOrEmpty(skillContainer))
+                    {
+                        // Check if this skill container has already been expanded
+                        if (!expandedSkills.Contains(skillContainer))
+                        {
+                            unexpandedContainers.Add(skillContainer);
+                        }
+                    }
+
+                    // Generate appropriate error message based on what containers exist
+                    if (unexpandedContainers.Count > 0)
+                    {
+                        if (unexpandedContainers.Count == 1)
+                        {
+                            return $"Function '{functionName}' is not currently available. It belongs to the '{unexpandedContainers[0]}' container. Call {unexpandedContainers[0]}() first to unlock this function.";
+                        }
+                        else
+                        {
+                            // Multiple containers - list them all
+                            var containerList = string.Join(" or ", unexpandedContainers.Select(c => $"{c}()"));
+                            return $"Function '{functionName}' is not currently available. It can be unlocked by calling one of these containers: {containerList}.";
+                        }
+                    }
+                }
+            }
+        }
+
+        // Default error message - function truly doesn't exist
+        return $"Function '{functionName}' not found.";
     }
 
     /// <summary>

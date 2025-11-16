@@ -69,7 +69,7 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(ILoggerFacto
         Provider = new ProviderConfig
         {
             ProviderKey = "openrouter",
-            ModelName = "z-ai/glm-4.6", // 🧠 Reasoning model - FREE on OpenRouter!
+            ModelName = "google/gemini-2.5-pro", // 🧠 Reasoning model - FREE on OpenRouter!
         },
         DynamicMemory = new DynamicMemoryConfig
         {
@@ -96,10 +96,8 @@ static Task<(Project, ConversationThread, Agent)> CreateAIAssistant(ILoggerFacto
     // ✨ BUILD AGENT - NO .WithAPIConfiguration() NEEDED!
     // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
-        .WithLogging()
         .WithPlugin<MathPlugin>()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
         .WithPlugin<FinancialAnalysisPlugin>()
-        .WithPlanMode() // ✨ Plan model support
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
         .Build();
 
