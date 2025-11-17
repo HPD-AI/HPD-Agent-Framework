@@ -78,6 +78,8 @@ public sealed record ToolMessage : BaseMessage;
 [JsonDerivedType(typeof(ToolCallResultEvent), "TOOL_CALL_RESULT")]
 [JsonDerivedType(typeof(StateSnapshotEvent), "STATE_SNAPSHOT")]
 [JsonDerivedType(typeof(StateDeltaEvent), "STATE_DELTA")]
+[JsonDerivedType(typeof(FunctionPermissionRequestEvent), "function")]
+[JsonDerivedType(typeof(ContinuationPermissionRequestEvent), "continuation")]
 [JsonDerivedType(typeof(CustomEvent), "CUSTOM")]
 [JsonDerivedType(typeof(RawEvent), "RAW")]
 [JsonDerivedType(typeof(MessagesSnapshotEvent), "MESSAGES_SNAPSHOT")]
@@ -318,6 +320,9 @@ public sealed record Context
     [JsonPropertyName("data")]
     public required JsonElement Data { get; init; }
 }
+
+// Permission Events defined in /Permissions/PermissionEvents.cs
+// (FunctionPermissionRequestEvent, ContinuationPermissionRequestEvent)
 
 // AOT-compatible interface
 public interface IAGUIAgent

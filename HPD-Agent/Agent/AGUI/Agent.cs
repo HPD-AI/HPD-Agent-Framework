@@ -210,6 +210,21 @@ internal static class EventStreamAdapter
                 InternalToolCallEndEvent e => EventSerialization.CreateToolCallEnd(e.CallId),
                 InternalToolCallResultEvent e => EventSerialization.CreateToolCallResult(e.CallId, e.Result),
 
+                // PERMISSION events (Human-in-the-Loop)
+                InternalPermissionRequestEvent e => EventSerialization.CreateFunctionPermissionRequest(
+                    e.PermissionId,
+                    e.FunctionName,
+                    e.Description ?? "",
+                    e.Arguments?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value) ?? new Dictionary<string, object?>(),
+                    new[] { PermissionScope.Conversation, PermissionScope.Project, PermissionScope.Global }),
+
+                InternalContinuationRequestEvent e => EventSerialization.CreateContinuationPermissionRequest(
+                    e.ContinuationId,
+                    e.CurrentIteration,
+                    e.MaxIterations,
+                    Array.Empty<string>(),  // Would need to track completed functions elsewhere
+                    ""),  // Would need to track elapsed time elsewhere
+
                 _ => null // Unknown event type
             };
 

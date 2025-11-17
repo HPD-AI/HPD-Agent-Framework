@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using HPD.Agent;
@@ -760,8 +761,195 @@ public static partial class NativeExports
     }
 
     // ════════════════════════════════════════════════════════════════════════════
+    // AGUI PROTOCOL ADAPTER APIs
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Creates an AGUI protocol agent from config JSON.
+    /// AGUI agents communicate using AG-UI protocol (RunAgentInput → BaseEvent stream).
+    /// </summary>
+    /// <param name="configJsonPtr">Pointer to UTF-8 encoded JSON of AgentConfig</param>
+    /// <returns>Handle to the created AGUI Agent, or IntPtr.Zero on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "create_agui_agent")]
+    public static IntPtr CreateAguiAgent(IntPtr configJsonPtr)
+    {
+        try
+        {
+            string? configJson = Marshal.PtrToStringUTF8(configJsonPtr);
+            if (string.IsNullOrEmpty(configJson)) return IntPtr.Zero;
+
+            // Deserialize agent config
+            var config = JsonSerializer.Deserialize(configJson, HPDFFIJsonContext.Default.AgentConfig);
+            if (config == null) return IntPtr.Zero;
+
+            // Create AGUI agent using AgentBuilder
+            var aguiAgent = new AgentBuilder(config)
+                .BuildAGUI();  // Returns HPD.Agent.AGUI.Agent
+
+            return ObjectManager.Add(aguiAgent);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to create AGUI agent: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            return IntPtr.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Destroys an AGUI agent and releases its resources.
+    /// </summary>
+    /// <param name="aguiAgentHandle">Handle to the AGUI agent to destroy</param>
+    [UnmanagedCallersOnly(EntryPoint = "destroy_agui_agent")]
+    public static void DestroyAguiAgent(IntPtr aguiAgentHandle)
+    {
+        ObjectManager.Remove(aguiAgentHandle);
+    }
+
+    /// <summary>
+    /// Runs an AGUI agent with RunAgentInput and streams AGUI BaseEvent events via callback.
+    /// This implements the official AG-UI protocol streaming pattern.
+    /// </summary>
+    /// <param name="aguiAgentHandle">Handle to the AGUI agent</param>
+    /// <param name="inputJsonPtr">Pointer to UTF-8 encoded JSON of RunAgentInput</param>
+    /// <param name="callbackPtr">Callback function to invoke for each AGUI event</param>
+    /// <param name="context">User context pointer passed back to callback</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "run_agui_agent_streaming")]
+    public static int RunAguiAgentStreaming(
+        IntPtr aguiAgentHandle,
+        IntPtr inputJsonPtr,
+        IntPtr callbackPtr,
+        IntPtr context)
+    {
+        try
+        {
+            var aguiAgent = ObjectManager.Get<HPD.Agent.AGUI.Agent>(aguiAgentHandle);
+            if (aguiAgent == null) return 0;
+
+            string? inputJson = Marshal.PtrToStringUTF8(inputJsonPtr);
+            if (string.IsNullOrEmpty(inputJson)) return 0;
+
+            if (callbackPtr == IntPtr.Zero) return 0;
+
+            // Deserialize AGUI RunAgentInput
+            var runInput = JsonSerializer.Deserialize(inputJson, HPDFFIJsonContext.Default.RunAgentInput);
+            if (runInput == null) return 0;
+
+            // Marshal the callback
+            var callback = Marshal.GetDelegateForFunctionPointer<StreamCallback>(callbackPtr);
+
+            // Create channel for AGUI events
+            var channel = Channel.CreateUnbounded<BaseEvent>();
+
+            // Run agent in background and stream events
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    // Start agent execution (writes to channel)
+                    var aguiTask = aguiAgent.RunAsync(runInput, channel.Writer);
+
+                    // Stream events from channel to callback
+                    await foreach (var aguiEvent in channel.Reader.ReadAllAsync())
+                    {
+                        // Serialize AGUI event using EventSerialization helper
+                        var eventJson = EventSerialization.SerializeEvent(aguiEvent);
+                        var eventPtr = MarshalString(eventJson);
+
+                        try
+                        {
+                            // Invoke callback with AGUI event
+                            callback(context, eventPtr);
+                        }
+                        finally
+                        {
+                            // Free the event string
+                            Marshal.FreeHGlobal(eventPtr);
+                        }
+                    }
+
+                    // Wait for agent to complete
+                    await aguiTask;
+
+                    // Signal end of stream with null pointer
+                    callback(context, IntPtr.Zero);
+                }
+                catch (Exception ex)
+                {
+                    // Create AGUI error event
+                    var errorEvent = EventSerialization.CreateRunError(ex.Message);
+                    var errorJson = EventSerialization.SerializeEvent(errorEvent);
+                    var errorPtr = MarshalString(errorJson);
+
+                    try
+                    {
+                        callback(context, errorPtr);
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(errorPtr);
+                    }
+
+                    // Signal end of stream
+                    callback(context, IntPtr.Zero);
+                }
+            });
+
+            task.Wait();
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to run AGUI agent streaming: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Sends a filter response to an AGUI agent (for permission handling, continuation, etc.).
+    /// This enables bidirectional communication for human-in-the-loop workflows.
+    /// </summary>
+    /// <param name="aguiAgentHandle">Handle to the AGUI agent</param>
+    /// <param name="filterIdPtr">Pointer to UTF-8 encoded filter/permission ID</param>
+    /// <param name="responseJsonPtr">Pointer to UTF-8 encoded JSON of InternalAgentEvent response</param>
+    /// <returns>1 on success, 0 on failure</returns>
+    [UnmanagedCallersOnly(EntryPoint = "agui_send_filter_response")]
+    public static int AguiSendFilterResponse(
+        IntPtr aguiAgentHandle,
+        IntPtr filterIdPtr,
+        IntPtr responseJsonPtr)
+    {
+        try
+        {
+            var aguiAgent = ObjectManager.Get<HPD.Agent.AGUI.Agent>(aguiAgentHandle);
+            if (aguiAgent == null) return 0;
+
+            string? filterId = Marshal.PtrToStringUTF8(filterIdPtr);
+            if (string.IsNullOrEmpty(filterId)) return 0;
+
+            string? responseJson = Marshal.PtrToStringUTF8(responseJsonPtr);
+            if (string.IsNullOrEmpty(responseJson)) return 0;
+
+            // Deserialize response event
+            var response = JsonSerializer.Deserialize(responseJson, HPDFFIJsonContext.Default.InternalAgentEvent);
+            if (response == null) return 0;
+
+            // Send response to agent
+            aguiAgent.SendFilterResponse(filterId, response);
+
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to send AGUI filter response: {ex.Message}");
+            return 0;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
     // Future APIs:
-    // - Protocol adapter exports (Microsoft.Agents.AI, AGUI)
     // - Advanced memory management APIs (optional user-facing CRUD)
     // - Provider discovery and management
     // ════════════════════════════════════════════════════════════════════════════
