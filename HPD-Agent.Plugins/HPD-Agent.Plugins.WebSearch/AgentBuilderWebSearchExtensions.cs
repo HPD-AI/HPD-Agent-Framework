@@ -26,12 +26,15 @@ public static class AgentBuilderWebSearchExtensions
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
         if (configure == null) throw new ArgumentNullException(nameof(configure));
-        
+
         var tavilyBuilder = new TavilyWebSearchBuilder(builder.Configuration);
         var configuredBuilder = configure(tavilyBuilder);
         var connector = ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)configuredBuilder).Build();
-        
-        return AddWebSearchConnector(builder, connector);
+
+        AddWebSearchConnector(builder, connector);
+
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
 
     /// <summary>
@@ -45,11 +48,14 @@ public static class AgentBuilderWebSearchExtensions
         if (builder == null) throw new ArgumentNullException(nameof(builder));
 
         // Defer building until FinalizeWebSearch() when configuration is available
-        return AddWebSearchBuilder(builder, (config) =>
+        AddWebSearchBuilder(builder, (config) =>
         {
             var tavilyBuilder = new TavilyWebSearchBuilder(config);
             return ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)tavilyBuilder).Build();
         });
+
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
     
     /// <summary>
@@ -68,7 +74,10 @@ public static class AgentBuilderWebSearchExtensions
         var configuredBuilder = configure(braveBuilder);
         var connector = ((IWebSearchProviderBuilder<IBraveWebSearchBuilder>)configuredBuilder).Build();
         
-        return AddWebSearchConnector(builder, connector);
+        AddWebSearchConnector(builder, connector);
+        
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
 
     /// <summary>
@@ -83,7 +92,10 @@ public static class AgentBuilderWebSearchExtensions
         var braveBuilder = new BraveWebSearchBuilder(builder.Configuration);
         var connector = ((IWebSearchProviderBuilder<IBraveWebSearchBuilder>)braveBuilder).Build();
         
-        return AddWebSearchConnector(builder, connector);
+        AddWebSearchConnector(builder, connector);
+        
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
     
     /// <summary>
@@ -102,7 +114,10 @@ public static class AgentBuilderWebSearchExtensions
         var configuredBuilder = configure(bingBuilder);
         var connector = ((IWebSearchProviderBuilder<IBingWebSearchBuilder>)configuredBuilder).Build();
         
-        return AddWebSearchConnector(builder, connector);
+        AddWebSearchConnector(builder, connector);
+        
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
 
     /// <summary>
@@ -117,7 +132,10 @@ public static class AgentBuilderWebSearchExtensions
         var bingBuilder = new BingWebSearchBuilder(builder.Configuration);
         var connector = ((IWebSearchProviderBuilder<IBingWebSearchBuilder>)bingBuilder).Build();
         
-        return AddWebSearchConnector(builder, connector);
+        AddWebSearchConnector(builder, connector);
+        
+        // Auto-finalize to register the plugin immediately
+        return FinalizeWebSearch(builder);
     }
     
     /// <summary>
@@ -178,11 +196,11 @@ public static class AgentBuilderWebSearchExtensions
 
     /// <summary>
     /// Finalizes web search configuration and creates the WebSearchPlugin with all configured providers.
-    /// This is called automatically by AgentBuilder.Build() when web search providers are configured.
+    /// This is called automatically by the With*WebSearch() extension methods.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <returns>The agent builder for chaining</returns>
-    internal static AgentBuilder FinalizeWebSearch(this AgentBuilder builder)
+    public static AgentBuilder FinalizeWebSearch(this AgentBuilder builder)
     {
         if (builder == null) throw new ArgumentNullException(nameof(builder));
 
@@ -229,10 +247,10 @@ public static class AgentBuilderWebSearchExtensions
     }
 
     /// <summary>
-    /// Cleanup method to remove temporary storage when agent is built
-    /// This should be called by the framework when the agent is finalized
+    /// Cleanup method to remove temporary storage when agent is built.
+    /// Called automatically by FinalizeWebSearch().
     /// </summary>
-    internal static void CleanupWebSearchStorage(AgentBuilder builder)
+    public static void CleanupWebSearchStorage(AgentBuilder builder)
     {
         _pendingConnectors.Remove(builder);
         _pendingBuilders.Remove(builder);

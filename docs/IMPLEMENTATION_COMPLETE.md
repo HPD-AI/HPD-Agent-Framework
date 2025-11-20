@@ -135,7 +135,6 @@ var skill = new SkillDefinition
 {
     Name = "Debugging",
     FunctionReferences = new[] { "FileSystemPlugin.ReadFile" }, // ← Runtime string!
-    ScopingMode = SkillScopingMode.Scoped
 };
 ```
 
@@ -148,7 +147,6 @@ public static Skill Debugging(SkillOptions? options = null)
         "Debug application issues",
         "Use ReadFile to examine logs...",
         FileSystemPlugin.ReadFile,  // ← Compile-time safe!
-        options: new SkillOptions { ScopingMode = SkillScopingMode.Scoped }
     );
 }
 ```

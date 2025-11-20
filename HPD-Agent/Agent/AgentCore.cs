@@ -1177,8 +1177,11 @@ internal sealed class AgentCore
                             state = state.EnableHistoryTracking(messageCountToSend);
                         }
 
-                        // Create assistant message for history WITHOUT reasoning (save tokens)
-                        var historyContents = assistantContents.Where(c => c is not TextReasoningContent).ToList();
+                        // Create assistant message for history
+                        // By default, exclude reasoning content to save tokens (configurable via PreserveReasoningInHistory)
+                        var historyContents = Config?.PreserveReasoningInHistory == true
+                            ? assistantContents.ToList()
+                            : assistantContents.Where(c => c is not TextReasoningContent).ToList();
 
                         // ✅ FIX: Add to history if there's ANY content (text OR tool calls)
                         // Previous code checked hasNonEmptyText which excluded tool-only messages
@@ -1420,7 +1423,7 @@ internal sealed class AgentCore
                     else
                     {
                         // No tools called - we're done
-                        var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
+                        var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
                         lastResponse = finalResponse;
 
                         // ✅ FIX: Add final assistant message to turnHistory BEFORE clearing responseUpdates
@@ -1588,7 +1591,7 @@ internal sealed class AgentCore
             // added after tool execution, causing message loss in multi-iteration scenarios.
             if (responseUpdates.Any())
             {
-                var finalResponse = ConstructChatResponseFromUpdates(responseUpdates);
+                var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
                 if (finalResponse.Messages.Count > 0)
                 {
                     var finalAssistantMessage = finalResponse.Messages[0];
@@ -1997,7 +2000,7 @@ internal sealed class AgentCore
     /// <summary>
     /// Constructs a final ChatResponse from collected streaming updates
     /// </summary>
-    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates)
+    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates, bool preserveReasoning = false)
     {
         // Collect all content from the updates
         var allContents = new List<AIContent>();
@@ -2018,8 +2021,9 @@ internal sealed class AgentCore
                     {
                         usage = usageContent.Details;
                     }
-                    // Only include TextContent in message (exclude TextReasoningContent to save tokens)
-                    else if (content is TextContent && content is not TextReasoningContent)
+                    // Include TextContent in message
+                    // By default, exclude TextReasoningContent to save tokens (configurable via preserveReasoning)
+                    else if (content is TextContent && (preserveReasoning || content is not TextReasoningContent))
                     {
                         allContents.Add(content);
                     }

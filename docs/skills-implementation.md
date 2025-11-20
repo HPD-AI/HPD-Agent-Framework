@@ -1470,7 +1470,6 @@ Skills worked like plugin scoping - functions hidden until skill expanded. This 
 We added `ScopingMode` property to allow developers to choose the right behavior:
 
 ```csharp
-public enum SkillScopingMode
 {
     /// <summary>
     /// Functions remain visible, skill provides instructions only (DEFAULT).
@@ -1493,7 +1492,6 @@ public enum SkillScopingMode
 ```csharp
 new SkillDefinition {
     Name = "DebuggingBasics",
-    ScopingMode = SkillScopingMode.InstructionOnly,  // Default
     FunctionReferences = new[] { "ReadFile", "WriteFile" },
     PostExpansionInstructions = "Use ReadFile for logs, WriteFile for notes"
 }
@@ -1535,7 +1533,6 @@ new SkillDefinition {
 ```csharp
 new SkillDefinition {
     Name = "AdvancedDatabaseMigration",
-    ScopingMode = SkillScopingMode.Scoped,  // Hide functions
     FunctionReferences = new[] { "ExecuteSQL", "BackupDB", "RollbackDB" },
     PostExpansionInstructions = "CRITICAL: Backup → Validate → Execute → Rollback if error"
 }
@@ -1588,7 +1585,6 @@ public class FileSystemPlugin
 // Skill hides ONLY the dangerous function
 new SkillDefinition {
     Name = "DangerousOps",
-    ScopingMode = SkillScopingMode.Scoped,
     FunctionReferences = new[] { "DeleteFile" }  // Only this one!
 }
 ```
@@ -1630,7 +1626,6 @@ public class SystemPlugin
 // Scope only dangerous operations
 new SkillDefinition {
     Name = "SystemAdministration",
-    ScopingMode = SkillScopingMode.Scoped,
     FunctionReferences = new[] {
         "KillProcess",      // Hide these
         "DeleteRegistry",   // Hide these
@@ -1659,7 +1654,6 @@ public class FileSystemPlugin { ... }
 
 new SkillDefinition {
     Name = "Debugging",
-    ScopingMode = SkillScopingMode.InstructionOnly,
     PluginReferences = new[] { "FileSystemPlugin" }
 }
 
@@ -1674,7 +1668,6 @@ new SkillDefinition {
 ```csharp
 new SkillDefinition {
     Name = "Debugging",
-    ScopingMode = SkillScopingMode.InstructionOnly,
     PluginReferences = new[] { "FileSystemPlugin" },
     SuppressPluginContainers = true  // Hide plugin container!
 }
@@ -1718,7 +1711,6 @@ public class FileSystemPlugin  // NO [PluginScope]
 
 new SkillDefinition {
     Name = "SafeFileOps",
-    ScopingMode = SkillScopingMode.Scoped,
     FunctionReferences = new[] { "DeleteFile" }  // Only hide this one
 }
 ```
@@ -1757,7 +1749,6 @@ public class FileSystemPlugin  // NO [PluginScope]
 
 new SkillDefinition {
     Name = "FileManagement",
-    ScopingMode = SkillScopingMode.InstructionOnly,  // Default
     FunctionReferences = new[] { "ReadFile", "WriteFile" }
 }
 ```
@@ -1793,7 +1784,6 @@ public class FileSystemPlugin
 
 new SkillDefinition {
     Name = "FileOps",
-    ScopingMode = SkillScopingMode.InstructionOnly,
     PluginReferences = new[] { "FileSystemPlugin" },
     SuppressPluginContainers = true  // Key!
 }
@@ -1828,7 +1818,6 @@ public class FileSystemPlugin
 
 new SkillDefinition {
     Name = "FileOps",
-    ScopingMode = SkillScopingMode.Scoped,
     PluginReferences = new[] { "FileSystemPlugin" }
 }
 ```
@@ -1873,7 +1862,6 @@ public class FileSystemPlugin
 
 new SkillDefinition {
     Name = "FileOps",
-    ScopingMode = SkillScopingMode.Scoped,
     PluginReferences = new[] { "FileSystemPlugin" },
     SuppressPluginContainers = true
 }
@@ -1903,7 +1891,6 @@ new SkillDefinition {
 
 **Files Modified:**
 
-1. **[SkillScopingMode.cs](../HPD-Agent/Skills/SkillScopingMode.cs)** - New enum (InstructionOnly, Scoped)
 
 2. **[SkillDefinition.cs](../HPD-Agent/Skills/SkillDefinition.cs):**
    - Added `ScopingMode` property (line 47)
@@ -1996,7 +1983,6 @@ if (hiddenBySkills.Count > 0)
 
 ### Examples
 
-See [Example_SkillScopingModes.cs](../HPD-Agent/Skills/Example_SkillScopingModes.cs) for comprehensive examples of all scoping modes.
 
 ---
 
@@ -2227,12 +2213,10 @@ var agent = AgentBuilder.Create()
 ```csharp
 .WithSkill(new SkillDefinition {
     Name = "SafeOps",
-    ScopingMode = SkillScopingMode.InstructionOnly,  // Functions always visible
     FunctionReferences = new[] { "ReadFile", "ListDirectory" }
 })
 .WithSkill(new SkillDefinition {
     Name = "DangerousOps",
-    ScopingMode = SkillScopingMode.Scoped,  // Functions hidden until expanded
     FunctionReferences = new[] { "DeleteFile", "ExecuteSQL" }
 })
 .EnableSkillsOnlyMode()

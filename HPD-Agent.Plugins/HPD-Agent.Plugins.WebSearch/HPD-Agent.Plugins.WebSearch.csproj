@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>HPD.Agent.Plugins.WebSearch</RootNamespace>
+
+    <!-- Package Metadata -->
+    <PackageId>HPD.Agent.Plugins.WebSearch</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>HPD-Agent Contributors</Authors>
+    <Description>Web search plugin for HPD-Agent. Provides AI functions for searching the web using Tavily, Brave, and Bing search APIs.</Description>
+    <PackageTags>ai;agent;websearch;search;plugin;hpd-agent;tavily;brave;bing</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/your-repo/HPD-Agent</RepositoryUrl>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core dependencies -->
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />
+
+    <!-- JSON Schema -->
+    <PackageReference Include="JsonSchema.Net.Generation" Version="4.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to core HPD-Agent project -->
+    <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

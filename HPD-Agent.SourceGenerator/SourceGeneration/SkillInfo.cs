@@ -75,11 +75,6 @@ internal class SkillInfo
 internal class SkillOptionsInfo
 {
     /// <summary>
-    /// Scoping mode: InstructionOnly or Scoped (OLD - kept for backwards compatibility)
-    /// </summary>
-    public string ScopingMode { get; set; } = "InstructionOnly";
-
-    /// <summary>
     /// Optional instruction document paths (OLD - kept for backwards compatibility)
     /// </summary>
     public List<string> InstructionDocuments { get; set; } = new();

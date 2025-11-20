@@ -193,7 +193,7 @@ Optional configuration for the skill:
 ```csharp
 options: new SkillOptions
 {
-    ScopingMode = SkillScopingMode.InstructionOnly,  // or Scoped
+    // Skills are always scoped by default,  // or Scoped
     AutoExpand = false,
     InstructionDocuments = new[] { "advanced_text_processing.md" },
     InstructionDocumentBaseDirectory = "skills/documents/"
@@ -206,7 +206,7 @@ options: new SkillOptions
 
 Skills support two scoping modes that control function visibility:
 
-### InstructionOnly Mode (Default)
+### default scoped mode (Default)
 
 Functions are **always visible**, skill just provides instructions when activated.
 
@@ -221,7 +221,7 @@ public static Skill BasicFileOps(SkillOptions? options = null)
         FileSystemPlugin.WriteFile,
         options: new SkillOptions
         {
-            ScopingMode = SkillScopingMode.InstructionOnly  // Default
+            // Skills are always scoped by default
         }
     );
 }
@@ -253,7 +253,7 @@ public static Skill DangerousOperations(SkillOptions? options = null)
         DatabasePlugin.DropTable,
         options: new SkillOptions
         {
-            ScopingMode = SkillScopingMode.Scoped  // Functions hidden!
+            // Skills are always scoped by default
         }
     );
 }
@@ -630,7 +630,7 @@ Code Review Workflow:
             // Options
             options: new SkillOptions
             {
-                ScopingMode = SkillScopingMode.InstructionOnly,
+                // Skills are always scoped by default,
                 InstructionDocuments = new[] { "code_review_checklist.md" }
             }
         );

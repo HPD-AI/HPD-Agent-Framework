@@ -52,11 +52,6 @@ public class AgentConfig
     public McpConfig? Mcp { get; set; }
 
     /// <summary>
-    /// Configuration for web search capabilities.
-    /// </summary>
-    public WebSearchConfig? WebSearch { get; set; }
-
-    /// <summary>
     /// Configuration for error handling behavior.
     /// </summary>
     public ErrorHandlingConfig? ErrorHandling { get; set; }
@@ -155,6 +150,31 @@ public class AgentConfig
     /// PerIteration is more durable but has higher overhead.
     /// </summary>
     public CheckpointFrequency CheckpointFrequency { get; set; } = CheckpointFrequency.PerTurn;
+
+    /// <summary>
+    /// Whether to preserve reasoning tokens (from models like o1, DeepSeek-R1) in conversation history.
+    /// Default: false (reasoning is shown during streaming but excluded from history to save tokens).
+    /// When true, reasoning content is included in history and available in future context.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Trade-offs:</b>
+    /// - false (default): Lower cost, smaller context - reasoning shown in UI but not in future prompts
+    /// - true: Higher cost, larger context - full reasoning preserved for complex multi-turn scenarios
+    /// </para>
+    /// <para>
+    /// <b>When to enable:</b>
+    /// - Research/debugging where full reasoning trace is needed
+    /// - Complex multi-turn reasoning where previous thoughts inform future responses
+    /// - Scenarios where preserving the model's thought process is critical
+    /// </para>
+    /// <para>
+    /// <b>Cost implications:</b>
+    /// Reasoning models can produce significant reasoning content (often 10x-50x the output length).
+    /// Including this in history means paying for those tokens on every subsequent request.
+    /// </para>
+    /// </remarks>
+    public bool PreserveReasoningInHistory { get; set; } = false;
 
     /// <summary>
     /// Enable pending writes support for partial failure recovery in parallel function execution.
@@ -460,33 +480,6 @@ public class ProviderConfig
                 $"Unexpected error parsing provider configuration for {typeof(T).Name}: {ex.Message}", ex);
         }
     }
-}
-
-/// <summary>
-/// Holds all web search related configurations.
-/// </summary>
-public class WebSearchConfig
-{
-    /// <summary>
-    /// The name of the default search provider to use if multiple are configured.
-    /// Should match one of the keys in the provider configs (e.g., "Tavily").
-    /// </summary>
-    public string? DefaultProvider { get; set; }
-
-    /// <summary>
-    /// Configuration for Tavily web search provider.
-    /// </summary>
-    public TavilyConfig? Tavily { get; set; }
-
-    /// <summary>
-    /// Configuration for Brave web search provider.
-    /// </summary>
-    public BraveConfig? Brave { get; set; }
-
-    /// <summary>
-    /// Configuration for Bing web search provider.
-    /// </summary>
-    public BingConfig? Bing { get; set; }
 }
 
 /// <summary>

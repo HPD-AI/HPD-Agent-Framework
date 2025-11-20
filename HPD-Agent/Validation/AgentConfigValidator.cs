@@ -81,31 +81,6 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
                 .WithMessage("MCP ManifestPath must be a valid file path.");
         });
 
-        // Web search configuration validation
-        When(config => config.WebSearch != null, () =>
-        {
-            When(config => config.WebSearch!.Tavily != null, () =>
-            {
-                RuleFor(config => config.WebSearch!.Tavily!.ApiKey)
-                    .NotEmpty()
-                    .WithMessage("Tavily API key is required when Tavily is configured.");
-            });
-
-            When(config => config.WebSearch!.Brave != null, () =>
-            {
-                RuleFor(config => config.WebSearch!.Brave!.ApiKey)
-                    .NotEmpty()
-                    .WithMessage("Brave API key is required when Brave is configured.");
-            });
-
-            When(config => config.WebSearch!.Bing != null, () =>
-            {
-                RuleFor(config => config.WebSearch!.Bing!.ApiKey)
-                    .NotEmpty()
-                    .WithMessage("Bing API key is required when Bing is configured.");
-            });
-        });
-
         // Error handling configuration validation
         When(config => config.ErrorHandling != null, () =>
         {

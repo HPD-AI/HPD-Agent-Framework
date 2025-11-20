@@ -340,12 +340,6 @@ internal static class SkillAnalyzer
 
                     switch (propertyName)
                     {
-                        case "ScopingMode":
-                            var scopingValue = (value as MemberAccessExpressionSyntax)?.Name.Identifier.ValueText;
-                            if (scopingValue != null)
-                                options.ScopingMode = scopingValue;
-                            break;
-
                         case "InstructionDocuments":
                             // Extract array of strings
                             if (value is ArrayCreationExpressionSyntax arrayCreation &&

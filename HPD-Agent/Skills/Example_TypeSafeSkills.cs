@@ -37,7 +37,8 @@ Use this skill to perform basic file operations:
     }
 
     /// <summary>
-    /// Example of a scoped skill (functions hidden until activated)
+    /// Example of a skill with options
+    /// Note: Skills are always scoped - functions are hidden until skill is activated
     /// </summary>
     public static Skill FileDiscoveryExample(SkillOptions? options = null)
     {
@@ -50,18 +51,14 @@ Use this skill to discover files:
 2. Use ListDirectory to explore directory contents
 3. Respect .gitignore rules when searching
 ",
-            options: new SkillOptions
-            {
-                ScopingMode = SkillScopingMode.Scoped, // Functions hidden until skill activated
-                AutoExpand = false
-            },
+            options: options ?? new SkillOptions(),
             FileSystemPlugin.SearchFiles,
             FileSystemPlugin.ListDirectory
         );
     }
 
     /// <summary>
-    /// Example of a skill with instruction documents (to be loaded from filesystem)
+    /// Example of a skill with document references
     /// </summary>
     public static Skill AdvancedFileEditingExample(SkillOptions? options = null)
     {
@@ -69,12 +66,8 @@ Use this skill to discover files:
             name: "AdvancedFileEditing",
             description: "Advanced file editing with diff and patch capabilities",
             instructions: "See instruction documents for detailed editing workflows",
-            options: new SkillOptions
-            {
-                ScopingMode = SkillScopingMode.InstructionOnly,
-                InstructionDocuments = new[] { "advanced_editing.md" },
-                InstructionDocumentBaseDirectory = "skills/documents/"
-            },
+            options: new SkillOptions()
+                .AddDocument("advanced_editing", "Advanced editing techniques and workflows"),
             FileSystemPlugin.ReadFile,
             FileSystemPlugin.WriteFile,
             FileSystemPlugin.EditFile

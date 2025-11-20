@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using HPD.Agent.Plugins.FileSystem;
 using HPD.Agent;
 
 // ═══════════════════════════════════════════════════════════════
@@ -33,7 +32,7 @@ Console.WriteLine();
 await RunInteractiveChat(agent, thread);
 
 // ✨ CONFIG-FIRST APPROACH: Using AgentConfig pattern with AUTO-CONFIGURATION
-static Task<(ConversationThread, Agent)> CreateAIAssistant(ILoggerFactory loggerFactory)
+static Task<(ConversationThread, AgentCore)> CreateAIAssistant(ILoggerFactory loggerFactory)
 {
     // ✨ CREATE SERVICE PROVIDER WITH LOGGER FACTORY
     var services = new ServiceCollection();
@@ -70,15 +69,20 @@ static Task<(ConversationThread, Agent)> CreateAIAssistant(ILoggerFactory logger
             Enabled = true,              // Scope C# plugins (MathPlugin, etc.)      // Scope MCP tools by server (MCP_filesystem, MCP_github, etc.)
             ScopeFrontendTools = false,   // Scope Frontend/AGUI tools (FrontendTools container)
             MaxFunctionNamesInDescription = 10  // Max function names shown in container descriptions
-        }
+        },
+        // 💭 Reasoning Token Preservation: Controls whether reasoning from models like o1/Gemini is saved in history
+        // Default: false (reasoning shown in UI but excluded from history to save tokens/cost)
+        // Set to true: Reasoning preserved in conversation history for complex multi-turn scenarios
+        PreserveReasoningInHistory = true  // 🧪 Try setting to true to preserve reasoning tokens!
     };
 
     // ✨ BUILD CORE AGENT - Direct access to internal Agent class
     // Auto-loads from appsettings.json, environment variables, and user secrets
     var agent = new AgentBuilder(agentConfig)
-        .WithPlugin<MathPlugin>()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
+        .WithPlanMode()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
         .WithPlugin<FinancialAnalysisPlugin>()
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
+        .WithLogging()
         .BuildCoreAgent();  // ✨ Build CORE agent (internal access via InternalsVisibleTo)
 
     // 💬 Create thread using agent directly
@@ -94,7 +98,7 @@ static Task<(ConversationThread, Agent)> CreateAIAssistant(ILoggerFactory logger
 }
 
 // 🎯 Interactive Chat Loop using CORE agent.RunAsync with InternalAgentEvent stream
-static async Task RunInteractiveChat(Agent agent, ConversationThread thread)
+static async Task RunInteractiveChat(AgentCore agent, ConversationThread thread)
 {
     Console.WriteLine("==========================================");
     Console.WriteLine("🤖 Interactive Chat Mode (Core Agent)");

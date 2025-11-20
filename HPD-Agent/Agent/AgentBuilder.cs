@@ -1034,9 +1034,6 @@ public class AgentBuilder
         // Dynamic Memory registration is handled by WithDynamicMemory() extension method
         // No need to register here in Build() - the extension already adds filter and plugin
 
-        // Automatically finalize web search configuration if providers were configured
-        AgentBuilderWebSearchExtensions.FinalizeWebSearch(this);
-
         // Create plugin functions using per-plugin contexts and merge with default options
         var pluginFunctions = new List<AIFunction>();
         foreach (var registration in _pluginManager.GetPluginRegistrations())
@@ -1552,9 +1549,10 @@ public class AgentBuilder
     public string AgentName => _config.Name;
 
     /// <summary>
-    /// Internal access to configuration for extension methods
+    /// Gets the configuration instance for this builder (if provided).
+    /// Used by extension methods and plugins to access configuration values.
     /// </summary>
-    internal IConfiguration? Configuration => _configuration;
+    public IConfiguration? Configuration => _configuration;
 
     /// <summary>
     /// Internal access to config object for extension methods

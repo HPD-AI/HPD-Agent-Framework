@@ -9,7 +9,6 @@ Complete API reference for the HPD-Agent Skill System.
 1. [Core Types](#core-types)
    - [Skill](#skill)
    - [SkillOptions](#skilloptions)
-   - [SkillScopingMode](#skillscopingmode)
 2. [Factory Methods](#factory-methods)
    - [SkillFactory.Create](#skillfactorycreate)
 3. [Source Generator](#source-generator)
@@ -90,7 +89,6 @@ Configuration options for skill behavior.
 ```csharp
 public class SkillOptions
 {
-    public SkillScopingMode ScopingMode { get; set; } = SkillScopingMode.InstructionOnly;
     public bool AutoExpand { get; set; } = false;
     public string[]? InstructionDocuments { get; set; }
     public string InstructionDocumentBaseDirectory { get; set; } = "skills/documents/";
@@ -101,7 +99,6 @@ public class SkillOptions
 
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
-| `ScopingMode` | `SkillScopingMode` | `InstructionOnly` | Controls function visibility behavior |
 | `AutoExpand` | `bool` | `false` | Whether skill auto-expands at conversation start |
 | `InstructionDocuments` | `string[]?` | `null` | Paths to additional instruction documents |
 | `InstructionDocumentBaseDirectory` | `string` | `"skills/documents/"` | Base directory for instruction documents |
@@ -109,7 +106,7 @@ public class SkillOptions
 **Usage:**
 
 ```csharp
-// Default options (InstructionOnly mode)
+// Default options (default scoped mode)
 var skill = SkillFactory.Create(
     "MySkill",
     "Description",
@@ -124,7 +121,6 @@ var skill = SkillFactory.Create(
     "Instructions",
     new SkillOptions
     {
-        ScopingMode = SkillScopingMode.Scoped,
         AutoExpand = true,
         InstructionDocuments = new[] { "debugging_guide.md", "troubleshooting.md" },
         InstructionDocumentBaseDirectory = "docs/skills/"
@@ -136,7 +132,6 @@ var skill = SkillFactory.Create(
 
 ---
 
-### SkillScopingMode
 
 Enum controlling function visibility behavior.
 
@@ -144,7 +139,6 @@ Enum controlling function visibility behavior.
 
 **Definition:**
 ```csharp
-public enum SkillScopingMode
 {
     InstructionOnly = 0,
     Scoped = 1
@@ -182,7 +176,6 @@ var scopedSkill = SkillFactory.Create(
     "file_debugging",
     "Debug file issues",
     "Use these tools to debug...",
-    new SkillOptions { ScopingMode = SkillScopingMode.Scoped },
     FileSystemPlugin.ReadFile,
     FileSystemPlugin.WriteFile
 );
@@ -275,7 +268,6 @@ public static Skill FileDebugging(SkillOptions? options = null)
         "Use these tools to investigate file problems...",
         options ?? new SkillOptions
         {
-            ScopingMode = SkillScopingMode.Scoped,
             AutoExpand = false
         },
         FileSystemPlugin.ReadFile,
@@ -303,7 +295,6 @@ SkillFactory.Create(
     "skill_name",
     "description",
     "instructions",
-    new SkillOptions { ScopingMode = SkillScopingMode.Scoped },
     Plugin.Function1,
     Plugin.Function2
 );
@@ -315,7 +306,6 @@ SkillFactory.Create(
     "instructions",
     Plugin.Function1,
     Plugin.Function2,
-    options: new SkillOptions { ScopingMode = SkillScopingMode.Scoped }
 );
 ```
 

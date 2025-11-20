@@ -52,7 +52,6 @@ using HPD.Agent;
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(McpConfig))]
-[JsonSerializable(typeof(WebSearchConfig))]
 
 // --- Conversation and messaging types ---
 [JsonSerializable(typeof(ChatMessage))]

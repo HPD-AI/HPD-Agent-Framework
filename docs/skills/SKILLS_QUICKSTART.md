@@ -76,7 +76,7 @@ Always verify file paths exist before performing operations.",
 - Creates a skill named `file_debugging`
 - Bundles three file system functions together
 - Provides instructions for when to use these tools
-- Uses default options (InstructionOnly mode)
+- Uses default options (default scoped mode)
 
 ---
 
@@ -173,7 +173,7 @@ public static Skill FileDebugging(SkillOptions? options = null)
 3. ListDirectory - Check directory structure",
         options ?? new SkillOptions
         {
-            ScopingMode = SkillScopingMode.Scoped
+            // Skills are always scoped by default
         },
         FileSystemPlugin.ReadFile,
         FileSystemPlugin.WriteFile,
@@ -309,7 +309,7 @@ public static Skill FileDebugging(SkillOptions? options = null)
         "Instructions...",
         options ?? new SkillOptions // Default if not provided
         {
-            ScopingMode = SkillScopingMode.InstructionOnly,
+            // Skills are always scoped by default,
             AutoExpand = false
         },
         FileSystemPlugin.ReadFile,
@@ -319,7 +319,7 @@ public static Skill FileDebugging(SkillOptions? options = null)
 
 // Usage:
 var skill1 = FileDebugging(); // Uses defaults
-var skill2 = FileDebugging(new SkillOptions { ScopingMode = SkillScopingMode.Scoped }); // Custom
+var skill2 = FileDebugging(new SkillOptions { // Skills are always scoped by default}); // Custom
 ```
 
 ---
@@ -388,7 +388,7 @@ public static Skill SkillName(SkillOptions? options = null)
 ```csharp
 new SkillOptions
 {
-    ScopingMode = SkillScopingMode.Scoped,  // or InstructionOnly
+    // Skills are always scoped by default,  // or InstructionOnly
     AutoExpand = false,                      // or true
     InstructionDocuments = new[] { "doc.md" },
     InstructionDocumentBaseDirectory = "docs/"
@@ -441,7 +441,7 @@ public static partial class QuickStartSkills
 - Use relative paths when possible",
             options ?? new SkillOptions
             {
-                ScopingMode = SkillScopingMode.InstructionOnly,
+                // Skills are always scoped by default,
                 AutoExpand = false
             },
             FileSystemPlugin.ReadFile,
@@ -528,8 +528,8 @@ builder.AddPlugin<MySkills>();
 
 ### Runtime Issue: Functions Hidden
 ```csharp
-// Change to InstructionOnly mode:
-new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly }
+// Change to default scoped mode:
+new SkillOptions { // Skills are always scoped by default}
 ```
 
 ---

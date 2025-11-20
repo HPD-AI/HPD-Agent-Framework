@@ -422,7 +422,7 @@ Activate both the skill AND the plugin:
 ```
 
 **Better Solution:**
-If skill should reveal functions, make referenced functions non-scoped or use InstructionOnly mode:
+If skill should reveal functions, make referenced functions non-scoped or use default scoped mode:
 ```csharp
 public static Skill FileDebugging()
 {
@@ -430,7 +430,7 @@ public static Skill FileDebugging()
         "file_debugging",
         "Debug files",
         "Instructions...",
-        new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly },
+        new SkillOptions { // Skills are always scoped by default},
         FileSystemPlugin.ReadFile // Functions always visible
     );
 }
@@ -776,7 +776,7 @@ public static Skill FileDebugging(SkillOptions? options = null)
         "file_debugging",
         "Debug files",
         "Instructions...",
-        options ?? new SkillOptions { ScopingMode = SkillScopingMode.Scoped },
+        options ?? new SkillOptions { // Skills are always scoped by default},
         FileSystemPlugin.ReadFile
     );
 }
@@ -821,7 +821,7 @@ public static Skill FileDebugging()
         "file_debugging",
         "Debug files",
         "Instructions...",
-        new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly },
+        new SkillOptions { // Skills are always scoped by default},
         FileSystemPlugin.ReadFile // Scoped in plugin
     );
 }
@@ -918,7 +918,7 @@ public static Skill AllFunctions()
         "all_functions",
         "All functions",
         "Instructions...",
-        new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly },
+        new SkillOptions { // Skills are always scoped by default},
         // 50 function references
     );
 }
@@ -930,7 +930,7 @@ public static Skill AllFunctions()
         "all_functions",
         "All functions",
         "Instructions...",
-        new SkillOptions { ScopingMode = SkillScopingMode.Scoped },
+        new SkillOptions { // Skills are always scoped by default},
         // 50 function references
     );
 }
@@ -1161,7 +1161,7 @@ Only static methods or instance methods from registered plugin instances work.
 
 ```csharp
 var skill = DevelopmentSkills.FileDebugging(
-    new SkillOptions { ScopingMode = SkillScopingMode.Scoped }
+    new SkillOptions { // Skills are always scoped by default}
 );
 
 // If FileDebugging() ignores options parameter:
@@ -1171,7 +1171,7 @@ public static Skill FileDebugging(SkillOptions? options = null)
         "file_debugging",
         "desc",
         "instr",
-        new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly }, // Hardcoded!
+        new SkillOptions { // Skills are always scoped by default}, // Hardcoded!
         Functions...
     );
 }
@@ -1186,7 +1186,7 @@ return SkillFactory.Create(
     "file_debugging",
     "desc",
     "instr",
-    options ?? new SkillOptions { ScopingMode = SkillScopingMode.InstructionOnly },
+    options ?? new SkillOptions { // Skills are always scoped by default},
     Functions...
 );
 ```

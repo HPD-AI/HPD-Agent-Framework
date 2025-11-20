@@ -409,7 +409,6 @@ Skills compose functions from multiple plugins into semantic capabilities. Unlik
 
 .AddSkill("WebResearch", skill => skill
     .WithPluginReferences("WebSearchPlugin", "BrowserPlugin")
-    .WithScopingMode(SkillScopingMode.Scoping)
 )
 
 // Hide ALL plugins, show ONLY skills
