@@ -1,9 +1,13 @@
+
 using Microsoft.Extensions.AI;
-using Microsoft.Agents.AI;
 using System.Text.Json;
+using HPD.Agent;
+
+namespace HPD.Agent;
 
 /// <summary>
 /// Abstract base class for conversation message storage with token tracking capabilities.
+/// PROTOCOL-AGNOSTIC: This class has no dependencies on any specific agent framework.
 ///
 /// Key Features:
 /// - Token counting: Tracks both provider-accurate and estimated token counts
@@ -11,9 +15,10 @@ using System.Text.Json;
 /// - Full history storage: Always stores complete message history (reduction is applied at runtime)
 ///
 /// Architecture:
-/// This inherits from Microsoft.Agents.AI.ChatMessageStore and provides:
+/// This provides:
 /// 1. Token counting methods - SHARED across all implementations
 /// 2. Abstract storage methods - IMPLEMENTED by derived classes
+/// 3. Protocol-agnostic message store contract compatible with any framework
 ///
 /// Derived classes must implement:
 /// - LoadMessagesAsync(): Load all messages from storage
@@ -23,8 +28,10 @@ using System.Text.Json;
 ///
 /// Cache-aware history reduction is handled by HistoryReductionState in ConversationThread,
 /// not by mutating the message store. Messages are reduced at runtime for LLM calls only.
+///
+/// For protocol-specific adapters (e.g., Microsoft.Agents.AI), see HPD-Agent.Microsoft.
 /// </summary>
-public abstract class ConversationMessageStore : ChatMessageStore
+public abstract class ChatMessageStore
 {
     #region Abstract Storage Methods - Derived Classes Must Implement
 
@@ -60,27 +67,27 @@ public abstract class ConversationMessageStore : ChatMessageStore
 
     #endregion
 
-    #region ChatMessageStore Implementation
+    #region Message Store Public API
 
     /// <summary>
     /// Retrieves all messages in chronological order (oldest first).
-    /// This is the contract method required by ChatMessageStore.
+    /// This is the primary method for accessing stored messages.
     /// Delegates to LoadMessagesAsync() implemented by derived classes.
     /// </summary>
-    public override async Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
     {
-        // NOTE: We DON'T apply reduction here like InMemoryChatMessageStore does
-        // because our architecture uses Agent-detected reduction + Conversation-applied pattern.
-        // Reduction is applied via ApplyReductionAsync() method when metadata flows back from Agent.
+        // NOTE: We DON'T apply reduction at storage time.
+        // Our architecture uses Agent-detected reduction + Conversation-applied pattern.
+        // Reduction is applied at runtime for LLM calls only.
         return await LoadMessagesAsync(cancellationToken);
     }
 
     /// <summary>
     /// Adds new messages to the store.
-    /// This is the contract method required by ChatMessageStore.
+    /// This is the primary method for adding messages.
     /// Delegates to AppendMessageAsync() implemented by derived classes.
     /// </summary>
-    public override async Task AddMessagesAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default)
+    public virtual async Task AddMessagesAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default)
     {
         if (messages == null)
             throw new ArgumentNullException(nameof(messages));
@@ -90,16 +97,15 @@ public abstract class ConversationMessageStore : ChatMessageStore
             await AppendMessageAsync(message, cancellationToken);
         }
 
-        // NOTE: We DON'T apply reduction here like InMemoryChatMessageStore does
-        // because our architecture uses Agent-detected reduction + Conversation-applied pattern.
+        // NOTE: We DON'T apply reduction at storage time.
+        // Our architecture uses Agent-detected reduction + Conversation-applied pattern.
     }
 
     /// <summary>
     /// Serializes the message store state to JSON.
-    /// This is the contract method required by ChatMessageStore.
-    /// Must be overridden by derived classes to serialize their specific state.
+    /// Must be implemented by derived classes to serialize their specific state.
     /// </summary>
-    public abstract override JsonElement Serialize(JsonSerializerOptions? jsonSerializerOptions = null);
+    public abstract JsonElement Serialize(JsonSerializerOptions? jsonSerializerOptions = null);
 
     #endregion
 
@@ -135,16 +141,4 @@ public abstract class ConversationMessageStore : ChatMessageStore
     }
 
     #endregion
-}
-
-/// <summary>
-/// Token usage statistics for a message store.
-/// Used for monitoring and debugging token-aware reduction.
-/// </summary>
-public record TokenStatistics
-{
-    public int TotalMessages { get; init; }
-    public int TotalTokens { get; init; }
-    public int SystemMessageCount { get; init; }
-    public int SystemMessageTokens { get; init; }
 }

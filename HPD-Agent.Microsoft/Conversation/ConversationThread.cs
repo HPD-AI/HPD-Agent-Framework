@@ -52,7 +52,7 @@ public sealed class ConversationThread : AgentThread
     /// <summary>
     /// Direct access to the message store for advanced operations (delegated to core)
     /// </summary>
-    public ConversationMessageStore MessageStore => _core.MessageStore;
+    public HPD.Agent.ChatMessageStore MessageStore => _core.MessageStore;
 
     /// <summary>
     /// Optional service thread ID for hybrid scenarios (delegated to core)
@@ -127,7 +127,7 @@ public sealed class ConversationThread : AgentThread
     /// Creates a new Microsoft protocol conversation thread with custom message store.
     /// </summary>
     /// <param name="messageStore">Message store implementation (in-memory, database, etc.)</param>
-    public ConversationThread(ConversationMessageStore messageStore)
+    public ConversationThread(HPD.Agent.ChatMessageStore messageStore)
         : this(new CoreThread(messageStore))
     {
     }

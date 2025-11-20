@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace HPD.Agent;
 
 /// <summary>
-/// Factory interface for creating ConversationMessageStore instances from serialized state.
+/// Factory interface for creating ChatMessageStore instances from serialized state.
 /// Enables AOT-friendly deserialization without reflection.
 /// </summary>
 /// <remarks>
@@ -13,7 +13,7 @@ namespace HPD.Agent;
 /// ConversationThread.RegisterStoreFactory(new InMemoryConversationMessageStoreFactory());
 /// </code>
 /// </remarks>
-public interface IConversationMessageStoreFactory
+internal interface IConversationMessageStoreFactory
 {
     /// <summary>
     /// Gets the store type name used for matching during deserialization.
@@ -27,7 +27,7 @@ public interface IConversationMessageStoreFactory
     /// <param name="state">Serialized store state (JsonElement)</param>
     /// <param name="options">Optional JSON serializer options</param>
     /// <returns>Initialized message store with restored state</returns>
-    ConversationMessageStore CreateFromSnapshot(JsonElement state, JsonSerializerOptions? options);
+    ChatMessageStore CreateFromSnapshot(JsonElement state, JsonSerializerOptions? options);
 }
 
 /// <summary>
@@ -37,7 +37,7 @@ public interface IConversationMessageStoreFactory
 ///
 /// <para><b>Architecture:</b></para>
 /// <para>
-/// - Uses ConversationMessageStore for message storage, cache-aware reduction, token counting
+/// - Uses ChatMessageStore for message storage, cache-aware reduction, token counting
 /// - Handles: metadata, timestamps, display names, execution state, history reduction state
 /// - Protocol-agnostic: No dependencies on Microsoft.Agents.AI or other protocols
 /// </para>
@@ -79,7 +79,7 @@ internal sealed class ConversationThread
     private static readonly Dictionary<string, IConversationMessageStoreFactory> _storeFactories = new();
     private static readonly object _factoryLock = new();
 
-    private readonly ConversationMessageStore _messageStore;
+    private readonly ChatMessageStore _messageStore;
     private readonly Dictionary<string, object> _metadata = new();
     private string? _serviceThreadId;
 
@@ -131,7 +131,7 @@ internal sealed class ConversationThread
     /// Direct access to the message store for advanced operations.
     /// Exposes cache-aware reduction and token counting capabilities.
     /// </summary>
-    public ConversationMessageStore MessageStore => _messageStore;
+    public ChatMessageStore MessageStore => _messageStore;
 
     /// <summary>
     /// Optional service thread ID for hybrid scenarios.
@@ -238,7 +238,7 @@ internal sealed class ConversationThread
     /// Creates a new conversation thread with custom message store.
     /// </summary>
     /// <param name="messageStore">Message store implementation (in-memory, database, etc.)</param>
-    public ConversationThread(ConversationMessageStore messageStore)
+    public ConversationThread(ChatMessageStore messageStore)
     {
         ArgumentNullException.ThrowIfNull(messageStore);
         _messageStore = messageStore;
@@ -254,7 +254,7 @@ internal sealed class ConversationThread
     /// <param name="createdAt">Creation timestamp</param>
     /// <param name="lastActivity">Last activity timestamp</param>
     /// <param name="messageStore">Message store implementation</param>
-    private ConversationThread(string id, DateTime createdAt, DateTime lastActivity, ConversationMessageStore messageStore)
+    private ConversationThread(string id, DateTime createdAt, DateTime lastActivity, ChatMessageStore messageStore)
     {
         ArgumentNullException.ThrowIfNull(messageStore);
         _messageStore = messageStore;
@@ -549,7 +549,7 @@ internal sealed class ConversationThread
         ArgumentNullException.ThrowIfNull(snapshot);
 
         // Deserialize message store
-        ConversationMessageStore messageStore;
+        ChatMessageStore messageStore;
 
         if (snapshot.MessageStoreState.HasValue && !string.IsNullOrEmpty(snapshot.MessageStoreType))
         {
@@ -580,7 +580,7 @@ internal sealed class ConversationThread
                 try
                 {
                     // Invoke constructor: new XxxMessageStore(JsonElement state, JsonSerializerOptions?)
-                    messageStore = (ConversationMessageStore)Activator.CreateInstance(
+                    messageStore = (ChatMessageStore)Activator.CreateInstance(
                         storeType,
                         snapshot.MessageStoreState.Value,
                         options)!;

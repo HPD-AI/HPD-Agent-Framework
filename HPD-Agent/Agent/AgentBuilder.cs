@@ -13,7 +13,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 using HPD_Agent.Memory.Agent.PlanMode;
-using Microsoft.Agents.AI;
 
 namespace HPD.Agent;
 

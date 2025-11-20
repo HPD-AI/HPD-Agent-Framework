@@ -5,9 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.Extensions.AI;
-using Microsoft.Agents.AI;
 using HPD.Agent;
-using HPD.Agent.Conversation;
+using ConversationThread = HPD.Agent.ConversationThread;
 
 namespace HPD_Agent.FFI;
 

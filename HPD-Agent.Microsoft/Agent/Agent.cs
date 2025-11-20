@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HPD.Agent.Providers;
-using CoreAgent = HPD.Agent.Agent;
+using CoreAgent = HPD.Agent.AgentCore;
 using MicrosoftThread = HPD.Agent.Microsoft.ConversationThread;
 
 namespace HPD.Agent.Microsoft;

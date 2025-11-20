@@ -3,11 +3,11 @@ using System.Text.Json;
 using HPD.Agent;
 
 /// <summary>
-/// In-memory implementation of ConversationMessageStore.
+/// In-memory implementation of ChatMessageStore.
 /// Messages are stored in a List in local memory.
 /// This is the default storage mechanism for conversation threads.
 /// </summary>
-public sealed class InMemoryConversationMessageStore : ConversationMessageStore
+internal sealed class InMemoryConversationMessageStore : ChatMessageStore
 {
     private readonly List<ChatMessage> _messages = new();
 
@@ -103,13 +103,13 @@ public sealed class InMemoryConversationMessageStore : ConversationMessageStore
 /// ConversationThread.RegisterStoreFactory(new InMemoryConversationMessageStoreFactory());
 /// </code>
 /// </remarks>
-public sealed class InMemoryConversationMessageStoreFactory : IConversationMessageStoreFactory
+internal sealed class InMemoryConversationMessageStoreFactory : IConversationMessageStoreFactory
 {
     /// <inheritdoc/>
     public string StoreTypeName => typeof(InMemoryConversationMessageStore).AssemblyQualifiedName!;
 
     /// <inheritdoc/>
-    public ConversationMessageStore CreateFromSnapshot(JsonElement state, JsonSerializerOptions? options)
+    public ChatMessageStore CreateFromSnapshot(JsonElement state, JsonSerializerOptions? options)
     {
         return new InMemoryConversationMessageStore(state, options);
     }

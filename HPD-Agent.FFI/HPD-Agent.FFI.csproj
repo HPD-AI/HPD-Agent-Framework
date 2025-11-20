@@ -24,6 +24,7 @@
   <!-- Core HPD-Agent reference -->
   <ItemGroup>
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
+    <ProjectReference Include="../HPD-Agent.Microsoft/HPD-Agent.Microsoft.csproj" />
   </ItemGroup>
 
   <!-- All Provider Package References - ensures they're included in AOT binary -->

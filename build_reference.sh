@@ -22,6 +22,7 @@ REPOS=(
     "https://github.com/anthropic-experimental/sandbox-runtime.git"
     "https://github.com/praeclarum/CrossIntelligence.git"
     "https://github.com/anthropics/skills.git"
+    "https://github.com/OpenRouterTeam/typescript-sdk.git"
     
 
     # Add more repo URLs as needed
