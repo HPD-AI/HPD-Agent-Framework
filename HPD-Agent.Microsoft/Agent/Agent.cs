@@ -48,6 +48,7 @@ public sealed class Agent : AIAgent
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
+        IReadOnlyList<IIterationFilter>? iterationFilters = null,
         IServiceProvider? serviceProvider = null,
         IEnumerable<IAgentEventObserver>? observers = null,
         Func<AIContextProviderFactoryContext, AIContextProvider>? contextProviderFactory = null)
@@ -62,6 +63,7 @@ public sealed class Agent : AIAgent
             permissionFilters,
             aiFunctionFilters,
             messageTurnFilters,
+            iterationFilters,
             serviceProvider,
             observers);
 

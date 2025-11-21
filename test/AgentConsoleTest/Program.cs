@@ -44,11 +44,11 @@ static Task<(ConversationThread, AgentCore)> CreateAIAssistant(ILoggerFactory lo
     {
         Name = "AI Assistant",
         SystemInstructions = "You are an accountant agent. You can do sequential and parallel tool calls. You can also plan out stuff before you start if the task requires sub steps. If you open a skill, it will give you instructions of how to use the skill and what to read.",
-        MaxAgenticIterations = 20,  // Reduced from 50 to avoid rate limits
+        MaxAgenticIterations = 20,  // Set to 2 to test continuation filter
         Provider = new ProviderConfig
         {
             ProviderKey = "openrouter",
-            ModelName = "google/gemini-2.5-pro", // 🧠 Reasoning model - FREE on OpenRouter!
+            ModelName = "z-ai/glm-4.6", // 🧠 Reasoning model - FREE on OpenRouter!
         },
         DynamicMemory = new DynamicMemoryConfig
         {
@@ -81,7 +81,8 @@ static Task<(ConversationThread, AgentCore)> CreateAIAssistant(ILoggerFactory lo
     var agent = new AgentBuilder(agentConfig)
         .WithLogging()
         .WithPlanMode()  // ✨ Financial analysis plugin (explicitly registered)  // ✨ Financial analysis skills (that reference the plugin)
-        .WithPlugin<FinancialAnalysisSkills>()
+        .WithPlugin<FinancialAnalysisSkills>()  // ✨ Math plugin (basic math functions)
+        .WithPlugin<MathPlugin>()  // ✨ Math plugin (basic math functions)
         .WithPermissions() // ✨ NEW: Unified permission filter - events handled in streaming loop
         .BuildCoreAgent();  // ✨ Build CORE agent (internal access via InternalsVisibleTo)
 
@@ -232,6 +233,46 @@ static async Task RunInteractiveChat(AgentCore agent, ConversationThread thread)
                         Console.ForegroundColor = approved ? ConsoleColor.Green : ConsoleColor.Red;
                         Console.WriteLine($"   {(approved ? "✓ Approved" : "✗ Denied")}");
                         Console.ResetColor();
+                    }
+
+                    // ✨ Handle continuation request events
+                    else if (evt is InternalContinuationRequestEvent contReq)
+                    {
+                        // Close any open sections
+                        if (!isFirstReasoningChunk || !isFirstTextChunk)
+                        {
+                            Console.WriteLine();
+                            Console.ResetColor();
+                            isFirstReasoningChunk = true;
+                            isFirstTextChunk = true;
+                        }
+
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine($"\n⏱️  Continuation Request");
+                        Console.WriteLine($"   Iteration: {contReq.CurrentIteration} / {contReq.MaxIterations}");
+                        Console.WriteLine($"   Continue for more iterations?");
+                        Console.WriteLine($"   Options: [Y]es, [N]o");
+                        Console.Write("   Your choice: ");
+                        Console.ResetColor();
+
+                        var userInput = Console.ReadLine();
+                        var approved = !string.IsNullOrEmpty(userInput) && char.ToLower(userInput[0]) == 'y';
+
+                        // Send response back to the filter
+                        agent.SendFilterResponse(
+                            contReq.ContinuationId,
+                            new InternalContinuationResponseEvent(
+                                contReq.ContinuationId,
+                                "Console",
+                                approved,
+                                approved ? 3 : 0  // Default 3 iterations if approved
+                            )
+                        );
+
+                        Console.ForegroundColor = approved ? ConsoleColor.Green : ConsoleColor.Red;
+                        Console.WriteLine($"{(approved ? "✓ Continuing" : "✗ Stopping")}");
+                        Console.ResetColor();
+
                     }
 
                     // ✨ Handle text content events (reasoning and regular text)

@@ -27,9 +27,10 @@ public class AgentDecisionEngineTests
     }
 
     [Fact]
-    public void DecideNextAction_MaxIterationsReached_ReturnsTerminate()
+    public void DecideNextAction_MaxIterationsReached_DecisionEngineDoesNotCheck()
     {
         // Arrange: State at max iterations
+        // NOTE: Max iterations is now enforced by loop condition, not decision engine
         var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
             .NextIteration()  // iteration = 1
             .NextIteration()  // iteration = 2
@@ -37,12 +38,12 @@ public class AgentDecisionEngineTests
 
         var config = AgentConfiguration.Default(maxIterations: 3);
 
-        // Act
+        // Act: Decision engine should NOT check max iterations (loop handles it)
         var decision = _engine.DecideNextAction(state, lastResponse: null, config);
 
-        // Assert: Should terminate due to max iterations
-        var terminate = Assert.IsType<AgentDecision.Terminate>(decision);
-        Assert.Contains("Maximum iterations", terminate.Reason);
+        // Assert: Without a response, should return CallLLM (not Terminate)
+        // Iteration limiting is loop-level concern, not decision engine concern
+        Assert.IsType<AgentDecision.CallLLM>(decision);
     }
 
     [Fact]

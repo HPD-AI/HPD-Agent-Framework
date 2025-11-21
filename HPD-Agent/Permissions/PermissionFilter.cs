@@ -29,19 +29,7 @@ internal class PermissionFilter : IPermissionFilter
 
     public async Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
     {
-        // First check: Continuation permission if we're approaching limits
-        if (context.State != null && context.Agent != null && ShouldCheckContinuation(context.State, context.Agent))
-        {
-            var continueDecision = await RequestContinuationPermissionAsync(context);
-            if (!continueDecision)
-            {
-                context.Result = "Execution terminated by user at iteration limit.";
-                context.IsTerminated = true;
-                return;
-            }
-        }
-
-        // Second check: Function-level permission (if required)
+        // Check: Function-level permission (if required)
         if (context.Function is not HPDAIFunctionFactory.HPDAIFunction hpdFunction ||
             !hpdFunction.HPDOptions.RequiresPermission)
         {
@@ -171,66 +159,6 @@ internal class PermissionFilter : IPermissionFilter
             context.Result = denialReason;
             context.IsTerminated = true;
         }
-    }
-
-    /// <summary>
-    /// Determines if we should check for continuation permission.
-    /// Only triggers when we've actually exceeded the limit.
-    /// </summary>
-    private static bool ShouldCheckContinuation(AgentLoopState state, AgentCore agent)
-    {
-        return state.Iteration >= agent.MaxFunctionCalls;
-    }
-
-    /// <summary>
-    /// Requests continuation permission via events.
-    /// </summary>
-    private async Task<bool> RequestContinuationPermissionAsync(FunctionInvocationContext context)
-    {
-        var continuationId = Guid.NewGuid().ToString();
-
-        // Emit continuation request event
-        context.Emit(new InternalContinuationRequestEvent(
-            continuationId,
-            _filterName,
-            context.State!.Iteration + 1, // Display as 1-based
-            context.Agent!.MaxFunctionCalls));
-
-        // Wait for response from external handler
-        InternalContinuationResponseEvent response;
-        try
-        {
-            response = await context.WaitForResponseAsync<InternalContinuationResponseEvent>(
-                continuationId,
-                timeout: TimeSpan.FromMinutes(2));
-        }
-        catch (TimeoutException)
-        {
-            // Default to deny on timeout
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            // Default to deny on cancellation
-            return false;
-        }
-
-        // Handle extension of limits based on response
-        if (response.Approved)
-        {
-            var extensionAmount = response.ExtensionAmount > 0
-                ? response.ExtensionAmount
-                : (_config?.ContinuationExtensionAmount ?? 3);
-
-            // TODO: Need to implement mechanism to extend max iterations
-            // The Agent.MaxFunctionCalls is read-only, so we need another approach
-            // This might need to be handled at the agent loop level
-            // For now, just approve continuation - the agent loop will handle termination
-            
-            return true;
-        }
-
-        return false;
     }
 
     /// <summary>

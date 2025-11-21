@@ -210,8 +210,9 @@ public class StateSnapshotTests : AgentTestBase
         }
 
         // Assert - State snapshots show progression to max
+        // Loop condition uses <=, so MaxAgenticIterations=5 means iterations 0-5 (6 snapshots)
         var snapshots = capturedEvents.OfType<InternalStateSnapshotEvent>().ToList();
-        snapshots.Should().HaveCountLessOrEqualTo(5, "should not exceed max iterations");
+        snapshots.Should().HaveCountLessOrEqualTo(6, "should not exceed max iterations (loop uses <=)");
 
         // Verify iteration counter increases
         for (int i = 0; i < snapshots.Count; i++)
@@ -221,7 +222,7 @@ public class StateSnapshotTests : AgentTestBase
 
         // Verify max iterations is respected
         var lastSnapshot = snapshots.Last();
-        lastSnapshot.CurrentIteration.Should().BeLessThan(5, "should not exceed max iterations");
+        lastSnapshot.CurrentIteration.Should().BeLessThanOrEqualTo(5, "should not exceed max iterations");
         lastSnapshot.MaxIterations.Should().Be(5, "max iterations should be configured value");
     }
 

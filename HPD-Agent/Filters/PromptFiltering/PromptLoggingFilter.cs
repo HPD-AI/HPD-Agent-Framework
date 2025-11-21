@@ -73,14 +73,6 @@ internal class PromptLoggingFilter : IPromptFilter
         sb.AppendLine($"📨 Message count: {context.Messages.Count()}");
         sb.AppendLine($"🆔 ChatOptions hash: {optionsHashCode}");
         sb.AppendLine("═══════════════════════════════════════════════════════");
-
-        // Log active skills if present (indicates SkillInstructionPromptFilter ran)
-        var expandedSkills = context.GetExpandedSkills();
-        if (expandedSkills != null && expandedSkills.Count > 0)
-        {
-            sb.AppendLine($"🎯 Active Skills: {string.Join(", ", expandedSkills.OrderBy(s => s))}");
-        }
-
         sb.AppendLine();
 
         // Log instructions

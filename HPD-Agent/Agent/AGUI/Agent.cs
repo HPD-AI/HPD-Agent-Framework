@@ -29,6 +29,7 @@ public sealed class Agent
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
+        IReadOnlyList<IIterationFilter>? iterationFilters = null,
         IServiceProvider? serviceProvider = null,
         IEnumerable<IAgentEventObserver>? observers = null,
         IChatClient? summarizerClient = null)
@@ -43,6 +44,7 @@ public sealed class Agent
             permissionFilters,
             aiFunctionFilters,
             messageTurnFilters,
+            iterationFilters,
             serviceProvider,
             observers,
             summarizerClient);

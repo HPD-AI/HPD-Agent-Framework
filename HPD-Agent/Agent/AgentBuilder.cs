@@ -54,6 +54,7 @@ public class AgentBuilder
     internal readonly List<IPromptFilter> _promptFilters = new();
     internal readonly List<IPermissionFilter> _permissionFilters = new(); // Permission filters
     internal readonly List<IMessageTurnFilter> _messageTurnFilters = new(); // Message turn filters
+    internal readonly List<IIterationFilter> _iterationFilters = new(); // Iteration filters
 
     // Internal observers for agent-level observability (developer-only, hidden from users)
     private readonly List<IAgentEventObserver> _observers = new();
@@ -691,6 +692,7 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
+            _iterationFilters,
             _serviceProvider,
             _observers,
             buildData.SummarizerClient);
@@ -713,17 +715,40 @@ public class AgentBuilder
         // Set global config for source-generated code to access
         AgentConfig.GlobalConfig = _config;
 
-        // Register SkillInstructionPromptFilter FIRST (highest priority)
-        // Filter always runs - it injects skill instructions to system prompt
-        if (_pluginManager.GetPluginRegistrations().Any())
-        {
-            _promptFilters.Insert(0, new HPD.Agent.Internal.Filters.SkillInstructionPromptFilter());
-        }
+        // Note: Skill instruction injection is now handled by SkillInstructionIterationFilter
+        // (runs before each LLM call during the agentic loop, not at message turn start)
 
         // Register PromptLoggingFilter LAST to capture final instructions after all filters
         // Always register - falls back to Console.WriteLine if no logger available
         var logger = _logger?.CreateLogger<HPD.Agent.Internal.Filters.PromptLoggingFilter>();
         _promptFilters.Add(new HPD.Agent.Internal.Filters.PromptLoggingFilter(logger));
+
+        // ═══════════════════════════════════════════════════════
+        // AUTO-REGISTER ITERATION FILTERS
+        // ═══════════════════════════════════════════════════════
+
+        // Register IterationLoggingFilter if logger available
+        if (_logger != null)
+        {
+            var iterationLogger = _logger.CreateLogger<HPD.Agent.Internal.Filters.IterationLoggingFilter>();
+            _iterationFilters.Add(new HPD.Agent.Internal.Filters.IterationLoggingFilter(iterationLogger));
+        }
+
+        // Register SkillInstructionIterationFilter if skills are registered
+        if (_pluginManager.GetPluginRegistrations().Any())
+        {
+            _iterationFilters.Add(new HPD.Agent.Internal.Filters.SkillInstructionIterationFilter());
+        }
+
+        // Register ContinuationPermissionIterationFilter if enabled
+        // This requests user permission when iteration limit is reached
+        // Only register if we have a reasonable iteration limit set
+        if (_config!.MaxAgenticIterations > 0 && _config.MaxAgenticIterations < 1000)
+        {
+            _iterationFilters.Add(new ContinuationPermissionIterationFilter(
+                maxIterations: _config.MaxAgenticIterations,
+                extensionAmount: _config.ContinuationExtensionAmount));
+        }
 
         // Create protocol-agnostic core agent
         return new AgentCore(
@@ -736,6 +761,7 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
+            _iterationFilters,
             _serviceProvider,
             _observers,
             buildData.SummarizerClient);
@@ -765,6 +791,7 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
+            _iterationFilters,
             _serviceProvider,
             _observers,
             buildData.SummarizerClient);
@@ -793,6 +820,7 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
+            _iterationFilters,
             _serviceProvider,
             _observers,
             buildData.SummarizerClient);
@@ -820,6 +848,7 @@ public class AgentBuilder
             _permissionFilters,
             _globalFilters,
             _messageTurnFilters,
+            _iterationFilters,
             _serviceProvider,
             null,
             buildData.SummarizerClient);
@@ -1928,6 +1957,29 @@ internal static class AgentBuilderFilterExtensions
             foreach (var f in filters)
                 builder._messageTurnFilters.Add(f);
         }
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds an iteration filter to run before each LLM call in the agentic loop (internal use only).
+    /// Iteration filters provide access to iteration state and can modify messages/options dynamically.
+    /// </summary>
+    /// <remarks>
+    /// This is an internal API used by the agent core to register built-in filters.
+    /// External users should use public filter APIs instead.
+    /// </remarks>
+    internal static AgentBuilder WithIterationFilter(this AgentBuilder builder, IIterationFilter filter)
+    {
+        builder._iterationFilters.Add(filter);
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds an iteration filter of the specified type (creates new instance) (internal use only).
+    /// </summary>
+    internal static AgentBuilder WithIterationFilter<T>(this AgentBuilder builder) where T : IIterationFilter, new()
+    {
+        builder._iterationFilters.Add(new T());
         return builder;
     }
 }

@@ -92,6 +92,7 @@ internal sealed class AgentCore
     private readonly BidirectionalEventCoordinator _eventCoordinator;
     private readonly IReadOnlyList<IAiFunctionFilter> _aiFunctionFilters;
     private readonly IReadOnlyList<IMessageTurnFilter> _messageTurnFilters;
+    private readonly IReadOnlyList<IIterationFilter> _iterationFilters;
     private readonly ErrorHandling.IProviderErrorHandler _providerErrorHandler;
 
     // Observer pattern for event-driven observability
@@ -266,6 +267,7 @@ internal sealed class AgentCore
         IReadOnlyList<IPermissionFilter>? permissionFilters = null,
         IReadOnlyList<IAiFunctionFilter>? aiFunctionFilters = null,
         IReadOnlyList<IMessageTurnFilter>? messageTurnFilters = null,
+        IReadOnlyList<IIterationFilter>? iterationFilters = null,
         IServiceProvider? serviceProvider = null,
         IEnumerable<IAgentEventObserver>? observers = null,
         IChatClient? summarizerClient = null)
@@ -305,6 +307,7 @@ internal sealed class AgentCore
         // Fix: Store and use AI function filters
         _aiFunctionFilters = aiFunctionFilters ?? new List<IAiFunctionFilter>();
         _messageTurnFilters = messageTurnFilters ?? new List<IMessageTurnFilter>();
+        _iterationFilters = iterationFilters ?? new List<IIterationFilter>();
 
         // Create bidirectional event coordinator for filter events and human-in-the-loop
         _eventCoordinator = new BidirectionalEventCoordinator();
@@ -768,8 +771,11 @@ internal sealed class AgentCore
             // ═══════════════════════════════════════════════════════
             // MAIN AGENTIC LOOP (Hybrid: Pure Decisions + Inline Execution)
             // ═══════════════════════════════════════════════════════
+            // NOTE: Use <= so that when MaxAgenticIterations=2, we allow iterations 0, 1, AND 2.
+            // Iteration 2 will hit the continuation filter before attempting the 3rd LLM call.
+            // This allows the filter to emit the continuation request event.
 
-            while (!state.IsTerminated && state.Iteration < config.MaxIterations)
+            while (!state.IsTerminated && state.Iteration <= config.MaxIterations)
             {
                 // Generate message ID for this iteration
                 var assistantMessageId = Guid.NewGuid().ToString();
@@ -878,7 +884,7 @@ internal sealed class AgentCore
                 if (decision is AgentDecision.CallLLM)
                 {
                     // ═══════════════════════════════════════════════════════
-                    // EXECUTE LLM CALL (INLINE - NOT EXTRACTED)
+                    // EXECUTE LLM CALL WITH ITERATION FILTERS
                     // ═══════════════════════════════════════════════════════
 
                     // ✅ NEW: Determine messages to send with cache-aware reduction
@@ -961,6 +967,71 @@ internal sealed class AgentCore
                         };
                     }
 
+                    // ═══════════════════════════════════════════════════════
+                    // ✅ NEW: Create iteration filter context
+                    // ═══════════════════════════════════════════════════════
+
+                    var filterContext = new IterationFilterContext
+                    {
+                        Iteration = state.Iteration,
+                        AgentName = _name,
+                        Messages = messagesToSend.ToList(),
+                        Options = scopedOptions,
+                        State = state,
+                        CancellationToken = effectiveCancellationToken,
+                        Agent = this  // Enable bidirectional event communication
+                    };
+
+                    // ═══════════════════════════════════════════════════════
+                    // ✅ NEW: Execute BEFORE iteration filters
+                    // ═══════════════════════════════════════════════════════
+                    // CRITICAL: Execute iteration filters with event polling
+                    // This allows bidirectional events (continuation requests) to be
+                    // yielded to the consumer while filters wait for responses.
+                    // Without polling, continuation filter requests would deadlock.
+
+                    foreach (var filter in _iterationFilters)
+                    {
+                        // Execute filter as a task and poll for events while it runs
+                        var filterTask = filter.BeforeIterationAsync(
+                            filterContext,
+                            effectiveCancellationToken);
+
+                        // Poll for filter events while iteration filter is executing
+                        // This is identical to the polling pattern used for tool execution
+                        while (!filterTask.IsCompleted)
+                        {
+                            var delayTask = Task.Delay(10, effectiveCancellationToken);
+                            await Task.WhenAny(filterTask, delayTask).ConfigureAwait(false);
+
+                            // Drain any events that were emitted during filter execution
+                            while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                            {
+                                yield return filterEvt;
+                            }
+                        }
+
+                        // Ensure filter completes (won't block since task is complete)
+                        await filterTask.ConfigureAwait(false);
+
+                        if (filterContext.SkipLLMCall)
+                        {
+                            // Filter wants to skip (e.g., cached response)
+                            // Response and ToolCalls should be populated by filter
+                            break;
+                        }
+                    }
+
+                    // Final drain of any remaining events from iteration filters
+                    while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
+                    {
+                        yield return filterEvt;
+                    }
+
+                    // Use potentially modified values from filters
+                    messagesToSend = filterContext.Messages;
+                    scopedOptions = filterContext.Options;
+
                     // Streaming state
                     var assistantContents = new List<AIContent>();
                     var toolRequests = new List<FunctionCallContent>();
@@ -968,15 +1039,30 @@ internal sealed class AgentCore
                     bool reasoningStarted = false;
                     bool reasoningMessageStarted = false;
 
-                    // Emit iteration messages event
-                    yield return new InternalIterationMessagesEvent(
-                        _name,
-                        state.Iteration,
-                        messagesToSend.Count(),
-                        DateTimeOffset.UtcNow);
+                    // ═══════════════════════════════════════════════════════
+                    // Execute LLM call (unless skipped by filter)
+                    // ═══════════════════════════════════════════════════════
 
-                    // Stream LLM response with IMMEDIATE event yielding
-                    await foreach (var update in _agentTurn.RunAsync(messagesToSend, scopedOptions, effectiveCancellationToken))
+                    if (filterContext.SkipLLMCall)
+                    {
+                        // Use cached/provided response from filter
+                        if (filterContext.Response != null)
+                        {
+                            assistantContents.AddRange(filterContext.Response.Contents);
+                        }
+                        toolRequests.AddRange(filterContext.ToolCalls);
+                    }
+                    else
+                    {
+                        // Emit iteration messages event
+                        yield return new InternalIterationMessagesEvent(
+                            _name,
+                            state.Iteration,
+                            messagesToSend.Count(),
+                            DateTimeOffset.UtcNow);
+
+                        // Stream LLM response with IMMEDIATE event yielding
+                        await foreach (var update in _agentTurn.RunAsync(messagesToSend, scopedOptions, effectiveCancellationToken))
                     {
                         // Store update for building final history
                         responseUpdates.Add(update);
@@ -1075,25 +1161,52 @@ internal sealed class AgentCore
                         }
                     }
 
-                    // Capture ConversationId from the agent turn response and update thread
-                    if (_agentTurn.LastResponseConversationId != null)
-                    {
-                        if (thread != null)
+                        // Capture ConversationId from the agent turn response and update thread
+                        if (_agentTurn.LastResponseConversationId != null)
                         {
-                            thread.ConversationId = _agentTurn.LastResponseConversationId;
+                            if (thread != null)
+                            {
+                                thread.ConversationId = _agentTurn.LastResponseConversationId;
+                            }
                         }
-                    }
-                    else if (state.InnerClientTracksHistory)
+                        else if (state.InnerClientTracksHistory)
+                        {
+                            // Service stopped returning ConversationId - disable tracking
+                            state = state.DisableHistoryTracking();
+                        }
+
+                        // Close the message if we started one
+                        if (messageStarted)
+                        {
+                            yield return new InternalTextMessageEndEvent(assistantMessageId);
+                        }
+                    } // End of else block (LLM call not skipped)
+
+                    // ═══════════════════════════════════════════════════════
+                    // ✅ NEW: Populate context with results
+                    // ═══════════════════════════════════════════════════════
+
+                    filterContext.Response = new ChatMessage(
+                        ChatRole.Assistant, assistantContents);
+                    filterContext.ToolCalls = toolRequests.AsReadOnly();
+                    filterContext.Exception = null;
+
+                    // ═══════════════════════════════════════════════════════
+                    // ✅ NEW: Execute AFTER iteration filters
+                    // ═══════════════════════════════════════════════════════
+
+                    foreach (var filter in _iterationFilters)
                     {
-                        // Service stopped returning ConversationId - disable tracking
-                        state = state.DisableHistoryTracking();
+                        await filter.AfterIterationAsync(
+                            filterContext,
+                            effectiveCancellationToken).ConfigureAwait(false);
                     }
 
-                    // Close the message if we started one
-                    if (messageStarted)
-                    {
-                        yield return new InternalTextMessageEndEvent(assistantMessageId);
-                    }
+                    // ═══════════════════════════════════════════════════════
+                    // ✅ NEW: Process filter signals
+                    // ═══════════════════════════════════════════════════════
+
+                    ProcessIterationFilterSignals(filterContext, ref state);
 
                     // If there are tool requests, execute them immediately
                     if (toolRequests.Count > 0)
@@ -1515,22 +1628,12 @@ internal sealed class AgentCore
             // ═══════════════════════════════════════════════════════
             // FINALIZATION
             // ═══════════════════════════════════════════════════════
-
-            // Check if we exited because max iterations was reached
-            if (state.Iteration >= _maxFunctionCalls && !state.IsTerminated)
-            {
-                var terminationMessageId = $"msg_{Guid.NewGuid()}";
-                var terminationMessage = (Config?.Messages ?? new AgentMessagesConfig()).FormatMaxIterationsReached(_maxFunctionCalls);
-
-                yield return new InternalTextMessageStartEvent(terminationMessageId, "assistant");
-                yield return new InternalTextDeltaEvent(terminationMessage, terminationMessageId);
-                yield return new InternalTextMessageEndEvent(terminationMessageId);
-
-                turnHistory.Add(new ChatMessage(ChatRole.Assistant, terminationMessage));
-
-                var terminationReason = $"Maximum iterations reached ({_maxFunctionCalls})";
-                state = state.Terminate(terminationReason);
-            }
+            // NOTE: Do NOT auto-generate termination messages for max iterations.
+            // Iteration filters (like ContinuationPermissionIterationFilter) are responsible
+            // for emitting bidirectional events (InternalContinuationRequestEvent) that the
+            // consumer can handle. The fallback termination message would mask these events,
+            // defeating the purpose of bidirectional communication.
+            // Let the event flow to the consumer - they decide what to do.
 
             // Build the complete history including the final assistant message
             // ✅ FIX: Always check for pending responseUpdates, regardless of tool history
@@ -2450,6 +2553,37 @@ Best practices:
         }
     }
 
+    // ═══════════════════════════════════════════════════════
+    // ITERATION FILTER SUPPORT
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Processes signals from iteration filters (cleanup requests, etc.).
+    /// Called after iteration filters complete.
+    /// </summary>
+    /// <param name="context">The iteration filter context with potential signals</param>
+    /// <param name="state">The current agent loop state (may be updated based on signals)</param>
+    private void ProcessIterationFilterSignals(
+        IterationFilterContext context,
+        ref AgentLoopState state)
+    {
+        // Check for skill cleanup signal
+        if (context.IsFinalIteration &&
+            context.Properties.TryGetValue("ShouldClearActiveSkills", out var clearSkills) &&
+            clearSkills is true)
+        {
+            // Clear active skill instructions at end of final iteration
+            // This ensures skills don't leak across message turns
+            state = state with
+            {
+                ActiveSkillInstructions = ImmutableDictionary<string, string>.Empty
+            };
+        }
+
+        // Future: Add more signal handlers here as needed
+        // Example: context.Properties["ShouldTerminate"] = true;
+    }
+
     #endregion
 
 }
@@ -2506,11 +2640,6 @@ internal sealed class AgentDecisionEngine
         // Check: Already terminated by external source (e.g., permission filter, manual termination)
         if (state.IsTerminated)
             return new AgentDecision.Terminate(state.TerminationReason ?? "Terminated");
-
-        // Check: Max iterations exceeded
-        if (state.Iteration >= config.MaxIterations)
-            return new AgentDecision.Terminate(
-                $"Maximum iterations ({config.MaxIterations}) reached");
 
         // Check: Too many consecutive errors
         if (state.ConsecutiveFailures >= config.MaxConsecutiveFailures)
@@ -4266,9 +4395,7 @@ internal class MessageProcessor
         IEnumerable<ChatMessage> inputMessages,
         ChatOptions? options,
         string agentName,
-        CancellationToken cancellationToken,
-        ImmutableHashSet<string>? expandedSkills = null,
-        ImmutableDictionary<string, string>? skillInstructions = null)
+        CancellationToken cancellationToken)
     {
         var inputMessagesList = inputMessages.ToList();
         var messagesForLLM = new List<ChatMessage>();
@@ -4376,9 +4503,7 @@ internal class MessageProcessor
             messagesForLLM,
             effectiveOptions,
             agentName,
-            cancellationToken,
-            expandedSkills,
-            skillInstructions).ConfigureAwait(false);
+            cancellationToken).ConfigureAwait(false);
 
         // STEP 7: Return PreparedTurn
         return new PreparedTurn
@@ -4504,9 +4629,7 @@ internal class MessageProcessor
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
         string agentName,
-        CancellationToken cancellationToken,
-        ImmutableHashSet<string>? expandedSkills = null,
-        ImmutableDictionary<string, string>? skillInstructions = null)
+        CancellationToken cancellationToken)
     {
         if (!_promptFilters.Any())
         {
@@ -4523,16 +4646,6 @@ internal class MessageProcessor
             {
                 context.Properties[kvp.Key] = kvp.Value!;
             }
-        }
-
-        // Add skill state for SkillInstructionPromptFilter
-        if (expandedSkills != null && expandedSkills.Count > 0)
-        {
-            context.Properties[PromptFilterContextKeys.ExpandedSkills] = expandedSkills;
-        }
-        if (skillInstructions != null && skillInstructions.Count > 0)
-        {
-            context.Properties[PromptFilterContextKeys.SkillInstructions] = skillInstructions;
         }
 
         // ✅ PHASE 2: Track filter pipeline execution
