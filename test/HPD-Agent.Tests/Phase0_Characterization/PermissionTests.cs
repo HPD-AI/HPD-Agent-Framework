@@ -17,7 +17,7 @@ public class PermissionTests : AgentTestBase
     /// <summary>
     /// Helper to create agent with permission filtering enabled.
     /// </summary>
-    private Agent CreateAgentWithPermissions(FakeChatClient client, params AIFunction[] tools)
+    private AgentCore CreateAgentWithPermissions(FakeChatClient client, params AIFunction[] tools)
     {
         var config = DefaultConfig();
         config.Provider ??= new ProviderConfig();

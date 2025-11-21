@@ -451,10 +451,11 @@ public class CheckpointingTests : AgentTestBase
         thread.ExecutionState = state;
 
         // Act: Serialize
-        var snapshotJson = thread.Serialize(null);
+        var snapshot = thread.Serialize(null);
 
         // Assert: Should include ExecutionStateJson
-        var doc = JsonDocument.Parse(snapshotJson.GetRawText());
+        var snapshotJson = JsonSerializer.Serialize(snapshot);
+        var doc = JsonDocument.Parse(snapshotJson);
         Assert.True(doc.RootElement.TryGetProperty("ExecutionStateJson", out var stateJson));
         Assert.NotEqual(JsonValueKind.Null, stateJson.ValueKind);
     }
@@ -474,12 +475,12 @@ public class CheckpointingTests : AgentTestBase
         thread.ExecutionState = originalState;
 
         // Serialize
-        var snapshotJson = thread.Serialize(null);
-        var snapshot = JsonSerializer.Deserialize<ConversationThreadSnapshot>(
-            snapshotJson.GetRawText());
+        var snapshot = thread.Serialize(null);
+        var snapshotJson = JsonSerializer.Serialize(snapshot);
+        var snapshotDeserialized = JsonSerializer.Deserialize<ConversationThreadSnapshot>(snapshotJson);
 
         // Act: Deserialize
-        var restoredThread = ConversationThread.Deserialize(snapshot!, null);
+        var restoredThread = ConversationThread.Deserialize(snapshotDeserialized!, null);
 
         // Assert: Should restore execution state
         Assert.NotNull(restoredThread.ExecutionState);

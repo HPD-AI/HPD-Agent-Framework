@@ -16,8 +16,8 @@ public static class TestAgentFactory
     /// <param name="config">Optional agent configuration (uses defaults if not provided)</param>
     /// <param name="chatClient">Optional chat client (uses FakeChatClient if not provided)</param>
     /// <param name="tools">Optional tools to register</param>
-    /// <returns>Configured Agent instance ready for testing</returns>
-    internal static Agent Create(
+    /// <returns>Configured AgentCore instance ready for testing</returns>
+    internal static AgentCore Create(
         AgentConfig? config = null,
         IChatClient? chatClient = null,
         params AIFunction[] tools)

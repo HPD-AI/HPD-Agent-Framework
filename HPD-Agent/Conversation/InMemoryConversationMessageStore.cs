@@ -14,8 +14,9 @@ internal sealed class InMemoryConversationMessageStore : ChatMessageStore
     /// <summary>
     /// Read-only view of messages for inspection (non-async accessor).
     /// For synchronous access to messages in memory.
+    /// Returns a snapshot (copy) to prevent mutation of internal state.
     /// </summary>
-    public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
+    public IReadOnlyList<ChatMessage> Messages => new List<ChatMessage>(_messages).AsReadOnly();
 
     /// <summary>
     /// Number of messages currently stored.
