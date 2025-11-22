@@ -288,28 +288,32 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                     new KeyValuePair<string, object?>("container.type", e.Type.ToString()));
                 break;
 
-            // Retries
-            case InternalRetryAttemptEvent e:
-                _retryAttempts.Add(1,
-                    new KeyValuePair<string, object?>("agent.name", e.AgentName),
-                    new KeyValuePair<string, object?>("function.name", e.FunctionName),
-                    new KeyValuePair<string, object?>("attempt", e.AttemptNumber));
-
-                if (e.RetryDelay.HasValue)
+            // Retries (consolidated)
+            case InternalRetryEvent e:
+                switch (e.Status)
                 {
-                    _retryDelayHistogram.Record(e.RetryDelay.Value.TotalMilliseconds,
-                        new KeyValuePair<string, object?>("agent.name", e.AgentName),
-                        new KeyValuePair<string, object?>("function.name", e.FunctionName));
-                }
-                break;
+                    case RetryStatus.Attempting:
+                        _retryAttempts.Add(1,
+                            new KeyValuePair<string, object?>("agent.name", e.AgentName),
+                            new KeyValuePair<string, object?>("function.name", e.FunctionName),
+                            new KeyValuePair<string, object?>("attempt", e.AttemptNumber));
 
-            // Retry exhaustion
-            case InternalRetryExhaustedEvent e:
-                _retryExhaustions.Add(1,
-                    new KeyValuePair<string, object?>("agent.name", e.AgentName),
-                    new KeyValuePair<string, object?>("function.name", e.FunctionName),
-                    new KeyValuePair<string, object?>("total.attempts", e.TotalAttempts),
-                    new KeyValuePair<string, object?>("error", e.LastErrorMessage ?? "unknown"));
+                        if (e.RetryDelay.HasValue)
+                        {
+                            _retryDelayHistogram.Record(e.RetryDelay.Value.TotalMilliseconds,
+                                new KeyValuePair<string, object?>("agent.name", e.AgentName),
+                                new KeyValuePair<string, object?>("function.name", e.FunctionName));
+                        }
+                        break;
+
+                    case RetryStatus.Exhausted:
+                        _retryExhaustions.Add(1,
+                            new KeyValuePair<string, object?>("agent.name", e.AgentName),
+                            new KeyValuePair<string, object?>("function.name", e.FunctionName),
+                            new KeyValuePair<string, object?>("total.attempts", e.AttemptNumber),
+                            new KeyValuePair<string, object?>("error", e.ErrorMessage ?? "unknown"));
+                        break;
+                }
                 break;
 
             // Parallel tool execution
@@ -358,34 +362,61 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                     new KeyValuePair<string, object?>("success", e.Success));
                 break;
 
-            // Checkpoint duration
-            case InternalCheckpointSavedEvent e:
-                _checkpointDuration.Record(e.Duration.TotalMilliseconds,
-                    new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                    new KeyValuePair<string, object?>("success", e.Success));
-
-                if (e.SizeBytes.HasValue)
+            // Checkpoint operations (consolidated)
+            case InternalCheckpointEvent e:
+                switch (e.Operation)
                 {
-                    _checkpointSizeHistogram.Record(e.SizeBytes.Value,
-                        new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                        new KeyValuePair<string, object?>("success", e.Success));
-                }
+                    case CheckpointOperation.Saved:
+                        if (e.Duration.HasValue)
+                        {
+                            _checkpointDuration.Record(e.Duration.Value.TotalMilliseconds,
+                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("success", e.Success ?? false));
+                        }
 
-                if (!e.Success)
-                {
-                    _checkpointErrors.Add(1,
-                        new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                        new KeyValuePair<string, object?>("iteration", e.Iteration),
-                        new KeyValuePair<string, object?>("error", e.ErrorMessage ?? "unknown"));
-                }
-                break;
+                        if (e.SizeBytes.HasValue)
+                        {
+                            _checkpointSizeHistogram.Record(e.SizeBytes.Value,
+                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("success", e.Success ?? false));
+                        }
 
-            // Checkpoint restore duration
-            case InternalCheckpointRestoredEvent e:
-                _checkpointRestoreDuration.Record(e.Duration.TotalMilliseconds,
-                    new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                    new KeyValuePair<string, object?>("from.iteration", e.FromIteration),
-                    new KeyValuePair<string, object?>("message.count", e.MessageCount));
+                        if (e.Success == false)
+                        {
+                            _checkpointErrors.Add(1,
+                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("iteration", e.Iteration ?? 0),
+                                new KeyValuePair<string, object?>("error", e.ErrorMessage ?? "unknown"));
+                        }
+                        break;
+
+                    case CheckpointOperation.Restored:
+                        if (e.Duration.HasValue)
+                        {
+                            _checkpointRestoreDuration.Record(e.Duration.Value.TotalMilliseconds,
+                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("from.iteration", e.Iteration ?? 0),
+                                new KeyValuePair<string, object?>("message.count", e.MessageCount ?? 0));
+                        }
+                        break;
+
+                    case CheckpointOperation.PendingWritesSaved:
+                        _pendingWritesSaves.Add(1,
+                            new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                            new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
+                        break;
+
+                    case CheckpointOperation.PendingWritesLoaded:
+                        _pendingWritesLoads.Add(1,
+                            new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                            new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
+                        break;
+
+                    case CheckpointOperation.PendingWritesDeleted:
+                        _pendingWritesDeletes.Add(1,
+                            new KeyValuePair<string, object?>("thread.id", e.ThreadId));
+                        break;
+                }
                 break;
 
             // Document processing
@@ -418,7 +449,7 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                 break;
 
             // Message turn tracking
-            case InternalMessageTurnEndObservabilityEvent e:
+            case InternalMessageTurnFinishedEvent e:
                 _messageTurnDuration.Record(e.Duration.TotalMilliseconds,
                     new KeyValuePair<string, object?>("agent.name", e.AgentName));
                 break;
@@ -430,30 +461,13 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                 break;
 
             // State snapshots
-            case InternalStateSnapshotObservabilityEvent e:
+            case InternalStateSnapshotEvent e:
                 _stateSnapshots.Add(1,
                     new KeyValuePair<string, object?>("agent.name", e.AgentName),
-                    new KeyValuePair<string, object?>("iteration", e.Iteration),
+                    new KeyValuePair<string, object?>("iteration", e.CurrentIteration),
                     new KeyValuePair<string, object?>("terminated", e.IsTerminated));
                 break;
 
-            // Pending writes operations
-            case InternalPendingWritesSavedEvent e:
-                _pendingWritesSaves.Add(1,
-                    new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                    new KeyValuePair<string, object?>("count", e.WriteCount));
-                break;
-
-            case InternalPendingWritesLoadedEvent e:
-                _pendingWritesLoads.Add(1,
-                    new KeyValuePair<string, object?>("thread.id", e.ThreadId),
-                    new KeyValuePair<string, object?>("count", e.WriteCount));
-                break;
-
-            case InternalPendingWritesDeletedEvent e:
-                _pendingWritesDeletes.Add(1,
-                    new KeyValuePair<string, object?>("thread.id", e.ThreadId));
-                break;
         }
 
         return Task.CompletedTask;

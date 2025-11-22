@@ -276,40 +276,45 @@ static async Task RunInteractiveChat(AgentCore agent, ConversationThread thread)
                     }
 
                     // ✨ Handle text content events (reasoning and regular text)
-                    // REASONING EVENTS
-                    else if (evt is InternalReasoningMessageStartEvent reasoningStart)
+                    // REASONING EVENTS (consolidated)
+                    else if (evt is InternalReasoningEvent reasoning)
                     {
-                        // If transitioning from text to reasoning, close text section
-                        if (!isFirstTextChunk)
+                        switch (reasoning.Phase)
                         {
-                            Console.WriteLine(); // End text section
-                            Console.ResetColor();
-                            isFirstTextChunk = true;
-                        }
+                            case ReasoningPhase.MessageStart:
+                                // If transitioning from text to reasoning, close text section
+                                if (!isFirstTextChunk)
+                                {
+                                    Console.WriteLine(); // End text section
+                                    Console.ResetColor();
+                                    isFirstTextChunk = true;
+                                }
 
-                        // Show header when starting new reasoning section
-                        if (isFirstReasoningChunk)
-                        {
-                            Console.WriteLine(); // Add spacing
-                            Console.ForegroundColor = ConsoleColor.DarkGray;
-                            Console.Write("💭 Thinking: ");
-                            isFirstReasoningChunk = false;
-                        }
-                        currentMessageId = reasoningStart.MessageId;
-                    }
-                    else if (evt is InternalReasoningDeltaEvent reasoningDelta)
-                    {
-                        Console.ForegroundColor = ConsoleColor.DarkGray;
-                        Console.Write(reasoningDelta.Text);
-                    }
-                    else if (evt is InternalReasoningMessageEndEvent)
-                    {
-                        // Reasoning section ended - will transition to text if any
-                        if (!isFirstReasoningChunk)
-                        {
-                            Console.WriteLine(); // End reasoning section
-                            Console.ResetColor();
-                            isFirstReasoningChunk = true;
+                                // Show header when starting new reasoning section
+                                if (isFirstReasoningChunk)
+                                {
+                                    Console.WriteLine(); // Add spacing
+                                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                                    Console.Write("💭 Thinking: ");
+                                    isFirstReasoningChunk = false;
+                                }
+                                currentMessageId = reasoning.MessageId;
+                                break;
+
+                            case ReasoningPhase.Delta:
+                                Console.ForegroundColor = ConsoleColor.DarkGray;
+                                Console.Write(reasoning.Text);
+                                break;
+
+                            case ReasoningPhase.MessageEnd:
+                                // Reasoning section ended - will transition to text if any
+                                if (!isFirstReasoningChunk)
+                                {
+                                    Console.WriteLine(); // End reasoning section
+                                    Console.ResetColor();
+                                    isFirstReasoningChunk = true;
+                                }
+                                break;
                         }
                     }
 

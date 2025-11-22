@@ -105,9 +105,26 @@ public class LoggingEventObserver : IAgentEventObserver
                 }
                 break;
 
-            // Turn boundaries (skip - already logged by Microsoft's LoggingChatClient)
-            case InternalMessageTurnStartedEvent:
-            case InternalMessageTurnFinishedEvent:
+            // Turn boundaries
+            case InternalMessageTurnStartedEvent e:
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "Agent '{AgentName}' message turn started: {TurnId}",
+                        e.AgentName, e.MessageTurnId);
+                }
+                break;
+
+            case InternalMessageTurnFinishedEvent e:
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "Agent '{AgentName}' message turn ended: {TurnId} (Duration: {Duration}ms)",
+                        e.AgentName, e.MessageTurnId, e.Duration.TotalMilliseconds);
+                }
+                break;
+
+            // Agent turn boundaries (skip - already logged by Microsoft's LoggingChatClient)
             case InternalAgentTurnStartedEvent:
             case InternalAgentTurnFinishedEvent:
                 // Already logged by Microsoft's LoggingChatClient at API level
@@ -134,39 +151,76 @@ public class LoggingEventObserver : IAgentEventObserver
                 }
                 break;
 
-            // Checkpoint operations
-            case InternalCheckpointSavedEvent e:
-                if (e.Success)
+            // Checkpoint operations (consolidated)
+            case InternalCheckpointEvent e:
+                switch (e.Operation)
                 {
-                    _logger.LogInformation(
-                        "Checkpoint saved for thread '{ThreadId}' at iteration {Iteration} in {Duration}ms",
-                        e.ThreadId, e.Iteration, e.Duration.TotalMilliseconds);
+                    case CheckpointOperation.Saved:
+                        if (e.Success == true)
+                        {
+                            _logger.LogInformation(
+                                "Checkpoint saved for thread '{ThreadId}' at iteration {Iteration} in {Duration}ms",
+                                e.ThreadId, e.Iteration, e.Duration?.TotalMilliseconds ?? 0);
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "Checkpoint save failed for thread '{ThreadId}' at iteration {Iteration}: {Error}",
+                                e.ThreadId, e.Iteration, e.ErrorMessage);
+                        }
+                        break;
+
+                    case CheckpointOperation.Restored:
+                        _logger.LogInformation(
+                            "Checkpoint restored for thread '{ThreadId}' from iteration {Iteration} ({MessageCount} messages) in {Duration}ms",
+                            e.ThreadId, e.Iteration, e.MessageCount, e.Duration?.TotalMilliseconds ?? 0);
+                        break;
+
+                    case CheckpointOperation.PendingWritesSaved:
+                        if (_logger.IsEnabled(LogLevel.Debug))
+                        {
+                            _logger.LogDebug(
+                                "Pending writes saved for thread '{ThreadId}': {Count} writes",
+                                e.ThreadId, e.WriteCount);
+                        }
+                        break;
+
+                    case CheckpointOperation.PendingWritesLoaded:
+                        if (_logger.IsEnabled(LogLevel.Debug))
+                        {
+                            _logger.LogDebug(
+                                "Pending writes loaded for thread '{ThreadId}': {Count} writes",
+                                e.ThreadId, e.WriteCount);
+                        }
+                        break;
+
+                    case CheckpointOperation.PendingWritesDeleted:
+                        if (_logger.IsEnabled(LogLevel.Debug))
+                        {
+                            _logger.LogDebug(
+                                "Pending writes deleted for thread '{ThreadId}'",
+                                e.ThreadId);
+                        }
+                        break;
                 }
-                else
+                break;
+
+            // Retry events (consolidated)
+            case InternalRetryEvent e:
+                switch (e.Status)
                 {
-                    _logger.LogWarning(
-                        "Checkpoint save failed for thread '{ThreadId}' at iteration {Iteration}: {Error}",
-                        e.ThreadId, e.Iteration, e.ErrorMessage);
+                    case RetryStatus.Attempting:
+                        _logger.LogWarning(
+                            "Agent '{AgentName}' retrying function '{Function}' (attempt {Attempt}/{MaxRetries}): {Error}",
+                            e.AgentName, e.FunctionName, e.AttemptNumber, e.MaxRetries, e.ErrorMessage);
+                        break;
+
+                    case RetryStatus.Exhausted:
+                        _logger.LogError(
+                            "Agent '{AgentName}' retry exhausted for function '{Function}' after {Attempts} attempts: {Error}",
+                            e.AgentName, e.FunctionName, e.AttemptNumber, e.ErrorMessage);
+                        break;
                 }
-                break;
-
-            case InternalCheckpointRestoredEvent e:
-                _logger.LogInformation(
-                    "Checkpoint restored for thread '{ThreadId}' from iteration {Iteration} ({MessageCount} messages) in {Duration}ms",
-                    e.ThreadId, e.FromIteration, e.MessageCount, e.Duration.TotalMilliseconds);
-                break;
-
-            // Retry events
-            case InternalRetryAttemptEvent e:
-                _logger.LogWarning(
-                    "Agent '{AgentName}' retrying function '{Function}' (attempt {Attempt}/{MaxRetries}): {Error}",
-                    e.AgentName, e.FunctionName, e.AttemptNumber, e.MaxRetries, e.ErrorMessage);
-                break;
-
-            case InternalRetryExhaustedEvent e:
-                _logger.LogError(
-                    "Agent '{AgentName}' retry exhausted for function '{Function}' after {Attempts} attempts: {Error}",
-                    e.AgentName, e.FunctionName, e.TotalAttempts, e.LastErrorMessage);
                 break;
 
             // Parallel tool execution
@@ -277,64 +331,19 @@ public class LoggingEventObserver : IAgentEventObserver
                 }
                 break;
 
-            // Message turn observability
-            case InternalMessageTurnStartObservabilityEvent e:
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug(
-                        "Agent '{AgentName}' message turn started: {TurnId}",
-                        e.AgentName, e.TurnId);
-                }
-                break;
-
-            case InternalMessageTurnEndObservabilityEvent e:
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug(
-                        "Agent '{AgentName}' message turn ended: {TurnId} (Duration: {Duration}ms)",
-                        e.AgentName, e.TurnId, e.Duration.TotalMilliseconds);
-                }
-                break;
 
             // State snapshot
-            case InternalStateSnapshotObservabilityEvent e:
+            case InternalStateSnapshotEvent e:
                 if (_logger.IsEnabled(LogLevel.Trace))
                 {
                     _logger.LogTrace(
                         "Agent '{AgentName}' state snapshot at iteration {Iteration}: " +
                         "Terminated={Terminated}, Reason={Reason}, Errors={Errors}, Functions={Functions}",
-                        e.AgentName, e.Iteration, e.IsTerminated, e.TerminationReason,
-                        e.ConsecutiveErrorCount, e.CompletedFunctionsCount);
+                        e.AgentName, e.CurrentIteration, e.IsTerminated, e.TerminationReason,
+                        e.ConsecutiveErrorCount, e.CompletedFunctions.Count);
                 }
                 break;
 
-            // Pending writes operations
-            case InternalPendingWritesSavedEvent e:
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug(
-                        "Pending writes saved for thread '{ThreadId}': {Count} writes",
-                        e.ThreadId, e.WriteCount);
-                }
-                break;
-
-            case InternalPendingWritesLoadedEvent e:
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug(
-                        "Pending writes loaded for thread '{ThreadId}': {Count} writes",
-                        e.ThreadId, e.WriteCount);
-                }
-                break;
-
-            case InternalPendingWritesDeletedEvent e:
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug(
-                        "Pending writes deleted for thread '{ThreadId}'",
-                        e.ThreadId);
-                }
-                break;
 
             // Errors
             case InternalMessageTurnErrorEvent e:

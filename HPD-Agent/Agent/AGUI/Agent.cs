@@ -201,12 +201,12 @@ internal static class EventStreamAdapter
                 InternalTextDeltaEvent e => EventSerialization.CreateTextMessageContent(e.MessageId, e.Text),
                 InternalTextMessageEndEvent e => EventSerialization.CreateTextMessageEnd(e.MessageId),
 
-                // REASONING events
-                InternalReasoningStartEvent e => EventSerialization.CreateReasoningStart(e.MessageId),
-                InternalReasoningMessageStartEvent e => EventSerialization.CreateReasoningMessageStart(e.MessageId, e.Role),
-                InternalReasoningDeltaEvent e => EventSerialization.CreateReasoningMessageContent(e.MessageId, e.Text),
-                InternalReasoningMessageEndEvent e => EventSerialization.CreateReasoningMessageEnd(e.MessageId),
-                InternalReasoningEndEvent e => EventSerialization.CreateReasoningEnd(e.MessageId),
+                // REASONING events (consolidated)
+                InternalReasoningEvent e when e.Phase == ReasoningPhase.SessionStart => EventSerialization.CreateReasoningStart(e.MessageId),
+                InternalReasoningEvent e when e.Phase == ReasoningPhase.MessageStart => EventSerialization.CreateReasoningMessageStart(e.MessageId, e.Role ?? "assistant"),
+                InternalReasoningEvent e when e.Phase == ReasoningPhase.Delta => EventSerialization.CreateReasoningMessageContent(e.MessageId, e.Text ?? ""),
+                InternalReasoningEvent e when e.Phase == ReasoningPhase.MessageEnd => EventSerialization.CreateReasoningMessageEnd(e.MessageId),
+                InternalReasoningEvent e when e.Phase == ReasoningPhase.SessionEnd => EventSerialization.CreateReasoningEnd(e.MessageId),
 
                 // TOOL events
                 InternalToolCallStartEvent e => EventSerialization.CreateToolCallStart(e.CallId, e.Name, e.MessageId),

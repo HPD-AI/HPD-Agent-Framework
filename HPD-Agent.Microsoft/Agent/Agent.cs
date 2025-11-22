@@ -218,8 +218,8 @@ public sealed class Agent : AIAgent
                         currentAssistantContents.Add(new TextContent(textDelta.Text));
                         break;
 
-                    case InternalReasoningDeltaEvent reasoning:
-                        currentAssistantContents.Add(new TextReasoningContent(reasoning.Text));
+                    case InternalReasoningEvent reasoning when reasoning.Phase == ReasoningPhase.Delta:
+                        currentAssistantContents.Add(new TextReasoningContent(reasoning.Text ?? ""));
                         break;
 
                     case InternalToolCallStartEvent toolStart:
@@ -232,7 +232,7 @@ public sealed class Agent : AIAgent
                         break;
 
                     case InternalTextMessageEndEvent:
-                    case InternalReasoningMessageEndEvent:
+                    case InternalReasoningEvent { Phase: ReasoningPhase.MessageEnd }:
                     case InternalToolCallEndEvent:
                         // Message completed - add to turn messages if we have content
                         if (currentAssistantContents.Count > 0)
@@ -620,11 +620,11 @@ internal static class EventStreamAdapter
                 },
 
                 // Reasoning content (for o1, DeepSeek-R1, etc.)
-                InternalReasoningDeltaEvent reasoning => new AgentRunResponseUpdate(new ChatResponseUpdate
+                InternalReasoningEvent reasoning when reasoning.Phase == ReasoningPhase.Delta => new AgentRunResponseUpdate(new ChatResponseUpdate
                 {
                     AuthorName = agentName,
                     Role = ChatRole.Assistant,
-                    Contents = [new TextReasoningContent(reasoning.Text)],
+                    Contents = [new TextReasoningContent(reasoning.Text ?? "")],
                     CreatedAt = DateTimeOffset.UtcNow
                 })
                 {

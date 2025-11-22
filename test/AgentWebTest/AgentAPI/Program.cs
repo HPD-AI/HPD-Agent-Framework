@@ -155,9 +155,9 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
                     eventData = new { text = textDelta.Text };
                     break;
 
-                case InternalReasoningDeltaEvent reasoningDelta:
+                case InternalReasoningEvent reasoning when reasoning.Phase == ReasoningPhase.Delta:
                     eventType = "reasoning_delta";
-                    eventData = new { text = reasoningDelta.Text };
+                    eventData = new { text = reasoning.Text };
                     break;
 
                 case InternalToolCallStartEvent toolStart:

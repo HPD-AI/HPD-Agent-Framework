@@ -571,7 +571,11 @@ internal sealed class AgentCore
         try
         {
             // Emit MESSAGE TURN started event
-            yield return new InternalMessageTurnStartedEvent(messageTurnId, conversationId);
+            yield return new InternalMessageTurnStartedEvent(
+                messageTurnId,
+                conversationId,
+                _name,
+                DateTimeOffset.UtcNow);
 
             // ═══════════════════════════════════════════════════════════════════════════
             // MESSAGE PREPARATION: Split logic between Fresh Run vs Resume
@@ -609,12 +613,13 @@ internal sealed class AgentCore
                 restoreStopwatch.Stop();
 
                 // Emit checkpoint restored event
-                yield return new InternalCheckpointRestoredEvent(
-                    thread.Id,
-                    state.Iteration,
-                    state.CurrentMessages.Count,
-                    restoreStopwatch.Elapsed,
-                    DateTimeOffset.UtcNow);
+                yield return new InternalCheckpointEvent(
+                    Operation: CheckpointOperation.Restored,
+                    ThreadId: thread.Id,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Duration: restoreStopwatch.Elapsed,
+                    Iteration: state.Iteration,
+                    MessageCount: state.CurrentMessages.Count);
 
                 // ═══════════════════════════════════════════════════════════════════════
                 // RESTORE PENDING WRITES (partial failure recovery)
@@ -651,10 +656,11 @@ internal sealed class AgentCore
                     // Emit observability event outside try-catch
                     if (pendingWritesLoaded)
                     {
-                        yield return new InternalPendingWritesLoadedEvent(
-                            thread.Id,
-                            pendingWritesCount,
-                            DateTimeOffset.UtcNow);
+                        yield return new InternalCheckpointEvent(
+                            Operation: CheckpointOperation.PendingWritesLoaded,
+                            ThreadId: thread.Id,
+                            Timestamp: DateTimeOffset.UtcNow,
+                            WriteCount: pendingWritesCount);
                     }
                 }
 
@@ -762,11 +768,6 @@ internal sealed class AgentCore
                 // Observability errors shouldn't break agent execution
             }
 
-            // Emit message turn start event
-            yield return new InternalMessageTurnStartObservabilityEvent(
-                _name,
-                messageTurnId,
-                DateTimeOffset.UtcNow);
 
             // ═══════════════════════════════════════════════════════
             // MAIN AGENTIC LOOP (Hybrid: Pure Decisions + Inline Execution)
@@ -790,7 +791,9 @@ internal sealed class AgentCore
                     IsTerminated: state.IsTerminated,
                     TerminationReason: state.TerminationReason,
                     ConsecutiveErrorCount: state.ConsecutiveFailures,
-                    CompletedFunctions: new List<string>(state.CompletedFunctions));
+                    CompletedFunctions: new List<string>(state.CompletedFunctions),
+                    AgentName: _name,
+                    Timestamp: DateTimeOffset.UtcNow);
 
                 // Drain filter events before decision
                 while (_eventCoordinator.EventReader.TryRead(out var filterEvt))
@@ -1076,29 +1079,41 @@ internal sealed class AgentCore
                                 {
                                     if (!reasoningStarted)
                                     {
-                                        yield return new InternalReasoningStartEvent(assistantMessageId);
+                                        yield return new InternalReasoningEvent(
+                                            Phase: ReasoningPhase.SessionStart,
+                                            MessageId: assistantMessageId);
                                         reasoningStarted = true;
                                     }
 
                                     if (!reasoningMessageStarted)
                                     {
-                                        yield return new InternalReasoningMessageStartEvent(assistantMessageId, "assistant");
+                                        yield return new InternalReasoningEvent(
+                                            Phase: ReasoningPhase.MessageStart,
+                                            MessageId: assistantMessageId,
+                                            Role: "assistant");
                                         reasoningMessageStarted = true;
                                     }
 
-                                    yield return new InternalReasoningDeltaEvent(reasoning.Text, assistantMessageId);
+                                    yield return new InternalReasoningEvent(
+                                        Phase: ReasoningPhase.Delta,
+                                        MessageId: assistantMessageId,
+                                        Text: reasoning.Text);
                                     assistantContents.Add(reasoning);
                                 }
                                 else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                                 {
                                     if (reasoningMessageStarted)
                                     {
-                                        yield return new InternalReasoningMessageEndEvent(assistantMessageId);
+                                        yield return new InternalReasoningEvent(
+                                            Phase: ReasoningPhase.MessageEnd,
+                                            MessageId: assistantMessageId);
                                         reasoningMessageStarted = false;
                                     }
                                     if (reasoningStarted)
                                     {
-                                        yield return new InternalReasoningEndEvent(assistantMessageId);
+                                        yield return new InternalReasoningEvent(
+                                            Phase: ReasoningPhase.SessionEnd,
+                                            MessageId: assistantMessageId);
                                         reasoningStarted = false;
                                     }
 
@@ -1150,12 +1165,16 @@ internal sealed class AgentCore
                         {
                             if (reasoningMessageStarted)
                             {
-                                yield return new InternalReasoningMessageEndEvent(assistantMessageId);
+                                yield return new InternalReasoningEvent(
+                                    Phase: ReasoningPhase.MessageEnd,
+                                    MessageId: assistantMessageId);
                                 reasoningMessageStarted = false;
                             }
                             if (reasoningStarted)
                             {
-                                yield return new InternalReasoningEndEvent(assistantMessageId);
+                                yield return new InternalReasoningEvent(
+                                    Phase: ReasoningPhase.SessionEnd,
+                                    MessageId: assistantMessageId);
                                 reasoningStarted = false;
                             }
                         }
@@ -1581,9 +1600,10 @@ internal sealed class AgentCore
                                             CancellationToken.None);
 
                                         // Emit pending writes deleted event
-                                        NotifyObservers(new InternalPendingWritesDeletedEvent(
-                                            threadId,
-                                            DateTimeOffset.UtcNow));
+                                        NotifyObservers(new InternalCheckpointEvent(
+                                            Operation: CheckpointOperation.PendingWritesDeleted,
+                                            ThreadId: threadId,
+                                            Timestamp: DateTimeOffset.UtcNow));
                                     }
                                     catch
                                     {
@@ -1595,28 +1615,27 @@ internal sealed class AgentCore
                             stopwatch.Stop();
 
                             // Emit checkpoint success event
-                            NotifyObservers(new InternalCheckpointSavedEvent(
-                                thread.Id,
-                                checkpointState.Iteration,
-                                stopwatch.Elapsed,
-                                Success: true,
-                                ErrorMessage: null,
-                                SizeBytes: null,
-                                DateTimeOffset.UtcNow));
+                            NotifyObservers(new InternalCheckpointEvent(
+                                Operation: CheckpointOperation.Saved,
+                                ThreadId: thread.Id,
+                                Timestamp: DateTimeOffset.UtcNow,
+                                Duration: stopwatch.Elapsed,
+                                Iteration: checkpointState.Iteration,
+                                Success: true));
                         }
                         catch (Exception ex)
                         {
                             stopwatch.Stop();
 
                             // Emit checkpoint failure event
-                            NotifyObservers(new InternalCheckpointSavedEvent(
-                                thread.Id,
-                                checkpointState.Iteration,
-                                stopwatch.Elapsed,
+                            NotifyObservers(new InternalCheckpointEvent(
+                                Operation: CheckpointOperation.Saved,
+                                ThreadId: thread.Id,
+                                Timestamp: DateTimeOffset.UtcNow,
+                                Duration: stopwatch.Elapsed,
+                                Iteration: checkpointState.Iteration,
                                 Success: false,
-                                ex.Message,
-                                SizeBytes: null,
-                                DateTimeOffset.UtcNow));
+                                ErrorMessage: ex.Message));
 
                             // Checkpoint failures are non-fatal (fire-and-forget)
                             // Agent execution continues even if checkpoint fails
@@ -1665,7 +1684,13 @@ internal sealed class AgentCore
                 yield return filterEvt;
 
             // Emit MESSAGE TURN finished event
-            yield return new InternalMessageTurnFinishedEvent(messageTurnId, conversationId);
+            turnStopwatch.Stop();
+            yield return new InternalMessageTurnFinishedEvent(
+                messageTurnId,
+                conversationId,
+                _name,
+                turnStopwatch.Elapsed,
+                DateTimeOffset.UtcNow);
 
             // Record orchestration telemetry metrics
             orchestrationActivity?.SetTag("agent.total_iterations", state.Iteration);
@@ -1744,9 +1769,10 @@ internal sealed class AgentCore
                                         CancellationToken.None);
 
                                     // Emit pending writes deleted event
-                                    NotifyObservers(new InternalPendingWritesDeletedEvent(
-                                        threadId,
-                                        DateTimeOffset.UtcNow));
+                                    NotifyObservers(new InternalCheckpointEvent(
+                                        Operation: CheckpointOperation.PendingWritesDeleted,
+                                        ThreadId: threadId,
+                                        Timestamp: DateTimeOffset.UtcNow));
                                 }
                                 catch
                                 {
@@ -1765,14 +1791,14 @@ internal sealed class AgentCore
                         stopwatch.Stop();
 
                         // Emit checkpoint event
-                        NotifyObservers(new InternalCheckpointSavedEvent(
-                            thread.Id,
-                            finalState.Iteration,
-                            stopwatch.Elapsed,
-                            success,
-                            errorMessage,
-                            SizeBytes: null,
-                            DateTimeOffset.UtcNow));
+                        NotifyObservers(new InternalCheckpointEvent(
+                            Operation: CheckpointOperation.Saved,
+                            ThreadId: thread.Id,
+                            Timestamp: DateTimeOffset.UtcNow,
+                            Duration: stopwatch.Elapsed,
+                            Iteration: finalState.Iteration,
+                            Success: success,
+                            ErrorMessage: errorMessage));
                     }
                 });
 
@@ -1797,13 +1823,6 @@ internal sealed class AgentCore
                 }
             }
 
-            // Emit message turn end event
-            turnStopwatch.Stop();
-            yield return new InternalMessageTurnEndObservabilityEvent(
-                _name,
-                messageTurnId,
-                turnStopwatch.Elapsed,
-                DateTimeOffset.UtcNow);
 
             historyCompletionSource.TrySetResult(turnHistory);
         }
@@ -2022,10 +2041,11 @@ internal sealed class AgentCore
                     CancellationToken.None).ConfigureAwait(false);
 
                 // Emit pending writes saved event
-                NotifyObservers(new InternalPendingWritesSavedEvent(
-                    threadId,
-                    pendingWrites.Count,
-                    DateTimeOffset.UtcNow));
+                NotifyObservers(new InternalCheckpointEvent(
+                    Operation: CheckpointOperation.PendingWritesSaved,
+                    ThreadId: threadId,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    WriteCount: pendingWrites.Count));
             }
             catch
             {
@@ -6454,13 +6474,22 @@ public abstract record InternalAgentEvent;
 /// Emitted when a message turn starts (user sends message, agent begins processing)
 /// This represents the START of the entire multi-step agent execution.
 /// </summary>
-public record InternalMessageTurnStartedEvent(string MessageTurnId, string ConversationId) : InternalAgentEvent;
+public record InternalMessageTurnStartedEvent(
+    string MessageTurnId,
+    string ConversationId,
+    string AgentName,
+    DateTimeOffset Timestamp) : InternalAgentEvent;
 
 /// <summary>
 /// Emitted when a message turn completes successfully
 /// This represents the END of the entire agent execution for this user message.
 /// </summary>
-public record InternalMessageTurnFinishedEvent(string MessageTurnId, string ConversationId) : InternalAgentEvent;
+public record InternalMessageTurnFinishedEvent(
+    string MessageTurnId,
+    string ConversationId,
+    string AgentName,
+    TimeSpan Duration,
+    DateTimeOffset Timestamp) : InternalAgentEvent;
 
 /// <summary>
 /// Emitted when an error occurs during message turn execution
@@ -6493,7 +6522,9 @@ public record InternalStateSnapshotEvent(
     bool IsTerminated,
     string? TerminationReason,
     int ConsecutiveErrorCount,
-    List<string> CompletedFunctions) : InternalAgentEvent;
+    List<string> CompletedFunctions,
+    string AgentName,
+    DateTimeOffset Timestamp) : InternalAgentEvent;
 
 #endregion
 
@@ -6519,29 +6550,32 @@ public record InternalTextMessageEndEvent(string MessageId) : InternalAgentEvent
 #region Reasoning Events (For reasoning-capable models like o1, DeepSeek-R1)
 
 /// <summary>
-/// Emitted when the agent starts reasoning/thinking
+/// Reasoning phase within a reasoning session.
 /// </summary>
-public record InternalReasoningStartEvent(string MessageId) : InternalAgentEvent;
+public enum ReasoningPhase
+{
+    /// <summary>Overall reasoning session begins</summary>
+    SessionStart,
+    /// <summary>Individual reasoning message starts</summary>
+    MessageStart,
+    /// <summary>Streaming reasoning content (delta)</summary>
+    Delta,
+    /// <summary>Individual reasoning message ends</summary>
+    MessageEnd,
+    /// <summary>Overall reasoning session ends</summary>
+    SessionEnd
+}
 
 /// <summary>
-/// Emitted when the agent starts a reasoning message
+/// Emitted for all reasoning-related events during agent execution.
+/// Supports reasoning-capable models like o1, DeepSeek-R1.
 /// </summary>
-public record InternalReasoningMessageStartEvent(string MessageId, string Role) : InternalAgentEvent;
-
-/// <summary>
-/// Emitted when the agent produces reasoning/thinking content (streaming delta)
-/// </summary>
-public record InternalReasoningDeltaEvent(string Text, string MessageId) : InternalAgentEvent;
-
-/// <summary>
-/// Emitted when the agent finishes a reasoning message
-/// </summary>
-public record InternalReasoningMessageEndEvent(string MessageId) : InternalAgentEvent;
-
-/// <summary>
-/// Emitted when the agent finishes reasoning
-/// </summary>
-public record InternalReasoningEndEvent(string MessageId) : InternalAgentEvent;
+public record InternalReasoningEvent(
+    ReasoningPhase Phase,
+    string MessageId,
+    string? Role = null,
+    string? Text = null
+) : InternalAgentEvent;
 
 #endregion
 
@@ -6843,27 +6877,31 @@ public record InternalHistoryReductionCacheEvent(
 ) : InternalAgentEvent, IObservabilityEvent;
 
 /// <summary>
-/// Emitted when a checkpoint is saved.
+/// Checkpoint operation type.
 /// </summary>
-public record InternalCheckpointSavedEvent(
-    string ThreadId,
-    int Iteration,
-    TimeSpan Duration,
-    bool Success,
-    string? ErrorMessage,
-    int? SizeBytes,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
+public enum CheckpointOperation
+{
+    Saved,
+    Restored,
+    PendingWritesSaved,
+    PendingWritesLoaded,
+    PendingWritesDeleted
+}
 
 /// <summary>
-/// Emitted when a checkpoint is restored.
+/// Emitted for all checkpoint-related operations (save, restore, pending writes).
 /// </summary>
-public record InternalCheckpointRestoredEvent(
+public record InternalCheckpointEvent(
+    CheckpointOperation Operation,
     string ThreadId,
-    int FromIteration,
-    int MessageCount,
-    TimeSpan Duration,
-    DateTimeOffset Timestamp
+    DateTimeOffset Timestamp,
+    TimeSpan? Duration = null,
+    int? Iteration = null,
+    int? WriteCount = null,
+    int? SizeBytes = null,
+    int? MessageCount = null,
+    bool? Success = null,
+    string? ErrorMessage = null
 ) : InternalAgentEvent, IObservabilityEvent;
 
 /// <summary>
@@ -6883,27 +6921,28 @@ public record InternalParallelToolExecutionEvent(
 ) : InternalAgentEvent, IObservabilityEvent;
 
 /// <summary>
-/// Emitted when a retry attempt occurs.
+/// Retry status for function execution.
 /// </summary>
-public record InternalRetryAttemptEvent(
+public enum RetryStatus
+{
+    /// <summary>Retry attempt in progress</summary>
+    Attempting,
+    /// <summary>All retry attempts exhausted</summary>
+    Exhausted
+}
+
+/// <summary>
+/// Emitted for all retry-related events during function execution.
+/// </summary>
+public record InternalRetryEvent(
+    RetryStatus Status,
     string AgentName,
     string FunctionName,
     int AttemptNumber,
     int MaxRetries,
-    string? ErrorMessage,
-    TimeSpan? RetryDelay,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
-
-/// <summary>
-/// Emitted when retry attempts are exhausted.
-/// </summary>
-public record InternalRetryExhaustedEvent(
-    string AgentName,
-    string FunctionName,
-    int TotalAttempts,
-    string? LastErrorMessage,
-    DateTimeOffset Timestamp
+    DateTimeOffset Timestamp,
+    string? ErrorMessage = null,
+    TimeSpan? RetryDelay = null
 ) : InternalAgentEvent, IObservabilityEvent;
 
 /// <summary>
@@ -6997,63 +7036,8 @@ public record InternalIterationMessagesEvent(
     DateTimeOffset Timestamp
 ) : InternalAgentEvent, IObservabilityEvent;
 
-/// <summary>
-/// Emitted when message turn starts.
-/// </summary>
-public record InternalMessageTurnStartObservabilityEvent(
-    string AgentName,
-    string TurnId,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
 
-/// <summary>
-/// Emitted when message turn ends.
-/// </summary>
-public record InternalMessageTurnEndObservabilityEvent(
-    string AgentName,
-    string TurnId,
-    TimeSpan Duration,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
 
-/// <summary>
-/// Emitted when state snapshot is captured.
-/// </summary>
-public record InternalStateSnapshotObservabilityEvent(
-    string AgentName,
-    int Iteration,
-    bool IsTerminated,
-    string? TerminationReason,
-    int ConsecutiveErrorCount,
-    int CompletedFunctionsCount,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
-
-/// <summary>
-/// Emitted when pending writes are saved.
-/// </summary>
-public record InternalPendingWritesSavedEvent(
-    string ThreadId,
-    int WriteCount,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
-
-/// <summary>
-/// Emitted when pending writes are loaded.
-/// </summary>
-public record InternalPendingWritesLoadedEvent(
-    string ThreadId,
-    int WriteCount,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
-
-/// <summary>
-/// Emitted when pending writes are deleted.
-/// </summary>
-public record InternalPendingWritesDeletedEvent(
-    string ThreadId,
-    DateTimeOffset Timestamp
-) : InternalAgentEvent, IObservabilityEvent;
 
 #endregion
 
