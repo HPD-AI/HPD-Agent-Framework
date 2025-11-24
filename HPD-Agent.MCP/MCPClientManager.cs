@@ -4,17 +4,19 @@ using ModelContextProtocol.Client;
 using System.Text.Json;
 
 
+namespace HPD_Agent.MCP;
+
 /// <summary>
 /// Manages lifecycle of MCP clients and tool loading
 /// </summary>
 public class MCPClientManager : IDisposable
 {
     private readonly Dictionary<string, IMcpClient> _clients = new();
-    private readonly ILogger<MCPClientManager> _logger;
+    private readonly ILogger _logger;
     private readonly MCPOptions _options;
     private bool _disposed = false;
 
-    public MCPClientManager(ILogger<MCPClientManager> logger, MCPOptions? options = null)
+    public MCPClientManager(ILogger logger, MCPOptions? options = null)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options ?? new MCPOptions();

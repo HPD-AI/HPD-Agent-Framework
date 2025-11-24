@@ -156,7 +156,7 @@ public sealed class MockPermissionHandler : IDisposable
                     }
 
                     // Send response back to agent
-                    _agent.SendFilterResponse(
+                    _agent.SendMiddlewareResponse(
                         permissionRequest.PermissionId,
                         new InternalPermissionResponseEvent(
                             permissionRequest.PermissionId,
@@ -168,7 +168,7 @@ public sealed class MockPermissionHandler : IDisposable
                 else if (evt is InternalContinuationRequestEvent continuationRequest)
                 {
                     // Auto-approve continuation requests by default
-                    _agent.SendFilterResponse(
+                    _agent.SendMiddlewareResponse(
                         continuationRequest.ContinuationId,
                         new InternalContinuationResponseEvent(
                             continuationRequest.ContinuationId,

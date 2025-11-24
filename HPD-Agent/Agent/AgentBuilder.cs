@@ -63,8 +63,8 @@ public class AgentBuilder
     internal IServiceProvider? _serviceProvider;
     internal ILoggerFactory? _logger;
 
-    // MCP runtime fields
-    internal MCPClientManager? _mcpClientManager;
+    // MCP runtime fields (stored as object to avoid circular reference to HPD-Agent.MCP)
+    internal object? _mcpClientManager;
 
     // AIContextProvider factory (protocol-specific, stored as object for extensibility)
     internal object? _contextProviderFactory;
@@ -774,71 +774,6 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Builds the AGUI protocol agent asynchronously.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token for async operations</param>
-    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    public async Task<AGUI.Agent> BuildAGUIAsync(CancellationToken cancellationToken = default)
-    {
-        var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Set explicitly registered plugins in config for scoping manager
-        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
-            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Get global middlewares from scoped middleware manager
-        var globalMiddlewares = _ScopedFunctionMiddlewareManager.GetGlobalMiddlewares();
-
-        // Wrap in AGUI protocol adapter
-        return new AGUI.Agent(
-            _config!,
-            buildData.ClientToUse,
-            buildData.MergedOptions,
-            _PromptMiddlewares,
-            _ScopedFunctionMiddlewareManager!,
-            buildData.ErrorHandler,
-            _PermissionMiddlewares,
-            globalMiddlewares,
-            _MessageTurnMiddlewares,
-            _IterationMiddleWares,
-            _serviceProvider,
-            _observers,
-            buildData.SummarizerClient);
-    }
-
-    /// <summary>
-    /// Builds the AGUI protocol agent synchronously.
-    /// </summary>
-    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    public AGUI.Agent BuildAGUI()
-    {
-        var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
-
-        // Set explicitly registered plugins in config for scoping manager
-        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
-            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Get global middlewares from scoped middleware manager
-        var globalMiddlewares = _ScopedFunctionMiddlewareManager.GetGlobalMiddlewares();
-
-        // Wrap in AGUI protocol adapter
-        return new AGUI.Agent(
-            _config!,
-            buildData.ClientToUse,
-            buildData.MergedOptions,
-            _PromptMiddlewares,
-            _ScopedFunctionMiddlewareManager!,
-            buildData.ErrorHandler,
-            _PermissionMiddlewares,
-            globalMiddlewares,
-            _MessageTurnMiddlewares,
-            _IterationMiddleWares,
-            _serviceProvider,
-            _observers,
-            buildData.SummarizerClient);
-    }
-
-    /// <summary>
     /// Core build logic shared between sync and async paths
     /// </summary>
     internal async Task<AgentCore> BuildCoreAsync(CancellationToken cancellationToken)
@@ -1130,19 +1065,21 @@ public class AgentBuilder
                     // Check if this is actually content vs path based on if it starts with '{'
                     if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
                     {
-                        mcpTools = await McpClientManager.LoadToolsFromManifestContentAsync(
+                        // Use dynamic to call MCPClientManager.LoadToolsFromManifestContentAsync without direct type reference
+                        mcpTools = await ((dynamic)McpClientManager).LoadToolsFromManifestContentAsync(
                             _config.Mcp.ManifestPath,
-                            enableScoping: false, // Default to false; per-server settings in JSON control this
+                            false, // enableScoping: Default to false; per-server settings in JSON control this
                             maxFunctionNames,
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken);
                     }
                     else
                     {
-                        mcpTools = await McpClientManager.LoadToolsFromManifestAsync(
+                        // Use dynamic to call MCPClientManager.LoadToolsFromManifestAsync without direct type reference
+                        mcpTools = await ((dynamic)McpClientManager).LoadToolsFromManifestAsync(
                             _config.Mcp.ManifestPath,
-                            enableScoping: false, // Default to false; per-server settings in JSON control this
+                            false, // enableScoping: Default to false; per-server settings in JSON control this
                             maxFunctionNames,
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken);
                     }
                 }
                 else
@@ -1707,9 +1644,9 @@ public class AgentBuilder
     internal List<IPermissionMiddleware> PermissionMiddlewares => _PermissionMiddlewares;
 
     /// <summary>
-    /// Internal access to MCP client manager for extension methods
+    /// Internal access to MCP client manager for extension methods (stored as object to avoid circular reference)
     /// </summary>
-    internal MCPClientManager? McpClientManager
+    internal object? McpClientManager
     {
         get => _mcpClientManager;
         set => _mcpClientManager = value;
@@ -1995,68 +1932,6 @@ internal static class AgentBuilderMiddlewareExtensions
     internal static AgentBuilder WithIterationMiddleWare<T>(this AgentBuilder builder) where T : IIterationMiddleWare, new()
     {
         builder._IterationMiddleWares.Add(new T());
-        return builder;
-    }
-}
-
-#endregion
-
-#region MCP Extensions
-/// <summary>
-/// Extension methods for configuring Model Context Protocol (MCP) capabilities for the AgentBuilder.
-/// </summary>
-public static class AgentBuilderMcpExtensions
-{
-    /// <summary>
-    /// Enables MCP support with the specified manifest file
-    /// </summary>
-    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
-    /// <param name="options">Optional MCP configuration options</param>
-    public static AgentBuilder WithMCP(this AgentBuilder builder, string manifestPath, MCPOptions? options = null)
-    {
-        if (string.IsNullOrWhiteSpace(manifestPath))
-            throw new ArgumentException("Manifest path cannot be null or empty", nameof(manifestPath));
-
-        builder.Config.Mcp = new McpConfig
-        {
-            ManifestPath = manifestPath,
-            Options = options
-        };
-        builder.McpClientManager = new MCPClientManager(builder.Logger?.CreateLogger<MCPClientManager>() ?? NullLogger<MCPClientManager>.Instance, options);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Enables MCP support with fluent configuration
-    /// </summary>
-    /// <param name="manifestPath">Path to the MCP manifest JSON file</param>
-    /// <param name="configure">Configuration action for MCP options</param>
-    public static AgentBuilder WithMCP(this AgentBuilder builder, string manifestPath, Action<MCPOptions> configure)
-    {
-        var options = new MCPOptions();
-        configure(options);
-        return builder.WithMCP(manifestPath, options);
-    }
-
-    /// <summary>
-    /// Enables MCP support with manifest content directly
-    /// </summary>
-    /// <param name="manifestContent">JSON content of the MCP manifest</param>
-    /// <param name="options">Optional MCP configuration options</param>
-    public static AgentBuilder WithMCPContent(this AgentBuilder builder, string manifestContent, MCPOptions? options = null)
-    {
-        if (string.IsNullOrWhiteSpace(manifestContent))
-            throw new ArgumentException("Manifest content cannot be null or empty", nameof(manifestContent));
-
-        // Store content in ManifestPath for now - we might need a separate property for content
-        builder.Config.Mcp = new McpConfig
-        {
-            ManifestPath = manifestContent, // This represents content, not path
-            Options = options
-        };
-        builder.McpClientManager = new MCPClientManager(builder.Logger?.CreateLogger<MCPClientManager>() ?? NullLogger<MCPClientManager>.Instance, options);
-
         return builder;
     }
 }

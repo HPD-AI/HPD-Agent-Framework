@@ -12,7 +12,6 @@ public static class AGUIJsonSerializerHelper
     /// Creates a combined JSON type info resolver that includes:
     /// - HPD-Agent core types (HPDJsonContext)
     /// - AG-UI protocol types (AGUIJsonContext)
-    /// - A2A protocol types (A2AJsonSerializerContext)
     ///
     /// Usage in ASP.NET:
     /// <code>
@@ -22,6 +21,8 @@ public static class AGUIJsonSerializerHelper
     ///         AGUIJsonSerializerHelper.CreateCombinedResolver(yourAppContext.Default));
     /// });
     /// </code>
+    /// 
+    /// NOTE: For A2A protocol support, use HPD-Agent.A2A library which provides A2AJsonSerializerContext
     /// </summary>
     /// <param name="additionalResolvers">Optional additional resolvers to include (e.g., your app's JsonSerializerContext)</param>
     /// <returns>Combined type info resolver</returns>
@@ -30,8 +31,7 @@ public static class AGUIJsonSerializerHelper
         var baseResolvers = new IJsonTypeInfoResolver[]
         {
             HPDJsonContext.Default,
-            AGUIJsonContext.Default,
-            A2AJsonSerializerContext.Default
+            AGUIJsonContext.Default
         };
 
         // Combine additional resolvers first (so app types take precedence), then library resolvers
@@ -53,3 +53,4 @@ public static class AGUIJsonSerializerHelper
     /// </summary>
     public static IJsonTypeInfoResolver Default => CreateCombinedResolver();
 }
+

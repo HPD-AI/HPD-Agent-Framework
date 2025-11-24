@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPD_Agent.MCP</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <NoWarn>HPDAUDIO001;MEAI001</NoWarn>
+    <!-- Native AOT Configuration -->
+    <PublishAot>true</PublishAot>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent" />
+    <InternalsVisibleTo Include="HPD-Agent.FFI" />
+    <InternalsVisibleTo Include="HPD-Agent.Tests" />
+    <InternalsVisibleTo Include="AgentConsoleTest" />
+    <InternalsVisibleTo Include="AgentAPI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core AI Framework -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+
+    <!-- MCP Support -->
+    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
+  </ItemGroup>
+
+</Project>

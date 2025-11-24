@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using HPD.Agent;
 using HPD.Agent.Conversation;
 using HPD_Agent.FFI;
+using HPD_Agent.MCP;
 
 namespace HPD_Agent.FFI;
 

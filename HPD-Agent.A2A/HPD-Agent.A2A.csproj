@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPD.Agent.A2A</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <NoWarn>HPDAUDIO001;MEAI001</NoWarn>
+    <!-- Native AOT Configuration -->
+    <PublishAot>true</PublishAot>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent.Tests" />
+    <InternalsVisibleTo Include="AgentAPI" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A2A Protocol -->
+    <PackageReference Include="A2A" Version="0.1.0-preview.2" />
+    <!-- AI Framework -->
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to core HPD-Agent -->
+    <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -36,11 +36,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         var className = classDecl.Identifier.ValueText;
         System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator] Checking class: {className}");
 
-        if (!classDecl.Modifiers.Any(SyntaxKind.PublicKeyword))
-        {
-            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} is not public, skipping");
-            return false;
-        }
+        // Note: We process classes with any access modifier (public, internal, private, etc.)
+        // This allows test classes and nested classes to work with source generation
 
         var methods = classDecl.Members.OfType<MethodDeclarationSyntax>().ToList();
         System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has {methods.Count} methods");
@@ -89,9 +86,21 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             method.AttributeLists.SelectMany(al => al.Attributes)
                 .Any(attr => attr.Name.ToString().Contains("Skill")));
 
-        diagnosticInfo.AppendLine($"RESULT: {(hasSkillMethods ? "SELECTED" : "SKIPPED")}");
+        // Check for sub-agent methods with [SubAgent] attribute
+        var hasSubAgentMethods = methods.Any(method =>
+            method.Modifiers.Any(SyntaxKind.PublicKeyword) &&
+            method.ReturnType.ToString().Contains("SubAgent") &&
+            method.AttributeLists.SelectMany(al => al.Attributes)
+                .Any(attr => attr.Name.ToString().Contains("SubAgent")));
 
-        return hasSkillMethods;
+        if (hasSubAgentMethods)
+        {
+            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has [SubAgent] methods - SELECTED");
+        }
+
+        diagnosticInfo.AppendLine($"RESULT: {(hasSkillMethods || hasSubAgentMethods ? "SELECTED" : "SKIPPED")}");
+
+        return hasSkillMethods || hasSubAgentMethods;
     }
     
     private static PluginInfo? GetPluginDeclaration(GeneratorSyntaxContext context, CancellationToken cancellationToken)
@@ -115,16 +124,26 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             .Where(skill => skill != null)
             .ToList();
 
-        // Must have at least one function or skill
-        if (!functions.Any() && !skills.Any()) return null;
-
+        // Get class info
+        var className = classDecl.Identifier.ValueText;
         var namespaceName = GetNamespace(classDecl);
+
+        // Analyze sub-agent methods ([SubAgent] public SubAgent MethodName(...))
+        var subAgents = classDecl.Members
+            .OfType<MethodDeclarationSyntax>()
+            .Where(method => SubAgentAnalyzer.IsSubAgentMethod(method, semanticModel))
+            .Select(method => SubAgentAnalyzer.AnalyzeSubAgent(method, semanticModel, className, namespaceName))
+            .Where(subAgent => subAgent != null)
+            .ToList();
+
+        // Must have at least one function, skill, or sub-agent
+        if (!functions.Any() && !skills.Any() && !subAgents.Any()) return null;
 
         // Check for [Scope] attribute
         var (hasScopeAttribute, scopeDescription, postExpansionInstructions) = GetScopeAttribute(classDecl);
 
         // Build description
-        var description = BuildPluginDescription(functions.Count, skills.Count);
+        var description = BuildPluginDescription(functions.Count, skills.Count, subAgents.Count);
 
         return new PluginInfo
         {
@@ -133,20 +152,28 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             Namespace = namespaceName,
             Functions = functions!,
             Skills = skills!,
+            SubAgents = subAgents!,
             HasScopeAttribute = hasScopeAttribute,
             ScopeDescription = scopeDescription,
             PostExpansionInstructions = postExpansionInstructions
         };
     }
 
-    private static string BuildPluginDescription(int functionCount, int skillCount)
+    private static string BuildPluginDescription(int functionCount, int skillCount, int subAgentCount)
     {
-        if (functionCount > 0 && skillCount > 0)
-            return $"Plugin containing {functionCount} AI functions and {skillCount} skills.";
-        else if (functionCount > 0)
-            return $"Plugin containing {functionCount} AI functions.";
+        var parts = new List<string>();
+        if (functionCount > 0) parts.Add($"{functionCount} AI functions");
+        if (skillCount > 0) parts.Add($"{skillCount} skills");
+        if (subAgentCount > 0) parts.Add($"{subAgentCount} sub-agents");
+
+        if (parts.Count == 0)
+            return "Empty plugin container.";
+        else if (parts.Count == 1)
+            return $"Plugin containing {parts[0]}.";
+        else if (parts.Count == 2)
+            return $"Plugin containing {parts[0]} and {parts[1]}.";
         else
-            return $"Skill container with {skillCount} skills.";
+            return $"Plugin containing {parts[0]}, {parts[1]}, and {parts[2]}.";
     }
     
     private static void GeneratePluginRegistrations(SourceProductionContext context, ImmutableArray<PluginInfo?> plugins)
@@ -179,6 +206,7 @@ namespace HPD_Agent.Diagnostics {{
                 var first = group.First()!;
                 var allFunctions = group.SelectMany(p => p!.Functions).ToList();
                 var allSkills = group.SelectMany(p => p!.Skills).ToList();
+                var allSubAgents = group.SelectMany(p => p!.SubAgents).ToList();
 
                 // Preserve HasScopeAttribute, ScopeDescription, and PostExpansionInstructions from any partial class that has it
                 var hasScopeAttribute = group.Any(p => p!.HasScopeAttribute);
@@ -188,10 +216,11 @@ namespace HPD_Agent.Diagnostics {{
                 return new PluginInfo
                 {
                     Name = first.Name,
-                    Description = BuildPluginDescription(allFunctions.Count, allSkills.Count),
+                    Description = BuildPluginDescription(allFunctions.Count, allSkills.Count, allSubAgents.Count),
                     Namespace = first.Namespace,
                     Functions = allFunctions,
                     Skills = allSkills,
+                    SubAgents = allSubAgents,
                     HasScopeAttribute = hasScopeAttribute,
                     ScopeDescription = scopeDescription,
                     PostExpansionInstructions = postExpansionInstructions
@@ -204,7 +233,7 @@ namespace HPD_Agent.Diagnostics {{
         debugInfo.AppendLine($"// Merged into {pluginGroups.Count} unique plugins");
         foreach (var plugin in pluginGroups)
         {
-            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.Functions.Count} functions and {plugin.Skills.Count} skills");
+            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.Functions.Count} functions, {plugin.Skills.Count} skills, and {plugin.SubAgents.Count} sub-agents");
         }
         context.AddSource("_SourceGeneratorDebug.g.cs", debugInfo.ToString());
 
@@ -315,6 +344,12 @@ namespace HPD_Agent.Diagnostics {{
         if (plugin.Skills.Any())
         {
             sb.Append(SkillCodeGenerator.GenerateSkillRegistrations(plugin));
+        }
+
+        // Add sub-agents
+        if (plugin.SubAgents.Any())
+        {
+            sb.Append(SubAgentCodeGenerator.GenerateAllSubAgentFunctions(plugin));
         }
 
         sb.AppendLine();

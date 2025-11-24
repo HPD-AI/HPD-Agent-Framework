@@ -407,7 +407,10 @@ public class StaticMemoryConfig
 public class McpConfig
 {
     public string ManifestPath { get; set; } = string.Empty;
-    public MCPOptions? Options { get; set; }
+    /// <summary>
+    /// MCP configuration options (stored as object to avoid circular dependency on HPD-Agent.MCP)
+    /// </summary>
+    public object? Options { get; set; }
 }
 
 /// <summary>

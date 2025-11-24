@@ -15,44 +15,15 @@ public sealed class Agent
     private readonly CoreAgent _core;
     private readonly AGUIEventConverter _converter;
 
-    /// <summary>
-    /// Initializes a new AGUI protocol agent instance.
-    /// Internal constructor - use AgentBuilder to create agents.
-    /// </summary>
-    internal Agent(
-        AgentConfig config,
-        IChatClient baseClient,
-        ChatOptions? mergedOptions,
-        List<IPromptMiddleware> PromptMiddlewares,
-        ScopedFunctionMiddlewareManager ScopedFunctionMiddlewareManager,
-        ErrorHandling.IProviderErrorHandler providerErrorHandler,
-        IReadOnlyList<IPermissionMiddleware>? PermissionMiddlewares = null,
-        IReadOnlyList<IAIFunctionMiddleware>? AIFunctionMiddlewares = null,
-        IReadOnlyList<IMessageTurnMiddleware>? MessageTurnMiddlewares = null,
-        IReadOnlyList<IIterationMiddleWare>? IterationMiddleWares = null,
-        IServiceProvider? serviceProvider = null,
-        IEnumerable<IAgentEventObserver>? observers = null,
-        IChatClient? summarizerClient = null)
-    {
-        _core = new CoreAgent(
-            config,
-            baseClient,
-            mergedOptions,
-            PromptMiddlewares,
-            ScopedFunctionMiddlewareManager,
-            providerErrorHandler,
-            PermissionMiddlewares,
-            AIFunctionMiddlewares,
-            MessageTurnMiddlewares,
-            IterationMiddleWares,
-            serviceProvider,
-            observers,
-            summarizerClient);
-
-        _converter = new AGUIEventConverter();
-    }
-
-    /// <summary>
+/// <summary>
+/// Initializes a new AGUI protocol agent instance.
+/// Internal constructor - use AgentBuilder.BuildAGUI() to create agents.
+/// </summary>
+internal Agent(CoreAgent core)
+{
+    _core = core ?? throw new ArgumentNullException(nameof(core));
+    _converter = new AGUIEventConverter();
+}    /// <summary>
     /// Agent name (delegated to core)
     /// </summary>
     public string Name => _core.Name;

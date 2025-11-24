@@ -3,16 +3,16 @@ using HPD.Agent.Internal.MiddleWare;
 using HPD.Agent;
 using Microsoft.Extensions.AI;
 
-namespace HPD.Agent.Tests.Filters;
+namespace HPD.Agent.Tests.Middlewares;
 
-public class ScopedFilterSystemTests
+public class ScopedMiddlewareSystemTests
 {
-    private class TestFilter : IAIFunctionMiddleware
+    private class TestMiddleware : IAIFunctionMiddleware
     {
         public string Name { get; }
         public bool WasCalled { get; private set; }
 
-        public TestFilter(string name) => Name = name;
+        public TestMiddleware(string name) => Name = name;
 
         public Task InvokeAsync(FunctionInvocationContext context, Func<FunctionInvocationContext, Task> next)
         {
@@ -21,55 +21,55 @@ public class ScopedFilterSystemTests
         }
     }
 
-    #region FilterScope Enum Tests
+    #region MiddlewareScope Enum Tests
 
     [Fact]
-    public void FilterScope_HasCorrectValues()
+    public void MiddlewareScope_HasCorrectValues()
     {
         // Ensure scope values are in correct order for priority
-        Assert.Equal(0, (int)FilterScope.Global);
-        Assert.Equal(1, (int)FilterScope.Plugin);
-        Assert.Equal(2, (int)FilterScope.Skill);
-        Assert.Equal(3, (int)FilterScope.Function);
+        Assert.Equal(0, (int)MiddlewareScope.Global);
+        Assert.Equal(1, (int)MiddlewareScope.Plugin);
+        Assert.Equal(2, (int)MiddlewareScope.Skill);
+        Assert.Equal(3, (int)MiddlewareScope.Function);
     }
 
     #endregion
 
-    #region ScopedFilter AppliesTo Tests
+    #region ScopedMiddleware AppliesTo Tests
 
     [Fact]
-    public void GlobalFilter_AppliesToAllFunctions()
+    public void GlobalMiddleware_AppliesToAllFunctions()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("global"), FilterScope.Global, null);
+        var Middleware = new ScopedMiddleware(new TestMiddleware("global"), MiddlewareScope.Global, null);
 
         // Act & Assert
-        Assert.True(filter.AppliesTo("AnyFunction"));
-        Assert.True(filter.AppliesTo("AnyFunction", "AnyPlugin"));
-        Assert.True(filter.AppliesTo("AnyFunction", "AnyPlugin", "AnySkill"));
-        Assert.True(filter.AppliesTo("AnyFunction", null, null, true));
+        Assert.True(Middleware.AppliesTo("AnyFunction"));
+        Assert.True(Middleware.AppliesTo("AnyFunction", "AnyPlugin"));
+        Assert.True(Middleware.AppliesTo("AnyFunction", "AnyPlugin", "AnySkill"));
+        Assert.True(Middleware.AppliesTo("AnyFunction", null, null, true));
     }
 
     [Fact]
-    public void PluginFilter_AppliesToPluginFunctions()
+    public void PluginMiddleware_AppliesToPluginFunctions()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("plugin"), FilterScope.Plugin, "FileSystemPlugin");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("plugin"), MiddlewareScope.Plugin, "FileSystemPlugin");
 
         // Act & Assert
-        Assert.True(filter.AppliesTo("ReadFile", "FileSystemPlugin"));
-        Assert.False(filter.AppliesTo("ReadFile", "DatabasePlugin"));
-        Assert.False(filter.AppliesTo("ReadFile", null));
+        Assert.True(Middleware.AppliesTo("ReadFile", "FileSystemPlugin"));
+        Assert.False(Middleware.AppliesTo("ReadFile", "DatabasePlugin"));
+        Assert.False(Middleware.AppliesTo("ReadFile", null));
     }
 
     [Fact]
-    public void SkillFilter_AppliesToSkillContainer()
+    public void SkillMiddleware_AppliesToSkillContainer()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("skill"), FilterScope.Skill, "analyze_codebase");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("skill"), MiddlewareScope.Skill, "analyze_codebase");
 
         // Act - skill container itself
-        var applies = filter.AppliesTo(
+        var applies = Middleware.AppliesTo(
             functionName: "analyze_codebase",
             pluginTypeName: null,
             skillName: null,
@@ -81,13 +81,13 @@ public class ScopedFilterSystemTests
     }
 
     [Fact]
-    public void SkillFilter_AppliesToReferencedFunctions()
+    public void SkillMiddleware_AppliesToReferencedFunctions()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("skill"), FilterScope.Skill, "analyze_codebase");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("skill"), MiddlewareScope.Skill, "analyze_codebase");
 
         // Act - function called by skill
-        var applies = filter.AppliesTo(
+        var applies = Middleware.AppliesTo(
             functionName: "ReadFile",
             pluginTypeName: "FileSystemPlugin",
             skillName: "analyze_codebase",
@@ -99,13 +99,13 @@ public class ScopedFilterSystemTests
     }
 
     [Fact]
-    public void SkillFilter_DoesNotApplyToOtherSkillContainers()
+    public void SkillMiddleware_DoesNotApplyToOtherSkillContainers()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("skill"), FilterScope.Skill, "analyze_codebase");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("skill"), MiddlewareScope.Skill, "analyze_codebase");
 
         // Act - different skill container
-        var applies = filter.AppliesTo(
+        var applies = Middleware.AppliesTo(
             functionName: "refactor_code",
             pluginTypeName: null,
             skillName: null,
@@ -117,13 +117,13 @@ public class ScopedFilterSystemTests
     }
 
     [Fact]
-    public void SkillFilter_DoesNotApplyToFunctionsFromOtherSkills()
+    public void SkillMiddleware_DoesNotApplyToFunctionsFromOtherSkills()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("skill"), FilterScope.Skill, "analyze_codebase");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("skill"), MiddlewareScope.Skill, "analyze_codebase");
 
         // Act - function called by different skill
-        var applies = filter.AppliesTo(
+        var applies = Middleware.AppliesTo(
             functionName: "WriteFile",
             pluginTypeName: "FileSystemPlugin",
             skillName: "refactor_code",
@@ -135,14 +135,14 @@ public class ScopedFilterSystemTests
     }
 
     [Fact]
-    public void FunctionFilter_AppliesToSpecificFunction()
+    public void FunctionMiddleware_AppliesToSpecificFunction()
     {
         // Arrange
-        var filter = new ScopedFilter(new TestFilter("function"), FilterScope.Function, "ReadFile");
+        var Middleware = new ScopedMiddleware(new TestMiddleware("function"), MiddlewareScope.Function, "ReadFile");
 
         // Act & Assert
-        Assert.True(filter.AppliesTo("ReadFile"));
-        Assert.False(filter.AppliesTo("WriteFile"));
+        Assert.True(Middleware.AppliesTo("ReadFile"));
+        Assert.False(Middleware.AppliesTo("WriteFile"));
     }
 
     #endregion
@@ -154,72 +154,72 @@ public class ScopedFilterSystemTests
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var filter = new TestFilter("skill");
+        var Middleware = new TestMiddleware("skill");
 
-        manager.AddFilter(filter, FilterScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(Middleware, MiddlewareScope.Skill, "analyze_codebase");
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
 
         // Act - No skill name provided, should use fallback
-        var applicable = manager.GetApplicableFilters("ReadFile").ToList();
+        var applicable = manager.GetApplicableMiddlewares("ReadFile").ToList();
 
         // Assert
-        Assert.Contains(filter, applicable);
+        Assert.Contains(Middleware, applicable);
     }
 
     [Fact]
-    public void ScopedFunctionMiddlewareManager_GetApplicableFilters_ReturnsCorrectFilters()
+    public void ScopedFunctionMiddlewareManager_GetApplicableMiddlewares_ReturnsCorrectMiddlewares()
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var globalFilter = new TestFilter("Global");
-        var pluginFilter = new TestFilter("Plugin");
-        var skillFilter = new TestFilter("Skill");
-        var functionFilter = new TestFilter("Function");
+        var globalMiddleware = new TestMiddleware("Global");
+        var pluginMiddleware = new TestMiddleware("Plugin");
+        var skillMiddleware = new TestMiddleware("Skill");
+        var functionMiddleware = new TestMiddleware("Function");
 
-        manager.AddFilter(globalFilter, FilterScope.Global, null);
-        manager.AddFilter(pluginFilter, FilterScope.Plugin, "FileSystemPlugin");
-        manager.AddFilter(skillFilter, FilterScope.Skill, "analyze_codebase");
-        manager.AddFilter(functionFilter, FilterScope.Function, "ReadFile");
+        manager.AddMiddleware(globalMiddleware, MiddlewareScope.Global, null);
+        manager.AddMiddleware(pluginMiddleware, MiddlewareScope.Plugin, "FileSystemPlugin");
+        manager.AddMiddleware(skillMiddleware, MiddlewareScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(functionMiddleware, MiddlewareScope.Function, "ReadFile");
 
         manager.RegisterFunctionPlugin("ReadFile", "FileSystemPlugin");
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
 
         // Act
-        var filters = manager.GetApplicableFilters(
+        var Middlewares = manager.GetApplicableMiddlewares(
             "ReadFile",
             "FileSystemPlugin",
             "analyze_codebase",
             false
         ).ToList();
 
-        // Assert - all 4 filters should apply
-        Assert.Equal(4, filters.Count);
-        Assert.Contains(globalFilter, filters);
-        Assert.Contains(pluginFilter, filters);
-        Assert.Contains(skillFilter, filters);
-        Assert.Contains(functionFilter, filters);
+        // Assert - all 4 Middlewares should apply
+        Assert.Equal(4, Middlewares.Count);
+        Assert.Contains(globalMiddleware, Middlewares);
+        Assert.Contains(pluginMiddleware, Middlewares);
+        Assert.Contains(skillMiddleware, Middlewares);
+        Assert.Contains(functionMiddleware, Middlewares);
     }
 
     [Fact]
-    public void ScopedFunctionMiddlewareManager_GetApplicableFilters_OrdersByScope()
+    public void ScopedFunctionMiddlewareManager_GetApplicableMiddlewares_OrdersByScope()
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var globalFilter = new TestFilter("Global");
-        var pluginFilter = new TestFilter("Plugin");
-        var skillFilter = new TestFilter("Skill");
-        var functionFilter = new TestFilter("Function");
+        var globalMiddleware = new TestMiddleware("Global");
+        var pluginMiddleware = new TestMiddleware("Plugin");
+        var skillMiddleware = new TestMiddleware("Skill");
+        var functionMiddleware = new TestMiddleware("Function");
 
-        manager.AddFilter(functionFilter, FilterScope.Function, "ReadFile");
-        manager.AddFilter(globalFilter, FilterScope.Global, null);
-        manager.AddFilter(skillFilter, FilterScope.Skill, "analyze_codebase");
-        manager.AddFilter(pluginFilter, FilterScope.Plugin, "FileSystemPlugin");
+        manager.AddMiddleware(functionMiddleware, MiddlewareScope.Function, "ReadFile");
+        manager.AddMiddleware(globalMiddleware, MiddlewareScope.Global, null);
+        manager.AddMiddleware(skillMiddleware, MiddlewareScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(pluginMiddleware, MiddlewareScope.Plugin, "FileSystemPlugin");
 
         manager.RegisterFunctionPlugin("ReadFile", "FileSystemPlugin");
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
 
         // Act
-        var filters = manager.GetApplicableFilters(
+        var Middlewares = manager.GetApplicableMiddlewares(
             "ReadFile",
             "FileSystemPlugin",
             "analyze_codebase",
@@ -227,11 +227,11 @@ public class ScopedFilterSystemTests
         ).ToList();
 
         // Assert - OrderBy(scope) returns: Global(0) → Plugin(1) → Skill(2) → Function(3)
-        Assert.Equal(4, filters.Count);
-        Assert.Same(globalFilter, filters[0]);
-        Assert.Same(pluginFilter, filters[1]);
-        Assert.Same(skillFilter, filters[2]);
-        Assert.Same(functionFilter, filters[3]);
+        Assert.Equal(4, Middlewares.Count);
+        Assert.Same(globalMiddleware, Middlewares[0]);
+        Assert.Same(pluginMiddleware, Middlewares[1]);
+        Assert.Same(skillMiddleware, Middlewares[2]);
+        Assert.Same(functionMiddleware, Middlewares[3]);
     }
 
     [Fact]
@@ -239,16 +239,16 @@ public class ScopedFilterSystemTests
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var filter = new TestFilter("plugin");
+        var Middleware = new TestMiddleware("plugin");
 
-        manager.AddFilter(filter, FilterScope.Plugin, "FileSystemPlugin");
+        manager.AddMiddleware(Middleware, MiddlewareScope.Plugin, "FileSystemPlugin");
         manager.RegisterFunctionPlugin("ReadFile", "FileSystemPlugin");
 
         // Act - No pluginTypeName provided, should use fallback
-        var applicable = manager.GetApplicableFilters("ReadFile").ToList();
+        var applicable = manager.GetApplicableMiddlewares("ReadFile").ToList();
 
         // Assert
-        Assert.Contains(filter, applicable);
+        Assert.Contains(Middleware, applicable);
     }
 
     [Fact]
@@ -256,16 +256,16 @@ public class ScopedFilterSystemTests
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var filter = new TestFilter("skill");
+        var Middleware = new TestMiddleware("skill");
 
-        manager.AddFilter(filter, FilterScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(Middleware, MiddlewareScope.Skill, "analyze_codebase");
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
 
         // Act - No skillName provided, should use fallback
-        var applicable = manager.GetApplicableFilters("ReadFile").ToList();
+        var applicable = manager.GetApplicableMiddlewares("ReadFile").ToList();
 
         // Assert
-        Assert.Contains(filter, applicable);
+        Assert.Contains(Middleware, applicable);
     }
 
     [Fact]
@@ -273,20 +273,20 @@ public class ScopedFilterSystemTests
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var filter = new TestFilter("skill");
+        var Middleware = new TestMiddleware("skill");
 
-        manager.AddFilter(filter, FilterScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(Middleware, MiddlewareScope.Skill, "analyze_codebase");
 
         // Act - Skill container invocation (isSkillContainer=true, skillName=null)
-        var applicable = manager.GetApplicableFilters(
+        var applicable = manager.GetApplicableMiddlewares(
             "analyze_codebase",
             pluginTypeName: null,
             skillName: null,
             isSkillContainer: true
         ).ToList();
 
-        // Assert - filter should apply because container name matches
-        Assert.Contains(filter, applicable);
+        // Assert - Middleware should apply because container name matches
+        Assert.Contains(Middleware, applicable);
     }
 
     #endregion
@@ -300,7 +300,7 @@ public class ScopedFilterSystemTests
         var context = new BuilderScopeContext();
 
         // Assert
-        Assert.Equal(FilterScope.Global, context.CurrentScope);
+        Assert.Equal(MiddlewareScope.Global, context.CurrentScope);
         Assert.Null(context.CurrentTarget);
     }
 
@@ -314,7 +314,7 @@ public class ScopedFilterSystemTests
         context.SetSkillScope("analyze_codebase");
 
         // Assert
-        Assert.Equal(FilterScope.Skill, context.CurrentScope);
+        Assert.Equal(MiddlewareScope.Skill, context.CurrentScope);
         Assert.Equal("analyze_codebase", context.CurrentTarget);
     }
 
@@ -329,7 +329,7 @@ public class ScopedFilterSystemTests
         context.SetGlobalScope();
 
         // Assert
-        Assert.Equal(FilterScope.Global, context.CurrentScope);
+        Assert.Equal(MiddlewareScope.Global, context.CurrentScope);
         Assert.Null(context.CurrentTarget);
     }
 
@@ -343,7 +343,7 @@ public class ScopedFilterSystemTests
         context.SetPluginScope("FileSystemPlugin");
 
         // Assert
-        Assert.Equal(FilterScope.Plugin, context.CurrentScope);
+        Assert.Equal(MiddlewareScope.Plugin, context.CurrentScope);
         Assert.Equal("FileSystemPlugin", context.CurrentTarget);
     }
 
@@ -357,7 +357,7 @@ public class ScopedFilterSystemTests
         context.SetFunctionScope("ReadFile");
 
         // Assert
-        Assert.Equal(FilterScope.Function, context.CurrentScope);
+        Assert.Equal(MiddlewareScope.Function, context.CurrentScope);
         Assert.Equal("ReadFile", context.CurrentTarget);
     }
 
@@ -366,36 +366,36 @@ public class ScopedFilterSystemTests
     #region Integration-style Tests
 
     [Fact]
-    public void SkillFilter_AppliesToBothContainerAndReferencedFunctions()
+    public void SkillMiddleware_AppliesToBothContainerAndReferencedFunctions()
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var filter = new TestFilter("skill");
+        var Middleware = new TestMiddleware("skill");
 
-        manager.AddFilter(filter, FilterScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(Middleware, MiddlewareScope.Skill, "analyze_codebase");
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
         manager.RegisterFunctionSkill("ListDirectory", "analyze_codebase");
 
         // Act & Assert - skill container
-        var containerApplicable = manager.GetApplicableFilters(
+        var containerApplicable = manager.GetApplicableMiddlewares(
             "analyze_codebase",
             null,
             null,
             isSkillContainer: true
         ).ToList();
-        Assert.Contains(filter, containerApplicable);
+        Assert.Contains(Middleware, containerApplicable);
 
         // Act & Assert - referenced function 1
-        var func1Applicable = manager.GetApplicableFilters("ReadFile").ToList();
-        Assert.Contains(filter, func1Applicable);
+        var func1Applicable = manager.GetApplicableMiddlewares("ReadFile").ToList();
+        Assert.Contains(Middleware, func1Applicable);
 
         // Act & Assert - referenced function 2
-        var func2Applicable = manager.GetApplicableFilters("ListDirectory").ToList();
-        Assert.Contains(filter, func2Applicable);
+        var func2Applicable = manager.GetApplicableMiddlewares("ListDirectory").ToList();
+        Assert.Contains(Middleware, func2Applicable);
 
         // Act & Assert - non-referenced function
-        var otherApplicable = manager.GetApplicableFilters("WriteFile").ToList();
-        Assert.DoesNotContain(filter, otherApplicable);
+        var otherApplicable = manager.GetApplicableMiddlewares("WriteFile").ToList();
+        Assert.DoesNotContain(Middleware, otherApplicable);
     }
 
     [Fact]
@@ -403,34 +403,34 @@ public class ScopedFilterSystemTests
     {
         // Arrange
         var manager = new ScopedFunctionMiddlewareManager();
-        var skill1Filter = new TestFilter("skill1");
-        var skill2Filter = new TestFilter("skill2");
+        var skill1Middleware = new TestMiddleware("skill1");
+        var skill2Middleware = new TestMiddleware("skill2");
 
-        manager.AddFilter(skill1Filter, FilterScope.Skill, "analyze_codebase");
-        manager.AddFilter(skill2Filter, FilterScope.Skill, "refactor_code");
+        manager.AddMiddleware(skill1Middleware, MiddlewareScope.Skill, "analyze_codebase");
+        manager.AddMiddleware(skill2Middleware, MiddlewareScope.Skill, "refactor_code");
 
         // Both skills reference ReadFile
         manager.RegisterFunctionSkill("ReadFile", "analyze_codebase");
         // Note: In real scenario, mapping is 1:1, last one wins
-        // But we're testing that different skills can have different filters
+        // But we're testing that different skills can have different Middlewares
 
         // Act
-        var skill1Applicable = manager.GetApplicableFilters(
+        var skill1Applicable = manager.GetApplicableMiddlewares(
             "ReadFile",
             skillName: "analyze_codebase"
         ).ToList();
 
-        var skill2Applicable = manager.GetApplicableFilters(
+        var skill2Applicable = manager.GetApplicableMiddlewares(
             "ReadFile",
             skillName: "refactor_code"
         ).ToList();
 
         // Assert
-        Assert.Contains(skill1Filter, skill1Applicable);
-        Assert.DoesNotContain(skill2Filter, skill1Applicable);
+        Assert.Contains(skill1Middleware, skill1Applicable);
+        Assert.DoesNotContain(skill2Middleware, skill1Applicable);
 
-        Assert.Contains(skill2Filter, skill2Applicable);
-        Assert.DoesNotContain(skill1Filter, skill2Applicable);
+        Assert.Contains(skill2Middleware, skill2Applicable);
+        Assert.DoesNotContain(skill1Middleware, skill2Applicable);
     }
 
     #endregion

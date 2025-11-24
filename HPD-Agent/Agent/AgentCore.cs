@@ -1142,7 +1142,7 @@ internal sealed class AgentCore
                                     {
                                         var argsJson = System.Text.Json.JsonSerializer.Serialize(
                                             functionCall.Arguments,
-                                            AGUIJsonContext.Default.DictionaryStringObject);
+                                             HPDJsonContext.Default.DictionaryStringObject);
 
                                         yield return new InternalToolCallArgsEvent(functionCall.CallId, argsJson);
                                     }
@@ -3749,7 +3749,7 @@ internal static class ContentExtractor
                     sb.Append("|F:").Append(fc.Name).Append(":").Append(fc.CallId).Append(":");
                     sb.Append(System.Text.Json.JsonSerializer.Serialize(
                         fc.Arguments ?? new Dictionary<string, object?>(),
-                        AGUIJsonContext.Default.DictionaryStringObject));
+                        HPDJsonContext.Default.DictionaryStringObject));
                     break;
                 case FunctionResultContent fr:
                     sb.Append("|FR:").Append(fr.CallId).Append(":");
@@ -5254,16 +5254,12 @@ internal record ReductionMetadata
 }
 
 /// <summary>
-/// Updated to stream BaseEvent instead of ChatResponseUpdate.
-/// This is a breaking change for v0.
+/// Generic streaming result for protocol adapters.
+/// Contains final history and reduction metadata after streaming completes.
+/// Protocol-specific event streaming is handled by protocol adapters (AGUI, Microsoft, etc.)
 /// </summary>
 internal class StreamingTurnResult
 {
-    /// <summary>
-    /// BREAKING: Change from ChatResponseUpdate to BaseEvent
-    /// </summary>
-    public IAsyncEnumerable<BaseEvent> EventStream { get; }
-
     /// <summary>
     /// Task that completes with the final turn history once streaming is done
     /// </summary>
@@ -5278,15 +5274,12 @@ internal class StreamingTurnResult
     /// <summary>
     /// Initializes a new instance of StreamingTurnResult
     /// </summary>
-    /// <param name="eventStream">The stream of BaseEvents</param>
     /// <param name="finalHistory">Task that provides the final turn history</param>
     /// <param name="reductionTask">Task that provides the reduction metadata</param>
     public StreamingTurnResult(
-        IAsyncEnumerable<BaseEvent> eventStream,
         Task<IReadOnlyList<ChatMessage>> finalHistory,
         Task<ReductionMetadata?> reductionTask)
     {
-        EventStream = eventStream ?? throw new ArgumentNullException(nameof(eventStream));
         FinalHistory = finalHistory ?? throw new ArgumentNullException(nameof(finalHistory));
         ReductionTask = reductionTask ?? Task.FromResult<ReductionMetadata?>(null);
     }
@@ -5624,98 +5617,9 @@ internal static class ErrorFormatter
 /// Eliminates duplication of event adaptation logic across the Agent codebase.
 ///
 /// Supported protocols:
-/// - Full event streaming with Run/Step/Tool lifecycle
-/// - Simplified content-only streaming (Microsoft.Extensions.AI)
-/// - Error handling wrapper for all protocols
+/// - Protocol-specific event adapters are in protocol libraries (AGUI, Microsoft)
+/// - Core remains protocol-agnostic
 /// </summary>
-internal static class EventStreamAdapter
-{
-    /// <summary>
-    /// Wraps an event stream with error handling.
-    /// Catches exceptions during enumeration and converts them to structured error events.
-    /// Works around C#'s limitation of no yield return in try-catch blocks.
-    /// </summary>
-    public static async IAsyncEnumerable<BaseEvent> WithErrorHandling(
-        IAsyncEnumerable<BaseEvent> innerStream,
-        TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletion,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var enumerator = innerStream.GetAsyncEnumerator(cancellationToken);
-        Exception? caughtError = null;
-        bool runFinishedEmitted = false;
-
-        // Capture IDs from RunStartedEvent to use in error scenarios
-        string? threadId = null;
-        string? runId = null;
-
-        try
-        {
-            while (true)
-            {
-                BaseEvent? currentEvent = default;
-                bool hasNext = false;
-                bool hadError = false;
-
-                try
-                {
-                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
-                    if (hasNext)
-                    {
-                        currentEvent = enumerator.Current;
-
-                        // Capture IDs from RunStartedEvent for error correlation
-                        if (currentEvent is RunStartedEvent runStarted)
-                        {
-                            threadId = runStarted.ThreadId;
-                            runId = runStarted.RunId;
-                        }
-                        else if (currentEvent is RunFinishedEvent)
-                        {
-                            runFinishedEmitted = true;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    caughtError = ex;
-                    hadError = true;
-                    historyCompletion.TrySetException(ex);
-                }
-
-                // Emit error event AFTER catch block (C# doesn't allow yield in catch)
-                if (hadError && caughtError != null)
-                {
-                    var errorMessage = caughtError is OperationCanceledException
-                        ? "Turn was canceled or timed out."
-                        : ErrorFormatter.FormatDetailedError(caughtError, null);
-
-                    yield return EventSerialization.CreateRunError(errorMessage);
-                    break;
-                }
-
-                if (!hasNext)
-                {
-                    break;
-                }
-
-                yield return currentEvent!;
-            }
-
-            // If error occurred and RunFinished wasn't emitted, emit it now for lifecycle closure
-            if (caughtError != null && !runFinishedEmitted)
-            {
-                yield return EventSerialization.CreateRunFinished(
-                    threadId ?? string.Empty,
-                    runId ?? string.Empty);
-            }
-        }
-        finally
-        {
-            await enumerator.DisposeAsync().ConfigureAwait(false);
-        }
-    }
-}
-
 #endregion
 #region
 

@@ -7,7 +7,8 @@
     <Nullable>enable</Nullable>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <NoWarn>HPDAUDIO001;MEAI001</NoWarn>
-    <!-- Core library - NOT Native AOT (FFI project handles that) -->
+    <!-- Native AOT Configuration -->
+    <PublishAot>true</PublishAot>
     <OutputType>Library</OutputType>
   </PropertyGroup>
 
@@ -17,42 +18,24 @@
     <InternalsVisibleTo Include="AgentConsoleTest" />
     <InternalsVisibleTo Include="AgentAPI" />
     <InternalsVisibleTo Include="HPD-Agent.Microsoft" />
+    <InternalsVisibleTo Include="HPD-Agent.A2A" />
+    <InternalsVisibleTo Include="HPD-Agent.AGUI" />
+    <InternalsVisibleTo Include="HPD-Agent.MCP" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- Core AI Framework (Protocol-Agnostic) -->
-    <PackageReference Include="A2A" Version="0.1.0-preview.2" />
     <!-- Microsoft.Agents.AI.Abstractions removed - core is now protocol-agnostic -->
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.9" />
-
-
-    <!-- Dependency Injection & Configuration -->
+        <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
 
-    <!-- JSON & Serialization (use version required by Extensions.AI) -->
-    <PackageReference Include="System.Text.Json" Version="10.0.0" />
-    
-    <!-- Async Utilities (use version required by Extensions.AI) -->
-    <PackageReference Include="System.Threading.Channels" Version="10.0.0" />
-
-    <!-- MCP Support -->
-    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
-
     <!-- Validation -->
     <PackageReference Include="FluentValidation" Version="12.0.0" />
-
-    <!-- OpenTelemetry for observability (Gen AI Semantic Conventions v1.38) -->
-    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="10.0.0" />
-    <PackageReference Include="OpenTelemetry.Api" Version="1.11.0" />
-
-    <!-- Distributed Caching -->
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.0" />
-
   </ItemGroup>
 
   <ItemGroup>

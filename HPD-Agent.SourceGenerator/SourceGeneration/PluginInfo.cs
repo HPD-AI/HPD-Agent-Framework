@@ -19,6 +19,11 @@ internal class PluginInfo
     public List<SkillInfo> Skills { get; set; } = new();
 
     /// <summary>
+    /// Sub-agents defined in this class (empty if no sub-agents)
+    /// </summary>
+    public List<SubAgentInfo> SubAgents { get; set; } = new();
+
+    /// <summary>
     /// Whether this class contains both functions and skills
     /// </summary>
     public bool IsMixed => Functions.Any() && Skills.Any();
@@ -27,6 +32,11 @@ internal class PluginInfo
     /// Whether this class contains only skills (no [AIFunction] methods)
     /// </summary>
     public bool IsSkillOnly => Skills.Any() && !Functions.Any();
+
+    /// <summary>
+    /// Whether this class contains only sub-agents (no [AIFunction] methods or skills)
+    /// </summary>
+    public bool IsSubAgentOnly => SubAgents.Any() && !Functions.Any() && !Skills.Any();
 
     /// <summary>
     /// Whether any functions have conditional logic requiring context resolution

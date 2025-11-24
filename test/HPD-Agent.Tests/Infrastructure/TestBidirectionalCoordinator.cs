@@ -45,7 +45,7 @@ public sealed class TestBidirectionalCoordinator
     public ChannelReader<InternalAgentEvent> EventReader => _eventChannel.Reader;
 
     /// <summary>
-    /// Event writer for filters to emit events.
+    /// Event writer for Middlewares to emit events.
     /// </summary>
     public ChannelWriter<InternalAgentEvent> EventWriter => _eventChannel.Writer;
 
@@ -65,7 +65,7 @@ public sealed class TestBidirectionalCoordinator
     }
 
     /// <summary>
-    /// Enqueues a filter event to be read by the agent.
+    /// Enqueues a Middleware event to be read by the agent.
     /// Useful for simulating permission responses, progress updates, etc.
     /// </summary>
     public void EnqueueEvent(InternalAgentEvent evt)
@@ -74,7 +74,7 @@ public sealed class TestBidirectionalCoordinator
     }
 
     /// <summary>
-    /// Sends a response to a waiting filter request.
+    /// Sends a response to a waiting Middleware request.
     /// Simulates user responding to permission prompt, etc.
     /// </summary>
     public void SendResponse(string requestId, InternalAgentEvent response)
@@ -95,7 +95,7 @@ public sealed class TestBidirectionalCoordinator
     }
 
     /// <summary>
-    /// Waits for a response from external source (simulates filter waiting for user input).
+    /// Waits for a response from external source (simulates Middleware waiting for user input).
     /// </summary>
     public async Task<T> WaitForResponseAsync<T>(
         string requestId,

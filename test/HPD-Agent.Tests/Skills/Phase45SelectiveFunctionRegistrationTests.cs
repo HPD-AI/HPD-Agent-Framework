@@ -15,7 +15,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     // ===== P0 Tests: Core Selective Registration =====
 
     [Fact]
-    public void PluginRegistration_FromTypeFunctions_CreatesFilteredRegistration()
+    public void PluginRegistration_FromTypeFunctions_CreatesMiddlewareedRegistration()
     {
         // Arrange
         var functionNames = new[] { "ReadFile", "WriteFile" };
@@ -28,10 +28,10 @@ public class Phase45SelectiveFunctionRegistrationTests
         // Assert
         Assert.NotNull(registration);
         Assert.Equal(typeof(MockFileSystemPlugin), registration.PluginType);
-        Assert.NotNull(registration.FunctionFilter);
-        Assert.Equal(2, registration.FunctionFilter!.Length);
-        Assert.Contains("ReadFile", registration.FunctionFilter);
-        Assert.Contains("WriteFile", registration.FunctionFilter);
+        Assert.NotNull(registration.FunctionMiddleware);
+        Assert.Equal(2, registration.FunctionMiddleware!.Length);
+        Assert.Contains("ReadFile", registration.FunctionMiddleware);
+        Assert.Contains("WriteFile", registration.FunctionMiddleware);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void PluginManager_RegisterPluginFunctions_AddsFilteredRegistration()
+    public void PluginManager_RegisterPluginFunctions_AddsMiddlewareedRegistration()
     {
         // Arrange
         var manager = new PluginManager();
@@ -63,8 +63,8 @@ public class Phase45SelectiveFunctionRegistrationTests
         // Assert
         var registrations = manager.GetPluginRegistrations();
         Assert.Single(registrations);
-        Assert.NotNull(registrations[0].FunctionFilter);
-        Assert.Equal(2, registrations[0].FunctionFilter!.Length);
+        Assert.NotNull(registrations[0].FunctionMiddleware);
+        Assert.Equal(2, registrations[0].FunctionMiddleware!.Length);
     }
 
     [Fact]
@@ -82,10 +82,10 @@ public class Phase45SelectiveFunctionRegistrationTests
         Assert.Same(manager, result);
     }
 
-    // ===== Function Filtering Tests =====
+    // ===== Function Middlewareing Tests =====
 
     [Fact]
-    public void ToAIFunctions_WithFunctionFilter_ReturnsOnlyFilteredFunctions()
+    public void ToAIFunctions_WithFunctionMiddleware_ReturnsOnlyMiddlewareedFunctions()
     {
         // Arrange
         var registration = PluginRegistration.FromTypeFunctions(
@@ -106,7 +106,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void ToAIFunctions_WithoutFunctionFilter_ReturnsAllFunctions()
+    public void ToAIFunctions_WithoutFunctionMiddleware_ReturnsAllFunctions()
     {
         // Arrange
         var registration = PluginRegistration.FromType<MockFileSystemPlugin>();
@@ -125,7 +125,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void ToAIFunctions_WithSingleFunctionFilter_ReturnsOnlyThatFunction()
+    public void ToAIFunctions_WithSingleFunctionMiddleware_ReturnsOnlyThatFunction()
     {
         // Arrange
         var registration = PluginRegistration.FromTypeFunctions(
@@ -143,12 +143,12 @@ public class Phase45SelectiveFunctionRegistrationTests
     // ===== Deduplication Tests =====
 
     [Fact]
-    public void CreateAllFunctions_WithDuplicatePlugins_DifferentFilters_ReturnsAllUniqueFunctions()
+    public void CreateAllFunctions_WithDuplicatePlugins_DifferentMiddlewares_ReturnsAllUniqueFunctions()
     {
         // Arrange
         var manager = new PluginManager();
 
-        // Register with filter first
+        // Register with Middleware first
         manager.RegisterPluginFunctions(typeof(MockFileSystemPlugin), new[] { "ReadFile", "WriteFile" });
 
         // Then register full plugin
@@ -158,7 +158,7 @@ public class Phase45SelectiveFunctionRegistrationTests
         var functions = manager.CreateAllFunctions();
 
         // Assert
-        // Should have 2 + 5 = 7 total (2 from filtered + 5 from full)
+        // Should have 2 + 5 = 7 total (2 from Middlewareed + 5 from full)
         // But ReadFile and WriteFile appear twice, so we check they exist
         Assert.NotEmpty(functions);
         Assert.Contains(functions, f => f.Name == "ReadFile");
@@ -169,7 +169,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void CreateAllFunctions_WithMultipleFilteredRegistrations_ReturnsAllFunctions()
+    public void CreateAllFunctions_WithMultipleMiddlewareedRegistrations_ReturnsAllFunctions()
     {
         // Arrange
         var manager = new PluginManager();
@@ -192,7 +192,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     // ===== Edge Cases =====
 
     [Fact]
-    public void ToAIFunctions_WithNonExistentFunctionInFilter_IgnoresIt()
+    public void ToAIFunctions_WithNonExistentFunctionInMiddleware_IgnoresIt()
     {
         // Arrange
         var registration = PluginRegistration.FromTypeFunctions(
@@ -227,7 +227,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     // ===== Case Sensitivity Tests =====
 
     [Fact]
-    public void ToAIFunctions_FunctionFilterIsCaseSensitive()
+    public void ToAIFunctions_FunctionMiddlewareIsCaseSensitive()
     {
         // Arrange
         var registration = PluginRegistration.FromTypeFunctions(
@@ -243,7 +243,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void ToAIFunctions_FunctionFilterExactMatch()
+    public void ToAIFunctions_FunctionMiddlewareExactMatch()
     {
         // Arrange
         var registration = PluginRegistration.FromTypeFunctions(
@@ -266,11 +266,11 @@ public class Phase45SelectiveFunctionRegistrationTests
         // Arrange
         var manager = new PluginManager();
 
-        // Mix of full and filtered registrations
+        // Mix of full and Middlewareed registrations
         // Note: MockDebuggingPlugin would require skill processing which is Phase 3+ feature
         // For now, just test with MockFileSystemPlugin
         manager.RegisterPlugin<MockFileSystemPlugin>(); // Full plugin (5 functions)
-        manager.RegisterPluginFunctions(typeof(MockFileSystemPlugin), new[] { "ReadFile" }); // Filtered (1 function)
+        manager.RegisterPluginFunctions(typeof(MockFileSystemPlugin), new[] { "ReadFile" }); // Middlewareed (1 function)
 
         // Act
         var functions = manager.CreateAllFunctions();
@@ -286,7 +286,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void PluginManager_GetRegisteredPluginTypes_IncludesFilteredPlugins()
+    public void PluginManager_GetRegisteredPluginTypes_IncludesMiddlewareedPlugins()
     {
         // Arrange
         var manager = new PluginManager();
@@ -301,7 +301,7 @@ public class Phase45SelectiveFunctionRegistrationTests
     }
 
     [Fact]
-    public void PluginManager_Clear_RemovesFilteredRegistrations()
+    public void PluginManager_Clear_RemovesMiddlewareedRegistrations()
     {
         // Arrange
         var manager = new PluginManager();

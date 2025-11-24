@@ -1,27 +1,17 @@
-using System.Collections.Generic;
-using System.Linq;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using HPD.Agent;
 
 namespace HPD_Agent.Tests.Infrastructure;
 
 /// <summary>
 /// In-memory implementation of IPermissionStorage for testing.
 /// Stores permission preferences in memory without any persistence.
+/// Uses implicit scoping based on whether conversationId is provided.
 /// </summary>
 public class InMemoryPermissionStorage : IPermissionStorage
 {
-    private readonly Dictionary<string, StoredPermission> _permissions = new();
-    private readonly object _lock = new();
-
-    /// <summary>
-    /// Represents a stored permission with its scope.
-    /// </summary>
-    public record StoredPermission(
-        string FunctionName,
-        PermissionChoice Choice,
-        PermissionScope Scope,
-        string ConversationId,
-        string? ProjectId);
+    private readonly ConcurrentDictionary<string, PermissionChoice> _permissions = new();
 
     /// <summary>
     /// Gets a stored permission preference for a specific function.

@@ -6,34 +6,34 @@ using HPD.Agent;
 namespace HPD_Agent.Tests.Core;
 
 /// <summary>
-/// Unit tests for Agent helper methods (FilterContainerResults, etc.)
+/// Unit tests for Agent helper methods (MiddlewareContainerResults, etc.)
 /// Demonstrates fast unit testing without I/O dependencies.
 /// </summary>
 public class AgentHelperMethodsTests
 {
     // Test helper to access private static method via reflection
-    private static List<AIContent> FilterContainerResults(
+    private static List<AIContent> MiddlewareContainerResults(
         IList<AIContent> contents,
         IList<FunctionCallContent> toolRequests,
         ChatOptions? options)
     {
         var agentType = typeof(AgentCore);
 #pragma warning disable IL2065
-        var method = agentType.GetMethod("FilterContainerResults", 
+        var method = agentType.GetMethod("MiddlewareContainerResults", 
             BindingFlags.NonPublic | BindingFlags.Static);
 #pragma warning restore IL2065
         
         if (method == null)
-            throw new InvalidOperationException("FilterContainerResults method not found");
+            throw new InvalidOperationException("MiddlewareContainerResults method not found");
             
         var result = method.Invoke(null, new object?[] { contents, toolRequests, options });
         return (List<AIContent>)result!;
     }
 
-    #region FilterContainerResults Tests
+    #region MiddlewareContainerResults Tests
 
     [Fact]
-    public void FilterContainerResults_RemovesContainerExpansions()
+    public void MiddlewareContainerResults_RemovesContainerExpansions()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -73,17 +73,17 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert
-        Assert.Equal(2, filtered.Count);
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call3");
+        Assert.Equal(2, Middlewareed.Count);
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call3");
     }
 
     [Fact]
-    public void FilterContainerResults_PreservesNonFunctionContent()
+    public void MiddlewareContainerResults_PreservesNonFunctionContent()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -108,16 +108,16 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert: Text content should pass through
-        Assert.Equal(2, filtered.Count);
-        Assert.Contains(filtered, c => c is TextContent);
-        Assert.Contains(filtered, c => c is FunctionResultContent);
+        Assert.Equal(2, Middlewareed.Count);
+        Assert.Contains(Middlewareed, c => c is TextContent);
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent);
     }
 
     [Fact]
-    public void FilterContainerResults_HandlesEmptyLists()
+    public void MiddlewareContainerResults_HandlesEmptyLists()
     {
         // Arrange
         var contents = new List<AIContent>();
@@ -125,14 +125,14 @@ public class AgentHelperMethodsTests
         var options = new ChatOptions();
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert
-        Assert.Empty(filtered);
+        Assert.Empty(Middlewareed);
     }
 
     [Fact]
-    public void FilterContainerResults_HandlesNullOptions()
+    public void MiddlewareContainerResults_HandlesNullOptions()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -146,15 +146,15 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options: null);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options: null);
 
         // Assert: Without options, can't determine containers, so all results pass through
-        Assert.Single(filtered);
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Single(Middlewareed);
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
     }
 
     [Fact]
-    public void FilterContainerResults_MultipleContainersRemoved()
+    public void MiddlewareContainerResults_MultipleContainersRemoved()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -199,16 +199,16 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert: Only the regular function result should remain
-        Assert.Single(filtered);
-        var result = Assert.IsType<FunctionResultContent>(filtered[0]);
+        Assert.Single(Middlewareed);
+        var result = Assert.IsType<FunctionResultContent>(Middlewareed[0]);
         Assert.Equal("call3", result.CallId);
     }
 
     [Fact]
-    public void FilterContainerResults_MixedContentTypes()
+    public void MiddlewareContainerResults_MixedContentTypes()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -244,18 +244,18 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert: Container result removed, but text content and regular result preserved
-        Assert.Equal(3, filtered.Count);
-        Assert.Contains(filtered, c => c is TextContent tc && tc.Text == "Thinking...");
-        Assert.Contains(filtered, c => c is TextContent tc && tc.Text == "Done!");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Equal(3, Middlewareed.Count);
+        Assert.Contains(Middlewareed, c => c is TextContent tc && tc.Text == "Thinking...");
+        Assert.Contains(Middlewareed, c => c is TextContent tc && tc.Text == "Done!");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
     }
 
     [Fact]
-    public void FilterContainerResults_NoContainers_AllResultsPreserved()
+    public void MiddlewareContainerResults_NoContainers_AllResultsPreserved()
     {
         // Arrange
         var contents = new List<AIContent>
@@ -289,20 +289,20 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
         // Assert: No containers, so all results preserved
-        Assert.Equal(3, filtered.Count);
+        Assert.Equal(3, Middlewareed.Count);
     }
 
     #endregion
 
-    #region Skill Container Filtering Tests
+    #region Skill Container Middlewareing Tests
 
     [Fact]
-    public void FilterContainerResults_SkillContainers_AreFiltered()
+    public void MiddlewareContainerResults_SkillContainers_AreMiddlewareed()
     {
-        // Arrange - ALL containers (including skill containers) are now filtered
+        // Arrange - ALL containers (including skill containers) are now Middlewareed
         // Container activation messages are only relevant within the current turn
         var contents = new List<AIContent>
         {
@@ -339,18 +339,18 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
-        // Assert - Skill container result SHOULD be filtered (new behavior)
-        Assert.Single(filtered);
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        // Assert - Skill container result SHOULD be Middlewareed (new behavior)
+        Assert.Single(Middlewareed);
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
     }
 
     [Fact]
-    public void FilterContainerResults_ScopedPluginContainers_AreFiltered()
+    public void MiddlewareContainerResults_ScopedPluginContainers_AreMiddlewareed()
     {
-        // Arrange - Scoped plugin containers SHOULD be filtered
+        // Arrange - Scoped plugin containers SHOULD be Middlewareed
         var contents = new List<AIContent>
         {
             new FunctionResultContent("call1", "Plugin expanded"),  // Scoped plugin container
@@ -386,22 +386,22 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
-        // Assert - Scoped plugin container result SHOULD be filtered
-        Assert.Single(filtered);
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        // Assert - Scoped plugin container result SHOULD be Middlewareed
+        Assert.Single(Middlewareed);
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
     }
 
     [Fact]
-    public void FilterContainerResults_MixedSkillAndPluginContainers()
+    public void MiddlewareContainerResults_MixedSkillAndPluginContainers()
     {
         // Arrange - Mixed scenario with both skill and plugin containers
         var contents = new List<AIContent>
         {
-            new FunctionResultContent("call1", "Plugin expanded"),  // Scoped plugin container (should be filtered)
-            new FunctionResultContent("call2", "Skill expanded"),   // Skill container (should ALSO be filtered - new behavior)
+            new FunctionResultContent("call1", "Plugin expanded"),  // Scoped plugin container (should be Middlewareed)
+            new FunctionResultContent("call2", "Skill expanded"),   // Skill container (should ALSO be Middlewareed - new behavior)
             new FunctionResultContent("call3", "Result")            // Regular function
         };
 
@@ -448,20 +448,20 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
-        // Assert - Both containers filtered, only regular function remains
-        Assert.Single(filtered);
-        // Plugin container should be filtered
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        // Skill container should ALSO be filtered (new behavior)
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        // Assert - Both containers Middlewareed, only regular function remains
+        Assert.Single(Middlewareed);
+        // Plugin container should be Middlewareed
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        // Skill container should ALSO be Middlewareed (new behavior)
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
         // Regular function should remain
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call3");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call3");
     }
 
     [Fact]
-    public void FilterContainerResults_LegacyScopedPluginContainer_IsFiltered()
+    public void MiddlewareContainerResults_LegacyScopedPluginContainer_IsMiddlewareed()
     {
         // Arrange - Legacy scoped plugin container (no IsScope flag, just IsContainer)
         var contents = new List<AIContent>
@@ -499,18 +499,18 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
-        // Assert - Legacy scoped plugin should be filtered
-        Assert.Single(filtered);
-        Assert.DoesNotContain(filtered, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.Contains(filtered, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        // Assert - Legacy scoped plugin should be Middlewareed
+        Assert.Single(Middlewareed);
+        Assert.DoesNotContain(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Contains(Middlewareed, c => c is FunctionResultContent frc && frc.CallId == "call2");
     }
 
     [Fact]
-    public void FilterContainerResults_MultipleSkillContainers_AllFiltered()
+    public void MiddlewareContainerResults_MultipleSkillContainers_AllMiddlewareed()
     {
-        // Arrange - Multiple skill containers should all be filtered (new behavior)
+        // Arrange - Multiple skill containers should all be Middlewareed (new behavior)
         var contents = new List<AIContent>
         {
             new FunctionResultContent("call1", "Skill A expanded"),
@@ -570,10 +570,10 @@ public class AgentHelperMethodsTests
         };
 
         // Act
-        var filtered = FilterContainerResults(contents, toolRequests, options);
+        var Middlewareed = MiddlewareContainerResults(contents, toolRequests, options);
 
-        // Assert - All skill container results should be filtered (new behavior)
-        Assert.Empty(filtered);
+        // Assert - All skill container results should be Middlewareed (new behavior)
+        Assert.Empty(Middlewareed);
     }
 
     #endregion
