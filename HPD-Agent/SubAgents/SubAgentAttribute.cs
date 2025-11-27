@@ -12,13 +12,4 @@
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public class SubAgentAttribute : Attribute
 {
-    /// <summary>
-    /// Optional category for grouping sub-agents (e.g., "Domain Experts", "Specialists")
-    /// </summary>
-    public string? Category { get; set; }
-
-    /// <summary>
-    /// Optional priority hint for sub-agent ordering (higher = more prominent)
-    /// </summary>
-    public int Priority { get; set; } = 0;
 }

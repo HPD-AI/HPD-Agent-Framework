@@ -18,7 +18,7 @@ Complete API reference for the HPD-Agent Skill System.
    - [Skill Registration](#skill-registration)
    - [Auto-Registration](#auto-registration)
 5. [Scoping Manager](#scoping-manager)
-   - [UnifiedScopingManager](#unifiedscopingmanager)
+   - [ToolVisibilityManager](#unifiedscopingmanager)
 6. [Diagnostic Codes](#diagnostic-codes)
 
 ---
@@ -579,7 +579,7 @@ namespace MyPlugins.Core { public class FileSystemPlugin { } }
 
 ## Scoping Manager
 
-### UnifiedScopingManager
+### ToolVisibilityManager
 
 Manages tool visibility for both plugins and skills in a unified way.
 
@@ -587,7 +587,7 @@ Manages tool visibility for both plugins and skills in a unified way.
 
 **Constructor:**
 ```csharp
-public UnifiedScopingManager(
+public ToolVisibilityManager(
     Dictionary<string, Skill> skills,
     List<AIFunction> initialTools,
     ILogger? logger = null)
@@ -643,7 +643,7 @@ Uses `DistinctBy(f => f.Name)` to remove duplicate functions:
 **Example:**
 
 ```csharp
-var scopingManager = new UnifiedScopingManager(skills, allTools, logger);
+var scopingManager = new ToolVisibilityManager(skills, allTools, logger);
 
 var expandedPlugins = new HashSet<string>(); // No plugins expanded yet
 var expandedSkills = new HashSet<string> { "file_debugging" }; // file_debugging activated

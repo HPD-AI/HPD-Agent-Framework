@@ -229,15 +229,15 @@ Available Functions:
 ```
 
 **Three-level hierarchy:**
-1. Skill class scope (collapsed)
-2. Skills (collapsed)
-3. Functions (collapsed until skill expands them)
+1. Skill class scope (Collapse)
+2. Skills (Collapse)
+3. Functions (Collapse until skill expands them)
 
 ---
 
 ## Visibility Rules
 
-The `UnifiedScopingManager` controls what the agent sees based on expansion state:
+The `ToolVisibilityManager` controls what the agent sees based on expansion state:
 
 ### Rule 1: Unscoped Functions (Always Visible)
 ```csharp
@@ -325,10 +325,10 @@ public class FinancialSkills
 ```
 
 **Scenario:**
-1. Initially: `FinancialAnalysisPlugin` collapsed, `QuickLiquidity` skill visible
+1. Initially: `FinancialAnalysisPlugin` Collapse, `QuickLiquidity` skill visible
 2. Agent calls `QuickLiquidity` →
    - `CalculateCurrentRatio` becomes visible (skill bypass)
-   - `CalculateDebtRatio` stays hidden (plugin still collapsed)
+   - `CalculateDebtRatio` stays hidden (plugin still Collapse)
    - `FinancialAnalysisPlugin` container stays visible (not auto-expanded)
 
 3. Agent can still call `FinancialAnalysisPlugin` container to see ALL 50 functions
@@ -341,7 +341,7 @@ public class FinancialSkills
 
 Functions/skills appear in this order:
 
-1. **Scope containers** (collapsed plugins/skill classes)
+1. **Scope containers** (Collapse plugins/skill classes)
 2. **Skill containers** (individual skills)
 3. **Non-scoped functions** (always visible utilities)
 4. **Expanded plugin functions** (from expanded scoped plugins)
@@ -395,14 +395,14 @@ public class MathSkills
 ```
 Available Functions:
 - GetTimestamp (always visible - unscoped)
-- AdvancedMath (collapsed - scoped plugin)
-- SolveEquation (collapsed - skill)
+- AdvancedMath (Collapse - scoped plugin)
+- SolveEquation (Collapse - skill)
 ```
 
 **Agent calls `SolveEquation` →**
 ```
 Available Functions:
-- AdvancedMath (still collapsed)
+- AdvancedMath (still Collapse)
 - Derivative (expanded by skill - skill bypass!)
 - GetTimestamp (now HIDDEN - claimed by skill)
 ```
@@ -580,7 +580,7 @@ Turn 1:
 
 Turn 2:
   Agent sees: Clean history without stale "FileSystemPlugin expanded" message
-  FileSystemPlugin is collapsed again (fresh state)
+  FileSystemPlugin is Collapse again (fresh state)
 ```
 
 **Container activation messages are removed from persistent history.**

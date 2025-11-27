@@ -382,7 +382,7 @@ Container expansion results were being added to the **persistent chat history** 
 4. This result gets added to `currentMessages` (persistent history)
 5. Agent uses `Multiply()` and returns result
 6. Message turn ends → `expandedPlugins` goes out of scope (local variable)
-7. **Next message turn**: Containers are collapsed again, but old expansion message is still in history
+7. **Next message turn**: Containers are Collapse again, but old expansion message is still in history
 8. LLM sees stale expansion message referencing functions that are no longer available
 9. Each expansion adds more stale messages to history
 
@@ -417,7 +417,7 @@ But it "worked" because:
 1. `expandedPlugins` is a local variable created at the start of `RunAgenticAsync` (line 585)
 2. When the method returns, `expandedPlugins` goes out of scope
 3. Next message turn creates a NEW empty `expandedPlugins`
-4. Old expansion messages are in history, but containers are collapsed again
+4. Old expansion messages are in history, but containers are Collapse again
 5. The expansion messages become **semantically useless** (reference unavailable functions)
 6. LLM learns to ignore them (but they still waste tokens)
 
@@ -506,7 +506,7 @@ Turn 1:
 Turn 2:
   User: "do you remember those instructions?"
   currentMessages contains:
-    - Turn 1: ExpandMathPlugin expansion message (STALE - containers collapsed)
+    - Turn 1: ExpandMathPlugin expansion message (STALE - containers Collapse)
     - Turn 1: Multiply result (still useful)
   LLM: "No, I don't remember those instructions" (ignoring stale message)
 ```
@@ -966,7 +966,7 @@ From the AI model's perspective, calling `MathPlugin()` is identical to calling 
 - Expansion state is **message-scoped**
 - `expandedPlugins` is a local variable in `RunAgenticAsync`
 - Auto-collapses when the message turn completes
-- Next user message starts fresh with all plugins collapsed
+- Next user message starts fresh with all plugins Collapse
 
 **Why**:
 - Simplicity: No state management or persistence needed
@@ -1250,7 +1250,7 @@ Agent: (auto-expands MathPlugin before responding)
 **Key Insight**:
 - Two history contexts: `currentMessages` (persistent, filtered) vs `turnHistory` (current turn, unfiltered)
 - Container results needed within turn (LLM sees available functions)
-- Container results useless after turn (functions unavailable, containers collapsed)
+- Container results useless after turn (functions unavailable, containers Collapse)
 - **Explicit > Implicit**: Don't rely on LLM ignoring stale messages, filter proactively
 
 **Testing**:

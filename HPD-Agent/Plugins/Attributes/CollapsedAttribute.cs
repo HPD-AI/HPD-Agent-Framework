@@ -1,16 +1,16 @@
 using System;
 
 /// <summary>
-/// Marks a container class (plugin or skill) for scoping. When scoped, the container's functions are hidden
+/// Marks a plugin class as Collapse. When Collapse, the plugin's functions are hidden
 /// until the container is explicitly expanded by the agent.
 /// This reduces token consumption and cognitive load by organizing functions hierarchically.
-/// 
+///
 /// This attribute is universal - it applies to any container type (plugins, skills, or future types).
 /// </summary>
 /// <example>
 /// <code>
-/// // Plugin scoping - groups AI functions
-/// [Scope("Search operations across web, code, and documentation")]
+/// // Plugin collapsing - groups AI functions
+/// [Collapse("Search operations across web, code, and documentation")]
 /// public class SearchPlugin
 /// {
 ///     [AIFunction]
@@ -18,8 +18,8 @@ using System;
 ///     public async Task&lt;string&gt; WebSearch(string query) { ... }
 /// }
 ///
-/// // Skill scoping - groups related skills
-/// [Scope("Financial analysis workflows combining multiple analysis techniques")]
+/// // Skill collapsing - groups related skills
+/// [Collapse("Financial analysis workflows combining multiple analysis techniques")]
 /// public class FinancialAnalysisSkills
 /// {
 ///     [Skill]
@@ -27,7 +27,7 @@ using System;
 /// }
 ///
 /// // With post-expansion instructions
-/// [Scope(
+/// [Collapse(
 ///     description: "Database operations",
 ///     postExpansionInstructions: @"
 ///         Transaction workflow:
@@ -40,10 +40,10 @@ using System;
 /// </code>
 /// </example>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public sealed class ScopeAttribute : Attribute
+public sealed class CollapseAttribute : Attribute
 {
     /// <summary>
-    /// Description of the container shown in the scoped function.
+    /// Description of the container shown in the Collapse function.
     /// This helps the agent understand when to expand this container.
     /// </summary>
     public string Description { get; }
@@ -57,10 +57,49 @@ public sealed class ScopeAttribute : Attribute
     public string? PostExpansionInstructions { get; }
 
     /// <summary>
-    /// Initializes a new instance of the ScopeAttribute with the specified description.
+    /// Initializes a new instance of the CollapseAttribute with the specified description.
     /// </summary>
     /// <param name="description">Brief description of container capabilities (e.g., "Search operations", "Financial analysis")</param>
     /// <exception cref="ArgumentNullException">Thrown when description is null</exception>
+    public CollapseAttribute(string description)
+    {
+        Description = description ?? throw new ArgumentNullException(nameof(description));
+        PostExpansionInstructions = null;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the CollapseAttribute with description and post-expansion instructions.
+    /// </summary>
+    /// <param name="description">Brief description of container capabilities</param>
+    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after container expansion</param>
+    /// <exception cref="ArgumentNullException">Thrown when description is null</exception>
+    public CollapseAttribute(string description, string? postExpansionInstructions)
+    {
+        Description = description ?? throw new ArgumentNullException(nameof(description));
+        PostExpansionInstructions = postExpansionInstructions;
+    }
+}
+
+/// <summary>
+/// Marks a plugin class as Collapse. Alias for CollapseAttribute.
+/// </summary>
+[Obsolete("Use [Collapse] instead. This attribute will be removed in a future version.")]
+[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
+public sealed class ScopeAttribute : Attribute
+{
+    /// <summary>
+    /// Description of the container shown in the Collapse function.
+    /// </summary>
+    public string Description { get; }
+
+    /// <summary>
+    /// Optional instructions provided to the agent after container expansion.
+    /// </summary>
+    public string? PostExpansionInstructions { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the ScopeAttribute with the specified description.
+    /// </summary>
     public ScopeAttribute(string description)
     {
         Description = description ?? throw new ArgumentNullException(nameof(description));
@@ -70,9 +109,6 @@ public sealed class ScopeAttribute : Attribute
     /// <summary>
     /// Initializes a new instance of the ScopeAttribute with description and post-expansion instructions.
     /// </summary>
-    /// <param name="description">Brief description of container capabilities</param>
-    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after container expansion</param>
-    /// <exception cref="ArgumentNullException">Thrown when description is null</exception>
     public ScopeAttribute(string description, string? postExpansionInstructions)
     {
         Description = description ?? throw new ArgumentNullException(nameof(description));

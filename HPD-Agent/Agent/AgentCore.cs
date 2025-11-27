@@ -86,7 +86,7 @@ internal sealed class AgentCore
     private readonly MessageProcessor _messageProcessor;
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
-    private readonly UnifiedScopingManager _scopingManager;
+    private readonly ToolVisibilityManager _scopingManager;
     private readonly PermissionManager _permissionManager;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
     private readonly IReadOnlyList<IMessageTurnMiddleware> _MessageTurnMiddlewares;
@@ -362,7 +362,7 @@ internal sealed class AgentCore
         var explicitlyRegisteredPlugins = config.ExplicitlyRegisteredPlugins ??
             ImmutableHashSet<string>.Empty;
 
-        _scopingManager = new UnifiedScopingManager(
+        _scopingManager = new ToolVisibilityManager(
             initialTools,
             explicitlyRegisteredPlugins);
 

@@ -172,8 +172,8 @@ Debugging expanded. Available functions: ReadFile, ListDirectory, GetStackTrace,
 ```
 
 **Agent now sees:**
-- FileManagement (still collapsed)
-- DataAnalysis (still collapsed)
+- FileManagement (still Collapse)
+- DataAnalysis (still Collapse)
 - ReadFile (from Debugging)
 - ListDirectory (from Debugging)
 - GetStackTrace (from Debugging)

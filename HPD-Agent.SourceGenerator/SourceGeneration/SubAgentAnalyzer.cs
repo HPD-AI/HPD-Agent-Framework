@@ -105,9 +105,6 @@ internal static class SubAgentAnalyzer
         var methodName = method.Identifier.ValueText;
         var isStatic = method.Modifiers.Any(SyntaxKind.StaticKeyword);
 
-        // Extract category and priority from [SubAgent] attribute
-        var (category, priority) = ExtractSubAgentAttributeMetadata(method, semanticModel);
-
         // Extract sub-agent name and description by analyzing method body
         // Look for SubAgentFactory.Create() or SubAgentFactory.CreateStateful() calls
         var (name, description, threadMode) = ExtractSubAgentMetadata(method, semanticModel);
@@ -126,52 +123,11 @@ internal static class SubAgentAnalyzer
             ClassName = className,
             Namespace = namespaceName,
             IsStatic = isStatic,
-            Category = category,
-            Priority = priority,
             ThreadMode = threadMode
         };
 
         System.Diagnostics.Debug.WriteLine($"[AnalyzeSubAgent]   ✅ Successfully analyzed sub-agent: {name}");
         return subAgentInfo;
-    }
-
-    /// <summary>
-    /// Extracts Category and Priority from [SubAgent] attribute
-    /// </summary>
-    private static (string? category, int priority) ExtractSubAgentAttributeMetadata(
-        MethodDeclarationSyntax method,
-        SemanticModel semanticModel)
-    {
-        string? category = null;
-        int priority = 0;
-
-        var subAgentAttribute = method.AttributeLists
-            .SelectMany(al => al.Attributes)
-            .FirstOrDefault(attr =>
-            {
-                var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol?.ContainingType;
-                return attrSymbol?.Name == "SubAgentAttribute" || attrSymbol?.Name == "SubAgent";
-            });
-
-        if (subAgentAttribute?.ArgumentList != null)
-        {
-            foreach (var arg in subAgentAttribute.ArgumentList.Arguments)
-            {
-                var argName = arg.NameEquals?.Name.Identifier.ValueText;
-
-                if (argName == "Category" && arg.Expression is LiteralExpressionSyntax categoryLiteral)
-                {
-                    category = categoryLiteral.Token.ValueText;
-                }
-                else if (argName == "Priority" && arg.Expression is LiteralExpressionSyntax priorityLiteral)
-                {
-                    if (int.TryParse(priorityLiteral.Token.ValueText, out var p))
-                        priority = p;
-                }
-            }
-        }
-
-        return (category, priority);
     }
 
     /// <summary>
@@ -274,7 +230,5 @@ internal class SubAgentInfo
     public string ClassName { get; set; } = string.Empty;
     public string Namespace { get; set; } = string.Empty;
     public bool IsStatic { get; set; }
-    public string? Category { get; set; }
-    public int Priority { get; set; }
     public string ThreadMode { get; set; } = "Stateless";
 }

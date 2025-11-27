@@ -12,7 +12,7 @@ public class FinancialAnalysisSkills
     /// Financial Health Dashboard Skill
     /// PRIMARY SKILL - Comprehensive balance sheet analysis
     /// </summary>
-    [Skill(Category = "Executive Summary", Priority = 1)]
+    [Skill]
     public Skill FinancialHealthDashboard(SkillOptions? options = null)
     {
         return SkillFactory.Create(
@@ -75,7 +75,7 @@ For interpretation guidance: read_skill_document('05-financialhealthdashboard-so
     /// Quick Liquidity Analysis Skill
     /// Use when the task specifically requires ONLY liquidity assessment
     /// </summary>
-    [Skill(Category = "Liquidity Analysis", Priority = 10)]
+    [Skill]
     public Skill QuickLiquidityAnalysis(SkillOptions? options = null)
     {
         return SkillFactory.Create(
@@ -116,7 +116,7 @@ For benchmarks: read_skill_document('01-quickliquidityanalysis-sop')",
     /// Capital Structure Analysis Skill
     /// Use when the task specifically requires ONLY leverage/capital structure assessment
     /// </summary>
-    [Skill(Category = "Leverage Analysis", Priority = 11)]
+    [Skill]
     public Skill CapitalStructureAnalysis(SkillOptions? options = null)
     {
         return SkillFactory.Create(
@@ -161,7 +161,7 @@ For benchmarks: read_skill_document('02-capitalstructureanalysis-sop')",
     /// Period Change Analysis Skill
     /// Use when analyzing period-over-period changes in financial metrics
     /// </summary>
-    [Skill(Category = "Trend Analysis", Priority = 12)]
+    [Skill]
     public Skill PeriodChangeAnalysis(SkillOptions? options = null)
     {
         return SkillFactory.Create(
@@ -207,7 +207,7 @@ For examples: read_skill_document('03-periodchangeanalysis-sop')",
     /// Common-Size Balance Sheet Skill
     /// Use for normalizing balance sheets to percentages for comparison
     /// </summary>
-    [Skill(Category = "Comparative Analysis", Priority = 13)]
+    [Skill]
     public Skill CommonSizeBalanceSheet(SkillOptions? options = null)
     {
         return SkillFactory.Create(

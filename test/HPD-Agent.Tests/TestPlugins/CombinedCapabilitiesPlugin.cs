@@ -47,7 +47,7 @@ public class CombinedCapabilitiesPlugin
     // SUB-AGENTS
     // ═══════════════════════════════════════════════════════════════
 
-    [SubAgent(Category = "Analysis")]
+    [SubAgent]
     public SubAgent DataExpertAgent()
     {
         return SubAgentFactory.Create(
@@ -66,7 +66,7 @@ public class CombinedCapabilitiesPlugin
             });
     }
 
-    [SubAgent(Category = "Processing", Priority = 50)]
+    [SubAgent]
     public SubAgent DataProcessorAgent()
     {
         return SubAgentFactory.Create(
@@ -99,7 +99,7 @@ public class FunctionsAndSubAgentsPlugin
     public string Filter(string results, string criteria) => $"Filtered by {criteria}";
 
     // Sub-Agent
-    [SubAgent(Category = "Search")]
+    [SubAgent]
     public SubAgent SearchExpertAgent()
     {
         return SubAgentFactory.Create(
@@ -136,7 +136,7 @@ public class SkillsAndSubAgentsPlugin
     );
 
     // Sub-Agent
-    [SubAgent(Category = "Files")]
+    [SubAgent]
     public SubAgent FileAssistantAgent()
     {
         return SubAgentFactory.Create(

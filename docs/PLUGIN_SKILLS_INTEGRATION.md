@@ -14,7 +14,7 @@ User Request to Agent
     ↓
 Agent needs tools
     ↓
-UnifiedScopingManager.GetToolsForAgentTurn()
+ToolVisibilityManager.GetToolsForAgentTurn()
     ├─ 1. What plugins are scoped? [Scope] attribute
     ├─ 2. Which plugins are explicit? .WithPlugin<T>()
     ├─ 3. Which functions are referenced by skills?
@@ -121,13 +121,13 @@ When plugin is registered, source generator also:
 
 During Agent initialization:
 ```csharp
-_scopingManager = new UnifiedScopingManager(
+_scopingManager = new ToolVisibilityManager(
     initialTools,                        // All functions & skills
     config.ExplicitlyRegisteredPlugins, // Explicitly registered plugins
     logger);
 ```
 
-UnifiedScopingManager:
+ToolVisibilityManager:
 1. Analyzes all tools
 2. Detects containers and relationships
 3. Tracks which plugins are explicit
@@ -303,7 +303,7 @@ Before Any Expansion:
   ❌ CalculateQuickRatio (hidden, in scoped plugin)
 
 After Agent Expands Skill:
-  ✅ FinancialPlugin (container, still collapsed)
+  ✅ FinancialPlugin (container, still Collapse)
   ✅ QuickLiquidityAnalysis (skill, still visible)
   ✅ CalculateCurrentRatio (now visible, skill references it)
   ✅ CalculateQuickRatio (now visible, skill references it)
@@ -358,7 +358,7 @@ Why: Skill expansion shows referenced functions,
 ### Testing Visibility Changes
 
 ```csharp
-// In UnifiedScopingManagerTests.cs
+// In ToolVisibilityManagerTests.cs
 [Fact]
 public void MyNewScenario_Works()
 {
@@ -373,7 +373,7 @@ public void MyNewScenario_Works()
         StringComparer.OrdinalIgnoreCase,
         "MyPlugin");
     
-    var manager = new UnifiedScopingManager(tools, explicit);
+    var manager = new ToolVisibilityManager(tools, explicit);
 
     // Act
     var visible = manager.GetToolsForAgentTurn(
@@ -468,7 +468,7 @@ public class AnalysisSkills
 The scoping manager logs detailed info:
 
 ```csharp
-[UnifiedScopingManager] 🔍 First Pass - Analyzing 22 tools
+[ToolVisibilityManager] 🔍 First Pass - Analyzing 22 tools
    📦 Scope Container: FinancialAnalysisSkills
    🔌 Plugin Container: FinancialAnalysisPlugin
    🎯 Skill Container: QuickLiquidityAnalysis
@@ -494,4 +494,4 @@ Look for emoji indicators:
 
 - [Scoping System Details](./SCOPING_SYSTEM.md)
 - [Skills Architecture Details](./SKILLS_ARCHITECTURE.md)
-- Test Suite: `test/HPD-Agent.Tests/Scoping/UnifiedScopingManagerTests.cs`
+- Test Suite: `test/HPD-Agent.Tests/Scoping/ToolVisibilityManagerTests.cs`

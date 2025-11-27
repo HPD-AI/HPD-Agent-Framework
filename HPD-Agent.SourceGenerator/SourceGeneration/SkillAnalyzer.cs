@@ -214,17 +214,12 @@ internal static class SkillAnalyzer
         var containingClass = method.Parent as ClassDeclarationSyntax;
         var namespaceName = GetNamespace(containingClass);
 
-        // Phase 3: Extract attribute metadata
-        var (category, priority) = ExtractSkillAttributeMetadata(method, semanticModel);
-
         return new SkillInfo
         {
             MethodName = methodName,
             Name = name,
             Description = description,
             Instructions = instructions,
-            Category = category,
-            Priority = priority,
             Options = options ?? new SkillOptionsInfo(),
             References = references,
             ContainingClass = containingClass!
@@ -493,47 +488,6 @@ internal static class SkillAnalyzer
             return fileScopedNamespace.Name.ToString() ?? string.Empty;
 
         return string.Empty;
-    }
-
-    /// <summary>
-    /// Extracts Category and Priority from [Skill] attribute (Phase 3)
-    /// </summary>
-    private static (string? category, int priority) ExtractSkillAttributeMetadata(
-        MethodDeclarationSyntax method,
-        SemanticModel semanticModel)
-    {
-        string? category = null;
-        int priority = 0;
-
-        var skillAttribute = method.AttributeLists
-            .SelectMany(al => al.Attributes)
-            .FirstOrDefault(attr =>
-            {
-                var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol?.ContainingType;
-                return attrSymbol?.Name == "SkillAttribute" ||
-                       attrSymbol?.Name == "Skill";
-            });
-
-        if (skillAttribute?.ArgumentList == null)
-            return (category, priority);
-
-        foreach (var argument in skillAttribute.ArgumentList.Arguments)
-        {
-            var name = argument.NameEquals?.Name.Identifier.ValueText;
-
-            if (name == "Category")
-            {
-                category = ExtractStringLiteral(argument.Expression, semanticModel);
-            }
-            else if (name == "Priority")
-            {
-                var constantValue = semanticModel.GetConstantValue(argument.Expression);
-                if (constantValue.HasValue && constantValue.Value is int p)
-                    priority = p;
-            }
-        }
-
-        return (category, priority);
     }
 
     // TODO: Phase 2.5 - Add diagnostic reporting support

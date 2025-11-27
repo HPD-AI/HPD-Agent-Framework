@@ -1424,7 +1424,7 @@ public class UtilityPlugin  // No scoping
 
 ### 7. **Visibility Order (Agent.cs:657-683)**
 ```
-1. Containers (collapsed plugins + non-auto-expanded skills)
+1. Containers (Collapse plugins + non-auto-expanded skills)
 2. Non-Plugin Functions (always visible)
 3. Expanded Plugin Functions (from expanded plugins)
 4. Expanded Skill Functions (from expanded skills, deduplicated)

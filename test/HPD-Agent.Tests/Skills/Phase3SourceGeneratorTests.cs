@@ -9,10 +9,9 @@ namespace HPD_Agent.Tests.Skills;
 /// Validates that the source generator correctly:
 /// 1. Detects [Skill] attribute (explicit intent)
 /// 2. Generates skill containers with metadata
-/// 3. Extracts Category and Priority from attributes
-/// 4. Parses string-based function references
-/// 5. Handles fluent API (AddDocument/AddDocumentFromFile)
-/// 6. Validates method signatures
+/// 3. Parses string-based function references
+/// 4. Handles fluent API (AddDocument/AddDocumentFromFile)
+/// 5. Validates method signatures
 /// </summary>
 public class Phase3SourceGeneratorTests
 {
@@ -30,35 +29,17 @@ public class Phase3SourceGeneratorTests
     }
 
     [Fact]
-    public void SkillAttribute_WithCategory_CompilesSuccessfully()
+    public void SkillAttribute_OnMethod_CompilesSuccessfully()
     {
         // Arrange
         var plugin = new TestSkillPlugin();
 
-        // Act - Call skill method with Category
+        // Act - Call skill method
         var skill = plugin.CategorizedSkill();
 
         // Assert
         Assert.NotNull(skill);
         Assert.Equal("CategorizedSkill", skill.Name);
-        // Note: Category is in metadata, not on Skill object directly
-        // It's used by source generator for organization
-    }
-
-    [Fact]
-    public void SkillAttribute_WithPriority_CompilesSuccessfully()
-    {
-        // Arrange
-        var plugin = new TestSkillPlugin();
-
-        // Act - Call skill method with Priority
-        var skill = plugin.PrioritizedSkill();
-
-        // Assert
-        Assert.NotNull(skill);
-        Assert.Equal("PrioritizedSkill", skill.Name);
-        // Note: Priority is in metadata, not on Skill object directly
-        // It's used by source generator for ordering
     }
 
     // ===== P0: String-Based Function References =====
@@ -248,21 +229,12 @@ public class Phase3SourceGeneratorTests
                 "Instructions here");
         }
 
-        [Skill(Category = "Testing")]
+        [Skill]
         public Skill CategorizedSkill()
         {
             return SkillFactory.Create(
                 "CategorizedSkill",
-                "Skill with category",
-                "Instructions");
-        }
-
-        [Skill(Priority = 100)]
-        public Skill PrioritizedSkill()
-        {
-            return SkillFactory.Create(
-                "PrioritizedSkill",
-                "Skill with priority",
+                "A categorized skill",
                 "Instructions");
         }
 

@@ -69,7 +69,7 @@ Agent sees: 150 functions at once
 System Prompt: "You are an analyst."
 [500 tokens]
 
-Agent sees: 20 collapsed skills
+Agent sees: 20 Collapse skills
 [1,000 tokens]
 
 Agent calls "QuickLiquidityAnalysis" →
@@ -157,7 +157,7 @@ await foreach (var response in agent.RunAsync("Analyze the liquidity of this com
 
 ### What Happens:
 
-1. **Agent sees:** `QuickLiquidityAnalysis` skill (collapsed)
+1. **Agent sees:** `QuickLiquidityAnalysis` skill (Collapse)
 2. **Agent calls:** `QuickLiquidityAnalysis`
 3. **Agent receives:**
    - Inline instructions (how to use the skill)
@@ -179,7 +179,7 @@ await foreach (var response in agent.RunAsync("Analyze the liquidity of this com
                             │ uses
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    UnifiedScopingManager                     │
+│                    ToolVisibilityManager                     │
 │  - Controls visibility of functions/skills                   │
 │  - Manages token efficiency through scoping                  │
 │  - Handles skill expansion and collapse                      │

@@ -18,7 +18,6 @@ internal static class SubAgentCodeGenerator
 
         // Generate method comment
         sb.AppendLine($"        // Sub-agent: {subAgent.SubAgentName}");
-        sb.AppendLine($"        // Category: {subAgent.Category ?? "None"}");
         sb.AppendLine($"        // Thread Mode: {subAgent.ThreadMode}");
         sb.AppendLine();
 
@@ -172,8 +171,6 @@ internal static class SubAgentCodeGenerator
         sb.AppendLine($"                    AdditionalProperties = new System.Collections.Generic.Dictionary<string, object>");
         sb.AppendLine($"                    {{");
         sb.AppendLine($"                        [\"IsSubAgent\"] = true,");
-        sb.AppendLine($"                        [\"SubAgentCategory\"] = \"{EscapeString(subAgent.Category ?? "Uncategorized")}\",");
-        sb.AppendLine($"                        [\"SubAgentPriority\"] = {subAgent.Priority},");
         sb.AppendLine($"                        [\"ThreadMode\"] = \"{subAgent.ThreadMode}\",");
         sb.AppendLine($"                        [\"PluginName\"] = \"{pluginName}\"");
         sb.AppendLine($"                    }}");

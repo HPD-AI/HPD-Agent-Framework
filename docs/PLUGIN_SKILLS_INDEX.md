@@ -193,7 +193,7 @@ See: [Plugin Clarification](./PLUGIN_CLARIFICATION.md)
 
 All scenarios documented in this guide are covered by tests:
 
-**Location:** `test/HPD-Agent.Tests/Scoping/UnifiedScopingManagerTests.cs`
+**Location:** `test/HPD-Agent.Tests/Scoping/ToolVisibilityManagerTests.cs`
 
 **Test Count:** 8 comprehensive scenarios
 - ✅ Both scoped & both explicit
@@ -207,7 +207,7 @@ All scenarios documented in this guide are covered by tests:
 
 **Running Tests:**
 ```bash
-dotnet test --filter "FullyQualifiedName~UnifiedScopingManagerTests"
+dotnet test --filter "FullyQualifiedName~ToolVisibilityManagerTests"
 ```
 
 ---
@@ -218,7 +218,7 @@ dotnet test --filter "FullyQualifiedName~UnifiedScopingManagerTests"
 
 | File | Purpose |
 |------|---------|
-| `HPD-Agent/Scoping/UnifiedScopingManager.cs` | Main visibility orchestrator |
+| `HPD-Agent/Scoping/ToolVisibilityManager.cs` | Main visibility orchestrator |
 | `HPD-Agent/Agent/AgentBuilder.cs` | Plugin registration (WithPlugin) |
 | `HPD-Agent/Plugins/Attributes/ScopeAttribute.cs` | [Scope] attribute definition |
 | `HPD-Agent.SourceGenerator/` | Code generation for containers |
@@ -227,7 +227,7 @@ dotnet test --filter "FullyQualifiedName~UnifiedScopingManagerTests"
 
 | File | Tests |
 |------|-------|
-| `test/HPD-Agent.Tests/Scoping/UnifiedScopingManagerTests.cs` | All visibility scenarios |
+| `test/HPD-Agent.Tests/Scoping/ToolVisibilityManagerTests.cs` | All visibility scenarios |
 | `test/HPD-Agent.Tests/Scoping/SkillScopingTests.cs` | Skill-specific tests |
 | `test/HPD-Agent.Tests/Infrastructure/ScopedPluginTestHelper.cs` | Test utilities |
 

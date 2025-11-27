@@ -7,7 +7,7 @@ using HPD_Agent;
 /// </summary>
 public class TestIntegrationSubAgents
 {
-    [SubAgent(Category = "Domain Experts", Priority = 1)]
+    [SubAgent]
     public SubAgent WeatherExpert()
     {
         return SubAgentFactory.Create(
@@ -26,7 +26,7 @@ public class TestIntegrationSubAgents
             });
     }
 
-    [SubAgent(Category = "Domain Experts", Priority = 2)]
+    [SubAgent]
     public SubAgent MathExpert()
     {
         return SubAgentFactory.CreateStateful(
@@ -45,7 +45,7 @@ public class TestIntegrationSubAgents
             });
     }
 
-    [SubAgent(Category = "Engineering", Priority = 1)]
+    [SubAgent]
     public SubAgent CodeReviewer()
     {
         return SubAgentFactory.Create(

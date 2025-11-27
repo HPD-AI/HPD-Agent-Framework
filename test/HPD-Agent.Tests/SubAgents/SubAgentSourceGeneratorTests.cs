@@ -8,10 +8,9 @@ namespace HPD_Agent.Tests.SubAgents;
 /// Validates that the source generator correctly:
 /// 1. Detects [SubAgent] attribute
 /// 2. Generates AIFunction wrappers for sub-agents
-/// 3. Extracts Category and Priority from attributes
-/// 4. Parses AgentConfig from method body
-/// 5. Handles different thread modes (Stateless, SharedThread, PerSession)
-/// 6. Validates method signatures
+/// 3. Parses AgentConfig from method body
+/// 4. Handles different thread modes (Stateless, SharedThread, PerSession)
+/// 5. Validates method signatures
 /// </summary>
 public class SubAgentSourceGeneratorTests
 {
@@ -29,32 +28,17 @@ public class SubAgentSourceGeneratorTests
     }
 
     [Fact]
-    public void SubAgentAttribute_WithCategory_CompilesSuccessfully()
+    public void SubAgentAttribute_OnMethod_CompilesSuccessfully()
     {
         // Arrange
         var plugin = new TestSubAgentPlugin();
 
-        // Act - Call sub-agent method with Category
+        // Act - Call sub-agent method
         var subAgent = plugin.CategorizedSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
         Assert.Equal("CategorizedSubAgent", subAgent.Name);
-        Assert.NotNull(subAgent.AgentConfig);
-    }
-
-    [Fact]
-    public void SubAgentAttribute_WithPriority_CompilesSuccessfully()
-    {
-        // Arrange
-        var plugin = new TestSubAgentPlugin();
-
-        // Act - Call sub-agent method with Priority
-        var subAgent = plugin.PrioritizedSubAgent();
-
-        // Assert
-        Assert.NotNull(subAgent);
-        Assert.Equal("PrioritizedSubAgent", subAgent.Name);
         Assert.NotNull(subAgent.AgentConfig);
     }
 

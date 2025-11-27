@@ -407,7 +407,7 @@ options: new SkillOptions()
 When an agent uses a skill, it goes through a series of Scoping expansions:
 
 ```
-Level 1 (Collapsed): Skill name shown
+Level 1 (Collapse): Skill name shown
 Level 2 (Expanded): Skill instructions + referenced functions shown
 Level 3 (Expanded): Documents shown (if available)
 ```

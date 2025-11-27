@@ -264,7 +264,7 @@ Based on comprehensive codebase analysis:
 - PluginManager with registration
 - PluginScopingManager
 - SkillScopingManager
-- UnifiedScopingManager
+- ToolVisibilityManager
 - Type-safe skill definitions
 - Auto-registration from skills
 - Function reference resolution

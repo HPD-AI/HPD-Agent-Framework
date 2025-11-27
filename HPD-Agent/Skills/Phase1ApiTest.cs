@@ -67,7 +67,7 @@ public class Phase1ApiTest
     /// <summary>
     /// Test 3: Skill with document references (using AddDocument)
     /// </summary>
-    [Skill(Category = "Debugging", Priority = 10)]
+    [Skill]
     public Skill SkillWithDocumentReferences(SkillOptions? options = null)
     {
         var skill = SkillFactory.Create(
@@ -95,7 +95,7 @@ public class Phase1ApiTest
     /// <summary>
     /// Test 4: Skill with document uploads (using AddDocumentFromFile)
     /// </summary>
-    [Skill(Category = "Debugging")]
+    [Skill]
     public Skill SkillWithDocumentUploads(SkillOptions? options = null)
     {
         var skill = SkillFactory.Create(

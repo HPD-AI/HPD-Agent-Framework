@@ -429,7 +429,7 @@ var agent = new AgentBuilder()
 ```
 
 **Result:**
-- Agent sees `QuickLiquidityAnalysis` skill (collapsed)
+- Agent sees `QuickLiquidityAnalysis` skill (Collapse)
 - When called → Gets instructions + 3 functions + document access
 - Agent follows the workflow using the provided guidance
 

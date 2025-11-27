@@ -61,7 +61,7 @@ After the agent calls `MathPlugin()`, the math functions expand and become avail
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Turn 1: Initial State (Collapsed)                           │
+│ Turn 1: Initial State (Collapse)                           │
 ├─────────────────────────────────────────────────────────────┤
 │ User: "Add 5 and 3"                                         │
 │                                                              │
@@ -133,7 +133,7 @@ while (iteration < maxIterations)
 }
 
 // After method exits, expandedPlugins is garbage collected
-// Next message starts fresh with collapsed state
+// Next message starts fresh with Collapse state
 ```
 
 **Key Properties**:
@@ -147,7 +147,7 @@ while (iteration < maxIterations)
 Tools are ordered to prioritize discoverability:
 
 ```
-Priority 1: Containers (collapsed plugins)
+Priority 1: Containers (Collapse plugins)
 Priority 2: Non-Plugin Functions (core utilities)
 Priority 3: Expanded Functions (from expanded plugins)
 ```
@@ -1009,7 +1009,7 @@ Example: OpenAI GPT-4 Turbo ($0.01/1K input tokens)
 - Cost: **$0.40**
 
 **With Plugin Scoping** (10 messages, 30% require expansion):
-- 7 messages × 500 tokens = 3,500 tokens (collapsed)
+- 7 messages × 500 tokens = 3,500 tokens (Collapse)
 - 3 messages × 1,200 tokens = 3,600 tokens (expanded)
 - Total: 7,100 tokens
 - Cost: **$0.071**
@@ -1255,7 +1255,7 @@ public class MathPlugin
 
 **Expected Behavior**: This is **correct**! Expansion state is message-scoped and auto-collapses.
 
-**Why**: Each message starts fresh with collapsed plugins. If you want different behavior, you'd need to persist `expandedPlugins` across messages (not currently implemented).
+**Why**: Each message starts fresh with Collapse plugins. If you want different behavior, you'd need to persist `expandedPlugins` across messages (not currently implemented).
 
 ## Best Practices
 

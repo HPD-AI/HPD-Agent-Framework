@@ -117,13 +117,6 @@ public class CombinedCapabilitiesTests
 
         Assert.True(dataProcessor.AdditionalProperties?.ContainsKey("IsSubAgent") ?? false);
         Assert.True((bool)dataProcessor.AdditionalProperties!["IsSubAgent"]);
-
-        // Check Category metadata
-        Assert.Equal("Analysis", dataExpert.AdditionalProperties["SubAgentCategory"]);
-        Assert.Equal("Processing", dataProcessor.AdditionalProperties["SubAgentCategory"]);
-
-        // Check Priority metadata
-        Assert.Equal(50, dataProcessor.AdditionalProperties["SubAgentPriority"]);
     }
 
     [Fact]
@@ -193,7 +186,6 @@ public class CombinedCapabilitiesTests
         // Assert
         Assert.NotNull(searchExpert);
         Assert.True((bool)searchExpert.AdditionalProperties!["IsSubAgent"]);
-        Assert.Equal("Search", searchExpert.AdditionalProperties["SubAgentCategory"]);
         Assert.Equal("FunctionsAndSubAgentsPlugin", searchExpert.AdditionalProperties["PluginName"]);
     }
 
@@ -275,7 +267,6 @@ public class CombinedCapabilitiesTests
         // Assert
         Assert.NotNull(fileAssistant);
         Assert.True((bool)fileAssistant.AdditionalProperties!["IsSubAgent"]);
-        Assert.Equal("Files", fileAssistant.AdditionalProperties["SubAgentCategory"]);
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -44,7 +44,7 @@ The pattern has three key layers:
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. Visibility Layer (WHEN to show)                          │
 │    Conditionally shows function based on skill state        │
-│    Location: HPD-Agent/Scoping/UnifiedScopingManager.cs     │
+│    Location: HPD-Agent/Scoping/ToolVisibilityManager.cs     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -182,9 +182,9 @@ if (_documentStore != null)
 
 ---
 
-### **Step 3: Add Conditional Visibility Logic to UnifiedScopingManager**
+### **Step 3: Add Conditional Visibility Logic to ToolVisibilityManager**
 
-**Location:** `HPD-Agent/Scoping/UnifiedScopingManager.cs` in `GetToolsForAgentTurn()` method
+**Location:** `HPD-Agent/Scoping/ToolVisibilityManager.cs` in `GetToolsForAgentTurn()` method
 
 **Line Reference:** ~Line 210, in the function classification section, after the `functionsReferencedBySkills` check
 
@@ -255,7 +255,7 @@ else if (functionName.Equals("read_skill_document", StringComparison.OrdinalIgno
 
 ### **Step 4: Add Helper Methods (if needed)**
 
-**Location:** `HPD-Agent/Scoping/UnifiedScopingManager.cs` in the helper methods section
+**Location:** `HPD-Agent/Scoping/ToolVisibilityManager.cs` in the helper methods section
 
 **Line Reference:** ~Line 320, after `GetReferencedPlugins()` method
 
@@ -363,7 +363,7 @@ private bool HasMinimumFunctions(AIFunction skillContainer, int minCount)
 
 ### **Step 5: Add Comprehensive Tests**
 
-**Location:** `test/HPD-Agent.Tests/Scoping/UnifiedScopingManagerTests.cs`
+**Location:** `test/HPD-Agent.Tests/Scoping/ToolVisibilityManagerTests.cs`
 
 **Line Reference:** Add in new test region at end of class, before closing brace
 
@@ -384,7 +384,7 @@ public void [FunctionName]_NotVisible_When[ConditionNotMet]()
         StringComparer.OrdinalIgnoreCase,
         "SomePlugin");
 
-    var manager = new UnifiedScopingManager(tools, explicitPlugins);
+    var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
     // Act: Expand skill but condition not met
     var expandedSkills = ImmutableHashSet.Create(
@@ -414,7 +414,7 @@ public void [FunctionName]_Visible_When[ConditionMet]()
         StringComparer.OrdinalIgnoreCase,
         "SomePlugin");
 
-    var manager = new UnifiedScopingManager(tools, explicitPlugins);
+    var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
     // Act: Expand skill with condition met
     var expandedSkills = ImmutableHashSet.Create(
@@ -439,7 +439,7 @@ public void [FunctionName]_NotVisible_WhenNoSkillsExpanded()
     tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: true));
     tools.Add(Create[FunctionName]Function());
 
-    var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+    var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
     // Act: No skills expanded
     var visibleTools = manager.GetToolsForAgentTurn(
@@ -460,7 +460,7 @@ public void [FunctionName]_VisibleOnce_WhenMultipleConditionsMet()
     tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: true));
     tools.Add(Create[FunctionName]Function());
 
-    var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+    var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
     // Act: Expand multiple skills with condition met
     var expandedSkills = ImmutableHashSet.Create(
@@ -503,7 +503,7 @@ public void [FunctionName]_Visible_When[MixedScenario]()
     tools.AddRange(skillsWithoutCondition);
     tools.Add(Create[FunctionName]Function());
 
-    var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+    var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
     // Act: Expand mixed skills
     var expandedSkills = ImmutableHashSet.Create(
@@ -549,7 +549,7 @@ private AIFunction Create[FunctionName]Function()
 4. ✅ Function visible only once when multiple conditions met (deduplication)
 5. ✅ Function visible in mixed scenarios (some conditions met, some not)
 
-**Reference Example:** Lines 556-724 in UnifiedScopingManagerTests.cs for `read_skill_document` tests
+**Reference Example:** Lines 556-724 in ToolVisibilityManagerTests.cs for `read_skill_document` tests
 
 ---
 
@@ -593,9 +593,9 @@ dotnet build test/HPD-Agent.Tests/HPD-Agent.Tests.csproj
 
 ### Run Tests
 ```bash
-# Run only UnifiedScopingManager tests
+# Run only ToolVisibilityManager tests
 dotnet test test/HPD-Agent.Tests/HPD-Agent.Tests.csproj \
-    --filter "FullyQualifiedName~UnifiedScopingManagerTests"
+    --filter "FullyQualifiedName~ToolVisibilityManagerTests"
 
 # Run all tests
 dotnet test
@@ -626,19 +626,19 @@ When adding a new skill-infrastructure function, complete these steps in order:
   - [ ] Call `_pluginManager.RegisterPlugin<YourPlugin>()`
   - [ ] Add comment explaining condition
 
-- [ ] **Step 3:** Add visibility logic in `UnifiedScopingManager.GetToolsForAgentTurn()` (~line 210)
+- [ ] **Step 3:** Add visibility logic in `ToolVisibilityManager.GetToolsForAgentTurn()` (~line 210)
   - [ ] Add else-if clause for your function name (both cases)
   - [ ] Check `expandedSkills` for condition
   - [ ] Use helper method for condition check
   - [ ] Add to `expandedSkillFunctions` if condition met
 
-- [ ] **Step 4:** Add helper method in `UnifiedScopingManager` (~line 320)
+- [ ] **Step 4:** Add helper method in `ToolVisibilityManager` (~line 320)
   - [ ] Check `AdditionalProperties` is not null
   - [ ] Extract relevant metadata
   - [ ] Return boolean indicating condition
   - [ ] Add XML doc comment
 
-- [ ] **Step 5:** Add 5+ tests in `UnifiedScopingManagerTests.cs`
+- [ ] **Step 5:** Add 5+ tests in `ToolVisibilityManagerTests.cs`
   - [ ] Test: Not visible when condition not met
   - [ ] Test: Visible when condition met
   - [ ] Test: Not visible when no skills expanded
@@ -653,7 +653,7 @@ When adding a new skill-infrastructure function, complete these steps in order:
 
 - [ ] **Step 7:** Build and test
   - [ ] `dotnet build` succeeds
-  - [ ] `dotnet test --filter UnifiedScopingManagerTests` passes
+  - [ ] `dotnet test --filter ToolVisibilityManagerTests` passes
   - [ ] All 13+ tests pass
 
 ---
@@ -862,7 +862,7 @@ if (_yourCondition != null) // Is this condition true?
 
 **Check Visibility Layer:**
 ```csharp
-// In UnifiedScopingManager.GetToolsForAgentTurn(), verify:
+// In ToolVisibilityManager.GetToolsForAgentTurn(), verify:
 else if (functionName.Equals("your_function", ...)) // Is name matching?
 {
     bool conditionMet = ...; // Is this true?
@@ -1016,6 +1016,6 @@ If you encounter issues or have questions about implementing skill infrastructur
 1. Review existing implementation: `DocumentRetrievalPlugin.cs` and related tests
 2. Check this document for troubleshooting tips
 3. Ensure all 7 steps completed
-4. Verify tests pass with `dotnet test --filter UnifiedScopingManagerTests`
+4. Verify tests pass with `dotnet test --filter ToolVisibilityManagerTests`
 
 **Remember:** This pattern is complex because the scoping architecture is complex. Take time to understand each layer before implementing.

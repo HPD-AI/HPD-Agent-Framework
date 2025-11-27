@@ -26,7 +26,7 @@ public class TestSubAgentPlugin
             });
     }
 
-    [SubAgent(Category = "Testing")]
+    [SubAgent]
     public SubAgent CategorizedSubAgent()
     {
         return SubAgentFactory.Create(
@@ -40,7 +40,7 @@ public class TestSubAgentPlugin
             });
     }
 
-    [SubAgent(Priority = 100)]
+    [SubAgent]
     public SubAgent PrioritizedSubAgent()
     {
         return SubAgentFactory.Create(
@@ -143,7 +143,7 @@ public class TestSubAgentPlugin
             });
     }
 
-    [SubAgent(Category = "Complex", Priority = 50)]
+    [SubAgent]
     public SubAgent ComplexSubAgent()
     {
         return SubAgentFactory.Create(

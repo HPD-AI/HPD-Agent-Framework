@@ -6,7 +6,7 @@ using Xunit;
 namespace HPD_Agent.Tests.Scoping;
 
 /// <summary>
-/// Tests for skill scoping functionality in UnifiedScopingManager.
+/// Tests for skill scoping functionality in ToolVisibilityManager.
 /// Ensures skills work like plugin containers - hiding referenced functions until expanded.
 /// </summary>
 public class SkillScopingTests
@@ -62,7 +62,7 @@ public class SkillScopingTests
         var nonScoped = CreateFunction("AlwaysVisible");
 
         var allTools = new List<AIFunction> { skill, func1, func2, nonScoped };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act
         var visible = manager.GetToolsForAgentTurn(
@@ -87,7 +87,7 @@ public class SkillScopingTests
         var nonScoped = CreateFunction("AlwaysVisible");
 
         var allTools = new List<AIFunction> { skill, func1, func2, nonScoped };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act - expand the skill
         var visible = manager.GetToolsForAgentTurn(
@@ -111,7 +111,7 @@ public class SkillScopingTests
         var sharedFunc = CreateFunction("SharedFunction");
 
         var allTools = new List<AIFunction> { skill1, skill2, sharedFunc };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act - expand only Skill1
         var visible = manager.GetToolsForAgentTurn(
@@ -135,7 +135,7 @@ public class SkillScopingTests
         var sharedFunc = CreateFunction("SharedFunction");
 
         var allTools = new List<AIFunction> { skill1, skill2, sharedFunc };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act - expand both skills
         var visible = manager.GetToolsForAgentTurn(
@@ -163,18 +163,18 @@ public class SkillScopingTests
         var func2 = CreateFunction("Function2", "MyPlugin");
 
         var allTools = new List<AIFunction> { skill, func1, func2 };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act - skill not expanded
-        var visibleCollapsed = manager.GetToolsForAgentTurn(
+        var visibleCollapse = manager.GetToolsForAgentTurn(
             allTools,
             ImmutableHashSet<string>.Empty,
             ImmutableHashSet<string>.Empty);
 
-        // Assert - functions hidden when skill collapsed
-        Assert.Contains(visibleCollapsed, f => f.Name == "TestSkill");
-        Assert.DoesNotContain(visibleCollapsed, f => f.Name == "Function1");
-        Assert.DoesNotContain(visibleCollapsed, f => f.Name == "Function2");
+        // Assert - functions hidden when skill Collapse
+        Assert.Contains(visibleCollapse, f => f.Name == "TestSkill");
+        Assert.DoesNotContain(visibleCollapse, f => f.Name == "Function1");
+        Assert.DoesNotContain(visibleCollapse, f => f.Name == "Function2");
 
         // Act - skill expanded
         var visibleExpanded = manager.GetToolsForAgentTurn(
@@ -210,7 +210,7 @@ public class SkillScopingTests
         var pluginFunc = CreateFunction("PluginFunc", "TestPlugin");
 
         var allTools = new List<AIFunction> { skill, skillFunc, pluginContainer, pluginFunc };
-        var manager = new UnifiedScopingManager(allTools);
+        var manager = new ToolVisibilityManager(allTools);
 
         // Act - nothing expanded
         var visibleInitial = manager.GetToolsForAgentTurn(

@@ -1394,15 +1394,17 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     }
 
     /// <summary>
-    /// Detects [Scope] attribute on a class and extracts its description and post-expansion instructions.
+    /// Detects [Collapse] or [Scope] attribute on a class and extracts its description and post-expansion instructions.
+    /// [Scope] is deprecated but still supported for backward compatibility.
     /// </summary>
     private static (bool hasScopeAttribute, string? scopeDescription, string? postExpansionInstructions) GetScopeAttribute(ClassDeclarationSyntax classDecl)
     {
-        var scopeAttributes = classDecl.AttributeLists
+        // Check for both [Collapse] (new) and [Scope] (deprecated) attributes
+        var CollapseAttributes = classDecl.AttributeLists
             .SelectMany(attrList => attrList.Attributes)
-            .Where(attr => attr.Name.ToString() == "Scope");
+            .Where(attr => attr.Name.ToString() == "Collapse" || attr.Name.ToString() == "Scope");
 
-        foreach (var attr in scopeAttributes)
+        foreach (var attr in CollapseAttributes)
         {
             var arguments = attr.ArgumentList?.Arguments;
             if (arguments.HasValue && arguments.Value.Count >= 1)

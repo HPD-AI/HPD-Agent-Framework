@@ -71,7 +71,7 @@ User Request: "Analyze company liquidity"
     ↓
 Agent selects: QuickLiquidityAnalysis skill
     ↓
-UnifiedScopingManager checks:
+ToolVisibilityManager checks:
 ├─ Is skill visible? (check parent scope)
 ├─ What functions does it reference?
 └─ Are those functions available?
@@ -505,7 +505,7 @@ private static AIFunction Create{SkillName}Container()
 
 2. Agent selects skill (expands)
 
-3. UnifiedScopingManager shows referenced functions
+3. ToolVisibilityManager shows referenced functions
    ✅ CalculateCurrentRatio
    ✅ CalculateQuickRatio
    ✅ CalculateWorkingCapital
@@ -605,7 +605,7 @@ public void SkillsWithoutScope_AreAlwaysVisible()
 {
     // Arrange
     var tools = CreateTestTools(skillsHaveScope: false);
-    var manager = new UnifiedScopingManager(tools);
+    var manager = new ToolVisibilityManager(tools);
 
     // Act
     var visible = manager.GetToolsForAgentTurn(tools, ImmutableHashSet<string>.Empty, ImmutableHashSet<string>.Empty);
@@ -624,7 +624,7 @@ public void ExpandingSkill_ShowsReferencedFunctions()
 {
     // Arrange
     var tools = CreateTestTools();
-    var manager = new UnifiedScopingManager(tools);
+    var manager = new ToolVisibilityManager(tools);
 
     // Act
     var visible = manager.GetToolsForAgentTurn(

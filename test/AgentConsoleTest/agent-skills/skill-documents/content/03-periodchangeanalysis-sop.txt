@@ -285,7 +285,7 @@ Example: If Gross Margin goes from 35% to 38%:
 ## Common Pitfalls
 
 ### Pitfall 1: Focusing on Only Percentage Change
-- **Problem:** 15% revenue growth sounds great, but margins collapsed
+- **Problem:** 15% revenue growth sounds great, but margins Collapse
 - **Solution:** Always look at absolute $ impact AND percentage point impact
 - **Example:** Revenue +$10M (15%) but Gross Margin -5 pp = Problem
 

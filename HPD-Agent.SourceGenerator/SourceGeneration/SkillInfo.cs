@@ -18,16 +18,6 @@ internal class SkillInfo
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Category from [Skill(Category = "...")] attribute (Phase 3)
-    /// </summary>
-    public string? Category { get; set; }
-
-    /// <summary>
-    /// Priority from [Skill(Priority = N)] attribute (Phase 3)
-    /// </summary>
-    public int Priority { get; set; } = 0;
-
-    /// <summary>
     /// Description shown before activation
     /// </summary>
     public string Description { get; set; } = string.Empty;

@@ -324,7 +324,7 @@ agent.RunAsync(messages, options, documentPaths)
 
 ### 4. Plugin/Skill Scoping (per iteration)
 ```
-├─ UnifiedScopingManager determines available tools
+├─ ToolVisibilityManager determines available tools
 └─ Container expansion (if plugin scoping enabled)
 ```
 

@@ -6,13 +6,4 @@
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
 public class SkillAttribute : Attribute
 {
-    /// <summary>
-    /// Optional category for grouping skills (e.g., "Debugging", "FileManagement")
-    /// </summary>
-    public string? Category { get; set; }
-
-    /// <summary>
-    /// Optional priority hint for skill ordering (higher = more prominent)
-    /// </summary>
-    public int Priority { get; set; } = 0;
 }

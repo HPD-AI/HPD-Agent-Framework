@@ -241,22 +241,9 @@ public class Phase1ApiTests
     }
 
     [Fact]
-    public void SkillAttribute_WithCategory_CompilesSuccessfully()
+    public void SkillAttribute_OnMethod_CompilesSuccessfully()
     {
-        [Skill(Category = "Testing")]
-        Skill TestMethod()
-        {
-            return SkillFactory.Create("Test", "Test", "Test");
-        }
-
-        var skill = TestMethod();
-        Assert.NotNull(skill);
-    }
-
-    [Fact]
-    public void SkillAttribute_WithPriority_CompilesSuccessfully()
-    {
-        [Skill(Priority = 10)]
+        [Skill]
         Skill TestMethod()
         {
             return SkillFactory.Create("Test", "Test", "Test");

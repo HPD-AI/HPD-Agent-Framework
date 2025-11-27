@@ -521,8 +521,8 @@ Tool Result: "Debugging expanded. Available functions: ReadFile, ListDirectory, 
 **Turn 3: Functions available**
 ```
 Available Tools:
-- FileManagement (skill container - still collapsed)
-- DataAnalysis (skill container - still collapsed)
+- FileManagement (skill container - still Collapse)
+- DataAnalysis (skill container - still Collapse)
 - ReadFile (from Debugging expansion)
 - ListDirectory (from Debugging expansion)
 - GetStackTrace (from Debugging expansion)
@@ -557,7 +557,7 @@ Result 2: "FileManagement expanded. Functions: ReadFile, WriteFile, DeleteFile, 
 **Turn 3: Deduplicated functions**
 ```
 Available Tools:
-- DataAnalysis (still collapsed)
+- DataAnalysis (still Collapse)
 - ReadFile (appears ONCE despite being in both skills)
 - ListDirectory (appears ONCE despite being in both skills)
 - GetStackTrace (from Debugging only)

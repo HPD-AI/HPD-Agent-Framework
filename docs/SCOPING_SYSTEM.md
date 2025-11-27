@@ -14,7 +14,7 @@ The Unified Scoping System manages hierarchical visibility of AI functions to re
 ### Core Components
 
 ```
-UnifiedScopingManager (Main Orchestrator)
+ToolVisibilityManager (Main Orchestrator)
 ├── First Pass Analysis
 │   ├── Detect scope containers (IsScopeContainer)
 │   ├── Detect plugin containers (IsPluginContainer)
@@ -37,7 +37,7 @@ UnifiedScopingManager (Main Orchestrator)
 ```
 Agent.GetToolsForAgentTurn()
     ↓
-UnifiedScopingManager.GetToolsForAgentTurn()
+ToolVisibilityManager.GetToolsForAgentTurn()
     ↓
 [First Pass: Analyze all tools]
     ├─ IsScopeContainer? → Track as skill scope
@@ -150,7 +150,7 @@ When skill class has NO `[Scope]`:
 builder.WithPlugin<FinancialAnalysisPlugin>()
 ```
 - Tracked in `AgentConfig.ExplicitlyRegisteredPlugins`
-- Passed to `UnifiedScopingManager` constructor
+- Passed to `ToolVisibilityManager` constructor
 - Used only for visibility logic (no impact on function access)
 
 ### Implicit Registration
@@ -348,13 +348,13 @@ builder
 
 ## Implementation Details
 
-### UnifiedScopingManager Constructor
+### ToolVisibilityManager Constructor
 
 ```csharp
-public UnifiedScopingManager(
+public ToolVisibilityManager(
     IEnumerable<AIFunction> allFunctions,
     ImmutableHashSet<string> explicitlyRegisteredPlugins,
-    ILogger<UnifiedScopingManager>? logger = null)
+    ILogger<ToolVisibilityManager>? logger = null)
 ```
 
 **Parameters:**
@@ -435,15 +435,15 @@ new Dictionary<string, object>
 
 ### Enable Debug Logging
 
-The `UnifiedScopingManager` includes extensive `Console.WriteLine` debug output:
+The `ToolVisibilityManager` includes extensive `Console.WriteLine` debug output:
 
 ```csharp
-[UnifiedScopingManager] 🔍 First Pass - Analyzing 22 tools
+[ToolVisibilityManager] 🔍 First Pass - Analyzing 22 tools
    📦 Scope Container: FinancialAnalysisSkills
    🔌 Plugin Container: FinancialAnalysisPlugin
    🎯 Skill Container: QuickLiquidityAnalysis
    ...
-[UnifiedScopingManager] 🎯 Returning 7 tools:
+[ToolVisibilityManager] 🎯 Returning 7 tools:
    - FinancialAnalysisPlugin
    - QuickLiquidityAnalysis
    - CalculateCurrentRatio
@@ -452,7 +452,7 @@ The `UnifiedScopingManager` includes extensive `Console.WriteLine` debug output:
 
 ### To Remove Debug Output
 
-Search `UnifiedScopingManager.cs` for `Console.WriteLine` and remove lines (they're marked with emoji indicators for easy finding).
+Search `ToolVisibilityManager.cs` for `Console.WriteLine` and remove lines (they're marked with emoji indicators for easy finding).
 
 ## Migration Guide
 

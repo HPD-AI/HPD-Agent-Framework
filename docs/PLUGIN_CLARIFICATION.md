@@ -95,7 +95,7 @@ Plugin (Generic Container)
 │  ├─ [AIFunction] methods → AI Functions
 │  ├─ [Skill] methods → Skills (workflow containers)
 │  └─ Regular methods
-└─ Visibility managed by UnifiedScopingManager
+└─ Visibility managed by ToolVisibilityManager
 ```
 
 ### Three Types of Content
@@ -186,7 +186,7 @@ Agent
     ↓
 Requests Tools
     ↓
-UnifiedScopingManager.GetToolsForAgentTurn()
+ToolVisibilityManager.GetToolsForAgentTurn()
     ├─ Analyzes all plugins (regardless of what they contain)
     ├─ Checks each plugin's [Scope] attribute
     ├─ Determines visibility based on:
@@ -258,10 +258,10 @@ public class CompleteTool
 
 ## System-Level Perspective
 
-### How UnifiedScopingManager Sees It
+### How ToolVisibilityManager Sees It
 
 ```csharp
-// UnifiedScopingManager doesn't distinguish between:
+// ToolVisibilityManager doesn't distinguish between:
 // builder.WithPlugin<FinancialPlugin>();
 // builder.WithPlugin<FinancialSkills>();
 

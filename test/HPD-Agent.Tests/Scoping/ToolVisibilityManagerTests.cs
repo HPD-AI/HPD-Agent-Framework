@@ -7,11 +7,11 @@ using System.Collections.Immutable;
 namespace HPD_Agent.Tests.Scoping;
 
 /// <summary>
-/// Comprehensive tests for UnifiedScopingManager to validate all scoping scenarios.
-/// These tests cover explicit/implicit plugin registration, [Scope] attribute behavior,
+/// Comprehensive tests for ToolVisibilityManager to validate all scoping scenarios.
+/// These tests cover explicit/implicit plugin registration, [Collapse] attribute behavior,
 /// orphan function hiding, and skill parent scope detection.
 /// </summary>
-public class UnifiedScopingManagerTests
+public class ToolVisibilityManagerTests
 {
     #region Test Scenario 1: Both Plugin and Skills with [Scope], Both Explicit
 
@@ -30,7 +30,7 @@ public class UnifiedScopingManagerTests
             "FinancialAnalysisPlugin",
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -73,7 +73,7 @@ public class UnifiedScopingManagerTests
             "FinancialAnalysisPlugin",
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -115,7 +115,7 @@ public class UnifiedScopingManagerTests
             "FinancialAnalysisPlugin",
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -157,7 +157,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisSkills"); // Only skills explicit
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -197,7 +197,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -239,7 +239,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act - Not expanded
         var visibleToolsBeforeExpansion = manager.GetToolsForAgentTurn(
@@ -285,7 +285,7 @@ public class UnifiedScopingManagerTests
             "FinancialAnalysisPlugin",
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act - Expand FinancialAnalysisSkills scope
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -316,7 +316,7 @@ public class UnifiedScopingManagerTests
             "FinancialAnalysisPlugin",
             "FinancialAnalysisSkills");
         
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act - Expand both the plugin (so functions are available) AND the skill (so it references them)
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -578,7 +578,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: No skills expanded
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -604,7 +604,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand skill that has documents
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -634,7 +634,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand skill that has NO documents
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -664,7 +664,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand BOTH skills that have documents
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -713,7 +713,7 @@ public class UnifiedScopingManagerTests
             StringComparer.OrdinalIgnoreCase,
             "FinancialAnalysisPlugin");
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand one skill WITH documents and one WITHOUT
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -740,7 +740,7 @@ public class UnifiedScopingManagerTests
     {
         // Arrange: Create MathPlugin with [Scope], containing functions and skills
         var tools = CreateMathPluginTools();
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Initially, MathPlugin container should be visible
         var initialTools = manager.GetToolsForAgentTurn(
@@ -775,7 +775,7 @@ public class UnifiedScopingManagerTests
     {
         // Arrange
         var tools = CreateMathPluginTools();
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand MathPlugin
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -801,7 +801,7 @@ public class UnifiedScopingManagerTests
     {
         // Arrange
         var tools = CreateMathPluginTools();
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand MathPlugin (goes into ExpandedSkillContainers)
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -822,7 +822,7 @@ public class UnifiedScopingManagerTests
     {
         // Arrange
         var tools = CreateMathPluginTools();
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand MathPlugin via expandedSkills parameter (second parameter)
         var expandedSkills = ImmutableHashSet.Create(
@@ -846,7 +846,7 @@ public class UnifiedScopingManagerTests
         tools.AddRange(CreateMathPluginTools());
         tools.Add(CreateScopeContainer("OtherPlugin", "Other plugin for testing"));
 
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand only MathPlugin
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -868,7 +868,7 @@ public class UnifiedScopingManagerTests
     {
         // Arrange: Skill with parent scope
         var tools = CreateMathPluginTools();
-        var manager = new UnifiedScopingManager(tools, ImmutableHashSet<string>.Empty);
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand parent scope in ExpandedSkillContainers
         var ExpandedSkillContainers = ImmutableHashSet.Create(
@@ -1037,7 +1037,7 @@ public class UnifiedScopingManagerTests
         // Plugin is NOT explicitly registered - only implicitly via skill reference
         var explicitPlugins = ImmutableHashSet<string>.Empty;
 
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: No expansions
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -1075,7 +1075,7 @@ public class UnifiedScopingManagerTests
             referencedPlugins: new[] { "FinancialAnalysisPlugin" }));
 
         var explicitPlugins = ImmutableHashSet<string>.Empty;
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand the skill (NOT the plugin)
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -1116,7 +1116,7 @@ public class UnifiedScopingManagerTests
             referencedPlugins: new[] { "FinancialAnalysisPlugin" }));
 
         var explicitPlugins = ImmutableHashSet<string>.Empty;
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand the skill
         var visibleTools = manager.GetToolsForAgentTurn(
@@ -1156,7 +1156,7 @@ public class UnifiedScopingManagerTests
             referencedPlugins: new[] { "FinancialAnalysisPlugin" }));
 
         var explicitPlugins = ImmutableHashSet<string>.Empty;
-        var manager = new UnifiedScopingManager(tools, explicitPlugins);
+        var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
         // Act: Expand the PLUGIN scope (not the skill)
         // This is an edge case - user manually expands the plugin even though it was implicitly registered

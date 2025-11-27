@@ -11,7 +11,7 @@ public class SpecializedAgents
     /// Weather specialist sub-agent - handles all weather-related queries
     /// Demonstrates stateless sub-agent (new thread per invocation)
     /// </summary>
-    [SubAgent(Category = "Domain Experts", Priority = 1)]
+    [SubAgent]
     public SubAgent WeatherExpert()
     {
         return SubAgentFactory.Create(
@@ -40,7 +40,7 @@ When asked about weather:
     /// Math specialist sub-agent - handles complex calculations
     /// Demonstrates stateful sub-agent (maintains conversation context)
     /// </summary>
-    [SubAgent(Category = "Domain Experts", Priority = 2)]
+    [SubAgent]
     public SubAgent MathExpert()
     {
         return SubAgentFactory.CreateStateful(
@@ -69,7 +69,7 @@ When asked about weather:
     /// Code review specialist sub-agent - analyzes code quality
     /// Demonstrates sub-agent with plugins registered (FileSystemPlugin for reading code files)
     /// </summary>
-    [SubAgent(Category = "Engineering", Priority = 1)]
+    [SubAgent]
     public SubAgent CodeReviewer()
     {
         return SubAgentFactory.Create(

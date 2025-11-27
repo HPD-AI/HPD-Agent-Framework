@@ -104,7 +104,7 @@ builder.WithPlugin<DebuggingSkills>();  // FileSystemPlugin and DebugPlugin auto
 ### ✅ Phase 4: Unified Scoping Manager (95% Complete)
 
 **Files Created:**
-- `/HPD-Agent/Scoping/UnifiedScopingManager.cs` (261 lines)
+- `/HPD-Agent/Scoping/ToolVisibilityManager.cs` (261 lines)
 
 **Files Modified:**
 - `/HPD-Agent/Agent/Agent.cs` (merged scoping logic)
@@ -193,7 +193,7 @@ public static Skill Debugging(SkillOptions? options = null)
 2. `/HPD-Agent/Skills/SkillOptions.cs`
 3. `/HPD-Agent/Skills/SkillFactory.cs`
 4. `/HPD-Agent/Skills/Example_TypeSafeSkills.cs`
-5. `/HPD-Agent/Scoping/UnifiedScopingManager.cs`
+5. `/HPD-Agent/Scoping/ToolVisibilityManager.cs`
 6. `/HPD-Agent.SourceGenerator/SourceGeneration/SkillInfo.cs`
 7. `/HPD-Agent.SourceGenerator/SourceGeneration/SkillAnalyzer.cs`
 8. `/HPD-Agent.SourceGenerator/SourceGeneration/SkillResolver.cs`
@@ -231,7 +231,7 @@ public static Skill Debugging(SkillOptions? options = null)
 ## Known Issues
 
 1. **Dead Code Blocks:** The `if (false)` block in Agent.cs around line 609 references removed managers - needs deletion
-2. **UnifiedScopingManager:** Needs testing with real skill/plugin combinations
+2. **ToolVisibilityManager:** Needs testing with real skill/plugin combinations
 3. **Backwards Compatibility:** Old `SkillDefinition` system still exists but not deprecated yet
 
 ---
@@ -241,7 +241,7 @@ public static Skill Debugging(SkillOptions? options = null)
 - [ ] Build succeeds without errors
 - [ ] Source generator detects skills correctly
 - [ ] Auto-registration discovers referenced plugins
-- [ ] UnifiedScopingManager provides correct tool visibility
+- [ ] ToolVisibilityManager provides correct tool visibility
 - [ ] Nested skills resolve correctly
 - [ ] Circular dependencies handled gracefully
 - [ ] Skills with `[PluginScope]` create containers

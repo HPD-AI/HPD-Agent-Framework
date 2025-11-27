@@ -17,9 +17,7 @@ public class SubAgentIntegrationTests
     private static AIFunction CreateSubAgentFunction(
         string name,
         string description,
-        string threadMode = "Stateless",
-        string? category = null,
-        int priority = 0)
+        string threadMode = "Stateless")
     {
         return AIFunctionFactory.Create(
             async (string query, CancellationToken ct) =>
@@ -34,8 +32,6 @@ public class SubAgentIntegrationTests
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsSubAgent"] = true,
-                    ["SubAgentCategory"] = category ?? "Uncategorized",
-                    ["SubAgentPriority"] = priority,
                     ["ThreadMode"] = threadMode,
                     ["PluginName"] = "TestPlugin"
                 }
@@ -61,9 +57,9 @@ public class SubAgentIntegrationTests
         // Arrange - Simulate what source generator would create
         var functions = new List<AIFunction>
         {
-            CreateSubAgentFunction("WeatherExpert", "Weather forecast agent", "Stateless", "Domain Experts", 1),
-            CreateSubAgentFunction("MathExpert", "Math calculation agent", "SharedThread", "Domain Experts", 2),
-            CreateSubAgentFunction("CodeReviewer", "Code review agent", "Stateless", "Engineering", 1)
+            CreateSubAgentFunction("WeatherExpert", "Weather forecast agent", "Stateless"),
+            CreateSubAgentFunction("MathExpert", "Math calculation agent", "SharedThread"),
+            CreateSubAgentFunction("CodeReviewer", "Code review agent", "Stateless")
         };
 
         // Act
@@ -84,9 +80,7 @@ public class SubAgentIntegrationTests
         var weatherExpert = CreateSubAgentFunction(
             "WeatherExpert",
             "Specialized agent for weather forecasts",
-            "Stateless",
-            "Domain Experts",
-            1);
+            "Stateless");
 
         // Assert
         Assert.NotNull(weatherExpert);
@@ -106,9 +100,7 @@ public class SubAgentIntegrationTests
         var subAgentFunction = CreateSubAgentFunction(
             "TestSubAgent",
             "Test sub-agent",
-            "Stateless",
-            "Test",
-            1);
+            "Stateless");
 
         // Assert
         Assert.NotNull(subAgentFunction);
@@ -144,44 +136,6 @@ public class SubAgentIntegrationTests
         // MathExpert should be SharedThread
         Assert.True(mathExpert.AdditionalProperties?.ContainsKey("ThreadMode"));
         Assert.Equal("SharedThread", mathExpert.AdditionalProperties!["ThreadMode"] as string);
-    }
-
-    // ===== P0: Category and Priority Metadata =====
-
-    [Fact]
-    public void SubAgent_AIFunction_HasCategoryMetadata()
-    {
-        // Arrange
-        var subAgentFunction = CreateSubAgentFunction(
-            "TestSubAgent",
-            "Test description",
-            "Stateless",
-            "Domain Experts",
-            1);
-
-        // Assert
-        Assert.NotNull(subAgentFunction);
-        Assert.True(subAgentFunction.AdditionalProperties!.ContainsKey("SubAgentCategory"));
-        var category = subAgentFunction.AdditionalProperties["SubAgentCategory"] as string;
-        Assert.Equal("Domain Experts", category);
-    }
-
-    [Fact]
-    public void SubAgent_AIFunction_HasPriorityMetadata()
-    {
-        // Arrange
-        var subAgentFunction = CreateSubAgentFunction(
-            "TestSubAgent",
-            "Test description",
-            "Stateless",
-            "Test",
-            42);
-
-        // Assert
-        Assert.NotNull(subAgentFunction);
-        Assert.True(subAgentFunction.AdditionalProperties!.ContainsKey("SubAgentPriority"));
-        var priority = subAgentFunction.AdditionalProperties["SubAgentPriority"];
-        Assert.Equal(42, priority);
     }
 
     // ===== P0: Function Signature =====

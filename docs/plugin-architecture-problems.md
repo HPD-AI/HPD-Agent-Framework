@@ -202,7 +202,7 @@ var expandedPlugins = new HashSet<string>();  // ← Lives only in this method
 //   → Uses GetLogs, ReadFile
 
 // Turn 2: User: "Now check the database"
-//   → Debugging container COLLAPSED (state reset)
+//   → Debugging container Collapse (state reset)
 //   → Agent must re-expand if needed
 //   → No "memory" that we're in a debugging session
 ```

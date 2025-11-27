@@ -1,10 +1,10 @@
 {
   "DocumentId": "03-periodchangeanalysis-sop",
   "Name": "03-periodchangeanalysis-sop",
-  "Description": "Step-by-step procedure for analyzing period-over-period changes",
-  "SizeBytes": 14111,
-  "ContentHash": "sha256:41064f863b0081020fcfd621b09f583474d2ac737971e98378a803c74b3abe1d",
-  "Version": 1,
+  "Description": "Change analysis examples and interpretation",
+  "SizeBytes": 14110,
+  "ContentHash": "sha256:368a8c9df97bc6c549f33ed81c7ab99880ace2af9f97cea0c2ef6d7fbbcc1db9",
+  "Version": 2,
   "CreatedAt": "2025-11-21T02:26:46.251503Z",
-  "LastModified": "2025-11-21T02:26:46.251503Z"
+  "LastModified": "2025-11-27T18:13:14.907258Z"
 }
