@@ -140,7 +140,7 @@ var config = new AgentConfig
 {
     Name = "MyAgent",
     Provider = new ProviderConfig { /* ... */ },
-    Checkpointer = new PostgresThreadCheckpointer(connectionString),  // ✅ One line!
+    Checkpointer = new PostgresConversationThreadStore(connectionString),  // ✅ One line!
     CheckpointFrequency = CheckpointFrequency.PerTurn
 };
 
@@ -420,7 +420,7 @@ _ = Task.Run(async () =>
     try
     {
         thread.ExecutionState = state;
-        await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+        await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
 
         // Metrics
         _checkpointDuration?.Record(stopwatch.Elapsed.TotalMilliseconds);
@@ -498,12 +498,12 @@ if (decision is AgentDecision.CallLLM)
 
 ```csharp
 // LatestOnly: 99% of use cases (crash recovery)
-var checkpointer = new PostgresThreadCheckpointer(
+var checkpointer = new PostgresConversationThreadStore(
     connectionString,
     CheckpointRetentionMode.LatestOnly);  // UPSERT (overwrite)
 
 // FullHistory: Advanced scenarios (debugging, audit, replay)
-var checkpointer = new PostgresThreadCheckpointer(
+var checkpointer = new PostgresConversationThreadStore(
     connectionString,
     CheckpointRetentionMode.FullHistory);  // INSERT (keep all)
 
@@ -665,7 +665,7 @@ var config = new AgentConfig
 {
     Name = "SupportAgent",
     Provider = new ProviderConfig { /* ... */ },
-    Checkpointer = new PostgresThreadCheckpointer(connectionString),
+    Checkpointer = new PostgresConversationThreadStore(connectionString),
     CheckpointFrequency = CheckpointFrequency.PerTurn
 };
 var agent = AgentBuilder.FromConfig(config).Build();
@@ -677,7 +677,7 @@ await agent.RunAsync(new[] { new ChatMessage(ChatRole.User, "Help me") }, thread
 // CRASH HERE - state persisted in Postgres
 
 // Resume after crash
-var thread = await config.Checkpointer.LoadThreadAsync(thread.Id);
+var thread = await config.ThreadStore.LoadThreadAsync(thread.Id);
 if (thread?.ExecutionState != null)
 {
     await agent.RunAsync(Array.Empty<ChatMessage>(), thread);  // Resume!

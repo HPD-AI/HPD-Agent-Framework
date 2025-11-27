@@ -652,7 +652,7 @@ internal sealed class AgentCore
                 // RESTORE PENDING WRITES (partial failure recovery)
                 // ═══════════════════════════════════════════════════════════════════════
                 if (Config?.EnablePendingWrites == true &&
-                    Config?.Checkpointer != null &&
+                    Config?.ThreadStore != null &&
                     state.ETag != null)
                 {
                     int pendingWritesCount = 0;
@@ -660,7 +660,7 @@ internal sealed class AgentCore
 
                     try
                     {
-                        var pendingWrites = await Config.Checkpointer.LoadPendingWritesAsync(
+                        var pendingWrites = await Config.ThreadStore.LoadPendingWritesAsync(
                             thread.Id,
                             state.ETag,
                             effectiveCancellationToken).ConfigureAwait(false);
@@ -1388,11 +1388,11 @@ internal sealed class AgentCore
                         // PENDING WRITES (save successful function results immediately)
                         // ═══════════════════════════════════════════════════════
                         if (Config?.EnablePendingWrites == true &&
-                            Config?.Checkpointer != null &&
+                            Config?.ThreadStore != null &&
                             thread != null &&
                             state.ETag != null)
                         {
-                            SavePendingWritesFireAndForget(toolResultMessage, state, Config.Checkpointer, thread.Id);
+                            SavePendingWritesFireAndForget(toolResultMessage, state, Config.ThreadStore, thread.Id);
                         }
 
                         // ═══════════════════════════════════════════════════════
@@ -1597,7 +1597,7 @@ internal sealed class AgentCore
 
                 if (thread != null &&
                     Config?.CheckpointFrequency == CheckpointFrequency.PerIteration &&
-                    Config?.Checkpointer != null)
+                    Config?.ThreadStore != null)
                 {
                     // Fire-and-forget async checkpoint (non-blocking!)
                     // Update metadata to reflect loop checkpoint
@@ -1616,7 +1616,7 @@ internal sealed class AgentCore
                         try
                         {
                             thread.ExecutionState = checkpointState;
-                            await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+                            await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
 
                             // Cleanup pending writes after successful checkpoint (fire-and-forget)
                             if (Config.EnablePendingWrites && checkpointState.ETag != null)
@@ -1628,7 +1628,7 @@ internal sealed class AgentCore
                                 {
                                     try
                                     {
-                                        await Config.Checkpointer.DeletePendingWritesAsync(
+                                        await Config.ThreadStore.DeletePendingWritesAsync(
                                             threadId,
                                             checkpointState.ETag,
                                             CancellationToken.None);
@@ -1763,7 +1763,7 @@ internal sealed class AgentCore
             // ✅ NEW: FINAL CHECKPOINT (if configured)
             // ═══════════════════════════════════════════════════════
 
-            if (thread != null && Config?.Checkpointer != null)
+            if (thread != null && Config?.ThreadStore != null)
             {
                 var finalState = state with
                 {
@@ -1784,7 +1784,7 @@ internal sealed class AgentCore
                     try
                     {
                         thread.ExecutionState = finalState;
-                        await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+                        await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
                         success = true;
 
                         // Cleanup pending writes after successful final checkpoint (fire-and-forget)
@@ -1797,7 +1797,7 @@ internal sealed class AgentCore
                             {
                                 try
                                 {
-                                    await Config.Checkpointer.DeletePendingWritesAsync(
+                                    await Config.ThreadStore.DeletePendingWritesAsync(
                                         threadId,
                                         finalState.ETag,
                                         CancellationToken.None);
@@ -2035,7 +2035,7 @@ internal sealed class AgentCore
     private void SavePendingWritesFireAndForget(
         ChatMessage toolResultMessage,
         AgentLoopState state,
-        IThreadCheckpointer checkpointer,
+        IConversationThreadStore threadStore,
         string threadId)
     {
         // Extract successful function results
@@ -2068,7 +2068,7 @@ internal sealed class AgentCore
         {
             try
             {
-                await checkpointer.SavePendingWritesAsync(
+                await threadStore.SavePendingWritesAsync(
                     threadId,
                     state.ETag!,
                     pendingWrites,
@@ -3381,7 +3381,7 @@ public sealed record AgentLoopState
     /// </para>
     /// <para>
     /// <strong>Note:</strong> Pending writes are NOT serialized in AgentLoopState itself.
-    /// They are stored separately by IThreadCheckpointer and restored during resume.
+    /// They are stored separately by IConversationThreadStore and restored during resume.
     /// This property tracks them during execution only.
     /// </para>
     /// </remarks>

@@ -25,14 +25,21 @@ public enum CheckpointRetentionMode
 }
 
 /// <summary>
-/// Interface for persisting and loading ConversationThread checkpoints.
+/// Interface for persisting and loading ConversationThread state.
 /// Implementations can use databases, file systems, cloud storage, etc.
-/// INTERNAL: Framework-level interface for checkpointing support.
+///
+/// This interface combines thread storage with checkpointing capabilities:
+/// - Save/Load entire conversation threads (messages + metadata)
+/// - Preserve execution state (AgentLoopState) for resumption
+/// - Support pending writes for partial failure recovery
+/// - Optional full history for time-travel debugging
+///
+/// INTERNAL: Framework-level interface for thread persistence and checkpointing.
 /// </summary>
-internal interface IThreadCheckpointer
+internal interface IConversationThreadStore
 {
     /// <summary>
-    /// Gets the checkpoint retention mode for this checkpointer.
+    /// Gets the checkpoint retention mode for this store.
     /// </summary>
     CheckpointRetentionMode RetentionMode { get; }
 

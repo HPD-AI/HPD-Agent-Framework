@@ -60,10 +60,10 @@ internal Agent(CoreAgent core)
             IAsyncEnumerable<InternalAgentEvent> internalStream;
 
             var config = _core.Config;
-            if (config?.Checkpointer != null)
+            if (config?.ThreadStore != null)
             {
-                // Load thread from checkpointer (may have checkpoint)
-                conversationThread = await config.Checkpointer.LoadThreadAsync(
+                // Load thread from thread store (may have checkpoint)
+                conversationThread = await config.ThreadStore.LoadThreadAsync(
                     input.ThreadId, cancellationToken);
 
                 // Create new thread if not found

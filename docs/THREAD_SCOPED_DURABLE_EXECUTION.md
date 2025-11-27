@@ -96,7 +96,7 @@ Thread-scoped durable execution (checkpointing) enables **fault-tolerant, resuma
 └────────────────────┬─────────────────────────────────────────┘
                      ↓
 ┌──────────────────────────────────────────────────────────────┐
-│  IThreadCheckpointer (Persistence Interface)                 │
+│  IConversationThreadStore (Persistence Interface)                 │
 │  • LoadThreadAsync() - retrieve checkpoint                   │
 │  • SaveThreadAsync() - persist checkpoint                    │
 │  • DeleteThreadAsync() - remove checkpoint                   │
@@ -104,7 +104,7 @@ Thread-scoped durable execution (checkpointing) enables **fault-tolerant, resuma
 └────────────────────┬─────────────────────────────────────────┘
                      ↓
 ┌──────────────────────────────────────────────────────────────┐
-│  InMemoryThreadCheckpointer (Dev/Test Implementation)       │
+│  InMemoryConversationThreadStore (Dev/Test Implementation)       │
 │  • LatestOnly: ConcurrentDictionary<threadId, JsonElement>  │
 │  • FullHistory: ConcurrentDictionary<threadId, List<Tuple>> │
 └──────────────────────────────────────────────────────────────┘
@@ -216,9 +216,9 @@ public static ConversationThread Deserialize(ConversationThreadSnapshot snapshot
 
 ---
 
-### 3. IThreadCheckpointer (Persistence Interface)
+### 3. IConversationThreadStore (Persistence Interface)
 
-**Location**: `/HPD-Agent/Conversation/Checkpointing/IThreadCheckpointer.cs`
+**Location**: `/HPD-Agent/Conversation/Checkpointing/IConversationThreadStore.cs`
 
 **Purpose**: Abstract interface for checkpoint storage. Allows swapping backends (in-memory, PostgreSQL, Redis, etc.).
 
@@ -303,9 +303,9 @@ public class CheckpointTuple
 
 ---
 
-### 4. InMemoryThreadCheckpointer (Dev/Test Implementation)
+### 4. InMemoryConversationThreadStore (Dev/Test Implementation)
 
-**Location**: `/HPD-Agent/Conversation/Checkpointing/InMemoryThreadCheckpointer.cs`
+**Location**: `/HPD-Agent/Conversation/Checkpointing/InMemoryConversationThreadStore.cs`
 
 **Purpose**: Non-persistent checkpointer for development and testing. Data lost on process restart.
 
@@ -379,7 +379,7 @@ public class CheckpointConcurrencyException : Exception
 // User code
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = new InMemoryThreadCheckpointer();
+        config.ThreadStore = new InMemoryConversationThreadStore();
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
     })
     .Build();
@@ -391,8 +391,8 @@ await agent.RunAsync([new ChatMessage(ChatRole.User, "Hello")], thread);
 **What Happens**:
 
 1. **Microsoft Adapter** (`Agent.RunAsync`):
-   - Checks if `config.Checkpointer` is set
-   - Tries to load checkpoint: `await config.Checkpointer.LoadThreadAsync(thread.Id)`
+   - Checks if `config.ThreadStore` is set
+   - Tries to load checkpoint: `await config.ThreadStore.LoadThreadAsync(thread.Id)`
    - Returns `null` (no checkpoint exists yet)
    - Adds messages to thread
    - Calls core agent: `_core.RunAsync(messages, options, thread, ct)`
@@ -430,7 +430,7 @@ await agent.RunAsync([new ChatMessage(ChatRole.User, "Hello")], thread);
            _ = Task.Run(async () => {
                try {
                    thread.ExecutionState = checkpointState;
-                   await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+                   await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
                    _telemetryService?.RecordCheckpointSuccess(...);
                }
                catch (Exception ex) {
@@ -442,7 +442,7 @@ await agent.RunAsync([new ChatMessage(ChatRole.User, "Hello")], thread);
    }
 
    // ✅ FINAL CHECKPOINT AFTER COMPLETION
-   if (thread != null && Config?.Checkpointer != null)
+   if (thread != null && Config?.ThreadStore != null)
    {
        var finalState = state with {
            Metadata = new CheckpointMetadata {
@@ -451,7 +451,7 @@ await agent.RunAsync([new ChatMessage(ChatRole.User, "Hello")], thread);
            }
        };
        thread.ExecutionState = finalState;
-       await Config.Checkpointer.SaveThreadAsync(thread, cancellationToken);
+       await Config.ThreadStore.SaveThreadAsync(thread, cancellationToken);
    }
    ```
 
@@ -470,19 +470,19 @@ await agent.RunAsync([new ChatMessage(ChatRole.User, "Hello")], thread);
 // Simulate crash and restart
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = new InMemoryThreadCheckpointer(); // Same instance or DB-backed
+        config.ThreadStore = new InMemoryConversationThreadStore(); // Same instance or DB-backed
     })
     .Build();
 
 // IMPORTANT: Empty message array to resume
-var thread = await config.Checkpointer.LoadThreadAsync(threadId);
+var thread = await config.ThreadStore.LoadThreadAsync(threadId);
 await agent.RunAsync(Array.Empty<ChatMessage>(), thread);
 ```
 
 **What Happens**:
 
 1. **Microsoft Adapter**:
-   - Loads checkpoint: `await config.Checkpointer.LoadThreadAsync(thread.Id)`
+   - Loads checkpoint: `await config.ThreadStore.LoadThreadAsync(thread.Id)`
    - Returns thread with `ExecutionState` populated
    - Validates resume semantics:
      ```csharp
@@ -624,7 +624,7 @@ if (Config?.EnablePendingWrites == true && state.ETag != null)
 // When resuming from checkpoint
 if (Config?.EnablePendingWrites == true && state.ETag != null)
 {
-    var pendingWrites = await Config.Checkpointer.LoadPendingWritesAsync(
+    var pendingWrites = await Config.ThreadStore.LoadPendingWritesAsync(
         thread.Id,
         state.ETag,
         cancellationToken);
@@ -640,7 +640,7 @@ if (Config?.EnablePendingWrites == true && state.ETag != null)
 **3. Cleanup Phase** (After Successful Checkpoint):
 ```csharp
 // After iteration checkpoint completes
-await Config.Checkpointer.DeletePendingWritesAsync(thread.Id, state.ETag);
+await Config.ThreadStore.DeletePendingWritesAsync(thread.Id, state.ETag);
 ```
 
 ### Configuration
@@ -649,7 +649,7 @@ await Config.Checkpointer.DeletePendingWritesAsync(thread.Id, state.ETag);
 ```csharp
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = new InMemoryThreadCheckpointer();
+        config.ThreadStore = new InMemoryConversationThreadStore();
         config.EnablePendingWrites = true;  // Enable partial failure recovery
     })
     .Build();
@@ -659,7 +659,7 @@ var agent = AgentBuilder.CreateMicrosoftAgent()
 
 ### Storage
 
-**IThreadCheckpointer Interface** - Three new methods:
+**IConversationThreadStore Interface** - Three new methods:
 ```csharp
 // Save pending writes for a specific checkpoint
 Task SavePendingWritesAsync(
@@ -696,7 +696,7 @@ public sealed record PendingWrite
 
 **Storage Key Format**: `"{threadId}:{checkpointId}"`
 
-### InMemoryThreadCheckpointer Implementation
+### InMemoryConversationThreadStore Implementation
 
 ```csharp
 // Pending writes storage (thread-scoped by checkpoint)
@@ -813,10 +813,10 @@ var tasks = new[]
 
 ```csharp
 // 1. Configure agent with pending writes
-var checkpointer = new InMemoryThreadCheckpointer();
+var checkpointer = new InMemoryConversationThreadStore();
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.EnablePendingWrites = true;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
     })
@@ -889,12 +889,12 @@ using HPD.Agent.Conversation.Checkpointing;
 using Microsoft.Extensions.AI;
 
 // 1. Create checkpointer
-var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
 
 // 2. Configure agent
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
     })
     .Build();
@@ -917,12 +917,12 @@ Console.WriteLine($"Completed at iteration: {thread.ExecutionState?.Iteration}")
 // Application crashes/restarts...
 
 // 1. Same checkpointer instance (or database-backed with persistence)
-var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
 
 // 2. Recreate agent with same config
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
     })
     .Build();
 
@@ -944,12 +944,12 @@ if (thread?.ExecutionState != null)
 using HPD.Agent.AGUI;
 
 // 1. Create checkpointer
-var checkpointer = new InMemoryThreadCheckpointer();
+var checkpointer = new InMemoryConversationThreadStore();
 
 // 2. Configure AGUI agent
 var agent = AgentBuilder.CreateAGUIAgent()
     .WithConfig(config => {
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
     })
     .Build();
 
@@ -977,12 +977,12 @@ await agent.RunAsync(resumeInput, eventChannel.Writer);
 
 ```csharp
 // 1. Create checkpointer with FullHistory mode
-var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.FullHistory);
+var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.FullHistory);
 
 // 2. Configure agent
 var agent = AgentBuilder.CreateMicrosoftAgent()
     .WithConfig(config => {
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
     })
     .Build();
@@ -1162,7 +1162,7 @@ private readonly ConcurrentDictionary<string, JsonElement> _checkpoints = new();
 
 **Example**:
 ```csharp
-var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
 
 // Save #1: Creates checkpoint
 await checkpointer.SaveThreadAsync(thread);  // thread.ExecutionState.Iteration = 1
@@ -1219,7 +1219,7 @@ public class CheckpointTuple
 
 **Example**:
 ```csharp
-var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.FullHistory);
+var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.FullHistory);
 
 // Save #1: Creates checkpoint-1
 await checkpointer.SaveThreadAsync(thread);  // iteration = 1
@@ -1314,7 +1314,7 @@ if (thread != null && Config?.CheckpointFrequency == CheckpointFrequency.PerIter
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         try {
             thread.ExecutionState = checkpointState;
-            await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+            await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
 
             stopwatch.Stop();
             _telemetryService?.RecordCheckpointSuccess(stopwatch.Elapsed, thread.Id, state.Iteration);
@@ -1336,7 +1336,7 @@ if (thread != null && Config?.CheckpointFrequency == CheckpointFrequency.PerIter
 **Final Checkpoint (Blocking)**:
 ```csharp
 // After loop completes
-if (thread != null && Config?.Checkpointer != null)
+if (thread != null && Config?.ThreadStore != null)
 {
     var finalState = state with {
         Metadata = new CheckpointMetadata {
@@ -1345,7 +1345,7 @@ if (thread != null && Config?.Checkpointer != null)
         }
     };
     thread.ExecutionState = finalState;
-    await Config.Checkpointer.SaveThreadAsync(thread, cancellationToken);  // Blocking
+    await Config.ThreadStore.SaveThreadAsync(thread, cancellationToken);  // Blocking
 }
 ```
 
@@ -1608,7 +1608,7 @@ _ = Task.Run(async () => {
     var stopwatch = System.Diagnostics.Stopwatch.StartNew();
     try {
         thread.ExecutionState = checkpointState;
-        await Config.Checkpointer.SaveThreadAsync(thread, CancellationToken.None);
+        await Config.ThreadStore.SaveThreadAsync(thread, CancellationToken.None);
 
         stopwatch.Stop();
         _telemetryService?.RecordCheckpointSuccess(stopwatch.Elapsed, thread.Id, state.Iteration);
@@ -1682,7 +1682,7 @@ Resume:
 
 ### 3. InMemoryCheckpointer Has No Persistence
 
-**Limitation**: `InMemoryThreadCheckpointer` stores data in memory. Process restart = data loss.
+**Limitation**: `InMemoryConversationThreadStore` stores data in memory. Process restart = data loss.
 
 **Impact**:
 - Cannot resume after application restart
@@ -1690,7 +1690,7 @@ Resume:
 
 **Solution**:
 - Use database-backed checkpointer in production (see [Future Enhancements](#future-enhancements))
-- `InMemoryThreadCheckpointer` is for dev/testing only
+- `InMemoryConversationThreadStore` is for dev/testing only
 
 ---
 
@@ -1902,7 +1902,7 @@ public class CheckpointingTests : AgentTestBase
 
 **Design**:
 ```csharp
-public class PostgresThreadCheckpointer : IThreadCheckpointer
+public class PostgresConversationThreadStore : IConversationThreadStore
 {
     private readonly string _connectionString;
 
@@ -2173,8 +2173,8 @@ public class CheckpointDebugger
 - `/HPD-Agent/Agent/AgentConfig.cs` - Configuration properties (Checkpointer, EnablePendingWrites)
 
 **Checkpointing Infrastructure**:
-- `/HPD-Agent/Conversation/Checkpointing/IThreadCheckpointer.cs` - Interface + 3 pending writes methods
-- `/HPD-Agent/Conversation/Checkpointing/InMemoryThreadCheckpointer.cs` - Implementation + pending writes storage
+- `/HPD-Agent/Conversation/Checkpointing/IConversationThreadStore.cs` - Interface + 3 pending writes methods
+- `/HPD-Agent/Conversation/Checkpointing/InMemoryConversationThreadStore.cs` - Implementation + pending writes storage
 - `/HPD-Agent/Conversation/Checkpointing/CheckpointExceptions.cs` - Exceptions
 - `/HPD-Agent/Conversation/Checkpointing/PendingWrite.cs` - PendingWrite record (v2.0)
 

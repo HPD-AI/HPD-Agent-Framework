@@ -24,7 +24,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
                 transform: static (ctx, ct) => GetPluginDeclaration(ctx, ct))
             .Where(static plugin => plugin is not null)
             .Collect();
-        
+
         context.RegisterSourceOutput(pluginClasses, GeneratePluginRegistrations);
     }
     
@@ -293,8 +293,8 @@ namespace HPD_Agent.Diagnostics {{
         sb.AppendLine($"    /// Creates an AIFunction list for the {plugin.Name} plugin.");
         sb.AppendLine("    /// </summary>");
 
-        // Handle skill-only classes (no instance parameter needed)
-        if (plugin.IsSkillOnly)
+        // Only include instance parameter if plugin has capabilities that need it
+        if (!plugin.RequiresInstance)
         {
             sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
             sb.AppendLine($"    public static List<AIFunction> CreatePlugin(IPluginMetadataContext? context = null)");
@@ -472,7 +472,7 @@ namespace HPD_Agent.Diagnostics {{
         var sb = new StringBuilder();
         var contextSerializableTypes = new List<string>();
 
-        // Generate SubAgentQueryArgs if there are sub-agents
+        // Generate SubAgentQueryArgs if there are sub-agents (scoped per plugin to avoid conflicts)
         if (plugin.SubAgents.Any())
         {
             sb.AppendLine(
@@ -480,7 +480,7 @@ $@"    /// <summary>
     /// Represents the arguments for sub-agent invocations, generated at compile-time.
     /// </summary>
     [System.CodeDom.Compiler.GeneratedCodeAttribute(""HPDPluginSourceGenerator"", ""1.0.0.0"")]
-    public class SubAgentQueryArgs
+    public class {plugin.Name}SubAgentQueryArgs
     {{
         [System.Text.Json.Serialization.JsonPropertyName(""query"")]
         [System.ComponentModel.Description(""Query for the sub-agent"")]

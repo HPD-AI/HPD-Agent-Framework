@@ -9,16 +9,16 @@ using System.Threading.Tasks;
 namespace HPD.Agent.Conversation.Checkpointing;
 
 /// <summary>
-/// In-memory thread checkpointer for development and testing.
+/// In-memory conversation thread store for development and testing.
 /// Data is lost on process restart.
 /// Supports both LatestOnly (default) and FullHistory modes.
-/// INTERNAL: Framework-level implementation for checkpointing support.
+/// INTERNAL: Framework-level implementation for thread persistence and checkpointing.
 /// </summary>
 /// <remarks>
 /// Thread-safe for concurrent access using ConcurrentDictionary.
-/// In production, use a database-backed checkpointer (e.g., PostgresThreadCheckpointer).
+/// In production, use a database-backed store (e.g., PostgresConversationThreadStore).
 /// </remarks>
-internal class InMemoryThreadCheckpointer : IThreadCheckpointer
+internal class InMemoryConversationThreadStore : IConversationThreadStore
 {
     // LatestOnly mode: single checkpoint per thread (stored as JSON element)
     private readonly ConcurrentDictionary<string, JsonElement> _checkpoints = new();
@@ -31,7 +31,7 @@ internal class InMemoryThreadCheckpointer : IThreadCheckpointer
 
     public CheckpointRetentionMode RetentionMode { get; }
 
-    public InMemoryThreadCheckpointer(CheckpointRetentionMode retentionMode = CheckpointRetentionMode.LatestOnly)
+    public InMemoryConversationThreadStore(CheckpointRetentionMode retentionMode = CheckpointRetentionMode.LatestOnly)
     {
         RetentionMode = retentionMode;
     }

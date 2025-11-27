@@ -43,7 +43,7 @@ The history reduction checkpoint fix ensures that **ConversationThread** and **M
 │                                                              │
 │  Purpose: Agent execution checkpoint (crash recovery)        │
 │  Content: CurrentMessages (FULL unreduced history)          │
-│  Location: Serialized as JSON in IThreadCheckpointer        │
+│  Location: Serialized as JSON in IConversationThreadStore        │
 │                                                              │
 │  Example (after fix):                                        │
 │  {                                                           │

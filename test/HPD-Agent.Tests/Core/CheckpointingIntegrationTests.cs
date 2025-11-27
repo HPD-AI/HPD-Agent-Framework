@@ -21,12 +21,12 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_WithCheckpointer_SavesCheckpointAfterIteration()
     {
         // Arrange: Agent with checkpointer configured
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueTextResponse("Hello from agent!");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
 
         var agent = CreateAgent(config, client);
@@ -56,12 +56,12 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_WithCheckpointer_PerTurnFrequency_SavesAfterTurnCompletes()
     {
         // Arrange: Agent with PerTurn checkpoint frequency
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueTextResponse("Response 1");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerTurn;
 
         var agent = CreateAgent(config, client);
@@ -94,7 +94,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_ResumeFromCheckpoint_RestoresExecutionState()
     {
         // Arrange: Create checkpoint mid-execution
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
@@ -113,7 +113,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         client.EnqueueTextResponse("Resumed response");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
 
         var agent = CreateAgent(config, client);
 
@@ -151,10 +151,10 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Expected: Error
 
         // Arrange: Empty thread, no checkpoint, no messages
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         var agent = CreateAgent(config, client);
 
         var emptyThread = new ConversationThread();
@@ -180,12 +180,12 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Expected: Fresh run
 
         // Arrange: No checkpoint, but messages provided
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueTextResponse("Fresh run response");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         var agent = CreateAgent(config, client);
 
         var thread = new ConversationThread();
@@ -212,7 +212,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Expected: Resume execution
 
         // Arrange: Thread with checkpoint
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
@@ -232,7 +232,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         client.EnqueueTextResponse("Resumed");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         var agent = CreateAgent(config, client);
 
         // Act: Resume with no new messages
@@ -257,7 +257,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Expected: Error (cannot add messages during mid-execution)
 
         // Arrange: Thread with checkpoint
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
@@ -275,7 +275,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
 
         var client = new FakeChatClient();
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         var agent = CreateAgent(config, client);
 
         // Act & Assert: Should throw InvalidOperationException
@@ -304,13 +304,13 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_FullHistoryMode_CreatesMultipleCheckpoints()
     {
         // Arrange: Agent with FullHistory checkpointer
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.FullHistory);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.FullHistory);
         var client = new FakeChatClient();
         client.EnqueueToolCall("TestTool", "call-1"); // Iteration 1
         client.EnqueueTextResponse("Final response");   // Iteration 2
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
 
         var testTool = HPDAIFunctionFactory.Create(
@@ -342,13 +342,13 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_FullHistoryMode_CanLoadPreviousCheckpoint()
     {
         // Arrange: Create agent run with multiple iterations
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.FullHistory);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.FullHistory);
         var client = new FakeChatClient();
         client.EnqueueToolCall("TestTool", "call-1");
         client.EnqueueTextResponse("Done");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
 
         var testTool = HPDAIFunctionFactory.Create(
@@ -395,7 +395,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
     public async Task Agent_StaleCheckpoint_ThrowsValidationError()
     {
         // Arrange: Create checkpoint, then add messages to conversation
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Message 1"));
         await thread.AddMessageAsync(AssistantMessage("Response 1"));
@@ -425,7 +425,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         client.EnqueueTextResponse("Should not reach here"); // Queue a response to avoid FakeChatClient error
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         var agent = CreateAgent(config, client);
 
         // Act & Assert: Should throw CheckpointStaleException during validation
@@ -452,12 +452,12 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Simulate: Agent starts, does some work, crashes, then resumes
 
         // PHASE 1: Initial run (simulate crash mid-execution)
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client1 = new FakeChatClient();
         client1.EnqueueToolCall("Step1", "call-1");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
 
         var step1Tool = HPDAIFunctionFactory.Create(
@@ -532,14 +532,14 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Test that successful function results are saved as pending writes during execution
 
         // Arrange
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueToolCall("GetWeather", "call-1");
         client.EnqueueToolCall("GetNews", "call-2");
         client.EnqueueTextResponse("Done");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
         config.EnablePendingWrites = true;
 
@@ -582,12 +582,12 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Test that pending writes are restored and loaded into state on resume
 
         // PHASE 1: Run agent and manually save pending writes before crash
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client1 = new FakeChatClient();
         client1.EnqueueToolCall("Step1", "call-1");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
         config.EnablePendingWrites = true;
 
@@ -673,13 +673,13 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Test that pending writes are deleted after successful checkpoint
 
         // Arrange
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueToolCall("TestTool", "call-1");
         client.EnqueueTextResponse("Done");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
         config.EnablePendingWrites = true;
 
@@ -721,13 +721,13 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Test that pending writes are NOT saved when EnablePendingWrites is false (default)
 
         // Arrange
-        var checkpointer = new InMemoryThreadCheckpointer(CheckpointRetentionMode.LatestOnly);
+        var checkpointer = new InMemoryConversationThreadStore(CheckpointRetentionMode.LatestOnly);
         var client = new FakeChatClient();
         client.EnqueueToolCall("TestTool", "call-1");
         client.EnqueueTextResponse("Done");
 
         var config = DefaultConfig();
-        config.Checkpointer = checkpointer;
+        config.ThreadStore = checkpointer;
         config.CheckpointFrequency = CheckpointFrequency.PerIteration;
         // Note: EnablePendingWrites defaults to false, so we don't set it
 

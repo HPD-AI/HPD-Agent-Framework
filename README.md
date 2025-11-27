@@ -1,178 +1,381 @@
 # HPD-Agent
 
-**Production-ready implementation of Microsoft Agent Framework with batteries included.**
+**A production-ready .NET agent framework with durable execution, intelligent tool management, and multi-protocol support.**
 
 [![NuGet](https://img.shields.io/nuget/v/HPD-Agent.svg)](https://www.nuget.org/packages/HPD-Agent/)
+[![.NET](https://img.shields.io/badge/.NET-9.0-512BD4)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/badge/license-Proprietary-blue.svg)](LICENSE.md)
 
-HPD-Agent extends Microsoft's Agent Framework with memory systems, advanced error handling, permissions, web search, MCP support, and 11 LLM providers - all with Native AOT compatibility.
+---
 
+## What is HPD-Agent?
+
+HPD-Agent is a comprehensive framework for building AI agents in .NET. It provides everything you need to create production-grade agents: durable execution with crash recovery, intelligent token management, multi-provider support, and protocol adapters for seamless integration.
+
+```csharp
+// Create a production-ready agent in minutes
+var agent = new AgentBuilder()
+    .WithInstructions("You are a helpful assistant.")
+    .WithProvider("openai", "gpt-4o", apiKey)
+    .RegisterPlugin<FileSystemPlugin>()
+    .RegisterPlugin<WebSearchPlugin>()
+    .WithThreadStore(new InMemoryConversationThreadStore())  // Durable execution
+    .Build();
+
+// Run with automatic checkpointing
+var thread = agent.CreateThread();
+await foreach (var response in agent.RunAsync(messages, thread))
+{
+    Console.Write(response.Text);
+}
+```
 
 ---
 
-## Why HPD-Agent?
+## Key Features
 
-**Microsoft Agent Framework provides:**
-- ✅ Clean abstractions (AIAgent, AgentThread)
-- ✅ Multi-agent workflows (WorkflowBuilder, GroupChat)
-- ✅ A2A Protocol (agent-to-agent communication)
-- ✅ Hosting infrastructure (ASP.NET Core - works with HPD-Agent)
+### Durable Execution
+- **Automatic Checkpointing** - Agent state saved during execution, not just after
+- **Mid-Run Recovery** - Resume from exact iteration after crashes
+- **Pending Writes** - Partial failure recovery for parallel tool calls
+- **Time-Travel Debugging** - Full checkpoint history with `FullHistory` mode
 
-**HPD-Agent adds the production features:**
-- 🔋 **3 Memory Systems** - Dynamic, Static, Planning (Microsoft: none)
-- 🔋 **Advanced Error Handling** - Provider-aware retry, Retry-After headers, circuit breakers
-- 🔋 **Permissions** - Function-level + human-in-the-loop + persistent storage
-- 🔋 **11 LLM Providers** - vs Microsoft's 2 (OpenAI, Azure)
-- 🔋 **Plugin System** - Scoped, conditional, permissioned (87.5% token reduction)
-- 🔋 **Skills System** - Package expertise with functions (like Anthropic's Agent Skills) (Microsoft: none)
-- 🔋 **Web Search** - Tavily, Brave, Bing (Microsoft: none)
-- 🔋 **MCP Integration** - Built-in client with manifest loading (Microsoft: manual SDK usage)
-- 🔋 **AG-UI Protocol** - Complete event system (vs Microsoft's Responses API)
-- 🔋 **Native AOT** - 100% compatible (Microsoft: partial)
+### Intelligent Token Management
+- **Scoping System** - 87.5% token reduction by hierarchically organizing tools
+- **History Reduction** - Automatic conversation compression with cache-aware optimization
+- **Skills System** - Load specialized knowledge only when needed
 
-**Same abstractions. Same workflows. Better production features.**
+### Multi-Provider Support
+11 LLM providers out of the box:
+> OpenAI • Anthropic • Azure OpenAI • Azure AI Inference • Google AI • Mistral • Ollama • HuggingFace • AWS Bedrock • OnnxRuntime • OpenRouter
 
----
+### Protocol Support
+- **A2A Protocol** - Agent-to-agent communication
+- **AG-UI Protocol** - Real-time streaming for frontends
+- **MCP Protocol** - Model Context Protocol integration
 
-## Core Principles
-
-HPD-Agent is designed around key architectural principles that make it production-ready:
-
-#### Fully Native AOT Compatible
-
-#### Configuration-First
-
-#### Event-Driven First
-
+### Production Features
+- **Permissions** - Function-level authorization with human-in-the-loop
+- **Error Handling** - Provider-aware retry, circuit breakers, Retry-After headers
+- **Observability** - OpenTelemetry integration, structured logging
+- **Native AOT** - Full compatibility for ahead-of-time compilation
 
 ---
 
-## Core Features
+## Architecture Overview
 
-### Memory Systems
-- **Dynamic Memory** - Agent-controlled working memory with auto-eviction
-- **Static Memory** - Read-only knowledge base (RAG without vector DB)
-- **Plan Mode** - Goal → Steps → Execution tracking
-- **History Reduction** - LLM-based conversation compression
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  HPD-Agent Architecture                                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │  A2A        │    │  AG-UI      │    │  MCP        │         │
+│  │  Protocol   │    │  Protocol   │    │  Protocol   │         │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘         │
+│         │                  │                  │                 │
+│         └──────────────────┼──────────────────┘                 │
+│                            ▼                                    │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  AgentCore (Protocol-Agnostic)                          │   │
+│  │                                                          │   │
+│  │  • Stateless execution engine                           │   │
+│  │  • Internal checkpointing (fire-and-forget)             │   │
+│  │  • Middleware pipeline                                   │   │
+│  │  • Event-driven observability                           │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                            │                                    │
+│         ┌──────────────────┼──────────────────┐                │
+│         ▼                  ▼                  ▼                 │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │ Plugins     │    │ Skills      │    │ Memory      │         │
+│  │ (Tools)     │    │ (Knowledge) │    │ Systems     │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  ConversationThread + IConversationThreadStore          │   │
+│  │                                                          │   │
+│  │  • Full execution state (AgentLoopState)                │   │
+│  │  • Message history with token tracking                  │   │
+│  │  • Checkpoint metadata and versioning                   │   │
+│  │  • Pending writes for partial recovery                  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  Providers (11+)                                         │   │
+│  │  OpenAI • Anthropic • Azure • Google • Mistral • ...    │   │
+│  └─────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### Provider Support (11 Providers)
-OpenAI • Anthropic • Azure OpenAI • Azure AI Inference • Google AI • Mistral • Ollama • HuggingFace • AWS Bedrock • OnnxRuntime • OpenRouter
+---
 
-### Error Handling & Resilience
-- Provider-specific error categorization
-- Retry-After header respect
-- Exponential backoff with jitter
-- Circuit breakers & timeouts
+## Core Concepts
 
-### Plugin System
-- Source-generated (Native AOT)
-- Conditional functions (type-safe)
-- Plugin scoping (87.5% token reduction)
-- Permission requirements
+### ConversationThread
+The unit of conversation state. Contains messages, metadata, and execution state for durable execution.
 
-### Skills System
-- **Package domain expertise with functions** - Same concept as Anthropic's Agent Skills
-- Progressive disclosure: metadata → instructions → linked documents
-- Load specialized knowledge only when needed (not in system prompt)
-- Markdown files with procedural knowledge, SOPs, best practices
-- Cross-plugin composition for semantic groupings
-- Skills-only mode for simplified agent interfaces
+```csharp
+var thread = agent.CreateThread();
 
-### Additional Features
-- **Project System** - Multi-conversation containers with shared document context (like workspaces)
-- **Human-in-the-Loop Clarification** - Sub-agents can ask users for information mid-turn without breaking agentic flow
-- **Web Search** - Multi-provider (Tavily, Brave, Bing)
-- **MCP Integration** - Full Model Context Protocol client
-- **AG-UI Protocol** - Standard event streaming for frontends
-- **Document Handling** - PDF, DOCX, images, URLs
-- **Observability** - OpenTelemetry, logging, caching
-- **Conversation Management** - Token counting, cost tracking
+// Thread persists across runs
+await agent.RunAsync(messages1, thread);
+await agent.RunAsync(messages2, thread);  // Continues conversation
+
+// Serialize for storage
+var snapshot = thread.Serialize();
+```
+
+### IConversationThreadStore
+Persistence layer for threads with full checkpointing support.
+
+```csharp
+// Development
+var store = new InMemoryConversationThreadStore();
+
+// Production (implement your own)
+var store = new PostgresConversationThreadStore(connectionString);
+
+// Configure agent
+var agent = new AgentBuilder()
+    .WithThreadStore(store)
+    .WithCheckpointFrequency(CheckpointFrequency.PerIteration)
+    .Build();
+```
+
+### Plugins
+Tools for the agent, with source-generated schemas for Native AOT.
+
+```csharp
+[HPDPlugin]
+public class FileSystemPlugin
+{
+    [HPDFunction("Read a file from disk")]
+    public string ReadFile(string path) => File.ReadAllText(path);
+
+    [HPDFunction("Write content to a file")]
+    public void WriteFile(string path, string content) => File.WriteAllText(path, content);
+}
+```
+
+### Skills
+Package domain expertise with functions - load knowledge only when needed.
+
+```csharp
+var codeReviewSkill = Skill.Create(
+    name: "code_review",
+    description: "Activate for code review tasks",
+    instructions: "Follow these code review guidelines...",
+    references: new[] { "CodeAnalysisPlugin.AnalyzeCode", "GitPlugin.GetDiff" }
+);
+```
+
+---
+
+## Memory Systems
+
+### Dynamic Memory
+Agent-controlled working memory with automatic eviction.
+
+```csharp
+config.DynamicMemory = new DynamicMemoryConfig
+{
+    Enabled = true,
+    MaxTokens = 4000,
+    EvictionThreshold = 0.85  // Evict when 85% full
+};
+```
+
+### Static Memory
+Read-only knowledge base - RAG without vector databases.
+
+```csharp
+config.StaticMemory = new StaticMemoryConfig
+{
+    Enabled = true,
+    Strategy = StaticMemoryStrategy.FullTextInjection,
+    MaxTokens = 8000
+};
+```
+
+### Plan Mode
+Goal-oriented execution with step tracking.
+
+```csharp
+config.PlanMode = new PlanModeConfig
+{
+    Enabled = true,
+    AutoCreatePlan = true
+};
+```
+
+---
+
+## Durable Execution
+
+HPD-Agent checkpoints execution state internally, enabling recovery from any point:
+
+```csharp
+// Configure durable execution
+var config = new AgentConfig
+{
+    ThreadStore = new InMemoryConversationThreadStore(),
+    CheckpointFrequency = CheckpointFrequency.PerIteration,
+    EnablePendingWrites = true  // Partial failure recovery
+};
+
+// First run - crashes at iteration 5
+var thread = agent.CreateThread();
+await agent.RunAsync(messages, thread);  // Checkpoints saved internally
+
+// After restart - resume from iteration 5
+var restored = await store.LoadThreadAsync(thread.Id);
+if (restored?.ExecutionState != null)
+{
+    await agent.RunAsync(Array.Empty<ChatMessage>(), restored);  // Resumes!
+}
+```
+
+**What gets checkpointed:**
+- Full message history
+- Current iteration number
+- Expanded plugins/skills (scoping state)
+- Circuit breaker state
+- Pending writes (completed tool calls)
+- Active history reduction state
 
 ---
 
 ## Documentation
 
-- **[Overview & Full Feature List](OVERVIEW.md)** - Comprehensive feature documentation
+### User Guides
+- **[Quick Start](docs/QUICK_START.md)** - Get running in 5 minutes
+- **[Conversation Architecture](docs/CONVERSATION_ARCHITECTURE.md)** - Thread and persistence model
+- **[Skills Guide](docs/skills/SKILLS_GUIDE.md)** - Package domain expertise
+- **[Permissions Guide](docs/permissions/PERMISSION_SYSTEM_GUIDE.md)** - Authorization and human-in-the-loop
+
+### API Reference
+- **[ConversationThread API](docs/ConversationThread-API-Reference.md)** - Thread operations
+- **[Skills API](docs/skills/SKILLS_API_REFERENCE.md)** - Skill configuration
+- **[Permissions API](docs/permissions/PERMISSION_SYSTEM_API.md)** - Permission management
+- **[Event Handling API](docs/EventHandling/API_REFERENCE.md)** - Observability
+
+### Architecture
+- **[Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md)** - System design
+- **[Scoping System](docs/SCOPING_SYSTEM.md)** - Token reduction via tool hierarchy
+- **[Durable Execution](docs/THREAD_SCOPED_DURABLE_EXECUTION.md)** - Checkpointing deep-dive
+- **[Message Store Architecture](docs/MESSAGE_STORE_ARCHITECTURE.md)** - Storage internals
+
+### Developer Guides
 - **[Agent Developer Guide](docs/Agent-Developer-Documentation.md)** - Build agents
-- **[Getting Started Guide](docs/getting-started.md)** - Step-by-step tutorial
-- **[Configuration Reference](docs/configuration-reference.md)** - All configuration options
-- **[Provider Guide](docs/providers.md)** - Provider-specific details
-- **[Plugin Development](docs/plugins.md)** - Create custom plugins
-- **[Migration Guides](docs/migration/)** - From ChatClientAgent/Semantic Kernel
+- **[Plugin Development](docs/PLUGIN_CLARIFICATION.md)** - Create plugins
+- **[SubAgents](docs/SubAgents/ARCHITECTURE.md)** - Multi-agent patterns
 
 ---
 
+## Example: Full-Featured Agent
 
-More examples in [`examples/`](examples/)
+```csharp
+var agent = new AgentBuilder()
+    // Core configuration
+    .WithInstructions("You are a senior software engineer assistant.")
+    .WithProvider("anthropic", "claude-sonnet-4-20250514", apiKey)
 
----
+    // Plugins (tools)
+    .RegisterPlugin<FileSystemPlugin>()
+    .RegisterPlugin<GitPlugin>()
+    .RegisterPlugin<CodeAnalysisPlugin>()
 
-## Microsoft Compatibility
+    // Skills (knowledge)
+    .RegisterSkill(Skill.Create(
+        name: "code_review",
+        description: "Comprehensive code review expertise",
+        instructions: await File.ReadAllTextAsync("skills/code-review.md"),
+        references: new[] { "CodeAnalysisPlugin.*", "GitPlugin.GetDiff" }
+    ))
 
-| Component | HPD-Agent |
-|-----------|-----------|
-| `AIAgent` abstraction | ✅ Implements |
-| `AgentThread` | ✅ Extends with ConversationThread |
-| `RunAsync()` / `RunStreamingAsync()` | ✅ Full implementation |
-| `WorkflowBuilder` | ✅ Drop-in compatible |
-| `GroupChatWorkflowBuilder` | ✅ Works seamlessly |
-| A2A Protocol | ✅ Compatible (can communicate with A2A agents) |
-| Service discovery | ✅ GetService pattern |
-| Thread serialization | ✅ Supported |
+    // Memory
+    .WithDynamicMemory(maxTokens: 4000)
+    .WithStaticMemory(strategy: StaticMemoryStrategy.FullTextInjection)
 
-**HPD-Agent is a drop-in replacement for ChatClientAgent with production features built-in.**
+    // Durable execution
+    .WithThreadStore(new PostgresConversationThreadStore(connectionString))
+    .WithCheckpointFrequency(CheckpointFrequency.PerIteration)
+    .WithPendingWrites(true)
 
----
+    // Scoping (token reduction)
+    .WithScoping(enabled: true)
 
-## Comparison
+    // Error handling
+    .WithErrorHandling(config => {
+        config.MaxRetries = 3;
+        config.UseProviderRetryDelays = true;
+    })
 
-| Feature | ChatClientAgent | HPD-Agent |
-|---------|----------------|-----------|
-| Implements AIAgent | ✅ | ✅ |
-| Works in Workflows | ✅ | ✅ |
-| A2A Protocol | ✅ | ✅ Compatible |
-| Memory Systems | ❌ | ✅ 3 types |
-| Error Handling | ⚠️ Basic | ✅ Provider-aware |
-| Permissions | ❌ | ✅ Built-in |
-| Plugin System | ⚠️ Basic | ✅ Scoped/Conditional |
-| Skills System | ❌ | ✅ Cross-plugin composition |
-| Web Search | ❌ | ✅ 3 providers |
-| MCP Support | ⚠️ Manual SDK | ✅ Built-in client |
-| AG-UI Protocol | ❌ | ✅ Full implementation |
-| Native AOT | ⚠️ Partial | ✅ Complete |
-| Providers | OpenAI, Azure | 11+ providers |
+    .Build();
 
----
-
-## The Story
-
-We built HPD-Agent on Microsoft.Extensions.AI before Microsoft released Agent Framework. When Agent Framework launched with clean abstractions and workflows, we kept their architecture and added our production features. The result: **Microsoft's blueprint + our batteries.**
-
-**Read the full story in [OVERVIEW.md](OVERVIEW.md#the-story-why-hpd-agent-exists)**
-
----
-
-## FAQ
-
-**Is this compatible with Microsoft Agent Framework?**
-Yes, 100%. We implement the same `AIAgent` specification.
-
-**Can I use Microsoft's workflows?**
-Absolutely. Both ChatClientAgent and HPD-Agent work seamlessly in Microsoft workflows.
-
-**Why not just use ChatClientAgent?**
-ChatClientAgent is currently minimal. HPD-Agent is intentionally batteries-included. Choose based on whether you want to build or buy.
-
-**Is this open source?**
-HPD-Agent is closed source.
+// Run with full observability
+var thread = agent.CreateThread();
+await foreach (var evt in agent.RunAsync(messages, thread))
+{
+    switch (evt)
+    {
+        case TextDeltaEvent text:
+            Console.Write(text.Delta);
+            break;
+        case ToolCallEvent tool:
+            Console.WriteLine($"Calling: {tool.FunctionName}");
+            break;
+        case CheckpointEvent cp:
+            Console.WriteLine($"Checkpoint saved at iteration {cp.Iteration}");
+            break;
+    }
+}
+```
 
 ---
 
-## Support
+## Why HPD-Agent?
 
-- **Documentation**: [docs.hpd-agent.com](https://docs.hpd-agent.com)
-- **Email**: [support@hpd-agent.com](mailto:support@hpd-agent.com)
-- **Issues**: [GitHub Issues](https://github.com/yourorg/hpd-agent/issues)
+| Challenge | HPD-Agent Solution |
+|-----------|-------------------|
+| Agent crashes mid-execution | **Durable execution** - Resume from any iteration |
+| Token limits with many tools | **Scoping** - 87.5% reduction via hierarchy |
+| Long conversations | **History reduction** - Automatic compression |
+| Production reliability | **Circuit breakers**, retries, observability |
+| Multi-provider support | **11 providers** with unified API |
+| Native AOT deployment | **100% compatible** |
+
+---
+
+## Getting Started
+
+```bash
+# Install the package
+dotnet add package HPD-Agent
+
+# Install a provider (e.g., OpenAI)
+dotnet add package HPD-Agent.Providers.OpenAI
+```
+
+```csharp
+using HPD.Agent;
+
+var agent = new AgentBuilder()
+    .WithInstructions("You are a helpful assistant.")
+    .WithProvider("openai", "gpt-4o", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
+    .Build();
+
+var thread = agent.CreateThread();
+await foreach (var response in agent.RunAsync(
+    new[] { new ChatMessage(ChatRole.User, "Hello!") },
+    thread))
+{
+    Console.Write(response.Text);
+}
+```
+
+See the **[Quick Start Guide](docs/QUICK_START.md)** for more.
 
 ---
 
@@ -182,12 +385,19 @@ Proprietary. See [LICENSE.md](LICENSE.md) for details.
 
 ---
 
+## Support
+
+- **Documentation**: [docs.hpd-agent.com](https://docs.hpd-agent.com)
+- **Email**: [support@hpd-agent.com](mailto:support@hpd-agent.com)
+
+---
+
 <div align="center">
 
-**Microsoft Agent Framework, Batteries Included** 🔋
+**Production-Ready .NET Agent Framework**
 
-*Same abstractions · Same workflows · Better implementation*
+*Durable Execution · Intelligent Token Management · Multi-Protocol Support*
 
-[Get Started](docs/getting-started.md) · [Full Overview](OVERVIEW.md) · [Examples](examples/)
+[Quick Start](docs/QUICK_START.md) · [Documentation](docs/) · [Examples](examples/)
 
 </div>

@@ -164,7 +164,7 @@ internal static class SubAgentCodeGenerator
         sb.AppendLine($"                            ?.GetCustomAttributes(typeof(SubAgentAttribute), false)");
         sb.AppendLine($"                            ?.FirstOrDefault();");
         sb.AppendLine($"                        return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateJsonSchema(");
-        sb.AppendLine($"                            typeof(SubAgentQueryArgs),");
+        sb.AppendLine($"                            typeof({pluginName}SubAgentQueryArgs),");
         sb.AppendLine($"                            serializerOptions: global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions,");
         sb.AppendLine($"                            inferenceOptions: options");
         sb.AppendLine($"                        );");

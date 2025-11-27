@@ -120,17 +120,17 @@ public class AgentConfig
     public ObservabilityConfig? Observability { get; set; }
 
     /// <summary>
-    /// Optional thread checkpointer for durable execution and crash recovery.
+    /// Optional conversation thread store for durable execution and crash recovery.
     /// When set, agent execution state is persisted according to CheckpointFrequency.
-    /// Use InMemoryThreadCheckpointer for development/testing or PostgresThreadCheckpointer for production.
+    /// Use InMemoryConversationThreadStore for development/testing or PostgresConversationThreadStore for production.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Example - In-Memory Checkpointing (Development):</b>
+    /// <b>Example - In-Memory Store (Development):</b>
     /// <code>
     /// var config = new AgentConfig
     /// {
-    ///     Checkpointer = new InMemoryThreadCheckpointer(),
+    ///     ThreadStore = new InMemoryConversationThreadStore(),
     ///     CheckpointFrequency = CheckpointFrequency.PerIteration
     /// };
     /// </code>
@@ -138,7 +138,7 @@ public class AgentConfig
     /// <para>
     /// <b>Example - Resume After Crash:</b>
     /// <code>
-    /// var thread = await checkpointer.LoadThreadAsync(threadId);
+    /// var thread = await threadStore.LoadThreadAsync(threadId);
     /// if (thread?.ExecutionState != null)
     /// {
     ///     // Resume from checkpoint (pass empty messages)
@@ -148,7 +148,7 @@ public class AgentConfig
     /// </para>
     /// </remarks>
     [JsonIgnore]
-    internal IThreadCheckpointer? Checkpointer { get; set; }
+    internal IConversationThreadStore? ThreadStore { get; set; }
 
     /// <summary>
     /// Checkpoint frequency (per turn, per iteration, or manual).

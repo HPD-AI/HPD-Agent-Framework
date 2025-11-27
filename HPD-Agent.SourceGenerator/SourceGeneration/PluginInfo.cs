@@ -24,19 +24,11 @@ internal class PluginInfo
     public List<SubAgentInfo> SubAgents { get; set; } = new();
 
     /// <summary>
-    /// Whether this class contains both functions and skills
+    /// Whether this plugin requires an instance parameter in CreatePlugin().
+    /// AIFunctions and SubAgents need instance access; Skills are static.
+    /// When adding new capability types, add them here if they need instance access.
     /// </summary>
-    public bool IsMixed => Functions.Any() && Skills.Any();
-
-    /// <summary>
-    /// Whether this class contains only skills (no [AIFunction] methods)
-    /// </summary>
-    public bool IsSkillOnly => Skills.Any() && !Functions.Any();
-
-    /// <summary>
-    /// Whether this class contains only sub-agents (no [AIFunction] methods or skills)
-    /// </summary>
-    public bool IsSubAgentOnly => SubAgents.Any() && !Functions.Any() && !Skills.Any();
+    public bool RequiresInstance => Functions.Any() || SubAgents.Any();
 
     /// <summary>
     /// Whether any functions have conditional logic requiring context resolution
