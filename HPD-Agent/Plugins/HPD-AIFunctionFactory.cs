@@ -82,47 +82,17 @@ public class HPDAIFunctionFactory
                 jsonArgs = JsonDocument.Parse(jsonString).RootElement;
             }
 
-            // 2. Container-specific validation: Check if this is a container being invoked with parameters
-            var isContainer = HPDOptions.AdditionalProperties?.TryGetValue("IsContainer", out var containerVal) == true
-                && containerVal is bool isCont && isCont;
-
-            if (isContainer)
-            {
-                // Check if ANY parameters were provided
-                bool hasParameters = jsonArgs.ValueKind == JsonValueKind.Object && jsonArgs.EnumerateObject().Any();
-
-                if (hasParameters)
-                {
-                    // Extract function names if available
-                    string[]? functionNames = null;
-                    if (HPDOptions.AdditionalProperties?.TryGetValue("FunctionNames", out var funcNamesVal) == true
-                        && funcNamesVal is string[] names)
-                    {
-                        functionNames = names;
-                    }
-
-                    // Extract plugin/container name
-                    var containerName = HPDOptions.AdditionalProperties?.TryGetValue("PluginName", out var pluginNameVal) == true
-                        ? pluginNameVal?.ToString()
-                        : Name;
-
-                    return new ContainerInvocationErrorResponse
-                    {
-                        ContainerName = containerName ?? Name,
-                        AttemptedParameters = jsonArgs,
-                        AvailableFunctions = functionNames,
-                        ErrorMessage = $"'{containerName ?? Name}' is a container function that groups related functions. It cannot be called with parameters.",
-                        RetryGuidance = GenerateRetryGuidanceWithMermaid(containerName ?? Name, functionNames)
-                    };
-                }
-            }
-
-            // 3. Use the validator for regular parameter validation.
+            // 2. Use the validator.
             var validationErrors = HPDOptions.Validator?.Invoke(jsonArgs);
+
+            // TODO: Add container-specific parameter validation
+            // Edge case: LLMs sometimes try to invoke containers with parameters like Math({function: "Add", a: 5, b: 10})
+            // instead of first expanding the container with Math() then calling Add(5, 10).
+            // Future work: Detect IsContainer metadata and reject any parameter invocations with helpful retry guidance.
 
             if (validationErrors != null && validationErrors.Count > 0)
             {
-                // 4. Return structured error on failure.
+                // 3. Return structured error on failure.
                 var errorResponse = new ValidationErrorResponse();
                 foreach (var error in validationErrors)
                 {
@@ -135,41 +105,10 @@ public class HPDAIFunctionFactory
                 return errorResponse;
             }
 
-            // 5. Invoke the function using the delegate approach only.
+            // 4. Invoke the function using the delegate approach only.
             // NOTE: Must NOT use ConfigureAwait(false) here to preserve ExecutionContext flow for AsyncLocal (e.g., ConversationContext)
             arguments.SetJson(jsonArgs);
             return await _invocationHandler(arguments, cancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// Generates retry guidance with embedded Mermaid diagram showing correct invocation flow.
-    /// </summary>
-    private static string GenerateRetryGuidanceWithMermaid(string containerName, string[]? functionNames)
-    {
-        if (functionNames != null && functionNames.Length > 0)
-        {
-            // Generate Mermaid flowchart showing the two-step process
-            var funcList = string.Join(", ", functionNames.Take(5));
-            if (functionNames.Length > 5) funcList += ", ...";
-
-            var mermaidFlow = $"A[Call {containerName} with NO arguments] --> B{{{{Container Expands}}}} --> C[Now call individual functions: {funcList}]";
-
-            return $"INCORRECT: You cannot call containers with parameters. " +
-                   $"CORRECT FLOW: {mermaidFlow}. " +
-                   $"This requires TWO separate tool calls: " +
-                   $"(1) First call '{containerName}' with NO arguments to expand it. " +
-                   $"(2) After expansion succeeds, call the individual function you need directly (e.g., '{functionNames[0]}', not '{containerName}.{functionNames[0]}').";
-        }
-        else
-        {
-            var mermaidFlow = $"A[Call {containerName} with NO arguments] --> B{{{{Container Expands}}}} --> C[Individual functions become available]";
-
-            return $"INCORRECT: You cannot call containers with parameters. " +
-                   $"CORRECT FLOW: {mermaidFlow}. " +
-                   $"This requires TWO separate tool calls: " +
-                   $"(1) First call '{containerName}' with NO arguments to expand it. " +
-                   $"(2) After expansion succeeds, call the individual function you need.";
         }
     }
 }
@@ -249,29 +188,4 @@ public class ValidationError
 
     [JsonPropertyName("error_code")]
     public string ErrorCode { get; set; } = "";
-}
-
-/// <summary>
-/// Response sent when the LLM tries to invoke a container function with parameters.
-/// Containers must be called with no arguments to expand and reveal individual functions.
-/// </summary>
-public class ContainerInvocationErrorResponse
-{
-    [JsonPropertyName("error_type")]
-    public string ErrorType { get; set; } = "container_invocation_error";
-
-    [JsonPropertyName("container_name")]
-    public string ContainerName { get; set; } = "";
-
-    [JsonPropertyName("attempted_parameters")]
-    public JsonElement? AttemptedParameters { get; set; }
-
-    [JsonPropertyName("available_functions")]
-    public string[]? AvailableFunctions { get; set; }
-
-    [JsonPropertyName("error_message")]
-    public string ErrorMessage { get; set; } = "";
-
-    [JsonPropertyName("retry_guidance")]
-    public string RetryGuidance { get; set; } = "This requires TWO separate tool calls: (1) First call the container with NO arguments to expand it. (2) After expansion succeeds, call the individual function you need.";
 }
