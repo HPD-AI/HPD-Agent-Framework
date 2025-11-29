@@ -1,0 +1,3 @@
+[submodule "OfficialDocs/InternalDocs"]
+	path = OfficialDocs/InternalDocs
+	url = https://github.com/HPD-AI/HPD-Agent-InternalDocs.git
