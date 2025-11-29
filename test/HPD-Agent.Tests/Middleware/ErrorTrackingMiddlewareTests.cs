@@ -354,12 +354,16 @@ public class ErrorTrackingMiddlewareTests
 
     private static AgentLoopState CreateStateWithConsecutiveFailures(int count)
     {
-        var errState = new ErrorTrackingState();
+        var errState = new ErrorTrackingStateData();
         for (int i = 0; i < count; i++)
         {
             errState = errState.IncrementFailures();
         }
 
-        return CreateEmptyState().UpdateState<ErrorTrackingState>(_ => errState);
+        var state = CreateEmptyState();
+        return state with
+        {
+            MiddlewareState = state.MiddlewareState.WithErrorTracking(errState)
+        };
     }
 }

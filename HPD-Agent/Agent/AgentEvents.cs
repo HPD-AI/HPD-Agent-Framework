@@ -636,6 +636,34 @@ public record IterationMessagesEvent(
     DateTimeOffset Timestamp
 ) : AgentEvent, IObservabilityEvent;
 
+/// <summary>
+/// Emitted when middleware schema changes are detected during checkpoint restoration.
+/// Used for monitoring, alerting, and audit trails.
+/// </summary>
+public record SchemaChangedEvent(
+    string? OldSignature,
+    string NewSignature,
+    IReadOnlyList<string> RemovedTypes,
+    IReadOnlyList<string> AddedTypes,
+    bool IsUpgrade,
+    DateTimeOffset Timestamp
+) : AgentEvent, IObservabilityEvent
+{
+    public SchemaChangedEvent(
+        string? oldSignature,
+        string newSignature,
+        DateTimeOffset timestamp)
+        : this(
+            OldSignature: oldSignature,
+            NewSignature: newSignature,
+            RemovedTypes: Array.Empty<string>(),
+            AddedTypes: Array.Empty<string>(),
+            IsUpgrade: oldSignature == null,
+            Timestamp: timestamp)
+    {
+    }
+}
+
 
 
 

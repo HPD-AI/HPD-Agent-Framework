@@ -1,7 +1,7 @@
 namespace HPD.Agent;
 
 /// <summary>
-/// State for continuation permission tracking. Immutable record with static abstract key.
+/// State for continuation permission tracking. Immutable record.
 /// Tracks the current extended iteration limit that can be increased when user approves continuation.
 /// </summary>
 /// <remarks>
@@ -15,25 +15,20 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var permState = context.State.GetState&lt;ContinuationPermissionState&gt;();
+/// var permState = context.State.MiddlewareState.ContinuationPermission ?? new();
 /// if (context.Iteration > permState.CurrentExtendedLimit - 1) { ... }
 ///
 /// // Extend limit when user approves
-/// context.UpdateState&lt;ContinuationPermissionState&gt;(s => s.ExtendLimit(extensionAmount));
+/// context.UpdateState(s => s with
+/// {
+///     MiddlewareState = s.MiddlewareState.WithContinuationPermission(
+///         permState.ExtendLimit(extensionAmount))
+/// });
 /// </code>
 /// </remarks>
-public sealed record ContinuationPermissionState : IMiddlewareState
+[MiddlewareState]
+public sealed record ContinuationPermissionStateData
 {
-    /// <summary>
-    /// Unique key for this middleware state type.
-    /// </summary>
-    public static string Key => "HPD.Agent.ContinuationPermission";
-
-    /// <summary>
-    /// Creates default/initial state.
-    /// Note: The initial limit should be set by the middleware during initialization.
-    /// </summary>
-    public static IMiddlewareState CreateDefault() => new ContinuationPermissionState();
 
     /// <summary>
     /// The current extended iteration limit.
@@ -46,7 +41,7 @@ public sealed record ContinuationPermissionState : IMiddlewareState
     /// </summary>
     /// <param name="initialLimit">The initial iteration limit</param>
     /// <returns>New state with the specified limit</returns>
-    public static ContinuationPermissionState WithInitialLimit(int initialLimit) =>
+    public static ContinuationPermissionStateData WithInitialLimit(int initialLimit) =>
         new() { CurrentExtendedLimit = initialLimit };
 
     /// <summary>
@@ -55,6 +50,6 @@ public sealed record ContinuationPermissionState : IMiddlewareState
     /// </summary>
     /// <param name="extensionAmount">Number of iterations to add</param>
     /// <returns>New state with extended limit</returns>
-    public ContinuationPermissionState ExtendLimit(int extensionAmount) =>
+    public ContinuationPermissionStateData ExtendLimit(int extensionAmount) =>
         this with { CurrentExtendedLimit = CurrentExtendedLimit + extensionAmount };
 }

@@ -10,7 +10,7 @@ namespace HPD.Agent;
 /// <para><b>STATELESS MIDDLEWARE:</b></para>
 /// <para>
 /// This middleware is stateless - all state flows through the context via
-/// <see cref="ContinuationPermissionState"/>. This preserves AgentCore's thread-safety
+/// <see cref="ContinuationPermissionStateData"/>. This preserves AgentCore's thread-safety
 /// guarantee for concurrent RunAsync() calls.
 /// </para>
 ///
@@ -66,15 +66,18 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
         CancellationToken cancellationToken)
     {
         // Get or initialize the current extended limit from state
-        var permState = context.State.GetState<ContinuationPermissionState>();
+        var permState = context.State.MiddlewareState.ContinuationPermission ?? new();
 
         // Initialize state with configured max iterations if this is the first check
         if (permState.CurrentExtendedLimit == 20 && _maxIterations != 20)
         {
             // Update state to use the configured limit
-            context.UpdateState<ContinuationPermissionState>(s =>
-                ContinuationPermissionState.WithInitialLimit(_maxIterations));
-            permState = context.State.GetState<ContinuationPermissionState>();
+            var newState = ContinuationPermissionStateData.WithInitialLimit(_maxIterations);
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithContinuationPermission(newState)
+            });
+            permState = context.State.MiddlewareState.ContinuationPermission ?? new();
         }
 
         // Check if we've EXCEEDED the iteration limit
@@ -116,7 +119,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
     /// <returns>True if user approves continuation, false otherwise</returns>
     private async Task<bool> RequestContinuationPermissionAsync(
         AgentMiddlewareContext context,
-        ContinuationPermissionState currentState,
+        ContinuationPermissionStateData currentState,
         CancellationToken cancellationToken)
     {
         var continuationId = Guid.NewGuid().ToString();
@@ -145,7 +148,11 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
                     ? response.ExtensionAmount
                     : _extensionAmount;
 
-                context.UpdateState<ContinuationPermissionState>(s => s.ExtendLimit(extension));
+                var newState = currentState.ExtendLimit(extension);
+                context.UpdateState(s => s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithContinuationPermission(newState)
+                });
                 return true;
             }
 

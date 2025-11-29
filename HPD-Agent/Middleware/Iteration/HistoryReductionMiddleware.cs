@@ -11,7 +11,7 @@ namespace HPD.Agent;
 /// <para><b>STATELESS MIDDLEWARE:</b></para>
 /// <para>
 /// This middleware is stateless - all state flows through the context via
-/// <see cref="HistoryReductionState"/>. This preserves AgentCore's thread-safety
+/// <see cref="HistoryReductionStateData"/>. This preserves AgentCore's thread-safety
 /// guarantee for concurrent RunAsync() calls.
 /// </para>
 ///
@@ -97,7 +97,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
             return;
 
         // Read state from context
-        var hrState = context.State.GetState<HistoryReductionState>();
+        var hrState = context.State.MiddlewareState.HistoryReduction;
 
         // Separate system messages from conversation messages
         var systemMessages = context.Messages.Where(m => m.Role == ChatRole.System).ToList();
@@ -107,7 +107,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
         CachedReduction? activeReduction = null;
         bool usedCache = false;
 
-        if (hrState.LastReduction != null && hrState.LastReduction.IsValidFor(conversationMessages.Count))
+        if (hrState?.LastReduction != null && hrState.LastReduction.IsValidFor(conversationMessages.Count))
         {
             // ✅ CACHE HIT: Reuse existing reduction
             activeReduction = hrState.LastReduction;
@@ -157,7 +157,11 @@ public class HistoryReductionMiddleware : IAgentMiddleware
                     context.Messages = systemMessages.Concat(reducedList).ToList();
 
                     // Store reduction in state for next iteration
-                    context.UpdateState<HistoryReductionState>(s => s.WithReduction(activeReduction));
+                    var newHrState = (hrState ?? new HistoryReductionStateData()).WithReduction(activeReduction);
+                    context.UpdateState(s => s with
+                    {
+                        MiddlewareState = s.MiddlewareState.WithHistoryReduction(newHrState)
+                    });
 
                     // Emit events for observability
                     EmitReductionPerformedEvent(context, activeReduction, removedCount);

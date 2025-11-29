@@ -80,7 +80,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Read state from context (type-safe!)
-        var errState = context.State.GetState<ErrorTrackingState>();
+        var errState = context.State.MiddlewareState.ErrorTracking ?? new();
 
         if (errState.ConsecutiveFailures >= MaxConsecutiveErrors)
         {
@@ -110,12 +110,17 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         if (hasErrors)
         {
             // Increment failure counter via context.UpdateState
-            context.UpdateState<ErrorTrackingState>(s => s.IncrementFailures());
+            var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
+            var newState = currentState.IncrementFailures();
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
+            });
 
             // Get the updated failure count from pending state
             var pendingState = context.GetPendingState();
-            var newFailureCount = pendingState?.GetState<ErrorTrackingState>().ConsecutiveFailures
-                ?? context.State.GetState<ErrorTrackingState>().ConsecutiveFailures + 1;
+            var newFailureCount = pendingState?.MiddlewareState.ErrorTracking?.ConsecutiveFailures
+                ?? context.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures + 1 ?? 1;
 
             // Check if this exceeds threshold
             if (newFailureCount >= MaxConsecutiveErrors)
@@ -126,7 +131,12 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         else
         {
             // Reset failure counter on success
-            context.UpdateState<ErrorTrackingState>(s => s.ResetFailures());
+            var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
+            var newState = currentState.ResetFailures();
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
+            });
         }
 
         return Task.CompletedTask;

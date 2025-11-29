@@ -1,7 +1,7 @@
 namespace HPD.Agent;
 
 /// <summary>
-/// State for error tracking. Immutable record with static abstract key.
+/// State for error tracking. Immutable record.
 /// Tracks consecutive failures to detect and handle persistent errors.
 /// </summary>
 /// <remarks>
@@ -15,27 +15,25 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var errState = context.State.GetState&lt;ErrorTrackingState&gt;();
+/// var errState = context.State.MiddlewareState.ErrorTracking ?? new();
 /// if (errState.ConsecutiveFailures >= maxErrors) { ... }
 ///
 /// // Increment on error
-/// context.UpdateState&lt;ErrorTrackingState&gt;(s => s.IncrementFailures());
+/// context.UpdateState(s => s with
+/// {
+///     MiddlewareState = s.MiddlewareState.WithErrorTracking(errState.IncrementFailures())
+/// });
 ///
 /// // Reset on success
-/// context.UpdateState&lt;ErrorTrackingState&gt;(s => s.ResetFailures());
+/// context.UpdateState(s => s with
+/// {
+///     MiddlewareState = s.MiddlewareState.WithErrorTracking(errState.ResetFailures())
+/// });
 /// </code>
 /// </remarks>
-public sealed record ErrorTrackingState : IMiddlewareState
+[MiddlewareState]
+public sealed record ErrorTrackingStateData
 {
-    /// <summary>
-    /// Unique key for this middleware state type.
-    /// </summary>
-    public static string Key => "HPD.Agent.ErrorTracking";
-
-    /// <summary>
-    /// Creates default/initial state with zero failures.
-    /// </summary>
-    public static IMiddlewareState CreateDefault() => new ErrorTrackingState();
 
     /// <summary>
     /// Number of consecutive iterations with errors.
@@ -48,13 +46,13 @@ public sealed record ErrorTrackingState : IMiddlewareState
     /// Increments the failure count by one.
     /// </summary>
     /// <returns>New state with incremented failure count</returns>
-    public ErrorTrackingState IncrementFailures() =>
+    public ErrorTrackingStateData IncrementFailures() =>
         this with { ConsecutiveFailures = ConsecutiveFailures + 1 };
 
     /// <summary>
     /// Resets the failure count to zero (on successful iteration).
     /// </summary>
     /// <returns>New state with zero failures</returns>
-    public ErrorTrackingState ResetFailures() =>
+    public ErrorTrackingStateData ResetFailures() =>
         this with { ConsecutiveFailures = 0 };
 }

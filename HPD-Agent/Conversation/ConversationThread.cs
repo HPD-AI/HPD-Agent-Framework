@@ -224,7 +224,7 @@ internal sealed class ConversationThread
     /// </list>
     /// </para>
     /// </remarks>
-    public HistoryReductionState? LastReduction { get; set; }
+    public HistoryReductionStateData? LastReduction { get; set; }
 
     /// <summary>
     /// Creates a new conversation thread with default in-memory storage.
@@ -676,5 +676,5 @@ public record ConversationThreadSnapshot
     /// Persists across agent runs to avoid redundant LLM calls for re-reduction.
     /// Null if history reduction has never been performed on this thread.
     /// </summary>
-    public HistoryReductionState? LastReductionState { get; init; }
+    public HistoryReductionStateData? LastReductionState { get; init; }
 }

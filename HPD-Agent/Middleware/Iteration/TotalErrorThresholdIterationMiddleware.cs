@@ -17,14 +17,14 @@ namespace HPD.Agent;
 /// <para><b>UNIFIED MIDDLEWARE:</b></para>
 /// <para>
 /// This middleware implements <see cref="IAgentMiddleware"/> and is stateless -
-/// all state flows through the context via <see cref="TotalErrorThresholdState"/>.
+/// all state flows through the context via <see cref="TotalErrorThresholdStateData"/>.
 /// This preserves AgentCore's thread-safety guarantee for concurrent RunAsync() calls.
 /// </para>
 ///
 /// <para><b>Error tracking happens in AfterIterationAsync:</b></para>
 /// <list type="number">
 /// <item>Counts any errors (regardless of type or consecutiveness)</item>
-/// <item>Updates TotalErrorThresholdState via context.UpdateState()</item>
+/// <item>Updates TotalErrorThresholdStateData via context.UpdateState()</item>
 /// <item>Checks threshold and triggers termination if exceeded</item>
 /// </list>
 ///
@@ -104,7 +104,7 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Read state from context (type-safe!)
-        var thresholdState = context.State.GetState<TotalErrorThresholdState>();
+        var thresholdState = context.State.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
 
         if (thresholdState.TotalErrorCount >= MaxTotalErrors)
         {
@@ -132,18 +132,21 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
 
         if (errorCount > 0)
         {
-            // Update state with cumulative error count
-            context.UpdateState<TotalErrorThresholdState>(s =>
+            // Read current state
+            var currentState = context.State.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
+            var newTotalCount = currentState.TotalErrorCount + errorCount;
+
+            // Check if this iteration puts us over threshold
+            if (newTotalCount >= MaxTotalErrors)
             {
-                var newTotalCount = s.TotalErrorCount + errorCount;
+                TriggerTermination(context, newTotalCount);
+            }
 
-                // Check if this iteration puts us over threshold
-                if (newTotalCount >= MaxTotalErrors)
-                {
-                    TriggerTermination(context, newTotalCount);
-                }
-
-                return s with { TotalErrorCount = newTotalCount };
+            // Update state with cumulative error count
+            var newThresholdState = currentState with { TotalErrorCount = newTotalCount };
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithTotalErrorThreshold(newThresholdState)
             });
         }
 

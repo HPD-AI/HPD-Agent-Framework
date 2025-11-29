@@ -1,9 +1,7 @@
-using System.Collections.Immutable;
-
 namespace HPD.Agent;
 
 /// <summary>
-/// State for circuit breaker tracking. Immutable record with static abstract key.
+/// State for circuit breaker tracking. Immutable record.
 /// Tracks repeated identical function calls to detect and prevent infinite loops.
 /// </summary>
 /// <remarks>
@@ -17,28 +15,20 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var cbState = context.State.GetState&lt;CircuitBreakerState&gt;();
+/// var cbState = context.State.MiddlewareState.CircuitBreaker ?? new();
 /// var count = cbState.ConsecutiveCountPerTool.GetValueOrDefault(toolName, 0);
 ///
 /// // Update state
-/// context.UpdateState&lt;CircuitBreakerState&gt;(s => s with
+/// context.UpdateState(s => s with
 /// {
-///     LastSignaturePerTool = s.LastSignaturePerTool.SetItem(toolName, signature),
-///     ConsecutiveCountPerTool = s.ConsecutiveCountPerTool.SetItem(toolName, newCount)
+///     MiddlewareState = s.MiddlewareState.WithCircuitBreaker(
+///         cbState.RecordToolCall(toolName, signature))
 /// });
 /// </code>
 /// </remarks>
-public sealed record CircuitBreakerState : IMiddlewareState
+[MiddlewareState]
+public sealed record CircuitBreakerStateData
 {
-    /// <summary>
-    /// Unique key for this middleware state type.
-    /// </summary>
-    public static string Key => "HPD.Agent.CircuitBreaker";
-
-    /// <summary>
-    /// Creates default/initial state with empty tracking dictionaries.
-    /// </summary>
-    public static IMiddlewareState CreateDefault() => new CircuitBreakerState();
 
     /// <summary>
     /// Last function signature per tool (for detecting identical calls).
@@ -63,7 +53,7 @@ public sealed record CircuitBreakerState : IMiddlewareState
     /// <param name="toolName">Name of the tool being called</param>
     /// <param name="signature">Signature of the tool call (name + args)</param>
     /// <returns>New state with updated tracking</returns>
-    public CircuitBreakerState RecordToolCall(string toolName, string signature)
+    public CircuitBreakerStateData RecordToolCall(string toolName, string signature)
     {
         var lastSig = LastSignaturePerTool.GetValueOrDefault(toolName);
         var isIdentical = !string.IsNullOrEmpty(lastSig) && signature == lastSig;

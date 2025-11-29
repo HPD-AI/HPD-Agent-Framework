@@ -84,8 +84,8 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
         if (context.ToolCalls.Count == 0)
             return Task.CompletedTask;
 
-        // Read state from context (type-safe via IMiddlewareState)
-        var cbState = context.State.GetState<CircuitBreakerState>();
+        // Read state from context (type-safe via generated property)
+        var cbState = context.State.MiddlewareState.CircuitBreaker ?? new();
 
         foreach (var toolCall in context.ToolCalls)
         {
@@ -119,18 +119,19 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Update state immutably via context
-        context.UpdateState<CircuitBreakerState>(cbState =>
+        var currentState = context.State.MiddlewareState.CircuitBreaker ?? new();
+        var updatedState = currentState;
+
+        foreach (var toolCall in context.ToolCalls)
         {
-            var updatedState = cbState;
+            var toolName = toolCall.Name ?? "_unknown";
+            var signature = ComputeFunctionSignature(toolCall);
+            updatedState = updatedState.RecordToolCall(toolName, signature);
+        }
 
-            foreach (var toolCall in context.ToolCalls)
-            {
-                var toolName = toolCall.Name ?? "_unknown";
-                var signature = ComputeFunctionSignature(toolCall);
-                updatedState = updatedState.RecordToolCall(toolName, signature);
-            }
-
-            return updatedState;
+        context.UpdateState(s => s with
+        {
+            MiddlewareState = s.MiddlewareState.WithCircuitBreaker(updatedState)
         });
 
         return Task.CompletedTask;

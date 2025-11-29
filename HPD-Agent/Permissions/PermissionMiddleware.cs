@@ -72,7 +72,11 @@ public class PermissionMiddleware : IAgentMiddleware
         CancellationToken cancellationToken)
     {
         // Reset batch state for new iteration
-        context.UpdateState<BatchPermissionState>(s => s.Reset());
+        var newBatchState = new BatchPermissionStateData().Reset();
+        context.UpdateState(s => s with
+        {
+            MiddlewareState = s.MiddlewareState.WithBatchPermission(newBatchState)
+        });
         return Task.CompletedTask;
     }
 
@@ -110,7 +114,7 @@ public class PermissionMiddleware : IAgentMiddleware
         // CHECK BATCH PERMISSION STATE (for parallel execution optimization)
         // ═══════════════════════════════════════════════════════════════
 
-        var batchState = context.State.GetState<BatchPermissionState>();
+        var batchState = context.State.MiddlewareState.BatchPermission ?? new BatchPermissionStateData();
 
         // If already approved in batch, allow execution immediately
         if (batchState.ApprovedFunctions.Contains(functionName))
@@ -151,7 +155,11 @@ public class PermissionMiddleware : IAgentMiddleware
             if (storedChoice == PermissionChoice.AlwaysAllow)
             {
                 // Record approval in batch state for parallel optimization
-                context.UpdateState<BatchPermissionState>(s => s.RecordApproval(functionName));
+                var updatedBatchState = batchState.RecordApproval(functionName);
+                context.UpdateState(s => s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
+                });
 
                 // Approved via stored preference - allow execution
                 return;
@@ -162,7 +170,11 @@ public class PermissionMiddleware : IAgentMiddleware
                 var denialReason = $"Execution of '{functionName}' was denied by a stored user preference.";
 
                 // Record denial in batch state for parallel optimization
-                context.UpdateState<BatchPermissionState>(s => s.RecordDenial(functionName, denialReason));
+                var updatedBatchState = batchState.RecordDenial(functionName, denialReason);
+                context.UpdateState(s => s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
+                });
 
                 // Denied via stored preference - block execution
                 context.BlockFunctionExecution = true;
@@ -238,7 +250,11 @@ public class PermissionMiddleware : IAgentMiddleware
             }
 
             // Record approval in batch state (for parallel execution optimization)
-            context.UpdateState<BatchPermissionState>(s => s.RecordApproval(functionName));
+            var updatedBatchState = batchState.RecordApproval(functionName);
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
+            });
 
             // Allow execution (don't set BlockFunctionExecution)
         }
@@ -256,7 +272,11 @@ public class PermissionMiddleware : IAgentMiddleware
                 denialReason));
 
             // Record denial in batch state (for parallel execution optimization)
-            context.UpdateState<BatchPermissionState>(s => s.RecordDenial(functionName, denialReason));
+            var updatedBatchState = batchState.RecordDenial(functionName, denialReason);
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
+            });
 
             // Block execution with denial reason
             context.BlockFunctionExecution = true;

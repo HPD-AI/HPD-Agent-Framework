@@ -447,6 +447,167 @@ Decorate classes with `[HPDSkill]` attribute
 
 ---
 
+## Middleware State Management
+
+### Overview
+
+HPD-Agent uses a **source-generated, versioned state container** for middleware state persistence. This enables:
+- ✅ **Type-safe** state access via generated properties
+- ✅ **Automatic schema versioning** for checkpoint compatibility
+- ✅ **Zero-overhead** serialization (ImmutableDictionary backbone)
+- ✅ **Runtime migration** detection and logging
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│ MiddlewareStateContainer (partial class)           │
+├─────────────────────────────────────────────────────┤
+│ Manual (HPD-Agent/Middleware/State/):               │
+│  • States: ImmutableDictionary<string, object?>     │
+│  • SchemaSignature: string?                         │
+│  • SchemaVersion: int                               │
+│  • StateVersions: ImmutableDictionary<string, int>? │
+│  • GetState<T>() / SetState<T>() - Smart accessors  │
+├─────────────────────────────────────────────────────┤
+│ Generated (MiddlewareStateContainer.g.cs):          │
+│  • CompiledSchemaSignature (const)                  │
+│  • CompiledSchemaVersion (const)                    │
+│  • CompiledStateVersions (static readonly)          │
+│  • CircuitBreaker property                          │
+│  • WithCircuitBreaker() method                      │
+│  • ErrorTracking property                           │
+│  • WithErrorTracking() method                       │
+│  • ... (one per [MiddlewareState] record)           │
+└─────────────────────────────────────────────────────┘
+```
+
+### State Definition
+
+Mark state records with `[MiddlewareState(Version = X)]`:
+
+```csharp
+[MiddlewareState(Version = 1)]
+public sealed record CircuitBreakerStateData
+{
+    public int ConsecutiveErrors { get; init; }
+    public DateTime? OpenedAt { get; init; }
+}
+```
+
+The source generator creates:
+```csharp
+// In MiddlewareStateContainer.g.cs
+public sealed partial class MiddlewareStateContainer
+{
+    public CircuitBreakerStateData? CircuitBreaker
+        => GetState<CircuitBreakerStateData>("HPD.Agent.CircuitBreakerStateData");
+
+    public MiddlewareStateContainer WithCircuitBreaker(CircuitBreakerStateData? value)
+        => value == null ? this : SetState("HPD.Agent.CircuitBreakerStateData", value);
+}
+```
+
+### Schema Versioning
+
+Three-level versioning system:
+
+1. **Container Version** (`SchemaVersion = 1`)
+   - For future container-level migrations
+   - Currently always 1
+
+2. **Composition Signature** (`SchemaSignature`)
+   - Sorted, comma-separated list of middleware state FQNs
+   - Example: `"HPD.Agent.CircuitBreakerStateData,HPD.Agent.ErrorTrackingStateData"`
+   - Detects added/removed middleware across deployments
+
+3. **Per-State Versions** (`StateVersions`)
+   - Maps each state type FQN to its version number
+   - Example: `{"HPD.Agent.CircuitBreakerStateData": 1}`
+   - Enables individual state schema evolution
+
+### Runtime Migration
+
+When resuming from a checkpoint, `AgentCore.ValidateAndMigrateSchema()` automatically:
+
+1. **Pre-versioning upgrade** - If `SchemaSignature == null`:
+   - Logs: `"Resuming from checkpoint created before schema versioning. Upgrading to current schema."`
+   - Emits: `SchemaChangedEvent(IsUpgrade: true)`
+
+2. **Schema match** - If signatures match:
+   - Fast path, no logging or events
+
+3. **Middleware removed** - If checkpoint has middleware no longer in code:
+   - Logs: `WARNING: "Checkpoint contains state for X middleware that no longer exist... State will be discarded"`
+   - State is safely dropped
+
+4. **Middleware added** - If code has new middleware not in checkpoint:
+   - Logs: `INFO: "Detected X new middleware not present in checkpoint... State will be initialized to defaults"`
+   - New state uses default values
+
+### Performance Characteristics
+
+- **Property access** (runtime): ~20-25ns (dictionary lookup)
+- **Property access** (post-checkpoint first read): ~150ns (JsonElement → concrete type)
+- **Property access** (post-checkpoint cached): ~20ns (from cache)
+- **Immutable update**: ~30ns (ImmutableDictionary.SetItem)
+- **Schema validation**: ~5-10µs (only on checkpoint resume)
+
+### Usage Pattern
+
+```csharp
+// Middleware reads state
+var state = context.State.MiddlewareState.CircuitBreaker ?? new();
+
+// Middleware updates state (immutable)
+context.UpdateState(s => s with
+{
+    MiddlewareState = s.MiddlewareState.WithCircuitBreaker(newState)
+});
+```
+
+### Schema Evolution
+
+**Breaking changes** (require version bump):
+- Removing or renaming properties
+- Changing property types
+- Changing collection types (e.g., `List` → `ImmutableList`)
+
+**Non-breaking changes** (no version bump):
+- Adding new optional properties with default values
+- Adding helper methods
+- Updating documentation
+
+Example:
+```csharp
+// Version 1
+[MiddlewareState(Version = 1)]
+public sealed record CircuitBreakerStateData
+{
+    public int ConsecutiveErrors { get; init; }
+}
+
+// Version 2 - Added optional property (non-breaking)
+[MiddlewareState(Version = 1)]  // Version stays 1!
+public sealed record CircuitBreakerStateData
+{
+    public int ConsecutiveErrors { get; init; }
+    public string? Reason { get; init; }  // Optional, has default
+}
+
+// Version 3 - Changed property type (breaking)
+[MiddlewareState(Version = 2)]  // Bump to 2!
+public sealed record CircuitBreakerStateData
+{
+    public long ConsecutiveErrors { get; init; }  // int → long
+    public string? Reason { get; init; }
+}
+```
+
+See [Source Generated Middleware State Container Proposal](proposals/SOURCE_GENERATED_MIDDLEWARE_STATE_CONTAINER_PROPOSAL.md) for full design details.
+
+---
+
 ## Performance Characteristics
 
 ### Startup
@@ -520,7 +681,7 @@ Decorate classes with `[HPDSkill]` attribute
 
 ## Type-Safe Middleware State Management
 
-HPD-Agent provides a sophisticated `IMiddlewareState` system that gives it a significant advantage over Microsoft's Extensions AI framework for stateful middleware development.
+HPD-Agent provides a sophisticated source-generated middleware state system that gives it a significant advantage over Microsoft's Extensions AI framework for stateful middleware development.
 
 ### The Problem with Microsoft's Approach
 Microsoft's framework lacks built-in middleware state management:
@@ -529,54 +690,84 @@ Microsoft's framework lacks built-in middleware state management:
 - Thread-safety is manual and error-prone
 - No compile-time guarantees for state access
 
-### HPD-Agent's Solution: IMiddlewareState
+### HPD-Agent's Solution: Source-Generated State Container
+
+HPD-Agent uses **Roslyn incremental source generators** to create strongly-typed properties for middleware state, eliminating boilerplate and providing IntelliSense support.
+
+**Define State (Just a Record):**
 ```csharp
-public interface IMiddlewareState
+[MiddlewareState]
+public sealed record CircuitBreakerStateData
 {
-    static abstract string Key { get; }
-    static abstract IMiddlewareState CreateDefault();
-}
-```
+    public Dictionary<string, string> LastSignaturePerTool { get; init; } = new();
+    public Dictionary<string, int> ConsecutiveCountPerTool { get; init; } = new();
 
-**Key Features:**
-- **Type-Safe Access**: `context.State.GetState<CircuitBreakerState>()` instead of `context.State["stringKey"]`
-- **Immutable Records**: State updates use `with` expressions, preventing accidental mutations
-- **Thread-Safe**: Stateless middleware + context-flowing state supports concurrent `RunAsync()` calls
-- **Self-Describing**: Each state type defines its own key and factory
-- **Serializable**: Built-in JSON support for checkpointing
-
-### Example: Circuit Breaker State
-```csharp
-public sealed record CircuitBreakerState : IMiddlewareState
-{
-    public static string Key => "HPD.Agent.CircuitBreaker";
-    public static IMiddlewareState CreateDefault() => new CircuitBreakerState();
-
-    public ImmutableDictionary<string, string> LastSignaturePerTool { get; init; }
-        = ImmutableDictionary<string, string>.Empty;
-
-    public CircuitBreakerState RecordToolCall(string toolName, string signature) => this with
+    public CircuitBreakerStateData RecordToolCall(string toolName, string signature) => this with
     {
         // Immutable update logic
     };
 }
 ```
 
-**Usage in Middleware:**
+**Source Generator Creates:**
 ```csharp
-var state = context.State.GetState<CircuitBreakerState>();
-var predictedCount = state.GetPredictedCount(toolName, signature);
-context.UpdateState<CircuitBreakerState>(s => s.RecordToolCall(toolName, signature));
+public sealed partial class MiddlewareStateContainer
+{
+    // Property: CircuitBreakerStateData → CircuitBreaker
+    public CircuitBreakerStateData? CircuitBreaker => /* smart accessor */;
+
+    // Immutable update method
+    public MiddlewareStateContainer WithCircuitBreaker(CircuitBreakerStateData? state) => /* ... */;
+}
 ```
 
-### Competitive Advantages
-- **Developer Experience**: Eliminates string-key bugs; IntelliSense works perfectly
-- **Reliability**: Immutable state prevents race conditions in concurrent scenarios
-- **Maintainability**: Clean, self-documenting code with compile-time safety
-- **Extensibility**: Add new state types without modifying core infrastructure
-- **Performance**: Efficient immutable collections with minimal overhead
+**Usage in Middleware:**
+```csharp
+// Read state (strongly-typed property!)
+var cbState = context.State.MiddlewareState.CircuitBreaker ?? new();
+var predictedCount = cbState.GetPredictedCount(toolName, signature);
 
-This pattern makes HPD-Agent middleware production-ready, while Microsoft's approach requires significant boilerplate and carries higher risk of bugs.
+// Update state (immutable with IntelliSense)
+context.UpdateState(s => s with
+{
+    MiddlewareState = s.MiddlewareState.WithCircuitBreaker(
+        cbState.RecordToolCall(toolName, signature))
+});
+```
+
+### Key Features
+- **Zero Boilerplate**: No interfaces, no static keys, no `CreateDefault()` — just add `[MiddlewareState]`
+- **Strongly-Typed Properties**: `state.MiddlewareState.CircuitBreaker` instead of dictionary lookups
+- **IntelliSense**: Full IDE support for all middleware states
+- **Smart Accessors**: Handles both runtime (concrete types) and deserialized (`JsonElement`) states
+- **Checkpoint/Resume**: Automatic JSON serialization for durable execution
+- **Thread-Safe**: Immutable state + stateless middleware = safe concurrent execution
+- **EditorBrowsable**: Implementation details hidden from IntelliSense
+
+### Checkpoint/Resume Support
+
+Unlike dictionary-based approaches, middleware state is **automatically checkpointed**:
+
+```csharp
+// State survives checkpointing
+var snapshot = await thread.CreateCheckpointAsync();
+
+// Resume from checkpoint - state flows through
+var restored = await threadStore.RestoreThreadAsync(snapshot.ThreadId);
+var cbState = restored.State.MiddlewareState.CircuitBreaker; // ✅ Restored!
+```
+
+The smart accessor pattern transparently handles deserialized `JsonElement` states, providing seamless checkpoint/resume without manual serialization code.
+
+### Competitive Advantages
+- **Developer Experience**: IntelliSense works everywhere; zero string-key bugs
+- **Reliability**: Immutable state + source generation = zero runtime errors
+- **Maintainability**: Self-documenting code; property names match state types
+- **Checkpointing**: Built-in durable execution support (Microsoft has none)
+- **Performance**: Efficient `ImmutableDictionary` backing with lazy caching
+- **Extensibility**: Add new states by creating a record — generator does the rest
+
+This pattern makes HPD-Agent middleware production-ready with compile-time safety and checkpoint/resume support, while Microsoft's approach requires significant boilerplate and lacks durability.
 
 ---
 

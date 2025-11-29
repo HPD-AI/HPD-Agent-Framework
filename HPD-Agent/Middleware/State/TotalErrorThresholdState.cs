@@ -17,21 +17,24 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var thresholdState = context.State.GetState&lt;TotalErrorThresholdState&gt;();
+/// var thresholdState = context.State.MiddlewareState.TotalErrorThreshold ?? new();
 /// var totalErrors = thresholdState.TotalErrorCount;
 ///
 /// // Update state
-/// context.UpdateState&lt;TotalErrorThresholdState&gt;(s => s with
+/// context.UpdateState(s => s with
 /// {
-///     TotalErrorCount = s.TotalErrorCount + newErrorsThisIteration
+///     MiddlewareState = s.MiddlewareState.WithTotalErrorThreshold(thresholdState with
+///     {
+///         TotalErrorCount = thresholdState.TotalErrorCount + 1
+///     })
 /// });
 /// </code>
 ///
-/// <para><b>Difference from ErrorTrackingState:</b></para>
+/// <para><b>Difference from ErrorTrackingStateData:</b></para>
 /// <list type="table">
 /// <listheader>
 ///   <term>Aspect</term>
-///   <description>TotalErrorThresholdState</description>
+///   <description>TotalErrorThresholdStateData</description>
 /// </listheader>
 /// <item>
 ///   <term>What it counts</term>
@@ -47,17 +50,9 @@ namespace HPD.Agent;
 /// </item>
 /// </list>
 /// </remarks>
-public sealed record TotalErrorThresholdState : IMiddlewareState
+[MiddlewareState]
+public sealed record TotalErrorThresholdStateData
 {
-    /// <summary>
-    /// Unique key for this middleware state type.
-    /// </summary>
-    public static string Key => "HPD.Agent.TotalErrorThreshold";
-
-    /// <summary>
-    /// Creates default/initial state with zero error count.
-    /// </summary>
-    public static IMiddlewareState CreateDefault() => new TotalErrorThresholdState();
 
     /// <summary>
     /// Total number of errors encountered in this agent run.

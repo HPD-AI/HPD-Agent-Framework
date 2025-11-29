@@ -249,13 +249,17 @@ public class CircuitBreakerMiddlewareTests
 
     private static AgentLoopState CreateStateWithConsecutiveCalls(string toolName, string signature, int count)
     {
-        var cbState = new CircuitBreakerState();
+        var cbState = new CircuitBreakerStateData();
         for (int i = 0; i < count; i++)
         {
             cbState = cbState.RecordToolCall(toolName, signature);
         }
 
-        return CreateEmptyState().UpdateState<CircuitBreakerState>(_ => cbState);
+        var state = CreateEmptyState();
+        return state with
+        {
+            MiddlewareState = state.MiddlewareState.WithCircuitBreaker(cbState)
+        };
     }
 
     private static FunctionCallContent CreateToolCall(string name, IDictionary<string, object?>? arguments = null)

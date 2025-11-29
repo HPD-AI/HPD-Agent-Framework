@@ -123,10 +123,17 @@ namespace HPD_Agent.FFI;
 
 // --- Agent State Types ---
 [JsonSerializable(typeof(AgentLoopState))]
+[JsonSerializable(typeof(MiddlewareStateContainer))]
+[JsonSerializable(typeof(CircuitBreakerStateData))]
+[JsonSerializable(typeof(ErrorTrackingStateData))]
+[JsonSerializable(typeof(ContinuationPermissionStateData))]
+[JsonSerializable(typeof(HistoryReductionStateData))]
+[JsonSerializable(typeof(CachedReduction))]
+[JsonSerializable(typeof(BatchPermissionStateData))]
+[JsonSerializable(typeof(TotalErrorThresholdStateData))]
 
 // --- Checkpointing / Resume Types ---
 [JsonSerializable(typeof(ConversationThreadSnapshot))]
-[JsonSerializable(typeof(HistoryReductionState))]
 
 // --- Permission Types ---
 [JsonSerializable(typeof(PermissionChoice))]

@@ -26,7 +26,7 @@ namespace HPD.Agent;
 /// - AppendMessageAsync(): Add a single message to storage
 /// - ClearAsync(): Remove all messages from storage
 ///
-/// Cache-aware history reduction is handled by HistoryReductionState in ConversationThread,
+/// Cache-aware history reduction is handled by HistoryReductionStateData in ConversationThread,
 /// not by mutating the message store. Messages are reduced at runtime for LLM calls only.
 ///
 /// For protocol-specific adapters (e.g., Microsoft.Agents.AI), see HPD-Agent.Microsoft.

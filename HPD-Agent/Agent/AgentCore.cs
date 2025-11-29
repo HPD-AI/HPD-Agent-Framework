@@ -460,6 +460,100 @@ internal sealed class AgentCore
     /// </summary>
 
     /// <summary>
+    /// Validates and migrates middleware state schema when resuming from checkpoint.
+    /// Detects added/removed middleware and logs changes for operational visibility.
+    /// </summary>
+    /// <param name="checkpointState">Middleware state from checkpoint</param>
+    /// <returns>Updated middleware state with current schema metadata</returns>
+    private MiddlewareStateContainer ValidateAndMigrateSchema(MiddlewareStateContainer checkpointState)
+    {
+        // Case 1: Pre-versioning checkpoint (SchemaSignature is null)
+        if (checkpointState.SchemaSignature == null)
+        {
+            _observerErrorLogger?.LogInformation(
+                "Resuming from checkpoint created before schema versioning. " +
+                "Upgrading to current schema.");
+
+            var upgradeEvent = new SchemaChangedEvent(
+                OldSignature: null,
+                NewSignature: MiddlewareStateContainer.CompiledSchemaSignature,
+                RemovedTypes: Array.Empty<string>(),
+                AddedTypes: Array.Empty<string>(),
+                IsUpgrade: true,
+                Timestamp: DateTimeOffset.UtcNow);
+
+            // Notify observers using existing NotifyObservers method
+            NotifyObservers(upgradeEvent);
+
+            return new MiddlewareStateContainer
+            {
+                States = checkpointState.States,
+                SchemaSignature = MiddlewareStateContainer.CompiledSchemaSignature,
+                SchemaVersion = MiddlewareStateContainer.CompiledSchemaVersion,
+                StateVersions = MiddlewareStateContainer.CompiledStateVersions
+            };
+        }
+
+        // Case 2: Schema matches (common case - no changes)
+        if (checkpointState.SchemaSignature == MiddlewareStateContainer.CompiledSchemaSignature)
+        {
+            return checkpointState;
+        }
+
+        // Case 3: Schema changed - detect and log differences
+        var oldTypes = checkpointState.SchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var newTypes = MiddlewareStateContainer.CompiledSchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+        var removed = oldTypes.Except(newTypes).ToList();
+        var added = newTypes.Except(oldTypes).ToList();
+
+        // Log removed middleware (potential data loss - WARNING level)
+        if (removed.Count > 0)
+        {
+            var removedNames = removed.Select(fqn => fqn.Split('.').Last()).ToList();
+
+            _observerErrorLogger?.LogWarning(
+                "Checkpoint contains state for {RemovedCount} middleware that no longer exist: {RemovedMiddleware}. " +
+                "State will be discarded (this is expected after middleware removal).",
+                removed.Count,
+                string.Join(", ", removedNames));
+        }
+
+        // Log added middleware (expected behavior - INFO level)
+        if (added.Count > 0)
+        {
+            var addedNames = added.Select(fqn => fqn.Split('.').Last()).ToList();
+
+            _observerErrorLogger?.LogInformation(
+                "Detected {AddedCount} new middleware not present in checkpoint: {AddedMiddleware}. " +
+                "State will be initialized to defaults.",
+                added.Count,
+                string.Join(", ", addedNames));
+        }
+
+        // Emit telemetry event for monitoring
+        var schemaEvent = new SchemaChangedEvent(
+            OldSignature: checkpointState.SchemaSignature,
+            NewSignature: MiddlewareStateContainer.CompiledSchemaSignature,
+            RemovedTypes: removed,
+            AddedTypes: added,
+            IsUpgrade: false,
+            Timestamp: DateTimeOffset.UtcNow);
+
+        // Notify observers using existing NotifyObservers method
+        NotifyObservers(schemaEvent);
+
+        // Update to current schema metadata
+        return new MiddlewareStateContainer
+        {
+            States = checkpointState.States,
+            SchemaSignature = MiddlewareStateContainer.CompiledSchemaSignature,
+            SchemaVersion = MiddlewareStateContainer.CompiledSchemaVersion,
+            StateVersions = MiddlewareStateContainer.CompiledStateVersions
+        };
+    }
+
+    /// <summary>
     /// Notifies all registered observers about an event using fire-and-forget pattern.
     /// Observer failures are logged but don't impact agent execution.
     /// Circuit breaker pattern automatically disables failing observers.
@@ -632,6 +726,13 @@ internal sealed class AgentCore
 
                 state = executionState;
 
+                // Validate and migrate middleware schema when resuming from checkpoint
+                // This detects added/removed middleware and logs changes for operational visibility
+                state = state with
+                {
+                    MiddlewareState = ValidateAndMigrateSchema(state.MiddlewareState)
+                };
+
                 // Use messages from restored state (already prepared - includes system instructions)
                 effectiveMessages = state.CurrentMessages;
 
@@ -793,7 +894,7 @@ internal sealed class AgentCore
                     MaxIterations: _maxFunctionCalls,
                     IsTerminated: state.IsTerminated,
                     TerminationReason: state.TerminationReason,
-                    ConsecutiveErrorCount: state.GetState<ErrorTrackingState>().ConsecutiveFailures,
+                    ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
                     CompletedFunctions: new List<string>(state.CompletedFunctions),
                     AgentName: _name,
                     Timestamp: DateTimeOffset.UtcNow);
@@ -830,7 +931,7 @@ internal sealed class AgentCore
                     AgentName: _name,
                     DecisionType: decision.GetType().Name,
                     Iteration: state.Iteration,
-                    ConsecutiveFailures: state.GetState<ErrorTrackingState>().ConsecutiveFailures,
+                    ConsecutiveFailures: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
                     ExpandedPluginsCount: state.expandedScopedPluginContainers.Count,
                     CompletedFunctionsCount: state.CompletedFunctions.Count,
                     Timestamp: DateTimeOffset.UtcNow);
@@ -2340,7 +2441,7 @@ internal sealed class AgentCore
             cancellationToken);
 
         // Note: History reduction caching is now handled by HistoryReductionMiddleware
-        // The middleware updates its state directly via context.UpdateState<HistoryReductionState>()
+        // The middleware updates its state directly via context.UpdateState<HistoryReductionStateData>()
 
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2829,10 +2930,10 @@ public sealed record AgentLoopState
     /// <b>Usage:</b>
     /// - Fresh run (iteration 0): Check if thread.LastReduction.IsValidFor() → cache hit
     /// - If valid: Set ActiveReduction and use ApplyToMessages() for LLM calls
-    /// - If invalid: Run reduction, create new HistoryReductionState, store in thread.LastReduction
+    /// - If invalid: Run reduction, create new HistoryReductionStateData, store in thread.LastReduction
     /// </para>
     /// </remarks>
-    public HistoryReductionState? ActiveReduction { get; init; }
+    public HistoryReductionStateData? ActiveReduction { get; init; }
 
     /// <summary>
     /// Whether the LLM service manages conversation history server-side.
@@ -2868,18 +2969,20 @@ public sealed record AgentLoopState
     // ═══════════════════════════════════════════════════════
 
     /// <summary>
-    /// Opaque state storage for stateful middlewares.
-    /// Keys are IMiddlewareState.Key values (tied to types via static abstract).
-    /// Values are state records implementing IMiddlewareState.
+    /// Source-generated middleware state container.
+    /// Provides strongly-typed properties for each middleware state type marked with [MiddlewareState].
     /// </summary>
     /// <remarks>
-    /// <para><b>Access via extension methods:</b></para>
+    /// <para><b>Usage:</b></para>
     /// <code>
-    /// // Read state (type-safe, returns default if not present)
-    /// var state = agentState.GetState&lt;CircuitBreakerState&gt;();
+    /// // Read state
+    /// var cbState = state.MiddlewareState.CircuitBreaker ?? new();
     ///
     /// // Update state immutably
-    /// agentState = agentState.UpdateState&lt;CircuitBreakerState&gt;(s => s with { ... });
+    /// state = state with
+    /// {
+    ///     MiddlewareState = state.MiddlewareState.WithCircuitBreaker(newState)
+    /// };
     /// </code>
     ///
     /// <para><b>Thread Safety:</b></para>
@@ -2888,20 +2991,9 @@ public sealed record AgentLoopState
     /// not stored in middleware fields. This preserves AgentCore's thread-safety
     /// guarantee for concurrent RunAsync() calls.
     /// </para>
-    ///
-    /// <para><b>NOT CHECKPOINTED:</b></para>
-    /// <para>
-    /// Middleware state is intentionally excluded from serialization/checkpointing.
-    /// Middleware guards against execution anomalies (loops, errors) within a single run.
-    /// When resuming from a checkpoint, middleware starts fresh because:
-    /// - The "consecutive" context is broken by the crash/resume
-    /// - Loop detection should monitor the new execution, not carry baggage from old runs
-    /// - This simplifies serialization (avoids polymorphic ImmutableDictionary&lt;string, object&gt;)
-    /// </para>
     /// </remarks>
-    [JsonIgnore]
-    public ImmutableDictionary<string, object> MiddlewareStates { get; init; }
-        = ImmutableDictionary<string, object>.Empty;
+    public MiddlewareStateContainer MiddlewareState { get; init; }
+        = new MiddlewareStateContainer();
 
     // ═══════════════════════════════════════════════════════
     // FACTORY METHOD
@@ -2935,7 +3027,6 @@ public sealed record AgentLoopState
         MessagesSentToInnerClient = 0,
         LastAssistantMessageId = null,
         ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-        MiddlewareStates = ImmutableDictionary<string, object>.Empty,
         Version = 1,
         Metadata = new CheckpointMetadata
         {
@@ -3041,7 +3132,7 @@ public sealed record AgentLoopState
     /// </summary>
     /// <param name="reduction">History reduction state to apply</param>
     /// <returns>New state with updated reduction</returns>
-    public AgentLoopState WithReduction(HistoryReductionState reduction) =>
+    public AgentLoopState WithReduction(HistoryReductionStateData reduction) =>
         this with { ActiveReduction = reduction };
 
     /// <summary>
@@ -3235,9 +3326,9 @@ public sealed record AgentLoopState
             throw new InvalidOperationException($"Checkpoint has invalid iteration: {Iteration}");
         }
 
-        // Check error tracking state from MiddlewareStates (new pattern)
-        var errorState = this.GetState<ErrorTrackingState>();
-        if (errorState.ConsecutiveFailures < 0)
+        // Check error tracking state from MiddlewareState (new pattern)
+        var errorState = this.MiddlewareState.ErrorTracking;
+        if (errorState != null && errorState.ConsecutiveFailures < 0)
         {
             throw new InvalidOperationException($"Checkpoint has invalid ConsecutiveFailures: {errorState.ConsecutiveFailures}");
         }

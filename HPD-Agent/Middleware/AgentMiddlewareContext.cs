@@ -117,19 +117,6 @@ public class AgentMiddlewareContext
     }
 
     /// <summary>
-    /// Schedules a typed middleware state update.
-    /// Convenience method that wraps the typed update in a full state transform.
-    /// </summary>
-    /// <typeparam name="TState">The middleware state type (must implement IMiddlewareState)</typeparam>
-    /// <param name="transform">Function that transforms the current middleware state to new state</param>
-    public void UpdateState<TState>(Func<TState, TState> transform)
-        where TState : class, IMiddlewareState
-    {
-        if (transform == null) throw new ArgumentNullException(nameof(transform));
-        UpdateState(state => state.UpdateState(transform));
-    }
-
-    /// <summary>
     /// Gets pending state updates (called by AgentCore after middleware chain).
     /// Returns null if no updates were scheduled.
     /// </summary>

@@ -886,7 +886,7 @@ public class AgentBuilder
             _functionToSkillMap,
             _middlewares,
             _serviceProvider,
-            null,
+            _observers,
             buildData.SummarizerClient);
 
         return agent;

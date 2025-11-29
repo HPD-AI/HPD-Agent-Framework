@@ -7,7 +7,7 @@ namespace HPD.Agent;
 /// <remarks>
 /// <para><b>Thread Safety:</b></para>
 /// <para>
-/// This state is immutable and flows through the context via AgentLoopState.MiddlewareStates.
+/// This state is immutable and flows through the context.
 /// It is NOT stored in middleware instance fields, preserving thread safety for concurrent RunAsync() calls.
 /// </para>
 ///
@@ -22,30 +22,22 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var hrState = context.State.GetState&lt;HistoryReductionState&gt;();
+/// var hrState = context.State.MiddlewareState.HistoryReduction ?? new();
 /// if (hrState.LastReduction?.IsValidFor(messages.Count) == true)
 /// {
 ///     // Cache hit - use hrState.LastReduction
 /// }
 ///
 /// // Update state
-/// context.UpdateState&lt;HistoryReductionState&gt;(s => s with
+/// context.UpdateState(s => s with
 /// {
-///     LastReduction = newReduction
+///     MiddlewareState = s.MiddlewareState.WithHistoryReduction(hrState.WithReduction(newReduction))
 /// });
 /// </code>
 /// </remarks>
-public sealed record HistoryReductionState : IMiddlewareState
+[MiddlewareState]
+public sealed record HistoryReductionStateData
 {
-    /// <summary>
-    /// Unique key for this middleware state type.
-    /// </summary>
-    public static string Key => "HPD.Agent.HistoryReduction";
-
-    /// <summary>
-    /// Creates default/initial state with no cached reduction.
-    /// </summary>
-    public static IMiddlewareState CreateDefault() => new HistoryReductionState();
 
     /// <summary>
     /// Last successful reduction (null if no reduction performed yet).
@@ -58,7 +50,7 @@ public sealed record HistoryReductionState : IMiddlewareState
     /// </summary>
     /// <param name="reduction">New reduction to cache</param>
     /// <returns>New state with updated cache</returns>
-    public HistoryReductionState WithReduction(CachedReduction reduction) =>
+    public HistoryReductionStateData WithReduction(CachedReduction reduction) =>
         this with { LastReduction = reduction };
 }
 
