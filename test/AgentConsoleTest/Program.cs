@@ -11,7 +11,7 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "openrouter",
-        ModelName = "google/gemini-2.5-flash-lite"
+        ModelName = "google/gemini-2.5-flash"
     },
     Mcp = new McpConfig { ManifestPath = "./MCP.json" },
     Scoping = new ScopingConfig { Enabled = true }

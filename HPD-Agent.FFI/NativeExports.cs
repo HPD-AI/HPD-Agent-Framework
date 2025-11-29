@@ -483,7 +483,7 @@ public static partial class NativeExports
     {
         try
         {
-            var agent = ObjectManager.Get<Agent>(agentHandle);
+            var agent = ObjectManager.Get<HPD.Agent.Agent>(agentHandle);
             if (agent == null) return IntPtr.Zero;
 
             string? input = Marshal.PtrToStringUTF8(inputPtr);
@@ -554,7 +554,7 @@ public static partial class NativeExports
     {
         try
         {
-            var agent = ObjectManager.Get<Agent>(agentHandle);
+            var agent = ObjectManager.Get<HPD.Agent.Agent>(agentHandle);
             if (agent == null) return 0;
 
             string? input = Marshal.PtrToStringUTF8(inputPtr);
@@ -708,7 +708,7 @@ public static partial class NativeExports
     {
         try
         {
-            var agent = ObjectManager.Get<Agent>(agentHandle);
+            var agent = ObjectManager.Get<HPD.Agent.Agent>(agentHandle);
             if (agent == null) return 0;
 
             string? permissionId = Marshal.PtrToStringUTF8(permissionIdPtr);

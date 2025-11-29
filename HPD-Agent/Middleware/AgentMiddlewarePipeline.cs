@@ -182,7 +182,8 @@ public class AgentMiddlewarePipeline
         Func<IAsyncEnumerable<ChatResponseUpdate>> innerCall,
         CancellationToken cancellationToken)
     {
-        // Build the pipeline chain in reverse order (last registered = outermost)
+        // Build the pipeline chain in registration order (first registered = outermost)
+        // Loop backwards so that first registered middleware wraps everything
         Func<IAsyncEnumerable<ChatResponseUpdate>> pipeline = innerCall;
 
         for (int i = _middlewares.Count - 1; i >= 0; i--)
@@ -332,7 +333,8 @@ public class AgentMiddlewarePipeline
         Func<ValueTask<object?>> innerCall,
         CancellationToken cancellationToken)
     {
-        // Build the pipeline chain in reverse order (last registered = outermost)
+        // Build the pipeline chain in registration order (first registered = outermost)
+        // Loop backwards so that first registered middleware wraps everything
         Func<ValueTask<object?>> pipeline = innerCall;
 
         for (int i = _middlewares.Count - 1; i >= 0; i--)

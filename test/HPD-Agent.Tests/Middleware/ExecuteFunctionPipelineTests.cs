@@ -58,7 +58,7 @@ public class ExecuteFunctionPipelineTests
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_MultipleMiddleware_ExecutesInReverseOrder()
+    public async Task ExecuteFunctionAsync_MultipleMiddleware_ExecutesInRegistrationOrder()
     {
         // Arrange - Register in order: M1, M2, M3
         var m1 = new TrackingMiddleware("M1");

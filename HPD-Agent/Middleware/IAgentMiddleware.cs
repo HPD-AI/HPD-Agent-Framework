@@ -145,7 +145,7 @@ public interface IAgentMiddleware
     /// <para><b>Execution Flow:</b></para>
     /// <list type="number">
     /// <item>BeforeIterationAsync runs (all middleware)</item>
-    /// <item>ExecuteLLMCallAsync chains execute (reverse order, like onion)</item>
+    /// <item>ExecuteLLMCallAsync chains execute (registration order, like onion)</item>
     /// <item>Innermost call invokes actual LLM</item>
     /// <item>Response streams back through the chain</item>
     /// <item>AfterIterationAsync runs (all middleware)</item>
@@ -259,7 +259,7 @@ public interface IAgentMiddleware
     /// <item>You MUST call <c>next()</c> unless you're completely skipping the LLM call</item>
     /// <item>You MUST yield every update from <c>next()</c> to preserve streaming</item>
     /// <item>Use <c>[EnumeratorCancellation]</c> attribute on cancellationToken parameter</item>
-    /// <item>Middleware chains execute in REVERSE order (last registered = outermost)</item>
+    /// <item>Middleware chains execute in REGISTRATION order (first registered = outermost)</item>
     /// <item>For simple skip logic, use <c>SkipLLMCall</c> in BeforeIterationAsync instead</item>
     /// </list>
     /// </remarks>
@@ -428,7 +428,7 @@ public interface IAgentMiddleware
     /// <para><b>Execution Flow:</b></para>
     /// <list type="number">
     /// <item>BeforeSequentialFunctionAsync runs (all middleware)</item>
-    /// <item>ExecuteFunctionAsync chains execute (reverse order, like onion)</item>
+    /// <item>ExecuteFunctionAsync chains execute (registration order, like onion)</item>
     /// <item>Innermost call invokes actual function</item>
     /// <item>Result bubbles back through the chain</item>
     /// <item>AfterFunctionAsync runs (all middleware)</item>
@@ -442,9 +442,9 @@ public interface IAgentMiddleware
     ///
     /// <para><b>Onion Architecture:</b></para>
     /// <para>
-    /// Middlewares wrap each other in reverse registration order:
-    /// - Last registered middleware wraps everything (outermost)
-    /// - First registered middleware is closest to the actual function (innermost)
+    /// Middlewares wrap each other in registration order:
+    /// - First registered middleware wraps everything (outermost)
+    /// - Last registered middleware is closest to the actual function (innermost)
     /// </para>
     ///
     /// <para><b>Examples:</b></para>
@@ -512,7 +512,7 @@ public interface IAgentMiddleware
     /// <para><b>Important Notes:</b></para>
     /// <list type="bullet">
     /// <item>You MUST call <c>next()</c> unless you're completely skipping execution (e.g., cache hit)</item>
-    /// <item>Middleware chains execute in REVERSE order (last registered = outermost)</item>
+    /// <item>Middleware chains execute in REGISTRATION order (first registered = outermost)</item>
     /// <item>For simple guards, use BeforeSequentialFunctionAsync instead</item>
     /// <item>For simple result transformation, use AfterFunctionAsync instead</item>
     /// </list>

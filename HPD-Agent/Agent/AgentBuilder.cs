@@ -855,9 +855,9 @@ public class AgentBuilder
         // ═══════════════════════════════════════════════════════════════
         // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
         // ═══════════════════════════════════════════════════════════════
-        // These are registered in REVERSE execution order (last = outermost):
-        // - FunctionTimeoutMiddleware wraps retry (timeout individual attempts)
-        // - FunctionRetryMiddleware wraps execution (retry failed attempts)
+        // These are registered in execution order (first = outermost):
+        // - FunctionRetryMiddleware wraps timeout (retry the entire timeout operation)
+        // - FunctionTimeoutMiddleware wraps execution (timeout individual attempts)
 
         // Register FunctionRetryMiddleware if retry is enabled
         if (_config.ErrorHandling?.MaxRetries > 0)
@@ -898,9 +898,9 @@ public class AgentBuilder
         // ═══════════════════════════════════════════════════════════════
         // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
         // ═══════════════════════════════════════════════════════════════
-        // These are registered in REVERSE execution order (last = outermost):
-        // - FunctionTimeoutMiddleware wraps retry (timeout individual attempts)
-        // - FunctionRetryMiddleware wraps execution (retry failed attempts)
+        // These are registered in execution order (first = outermost):
+        // - FunctionRetryMiddleware wraps timeout (retry the entire timeout operation)
+        // - FunctionTimeoutMiddleware wraps execution (timeout individual attempts)
 
         // Register FunctionRetryMiddleware if retry is enabled
         if (_config.ErrorHandling?.MaxRetries > 0)
