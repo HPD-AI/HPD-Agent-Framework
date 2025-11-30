@@ -227,6 +227,39 @@ internal static class SkillCodeGenerator
         sb.AppendLine($"                    Name = \"{skill.Name}\",");
         sb.AppendLine($"                    Description = \"{fullDescription}\",");
         sb.AppendLine("                    SchemaProvider = () => CreateEmptyContainerSchema(),");
+
+        // Type-safe SkillDocuments property
+        if (skill.Options.DocumentUploads.Any())
+        {
+            sb.AppendLine("                    SkillDocuments = new SkillDocumentContent[]");
+            sb.AppendLine("                    {");
+            foreach (var doc in skill.Options.DocumentUploads)
+            {
+                var escapedDesc = doc.Description.Replace("\"", "\\\"");
+                var docId = string.IsNullOrEmpty(doc.DocumentId) ? "null" : $"\"{doc.DocumentId}\"";
+
+                if (doc.SourceType == DocumentSourceType.FilePath)
+                {
+                    sb.AppendLine($"                        new SkillDocumentContent");
+                    sb.AppendLine("                        {");
+                    sb.AppendLine($"                            DocumentId = {docId},");
+                    sb.AppendLine($"                            Description = \"{escapedDesc}\",");
+                    sb.AppendLine($"                            FilePath = \"{doc.FilePath}\"");
+                    sb.AppendLine("                        },");
+                }
+                else // DocumentSourceType.Url
+                {
+                    sb.AppendLine($"                        new SkillDocumentContent");
+                    sb.AppendLine("                        {");
+                    sb.AppendLine($"                            DocumentId = {docId},");
+                    sb.AppendLine($"                            Description = \"{escapedDesc}\",");
+                    sb.AppendLine($"                            Url = \"{doc.Url}\"");
+                    sb.AppendLine("                        },");
+                }
+            }
+            sb.AppendLine("                    },");
+        }
+
         sb.AppendLine("                    AdditionalProperties = new Dictionary<string, object>");
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
@@ -241,26 +274,6 @@ internal static class SkillCodeGenerator
         {
             var escapedInstructions = skill.Instructions.Replace("\"", "\"\"");
             sb.AppendLine($"                        [\"Instructions\"] = @\"{escapedInstructions}\",");
-        }
-
-        // Add Document References and Uploads (metadata only, actual functionality in Phase 5/6)
-        if (skill.Options.DocumentReferences.Any())
-        {
-            var docRefs = string.Join(", ", skill.Options.DocumentReferences.Select(dr =>
-            {
-                if (dr.DescriptionOverride != null)
-                    return $"(object)new Dictionary<string, string?> {{ [\"DocumentId\"] = \"{dr.DocumentId}\", [\"DescriptionOverride\"] = \"{dr.DescriptionOverride}\" }}";
-                else
-                    return $"(object)new Dictionary<string, string?> {{ [\"DocumentId\"] = \"{dr.DocumentId}\", [\"DescriptionOverride\"] = null }}";
-            }));
-            sb.AppendLine($"                        [\"DocumentReferences\"] = new object[] {{ {docRefs} }},");
-        }
-
-        if (skill.Options.DocumentUploads.Any())
-        {
-            var docUploads = string.Join(", ", skill.Options.DocumentUploads.Select(du =>
-                $"(object)new Dictionary<string, string> {{ [\"FilePath\"] = \"{du.FilePath}\", [\"DocumentId\"] = \"{du.DocumentId}\", [\"Description\"] = \"{du.Description}\" }}"));
-            sb.AppendLine($"                        [\"DocumentUploads\"] = new object[] {{ {docUploads} }}");
         }
 
         sb.AppendLine("                    }");

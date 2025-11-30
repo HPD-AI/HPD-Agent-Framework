@@ -102,14 +102,19 @@ internal class DocumentReferenceInfo
 }
 
 /// <summary>
-/// Information about a document upload (from AddDocumentFromFile call)
+/// Information about a document upload (from AddDocumentFromFile or AddDocumentFromUrl call)
 /// </summary>
 internal class DocumentUploadInfo
 {
     /// <summary>
-    /// File path to upload
+    /// File path to upload (for file-based documents)
     /// </summary>
-    public string FilePath { get; set; } = string.Empty;
+    public string? FilePath { get; set; }
+
+    /// <summary>
+    /// URL to download (for URL-based documents)
+    /// </summary>
+    public string? Url { get; set; }
 
     /// <summary>
     /// Document ID (auto-derived or explicit)
@@ -120,6 +125,27 @@ internal class DocumentUploadInfo
     /// Document description
     /// </summary>
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Source type of the document
+    /// </summary>
+    public DocumentSourceType SourceType { get; set; }
+}
+
+/// <summary>
+/// Type of document source
+/// </summary>
+internal enum DocumentSourceType
+{
+    /// <summary>
+    /// File path-based document (AddDocumentFromFile)
+    /// </summary>
+    FilePath,
+
+    /// <summary>
+    /// URL-based document (AddDocumentFromUrl)
+    /// </summary>
+    Url
 }
 
 /// <summary>

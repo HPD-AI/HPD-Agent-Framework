@@ -383,6 +383,11 @@ internal static class SkillAnalyzer
                     System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Found AddDocumentFromFile() call");
                     ExtractAddDocumentFromFileCall(invocation, semanticModel, options);
                 }
+                else if (methodName == "AddDocumentFromUrl")
+                {
+                    System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer]   Found AddDocumentFromUrl() call");
+                    ExtractAddDocumentFromUrlCall(invocation, semanticModel, options);
+                }
 
                 // Move to the target of the invocation (the thing before the method call)
                 currentExpr = (invocation.Expression as MemberAccessExpressionSyntax)?.Expression;
@@ -465,11 +470,60 @@ internal static class SkillAnalyzer
         {
             FilePath = filePath,
             DocumentId = documentId ?? string.Empty,  // Empty means auto-derive
-            Description = description
+            Description = description,
+            SourceType = DocumentSourceType.FilePath
         };
 
         options.DocumentUploads.Add(uploadInfo);
         System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Added DocumentUpload: {filePath} -> {uploadInfo.DocumentId}");
+    }
+
+    /// <summary>
+    /// Extracts information from AddDocumentFromUrl(url, description, documentId?) call
+    /// </summary>
+    private static void ExtractAddDocumentFromUrlCall(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        SkillOptionsInfo options)
+    {
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] ExtractAddDocumentFromUrlCall() called");
+
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count < 2)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] AddDocumentFromUrl has < 2 args, skipping");
+            return;
+        }
+
+        var url = ExtractStringLiteral(args[0].Expression, semanticModel);
+        var description = ExtractStringLiteral(args[1].Expression, semanticModel);
+
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Extracted: url='{url}', description='{description}'");
+
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(description))
+        {
+            System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] URL or description is empty, skipping");
+            return;
+        }
+
+        string? documentId = null;
+        if (args.Count >= 3)
+        {
+            documentId = ExtractStringLiteral(args[2].Expression, semanticModel);
+        }
+
+        // If documentId not provided, it will be auto-derived at runtime
+        // For source generation, we store the explicit ID if provided
+        var uploadInfo = new DocumentUploadInfo
+        {
+            Url = url,
+            DocumentId = documentId ?? string.Empty,  // Empty means auto-derive
+            Description = description,
+            SourceType = DocumentSourceType.Url
+        };
+
+        options.DocumentUploads.Add(uploadInfo);
+        System.Diagnostics.Debug.WriteLine($"[SkillAnalyzer] Added DocumentUpload (URL): {url} -> {uploadInfo.DocumentId}");
     }
 
     /// <summary>

@@ -635,7 +635,7 @@ public class DocumentHandlingConfig
     /// <summary>
     /// Custom document tag format for message injection.
     /// Uses string.Format with {0} = filename, {1} = extracted text.
-    /// If null, uses default format from DocumentHelper.
+    /// If null, uses default format: "\n\n[ATTACHED_DOCUMENT[{0}]]\n{1}\n[/ATTACHED_DOCUMENT]\n\n"
     /// </summary>
     public string? DocumentTagFormat { get; set; }
 

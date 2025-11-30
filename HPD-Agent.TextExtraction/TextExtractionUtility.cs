@@ -230,6 +230,68 @@ namespace HPD_Agent.TextExtraction
         }
 
         /// <summary>
+        /// Extract text from binary data (e.g., from DataContent in Microsoft.Extensions.AI)
+        /// </summary>
+        /// <param name="data">Binary data to extract text from</param>
+        /// <param name="mimeType">MIME type of the data</param>
+        /// <param name="fileName">Optional file name (used for logging and result)</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <returns>Text extraction result</returns>
+        public async Task<TextExtractionResult> ExtractTextAsync(
+            ReadOnlyMemory<byte> data,
+            string? mimeType = null,
+            string? fileName = null,
+            CancellationToken cancellationToken = default)
+        {
+            var startTime = DateTime.UtcNow;
+            fileName ??= "binary-data";
+            mimeType ??= Models.MimeTypes.PlainText;
+            long fileSize = data.Length;
+
+            _log.LogDebug("Processing binary data ({FileSize} bytes), MIME type: {MimeType}",
+                fileSize, mimeType);
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Get appropriate decoder
+            var decoder = _decoderFactory.GetDecoder(mimeType);
+
+            if (decoder == null)
+            {
+                var errorMsg = $"No decoder found for MIME type '{mimeType}'";
+                _log.LogError(errorMsg);
+                return TextExtractionResult.Failure(fileName, "binary-data", errorMsg);
+            }
+
+            try
+            {
+                _log.LogDebug("Using decoder: {DecoderType}", decoder.GetType().Name);
+
+                // Create a MemoryStream from the binary data
+                using var stream = new MemoryStream(data.ToArray(), writable: false);
+                var fileContent = await decoder.DecodeAsync(stream, cancellationToken);
+
+                var extractedText = ConvertFileContentToString(fileContent);
+                var processingTime = DateTime.UtcNow - startTime;
+
+                _log.LogInformation("Successfully extracted {CharCount} characters from binary data in {ProcessingTime}ms",
+                    extractedText.Length, processingTime.TotalMilliseconds);
+
+                return TextExtractionResult.Success(extractedText, fileName, "binary-data",
+                    processingTime, fileSize, mimeType, fileContent);
+            }
+            catch (Exception ex)
+            {
+                var processingTime = DateTime.UtcNow - startTime;
+                _log.LogError(ex, "Failed to extract text from binary data after {ProcessingTime}ms",
+                    processingTime.TotalMilliseconds);
+
+                return TextExtractionResult.Failure(fileName, "binary-data",
+                    $"Text extraction failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Register a custom decoder
         /// </summary>
         public void RegisterDecoder(IContentDecoder decoder, params string[] mimeTypes)

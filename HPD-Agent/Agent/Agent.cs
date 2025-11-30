@@ -636,8 +636,8 @@ internal sealed class Agent
         var newInputMessages = turn.NewInputMessages;
 
         // NOTE: Document processing is now handled by DocumentHandlingMiddleware
-        // Documents should be attached to messages using ChatMessageDocumentExtensions.WithDocuments()
-        // and processed via middleware pipeline before reaching this point.
+        // Documents should be attached to messages as DataContent, UriContent, or HostedFileContent
+        // and will be processed via middleware pipeline before reaching this point.
 
         // Create linked cancellation token for turn timeout
         using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

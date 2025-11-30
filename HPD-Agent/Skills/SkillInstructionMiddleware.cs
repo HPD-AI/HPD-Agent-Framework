@@ -151,60 +151,34 @@ public class SkillInstructionMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Builds the document section for a skill, showing available documents.
+    /// Internal for testing purposes.
+    /// </summary>
+    internal static string BuildDocumentSectionForTesting(AIFunction skillFunction)
+    {
+        var sb = new StringBuilder();
+        BuildDocumentSection(skillFunction, sb);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the document section for a skill, showing available documents.
     /// </summary>
     private static bool BuildDocumentSection(AIFunction skillFunction, StringBuilder sb)
     {
-        var hasAnyDocuments = false;
-
-        // Check for DocumentUploads
-        if (skillFunction.AdditionalProperties?.TryGetValue("DocumentUploads", out var uploadsObj) == true
-            && uploadsObj is Array uploadsArray && uploadsArray.Length > 0)
+        // Use type-safe SkillDocuments property
+        if (skillFunction is HPDAIFunctionFactory.HPDAIFunction hpdFunction &&
+            hpdFunction.SkillDocuments?.Any() == true)
         {
-            if (!hasAnyDocuments)
+            sb.AppendLine("📚 **Available Documents:**");
+            foreach (var doc in hpdFunction.SkillDocuments)
             {
-                sb.AppendLine("📚 **Available Documents:**");
-                hasAnyDocuments = true;
+                sb.AppendLine($"- {doc.DocumentId}: {doc.Description} ({doc.SourceType})");
             }
-
-            foreach (var upload in uploadsArray)
-            {
-                if (upload is Dictionary<string, string> uploadDict)
-                {
-                    var docId = uploadDict.GetValueOrDefault("DocumentId", "");
-                    var description = uploadDict.GetValueOrDefault("Description", "");
-                    sb.AppendLine($"- {docId}: {description}");
-                }
-            }
-        }
-
-        // Check for DocumentReferences
-        if (skillFunction.AdditionalProperties?.TryGetValue("DocumentReferences", out var refsObj) == true
-            && refsObj is Array refsArray && refsArray.Length > 0)
-        {
-            if (!hasAnyDocuments)
-            {
-                sb.AppendLine("📚 **Available Documents:**");
-                hasAnyDocuments = true;
-            }
-
-            foreach (var reference in refsArray)
-            {
-                if (reference is Dictionary<string, string?> refDict)
-                {
-                    var docId = refDict.GetValueOrDefault("DocumentId", "");
-                    var description = refDict.GetValueOrDefault("DescriptionOverride")
-                        ?? "[Use read_skill_document to view]";
-                    sb.AppendLine($"- {docId}: {description}");
-                }
-            }
-        }
-
-        if (hasAnyDocuments)
-        {
             sb.AppendLine();
             sb.AppendLine("Use `read_skill_document(documentId)` to retrieve document content.");
+            return true;
         }
 
-        return hasAnyDocuments;
+        return false;
     }
 }

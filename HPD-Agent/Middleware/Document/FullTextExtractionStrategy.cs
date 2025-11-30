@@ -5,9 +5,12 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent.Middleware.Document;
 
 /// <summary>
-/// Extracts full text from documents and injects into user message.
-/// This is the default document handling strategy (current behavior).
-/// Uses DocumentHelper for text extraction and formatting.
+/// Extracts full text from document contents and replaces them with TextContent.
+/// This is the default document handling strategy.
+/// 
+/// Supports DataContent (binary data), UriContent (URLs), and HostedFileContent from
+/// Microsoft.Extensions.AI. Documents are extracted using TextExtractionUtility and
+/// replaced with TextContent formatted with document tags for LLM processing.
 /// </summary>
 public class FullTextExtractionStrategy : IDocumentStrategy
 {
@@ -23,86 +26,142 @@ public class FullTextExtractionStrategy : IDocumentStrategy
     }
 
     /// <summary>
-    /// Process documents by extracting text and injecting into the last user message.
+    /// Process document contents by extracting text and replacing with TextContent.
     /// </summary>
     public async Task ProcessDocumentsAsync(
         AgentMiddlewareContext context,
-        IEnumerable<string> documentPaths,
+        IEnumerable<AIContent> documentContents,
         DocumentHandlingOptions options,
         CancellationToken cancellationToken)
     {
-        var paths = documentPaths.ToArray();
-        if (paths.Length == 0)
+        var contents = documentContents.ToArray();
+        if (contents.Length == 0)
             return;
 
-        // Process uploads using DocumentHelper
-        var uploads = await DocumentHelper.ProcessUploadsAsync(
-            paths,
-            _extractor,
-            cancellationToken);
-
-        // Inject into last user message
-        InjectDocumentsIntoMessages(context, uploads, options.CustomTagFormat);
+        // Process each message to replace document content with extracted text
+        await ReplaceDocumentContentsWithTextAsync(context, contents, options, cancellationToken);
     }
 
     /// <summary>
-    /// Inject document content into the last user message in context.
-    /// This is the logic extracted from Agent.cs ModifyLastUserMessageWithDocuments.
+    /// Replace DataContent and UriContent with TextContent containing extracted text.
     /// </summary>
-    private void InjectDocumentsIntoMessages(
+    private async Task ReplaceDocumentContentsWithTextAsync(
         AgentMiddlewareContext context,
-        DocumentUpload[] uploads,
-        string? customTagFormat)
+        AIContent[] documentContents,
+        DocumentHandlingOptions options,
+        CancellationToken cancellationToken)
     {
-        if (context.Messages == null || !context.Messages.Any() || uploads.Length == 0)
+        if (context.Messages == null || !context.Messages.Any())
             return;
 
         var messagesList = context.Messages.ToList();
 
-        // Find the last user message
-        var lastUserMessageIndex = -1;
-        for (int i = messagesList.Count - 1; i >= 0; i--)
+        for (int msgIndex = 0; msgIndex < messagesList.Count; msgIndex++)
         {
-            if (messagesList[i].Role == ChatRole.User)
+            var message = messagesList[msgIndex];
+            var newContents = new List<AIContent>();
+            bool modified = false;
+
+            foreach (var content in message.Contents)
             {
-                lastUserMessageIndex = i;
-                break;
+                if (content is DataContent dataContent)
+                {
+                    // Extract text from DataContent
+                    var extractedText = await ExtractTextFromDataContentAsync(dataContent, cancellationToken);
+                    if (!string.IsNullOrEmpty(extractedText))
+                    {
+                        // Replace DataContent with TextContent
+                        newContents.Add(new TextContent(FormatExtractedText(dataContent.Name, extractedText, options.CustomTagFormat)));
+                        modified = true;
+                        continue;
+                    }
+                }
+                else if (content is UriContent uriContent)
+                {
+                    // Download and extract text from URI
+                    var extractedText = await ExtractTextFromUriAsync(uriContent, cancellationToken);
+                    if (!string.IsNullOrEmpty(extractedText))
+                    {
+                        newContents.Add(new TextContent(FormatExtractedText(uriContent.Uri.ToString(), extractedText, options.CustomTagFormat)));
+                        modified = true;
+                        continue;
+                    }
+                }
+                
+                // Keep all other content as-is (TextContent, FunctionCallContent, HostedFileContent, etc.)
+                newContents.Add(content);
+            }
+
+            if (modified)
+            {
+                // Create new message with replaced contents
+                var newMessage = new ChatMessage(message.Role, newContents);
+                if (message.AdditionalProperties != null)
+                {
+                    newMessage.AdditionalProperties = new AdditionalPropertiesDictionary(message.AdditionalProperties);
+                }
+                if (message.AuthorName != null)
+                {
+                    newMessage.AuthorName = message.AuthorName;
+                }
+                messagesList[msgIndex] = newMessage;
             }
         }
 
-        if (lastUserMessageIndex == -1)
-            return;
-
-        var lastUserMessage = messagesList[lastUserMessageIndex];
-        
-        // Extract text from message (handles multiple TextContent items)
-        var originalText = string.IsNullOrEmpty(lastUserMessage.Text) 
-            ? string.Join(" ", lastUserMessage.Contents
-                .OfType<TextContent>()
-                .Where(t => !string.IsNullOrEmpty(t.Text))
-                .Select(t => t.Text))
-            : lastUserMessage.Text;
-
-        // Format message with documents using DocumentHelper
-        var formattedMessage = DocumentHelper.FormatMessageWithDocuments(
-            originalText, uploads, customTagFormat);
-
-        // Append document content to existing contents instead of replacing
-        // This preserves images, audio, and other non-text content
-        var newContents = lastUserMessage.Contents.ToList();
-        newContents.Add(new TextContent(formattedMessage));
-
-        // Preserve AdditionalProperties if present
-        var newMessage = new ChatMessage(ChatRole.User, newContents);
-        if (lastUserMessage.AdditionalProperties != null)
-        {
-            newMessage.AdditionalProperties = new AdditionalPropertiesDictionary(lastUserMessage.AdditionalProperties);
-        }
-
-        messagesList[lastUserMessageIndex] = newMessage;
-
-        // Update context messages
         context.Messages = messagesList;
+    }
+
+    /// <summary>
+    /// Extract text from DataContent using TextExtractionUtility.
+    /// </summary>
+    private async Task<string> ExtractTextFromDataContentAsync(DataContent dataContent, CancellationToken cancellationToken)
+    {
+        if (dataContent.Data.IsEmpty)
+            return string.Empty;
+
+        try
+        {
+            var result = await _extractor.ExtractTextAsync(
+                dataContent.Data,
+                dataContent.MediaType,
+                dataContent.Name,
+                cancellationToken);
+            
+            return result.ExtractedText ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Download and extract text from UriContent.
+    /// </summary>
+    private async Task<string> ExtractTextFromUriAsync(UriContent uriContent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _extractor.ExtractTextAsync(
+                uriContent.Uri.ToString(),
+                cancellationToken);
+            
+            return result.ExtractedText ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Format extracted text with document tags.
+    /// </summary>
+    private static string FormatExtractedText(string? documentName, string extractedText, string? customTagFormat)
+    {
+        const string DefaultDocumentTagFormat = "\n\n[ATTACHED_DOCUMENT[{0}]]\n{1}\n[/ATTACHED_DOCUMENT]\n\n";
+        var format = customTagFormat ?? DefaultDocumentTagFormat;
+        return string.Format(format, documentName ?? "document", extractedText);
     }
 
 }

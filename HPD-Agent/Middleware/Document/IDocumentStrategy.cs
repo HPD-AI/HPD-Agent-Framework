@@ -1,4 +1,5 @@
 using HPD.Agent.Middleware;
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Middleware.Document;
 
@@ -9,16 +10,16 @@ namespace HPD.Agent.Middleware.Document;
 public interface IDocumentStrategy
 {
     /// <summary>
-    /// Process documents and modify agent context accordingly.
+    /// Process document contents (DataContent, UriContent, HostedFileContent) and modify agent context accordingly.
     /// </summary>
     /// <param name="context">Agent middleware context to modify</param>
-    /// <param name="documentPaths">Paths to documents to process</param>
+    /// <param name="documentContents">Document contents to process (DataContent, UriContent, or HostedFileContent)</param>
     /// <param name="options">Document handling options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Task representing the async operation</returns>
     Task ProcessDocumentsAsync(
         AgentMiddlewareContext context,
-        IEnumerable<string> documentPaths,
+        IEnumerable<AIContent> documentContents,
         DocumentHandlingOptions options,
         CancellationToken cancellationToken);
 }

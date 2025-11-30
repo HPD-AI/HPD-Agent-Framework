@@ -89,10 +89,77 @@ public class SkillOptions
         return this;
     }
 
+    /// <summary>
+    /// Upload a document directly from URL.
+    /// Document is automatically downloaded and extracted at skill activation.
+    /// TextExtractionUtility handles the download and text extraction.
+    /// </summary>
+    /// <param name="url">URL to document (must be http or https)</param>
+    /// <param name="description">
+    /// Document description (REQUIRED).
+    /// This description helps the agent understand what the document contains and decide whether to read it.
+    /// Be specific about the content (e.g., "Company policy documentation" instead of just "Policy").
+    /// </param>
+    /// <param name="documentId">Document ID (optional, auto-derived from URL if null)</param>
+    /// <exception cref="ArgumentException">Thrown if url or description is empty</exception>
+    public SkillOptions AddDocumentFromUrl(
+        string url,
+        string description,
+        string? documentId = null)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("URL cannot be empty.", nameof(url));
+
+        if (string.IsNullOrWhiteSpace(description))
+            throw new ArgumentException(
+                "Description is required when uploading documents. " +
+                "It helps the agent understand what the document contains and decide whether to read it.",
+                nameof(description));
+
+        // Validate URL format
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new ArgumentException(
+                "URL must be a valid HTTP or HTTPS URL.",
+                nameof(url));
+        }
+
+        // Auto-derive document ID from URL if not provided
+        var effectiveDocumentId = documentId ?? DeriveDocumentIdFromUrl(url);
+
+        DocumentUploads.Add(new DocumentUpload
+        {
+            Url = url,
+            DocumentId = effectiveDocumentId,
+            Description = description
+        });
+
+        return this;
+    }
+
     private static string DeriveDocumentId(string filePath)
     {
         // "./docs/debugging-workflow.md" -> "debugging-workflow"
         var fileName = Path.GetFileNameWithoutExtension(filePath);
+
+        // Normalize to lowercase-kebab-case
+        return fileName.ToLowerInvariant()
+            .Replace(" ", "-")
+            .Replace("_", "-");
+    }
+
+    private static string DeriveDocumentIdFromUrl(string url)
+    {
+        // "https://docs.company.com/sops/financial-health.md" -> "financial-health"
+        var uri = new Uri(url);
+        var fileName = Path.GetFileNameWithoutExtension(uri.LocalPath);
+
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            // If no filename, use host: "https://example.com" -> "example-com"
+            fileName = uri.Host.Replace(".", "-");
+        }
 
         // Normalize to lowercase-kebab-case
         return fileName.ToLowerInvariant()
@@ -111,11 +178,72 @@ public record DocumentReference
 }
 
 /// <summary>
-/// Document to be uploaded from file path at application startup
+/// Document to be uploaded from file path or URL at application startup
 /// </summary>
 public record DocumentUpload
 {
-    public required string FilePath { get; init; }
+    /// <summary>
+    /// File path (for file-based documents). Mutually exclusive with Url.
+    /// </summary>
+    public string? FilePath { get; init; }
+
+    /// <summary>
+    /// URL (for URL-based documents). Mutually exclusive with FilePath.
+    /// </summary>
+    public string? Url { get; init; }
+
     public required string DocumentId { get; init; }
     public required string Description { get; init; }
+
+    /// <summary>
+    /// Returns true if this is a file-based document
+    /// </summary>
+    public bool IsFilePath => FilePath != null;
+
+    /// <summary>
+    /// Returns true if this is a URL-based document
+    /// </summary>
+    public bool IsUrl => Url != null;
+}
+
+/// <summary>
+/// Type-safe document content for a skill.
+/// Replaces dictionary-based document storage with proper typed properties.
+/// </summary>
+public record SkillDocumentContent
+{
+    /// <summary>
+    /// Unique identifier for the document
+    /// </summary>
+    public required string DocumentId { get; init; }
+
+    /// <summary>
+    /// Human-readable description of the document's content and purpose
+    /// </summary>
+    public required string Description { get; init; }
+
+    /// <summary>
+    /// File path (for file-based documents). Mutually exclusive with Url.
+    /// </summary>
+    public string? FilePath { get; init; }
+
+    /// <summary>
+    /// URL (for URL-based documents). Mutually exclusive with FilePath.
+    /// </summary>
+    public string? Url { get; init; }
+
+    /// <summary>
+    /// Returns true if this is a file-based document
+    /// </summary>
+    public bool IsFilePath => FilePath != null;
+
+    /// <summary>
+    /// Returns true if this is a URL-based document
+    /// </summary>
+    public bool IsUrl => Url != null;
+
+    /// <summary>
+    /// Gets the source type for display purposes
+    /// </summary>
+    public string SourceType => IsUrl ? "🔗 URL" : "📄 File";
 }

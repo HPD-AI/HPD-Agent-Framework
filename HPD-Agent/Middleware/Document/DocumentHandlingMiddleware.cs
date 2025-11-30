@@ -1,18 +1,31 @@
 using HPD.Agent.Middleware;
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Middleware.Document;
 
 /// <summary>
-/// Middleware for handling document attachments in user messages.
-/// Extracts, processes, and injects document content based on strategy.
+/// Middleware for handling document attachments using Microsoft.Extensions.AI content types.
+/// Detects DataContent, UriContent, and HostedFileContent in messages and processes them
+/// according to the provided strategy (typically extracting text and converting to TextContent).
 ///
-/// Usage:
+/// Usage with AgentBuilder extensions (recommended):
 /// <code>
 /// var agent = new AgentBuilder()
-///     .WithMiddleware(new DocumentHandlingMiddleware(
-///         new FullTextExtractionStrategy(textExtractor),
-///         new DocumentHandlingOptions { CustomTagFormat = "[DOC[{0}]]" }
-///     ))
+///     .WithChatClient(client)
+///     .WithDocumentHandling() // Uses default full-text extraction
+///     .Build();
+/// </code>
+///
+/// Direct usage:
+/// <code>
+/// var extractor = new TextExtractionUtility();
+/// var strategy = new FullTextExtractionStrategy(extractor);
+/// var middleware = new DocumentHandlingMiddleware(strategy,
+///     new DocumentHandlingOptions { CustomTagFormat = "[DOC[{0}]]\n{1}\n[/DOC]" });
+/// 
+/// var agent = new AgentBuilder()
+///     .WithChatClient(client)
+///     .WithMiddleware(middleware)
 ///     .Build();
 /// </code>
 /// </summary>
@@ -36,31 +49,35 @@ public class DocumentHandlingMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Called before processing a user message turn.
-    /// Checks for document paths in context and processes them if present.
+    /// Checks for DataContent, UriContent, or HostedFileContent in messages and processes them if present.
     /// </summary>
     public async Task BeforeMessageTurnAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
-        // Extract document paths from context
-        var documentPaths = ExtractDocumentPaths(context);
-        if (!documentPaths.Any())
+        // Extract document content from all messages
+        var documentContents = ExtractDocumentContents(context);
+        if (!documentContents.Any())
             return;
 
         // Process documents using strategy
         await _strategy.ProcessDocumentsAsync(
             context,
-            documentPaths,
+            documentContents,
             _options,
             cancellationToken);
     }
 
     /// <summary>
-    /// Extract document paths from the agent middleware context.
-    /// Uses ChatMessageDocumentExtensions.GetDocumentPaths() to retrieve attached paths.
+    /// Extract document content from messages (DataContent, UriContent, HostedFileContent).
     /// </summary>
-    private IEnumerable<string> ExtractDocumentPaths(AgentMiddlewareContext context)
+    private IEnumerable<AIContent> ExtractDocumentContents(AgentMiddlewareContext context)
     {
-        return context.UserMessage?.GetDocumentPaths() ?? Enumerable.Empty<string>();
+        if (context.Messages == null)
+            return Enumerable.Empty<AIContent>();
+
+        return context.Messages
+            .SelectMany(m => m.Contents)
+            .Where(c => c is DataContent || c is UriContent || c is HostedFileContent);
     }
 }

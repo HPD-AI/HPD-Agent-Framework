@@ -53,6 +53,12 @@ public class HPDAIFunctionFactory
         public override string Description { get; }
         public override JsonElement JsonSchema { get; }
         public override MethodInfo? UnderlyingMethod => _method;
+
+        /// <summary>
+        /// Type-safe skill documents (Phase 2 - Native Content Types)
+        /// </summary>
+        public SkillDocumentContent[]? SkillDocuments => HPDOptions.SkillDocuments;
+
         public override IReadOnlyDictionary<string, object?> AdditionalProperties
         {
             get
@@ -152,6 +158,9 @@ public class HPDAIFunctionFactoryOptions
     public Func<JsonElement, List<ValidationError>>? Validator { get; set; }
 
     public Func<JsonElement>? SchemaProvider { get; set; }
+
+    // Type-safe skill documents (Phase 2 - Native Content Types)
+    public SkillDocumentContent[]? SkillDocuments { get; set; }
 
     // Additional metadata properties for plugin scoping and other features
     public Dictionary<string, object?>? AdditionalProperties { get; set; }

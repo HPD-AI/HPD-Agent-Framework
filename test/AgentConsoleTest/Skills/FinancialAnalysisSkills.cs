@@ -249,4 +249,27 @@ For interpretation: read_skill_document('04-commonsizebalancesheet-sop')",
             "FinancialAnalysisPlugin.EquityToTotalAssetsPercentage"
         );
     }
+
+    /// <summary>
+    /// URL Document Test Skill - Tests URL document support
+    /// </summary>
+    [Skill]
+    public Skill UrlDocumentTest(SkillOptions? options = null)
+    {
+        return SkillFactory.Create(
+            name: "UrlDocumentTest",
+            description: "Test skill demonstrating URL document support",
+            instructions: @"
+This skill demonstrates the new URL document feature.
+The documentation is loaded from a URL instead of a local file.
+
+Check the available documents to see URL-based documents marked with 🔗 URL indicator.",
+            options: new SkillOptions()
+                .AddDocumentFromUrl(
+                    "https://raw.githubusercontent.com/microsoft/semantic-kernel/main/README.md",
+                    "Semantic Kernel README for reference",
+                    documentId: "semantic-kernel-readme"),
+            "FinancialAnalysisPlugin.CalculateCurrentRatio"
+        );
+    }
 }
