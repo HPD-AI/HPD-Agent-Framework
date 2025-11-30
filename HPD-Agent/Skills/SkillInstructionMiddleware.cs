@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
@@ -56,7 +57,8 @@ public class SkillInstructionMiddleware : IAgentMiddleware
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
-        var activeSkills = context.State.ActiveSkillInstructions;
+        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
+        var activeSkills = scopingState.ActiveSkillInstructions;
 
         if (activeSkills.Any() && context.Options != null)
         {
@@ -82,19 +84,27 @@ public class SkillInstructionMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Called AFTER all tools complete for this iteration.
-    /// Detects final iteration and signals cleanup.
+    /// Clears active skill instructions on final iteration to prevent leakage across message turns.
     /// </summary>
     public Task AfterIterationAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
-        var activeSkills = context.State.ActiveSkillInstructions;
+        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
+        var activeSkills = scopingState.ActiveSkillInstructions;
 
-        // If this is the final iteration (no tool calls), mark skills for cleanup
-        // The agent loop will clear ActiveSkillInstructions between message turns
+        // If this is the final iteration (no tool calls), clear active skill instructions
+        // This ensures skills don't leak across message turns
         if (context.IsFinalIteration && activeSkills.Any())
         {
-            context.Properties["ShouldClearActiveSkills"] = true;
+            var updatedScoping = scopingState with
+            {
+                ActiveSkillInstructions = ImmutableDictionary<string, string>.Empty
+            };
+            context.UpdateState(s => s with
+            {
+                MiddlewareState = s.MiddlewareState.WithScoping(updatedScoping)
+            });
         }
 
         return Task.CompletedTask;

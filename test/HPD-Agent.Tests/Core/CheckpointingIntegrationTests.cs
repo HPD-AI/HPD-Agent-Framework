@@ -98,13 +98,16 @@ public class CheckpointingIntegrationTests : AgentTestBase
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
+        var scopingState = new ScopingStateData().WithExpandedPlugin("TestPlugin");
         var state = AgentLoopState.Initial(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
             "TestAgent")
-            .NextIteration()
-            .WithExpandedPlugin("TestPlugin");
+            .NextIteration() with
+            {
+                MiddlewareState = new MiddlewareStateContainer().WithScoping(scopingState)
+            };
         thread.ExecutionState = state;
         await checkpointer.SaveThreadAsync(thread);
 

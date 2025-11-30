@@ -82,10 +82,13 @@ public class SkillInstructionMiddlewareTests
         // Act
         await middleware.AfterIterationAsync(context, CancellationToken.None);
 
-        // Assert
+        // Assert - Check that middleware updated state to clear active skills
         Assert.True(context.IsFinalIteration);
-        Assert.True(context.Properties.ContainsKey("ShouldClearActiveSkills"));
-        Assert.Equal(true, context.Properties["ShouldClearActiveSkills"]);
+        var pendingState = context.GetPendingState();
+        Assert.NotNull(pendingState);
+        var scopingState = pendingState!.MiddlewareState.Scoping;
+        Assert.NotNull(scopingState);
+        Assert.Empty(scopingState!.ActiveSkillInstructions);
     }
 
     [Fact]
@@ -167,8 +170,12 @@ public class SkillInstructionMiddlewareTests
         // Act - After phase
         await middleware.AfterIterationAsync(context, CancellationToken.None);
 
-        // Assert - Signal set
-        Assert.True(context.Properties.ContainsKey("ShouldClearActiveSkills"));
+        // Assert - State updated to clear skills
+        var pendingState = context.GetPendingState();
+        Assert.NotNull(pendingState);
+        var scopingState = pendingState!.MiddlewareState.Scoping;
+        Assert.NotNull(scopingState);
+        Assert.Empty(scopingState!.ActiveSkillInstructions);
     }
 
     [Fact]
@@ -199,7 +206,8 @@ public class SkillInstructionMiddlewareTests
             agentName: "TestAgent")
             with
             {
-                ActiveSkillInstructions = activeSkills
+                MiddlewareState = new MiddlewareStateContainer().WithScoping(
+                    new ScopingStateData { ActiveSkillInstructions = activeSkills })
             };
 
         var context = new AgentMiddlewareContext
@@ -208,6 +216,7 @@ public class SkillInstructionMiddlewareTests
             ConversationId = "test-conv-id",
             Messages = new List<ChatMessage>(),
             Options = new ChatOptions { Instructions = "Base instructions" },
+            ToolCalls = Array.Empty<FunctionCallContent>(), // Initialize to empty array
             Iteration = 0,
             CancellationToken = CancellationToken.None
         };

@@ -28,8 +28,7 @@ public class CheckpointingTests : AgentTestBase
             AssistantMessage("Hi there!")
         };
         var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
-            .NextIteration()
-            .WithExpandedPlugin("TestPlugin");
+            .NextIteration();
 
         // Act: Serialize to JSON
         var json = state.Serialize();
@@ -59,9 +58,7 @@ public class CheckpointingTests : AgentTestBase
         };
         var originalState = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
             .NextIteration()
-            .NextIteration()
-            .WithExpandedPlugin("PluginA")
-            .WithExpandedPlugin("PluginB");
+            .NextIteration();
 
         var json = originalState.Serialize();
 
@@ -74,7 +71,6 @@ public class CheckpointingTests : AgentTestBase
         Assert.Equal(originalState.ConversationId, restoredState.ConversationId);
         Assert.Equal(originalState.AgentName, restoredState.AgentName);
         Assert.Equal(originalState.CurrentMessages.Count, restoredState.CurrentMessages.Count);
-        Assert.Equal(originalState.expandedScopedPluginContainers.Count, restoredState.expandedScopedPluginContainers.Count);
         Assert.NotNull(restoredState.ETag);
     }
 
@@ -318,7 +314,7 @@ public class CheckpointingTests : AgentTestBase
         thread.ExecutionState = state1;
         await checkpointer.SaveThreadAsync(thread);
 
-        var state2 = state1.NextIteration().WithExpandedPlugin("PluginA");
+        var state2 = state1.NextIteration();
         thread.ExecutionState = state2;
         await checkpointer.SaveThreadAsync(thread);
 
@@ -333,7 +329,8 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(loadedThread);
         Assert.NotNull(loadedThread.ExecutionState);
         Assert.Equal(0, loadedThread.ExecutionState.Iteration);
-        Assert.Empty(loadedThread.ExecutionState.expandedScopedPluginContainers);
+        var scopingState = loadedThread.ExecutionState.MiddlewareState.Scoping;
+        Assert.True(scopingState == null || scopingState.ExpandedPlugins.Count == 0);
     }
 
     [Fact]
@@ -466,10 +463,13 @@ public class CheckpointingTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Hello"));
         await thread.AddMessageAsync(AssistantMessage("Hi"));
 
+        var scopingState = new ScopingStateData().WithExpandedPlugin("TestPlugin");
         var originalState = AgentLoopState.Initial(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent")
-            .NextIteration()
-            .WithExpandedPlugin("TestPlugin");
+            .NextIteration() with
+            {
+                MiddlewareState = new MiddlewareStateContainer().WithScoping(scopingState)
+            };
         thread.ExecutionState = originalState;
 
         // Serialize
@@ -484,7 +484,8 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(restoredThread.ExecutionState);
         Assert.Equal(originalState.Iteration, restoredThread.ExecutionState.Iteration);
         Assert.Equal(originalState.AgentName, restoredThread.ExecutionState.AgentName);
-        Assert.Equal(originalState.expandedScopedPluginContainers.Count, restoredThread.ExecutionState.expandedScopedPluginContainers.Count);
+        var restoredScoping = restoredThread.ExecutionState.MiddlewareState.Scoping;
+        Assert.Equal(1, restoredScoping?.ExpandedPlugins.Count ?? 0);
     }
 
     // ═══════════════════════════════════════════════════════

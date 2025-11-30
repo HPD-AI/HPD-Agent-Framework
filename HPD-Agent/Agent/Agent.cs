@@ -12,7 +12,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.Conversation.Checkpointing;
-using HPD_Agent.Scoping;
 
 namespace HPD.Agent;
 
@@ -84,7 +83,6 @@ internal sealed class Agent
     private readonly MessageProcessor _messageProcessor;
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
-    private readonly ToolVisibilityManager _scopingManager;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
 
     // Unified middleware pipeline
@@ -345,17 +343,9 @@ internal sealed class Agent
             config.ChatClientMiddleware,
             serviceProvider);
 
-        // Initialize unified scoping manager (without deprecated SkillDefinitions)
-        var initialTools = (mergedOptions ?? config.Provider?.DefaultChatOptions)?.Tools?
-            .OfType<AIFunction>().ToList() ?? new List<AIFunction>();
-
-        // Get explicitly registered plugins from config
-        var explicitlyRegisteredPlugins = config.ExplicitlyRegisteredPlugins ??
-            ImmutableHashSet<string>.Empty;
-
-        _scopingManager = new ToolVisibilityManager(
-            initialTools,
-            explicitlyRegisteredPlugins);
+        // NOTE: Tool scoping is now fully handled by ToolScopingMiddleware (Phase 1 complete)
+        // The middleware creates its own ToolVisibilityManager and is auto-registered in AgentBuilder
+        // when config.Scoping.Enabled == true. Agent.cs no longer has any scoping logic.
 
         // ToolScheduler removed - FunctionCallProcessor now handles all tool execution
 
@@ -819,9 +809,6 @@ internal sealed class Agent
 
             ChatResponse? lastResponse = null;
 
-            // Track expanded plugins/skills (message-turn scoped)
-            // Note: These are now tracked in state.expandedScopedPluginContainers and state.ExpandedSkillContainers
-
             // Collect all response updates to build final history
             var responseUpdates = new List<ChatResponseUpdate>();
 
@@ -829,6 +816,37 @@ internal sealed class Agent
             // OBSERVABILITY: Start telemetry and logging
             // ═══════════════════════════════════════════════════════
             var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            // ═══════════════════════════════════════════════════════
+            // INITIALIZE TURN CONTEXT (turn-scoped, for BeforeMessageTurn/AfterMessageTurn hooks)
+            // ═══════════════════════════════════════════════════════
+            var turnContext = new AgentMiddlewareContext
+            {
+                AgentName = _name,
+                ConversationId = conversationId,
+                EventCoordinator = _eventCoordinator,
+                CancellationToken = effectiveCancellationToken
+            };
+            turnContext.SetOriginalState(state);
+
+            // ═══════════════════════════════════════════════════════
+            // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
+            // ═══════════════════════════════════════════════════════
+            turnContext.UserMessage = newInputMessages.FirstOrDefault();
+            turnContext.ConversationHistory = effectiveMessages.ToList();
+            
+            await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(turnContext, effectiveCancellationToken);
+            
+            // Apply any pending state updates from middleware
+            if (turnContext.HasPendingStateUpdates)
+            {
+                state = turnContext.GetPendingState()!;
+                turnContext.SetOriginalState(state);
+            }
+            
+            // Drain middleware events
+            while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                yield return middlewareEvt;
 
 
             // ═══════════════════════════════════════════════════════
@@ -879,8 +897,6 @@ internal sealed class Agent
                     CurrentMessageCount: state.CurrentMessages.Count,
                     HistoryMessageCount: 0, // History is part of CurrentMessages
                     TurnHistoryMessageCount: state.TurnHistory.Count,
-                    ExpandedPluginsCount: state.expandedScopedPluginContainers.Count,
-                    ExpandedSkillsCount: state.ExpandedSkillContainers.Count,
                     CompletedFunctionsCount: state.CompletedFunctions.Count,
                     Timestamp: DateTimeOffset.UtcNow);
 
@@ -890,7 +906,6 @@ internal sealed class Agent
                     DecisionType: decision.GetType().Name,
                     Iteration: state.Iteration,
                     ConsecutiveFailures: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
-                    ExpandedPluginsCount: state.expandedScopedPluginContainers.Count,
                     CompletedFunctionsCount: state.CompletedFunctions.Count,
                     Timestamp: DateTimeOffset.UtcNow);
 
@@ -964,27 +979,10 @@ internal sealed class Agent
                         messageCountToSend = state.CurrentMessages.Count;
                     }
 
-                    // Apply plugin scoping if enabled
+                    // Note: Tool scoping is now handled by ToolScopingMiddleware in BeforeIterationAsync
+                    // The middleware will filter tools and emit ScopedToolsVisibleEvent
                     var scopedOptions = effectiveOptions;
-                    if (Config?.Scoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
-                    {
-                        scopedOptions = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
-
-                        // Emit scoped tools visible event
-                        if (scopedOptions?.Tools != null)
-                        {
-                            var visibleToolNames = scopedOptions.Tools.Select(t => t.Name).ToList();
-                            yield return new ScopedToolsVisibleEvent(
-                                _name,
-                                state.Iteration,
-                                visibleToolNames,
-                                state.expandedScopedPluginContainers,
-                                state.ExpandedSkillContainers,
-                                visibleToolNames.Count,
-                                DateTimeOffset.UtcNow);
-                        }
-                    }
-                    else if (state.InnerClientTracksHistory && scopedOptions != null && scopedOptions.ConversationId != thread?.ConversationId)
+                    if (state.InnerClientTracksHistory && scopedOptions != null && scopedOptions.ConversationId != thread?.ConversationId)
                     {
                         scopedOptions = new ChatOptions
                         {
@@ -1296,12 +1294,9 @@ internal sealed class Agent
                         // TOOL EXECUTION (Inline - NOT via decision engine)
                         // ═══════════════════════════════════════════════════════
 
-                        // Apply plugin scoping if enabled
-                        var effectiveOptionsForTools = effectiveOptions;
-                        if (Config?.Scoping?.Enabled == true && effectiveOptions?.Tools != null && effectiveOptions.Tools.Count > 0)
-                        {
-                            effectiveOptionsForTools = ApplyPluginScoping(effectiveOptions, state.expandedScopedPluginContainers, state.ExpandedSkillContainers);
-                        }
+                        // Note: Tool scoping is handled by ToolScopingMiddleware in BeforeIterationAsync
+                        // At this point, middlewareContext.Options already has scoped tools
+                        var effectiveOptionsForTools = middlewareContext.Options ?? effectiveOptions;
 
                         // Yield Middleware events before tool execution
                         while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
@@ -1366,9 +1361,6 @@ internal sealed class Agent
 
                         // Extract structured results from ToolExecutionResult
                         var toolResultMessage = executionResult.Message;
-                        var pluginExpansions = executionResult.PluginExpansions;
-                        var skillExpansions = executionResult.SkillExpansions;
-                        var skillInstructions = executionResult.SkillInstructions;
                         var successfulFunctions = executionResult.SuccessfulFunctions;
 
                         // Final drain
@@ -1420,26 +1412,9 @@ internal sealed class Agent
                         // and Properties["ShouldResetFailures"], processed by ProcessIterationMiddleWareSignals.
                         // This provides configurable error detection and is registered via WithErrorTracking().
 
-                        // ═══════════════════════════════════════════════════════
-                        // UPDATE STATE WITH CONTAINER EXPANSIONS
-                        // ═══════════════════════════════════════════════════════
-                        foreach (var pluginName in pluginExpansions)
-                        {
-                            state = state.WithExpandedPlugin(pluginName);
-                        }
-                        foreach (var skillName in skillExpansions)
-                        {
-                            state = state.WithExpandedSkill(skillName);
-                        }
-
-                        // Accumulate skill instructions in state (for prompt Middleware)
-                        foreach (var (skillName, instructions) in skillInstructions)
-                        {
-                            state = state with
-                            {
-                                ActiveSkillInstructions = state.ActiveSkillInstructions.SetItem(skillName, instructions)
-                            };
-                        }
+                        // NOTE: Container expansion state updates are handled by ToolScopingMiddleware
+                        // which runs in AfterIterationAsync. The middleware updates MiddlewareState.Scoping.
+                        // State changes flow back via ProcessIterationMiddleWareSignals.
 
                         // ═══════════════════════════════════════════════════════
                         // UPDATE STATE WITH COMPLETED FUNCTIONS  
@@ -1452,28 +1427,18 @@ internal sealed class Agent
 
 
                         // ═══════════════════════════════════════════════════════
-                        // Middleware CONTAINER EXPANSIONS FOR PERSISTENCE
-                        // Container expansion results are temporary (turn-scoped only)
-                        // They should NOT be saved to persistent history or thread storage
-                        // BUT they MUST be visible to the LLM within the current turn
+                        // ADD RESULTS TO MESSAGE LISTS
                         // ═══════════════════════════════════════════════════════
-                        var nonContainerResults = MiddlewareContainerResults(
-                            toolResultMessage.Contents,
-                            toolRequests,
-                            effectiveOptionsForTools);
-
-                        // ✅ ALWAYS add unMiddlewareed results to currentMessages (LLM needs to see container expansions)
+                        
+                        // ✅ ALWAYS add unfiltered results to currentMessages (LLM needs to see container expansions)
                         currentMessages.Add(toolResultMessage);
 
-                        // ✅ Only add Middlewareed results to turnHistory (for persistence - exclude containers)
-                        if (nonContainerResults.Count > 0)
-                        {
-                            var MiddlewareedMessage = new ChatMessage(ChatRole.Tool, nonContainerResults);
-                            turnHistory.Add(MiddlewareedMessage);
-                        }
+                        // ✅ Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
+                        // ToolScopingMiddleware marks container results as ephemeral and filters them before persistence
+                        turnHistory.Add(toolResultMessage);
 
-                        // Note: turnHistory does NOT include container results
-                        // This ensures container expansions don't pollute persistent thread storage
+                        // Note: Ephemeral filtering is handled by ToolScopingMiddleware.AfterMessageTurnAsync
+                        // Container expansions are visible to LLM but filtered from persistent thread storage
 
                         // ═══════════════════════════════════════════════════════
                         // EMIT TOOL RESULT EVENTS
@@ -1810,6 +1775,22 @@ internal sealed class Agent
             }
 
             // ═══════════════════════════════════════════════════════
+            // MIDDLEWARE: AfterMessageTurnAsync (turn-level hook)
+            // ═══════════════════════════════════════════════════════
+            turnContext.FinalResponse = lastResponse;
+            turnContext.TurnHistory = turnHistory;
+            
+            // Execute AfterMessageTurnAsync in REVERSE order (stack unwinding)
+            await _middlewarePipeline.ExecuteAfterMessageTurnAsync(turnContext, effectiveCancellationToken);
+            
+            // Middleware may have modified turnHistory (e.g., filtered ephemeral messages)
+            // Use the modified list for persistence
+            
+            // Drain middleware events
+            while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                yield return middlewareEvt;
+
+            // ═══════════════════════════════════════════════════════
             // PERSISTENCE: Save complete turn history to thread
             // ═══════════════════════════════════════════════════════
             if (thread != null && turnHistory.Count > 0)
@@ -1818,6 +1799,7 @@ internal sealed class Agent
                 {
                     // Save ALL messages from this turn (user + assistant + tool)
                     // Input messages were added to turnHistory at the start of execution
+                    // Middleware may have filtered this list (e.g., removed ephemeral container results)
                     await thread.AddMessagesAsync(turnHistory, effectiveCancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception)
@@ -1833,139 +1815,6 @@ internal sealed class Agent
         {
             RootAgent = previousRootAgent;
         }
-    }
-
-    /// <summary>
-    /// Applies plugin scoping to limit which tools are visible to the LLM.
-    /// Preserves expanded plugins/skills from previous iterations.
-    /// </summary>
-    private ChatOptions? ApplyPluginScoping(
-        ChatOptions? options,
-        ImmutableHashSet<string> expandedScopedPluginContainers,
-        ImmutableHashSet<string> ExpandedSkillContainers)
-    {
-        if (options?.Tools == null || Config?.Scoping?.Enabled != true)
-            return options;
-
-        // PERFORMANCE: Single-pass extraction using manual loop
-        var aiFunctions = new List<AIFunction>(options.Tools.Count);
-        for (int i = 0; i < options.Tools.Count; i++)
-        {
-            if (options.Tools[i] is AIFunction af)
-                aiFunctions.Add(af);
-        }
-
-        // Get plugin-scoped functions
-        var scopedFunctions = _scopingManager.GetToolsForAgentTurn(
-            aiFunctions,
-            expandedScopedPluginContainers,
-            ExpandedSkillContainers);
-
-        // Manual cast to AITool list
-        var scopedTools = new List<AITool>(scopedFunctions.Count);
-        for (int i = 0; i < scopedFunctions.Count; i++)
-        {
-            scopedTools.Add(scopedFunctions[i]);
-        }
-
-        return new ChatOptions
-        {
-            ModelId = options.ModelId,
-            Tools = scopedTools,
-            ToolMode = options.ToolMode,
-            Temperature = options.Temperature,
-            MaxOutputTokens = options.MaxOutputTokens,
-            TopP = options.TopP,
-            TopK = options.TopK,
-            FrequencyPenalty = options.FrequencyPenalty,
-            PresencePenalty = options.PresencePenalty,
-            StopSequences = options.StopSequences,
-            ResponseFormat = options.ResponseFormat,
-            Seed = options.Seed,
-            AllowMultipleToolCalls = options.AllowMultipleToolCalls,
-            Instructions = options.Instructions,
-            RawRepresentationFactory = options.RawRepresentationFactory,
-            AdditionalProperties = options.AdditionalProperties,
-            ConversationId = options.ConversationId  // Preserve from input options
-        };
-    }
-
-    /// <summary>
-    /// Middlewares out container expansion results from history.
-    /// Container expansions are temporary - only relevant within the current turn.
-    /// Persistent history should NOT contain "ExpandPlugin" or "ExpandSkill" results.
-    /// </summary>
-    /// <param name="contents">All tool result contents</param>
-    /// <param name="toolRequests">Original tool call requests</param>
-    /// <param name="options">Chat options containing tool metadata</param>
-    /// <returns>Middlewareed contents (non-container results only)</returns>
-    private static List<AIContent> MiddlewareContainerResults(
-        IList<AIContent> contents,
-        IList<FunctionCallContent> toolRequests,
-        ChatOptions? options)
-    {
-        var nonContainerResults = new List<AIContent>(contents.Count);
-
-        foreach (var content in contents)
-        {
-            if (content is FunctionResultContent result)
-            {
-                // Check if this result is from a container function
-                var isContainerResult = IsContainerResult(result, toolRequests, options);
-
-                if (!isContainerResult)
-                {
-                    nonContainerResults.Add(content);
-                }
-            }
-            else
-            {
-                // Non-function-result content always passes through
-                nonContainerResults.Add(content);
-            }
-        }
-
-        return nonContainerResults;
-    }
-
-    /// <summary>
-    /// Checks if a function result is from ANY container expansion (scoped plugin OR skill).
-    /// All container activation messages are Middlewareed from persistent history because:
-    /// 1. They're only relevant within the current message turn
-    /// 2. They prevent history pollution across message turns
-    /// 3. Containers re-collapse at the start of each new turn
-    ///
-    /// Container results are still added to turnHistory (visible within turn) but not currentMessages (persistent).
-    /// </summary>
-    /// <param name="result">The function result to check</param>
-    /// <param name="toolRequests">Original tool call requests</param>
-    /// <param name="options">Chat options containing tool metadata</param>
-    /// <returns>True if this result is from any container (scoped plugin or skill)</returns>
-    private static bool IsContainerResult(
-        FunctionResultContent result,
-        IList<FunctionCallContent> toolRequests,
-        ChatOptions? options)
-    {
-        return toolRequests.Any(tr =>
-        {
-            if (tr.CallId != result.CallId)
-                return false;
-
-            var function = options?.Tools?.OfType<AIFunction>()
-                .FirstOrDefault(t => t.Name == tr.Name);
-
-            if (function?.AdditionalProperties == null)
-                return false;
-
-            // Check if it's a container
-            var isContainer = function.AdditionalProperties.TryGetValue("IsContainer", out var containerVal) == true
-                && containerVal is bool isCont && isCont;
-
-            // Middleware ALL containers (both scoped plugins AND skills) from persistent history
-            // Container activation messages are only relevant within the current turn
-            // and should not pollute the persistent chat history across message turns
-            return isContainer;
-        });
     }
 
     /// <summary>
@@ -2413,22 +2262,6 @@ internal sealed class Agent
             state = pendingState;
         }
 
-        // Check for skill cleanup signal (using Properties bag for backward compatibility)
-        var isFinalIteration = context.IterationException == null &&
-                               context.Response != null &&
-                               context.ToolCalls.Count == 0;
-        if (isFinalIteration &&
-            context.Properties.TryGetValue("ShouldClearActiveSkills", out var clearSkills) &&
-            clearSkills is true)
-        {
-            // Clear active skill instructions at end of final iteration
-            // This ensures skills don't leak across message turns
-            state = state with
-            {
-                ActiveSkillInstructions = ImmutableDictionary<string, string>.Empty
-            };
-        }
-
         // Handle termination signals from middleware
         if (context.Properties.TryGetValue("IsTerminated", out var isTerminated) &&
             isTerminated is true)
@@ -2744,31 +2577,6 @@ public sealed record AgentLoopState
     public string? TerminationReason { get; init; }
 
     // ═══════════════════════════════════════════════════════
-    // PLUGIN/SKILL SCOPING STATE
-    // ═══════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Plugins that have been expanded in this turn.
-    /// Used for container expansion pattern - once a container is expanded,
-    /// its member functions become available.
-    /// </summary>
-    public required ImmutableHashSet<string> expandedScopedPluginContainers { get; init; }
-
-    /// <summary>
-    /// Skills that have been expanded in this turn.
-    /// Used for container expansion pattern (skills version).
-    /// </summary>
-    public required ImmutableHashSet<string> ExpandedSkillContainers { get; init; }
-
-    /// <summary>
-    /// Skill instructions for expanded skills (accumulated during turn).
-    /// Maps skill name → full instruction text from container metadata.
-    /// Ephemeral - cleared at end of message turn, used to inject into system prompt via Middleware.
-    /// Accumulates ALL skills activated within the turn across iterations.
-    /// </summary>
-    public required ImmutableDictionary<string, string> ActiveSkillInstructions { get; init; }
-
-    // ═══════════════════════════════════════════════════════
     // FUNCTION TRACKING
     // ═══════════════════════════════════════════════════════
 
@@ -2870,9 +2678,6 @@ public sealed record AgentLoopState
         Iteration = 0,
         IsTerminated = false,
         TerminationReason = null,
-        expandedScopedPluginContainers = ImmutableHashSet<string>.Empty,
-        ExpandedSkillContainers = ImmutableHashSet<string>.Empty,
-        ActiveSkillInstructions = ImmutableDictionary<string, string>.Empty,
         CompletedFunctions = ImmutableHashSet<string>.Empty,
         InnerClientTracksHistory = false,
         MessagesSentToInnerClient = 0,
@@ -2921,17 +2726,7 @@ public sealed record AgentLoopState
     public AgentLoopState Terminate(string reason) =>
         this with { IsTerminated = true, TerminationReason = reason };
 
-    /// <summary>
-    /// Records that a plugin container has been expanded.
-    /// </summary>
-    public AgentLoopState WithExpandedPlugin(string pluginName) =>
-        this with { expandedScopedPluginContainers = expandedScopedPluginContainers.Add(pluginName) };
 
-    /// <summary>
-    /// Records that a skill container has been expanded.
-    /// </summary>
-    public AgentLoopState WithExpandedSkill(string skillName) =>
-        this with { ExpandedSkillContainers = ExpandedSkillContainers.Add(skillName) };
 
     /// <summary>
     /// Adds a pending write for a completed function call.
@@ -3573,7 +3368,6 @@ internal class FunctionCallProcessor
 {
     private readonly IEventCoordinator _eventCoordinator;
     private readonly AgentMiddlewarePipeline _middlewarePipeline;
-    private readonly int _maxFunctionCalls;
     private readonly ErrorHandlingConfig? _errorHandlingConfig;
     private readonly IList<AITool>? _serverConfiguredTools;
     private readonly AgenticLoopConfig? _agenticLoopConfig;
@@ -3592,7 +3386,6 @@ internal class FunctionCallProcessor
     {
         _eventCoordinator = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
         _middlewarePipeline = middlewarePipeline ?? throw new ArgumentNullException(nameof(middlewarePipeline));
-        _maxFunctionCalls = maxFunctionCalls;
         _errorHandlingConfig = errorHandlingConfig;
         _serverConfiguredTools = serverConfiguredTools;
         _agenticLoopConfig = agenticLoopConfig;
@@ -3619,22 +3412,19 @@ internal class FunctionCallProcessor
         AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
-        // PHASE 0: Container detection (ONCE, not duplicated)
-        var containerInfo = DetectContainers(toolRequests, options);
-
-        // PHASE 1: Route to appropriate execution strategy
+        // Route to appropriate execution strategy
         // For single tool calls, inline execution (no parallel overhead)
         if (toolRequests.Count <= 1)
         {
             return await ExecuteSequentiallyAsync(
                 currentHistory, toolRequests, options, agentLoopState,
-                containerInfo, cancellationToken).ConfigureAwait(false);
+                cancellationToken).ConfigureAwait(false);
         }
 
         // For multiple tools, use parallel execution with throttling
         return await ExecuteInParallelAsync(
             currentHistory, toolRequests, options, agentLoopState,
-            containerInfo, cancellationToken).ConfigureAwait(false);
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3646,13 +3436,9 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
-        ContainerDetectionInfo containerInfo,
         CancellationToken cancellationToken)
     {
         var allContents = new List<AIContent>();
-        var pluginExpansions = new HashSet<string>();
-        var skillExpansions = new HashSet<string>();
-
         // Process ALL tools (containers + regular) through the existing processor
         var resultMessages = await ProcessFunctionCallsAsync(
             currentHistory, options, toolRequests, agentLoopState, cancellationToken).ConfigureAwait(false);
@@ -3666,30 +3452,11 @@ internal class FunctionCallProcessor
             }
         }
 
-        // Track container expansions from results
-        foreach (var content in allContents)
-        {
-            if (content is FunctionResultContent functionResult)
-            {
-                if (containerInfo.PluginContainers.TryGetValue(functionResult.CallId, out var pluginName))
-                {
-                    pluginExpansions.Add(pluginName);
-                }
-                else if (containerInfo.SkillContainers.TryGetValue(functionResult.CallId, out var skillName))
-                {
-                    skillExpansions.Add(skillName);
-                }
-            }
-        }
-
         // Extract successful functions
         var successfulFunctions = ExtractSuccessfulFunctions(allContents, toolRequests);
 
         return new ToolExecutionResult(
             new ChatMessage(ChatRole.Tool, allContents),
-            pluginExpansions,
-            skillExpansions,
-            containerInfo.SkillInstructions,
             successfulFunctions);
     }
 
@@ -3702,7 +3469,6 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
-        ContainerDetectionInfo containerInfo,
         CancellationToken cancellationToken)
     {
         // PHASE 1: Batch permission check via BeforeParallelFunctionsAsync hook
@@ -3818,8 +3584,6 @@ internal class FunctionCallProcessor
 
         // Aggregate results
         var allContents = new List<AIContent>();
-        var pluginExpansions = new HashSet<string>();
-        var skillExpansions = new HashSet<string>();
 
         // Add results from approved tools
         foreach (var result in results)
@@ -3829,22 +3593,6 @@ internal class FunctionCallProcessor
                 foreach (var message in result.Messages)
                 {
                     allContents.AddRange(message.Contents);
-                }
-
-                // Check if this was a container and track expansion
-                foreach (var content in result.Messages.SelectMany(m => m.Contents))
-                {
-                    if (content is FunctionResultContent functionResult)
-                    {
-                        if (containerInfo.PluginContainers.TryGetValue(functionResult.CallId, out var pluginName))
-                        {
-                            pluginExpansions.Add(pluginName);
-                        }
-                        else if (containerInfo.SkillContainers.TryGetValue(functionResult.CallId, out var skillName))
-                        {
-                            skillExpansions.Add(skillName);
-                        }
-                    }
                 }
             }
             else if (result.Error != null)
@@ -3870,9 +3618,6 @@ internal class FunctionCallProcessor
 
         return new ToolExecutionResult(
             new ChatMessage(ChatRole.Tool, allContents),
-            pluginExpansions,
-            skillExpansions,
-            containerInfo.SkillInstructions,
             successfulFunctions);
     }
 
@@ -4058,11 +3803,12 @@ internal class FunctionCallProcessor
                 // Handle function not found case
                 if (middlewareContext.Function is null)
                 {
-                    // Generate a more descriptive error message if this is a scoped function
-                    middlewareContext.FunctionResult = GenerateFunctionNotFoundMessage(
-                        functionCall.Name ?? "Unknown",
-                        middlewareContext.State.expandedScopedPluginContainers,
-                        middlewareContext.State.ExpandedSkillContainers);
+                    // Generate basic error message
+                    // Note: ToolScopingMiddleware may have already set a more detailed message in BeforeToolExecutionAsync
+                    if (middlewareContext.FunctionResult == null)
+                    {
+                        middlewareContext.FunctionResult = $"Function '{functionCall.Name ?? "Unknown"}' not found.";
+                    }
                 }
                 else
                 {
@@ -4155,133 +3901,7 @@ internal class FunctionCallProcessor
         }
     }
 
-    /// <summary>
-    /// Generates a descriptive error message when a function is not found.
-    /// If the function belongs to a scoped plugin or skill that hasn't been expanded, provides guidance to call the container first.
-    /// Handles the case where a function can belong to BOTH a plugin container AND a skill container.
-    /// </summary>
-    private string GenerateFunctionNotFoundMessage(
-        string functionName,
-        ImmutableHashSet<string> expandedPlugins,
-        ImmutableHashSet<string> expandedSkills)
-    {
-        // Check if this function belongs to a scoped plugin by searching all registered tools
-        if (_serverConfiguredTools != null)
-        {
-            foreach (var tool in _serverConfiguredTools)
-            {
-                if (tool is AIFunction func &&
-                    string.Equals(func.Name, functionName, StringComparison.OrdinalIgnoreCase))
-                {
-                    // Found the function in registered tools
-                    // A function can belong to BOTH a plugin container AND a skill container
-                    var unexpandedContainers = new List<string>();
 
-                    // Check if it belongs to a scoped plugin
-                    if (func.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginObj) == true &&
-                        parentPluginObj is string parentPlugin &&
-                        !string.IsNullOrEmpty(parentPlugin))
-                    {
-                        // Check if this plugin has already been expanded
-                        if (!expandedPlugins.Contains(parentPlugin))
-                        {
-                            unexpandedContainers.Add(parentPlugin);
-                        }
-                    }
-
-                    // Check if it belongs to a skill container (ParentSkillContainer)
-                    if (func.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var skillContainerObj) == true &&
-                        skillContainerObj is string skillContainer &&
-                        !string.IsNullOrEmpty(skillContainer))
-                    {
-                        // Check if this skill container has already been expanded
-                        if (!expandedSkills.Contains(skillContainer))
-                        {
-                            unexpandedContainers.Add(skillContainer);
-                        }
-                    }
-
-                    // Generate appropriate error message based on what containers exist
-                    if (unexpandedContainers.Count > 0)
-                    {
-                        if (unexpandedContainers.Count == 1)
-                        {
-                            return $"Function '{functionName}' is not currently available. It belongs to the '{unexpandedContainers[0]}' container. Call {unexpandedContainers[0]}() first to unlock this function.";
-                        }
-                        else
-                        {
-                            // Multiple containers - list them all
-                            var containerList = string.Join(" or ", unexpandedContainers.Select(c => $"{c}()"));
-                            return $"Function '{functionName}' is not currently available. It can be unlocked by calling one of these containers: {containerList}.";
-                        }
-                    }
-                }
-            }
-        }
-
-        // Default error message - function truly doesn't exist
-        return $"Function '{functionName}' not found.";
-    }
-
-    /// <summary>
-    /// Detects plugin and skill containers in tool requests (consolidates duplication).
-    /// Extracts container metadata to eliminate duplicate detection logic between sequential/parallel paths.
-    /// </summary>
-    /// <param name="toolRequests">The tool call requests to analyze</param>
-    /// <param name="options">Chat options containing tool definitions</param>
-    /// <returns>Container detection info with plugin/skill metadata</returns>
-    private ContainerDetectionInfo DetectContainers(
-        List<FunctionCallContent> toolRequests,
-        ChatOptions? options)
-    {
-        var pluginContainers = new Dictionary<string, string>(); // callId -> pluginName
-        var skillContainers = new Dictionary<string, string>(); // callId -> skillName
-        var skillInstructions = new Dictionary<string, string>(); // skillName -> instructions
-
-        foreach (var toolRequest in toolRequests)
-        {
-            // Find the function in the options to check if it's a container
-            var function = FunctionMapBuilder.FindFunctionInList(toolRequest.Name, options?.Tools);
-
-            if (function == null) continue;
-
-            // Check if it's a container (plugin or skill)
-            if (function.AdditionalProperties?.TryGetValue("IsContainer", out var isCont) == true
-                && isCont is bool isC && isC)
-            {
-                // Check if it's a skill container (has both IsContainer=true AND IsSkill=true)
-                var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true
-                    && isSkillValue is bool isS && isS;
-
-                if (isSkill)
-                {
-                    // Skill container
-                    var skillName = function.Name ?? toolRequest.Name;
-                    skillContainers[toolRequest.CallId] = skillName;
-
-                    // Extract instructions from metadata for prompt Middleware
-                    if (function.AdditionalProperties?.TryGetValue("Instructions", out var instructionsObj) == true
-                        && instructionsObj is string instructions
-                        && !string.IsNullOrWhiteSpace(instructions))
-                    {
-                        skillInstructions[skillName] = instructions;
-                    }
-                }
-                else
-                {
-                    // Plugin container
-                    var pluginName = function.AdditionalProperties
-                        ?.TryGetValue("PluginName", out var value) == true && value is string pn
-                        ? pn
-                        : toolRequest.Name;
-
-                    pluginContainers[toolRequest.CallId] = pluginName;
-                }
-            }
-        }
-
-        return new ContainerDetectionInfo(pluginContainers, skillContainers, skillInstructions);
-    }
 
     /// <summary>
     /// Prepares the various chat message lists after a response from the inner client and before invoking functions
@@ -4388,8 +4008,6 @@ internal class MessageProcessor
     /// <param name="options">Chat options to merge with defaults.</param>
     /// <param name="agentName">Agent name for logging/Middlewareing.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <param name="expandedSkills">Optional set of expanded skill names for SkillInstructionPromptMiddleware.</param>
-    /// <param name="skillInstructions">Optional dictionary of skill-specific instructions for SkillInstructionPromptMiddleware.</param>
     /// <returns>PreparedTurn with all state needed for execution.</returns>
     /// <remarks>
     /// <para>
@@ -5168,18 +4786,6 @@ internal class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 /// </summary>
 internal record ToolExecutionResult(
     ChatMessage Message,
-    HashSet<string> PluginExpansions,
-    HashSet<string> SkillExpansions,
-    Dictionary<string, string> SkillInstructions,
     HashSet<string> SuccessfulFunctions);
-
-/// <summary>
-/// Container detection metadata extracted from tool requests.
-/// Consolidates plugin and skill container information to eliminate duplication.
-/// </summary>
-internal record ContainerDetectionInfo(
-    Dictionary<string, string> PluginContainers,
-    Dictionary<string, string> SkillContainers,
-    Dictionary<string, string> SkillInstructions);
 
 #endregion

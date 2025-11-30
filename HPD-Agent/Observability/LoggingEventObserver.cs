@@ -97,11 +97,10 @@ public class LoggingEventObserver : IAgentEventObserver
                 {
                     _logger.LogDebug(
                         "Agent '{AgentName}' iteration {Iteration}/{MaxIterations} started: " +
-                        "Messages={Messages}, History={History}, TurnHistory={TurnHistory}, " +
-                        "ExpandedPlugins={Plugins}, ExpandedSkills={Skills}, CompletedFunctions={Functions}",
+                        "Messages={Messages}, History={History}, TurnHistory={TurnHistory}, CompletedFunctions={Functions}",
                         e.AgentName, e.Iteration, e.MaxIterations,
                         e.CurrentMessageCount, e.HistoryMessageCount, e.TurnHistoryMessageCount,
-                        e.ExpandedPluginsCount, e.ExpandedSkillsCount, e.CompletedFunctionsCount);
+                        e.CompletedFunctionsCount);
                 }
                 break;
 
@@ -248,9 +247,19 @@ public class LoggingEventObserver : IAgentEventObserver
                 {
                     _logger.LogDebug(
                         "Agent '{AgentName}' iteration {Iteration}: Decision={Decision}, " +
-                        "State(Failures={Failures}, Plugins={Plugins}, Functions={Functions})",
+                        "State(Failures={Failures}, Functions={Functions})",
                         e.AgentName, e.Iteration, e.DecisionType,
-                        e.ConsecutiveFailures, e.ExpandedPluginsCount, e.CompletedFunctionsCount);
+                        e.ConsecutiveFailures, e.CompletedFunctionsCount);
+                }
+                break;
+
+            // Scoping state (from ToolScopingMiddleware)
+            case ScopingStateEvent e:
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "Agent '{AgentName}' iteration {Iteration}: Scoping(ExpandedPlugins={Plugins}, ExpandedSkills={Skills})",
+                        e.AgentName, e.Iteration, e.ExpandedPluginsCount, e.ExpandedSkillsCount);
                 }
                 break;
 

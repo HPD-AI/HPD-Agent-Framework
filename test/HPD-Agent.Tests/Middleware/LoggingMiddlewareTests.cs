@@ -450,7 +450,8 @@ public class LoggingMiddlewareTests
 
         // Assert
         var actualDuration = (endTime - startTime).TotalMilliseconds;
-        Assert.True(actualDuration >= delayMs, $"Expected at least {delayMs}ms, got {actualDuration}ms");
+        // Allow 5ms tolerance for Task.Delay imprecision (can complete slightly early)
+        Assert.True(actualDuration >= delayMs - 5, $"Expected at least {delayMs - 5}ms, got {actualDuration}ms");
 
         // Verify timing was logged
         Assert.Contains(logOutput, s => s.Contains("ms"));

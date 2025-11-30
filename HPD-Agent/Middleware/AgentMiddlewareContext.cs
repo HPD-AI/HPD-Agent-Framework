@@ -215,6 +215,13 @@ public class AgentMiddlewareContext
     /// </summary>
     public Dictionary<string, List<string>>? TurnFunctionCalls { get; set; }
 
+    /// <summary>
+    /// Messages that will be persisted to the thread after this turn completes.
+    /// Available in AfterMessageTurn - middleware can filter/modify before persistence.
+    /// MUTABLE - modify this list to control what gets saved (e.g., filter ephemeral messages).
+    /// </summary>
+    public List<ChatMessage>? TurnHistory { get; set; }
+
     // ═══════════════════════════════════════════════════════════════
     // ITERATION LEVEL
     // Available in: BeforeIteration, BeforeToolExecution, AfterIteration

@@ -1103,6 +1103,17 @@ public class AgentBuilder
             _middlewares.Add(new Middleware.Function.FunctionTimeoutMiddleware(_config.ErrorHandling.SingleFunctionTimeout.Value));
         }
 
+        // Register ToolScopingMiddleware if enabled
+        // This middleware owns the ToolVisibilityManager and handles all tool scoping logic
+        if (_config.Scoping?.Enabled == true && buildData.MergedOptions?.Tools != null)
+        {
+            var scopingMiddleware = new ToolScopingMiddleware(
+                buildData.MergedOptions.Tools,
+                _explicitlyRegisteredPlugins.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
+                _config.Scoping);
+            _middlewares.Add(scopingMiddleware);
+        }
+
         // Create protocol-agnostic core agent
         return new Agent(
             _config!,
@@ -1144,6 +1155,17 @@ public class AgentBuilder
         if (_config.ErrorHandling?.SingleFunctionTimeout != null)
         {
             _middlewares.Add(new Middleware.Function.FunctionTimeoutMiddleware(_config.ErrorHandling.SingleFunctionTimeout.Value));
+        }
+
+        // Register ToolScopingMiddleware if enabled
+        // This middleware owns the ToolVisibilityManager and handles all tool scoping logic
+        if (_config.Scoping?.Enabled == true && buildData.MergedOptions?.Tools != null)
+        {
+            var scopingMiddleware = new ToolScopingMiddleware(
+                buildData.MergedOptions.Tools,
+                _explicitlyRegisteredPlugins.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
+                _config.Scoping);
+            _middlewares.Add(scopingMiddleware);
         }
 
         // Create agent using the new, cleaner constructor with AgentConfig
@@ -2154,9 +2176,6 @@ internal static class AgentBuilderMiddlewareExtensions
     /// The circuit breaker detects when the same tool is called with identical arguments
     /// multiple times consecutively, which typically indicates the agent is stuck in a loop.
     /// When triggered, execution terminates with a descriptive message.
-    ///
-    /// Note: This middleware-based circuit breaker is independent of the config-based
-    /// MaxConsecutiveFunctionCalls setting. Use one or the other, not both.
     /// </remarks>
     /// <example>
     /// <code>
@@ -2796,6 +2815,108 @@ internal static class AgentBuilderMiddlewareExtensions
         configure(middleware);
         // Insert at the beginning so PII is sanitized before other middlewares see the messages
         builder.Middlewares.Insert(0, middleware);
+        return builder;
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // TOOL SCOPING
+    // ═══════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Enables tool scoping middleware for plugin collapsing and skills architecture.
+    /// When enabled, plugins and skills are hidden behind container functions,
+    /// reducing the initial tool list and cognitive load on the LLM.
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The builder for chaining</returns>
+    /// <remarks>
+    /// <para>
+    /// Tool scoping allows you to organize functions hierarchically:
+    /// - Plugin containers: Hide member functions until plugin is expanded
+    /// - Skill containers: Hide skill-specific functions until skill is activated
+    /// </para>
+    /// <para>
+    /// This can reduce initial tool list size by up to 87.5%, improving LLM performance
+    /// and reducing token usage.
+    /// </para>
+    /// <para>
+    /// <b>Phase 1 Note:</b> This middleware integrates with the existing scoping
+    /// infrastructure in Agent.cs. Future phases will migrate more logic to middleware.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithPlugin&lt;FinancialPlugin&gt;()
+    ///     .WithToolScoping()  // Enable tool scoping
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithToolScoping(this AgentBuilder builder)
+    {
+        // Enable scoping in config
+        builder.Config.Scoping ??= new ScopingConfig();
+        builder.Config.Scoping.Enabled = true;
+
+        // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
+        // during Build() after the Agent is constructed (since it needs the ToolVisibilityManager
+        // which is created in the Agent constructor). See BuildCoreAgent() for registration logic.
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Enables tool scoping middleware with custom configuration.
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <param name="configure">Action to configure scoping behavior</param>
+    /// <returns>The builder for chaining</returns>
+    /// <example>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithPlugin&lt;FinancialPlugin&gt;()
+    ///     .WithToolScoping(config =>
+    ///     {
+    ///         config.ScopeFrontendTools = true;
+    ///         config.MaxFunctionNamesInDescription = 5;
+    ///     })
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithToolScoping(this AgentBuilder builder, Action<ScopingConfig> configure)
+    {
+        builder.Config.Scoping ??= new ScopingConfig();
+        builder.Config.Scoping.Enabled = true;
+        configure(builder.Config.Scoping);
+        
+        // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
+        // during Build() after the Agent is constructed. See BuildCoreAgent() for registration logic.
+        
+        return builder;
+    }
+
+    /// <summary>
+    /// Disables tool scoping, making all tools visible to the LLM at all times.
+    /// </summary>
+    /// <param name="builder">The agent builder</param>
+    /// <returns>The builder for chaining</returns>
+    /// <remarks>
+    /// Use this when you want all functions to be immediately available without
+    /// requiring container expansion. This may increase token usage but simplifies
+    /// tool discovery.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithPlugin&lt;FinancialPlugin&gt;()
+    ///     .WithoutToolScoping()  // All tools always visible
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public static AgentBuilder WithoutToolScoping(this AgentBuilder builder)
+    {
+        builder.Config.Scoping ??= new ScopingConfig();
+        builder.Config.Scoping.Enabled = false;
         return builder;
     }
 }
