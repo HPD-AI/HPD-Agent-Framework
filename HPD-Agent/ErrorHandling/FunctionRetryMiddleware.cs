@@ -1,4 +1,5 @@
 using HPD.Agent.ErrorHandling;
+using HPD.Agent;
 
 namespace HPD.Agent.Middleware.Function;
 
@@ -161,22 +162,3 @@ public class FunctionRetryMiddleware : IAgentMiddleware
         return TimeSpan.FromMilliseconds(cappedDelayMs * jitter);
     }
 }
-/// <summary>
-/// Event emitted when a function execution is being retried due to an error.
-/// </summary>
-/// <param name="FunctionName">The name of the function being retried</param>
-/// <param name="Attempt">The current retry attempt number (1-based)</param>
-/// <param name="MaxRetries">Maximum number of retries allowed</param>
-/// <param name="Delay">Time to wait before retrying</param>
-/// <param name="Exception">The exception that caused the retry</param>
-/// <param name="ExceptionType">The type name of the exception</param>
-/// <param name="ErrorMessage">The error message from the exception</param>
-public record FunctionRetryEvent(
-    string FunctionName,
-    int Attempt,
-    int MaxRetries,
-    TimeSpan Delay,
-    Exception Exception,
-    string ExceptionType,
-    string ErrorMessage
-) : AgentEvent;

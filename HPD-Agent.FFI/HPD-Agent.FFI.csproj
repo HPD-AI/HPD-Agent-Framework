@@ -24,8 +24,6 @@
   <!-- Core HPD-Agent reference -->
   <ItemGroup>
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
-    <ProjectReference Include="../HPD-Agent.Microsoft/HPD-Agent.Microsoft.csproj" />
-    <ProjectReference Include="../HPD-Agent.AGUI/HPD-Agent.AGUI.csproj" />
     <ProjectReference Include="../HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
   </ItemGroup>
 

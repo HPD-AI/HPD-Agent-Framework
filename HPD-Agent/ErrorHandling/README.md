@@ -18,31 +18,48 @@ HPD-Agent includes a sophisticated, provider-aware error handling system that in
 
 ## Architecture Layers
 
+Error handling is implemented as composable middleware that form a chain of responsibility:
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         Agent.cs                            │
-│                  (Auto-detection logic)                     │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  FunctionCallProcessor                      │
-│            (ExecuteWithRetryAsync - 3-tier logic)           │
-│  Priority 1: Custom Strategy → Priority 2: Provider →      │
-│               Priority 3: Exponential Backoff              │
-└─────────────────────┬───────────────────────────────────────┘
-                      │
-                      ↓
-┌─────────────────────────────────────────────────────────────┐
-│              IProviderErrorHandler Interface                │
-│  ┌──────────────┬──────────────┬──────────────────────┐    │
-│  │   OpenAI     │  Anthropic*  │  GoogleAI*          │    │
-│  │   Handler    │   Handler    │   Handler           │    │
-│  │              │  (future)    │  (future)           │    │
-│  └──────────────┴──────────────┴──────────────────────┘    │
-│                                                             │
-│              GenericErrorHandler (fallback)                 │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│           FunctionRetryMiddleware (Outermost)               │
+│  • 3-tier priority retry logic                              │
+│  • Provider-aware with Retry-After headers                  │
+│  • Emits FunctionRetryEvent for observability               │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ↓
+┌──────────────────────────────────────────────────────────────┐
+│           FunctionTimeoutMiddleware (Middle)                │
+│  • Enforces timeout per attempt                             │
+│  • Throws descriptive TimeoutException                      │
+│  • Cancellation-token aware                                 │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ↓
+┌──────────────────────────────────────────────────────────────┐
+│         ErrorFormattingMiddleware (Innermost)               │
+│  • Security-aware error message formatting                  │
+│  • Sanitizes errors by default (prevents info leakage)      │
+│  • Stores full exception in context for observability       │
+└──────────────────────┬───────────────────────────────────────┘
+                       │
+                       ↓
+┌──────────────────────────────────────────────────────────────┐
+│        IProviderErrorHandler Interface (Shared)             │
+│  ┌─────────────┬──────────────┬──────────────┬────────────┐    │
+│  │   OpenAI    │  Anthropic   │  GoogleAI    │   Ollama   │    │
+│  │   Handler   │   Handler    │   Handler    │   Handler  │    │
+│  ├─────────────┼──────────────┼──────────────┼────────────┤    │
+│  │ AzureAI     │  OpenRouter  │   Bedrock    │  Mistral   │    │
+│  │ Inference   │   Handler    │   Handler    │   Handler  │    │
+│  ├─────────────┼──────────────┼──────────────┼────────────┤    │
+│  │HuggingFace  │ OnnxRuntime  │              │            │    │
+│  │ Handler     │   Handler    │              │            │    │
+│  └─────────────┴──────────────┴──────────────┴────────────┘    │
+│                                                                 │
+│               GenericErrorHandler (fallback)                    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ## Core Components
@@ -106,9 +123,111 @@ public interface IProviderErrorHandler
 }
 ```
 
+### 4. FunctionRetryMiddleware (`FunctionRetryMiddleware.cs`)
+
+Implements the 3-tier retry logic:
+
+- Catches exceptions during function execution
+- Applies priority system: custom strategy → provider-aware → exponential backoff
+- Respects provider Retry-After headers
+- Enforces per-category retry limits
+- Emits `FunctionRetryEvent` (defined in `AgentEvents.cs`) for observability
+- Uses exponential backoff with jitter (±10%)
+
+```csharp
+public class FunctionRetryMiddleware : IAgentMiddleware
+{
+    private readonly ErrorHandlingConfig _config;
+    private readonly IProviderErrorHandler _providerHandler;
+
+    public async ValueTask<object?> ExecuteFunctionAsync(
+        AgentMiddlewareContext context,
+        Func<ValueTask<object?>> next,
+        CancellationToken cancellationToken)
+    {
+        // Retry loop with 3-tier logic
+    }
+}
+```
+
+**Event Emitted:**
+```csharp
+// From AgentEvents.cs - Observability Events
+public record FunctionRetryEvent(
+    string FunctionName,
+    int Attempt,
+    int MaxRetries,
+    TimeSpan Delay,
+    Exception Exception,
+    string ExceptionType,
+    string ErrorMessage
+) : AgentEvent, IObservabilityEvent;
+```
+
+### 5. FunctionTimeoutMiddleware (`FunctionTimeoutMiddleware.cs`)
+
+Enforces timeout on function execution:
+
+- Wraps function call in `Task.WaitAsync(timeout)`
+- Respects cancellation tokens
+- Throws descriptive `TimeoutException` with function name and duration
+- Positioned inside retry middleware (retries happen before timeout)
+
+```csharp
+public class FunctionTimeoutMiddleware : IAgentMiddleware
+{
+    private readonly TimeSpan _timeout;
+
+    public async ValueTask<object?> ExecuteFunctionAsync(
+        AgentMiddlewareContext context,
+        Func<ValueTask<object?>> next,
+        CancellationToken cancellationToken)
+    {
+        // Enforce timeout using Task.WaitAsync
+    }
+}
+```
+
+### 6. ErrorFormattingMiddleware (`ErrorFormattingMiddleware.cs`)
+
+Formats errors for secure LLM consumption:
+
+- **Default behavior**: Returns generic error message (secure)
+- **Optional behavior**: Returns detailed error message (configurable)
+- **Always logs**: Stores full exception in `context.FunctionException` for observability
+- Prevents exposing: stack traces, connection strings, paths, API keys
+
+Controlled by `ErrorHandlingConfig.IncludeDetailedErrorsInChat`:
+- `false` (default): `"Error: Function 'X' failed."`
+- `true` (trusted only): `"Error invoking function 'X': {exception.Message}"`
+
+```csharp
+public class ErrorFormattingMiddleware : IAgentMiddleware
+{
+    private readonly bool _includeDetailedErrors;
+
+    public async ValueTask<object?> ExecuteFunctionAsync(
+        AgentMiddlewareContext context,
+        Func<ValueTask<object?>> next,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await next();
+        }
+        catch (Exception ex)
+        {
+            // Store for observability, format for LLM
+            context.FunctionException = ex;
+            // Return sanitized or detailed message based on config
+        }
+    }
+}
+```
+
 ## Provider Handlers
 
-### OpenAIErrorHandler (`Providers/OpenAIErrorHandler.cs`)
+### OpenAIErrorHandler (`HPD-Agent.Providers.OpenAI/OpenAIErrorHandler.cs`)
 
 Handles both OpenAI and Azure OpenAI errors:
 
@@ -126,17 +245,97 @@ Handles both OpenAI and Azure OpenAI errors:
 - Pattern: `"Service request failed.\nStatus: 429 (Too Many Requests)"`
 - Extracts status code, request ID, and retry delay from message text
 
-**Example Error Classifications:**
-```
-400 + "context_length_exceeded" → ContextWindow (don't retry)
-400 + other message             → ClientError (don't retry)
-401                             → AuthError (special handling)
-429 + "insufficient_quota"      → RateLimitTerminal (don't retry)
-429 + other message             → RateLimitRetryable (retry after delay)
-5xx                             → ServerError (retry with backoff)
-```
+### AnthropicErrorHandler (`HPD-Agent.Providers.Anthropic/AnthropicErrorHandler.cs`)
 
-### GenericErrorHandler (`GenericErrorHandler.cs`)
+Handles Anthropic Claude API errors:
+
+**Capabilities:**
+- ✅ Parses rate limit errors
+- ✅ Extracts retry delay from error messages
+- ✅ Classifies terminal quota errors
+- ✅ Handles authentication errors
+
+### GoogleAIErrorHandler (`HPD-Agent.Providers.GoogleAI/GoogleAIErrorHandler.cs`)
+
+Handles Google AI (Gemini) API errors:
+
+**Capabilities:**
+- ✅ Parses quota exceeded errors
+- ✅ Detects resource exhausted errors
+- ✅ Extracts backend error information
+- ✅ Handles safety/policy blocked errors
+
+### OllamaErrorHandler (`HPD-Agent.Providers.Ollama/OllamaErrorHandler.cs`)
+
+Handles local Ollama model errors:
+
+**Capabilities:**
+- ✅ Detects model loading in progress
+- ✅ Parses connection refused errors
+- ✅ Handles out-of-memory errors
+- ✅ Recognizes model not found errors
+
+### OpenRouterErrorHandler (`HPD-Agent.Providers.OpenRouter/OpenRouterErrorHandler.cs`)
+
+Handles OpenRouter API errors:
+
+**Capabilities:**
+- ✅ Parses rate limit and quota errors
+- ✅ Extracts queue/busy states
+- ✅ Handles insufficient credits
+- ✅ Detects model unavailability
+
+### BedrockErrorHandler (`HPD-Agent.Providers.Bedrock/BedrockErrorHandler.cs`)
+
+Handles AWS Bedrock errors:
+
+**Capabilities:**
+- ✅ Parses access denied errors
+- ✅ Detects throttling and rate limits
+- ✅ Handles model not ready errors
+- ✅ Extracts service quota information
+
+### AzureAIInferenceErrorHandler (`HPD-Agent.Providers.AzureAIInference/AzureAIInferenceErrorHandler.cs`)
+
+Handles Azure AI Inference errors:
+
+**Capabilities:**
+- ✅ Parses throttling errors
+- ✅ Detects resource busy states
+- ✅ Handles quota exceeded errors
+- ✅ Extracts authentication failures
+
+### MistralErrorHandler (`HPD-Agent.Providers.Mistral/MistralErrorHandler.cs`)
+
+Handles Mistral AI API errors:
+
+**Capabilities:**
+- ✅ Parses rate limit errors
+- ✅ Detects service overload
+- ✅ Handles quota exceeded errors
+- ✅ Extracts authentication failures
+
+### HuggingFaceErrorHandler (`HPD-Agent.Providers.HuggingFace/HuggingFaceErrorHandler.cs`)
+
+Handles HuggingFace API errors:
+
+**Capabilities:**
+- ✅ Detects model loading in progress
+- ✅ Parses estimated time to ready
+- ✅ Handles rate limit errors
+- ✅ Detects service unavailability
+
+### OnnxRuntimeErrorHandler (`HPD-Agent.Providers.OnnxRuntime/OnnxRuntimeErrorHandler.cs`)
+
+Handles ONNX Runtime model errors:
+
+**Capabilities:**
+- ✅ Detects model initialization failures
+- ✅ Handles out-of-memory errors
+- ✅ Parses invalid input errors
+- ✅ Detects execution provider issues
+
+### GenericErrorHandler (`ErrorHandling/GenericErrorHandler.cs`)
 
 Fallback handler for unknown providers:
 
@@ -189,7 +388,83 @@ public class ErrorHandlingConfig
 
 ## How It Works
 
-### Auto-Detection (`Agent.cs:103-107`)
+### Middleware Composition
+
+Error handling is implemented as three composable middleware layers that work together:
+
+```csharp
+// Middleware are registered in order (outermost to innermost)
+.WithFunctionRetry()      // Outermost - retry entire operation
+.WithFunctionTimeout()    // Middle - timeout individual attempts
+.WithErrorFormatting()    // Innermost - format errors for LLM
+```
+
+Each middleware wraps the next, creating a chain of responsibility:
+1. **FunctionRetryMiddleware** catches exceptions and decides whether to retry
+2. **FunctionTimeoutMiddleware** enforces timeout on each attempt
+3. **ErrorFormattingMiddleware** formats errors securely for the LLM
+4. **Actual function execution** happens at the end of the chain
+
+### FunctionRetryMiddleware - 3-Tier Retry Logic
+
+When an exception occurs during function execution:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ PRIORITY 1: Custom Retry Strategy                      │
+│ If user provided CustomRetryStrategy delegate          │
+│ → Use it (full control)                                │
+└─────────────────────────────────────────────────────────┘
+                        ↓ (if null)
+┌─────────────────────────────────────────────────────────┐
+│ PRIORITY 2: Provider-Aware Handling                    │
+│ 1. Parse exception with IProviderErrorHandler          │
+│ 2. Check per-category retry limits                     │
+│ 3. Get provider-calculated delay:                      │
+│    - Use RetryAfter if present (respects headers)      │
+│    - Use exponential backoff with provider settings    │
+│    - Return null if error is non-retryable             │
+└─────────────────────────────────────────────────────────┘
+                        ↓ (if null)
+┌─────────────────────────────────────────────────────────┐
+│ PRIORITY 3: Exponential Backoff (Fallback)             │
+│ delay = base * 2^attempt * random(0.9-1.1)             │
+│ Apply MaxRetryDelay cap                                │
+└─────────────────────────────────────────────────────────┘
+```
+
+Features:
+- ✅ Respects provider Retry-After headers (e.g., OpenAI 429 responses)
+- ✅ Per-error-category retry limits (e.g., more retries for rate limits)
+- ✅ Intelligent error classification (transient, rate limit, etc.)
+- ✅ Exponential backoff with jitter to avoid thundering herd
+- ✅ Emits `FunctionRetryEvent` for observability
+
+### FunctionTimeoutMiddleware - Timeout Enforcement
+
+Enforces a timeout on each function execution attempt:
+
+- ✅ Uses `Task.WaitAsync()` for clean timeout handling
+- ✅ Wrapped by retry middleware (retries happen before timeout)
+- ✅ Throws descriptive `TimeoutException` with function name and delay
+- ✅ Respects cancellation tokens
+
+### ErrorFormattingMiddleware - Security-Aware Error Formatting
+
+Formats exceptions for safe LLM consumption:
+
+- ✅ **Default (secure)**: Returns generic message like `"Error: Function 'X' failed."`
+- ✅ **Optional (detailed)**: Returns full exception message (configurable)
+- ✅ **Always observability**: Stores full exception in `context.FunctionException` for logging
+- ✅ Prevents exposing: stack traces, connection strings, file paths, API keys
+
+Controlled by `ErrorHandlingConfig.IncludeDetailedErrorsInChat`:
+```csharp
+false // Default - secure, generic errors
+true  // Only in trusted environments - includes exception details
+```
+
+### Auto-Detection
 
 When an agent is created, it automatically selects the appropriate error handler:
 
@@ -206,45 +481,25 @@ private static IProviderErrorHandler CreateProviderHandler(ChatProvider? provide
     {
         ChatProvider.OpenAI => new OpenAIErrorHandler(),
         ChatProvider.AzureOpenAI => new OpenAIErrorHandler(),
-        // Future: ChatProvider.Anthropic => new AnthropicErrorHandler(),
+        ChatProvider.Anthropic => new AnthropicErrorHandler(),
+        ChatProvider.GoogleAI => new GoogleAIErrorHandler(),
+        ChatProvider.Ollama => new OllamaErrorHandler(),
+        ChatProvider.OpenRouter => new OpenRouterErrorHandler(),
+        ChatProvider.Bedrock => new BedrockErrorHandler(),
+        ChatProvider.AzureAIInference => new AzureAIInferenceErrorHandler(),
+        ChatProvider.Mistral => new MistralErrorHandler(),
+        ChatProvider.HuggingFace => new HuggingFaceErrorHandler(),
+        ChatProvider.OnnxRuntime => new OnnxRuntimeErrorHandler(),
         _ => new GenericErrorHandler()
     };
 }
-```
-
-### Retry Logic (`Agent.cs:1555-1657`)
-
-Three-tier priority system in `ExecuteWithRetryAsync`:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ PRIORITY 1: Custom Retry Strategy                      │
-│ If user provided CustomRetryStrategy delegate          │
-│ → Use it (full control)                                │
-└─────────────────────────────────────────────────────────┘
-                        ↓ (if null)
-┌─────────────────────────────────────────────────────────┐
-│ PRIORITY 2: Provider-Aware Handling                    │
-│ 1. Parse exception with ProviderHandler                │
-│ 2. Check per-category retry limits                     │
-│ 3. Get provider-calculated delay:                      │
-│    - Use RetryAfter if present                         │
-│    - Use exponential backoff with provider settings    │
-│    - Return null if error is non-retryable             │
-└─────────────────────────────────────────────────────────┘
-                        ↓ (if null)
-┌─────────────────────────────────────────────────────────┐
-│ PRIORITY 3: Exponential Backoff (Fallback)             │
-│ delay = base * 2^attempt * random(0.9-1.1)             │
-│ Apply MaxRetryDelay cap                                │
-└─────────────────────────────────────────────────────────┘
 ```
 
 ### Example Flow
 
 ```
 1. Tool calls OpenAI API → HttpRequestException (429)
-2. FunctionCallProcessor catches exception
+2. FunctionRetryMiddleware catches exception
 3. Checks CustomRetryStrategy → null
 4. Calls OpenAIErrorHandler.ParseError()
    → Returns ProviderErrorDetails {
@@ -256,8 +511,11 @@ Three-tier priority system in `ExecuteWithRetryAsync`:
 5. Checks per-category limit → attempt 1 < 3
 6. Calls OpenAIErrorHandler.GetRetryDelay()
    → Returns TimeSpan.FromSeconds(2) (from RetryAfter)
-7. Waits 2 seconds
-8. Retries tool call → Success!
+7. Emits FunctionRetryEvent
+8. Waits 2 seconds
+9. FunctionTimeoutMiddleware enforces timeout on retry
+10. ErrorFormattingMiddleware ready to format if retry fails
+11. Retries tool call → Success!
 ```
 
 ## Usage Examples
@@ -267,13 +525,44 @@ Three-tier priority system in `ExecuteWithRetryAsync`:
 ```csharp
 var agent = await new AgentBuilder()
     .WithOpenAI("gpt-4", apiKey)
+    // Middleware are added automatically by builder
     .BuildAsync();
 
 // Error handling works automatically:
 // - Auto-detects OpenAI provider
 // - Respects Retry-After headers
 // - Intelligent retry decisions
+// - Timeouts enforced
+// - Errors sanitized for LLM
 // - No configuration needed!
+```
+
+### Explicit Middleware Registration
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithOpenAI("gpt-4", apiKey)
+    // Register middleware explicitly (order matters!)
+    .WithFunctionRetry()      // Outermost - retry entire operation
+    .WithFunctionTimeout()    // Middle - timeout each attempt
+    .WithErrorFormatting()    // Innermost - format errors
+    .BuildAsync();
+```
+
+### Custom Error Formatting (Detailed Errors for Trusted Environments)
+
+```csharp
+var config = new AgentConfig
+{
+    ErrorHandling = new ErrorHandlingConfig
+    {
+        IncludeDetailedErrorsInChat = true  // ⚠️ Only in trusted environments
+    }
+};
+
+var agent = await new AgentBuilder(config)
+    .WithOpenAI("gpt-4", apiKey)
+    .BuildAsync();
 ```
 
 ### Custom Per-Category Limits
@@ -325,6 +614,18 @@ public class MyCustomHandler : IProviderErrorHandler
 
 // Use it
 config.ErrorHandling.ProviderHandler = new MyCustomHandler();
+```
+
+### Custom Timeout
+
+```csharp
+var config = new AgentConfig
+{
+    ErrorHandling = new ErrorHandlingConfig
+    {
+        SingleFunctionTimeout = TimeSpan.FromSeconds(60)  // Per-attempt timeout
+    }
+};
 ```
 
 ### Disable Error Handling (Unit Tests)
@@ -434,6 +735,31 @@ public void ParseError_AnthropicException_ExtractsDetails()
 }
 ```
 
+## Observability
+
+### Events
+
+Error handling middleware emits observability events for monitoring and debugging:
+
+- **`FunctionRetryEvent`** (`AgentEvents.cs`) - Emitted by `FunctionRetryMiddleware` when a function call is being retried
+  - Includes: FunctionName, Attempt, MaxRetries, Delay, Exception details
+  - Implements: `IObservabilityEvent` for proper event classification
+  - Use case: Monitor retry patterns, detect flaky functions, measure resilience
+
+Example event handler:
+```csharp
+void OnFunctionRetryEvent(FunctionRetryEvent evt)
+{
+    logger.LogWarning(
+        "Retrying function {Function} (attempt {Attempt}/{Max}) after {Delay}ms: {Error}",
+        evt.FunctionName,
+        evt.Attempt,
+        evt.MaxRetries,
+        evt.Delay.TotalMilliseconds,
+        evt.ErrorMessage);
+}
+```
+
 ## Best Practices
 
 ### For Library Users
@@ -509,13 +835,6 @@ config.ErrorHandling.UseProviderRetryDelays = true;  // Default
 
 ## Future Enhancements
 
-### Planned Provider Handlers
-
-- [ ] AnthropicErrorHandler (Claude API)
-- [ ] GoogleAIErrorHandler (Gemini API)
-- [ ] VertexAIErrorHandler (Google Cloud)
-- [ ] MistralErrorHandler (Mistral AI)
-
 ### Potential Features
 
 - [ ] Circuit breaker per provider (fail fast after N errors)
@@ -523,6 +842,22 @@ config.ErrorHandling.UseProviderRetryDelays = true;  // Default
 - [ ] Telemetry integration (OpenTelemetry spans for retries)
 - [ ] Retry metrics (success rate, average delay, etc.)
 - [ ] Adaptive backoff (learn optimal delays over time)
+- [ ] VertexAI error handler (Google Cloud Vertex AI)
+
+### Provider Coverage
+
+✅ **11 Provider Handlers Implemented:**
+- OpenAI (including Azure OpenAI)
+- Anthropic (Claude)
+- Google AI (Gemini)
+- Ollama (Local models)
+- OpenRouter (Multi-provider)
+- AWS Bedrock
+- Azure AI Inference
+- Mistral AI
+- HuggingFace
+- ONNX Runtime
+- Generic fallback for unknown providers
 
 ## Migration Guide
 
@@ -554,13 +889,16 @@ var agent = await new AgentBuilder()
 
 ## Summary
 
-HPD-Agent's error handling system provides:
+HPD-Agent's error handling system is implemented as composable middleware providing:
 
-✅ **Intelligent**: Classifies errors and makes smart retry decisions
-✅ **Provider-aware**: Understands OpenAI, Azure, and others
+✅ **Intelligent Classification**: Categorizes errors (transient, rate limit, client error, etc.)
+✅ **Provider-Aware**: Understands OpenAI, Azure, and others with fallback
 ✅ **Respectful**: Honors Retry-After headers and provider guidance
+✅ **Composable**: Three separate middleware (retry, timeout, formatting)
 ✅ **Automatic**: Works out of the box with zero configuration
 ✅ **Flexible**: Fully customizable for advanced scenarios
+✅ **Secure**: Sanitizes errors by default, logs full exceptions separately
+✅ **Observable**: Emits events for logging and monitoring
 ✅ **AOT-compatible**: No reflection, works with Native AOT
 ✅ **Battle-tested**: Patterns from Gemini CLI and Codex CLI
 ✅ **Zero breaking changes**: Existing code works unchanged

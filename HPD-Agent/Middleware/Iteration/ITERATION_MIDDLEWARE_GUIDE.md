@@ -338,7 +338,7 @@ internal class IterationCachingMiddleware : IIterationMiddleWare
 
 ### Automatic Registration
 
-Built-in Middlewares are automatically registered in `AgentBuilder.BuildCoreAgent()`:
+Built-in Middlewares are automatically registered in `AgentBuilder.Build()`:
 
 ```csharp
 // Logging Middleware (if logger available)

@@ -169,7 +169,7 @@ public static partial class NativeExports
                 }
             }
 
-            var agent = builder.BuildCoreAgent();
+            var agent = builder.Build();
             return ObjectManager.Add(agent);
         }
         catch (Exception ex)

@@ -1,7 +1,7 @@
 using System;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
-using HPD.Agent.Conversation.Checkpointing;
+using HPD.Agent.Checkpointing;
 using System.Collections.Immutable;
 
 namespace HPD.Agent;
@@ -15,7 +15,7 @@ public class AgentConfig
     /// Global configuration instance used by source-generated code.
     /// Set by AgentBuilder during agent construction.
     /// </summary>
-    internal static AgentConfig? GlobalConfig { get; set; }
+    public static AgentConfig? GlobalConfig { get; set; }
 
     public string Name { get; set; } = "HPD-Agent";
     public string SystemInstructions { get; set; } = "You are a helpful assistant.";
@@ -246,7 +246,6 @@ public class AgentConfig
     /// the one in <see cref="ChatOptions.Tools"/> takes precedence (allows per-request overrides).
     /// </para>
     /// <para>
-    /// Inspired by Microsoft.Extensions.AI's <c>FunctionInvokingChatClient.AdditionalTools</c>.
     /// </para>
     /// <para>
     /// <b>Example:</b>
@@ -429,11 +428,31 @@ public class ProviderConfig
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
     public ChatOptions? DefaultChatOptions { get; set; }
-    
+
+    /// <summary>
+    /// Provider-specific configuration as raw JSON string.
+    /// This is the preferred way for FFI/JSON configuration.
+    /// The JSON is deserialized using the provider's registered deserializer.
+    ///
+    /// Example JSON config:
+    /// <code>
+    /// {
+    ///   "Provider": {
+    ///     "ProviderKey": "anthropic",
+    ///     "ModelName": "claude-sonnet-4-5-20250929",
+    ///     "ApiKey": "sk-ant-...",
+    ///     "ProviderOptionsJson": "{\"ThinkingBudgetTokens\":4096,\"EnablePromptCaching\":true}"
+    ///   }
+    /// }
+    /// </code>
+    /// </summary>
+    public string? ProviderOptionsJson { get; set; }
+
     /// <summary>
     /// Provider-specific configuration as key-value pairs.
+    /// Legacy approach - prefer ProviderOptionsJson for FFI compatibility.
     /// See provider documentation for available options.
-    /// 
+    ///
     /// Examples:
     /// - OpenAI: { "Organization": "org-123", "StrictJsonSchema": true }
     /// - Anthropic: { "PromptCachingType": "AutomaticToolsAndSystem" }
@@ -442,10 +461,68 @@ public class ProviderConfig
     /// </summary>
     public Dictionary<string, object>? AdditionalProperties { get; set; }
 
+    // Cache for deserialized provider config (avoids repeated deserialization)
+    [System.Text.Json.Serialization.JsonIgnore]
+    private object? _cachedProviderConfig;
+
+    /// <summary>
+    /// Gets the provider-specific configuration using the registered deserializer.
+    /// Prefers ProviderOptionsJson (FFI-friendly), falls back to AdditionalProperties.
+    /// Uses the provider's registered deserializer from ProviderDiscovery for AOT compatibility.
+    ///
+    /// Usage in providers:
+    /// <code>
+    /// var myConfig = config.GetTypedProviderConfig&lt;AnthropicProviderConfig&gt;();
+    /// </code>
+    /// </summary>
+    /// <typeparam name="T">The strongly-typed configuration class</typeparam>
+    /// <returns>Parsed configuration object, or null if no config is present</returns>
+    public T? GetTypedProviderConfig<T>() where T : class
+    {
+        // Return cached value if available and correct type
+        if (_cachedProviderConfig is T cached)
+            return cached;
+
+        // Priority 1: Use ProviderOptionsJson with registered deserializer
+        if (!string.IsNullOrWhiteSpace(ProviderOptionsJson))
+        {
+            var registration = Providers.ProviderDiscovery.GetProviderConfigType(ProviderKey);
+            if (registration != null && registration.ConfigType == typeof(T))
+            {
+                var result = registration.Deserialize(ProviderOptionsJson) as T;
+                _cachedProviderConfig = result;
+                return result;
+            }
+        }
+
+        // Priority 2: Fall back to AdditionalProperties (legacy)
+        var legacyConfig = GetProviderConfig<T>();
+        _cachedProviderConfig = legacyConfig;
+        return legacyConfig;
+    }
+
+    /// <summary>
+    /// Sets the provider-specific configuration and updates ProviderOptionsJson.
+    /// Uses the provider's registered serializer from ProviderDiscovery for AOT compatibility.
+    /// </summary>
+    /// <typeparam name="T">The strongly-typed configuration class</typeparam>
+    /// <param name="config">The configuration object to set</param>
+    public void SetTypedProviderConfig<T>(T config) where T : class
+    {
+        _cachedProviderConfig = config;
+
+        // Serialize using registered serializer
+        var registration = Providers.ProviderDiscovery.GetProviderConfigType(ProviderKey);
+        if (registration != null && registration.ConfigType == typeof(T))
+        {
+            ProviderOptionsJson = registration.Serialize(config);
+        }
+    }
+
     /// <summary>
     /// Deserializes AdditionalProperties to a strongly-typed configuration class.
-    /// This method is available to all providers (built-in and external) for consistent configuration parsing.
-    /// 
+    /// Legacy method - prefer GetTypedProviderConfig for FFI/AOT compatibility.
+    ///
     /// Usage in providers:
     /// <code>
     /// var myConfig = config.GetProviderConfig&lt;MyProviderConfig&gt;();
@@ -468,7 +545,7 @@ public class ProviderConfig
                 WriteIndented = false,
                 PropertyNameCaseInsensitive = true
             });
-            
+
             return System.Text.Json.JsonSerializer.Deserialize<T>(json, new System.Text.Json.JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -559,8 +636,6 @@ public class ErrorHandlingConfig
     /// environments or with sanitized exceptions.
     /// </para>
     /// <para>
-    /// Inspired by Microsoft.Extensions.AI's <c>FunctionInvokingChatClient.IncludeDetailedErrors</c>.
-    /// </para>
     /// </remarks>
     public bool IncludeDetailedErrorsInChat { get; set; } = false;
 

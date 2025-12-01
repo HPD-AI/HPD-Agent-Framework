@@ -1,7 +1,6 @@
 
 using Microsoft.Extensions.AI;
 using System.Text.Json;
-using HPD.Agent;
 
 namespace HPD.Agent;
 
@@ -29,7 +28,6 @@ namespace HPD.Agent;
 /// Cache-aware history reduction is handled by HistoryReductionStateData in ConversationThread,
 /// not by mutating the message store. Messages are reduced at runtime for LLM calls only.
 ///
-/// For protocol-specific adapters (e.g., Microsoft.Agents.AI), see HPD-Agent.Microsoft.
 /// </summary>
 public abstract class ChatMessageStore
 {

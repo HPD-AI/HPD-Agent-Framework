@@ -14,7 +14,7 @@ public class ErrorHandlingConvenienceMethodDemo
         // ✅ Simple usage with defaults
         var agent = new AgentBuilder()
             .WithErrorHandling()  // One call, all middleware registered in correct order
-            .BuildCoreAgent();
+            .Build();
 
         Console.WriteLine("✓ Simple usage: All error handling middleware registered");
         Console.WriteLine($"  Middleware count: {GetMiddlewareCount(agent)}");
@@ -28,7 +28,7 @@ public class ErrorHandlingConvenienceMethodDemo
                 maxConsecutiveCalls: 3,      // Circuit breaker triggers after 3 identical calls
                 maxConsecutiveErrors: 5,      // Terminate after 5 consecutive errors
                 maxTotalErrors: 15)           // Terminate after 15 total errors
-            .BuildCoreAgent();
+            .Build();
 
         Console.WriteLine("✓ Custom thresholds: Error handling configured with custom limits");
     }
@@ -54,7 +54,7 @@ public class ErrorHandlingConvenienceMethodDemo
                     };
                 },
                 configureFunctionTimeout: TimeSpan.FromMinutes(2))
-            .BuildCoreAgent();
+            .Build();
 
         Console.WriteLine("✓ Advanced configuration: Fine-grained control over each middleware");
     }
@@ -77,7 +77,7 @@ public class ErrorHandlingConvenienceMethodDemo
             .WithFunctionTimeout()     // Uses config.ErrorHandling.SingleFunctionTimeout
             .WithCircuitBreaker(3)
             .WithErrorTracking(5)
-            .BuildCoreAgent();
+            .Build();
 
         Console.WriteLine("✓ Standalone middleware: Individual methods for granular control");
     }

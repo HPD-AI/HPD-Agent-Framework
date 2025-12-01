@@ -52,7 +52,7 @@ internal static class SubAgentCodeGenerator
         sb.AppendLine($"                    }}");
         sb.AppendLine($"                }}");
         sb.AppendLine();
-        sb.AppendLine($"                var agent = agentBuilder.BuildCoreAgent();");
+        sb.AppendLine($"                var agent = await agentBuilder.Build();");
         sb.AppendLine();
 
         // Set up event bubbling via parent-child linking

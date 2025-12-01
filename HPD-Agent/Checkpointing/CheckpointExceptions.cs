@@ -1,6 +1,6 @@
 using System;
 
-namespace HPD.Agent.Conversation.Checkpointing;
+namespace HPD.Agent.Checkpointing;
 
 /// <summary>
 /// Thrown when a checkpoint version is newer than the maximum supported version.

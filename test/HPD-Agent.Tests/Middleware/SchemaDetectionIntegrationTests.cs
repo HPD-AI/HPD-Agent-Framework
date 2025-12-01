@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using HPD.Agent;
-using HPD.Agent.Conversation.Checkpointing;
+using HPD.Agent.Checkpointing;
 using HPD_Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;

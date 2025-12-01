@@ -228,11 +228,8 @@ public class MCPClientManager : IDisposable
     {
         var client = await GetOrCreateClientAsync(serverConfig, cancellationToken);
 
-        // Try to extract server description from MCP serverInfo if not provided in config
-        if (string.IsNullOrWhiteSpace(serverConfig.Description))
-        {
-            serverConfig.Description = TryExtractServerDescription(client, serverConfig.Name);
-        }
+        // Use only the provided description from config (no reflection-based extraction for AOT compatibility)
+        // If description is not provided, it will be empty
 
         // ListToolsAsync returns McpClientTool[], which inherit from AIFunction
         var mcpTools = await client.ListToolsAsync(cancellationToken: cancellationToken);
@@ -264,54 +261,8 @@ public class MCPClientManager : IDisposable
                 };
 
                 // Attempt to copy schema information if the external tool exposes it
-                try
-                {
-                    var toolType = tool.GetType();
-                    var jsonSchemaProp = toolType.GetProperty("JsonSchema");
-                    if (jsonSchemaProp != null)
-                    {
-                        var val = jsonSchemaProp.GetValue(tool);
-                        if (val is System.Text.Json.JsonElement je)
-                        {
-                            options.SchemaProvider = () => je;
-                        }
-                        else if (val is string s && !string.IsNullOrEmpty(s))
-                        {
-                            try
-                            {
-                                using var doc = System.Text.Json.JsonDocument.Parse(s);
-                                var parsed = doc.RootElement.Clone();
-                                options.SchemaProvider = () => parsed;
-                            }
-                            catch { /* ignore parse errors */ }
-                        }
-                    }
-
-                    // If there is a SchemaProvider delegate on the external tool, try to adapt it
-                    var schemaProviderProp = toolType.GetProperty("SchemaProvider");
-                    if (schemaProviderProp != null)
-                    {
-                        var sp = schemaProviderProp.GetValue(tool);
-                        if (sp is Func<System.Text.Json.JsonElement> spFunc)
-                        {
-                            options.SchemaProvider = spFunc;
-                        }
-                        else if (sp is Func<string> spStr)
-                        {
-                            try
-                            {
-                                using var doc = System.Text.Json.JsonDocument.Parse(spStr());
-                                var el = doc.RootElement.Clone();
-                                options.SchemaProvider = () => el;
-                            }
-                            catch { }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Unable to extract schema from MCP tool '{ToolName}' - continuing without schema", tool.Name);
-                }
+                // Note: Reflection-based schema extraction removed for Native AOT compatibility
+                // Tools should provide schema through standard AIFunction properties
 
                 // Create an adapted AIFunction via our factory so it's compatible with generated plugins
                 var adapted = HPDAIFunctionFactory.Create(invocationWrapper, options);
@@ -359,57 +310,8 @@ public class MCPClientManager : IDisposable
         var client = await McpClientFactory.CreateAsync(transport);
         _clients[serverConfig.Name] = client;
 
-        // Log server info if available
-        try
-        {
-            var serverInfo = client.GetType().GetProperty("ServerInfo")?.GetValue(client);
-            if (serverInfo != null)
-            {
-                _logger.LogDebug("MCP server '{ServerName}' info: {ServerInfo}", serverConfig.Name, serverInfo);
-            }
-        }
-        catch
-        {
-            // Ignore if ServerInfo not available
-        }
-
         _logger.LogDebug("Successfully created MCP client for server '{ServerName}'", serverConfig.Name);
         return client;
-    }
-
-    /// <summary>
-    /// Attempts to extract description from MCP server metadata via reflection
-    /// (since the C# MCP library might expose ServerInfo but we don't know the exact type)
-    /// </summary>
-    private string? TryExtractServerDescription(IMcpClient client, string serverName)
-    {
-        try
-        {
-            // Try to get ServerInfo property
-            var serverInfoProp = client.GetType().GetProperty("ServerInfo");
-            if (serverInfoProp == null) return null;
-
-            var serverInfo = serverInfoProp.GetValue(client);
-            if (serverInfo == null) return null;
-
-            // Try to get Description property from ServerInfo
-            var descriptionProp = serverInfo.GetType().GetProperty("Description");
-            if (descriptionProp == null) return null;
-
-            var description = descriptionProp.GetValue(serverInfo) as string;
-            if (!string.IsNullOrWhiteSpace(description))
-            {
-                _logger.LogDebug("Extracted description from MCP server '{ServerName}': {Description}",
-                    serverName, description);
-                return description;
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not extract description from MCP server '{ServerName}' - using fallback", serverName);
-        }
-
-        return null;
     }
 
     /// <summary>

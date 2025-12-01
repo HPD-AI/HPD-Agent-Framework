@@ -1,8 +1,5 @@
 # HPD-Agent FileSystem Plugin
 
-**Production-grade file system operations for AI agents**
-
-This plugin provides comprehensive file system capabilities for HPD-Agent, inspired by [Gemini CLI's file tools](https://github.com/google-gemini/gemini-cli). It enables your AI agent to read, write, search, and manipulate files safely within a configured workspace.
 
 ## 🚀 Features
 

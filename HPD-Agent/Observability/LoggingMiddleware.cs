@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
-using HPD.Agent.Middleware;
 using Microsoft.Extensions.Logging;
 
 namespace HPD.Agent.Middleware;

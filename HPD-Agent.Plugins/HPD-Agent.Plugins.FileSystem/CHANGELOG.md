@@ -33,11 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Ude.NetStandard` for encoding detection
   - `MAB.DotIgnore` for .gitignore support
 
-### Inspired By
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) file system tools
-  - Similar parameter structure for read/write operations
-  - Glob and grep functionality
-  - Smart editing with diff previews
   - Workspace-based security model
 
 ## [Unreleased]

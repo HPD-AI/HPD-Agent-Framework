@@ -14,7 +14,7 @@ namespace HPD.Agent;
 /// var handler = new ConsoleEventHandler();
 /// var agent = new AgentBuilder(config)
 ///     .WithObserver(handler)
-///     .BuildCoreAgent();
+///     .Build();
 /// handler.SetAgent(agent);
 ///
 /// await agent.RunAsync(messages, thread: thread);
@@ -25,8 +25,8 @@ namespace HPD.Agent;
 /// <b>Usage - Multiple Agents:</b>
 /// <code>
 /// var handler = new ConsoleEventHandler();
-/// var agent1 = new AgentBuilder(config1).WithObserver(handler).BuildCoreAgent();
-/// var agent2 = new AgentBuilder(config2).WithObserver(handler).BuildCoreAgent();
+/// var agent1 = new AgentBuilder(config1).WithObserver(handler).Build();
+/// var agent2 = new AgentBuilder(config2).WithObserver(handler).Build();
 /// handler.SetAgent(agent1);  // Or agent2, depending on which handles permissions
 /// </code>
 /// </para>
@@ -41,7 +41,7 @@ namespace HPD.Agent;
 /// - Automatic section management (reasoning → text transitions)
 /// </para>
 /// </remarks>
-public class ConsoleEventHandler : IEventHandler
+public class ConsoleEventHandler : IAgentEventHandler
 {
     private Agent? _agent;
 
@@ -73,7 +73,7 @@ public class ConsoleEventHandler : IEventHandler
     /// Required for bidirectional events (permissions, continuations) to work.
     /// </summary>
     /// <param name="agent">The agent instance</param>
-    internal void SetAgent(Agent agent)
+    public void SetAgent(Agent agent)
     {
         _agent = agent;
     }

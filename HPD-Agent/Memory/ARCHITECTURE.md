@@ -82,8 +82,6 @@ This document explains the internal architecture of HPD-Agent's memory systems f
 
 ### 1. Pluggable Storage
 
-All memory systems follow the same abstract store pattern inspired by Microsoft's `AgentThread` / `ChatMessageStore`:
-
 - **Abstract Base Class**: Defines the contract
 - **Multiple Implementations**: In-memory, JSON, SQL, Redis, etc.
 - **Serialization Support**: Snapshot/restore via records

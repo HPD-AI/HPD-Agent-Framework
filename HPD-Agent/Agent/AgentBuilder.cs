@@ -1,7 +1,6 @@
 using HPD.Agent.Providers;
 using HPD.Agent.Middleware;
 using HPD.Agent.Middleware.Function;
-using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +13,6 @@ using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
-using System.Linq;
 using HPD_Agent.Memory.Agent.PlanMode;
 
 namespace HPD.Agent;
@@ -65,6 +63,9 @@ public class AgentBuilder
 
     // Internal observers for agent-level observability (developer-only, hidden from users)
     private readonly List<IAgentEventObserver> _observers = new();
+
+    // Event handlers for synchronous, ordered event processing (UI, console, web streams)
+    private readonly List<IAgentEventHandler> _eventHandlers = new();
 
     internal readonly Dictionary<Type, object> _providerConfigs = new();
     internal IServiceProvider? _serviceProvider;
@@ -811,7 +812,7 @@ public class AgentBuilder
     /// // Register with agent
     /// var agent = new AgentBuilder(config)
     ///     .WithObserver(new MyEventHandler())
-    ///     .BuildCoreAgent();
+    ///     .Build();
     /// </code>
     /// </para>
     /// <para>
@@ -830,6 +831,51 @@ public class AgentBuilder
             throw new ArgumentNullException(nameof(observer));
 
         _observers.Add(observer);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers an event handler for synchronous, ordered event processing.
+    /// Use this for UI handlers (console, web streams) that need guaranteed ordering.
+    /// </summary>
+    /// <param name="handler">The event handler to register</param>
+    /// <returns>The builder for chaining</returns>
+    /// <remarks>
+    /// <para>
+    /// Unlike <see cref="WithObserver"/>, event handlers are awaited synchronously
+    /// in the event loop, guaranteeing events are processed in order.
+    /// </para>
+    /// <para>
+    /// <b>Use WithEventHandler for:</b>
+    /// <list type="bullet">
+    /// <item>Console output that needs correct ordering</item>
+    /// <item>Web UI streaming (SSE, WebSockets)</item>
+    /// <item>Permission prompts that need user interaction</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>Use WithObserver for:</b>
+    /// <list type="bullet">
+    /// <item>Telemetry and metrics (ordering doesn't matter)</item>
+    /// <item>Background logging</item>
+    /// <item>Analytics</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// var agent = new AgentBuilder(config)
+    ///     .WithEventHandler(new ConsoleEventHandler())  // Synchronous, ordered
+    ///     .WithObserver(new TelemetryObserver())        // Fire-and-forget
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public AgentBuilder WithEventHandler(IAgentEventHandler handler)
+    {
+        if (handler == null)
+            throw new ArgumentNullException(nameof(handler));
+
+        _eventHandlers.Add(handler);
         return this;
     }
 
@@ -1027,38 +1073,28 @@ public class AgentBuilder
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for async operations</param>
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    internal async Task<Agent> BuildCoreAgentAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Builds the protocol-agnostic core agent asynchronously.
+    /// Required for provider validation (LLM connectivity checks) during initialization.
+    /// </summary>
+    public async Task<Agent> Build(CancellationToken cancellationToken = default)
     {
         var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Create protocol-agnostic core agent
-        return new Agent(
-            _config!,
-            buildData.ClientToUse,
-            buildData.MergedOptions,
-            buildData.ErrorHandler,
-            _functionToPluginMap,
-            _functionToSkillMap,
-            _middlewares,
-            _serviceProvider,
-            _observers);
+        RegisterAutoMiddleware(buildData);
+        return CreateAgent(buildData);
     }
 
     /// <summary>
-    /// Builds the protocol-agnostic core agent synchronously (blocks thread until complete).
-    /// Internal method - use protocol-specific Build methods (e.g., BuildMicrosoftAgent()).
-    /// Always uses sync validation for performance.
+    /// Registers all auto-middleware (error handling, history reduction, tool scoping, etc).
+    /// Called by both sync and async build paths to eliminate code duplication.
     /// </summary>
-    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
-    internal Agent BuildCoreAgent()
+    private void RegisterAutoMiddleware(AgentBuildDependencies buildData)
     {
-        var buildData = BuildDependenciesAsync(CancellationToken.None).GetAwaiter().GetResult();
-
         // Set explicitly registered plugins in config for scoping manager
         _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
             .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // Set global config for source-generated code to access
+        // Set global config for source-generated code to access (sync path sets this, harmless when called from async)
         AgentConfig.GlobalConfig = _config;
 
         // Register ContinuationPermissionMiddleware if enabled
@@ -1113,8 +1149,14 @@ public class AgentBuilder
                 _config.Scoping);
             _middlewares.Add(scopingMiddleware);
         }
+    }
 
-        // Create protocol-agnostic core agent
+    /// <summary>
+    /// Creates the final Agent instance with all registered middleware and configuration.
+    /// Shared by both sync and async build paths to eliminate code duplication.
+    /// </summary>
+    private Agent CreateAgent(AgentBuildDependencies buildData)
+    {
         return new Agent(
             _config!,
             buildData.ClientToUse,
@@ -1124,63 +1166,8 @@ public class AgentBuilder
             _functionToSkillMap,
             _middlewares,
             _serviceProvider,
-            _observers);
-    }
-
-    /// <summary>
-    /// Core build logic shared between sync and async paths
-    /// </summary>
-    internal async Task<Agent> BuildCoreAsync(CancellationToken cancellationToken)
-    {
-        var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Set explicitly registered plugins in config for scoping manager
-        _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
-            .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // ═══════════════════════════════════════════════════════════════
-        // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
-        // ═══════════════════════════════════════════════════════════════
-        // These are registered in execution order (first = outermost):
-        // - FunctionRetryMiddleware wraps timeout (retry the entire timeout operation)
-        // - FunctionTimeoutMiddleware wraps execution (timeout individual attempts)
-
-        // Register FunctionRetryMiddleware if retry is enabled
-        if (_config.ErrorHandling?.MaxRetries > 0)
-        {
-            _middlewares.Add(new Middleware.Function.FunctionRetryMiddleware(_config.ErrorHandling));
-        }
-
-        // Register FunctionTimeoutMiddleware if timeout is configured
-        if (_config.ErrorHandling?.SingleFunctionTimeout != null)
-        {
-            _middlewares.Add(new Middleware.Function.FunctionTimeoutMiddleware(_config.ErrorHandling.SingleFunctionTimeout.Value));
-        }
-
-        // Register ToolScopingMiddleware if enabled
-        // This middleware owns the ToolVisibilityManager and handles all tool scoping logic
-        if (_config.Scoping?.Enabled == true && buildData.MergedOptions?.Tools != null)
-        {
-            var scopingMiddleware = new ToolScopingMiddleware(
-                buildData.MergedOptions.Tools,
-                _explicitlyRegisteredPlugins.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
-                _config.Scoping);
-            _middlewares.Add(scopingMiddleware);
-        }
-
-        // Create agent using the new, cleaner constructor with AgentConfig
-        var agent = new Agent(
-            _config,
-            buildData.ClientToUse,
-            buildData.MergedOptions,
-            buildData.ErrorHandler,
-            _functionToPluginMap,
-            _functionToSkillMap,
-            _middlewares,
-            _serviceProvider,
-            _observers);
-
-        return agent;
+            _observers,
+            _eventHandlers);
     }
 
     /// <summary>
@@ -1244,10 +1231,38 @@ public class AgentBuilder
             }
         }
 
-        // ✨ PRIORITY 1: Try to resolve from connection string first (Microsoft pattern)
+        // ✨ PRIORITY 1: Try to resolve from Providers section (recommended pattern)
+        if (_configuration != null && !string.IsNullOrEmpty(_config.Provider.ProviderKey))
+        {
+            var providerName = _config.Provider.ProviderKey;
+            var providerSection = _configuration.GetSection($"Providers:{providerName}")
+                               ?? _configuration.GetSection($"Providers:{Capitalize(providerName)}");
+
+            if (providerSection.Exists())
+            {
+                // Apply provider section values (only if not already set in code)
+                var sectionProviderKey = providerSection["ProviderKey"];
+                if (!string.IsNullOrEmpty(sectionProviderKey) && string.IsNullOrEmpty(_config.Provider.ProviderKey))
+                    _config.Provider.ProviderKey = sectionProviderKey;
+
+                var sectionApiKey = providerSection["ApiKey"];
+                if (!string.IsNullOrEmpty(sectionApiKey) && string.IsNullOrEmpty(_config.Provider.ApiKey))
+                    _config.Provider.ApiKey = sectionApiKey;
+
+                var sectionModelName = providerSection["ModelName"];
+                if (!string.IsNullOrEmpty(sectionModelName) && string.IsNullOrEmpty(_config.Provider.ModelName))
+                    _config.Provider.ModelName = sectionModelName;
+
+                var sectionEndpoint = providerSection["Endpoint"];
+                if (!string.IsNullOrEmpty(sectionEndpoint) && string.IsNullOrEmpty(_config.Provider.Endpoint))
+                    _config.Provider.Endpoint = sectionEndpoint;
+            }
+        }
+
+        // ✨ PRIORITY 2: Try to resolve from connection string (backward compatibility)
         if (_configuration != null)
         {
-            // Try standard ConnectionStrings section first
+            // Try standard ConnectionStrings section
             var connectionString = _configuration.GetConnectionString("Agent")
                                 ?? _configuration.GetConnectionString("ChatClient")
                                 ?? _configuration.GetConnectionString("Provider");
@@ -1269,7 +1284,7 @@ public class AgentBuilder
             }
         }
 
-        // ✨ PRIORITY 2: Resolve from individual configuration keys (backward compatibility)
+        // ✨ PRIORITY 3: Resolve from individual configuration keys (backward compatibility)
         if (string.IsNullOrEmpty(_config.Provider.ApiKey) && _configuration != null)
         {
             var providerKeyForConfig = _config.Provider.ProviderKey;
@@ -1364,7 +1379,7 @@ public class AgentBuilder
                 e.Contains("ApiKey", StringComparison.OrdinalIgnoreCase) ||
                 e.Contains("AccessKey", StringComparison.OrdinalIgnoreCase));
 
-            var errorMessage = $"Provider configuration for '{providerKey}' is invalid:\n- {string.Join("\n- ", validation.Errors)}";
+                var errorMessage = $"Provider configuration for '{providerKey}' is invalid:\n- {string.Join("\n- ", validation.Errors)}";
 
             if (hasApiKeyError)
             {
@@ -1372,21 +1387,25 @@ public class AgentBuilder
                 var providerCapitalized = Capitalize(providerKey);
 
                 errorMessage += $"\n\n💡 Configure your API key using any of these methods:\n\n" +
-                    $"1️⃣  CONNECTION STRING (recommended):\n" +
+                    $"1️⃣  PROVIDERS SECTION (recommended for multiple providers):\n" +
+                    $"   appsettings.json → \"Providers\": {{\n" +
+                    $"     \"{providerCapitalized}\": {{\n" +
+                    $"       \"ProviderKey\": \"{providerKey}\",\n" +
+                    $"       \"ModelName\": \"your-model\",\n" +
+                    $"       \"ApiKey\": \"your-api-key\"\n" +
+                    $"     }}\n" +
+                    $"   }}\n\n" +
+                    $"2️⃣  CONNECTION STRING (legacy, single provider):\n" +
                     $"   appsettings.json → \"ConnectionStrings\": {{\n" +
                     $"     \"Agent\": \"Provider={providerKey};AccessKey=your-api-key;Model=your-model\"\n" +
                     $"   }}\n\n" +
-                    $"2️⃣  CONFIGURATION FILE:\n" +
-                    $"   appsettings.json → \"{providerCapitalized}\": {{ \"ApiKey\": \"your-api-key\" }}\n\n" +
                     $"3️⃣  ENVIRONMENT VARIABLE:\n" +
                     $"   {providerUpper}_API_KEY=your-api-key\n\n" +
                     $"4️⃣  USER SECRETS (development only):\n" +
-                    $"   dotnet user-secrets set \"{providerCapitalized}:ApiKey\" \"your-api-key\"\n\n" +
+                    $"   dotnet user-secrets set \"Providers:{providerCapitalized}:ApiKey\" \"your-api-key\"\n\n" +
                     $"5️⃣  CODE (for testing only, not recommended):\n" +
                     $"   Provider = new ProviderConfig {{ ApiKey = \"your-api-key\", ... }}";
-            }
-
-            throw new InvalidOperationException(errorMessage);
+            }            throw new InvalidOperationException(errorMessage);
         }
 
         // Create chat client and error handler via provider factories
@@ -1966,9 +1985,10 @@ public class AgentBuilder
     public IConfiguration? Configuration => _configuration;
 
     /// <summary>
-    /// Internal access to config object for extension methods
+    /// Gets the configuration object for this builder.
+    /// Used by provider extension methods to configure provider-specific settings.
     /// </summary>
-    internal AgentConfig Config => _config;
+    public AgentConfig Config => _config;
 
     /// <summary>
     /// Internal access to base client for extension methods
@@ -2115,10 +2135,9 @@ public class AgentBuilder
 
 #region Middleware Extensions
 /// <summary>
-/// Extension methods for configuring prompt and function Middlewares for the AgentBuilder.
-/// Internal - not exposed to users. Use AIContextProvider for public API.
+/// Extension methods for configuring middleware for the AgentBuilder.
 /// </summary>
-internal static class AgentBuilderMiddlewareExtensions
+public static class AgentBuilderMiddlewareExtensions
 {
     /// <summary>
     /// Adds a unified agent middleware instance.
@@ -2860,7 +2879,7 @@ internal static class AgentBuilderMiddlewareExtensions
 
         // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
         // during Build() after the Agent is constructed (since it needs the ToolVisibilityManager
-        // which is created in the Agent constructor). See BuildCoreAgent() for registration logic.
+        // which is created in the Agent constructor). See Build() for registration logic.
 
         return builder;
     }
@@ -2890,7 +2909,7 @@ internal static class AgentBuilderMiddlewareExtensions
         configure(builder.Config.Scoping);
         
         // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
-        // during Build() after the Agent is constructed. See BuildCoreAgent() for registration logic.
+        // during Build() after the Agent is constructed. See Build() for registration logic.
         
         return builder;
     }
@@ -3418,345 +3437,6 @@ public static class AgentBuilderPluginExtensions
         }
     }
 
-}
-
-#endregion
-
-
-#region Error Handling Policy
-
-/// <summary>
-/// Error handling policy that normalizes exceptions across different providers
-/// into consistent ErrorContent format following Microsoft.Extensions.AI patterns.
-/// </summary>
-public class ErrorHandlingPolicy
-{
-    /// <summary>
-    /// Whether to normalize provider-specific errors into standard formats
-    /// </summary>
-    public bool NormalizeProviderErrors { get; set; } = true;
-
-    /// <summary>
-    /// Whether to include provider-specific details in error messages
-    /// </summary>
-    public bool IncludeProviderDetails { get; set; } = false;
-
-    /// <summary>
-    /// Maximum number of retries for transient errors
-    /// </summary>
-    public int MaxRetries { get; set; } = 3;
-
-    /// <summary>
-    /// Normalizes an exception into a consistent ErrorContent format
-    /// </summary>
-    /// <param name="ex">The exception to normalize</param>
-    /// <param name="providerKey">The provider key that generated the exception (e.g., "openai", "openrouter")</param>
-    /// <returns>Normalized ErrorContent</returns>
-    public ErrorContent NormalizeError(Exception ex, string providerKey)
-    {
-        if (!NormalizeProviderErrors)
-        {
-            return new ErrorContent(ex.Message);
-        }
-
-        var normalizedMessage = ex.Message;
-        var errorCode = "UnknownError";
-
-        // Provider-specific error normalization
-        switch (providerKey?.ToLowerInvariant())
-        {
-            case "openai":
-                (normalizedMessage, errorCode) = NormalizeOpenAIError(ex);
-                break;
-            case "openrouter":
-                (normalizedMessage, errorCode) = NormalizeOpenRouterError(ex);
-                break;
-            case "azureopenai":
-                (normalizedMessage, errorCode) = NormalizeAzureError(ex);
-                break;
-            case "azureaiinference":
-                (normalizedMessage, errorCode) = NormalizeAzureAIInferenceError(ex);
-                break;
-            case "anthropic":
-                (normalizedMessage, errorCode) = NormalizeAnthropicError(ex);
-                break;
-            case "ollama":
-                (normalizedMessage, errorCode) = NormalizeOllamaError(ex);
-                break;
-            case "googleai":
-                (normalizedMessage, errorCode) = NormalizeGoogleAIError(ex);
-                break;
-            case "vertexai":
-                (normalizedMessage, errorCode) = NormalizeVertexAIError(ex);
-                break;
-            case "huggingface":
-                (normalizedMessage, errorCode) = NormalizeHuggingFaceError(ex);
-                break;
-            case "bedrock":
-                (normalizedMessage, errorCode) = NormalizeBedrockError(ex);
-                break;
-            case "onnxruntime":
-                (normalizedMessage, errorCode) = NormalizeOnnxRuntimeError(ex);
-                break;
-            case "mistral":
-                (normalizedMessage, errorCode) = NormalizeMistralError(ex);
-                break;
-            default:
-                normalizedMessage = ex.Message;
-                errorCode = "ProviderError";
-                break;
-        }
-
-        var errorContent = new ErrorContent(normalizedMessage)
-        {
-            ErrorCode = errorCode
-        };
-
-        // Add provider details if requested
-        if (IncludeProviderDetails)
-        {
-            errorContent.AdditionalProperties ??= new();
-            errorContent.AdditionalProperties["Provider"] = providerKey ?? "Unknown";
-            errorContent.AdditionalProperties["OriginalMessage"] = ex.Message;
-            errorContent.AdditionalProperties["ExceptionType"] = ex.GetType().Name;
-        }
-
-        return errorContent;
-    }
-
-    /// <summary>
-    /// Determines if an error is transient and should be retried
-    /// </summary>
-    /// <param name="ex">The exception to check</param>
-    /// <param name="providerKey">The provider key that generated the exception (e.g., "openai", "openrouter")</param>
-    /// <returns>True if the error is transient</returns>
-    public bool IsTransientError(Exception ex, string providerKey)
-    {
-        var message = ex.Message.ToLowerInvariant();
-
-        // Common transient error patterns
-        if (message.Contains("rate limit") ||
-            message.Contains("timeout") ||
-            message.Contains("503") ||
-            message.Contains("502") ||
-            message.Contains("network") ||
-            message.Contains("connection"))
-        {
-            return true;
-        }
-
-        // Provider-specific transient patterns
-        return providerKey?.ToLowerInvariant() switch
-        {
-            "openai" => message.Contains("overloaded") || message.Contains("429"),
-            "openrouter" => message.Contains("queue") || message.Contains("busy"),
-            "azureopenai" => message.Contains("deployment busy") || message.Contains("throttling"),
-            "azureaiinference" => message.Contains("throttling") || message.Contains("resource busy"),
-            "anthropic" => message.Contains("overloaded") || message.Contains("rate_limit"),
-            "ollama" => message.Contains("loading") || message.Contains("busy"),
-            "googleai" => message.Contains("quota exceeded") || message.Contains("backend error"),
-            "vertexai" => message.Contains("quota exceeded") || message.Contains("backend error"),
-            "huggingface" => message.Contains("model loading") || message.Contains("estimated_time"),
-            "bedrock" => message.Contains("throttling") || message.Contains("model busy"),
-            "onnxruntime" => message.Contains("model loading") || message.Contains("initialization"),
-            "mistral" => message.Contains("rate limit") || message.Contains("overloaded"),
-            _ => false
-        };
-    }
-
-    private static (string message, string code) NormalizeOpenAIError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
-            var m when m.Contains("insufficient quota") => ("API quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("invalid api key") => ("Invalid API key provided.", "InvalidApiKey"),
-            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("refused") => ("Request was refused by the model.", "Refusal"),
-            var m when m.Contains("context_length_exceeded") => ("Input exceeds maximum context length.", "ContextTooLong"),
-            var m when m.Contains("content Middleware") => ("Content was Middlewareed due to policy violations.", "ContentMiddlewareed"),
-            _ => (message, "OpenAIError")
-        };
-    }
-
-    private static (string message, string code) NormalizeOpenRouterError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
-            var m when m.Contains("credits") => ("Insufficient credits.", "InsufficientCredits"),
-            var m when m.Contains("queue") => ("Request queued due to high demand.", "Queued"),
-            var m when m.Contains("model unavailable") => ("Model is currently unavailable.", "ModelUnavailable"),
-            _ => (message, "OpenRouterError")
-        };
-    }
-
-    private static (string message, string code) NormalizeAzureError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
-            var m when m.Contains("deployment not found") => ("Model deployment not found.", "DeploymentNotFound"),
-            var m when m.Contains("quota") => ("Deployment quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("content Middleware") => ("Content Middlewareed by Azure policies.", "ContentMiddlewareed"),
-            _ => (message, "AzureError")
-        };
-    }
-
-    private static (string message, string code) NormalizeOllamaError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("model not found") => ("Model not found. Please pull the model first.", "ModelNotFound"),
-            var m when m.Contains("connection refused") => ("Cannot connect to Ollama server.", "ConnectionFailed"),
-            var m when m.Contains("loading") => ("Model is still loading. Please wait.", "ModelLoading"),
-            var m when m.Contains("out of memory") => ("Insufficient memory to run model.", "OutOfMemory"),
-            _ => (message, "OllamaError")
-        };
-    }
-
-    private static (string message, string code) NormalizeAzureAIInferenceError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
-            var m when m.Contains("quota") => ("API quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("throttling") => ("Request was throttled. Please retry after some time.", "Throttled"),
-            var m when m.Contains("model not found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("resource busy") => ("Azure AI resource is busy. Please try again later.", "ResourceBusy"),
-            var m when m.Contains("content Middleware") => ("Content Middlewareed by Azure policies.", "ContentMiddlewareed"),
-            _ => (message, "AzureAIInferenceError")
-        };
-    }
-
-    private static (string message, string code) NormalizeAnthropicError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("rate_limit_error") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
-            var m when m.Contains("invalid_request_error") => ("Invalid request. Check your parameters.", "InvalidRequest"),
-            var m when m.Contains("authentication_error") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
-            var m when m.Contains("permission_error") => ("Permission denied. Check your access rights.", "PermissionDenied"),
-            var m when m.Contains("not_found_error") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("overloaded_error") => ("Service is overloaded. Please try again later.", "ServiceOverloaded"),
-            var m when m.Contains("api_error") => ("Internal API error occurred.", "InternalApiError"),
-            _ => (message, "AnthropicError")
-        };
-    }
-
-    private static (string message, string code) NormalizeGoogleAIError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("invalid_api_key") => ("Invalid API key provided.", "InvalidApiKey"),
-            var m when m.Contains("quota_exceeded") => ("API quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("resource_exhausted") => ("Resource quota exhausted.", "ResourceExhausted"),
-            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("permission_denied") => ("Permission denied. Check your access rights.", "PermissionDenied"),
-            var m when m.Contains("backend_error") => ("Backend service error. Please try again later.", "BackendError"),
-            var m when m.Contains("safety") => ("Content was blocked due to safety policies.", "SafetyBlocked"),
-            _ => (message, "GoogleAIError")
-        };
-    }
-
-    private static (string message, string code) NormalizeVertexAIError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("unauthenticated") => ("Authentication failed. Check your credentials.", "AuthenticationFailed"),
-            var m when m.Contains("permission_denied") => ("Permission denied. Check your access rights.", "PermissionDenied"),
-            var m when m.Contains("quota_exceeded") => ("Project quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("resource_exhausted") => ("Resource quota exhausted.", "ResourceExhausted"),
-            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("backend_error") => ("Backend service error. Please try again later.", "BackendError"),
-            var m when m.Contains("safety") => ("Content was blocked due to safety policies.", "SafetyBlocked"),
-            _ => (message, "VertexAIError")
-        };
-    }
-
-    private static (string message, string code) NormalizeHuggingFaceError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("authorization") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
-            var m when m.Contains("model loading") => ("Model is still loading. Please wait.", "ModelLoading"),
-            var m when m.Contains("estimated_time") => ("Model loading in progress. Please wait.", "ModelLoading"),
-            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
-            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("service_unavailable") => ("Service temporarily unavailable.", "ServiceUnavailable"),
-            var m when m.Contains("bad_request") => ("Invalid request. Check your parameters.", "InvalidRequest"),
-            _ => (message, "HuggingFaceError")
-        };
-    }
-
-    private static (string message, string code) NormalizeBedrockError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("accessdenied") => ("Access denied. Check your AWS credentials and permissions.", "AccessDenied"),
-            var m when m.Contains("throttling") => ("Request was throttled. Please retry after some time.", "Throttled"),
-            var m when m.Contains("model_not_ready") => ("Model is not ready. Please try again later.", "ModelNotReady"),
-            var m when m.Contains("validation") => ("Invalid request. Check your parameters.", "ValidationError"),
-            var m when m.Contains("service_quota") => ("Service quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("model_error") => ("Model execution error occurred.", "ModelError"),
-            var m when m.Contains("content_policy") => ("Content was blocked due to content policies.", "ContentBlocked"),
-            _ => (message, "BedrockError")
-        };
-    }
-
-    private static (string message, string code) NormalizeOnnxRuntimeError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("model not found") => ("ONNX model file not found.", "ModelNotFound"),
-            var m when m.Contains("initialization") => ("Model initialization failed.", "InitializationFailed"),
-            var m when m.Contains("invalid input") => ("Invalid input format or dimensions.", "InvalidInput"),
-            var m when m.Contains("out of memory") => ("Insufficient memory to run model.", "OutOfMemory"),
-            var m when m.Contains("session") => ("Model session error occurred.", "SessionError"),
-            var m when m.Contains("provider") => ("Execution provider error.", "ProviderError"),
-            var m when m.Contains("graph") => ("Model graph error occurred.", "GraphError"),
-            _ => (message, "OnnxRuntimeError")
-        };
-    }
-
-    private static (string message, string code) NormalizeMistralError(Exception ex)
-    {
-        var message = ex.Message;
-
-        return message.ToLowerInvariant() switch
-        {
-            var m when m.Contains("unauthorized") => ("Authentication failed. Check your API key.", "AuthenticationFailed"),
-            var m when m.Contains("rate limit") => ("Rate limit exceeded. Please try again later.", "RateLimit"),
-            var m when m.Contains("overloaded") => ("Service is overloaded. Please try again later.", "ServiceOverloaded"),
-            var m when m.Contains("model_not_found") => ("Model not found or not accessible.", "ModelNotFound"),
-            var m when m.Contains("bad_request") => ("Invalid request. Check your parameters.", "InvalidRequest"),
-            var m when m.Contains("quota") => ("API quota exceeded.", "QuotaExceeded"),
-            var m when m.Contains("internal_error") => ("Internal server error occurred.", "InternalError"),
-            _ => (message, "MistralError")
-        };
-    }
 }
 
 

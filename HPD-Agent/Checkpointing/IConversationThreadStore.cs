@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace HPD.Agent.Conversation.Checkpointing;
+namespace HPD.Agent.Checkpointing;
 
 /// <summary>
 /// Mode for checkpoint retention.

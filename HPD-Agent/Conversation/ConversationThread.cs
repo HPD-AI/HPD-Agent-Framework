@@ -5,7 +5,6 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Factory interface for creating ChatMessageStore instances from serialized state.
-/// Enables AOT-friendly deserialization without reflection.
 /// </summary>
 /// <remarks>
 /// Implement this interface for each message store type, then register via:
@@ -13,7 +12,7 @@ namespace HPD.Agent;
 /// ConversationThread.RegisterStoreFactory(new InMemoryConversationMessageStoreFactory());
 /// </code>
 /// </remarks>
-internal interface IConversationMessageStoreFactory
+public interface IConversationMessageStoreFactory
 {
     /// <summary>
     /// Gets the store type name used for matching during deserialization.
@@ -70,7 +69,7 @@ internal interface IConversationMessageStoreFactory
 /// </code>
 /// </para>
 /// </summary>
-internal sealed class ConversationThread
+public sealed class ConversationThread
 {
     // Metadata key constants
     private const string METADATA_KEY_DISPLAY_NAME = "DisplayName";
@@ -389,7 +388,7 @@ internal sealed class ConversationThread
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Read-only list of messages (snapshot, not live)</returns>
-    internal async Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
     {
         var messages = await _messageStore.GetMessagesAsync(cancellationToken);
         return messages.ToList().AsReadOnly();

@@ -38,14 +38,14 @@ public class SubAgent
     /// Only used when ThreadMode = SharedThread.
     /// WARNING: Do not use shared threads concurrently - can cause race conditions.
     /// </summary>
-    internal ConversationThread? SharedThread { get; set; }
+    public ConversationThread? SharedThread { get; set; }
 
     /// <summary>
     /// Plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin), typeof(WebSearchPlugin)).
     /// These plugins will be available as tools for the sub-agent to use.
     /// This is a runtime-only property and is not serializable (similar to Skills' References).
     /// </summary>
-    internal Type[] PluginTypes { get; set; } = Array.Empty<Type>();
+    public Type[] PluginTypes { get; set; } = Array.Empty<Type>();
 }
 
 /// <summary>

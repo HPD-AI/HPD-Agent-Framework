@@ -1,12 +1,7 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
-namespace HPD.Agent.Conversation.Checkpointing;
+namespace HPD.Agent.Checkpointing;
 
 /// <summary>
 /// In-memory conversation thread store for development and testing.

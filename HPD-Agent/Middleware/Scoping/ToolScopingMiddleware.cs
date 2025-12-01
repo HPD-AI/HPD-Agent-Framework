@@ -142,8 +142,10 @@ public class ToolScopingMiddleware : IAgentMiddleware
             visibleTools.Add(visibleFunctions[i]);
         }
 
-        // Update options with scoped tool list using extension method
-        context.Options = context.Options.WithTools(visibleTools);
+        // Update options with scoped tool list using Clone() + mutation
+        var clonedOptions = context.Options.Clone();
+        clonedOptions.Tools = visibleTools;
+        context.Options = clonedOptions;
 
         // Emit scoping state event for observability
         EmitScopingStateEvent(context, expandedPlugins, expandedSkills);

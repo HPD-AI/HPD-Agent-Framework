@@ -12,15 +12,27 @@
     <OutputType>Library</OutputType>
   </PropertyGroup>
 
+  <!-- NuGet Package Metadata -->
+  <PropertyGroup>
+    <PackageId>HPD.Agent.Framework</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Einstein Essibu</Authors>
+    <Company>HPD</Company>
+    <Description>A middleware-driven agentic AI framework built on Microsoft.Extensions.AI for building intelligent, tool-using agents.</Description>
+    <Copyright>Copyright © 2024 Einstein Essibu. All rights reserved.</Copyright>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageTags>ai;agent;llm;middleware;microsoft-extensions-ai;agentic;framework</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
   <ItemGroup>
-    <InternalsVisibleTo Include="HPD-Agent.FFI" />
-    <InternalsVisibleTo Include="HPD-Agent.Tests" />
-    <InternalsVisibleTo Include="AgentConsoleTest" />
-    <InternalsVisibleTo Include="AgentAPI" />
-    <InternalsVisibleTo Include="HPD-Agent.Microsoft" />
-    <InternalsVisibleTo Include="HPD-Agent.A2A" />
-    <InternalsVisibleTo Include="HPD-Agent.AGUI" />
-    <InternalsVisibleTo Include="HPD-Agent.MCP" />
+    <None Include="..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>

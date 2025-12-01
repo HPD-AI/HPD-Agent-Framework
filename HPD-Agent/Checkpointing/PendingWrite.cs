@@ -1,6 +1,4 @@
-using System;
-
-namespace HPD.Agent.Conversation.Checkpointing;
+namespace HPD.Agent.Checkpointing;
 
 /// <summary>
 /// Represents a function call result saved before iteration checkpoint.

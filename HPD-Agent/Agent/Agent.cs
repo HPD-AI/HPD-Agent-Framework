@@ -11,7 +11,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
-using HPD.Agent.Conversation.Checkpointing;
+using HPD.Agent.Checkpointing;
 
 namespace HPD.Agent;
 
@@ -48,7 +48,7 @@ namespace HPD.Agent;
 /// // The agent is stateless and can serve both threads concurrently
 /// </code>
 /// </summary>
-internal sealed class Agent
+public sealed class Agent
 {
     private readonly IChatClient _baseClient;
     private readonly string _name;
@@ -60,7 +60,6 @@ internal sealed class Agent
 
     // Microsoft.Extensions.AI compliance fields
     private readonly ChatClientMetadata _metadata;
-    private readonly ErrorHandlingPolicy _errorPolicy;
 
     // OpenTelemetry Activity Source for telemetry
     private static readonly ActivitySource ActivitySource = new("HPD.Agent");
@@ -90,6 +89,7 @@ internal sealed class Agent
 
     // Observer pattern for event-driven observability
     private readonly IReadOnlyList<IAgentEventObserver> _observers;
+    private readonly IReadOnlyList<IAgentEventHandler> _eventHandlers;
     private readonly ObserverHealthTracker? _observerHealthTracker;
     private readonly ILogger? _observerErrorLogger;
     private readonly Counter<long>? _observerErrorCounter;
@@ -199,11 +199,6 @@ internal sealed class Agent
 
 
     /// <summary>
-    /// Error handling policy for normalizing provider errors
-    /// </summary>
-    public ErrorHandlingPolicy ErrorPolicy => _errorPolicy;
-
-    /// <summary>
     /// Execution context for this agent (agent name, ID, hierarchy).
     /// Set during agent initialization to enable event attribution in multi-agent systems.
     /// </summary>
@@ -211,7 +206,7 @@ internal sealed class Agent
     public AgentExecutionContext? ExecutionContext
     {
         get => _executionContextValue;
-        internal set
+        set
         {
             _executionContextValue = value;
             // Sync with event coordinator so it can auto-attach context to events
@@ -225,7 +220,7 @@ internal sealed class Agent
     /// <summary>
     /// Internal access to event coordinator for context setup and nested agent configuration.
     /// </summary>
-    internal BidirectionalEventCoordinator EventCoordinator => _eventCoordinator;
+    public BidirectionalEventCoordinator EventCoordinator => _eventCoordinator;
 
     /// <summary>
     /// Internal access to Middleware event channel writer for context setup.
@@ -285,7 +280,8 @@ internal sealed class Agent
         IReadOnlyDictionary<string, string>? functionToSkillMap = null,
         IReadOnlyList<IAgentMiddleware>? middlewares = null,
         IServiceProvider? serviceProvider = null,
-        IEnumerable<IAgentEventObserver>? observers = null)
+        IEnumerable<IAgentEventObserver>? observers = null,
+        IEnumerable<IAgentEventHandler>? eventHandlers = null)
     {
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
@@ -308,14 +304,6 @@ internal sealed class Agent
             providerUri: null,
             defaultModelId: config.Provider?.ModelName
         );
-
-        // Initialize error handling policy
-        _errorPolicy = new ErrorHandlingPolicy
-        {
-            NormalizeProviderErrors = config.ErrorHandling?.NormalizeErrors ?? true,
-            IncludeProviderDetails = config.ErrorHandling?.IncludeProviderDetails ?? false,
-            MaxRetries = config.ErrorHandling?.MaxRetries ?? 3
-        };
 
         // Initialize unified middleware pipeline
         _middlewarePipeline = new AgentMiddlewarePipeline(middlewares ?? Array.Empty<IAgentMiddleware>());
@@ -357,8 +345,11 @@ internal sealed class Agent
         var loggerFactory = serviceProvider?.GetService(typeof(ILoggerFactory))
             as ILoggerFactory;
 
-        // Initialize event observers
+        // Initialize event observers (fire-and-forget, for telemetry/logging)
         _observers = observers?.ToList() ?? new List<IAgentEventObserver>();
+
+        // Initialize event handlers (synchronous, ordered, for UI)
+        _eventHandlers = eventHandlers?.ToList() ?? new List<IAgentEventHandler>();
 
         // Initialize observer health tracker if observers are configured
         if (_observers.Count > 0 && loggerFactory != null)
@@ -568,6 +559,42 @@ internal sealed class Agent
                     _observerHealthTracker?.RecordFailure(observer, ex);
                 }
             });
+        }
+    }
+
+    /// <summary>
+    /// Processes event handlers synchronously, guaranteeing ordered execution.
+    /// Unlike NotifyObservers which fires-and-forgets, this awaits each handler.
+    /// Handler failures are logged but don't crash the agent.
+    /// </summary>
+    private async Task ProcessEventHandlersAsync(AgentEvent evt, CancellationToken cancellationToken)
+    {
+        if (_eventHandlers.Count == 0) return;
+
+        foreach (var handler in _eventHandlers)
+        {
+            // Check handler-specific filter
+            if (!handler.ShouldProcess(evt))
+            {
+                continue;
+            }
+
+            try
+            {
+                await handler.OnEventAsync(evt, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Cancellation requested - stop processing handlers
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Log but don't crash - handler failures shouldn't break the agent
+                _observerErrorLogger?.LogError(ex,
+                    "EventHandler {HandlerType} failed processing {EventType}",
+                    handler.GetType().Name, evt.GetType().Name);
+            }
         }
     }
 
@@ -2069,7 +2096,14 @@ internal sealed class Agent
             thread: null,
             cancellationToken))
         {
+            // 1. Event handlers FIRST (awaited, ordered) - for UI
+            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
+
+            // 2. Yield event (for direct stream consumers)
             yield return evt;
+
+            // 3. Observers LAST (fire-and-forget) - for telemetry
+            NotifyObservers(evt);
         }
     }
 
@@ -2125,10 +2159,13 @@ internal sealed class Agent
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
-            // Yield event first (real-time protocol stream - zero delay)
+            // 1. Event handlers FIRST (awaited, ordered) - for UI
+            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
+
+            // 2. Yield event (for direct stream consumers)
             yield return evt;
 
-            // Then notify observers (fire-and-forget, non-blocking)
+            // 3. Observers LAST (fire-and-forget) - for telemetry
             NotifyObservers(evt);
         }
     }
@@ -2229,10 +2266,13 @@ internal sealed class Agent
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
-            // Yield event first (real-time protocol stream - zero delay)
+            // 1. Event handlers FIRST (awaited, ordered) - for UI
+            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
+
+            // 2. Yield event (for direct stream consumers)
             yield return evt;
 
-            // Then notify observers (fire-and-forget, non-blocking)
+            // 3. Observers LAST (fire-and-forget) - for telemetry
             NotifyObservers(evt);
         }
     }
@@ -4425,7 +4465,7 @@ internal static class ErrorFormatter
 /// - Multiple Middlewares can emit concurrently
 /// - Event channel supports multiple producers, single consumer
 /// </remarks>
-internal class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
+public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 {
     /// <summary>
     /// Shared event channel for all events.

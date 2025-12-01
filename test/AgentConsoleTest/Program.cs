@@ -17,20 +17,20 @@ var config = new AgentConfig
     Scoping = new ScopingConfig { Enabled = true }
 };
 
-// Build agent with observer
+// Build agent with event handler (synchronous, ordered for UI)
 var eventHandler = new ConsoleEventHandler();
-var agent = new AgentBuilder(config)
-    .WithObserver(eventHandler)
+var agent = await new AgentBuilder(config)
+    .WithEventHandler(eventHandler)
     .WithPlugin<MathPlugin>()
     .WithPlugin<FinancialAnalysisPlugin>()
     .WithPlugin<FinancialAnalysisSkills>()
-    .WithLogging()
     .WithPlanMode()
     .WithPermissions()
+    .WithLogging()
     .WithCircuitBreaker(maxConsecutiveCalls: 3)
     .WithErrorTracking(maxConsecutiveErrors: 3)
     .WithTotalErrorThreshold(maxTotalErrors: 10)
-    .BuildCoreAgent();
+    .Build();
 
 eventHandler.SetAgent(agent);
 var thread = agent.CreateThread();

@@ -23,7 +23,7 @@ try
     var agent = new AgentBuilder()
         .WithProvider("openai", "gpt-4o-mini", apiKey)
         .WithLogging(loggerFactory) // Uses unified LoggingMiddleware
-        .BuildCoreAgent();
+        .Build();
 
     Console.WriteLine("✅ Agent created successfully!");
 

@@ -16,7 +16,7 @@ internal class AzureAIInferenceProvider : IProviderFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        string endpoint = config.Endpoint;
+        string? endpoint = config.Endpoint;
         if (string.IsNullOrEmpty(endpoint))
         {
             if (config.AdditionalProperties?.TryGetValue("Endpoint", out var endpointObj) == true)
@@ -26,7 +26,7 @@ internal class AzureAIInferenceProvider : IProviderFeatures
         }
         endpoint ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_ENDPOINT");
 
-        string apiKey = config.ApiKey;
+        string? apiKey = config.ApiKey;
         if (string.IsNullOrEmpty(apiKey))
         {
             if (config.AdditionalProperties?.TryGetValue("ApiKey", out var apiKeyObj) == true)
@@ -74,7 +74,7 @@ internal class AzureAIInferenceProvider : IProviderFeatures
         if (string.IsNullOrEmpty(config.ModelName))
             errors.Add("Model name is required for Azure AI Inference");
 
-        string endpoint = config.Endpoint;
+        string? endpoint = config.Endpoint;
         if (string.IsNullOrEmpty(endpoint))
         {
             if (config.AdditionalProperties?.TryGetValue("Endpoint", out var endpointObj) == true)
@@ -84,7 +84,7 @@ internal class AzureAIInferenceProvider : IProviderFeatures
         }
         endpoint ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_ENDPOINT");
 
-        string apiKey = config.ApiKey;
+        string? apiKey = config.ApiKey;
         if (string.IsNullOrEmpty(apiKey))
         {
             if (config.AdditionalProperties?.TryGetValue("ApiKey", out var apiKeyObj) == true)

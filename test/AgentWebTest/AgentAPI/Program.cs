@@ -347,7 +347,7 @@ internal class ConversationManager
         _conversations.TryRemove(conversationId, out _);
 
     // ✨ CLEAN: Agent creation using CORE agent (internal access via InternalsVisibleTo)
-    [RequiresUnreferencedCode("AgentBuilder.BuildCoreAgent uses reflection for plugin registration")]
+    [RequiresUnreferencedCode("AgentBuilder.Build uses reflection for plugin registration")]
     public Agent CreateAgent()
     {
         if (_cachedAgent != null)
@@ -371,7 +371,7 @@ internal class ConversationManager
             .WithPlugin<MathPlugin>()
             .WithMCP("./MCP.json")
             .WithMaxFunctionCallTurns(6)
-            .BuildCoreAgent();  // ✨ Build CORE agent (internal access)
+            .Build();  // ✨ Build CORE agent (internal access)
 
         return _cachedAgent;
     }

@@ -453,7 +453,8 @@ public class ToolScopingMiddlewareTests
         };
 
         // Act
-        var updated = original.WithTools(newTools);
+        var updated = original.Clone();
+        updated.Tools = newTools;
 
         // Assert - new tools applied
         Assert.Single(updated.Tools);
