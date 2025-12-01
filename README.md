@@ -1,36 +1,71 @@
 # HPD.Agent.Framework
+```
+                    ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+                    ██║  ██║██╔══██╗██╔══██╗     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+                    ███████║██████╔╝██║  ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
+                    ██╔══██║██╔═══╝ ██║  ██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
+                    ██║  ██║██║     ██████╔╝      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
+                    ╚═╝  ╚═╝╚═╝     ╚═════╝       ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   
+```
+The HPD Agent Framework is a battery first agentic framework designed to enable you to create reliable agents as quickly as possible.
 
-A middleware-driven agentic AI framework built on Microsoft.Extensions.AI.
+The single philosphy driving this library: ***"Make Simple Things Simple, Make Complex Things Possible"***
 
-## Features
+## Main Characteritics 
+- **Native AOT First**
+- **Configuration First** 
+- **Provider Agnostic**
+- **Event Streaming First** - No built non streaming mechanisms due to the event architecture
 
-- **Native AOT First** - Designed for ahead-of-time compilation with minimal reflection
-- **Middleware Pipeline** - Extensible middleware system for customizing agent behavior
+## Built-In Features
+- **Custom Event Protocol** - Standardizes how AI agents connect to UI
+- **Middleware** - Extensible middleware system for customizing agent behavior
+- **Durable Execution** - Checkpointing and conversation thread persistence
+- **PII Filtering** - Remove sensitive information before it reaches the LLM
+- **Error Handling** - Built in Provider Error Handling
+- **Document Handling** - Automatic text extraction from PDFs, DOCX, Powerpoint, Excel, HTML, and more
+- **Permissions** - Permission system for tool execution control
+- **History Reduction** - Conversation summarization and context window management
 - **Tool Calling** - First-class support for function/tool calling with automatic schema generation
-- **History Reduction** - Built-in conversation summarization and context window management
+- **Tool Scoping** - Innovative mechanism to reduce tool context(without RAG or Code Execution or Truncation)
+- **Skills** - Provider agnsotic way to define reusable agent skills
 - **Observability** - Built-in event system for logging, telemetry, and debugging
-- **Permissions** - Built-in permission system for tool execution control
-- **Durable Execution** - Built-in checkpointing and conversation thread persistence
-- **Memory Systems** - Static and dynamic memory for agent knowledge persistence
-- **Document Handling** - Automatic text extraction from PDFs, DOCX, HTML, and more
-- **Skills System** - Define reusable agent capabilities with source-generated metadata
+- **Memory** - Static, Dynamic for agent knowledge persistence
+- **Planning** - Built-in plan mode for complex tasks
 - **SubAgents** - Built-in support for nested agent orchestration
-- **Configuration** - Flexible config object for serializable agent definitions
-- **Provider Agnostic** - Works with any LLM provider via Microsoft.Extensions.AI
+- **MCP Support** - Supports MCP
+- **Custom Event Handling Presets** - Custom Event UI handling for normal Chat consversatins, telemetry etc
+
 
 ## Quick Start
 
 ```csharp
 using HPD.Agent;
+using HPD.Agent.Provider.Providername;
 
 var agent = new AgentBuilder()
-    .WithChatClient(yourChatClient)
+    .WithProvider("providername","model")
     .WithName("Assistant")
     .WithInstructions("You are a helpful assistant.")
+    .WithEventHandler(ConsoleEventHandler)
     .Build();
 
 await foreach (var _ in agent.RunAsync("Hello!")) { }
 ```
+
+## Future Features
+- **Audio TTS->LLM->STT Support**
+- **Streaming Structured Output**
+- **Dedicated Observability Platform**
+- **Evalautors**
+- **Graph Support**
+- **A2A and AGUI Support**
+
+## Future Language Support(Not Guaranteed)
+- **Python**
+- **Rust**
+- **Swift**
+
 
 ## Requirements
 
