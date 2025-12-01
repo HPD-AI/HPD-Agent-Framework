@@ -178,9 +178,9 @@ public class AnthropicOptions
     /// </summary>
     public IList<string>? StopSequences { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // EXTENDED THINKING
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Enable extended thinking mode by setting the token budget.
@@ -197,9 +197,9 @@ public class AnthropicOptions
     /// </summary>
     public bool UseInterleavedThinking { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // PROMPT CACHING
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Enable prompt caching to reduce costs on repeated prompts (up to 90% savings).
@@ -212,9 +212,9 @@ public class AnthropicOptions
     /// </summary>
     public PromptCacheType PromptCacheType { get; set; } = PromptCacheType.AutomaticToolsAndSystem;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CLAUDE SKILLS (Anthropic's built-in document processing)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Claude Skills to enable (Anthropic's built-in server-side document processing).
@@ -229,9 +229,9 @@ public class AnthropicOptions
     /// </summary>
     public string? ContainerId { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MCP SERVERS (Anthropic's native MCP support)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// MCP (Model Context Protocol) servers for Claude to use.
@@ -239,9 +239,9 @@ public class AnthropicOptions
     /// </summary>
     public List<MCPServerConfig> MCPServers { get; set; } = new();
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // SERVICE TIER
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Service tier for request prioritization.

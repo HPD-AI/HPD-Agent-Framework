@@ -53,16 +53,16 @@ namespace HPD.Agent;
 /// </example>
 public class ToolScopingMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // DEPENDENCIES (owned by middleware)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private readonly ToolVisibilityManager _visibilityManager;
     private readonly ScopingConfig _config;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONSTRUCTOR
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Creates a new ToolScopingMiddleware instance with its own ToolVisibilityManager.
@@ -95,9 +95,9 @@ public class ToolScopingMiddleware : IAgentMiddleware
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // BEFORE ITERATION: Apply tool visibility scoping
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called before each LLM call. Filters tools based on expansion state.
@@ -156,9 +156,9 @@ public class ToolScopingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // BEFORE TOOL EXECUTION: Enhanced error messages
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called before tool execution. Provides enhanced error messages for scoped functions.
@@ -190,9 +190,9 @@ public class ToolScopingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // AFTER ITERATION: Detect container expansions
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called after each iteration. Detects container expansions from tool calls
@@ -400,9 +400,9 @@ public class ToolScopingMiddleware : IAgentMiddleware
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // AFTER MESSAGE TURN: Filter ephemeral results from turnHistory
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Filters ephemeral container results from turnHistory before persistence.
@@ -452,9 +452,9 @@ public class ToolScopingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Emits a ScopedToolsVisibleEvent for observability.

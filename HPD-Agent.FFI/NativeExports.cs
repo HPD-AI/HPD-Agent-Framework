@@ -293,9 +293,9 @@ public static partial class NativeExports
         ObjectManager.Remove(agentHandle);
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // CONVERSATION THREAD MANAGEMENT
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Creates a new conversation thread for managing conversation state.
@@ -467,9 +467,9 @@ public static partial class NativeExports
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // AGENT EXECUTION APIs
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Runs the agent synchronously with the given input and returns the final response.
@@ -625,9 +625,9 @@ public static partial class NativeExports
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // CHECKPOINTING & RESUME APIs (Durable Execution)
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Serializes a conversation thread to JSON for persistence (checkpointing).
@@ -687,9 +687,9 @@ public static partial class NativeExports
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // PERMISSION SYSTEM APIs (Human-in-the-Loop)
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Responds to a permission request from the agent.
@@ -744,9 +744,9 @@ public static partial class NativeExports
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // HELPER METHODS
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Helper method to marshal a C# string to unmanaged UTF-8 memory.
@@ -761,9 +761,9 @@ public static partial class NativeExports
         return ptr;
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // AGUI PROTOCOL ADAPTER APIs
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Creates an AGUI protocol agent from config JSON.
@@ -949,9 +949,9 @@ public static partial class NativeExports
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // Future APIs:
     // - Advanced memory management APIs (optional user-facing CRUD)
     // - Provider discovery and management
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 }

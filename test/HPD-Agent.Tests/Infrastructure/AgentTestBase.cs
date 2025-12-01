@@ -68,9 +68,9 @@ public abstract class AgentTestBase : IAsyncDisposable, IDisposable
         }
     };
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // SIMPLE HELPERS (for common, readable test cases)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates a user message with the given text.
@@ -101,9 +101,9 @@ public abstract class AgentTestBase : IAsyncDisposable, IDisposable
         return userMessages.Select(msg => UserMessage(msg)).ToList();
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // ASSERTION HELPERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Asserts that an event sequence matches expected types in order.
@@ -134,9 +134,9 @@ public abstract class AgentTestBase : IAsyncDisposable, IDisposable
         Assert.Contains(actualEvents, e => e is TEvent);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // ASYNC DISPOSAL AND CLEANUP
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Async disposal: waits for background tasks, then clears AsyncLocal.

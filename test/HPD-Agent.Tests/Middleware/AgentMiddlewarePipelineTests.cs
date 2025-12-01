@@ -234,9 +234,9 @@ public class AgentMiddlewarePipelineTests
         return context;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // TEST HELPER MIDDLEWARES
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private class TestMiddleware : IAgentMiddleware
     {

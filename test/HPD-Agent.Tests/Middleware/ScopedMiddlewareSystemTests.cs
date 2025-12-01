@@ -367,9 +367,9 @@ public class ScopedMiddlewareSystemTests
 
     #endregion
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private static AgentMiddlewareContext CreateContext(
         string functionName,

@@ -43,11 +43,11 @@ namespace HPD.Agent;
 /// });
 /// </code>
 /// </remarks>
-public sealed partial class MiddlewareStateContainer
+public sealed partial class MiddlewareState
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // BACKING STORAGE (Internal)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Internal storage for middleware states.
@@ -70,9 +70,9 @@ public sealed partial class MiddlewareStateContainer
     [EditorBrowsable(EditorBrowsableState.Advanced)]
     public ImmutableDictionary<string, object?> States { get; init; }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // SCHEMA METADATA (Runtime Fields)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Schema signature of the code that created this checkpoint.
@@ -105,15 +105,15 @@ public sealed partial class MiddlewareStateContainer
     [JsonIgnore]
     private readonly Lazy<ConcurrentDictionary<string, object?>> _deserializedCache;
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CONSTRUCTORS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates an empty middleware state container.
     /// Auto-populates schema metadata from source-generated constants.
     /// </summary>
-    public MiddlewareStateContainer()
+    public MiddlewareState()
     {
         States = ImmutableDictionary<string, object?>.Empty;
         _deserializedCache = new Lazy<ConcurrentDictionary<string, object?>>(
@@ -125,9 +125,9 @@ public sealed partial class MiddlewareStateContainer
         StateVersions = CompiledStateVersions;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // SMART ACCESSOR (Protected - Used by Generated Code)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Smart accessor that handles both runtime and deserialized states.
@@ -191,11 +191,11 @@ public sealed partial class MiddlewareStateContainer
     /// <param name="key">Fully-qualified type name</param>
     /// <param name="state">New state value</param>
     /// <returns>New container with updated state</returns>
-    protected MiddlewareStateContainer SetState<TState>(
+    protected MiddlewareState SetState<TState>(
         string key,
         TState state) where TState : class
     {
-        return new MiddlewareStateContainer
+        return new MiddlewareState
         {
             States = States.SetItem(key, state),
 

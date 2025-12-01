@@ -63,9 +63,9 @@ namespace HPD.Agent;
 /// </example>
 public class TotalErrorThresholdMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // CONFIGURATION (not state - set at registration time)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Maximum total errors allowed before triggering termination.
@@ -87,9 +87,9 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
         "Total error threshold ({totalErrors}/{maxErrors}) exceeded. " +
         "Encountered too many errors of varying types. Stopping execution.";
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HOOKS (stateless - read/write via context)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Called BEFORE the LLM call begins.
@@ -153,9 +153,9 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Determines if a function result represents an error.

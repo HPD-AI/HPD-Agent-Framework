@@ -118,9 +118,9 @@ public class SkillInstructionMiddleware : IAgentMiddleware
         ChatOptions options)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
         sb.AppendLine("🔧 ACTIVE SKILL PROTOCOLS (Execute ALL steps completely)");
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
         sb.AppendLine();
 
         // Order alphabetically for consistency

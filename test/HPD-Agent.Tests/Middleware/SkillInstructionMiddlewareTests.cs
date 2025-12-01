@@ -206,7 +206,7 @@ public class SkillInstructionMiddlewareTests
             agentName: "TestAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer().WithScoping(
+                MiddlewareState = new MiddlewareState().WithScoping(
                     new ScopingStateData { ActiveSkillInstructions = activeSkills })
             };
 

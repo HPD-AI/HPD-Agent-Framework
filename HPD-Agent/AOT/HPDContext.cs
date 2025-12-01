@@ -96,6 +96,9 @@ using HPD.Agent;
 // Note: Nested classes need full type paths for AOT
 // These are internal implementation details but need serialization support
 
+// --- Additional utility types for generic serialization ---
+[JsonSerializable(typeof(object[]))]  // For dynamic object arrays in logging
+
 public partial class HPDJsonContext : JsonSerializerContext
 {
 }

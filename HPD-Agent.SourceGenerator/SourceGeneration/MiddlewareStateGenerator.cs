@@ -17,9 +17,9 @@ namespace HPD.Agent.SourceGenerator;
 [Generator]
 public class MiddlewareStateGenerator : IIncrementalGenerator
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // DIAGNOSTIC DESCRIPTORS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private static readonly DiagnosticDescriptor HPD001_MustBeRecord = new(
         id: "HPD001",
@@ -51,7 +51,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor HPD005_PropertyNameConflict = new(
         id: "HPD005",
         title: "Middleware state property name conflicts with container API",
-        messageFormat: "Generated property name '{0}' conflicts with MiddlewareStateContainer API. Rename type '{1}' to avoid conflicts with: GetState, SetState, _states, _deserializedCache.",
+        messageFormat: "Generated property name '{0}' conflicts with MiddlewareState API. Rename type '{1}' to avoid conflicts with: GetState, SetState, _states, _deserializedCache.",
         category: "Design",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
@@ -66,9 +66,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         "_deserializedCache"
     };
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // INITIALIZATION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -86,9 +86,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             (spc, types) => GenerateContainerProperties(spc, types!));
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // STATE INFO EXTRACTION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private StateInfo? GetStateInfo(
         GeneratorAttributeSyntaxContext context,
@@ -195,9 +195,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         return typeName;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CODE GENERATION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private void GenerateContainerProperties(
         SourceProductionContext context,
@@ -264,7 +264,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// Generated properties for middleware state container.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("public sealed partial class MiddlewareStateContainer");
+        sb.AppendLine("public sealed partial class MiddlewareState");
         sb.AppendLine("{");
 
         // Generate schema metadata constants
@@ -273,9 +273,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             .OrderBy(n => n, System.StringComparer.Ordinal)
             .ToList();
 
-        sb.AppendLine("    // ════════════════════════════════════════════════════════");
+        sb.AppendLine("    //      ");
         sb.AppendLine("    // SCHEMA METADATA (Generated)");
-        sb.AppendLine("    // ════════════════════════════════════════════════════════");
+        sb.AppendLine("    //      ");
         sb.AppendLine();
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Compiled schema signature (sorted list of middleware state FQNs).");
@@ -305,9 +305,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         // Generate properties and WithX methods for each state type
         foreach (var stateInfo in uniqueTypes)
         {
-            sb.AppendLine($"    // ════════════════════════════════════════════════════════");
+            sb.AppendLine($"    //      ");
             sb.AppendLine($"    // {stateInfo.PropertyName} ({stateInfo.TypeName})");
-            sb.AppendLine($"    // ════════════════════════════════════════════════════════");
+            sb.AppendLine($"    //      ");
             sb.AppendLine();
 
             // Generate property
@@ -326,7 +326,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             sb.AppendLine($"    /// </summary>");
             sb.AppendLine($"    /// <param name=\"value\">New state value (null to clear)</param>");
             sb.AppendLine($"    /// <returns>New container instance with updated state</returns>");
-            sb.AppendLine($"    public MiddlewareStateContainer With{stateInfo.PropertyName}({stateInfo.FullyQualifiedName}? value)");
+            sb.AppendLine($"    public MiddlewareState With{stateInfo.PropertyName}({stateInfo.FullyQualifiedName}? value)");
             sb.AppendLine($"    {{");
             sb.AppendLine($"        return value == null");
             sb.AppendLine($"            ? this");
@@ -337,12 +337,12 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
 
         sb.AppendLine("}");
 
-        context.AddSource("MiddlewareStateContainer.g.cs", sb.ToString());
+        context.AddSource("MiddlewareState.g.cs", sb.ToString());
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // STATE INFO RECORD
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private record StateInfo(
         string TypeName,

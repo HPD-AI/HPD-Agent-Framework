@@ -155,9 +155,9 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         Assert.Empty(schemaEvents);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private Agent CreateTestAgentWithLogging()
     {
@@ -195,7 +195,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     private AgentLoopState CreatePreVersioningCheckpoint()
     {
         // Create a checkpoint without schema metadata (SchemaSignature = null)
-        var middlewareState = new MiddlewareStateContainer
+        var middlewareState = new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = null,  // Pre-versioning
@@ -227,16 +227,16 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     private AgentLoopState CreateCheckpointWithRemovedMiddleware()
     {
         // Create a checkpoint with a fake middleware that doesn't exist in current schema
-        var currentSignature = MiddlewareStateContainer.CompiledSchemaSignature;
+        var currentSignature = MiddlewareState.CompiledSchemaSignature;
         var fakeOldSignature = currentSignature + ",HPD.Agent.ObsoleteMiddlewareStateData";
 
-        var middlewareState = new MiddlewareStateContainer
+        var middlewareState = new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", new { }),
             SchemaSignature = fakeOldSignature,
             SchemaVersion = 1,
-            StateVersions = MiddlewareStateContainer.CompiledStateVersions
+            StateVersions = MiddlewareState.CompiledStateVersions
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", 1)
         };
 
@@ -264,11 +264,11 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     private AgentLoopState CreateCheckpointWithFewerMiddleware()
     {
         // Create a checkpoint with fewer middleware than current schema
-        var currentTypes = MiddlewareStateContainer.CompiledSchemaSignature.Split(',');
+        var currentTypes = MiddlewareState.CompiledSchemaSignature.Split(',');
         var fewerTypes = currentTypes.Take(Math.Max(1, currentTypes.Length - 1)).ToArray();
         var olderSignature = string.Join(",", fewerTypes);
 
-        var middlewareState = new MiddlewareStateContainer
+        var middlewareState = new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = olderSignature,
@@ -300,7 +300,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     private AgentLoopState CreateCheckpointWithCurrentSchema()
     {
         // Create a checkpoint with the current schema (no changes)
-        var middlewareState = new MiddlewareStateContainer();  // Uses current schema
+        var middlewareState = new MiddlewareState();  // Uses current schema
 
         return new AgentLoopState
         {

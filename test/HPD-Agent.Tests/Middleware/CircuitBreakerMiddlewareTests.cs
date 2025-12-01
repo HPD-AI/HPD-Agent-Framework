@@ -217,9 +217,9 @@ public class CircuitBreakerMiddlewareTests
         Assert.False(context.SkipToolExecution);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private static AgentLoopState CreateEmptyState()
     {

@@ -13,9 +13,9 @@ namespace HPD_Agent.Tests.Infrastructure;
 /// </summary>
 public static class TestDataBuilders
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // MESSAGE BUILDERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates a user message with the given text.
@@ -60,9 +60,9 @@ public static class TestDataBuilders
         return new ChatMessage(ChatRole.System, text);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // RESPONSE BUILDERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates a ChatResponse with text content.
@@ -116,9 +116,9 @@ public static class TestDataBuilders
         return new ChatResponse([new ChatMessage(ChatRole.Assistant, contents)]);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // FUNCTION BUILDERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates a simple AIFunction with no parameters that returns a string.
@@ -185,9 +185,9 @@ public static class TestDataBuilders
             name: name);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CONVERSATION BUILDERS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates a simple conversation with one user message.
@@ -212,9 +212,9 @@ public static class TestDataBuilders
         return messages.ToArray();
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // NOTE: State and Config builders will be added after refactor
-    // ═══════════════════════════════════════════════════════
+    //      
     //
     // The following builders require types that don't exist yet:
     // - AgentLoopState InitialState(params ChatMessage[] messages)

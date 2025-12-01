@@ -68,9 +68,9 @@ public class AgentMiddlewarePipeline
     /// </summary>
     public IReadOnlyList<IAgentMiddleware> Middlewares => _middlewares;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MESSAGE TURN LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Executes BeforeMessageTurnAsync on all middlewares in registration order.
@@ -120,9 +120,9 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // ITERATION LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Executes BeforeIterationAsync on all middlewares in registration order.
@@ -247,9 +247,9 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // FUNCTION LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Executes BeforeParallelFunctionsAsync on all middlewares in registration order.
@@ -391,9 +391,9 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONVENIENCE METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Wraps a function execution with Before/After hooks.

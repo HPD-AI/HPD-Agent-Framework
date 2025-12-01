@@ -22,9 +22,9 @@ namespace HPD.Agent;
 /// </remarks>
 public class PIIMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION - Per-PII-Type Strategies
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>Strategy for handling email addresses. Default: Redact.</summary>
     public PIIStrategy EmailStrategy { get; set; } = PIIStrategy.Redact;
@@ -41,9 +41,9 @@ public class PIIMiddleware : IAgentMiddleware
     /// <summary>Strategy for handling IP addresses. Default: Hash.</summary>
     public PIIStrategy IPAddressStrategy { get; set; } = PIIStrategy.Hash;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION - Application Scope
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>Apply PII detection to user input messages. Default: true.</summary>
     public bool ApplyToInput { get; set; } = true;
@@ -54,9 +54,9 @@ public class PIIMiddleware : IAgentMiddleware
     /// <summary>Apply PII detection to tool results. Default: false.</summary>
     public bool ApplyToToolResults { get; set; } = false;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION - Custom Detectors
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>Custom PII detectors for domain-specific patterns.</summary>
     public List<CustomPIIDetector> CustomDetectors { get; } = new();
@@ -64,9 +64,9 @@ public class PIIMiddleware : IAgentMiddleware
     /// <summary>Optional async detector for external PII detection services.</summary>
     public Func<string, CancellationToken, Task<IEnumerable<PIIMatch>>>? ExternalDetector { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // BUILT-IN DETECTORS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private static readonly Regex EmailRegex = new(
         @"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
@@ -88,9 +88,9 @@ public class PIIMiddleware : IAgentMiddleware
         @"\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b",
         RegexOptions.Compiled);
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HOOKS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Scans incoming messages for PII before the agent processes them.
@@ -149,9 +149,9 @@ public class PIIMiddleware : IAgentMiddleware
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // PROCESSING LOGIC
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private async Task<IEnumerable<ChatMessage>> ProcessMessagesAsync(
         IEnumerable<ChatMessage> messages,
@@ -259,9 +259,9 @@ public class PIIMiddleware : IAgentMiddleware
         return allMatches;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // DETECTION METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private IEnumerable<PIIMatch> DetectEmail(string text)
     {
@@ -297,9 +297,9 @@ public class PIIMiddleware : IAgentMiddleware
             yield return new PIIMatch("IPAddress", match.Value, match.Index, match.Length, IPAddressStrategy);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // STRATEGY IMPLEMENTATIONS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private static string GetReplacement(PIIMatch match)
     {
@@ -379,9 +379,9 @@ public class PIIMiddleware : IAgentMiddleware
     }
 }
 
-// ═══════════════════════════════════════════════════════
+//      
 // SUPPORTING TYPES
-// ═══════════════════════════════════════════════════════
+//      
 
 /// <summary>
 /// Strategy for handling detected PII.

@@ -25,7 +25,7 @@ namespace HPD_Agent.FFI
     /// </summary>
     public static class NativePluginFFI
     {
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
         // CONFIGURATION: Native library name
         //
         // Customize per platform/language:
@@ -35,15 +35,15 @@ namespace HPD_Agent.FFI
         // - Go:     "hpd_go_plugins"
         // - Swift:  "hpd_swift_plugins"
         // - Multi:  "hpd_native_plugins" (any language)
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
         private const string LibraryName = "hpd_native_plugins";
 
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
         // FFI IMPORTS: C ABI functions (language-agnostic)
         //
         // Any language can implement these by exporting C-compatible symbols.
         // All functions use JSON for data exchange to ensure language neutrality.
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
 
         /// <summary>
         /// Get plugin registry as JSON string.
@@ -98,9 +98,9 @@ namespace HPD_Agent.FFI
         private static extern bool RegisterPluginExecutorsNative(
             [MarshalAs(UnmanagedType.LPStr)] string pluginName);
 
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
         // PUBLIC API: Language-agnostic wrapper methods
-        // ════════════════════════════════════════════════════════════════════════════
+        //    
 
         /// <summary>
         /// Register plugin executors in the native plugin runtime.
@@ -265,12 +265,12 @@ namespace HPD_Agent.FFI
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
     // LANGUAGE-AGNOSTIC DATA STRUCTURES
     //
     // These work with JSON from any language that can serialize to JSON.
     // The structures are designed to be simple and portable across language boundaries.
-    // ════════════════════════════════════════════════════════════════════════════
+    //    
 
     /// <summary>
     /// Plugin registry information from native runtime.

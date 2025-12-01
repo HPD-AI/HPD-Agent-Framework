@@ -1,5 +1,7 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
 using HPD.Agent.Checkpointing;
 using System.Collections.Immutable;
@@ -477,6 +479,7 @@ public class ProviderConfig
     /// </summary>
     /// <typeparam name="T">The strongly-typed configuration class</typeparam>
     /// <returns>Parsed configuration object, or null if no config is present</returns>
+    [RequiresUnreferencedCode("Provider configuration deserialization requires runtime type information. For AOT, use ProviderOptionsJson with registered deserializer.")]
     public T? GetTypedProviderConfig<T>() where T : class
     {
         // Return cached value if available and correct type
@@ -531,6 +534,7 @@ public class ProviderConfig
     /// <typeparam name="T">The strongly-typed configuration class</typeparam>
     /// <returns>Parsed configuration object, or null if AdditionalProperties is empty</returns>
     /// <exception cref="InvalidOperationException">Thrown when configuration parsing fails</exception>
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Generic deserialization requires runtime type information. Use type-safe provider config methods for AOT.")]
     public T? GetProviderConfig<T>() where T : class
     {
         if (AdditionalProperties == null || AdditionalProperties.Count == 0)
@@ -538,20 +542,18 @@ public class ProviderConfig
 
         try
         {
-            // Convert dictionary to JSON, then deserialize to strongly-typed class
-            // This handles all the complex type conversion automatically
-            var json = System.Text.Json.JsonSerializer.Serialize(AdditionalProperties, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = false,
-                PropertyNameCaseInsensitive = true
-            });
-
-            return System.Text.Json.JsonSerializer.Deserialize<T>(json, new System.Text.Json.JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                AllowTrailingCommas = true,
-                ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip
-            });
+            // Convert dictionary to JSON using source-generated context (AOT-safe)
+            var json = System.Text.Json.JsonSerializer.Serialize(
+                AdditionalProperties, 
+                typeof(Dictionary<string, object>),
+                HPDJsonContext.Default);
+            
+            // Deserialize using source-generated context for AOT compatibility
+            var result = System.Text.Json.JsonSerializer.Deserialize(
+                json,
+                typeof(T),
+                HPDJsonContext.Default) as T;
+            return result;
         }
         catch (System.Text.Json.JsonException ex)
         {

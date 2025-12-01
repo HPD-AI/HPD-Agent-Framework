@@ -322,9 +322,9 @@ public class ErrorTrackingMiddlewareTests
         Assert.Contains("{max}", middleware.TerminationMessageTemplate);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private static AgentLoopState CreateEmptyState()
     {

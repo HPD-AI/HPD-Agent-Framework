@@ -245,7 +245,7 @@ public class MermaidVisualizationObserver : IAgentEventObserver
         {
             var sb = new StringBuilder();
             sb.AppendLine("Agent Execution Timeline");
-            sb.AppendLine("═══════════════════════════════════════════════════════════");
+            sb.AppendLine("     ");
 
             var startTime = _startTime ?? DateTimeOffset.UtcNow;
 
@@ -257,7 +257,7 @@ public class MermaidVisualizationObserver : IAgentEventObserver
                 sb.AppendLine($"[{elapsed,6:F2}s] {indent}{FormatEvent(evt.Data)}");
             }
 
-            sb.AppendLine("═══════════════════════════════════════════════════════════");
+            sb.AppendLine("     ");
             sb.AppendLine($"Total: {TotalDuration.TotalSeconds:F2}s, {IterationCount} iterations");
 
             return sb.ToString();

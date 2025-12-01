@@ -2,9 +2,9 @@
   "documentId": "05-financialhealthdashboard-sop",
   "name": "05-financialhealthdashboard-sop",
   "description": "Interpretation framework and benchmarks",
-  "sizeBytes": 19860,
-  "contentHash": "sha256:24b081c499b3f2e015068428b76fb66fd1cf4d75bfd1e9fbb40edc172fa066e3",
-  "version": 1,
+  "sizeBytes": 19268,
+  "contentHash": "sha256:71944c0d7cfe7b6ec21044f4bc955eb8c40d5d63899c6f1661f8a4eab6b88795",
+  "version": 2,
   "createdAt": "2025-11-30T13:12:03.457633Z",
-  "lastModified": "2025-11-30T13:12:03.457644Z"
+  "lastModified": "2025-12-01T14:05:17.170442Z"
 }

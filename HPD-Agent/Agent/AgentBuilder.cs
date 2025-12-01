@@ -80,9 +80,9 @@ public class AgentBuilder
     // Text extraction utility for document processing (shared instance)
     internal HPD_Agent.TextExtraction.TextExtractionUtility? _textExtractor;
 
-    // ═══════════════════════════════════════════════════════════════════════════
+    //     
     // AOT-COMPATIBLE PLUGIN REGISTRY (Phase: AOT Plugin Registry Hybrid)
-    // ═══════════════════════════════════════════════════════════════════════════
+    //     
     // These fields enable reflection-free plugin instantiation in hot paths.
     // The source generator creates a PluginRegistry.All array with direct delegates.
 
@@ -116,6 +116,7 @@ public class AgentBuilder
     /// Creates a new builder with default configuration.
     /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
+#pragma warning disable IL2026
     public AgentBuilder()
     {
         // Capture calling assembly FIRST, before any method calls
@@ -127,11 +128,13 @@ public class AgentBuilder
         LoadPluginRegistryFromAssembly(callingAssembly);
         RegisterDiscoveredProviders();
     }
+#pragma warning restore IL2026
 
     /// <summary>
     /// Creates a builder from existing configuration.
     /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
+#pragma warning disable IL2026
     public AgentBuilder(AgentConfig config)
     {
         // Capture calling assembly FIRST, before any method calls
@@ -142,11 +145,13 @@ public class AgentBuilder
         LoadPluginRegistryFromAssembly(callingAssembly);
         RegisterDiscoveredProviders();
     }
+#pragma warning restore IL2026
 
     /// <summary>
     /// Creates a builder with custom provider registry (for testing).
     /// Optionally accepts an assembly hint for plugin registry discovery.
     /// </summary>
+#pragma warning disable IL2026
     public AgentBuilder(AgentConfig config, IProviderRegistry providerRegistry)
     {
         // Capture calling assembly FIRST
@@ -156,6 +161,7 @@ public class AgentBuilder
         _providerRegistry = providerRegistry;
         LoadPluginRegistryFromAssembly(callingAssembly);
     }
+#pragma warning restore IL2026
 
     /// <summary>
     /// Registers all providers that were discovered by ProviderAutoDiscovery ModuleInitializer.
@@ -182,8 +188,10 @@ public class AgentBuilder
     /// and merges them into the _availablePlugins dictionary.
     /// Uses minimal reflection (one GetType call per assembly) to discover the catalog.
     /// Thread-safe: tracks loaded assemblies to avoid duplicate processing.
+    /// WARNING: Requires source-generated PluginRegistry type to be preserved in AOT.
     /// </summary>
     /// <param name="assembly">The assembly to search for the generated PluginRegistry</param>
+    [RequiresUnreferencedCode("Plugin registry lookup via Assembly.GetType requires PluginRegistry type to be preserved during AOT compilation.")]
     internal void LoadPluginRegistryFromAssembly(Assembly assembly)
     {
         // Skip if already loaded
@@ -471,9 +479,9 @@ public class AgentBuilder
         return this;
     }
 
-    // ══════════════════════════════════════════════════════════════════════════════
+    //   
     // PROTOCOL-SPECIFIC CONFIGURATION
-    // ══════════════════════════════════════════════════════════════════════════════
+    //   
     // Protocol-specific configuration methods (WithContextProviderFactory, etc.) are now
     // provided via extension methods in protocol adapter projects (HPD-Agent.Microsoft, etc.)
 
@@ -492,9 +500,9 @@ public class AgentBuilder
     /// </summary>
     internal object? GetContextProviderFactory() => _contextProviderFactory;
 
-    // ══════════════════════════════════════════════════════════════════════════════
+    //   
     // DUAL-LAYER OBSERVABILITY ARCHITECTURE
-    // ══════════════════════════════════════════════════════════════════════════════
+    //   
     // HPD-Agent implements a dual-layer observability model that combines:
     // 1. LLM-level instrumentation (Microsoft.Extensions.AI middleware)
     // 2. Agent-level instrumentation (HPD's specialized services)
@@ -567,7 +575,7 @@ public class AgentBuilder
     // .WithCaching()    → Automatic: Microsoft middleware only
     //
     // Result: Zero boilerplate, production-grade observability at both layers.
-    // ══════════════════════════════════════════════════════════════════════════════
+    //   
 
     /// <summary>
     /// Enables dual-layer telemetry tracking for complete observability:
@@ -1120,9 +1128,9 @@ public class AgentBuilder
             });
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // These are registered in execution order (first = outermost):
         // - FunctionRetryMiddleware wraps timeout (retry the entire timeout operation)
         // - FunctionTimeoutMiddleware wraps execution (timeout individual attempts)
@@ -1171,8 +1179,45 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Builds all dependencies needed for agent construction
+    /// Invokes MCP methods via reflection. This is only called from RequiresUnreferencedCode context,
+    /// so the trimmer knows MCPClientManager types must be preserved.
     /// </summary>
+#pragma warning disable IL2075
+    private async Task<List<AIFunction>> InvokeMCPMethodAsync(
+        object mcpManager,
+        string methodName,
+        string manifestPath,
+        int maxFunctionNames,
+        CancellationToken cancellationToken)
+    {
+        var managerType = mcpManager.GetType();
+        var method = managerType.GetMethod(
+            methodName,
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance,
+            null,
+            new[] { typeof(string), typeof(bool), typeof(int), typeof(System.Threading.CancellationToken) },
+            null);
+
+        if (method == null)
+            throw new InvalidOperationException($"MCPClientManager does not have {methodName} method");
+
+        var task = method.Invoke(mcpManager, new object[] { manifestPath, false, maxFunctionNames, cancellationToken })
+            as System.Threading.Tasks.Task<List<AIFunction>>;
+
+        if (task == null)
+            throw new InvalidOperationException($"MCP method {methodName} returned null or wrong type");
+
+        return await task;
+    }
+#pragma warning restore IL2075
+
+    /// <summary>
+    /// Builds all dependencies needed for agent construction.
+    /// WARNING: This method uses reflection for MCP tool loading. It requires HPD_Agent.MCP assembly
+    /// and its public types to be preserved during AOT compilation. For Native AOT deployment,
+    /// ensure MCPClientManager type is explicitly preserved in your rd.xml or RootDescriptor.
+    /// </summary>
+    [RequiresUnreferencedCode("MCP tool loading via reflection. Requires HPD_Agent.MCP types preserved.")]
     private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
         // === PHASE 1: PROCESS SKILL DOCUMENTS (Before provider validation) ===
@@ -1431,9 +1476,9 @@ public class AgentBuilder
         // Dynamic Memory registration is handled by WithDynamicMemory() extension method
         // No need to register here in Build() - the extension already adds Middleware and plugin
 
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         // CREATE PLUGIN FUNCTIONS (AOT-Compatible - Zero Reflection in Hot Path)
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         // All plugins are registered via the catalog (PluginRegistry.All) using direct delegate calls.
         // Instance-based plugins (requiring DI) use their own direct delegate calls.
         // No reflection fallback - the catalog is required.
@@ -1450,9 +1495,6 @@ public class AgentBuilder
             ).ToList();
         }
 
-        // Register function-to-plugin mappings for scoped Middlewares
-        RegisterFunctionPluginMappings(pluginFunctions);
-
         // Load MCP tools if configured
         if (McpClientManager != null)
         {
@@ -1467,19 +1509,21 @@ public class AgentBuilder
                     // Check if this is actually content vs path based on if it starts with '{'
                     if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
                     {
-                        // Use dynamic to call MCPClientManager.LoadToolsFromManifestContentAsync without direct type reference
-                        mcpTools = await ((dynamic)McpClientManager).LoadToolsFromManifestContentAsync(
+                        // AOT-safe reflection-based method invocation (no dynamic required)
+                        mcpTools = await InvokeMCPMethodAsync(
+                            McpClientManager,
+                            "LoadToolsFromManifestContentAsync",
                             _config.Mcp.ManifestPath,
-                            false, // enableScoping: Default to false; per-server settings in JSON control this
                             maxFunctionNames,
                             cancellationToken);
                     }
                     else
                     {
-                        // Use dynamic to call MCPClientManager.LoadToolsFromManifestAsync without direct type reference
-                        mcpTools = await ((dynamic)McpClientManager).LoadToolsFromManifestAsync(
+                        // AOT-safe reflection-based method invocation (no dynamic required)
+                        mcpTools = await InvokeMCPMethodAsync(
+                            McpClientManager,
+                            "LoadToolsFromManifestAsync",
                             _config.Mcp.ManifestPath,
-                            false, // enableScoping: Default to false; per-server settings in JSON control this
                             maxFunctionNames,
                             cancellationToken);
                     }
@@ -1537,6 +1581,7 @@ public class AgentBuilder
     /// Extracts document metadata from skill containers and processes them.
     /// If no document store is configured, creates a default FileSystemInstructionStore.
     /// </summary>
+    [RequiresUnreferencedCode("Skill document processing uses reflection-based plugin catalog.")]
     private async Task ProcessSkillDocumentsAsync(CancellationToken cancellationToken)
     {
         var logger = _logger?.CreateLogger<AgentBuilder>();
@@ -1866,47 +1911,6 @@ public class AgentBuilder
 
 
 
-    /// <summary>
-    /// Registers function-to-plugin mappings for scoped Middleware support.
-    /// Uses the already-created functions list (no reflection needed).
-    /// </summary>
-    private void RegisterFunctionPluginMappings(List<AIFunction> pluginFunctions)
-    {
-        foreach (var function in pluginFunctions)
-        {
-            // Get plugin name from function's additional properties (set by source generator)
-            var pluginName = function.AdditionalProperties?.TryGetValue("PluginName", out var pn) == true
-                ? pn as string ?? "Unknown"
-                : "Unknown";
-
-            // Register function-to-plugin mapping for middleware scoping
-            _functionToPluginMap[function.Name] = pluginName;
-
-            // Register skill mappings
-            var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValue) == true
-                          && isSkillValue is bool s && s;
-
-            if (isSkill)
-            {
-                // Extract referenced functions and map them to this skill
-                if (function.AdditionalProperties?.TryGetValue("ReferencedFunctions", out var refFuncsValue) == true
-                    && refFuncsValue is string[] referencedFunctions)
-                {
-                    foreach (var refFunc in referencedFunctions)
-                    {
-                        // Format: "PluginName.FunctionName"
-                        var parts = refFunc.Split('.');
-                        if (parts.Length == 2)
-                        {
-                            var functionName = parts[1];
-                            // Map the referenced function to this skill
-                            _functionToSkillMap[functionName] = function.Name;
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     /// <summary>
     /// Merges plugin functions into chat options.
@@ -2011,9 +2015,10 @@ public class AgentBuilder
     internal IServiceProvider? ServiceProvider => _serviceProvider;
 
     /// <summary>
-    /// Internal access to logger for extension methods
+    /// Gets the logger factory for use in extension methods.
+    /// Used by MCP and other extension methods to create loggers.
     /// </summary>
-    internal ILoggerFactory? Logger => _logger;
+    public ILoggerFactory? Logger => _logger;
 
     /// <summary>
     /// Internal access to scoped Middleware manager for extension methods
@@ -2043,9 +2048,10 @@ public class AgentBuilder
     /// </summary>
 
     /// <summary>
-    /// Internal access to MCP client manager for extension methods (stored as object to avoid circular reference)
+    /// Gets or sets the MCP client manager for extension methods (stored as object to avoid circular reference).
+    /// Used by MCP extension methods to initialize and manage MCP server connections.
     /// </summary>
-    internal object? McpClientManager
+    public object? McpClientManager
     {
         get => _mcpClientManager;
         set => _mcpClientManager = value;
@@ -2349,9 +2355,9 @@ public static class AgentBuilderMiddlewareExtensions
         return builder;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // FUNCTION-LEVEL ERROR HANDLING MIDDLEWARE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Adds function retry middleware with provider-aware retry logic.
@@ -2763,9 +2769,9 @@ public static class AgentBuilderMiddlewareExtensions
         return builder;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // PII PROTECTION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Adds PII (Personally Identifiable Information) protection middleware
@@ -2837,9 +2843,9 @@ public static class AgentBuilderMiddlewareExtensions
         return builder;
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // TOOL SCOPING
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Enables tool scoping middleware for plugin collapsing and skills architecture.
@@ -3295,8 +3301,10 @@ public static class AgentBuilderPluginExtensions
     /// AOT-Compatible: Uses generated PluginRegistry.All catalog (zero reflection in hot path).
     /// Automatically loads plugin registry from the assembly where T is defined if not already loaded.
     /// Auto-registers referenced plugins from skills via GetReferencedPlugins().
+    /// WARNING: For Native AOT, requires PluginRegistry types in all referenced assemblies to be preserved.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
+    [RequiresUnreferencedCode("Plugin loading via WithPlugin requires PluginRegistry from assembly where T is defined to be preserved.")]
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadataContext? context = null) where T : class, new()
     {
         var pluginName = typeof(T).Name;
@@ -3336,7 +3344,9 @@ public static class AgentBuilderPluginExtensions
     /// Registers a plugin using a pre-created instance with optional execution context.
     /// Used for DI-required plugins (e.g., AgentPlanPlugin, DynamicMemoryPlugin).
     /// The instance's generated Registration class is used for function creation (AOT-compatible).
+    /// WARNING: For Native AOT, requires PluginRegistry from instance assembly to be preserved.
     /// </summary>
+    [RequiresUnreferencedCode("Plugin instance registration requires PluginRegistry from instance's assembly to be preserved.")]
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadataContext? context = null) where T : class
     {
         var pluginName = typeof(T).Name;
@@ -3364,8 +3374,10 @@ public static class AgentBuilderPluginExtensions
     /// AOT-Compatible: Uses generated PluginRegistry.All catalog (zero reflection in hot path).
     /// Automatically loads plugin registry from the assembly where pluginType is defined if not already loaded.
     /// Auto-registers referenced plugins from skills via GetReferencedPlugins().
+    /// WARNING: For Native AOT, requires PluginRegistry from pluginType's assembly to be preserved.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
+    [RequiresUnreferencedCode("Plugin registration by Type requires PluginRegistry from plugin assembly to be preserved.")]
     public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadataContext? context = null)
     {
         var pluginName = pluginType.Name;

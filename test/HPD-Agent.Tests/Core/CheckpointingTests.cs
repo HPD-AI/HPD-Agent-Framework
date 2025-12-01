@@ -14,9 +14,9 @@ namespace HPD_Agent.Tests.Core;
 /// </summary>
 public class CheckpointingTests : AgentTestBase
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // AGENTLOOPSTATE SERIALIZATION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public void AgentLoopState_Serialize_ProducesValidJson()
@@ -144,9 +144,9 @@ public class CheckpointingTests : AgentTestBase
         state.ValidateConsistency(currentMessageCount: 10, allowStaleCheckpoint: true);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // INMEMORYTHREADCHECKPOINTER TESTS - LATESTONLY MODE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task InMemoryCheckpointer_LatestOnly_SaveAndLoad_RoundTrip()
@@ -267,9 +267,9 @@ public class CheckpointingTests : AgentTestBase
         Assert.Contains(thread2.Id, threadIds);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // INMEMORYTHREADCHECKPOINTER TESTS - FULLHISTORY MODE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task InMemoryCheckpointer_FullHistory_SaveMultiple_PreservesHistory()
@@ -429,9 +429,9 @@ public class CheckpointingTests : AgentTestBase
         Assert.All(history, cp => Assert.True(cp.CreatedAt < cutoffTime));
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CONVERSATIONTHREAD SERIALIZATION WITH EXECUTIONSTATE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task ConversationThread_Serialize_IncludesExecutionState()
@@ -468,7 +468,7 @@ public class CheckpointingTests : AgentTestBase
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent")
             .NextIteration() with
             {
-                MiddlewareState = new MiddlewareStateContainer().WithScoping(scopingState)
+                MiddlewareState = new MiddlewareState().WithScoping(scopingState)
             };
         thread.ExecutionState = originalState;
 
@@ -488,9 +488,9 @@ public class CheckpointingTests : AgentTestBase
         Assert.Equal(1, restoredScoping?.ExpandedPlugins.Count ?? 0);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CHECKPOINT METADATA TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public void CheckpointMetadata_DefaultValues_AreCorrect()
@@ -519,9 +519,9 @@ public class CheckpointingTests : AgentTestBase
         Assert.Equal(5, metadata.Step);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CHECKPOINT CLEANUP TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task InMemoryCheckpointer_DeleteOlderThan_RemovesOldCheckpoints()
@@ -605,9 +605,9 @@ public class CheckpointingTests : AgentTestBase
         Assert.Null(loaded); // Should be deleted
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // PENDING WRITES TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task PendingWrites_SaveAndLoad_RoundTrip()

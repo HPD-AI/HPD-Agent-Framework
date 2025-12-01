@@ -16,64 +16,21 @@ using HPD.Agent.Checkpointing;
 namespace HPD.Agent;
 
 /// <summary>
-/// Protocol-agnostic agent execution engine.
-/// Provides a pure, composable core for building AI agents without framework dependencies.
-/// Delegates to specialized components for clean separation of concerns.
-/// INTERNAL: Use HPD.Agent.Microsoft.Agent or HPD.Agent.AGUI.Agent for protocol-specific APIs.
-///
-/// <strong>Concurrency Model: Stateless (Fully Concurrent)</strong>
-/// This Agent instance is now fully stateless and thread-safe. Multiple concurrent RunAsync() calls
-/// on the same instance are supported - each call operates on its own ConversationThread.
-///
-/// Architecture:
-/// - Agent is stateless (no mutable conversation state)
-/// - ConversationThread owns conversation-specific state (messages, ConversationId, etc.)
-/// - BidirectionalEventCoordinator is thread-safe (uses Channel and ConcurrentDictionary)
-/// - One agent instance can serve unlimited concurrent threads
-///
-/// For parallel agent execution across multiple threads, reuse the same Agent instance:
-/// Example:
-/// <code>
-/// // ✅ NOW SUPPORTED: Concurrent calls on same agent instance with different threads
-/// var agent = new Agent(...);
-/// var thread1 = agent.CreateThread();
-/// var thread2 = agent.CreateThread();
-///
-/// var results = await Task.WhenAll(
-///     agent.RunAsync(messages1, thread: thread1).ToListAsync(),
-///     agent.RunAsync(messages2, thread: thread2).ToListAsync()
-/// );
-///
-/// // Each thread maintains its own conversation state, ConversationId, and message history
-/// // The agent is stateless and can serve both threads concurrently
+/// Core Agent class implementing agentic behavior with function calling, middleware, and event coordination.
 /// </code>
 /// </summary>
 public sealed class Agent
 {
     private readonly IChatClient _baseClient;
     private readonly string _name;
-    private readonly int _maxFunctionCalls;
-
-    // Function scope tracking for middleware scoping
-    private readonly IReadOnlyDictionary<string, string> _functionToPluginMap;
-    private readonly IReadOnlyDictionary<string, string> _functionToSkillMap;
-
-    // Microsoft.Extensions.AI compliance fields
     private readonly ChatClientMetadata _metadata;
-
     // OpenTelemetry Activity Source for telemetry
     private static readonly ActivitySource ActivitySource = new("HPD.Agent");
-
     // AsyncLocal storage for function invocation context (flows across async calls)
     // Stores the full AgentMiddlewareContext with all orchestration capabilities
     private static readonly AsyncLocal<AgentMiddlewareContext?> _currentFunctionContext = new();
-
     // AsyncLocal storage for root agent tracking in nested agent calls
-    // Used for event bubbling from nested agents to their orchestrator
-    // When an agent calls another agent (via AsAIFunction), this tracks the top-level orchestrator
-    // Flows automatically through AsyncLocal propagation across nested async calls
     private static readonly AsyncLocal<Agent?> _rootAgent = new();
-
     // AsyncLocal storage for current conversation thread (flows across async calls)
     // Provides access to thread context (project, documents, etc.) throughout the agent execution
     private static readonly AsyncLocal<ConversationThread?> _currentThread = new();
@@ -83,10 +40,8 @@ public sealed class Agent
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
     private readonly BidirectionalEventCoordinator _eventCoordinator;
-
     // Unified middleware pipeline
     private readonly AgentMiddlewarePipeline _middlewarePipeline;
-
     // Observer pattern for event-driven observability
     private readonly IReadOnlyList<IAgentEventObserver> _observers;
     private readonly IReadOnlyList<IAgentEventHandler> _eventHandlers;
@@ -110,24 +65,6 @@ public sealed class Agent
     /// This flows across async calls via AsyncLocal storage.
     /// Returns null if no function is currently executing.
     /// </summary>
-    /// <remarks>
-    /// Use this in plugins/functions to access metadata about the current function call:
-    /// - Function metadata (Function, FunctionCallId, FunctionArguments)
-    /// - Agent context (AgentName, Iteration, ConversationId)
-    /// - State management (State, UpdateState)
-    /// - Event coordination (Emit, WaitForResponseAsync via EventCoordinator)
-    ///
-    /// Example:
-    /// <code>
-    /// var ctx = Agent.CurrentFunctionContext;
-    /// if (ctx != null)
-    /// {
-    ///     Console.WriteLine($"Function {ctx.Function?.Name} called at iteration {ctx.Iteration}");
-    ///     ctx.Emit(new CustomEvent("MyData"));
-    ///     ctx.UpdateState&lt;MyState&gt;(s => s with { Counter = s.Counter + 1 });
-    /// }
-    /// </code>
-    /// </remarks>
     public static AgentMiddlewareContext? CurrentFunctionContext
     {
         get => _currentFunctionContext.Value;
@@ -138,30 +75,6 @@ public sealed class Agent
     /// Gets or sets the root agent in the current execution chain.
     /// Returns null if no root agent is set (single-agent execution).
     /// </summary>
-    /// <remarks>
-    /// This property tracks the top-level orchestrator in nested agent scenarios.
-    /// When an agent calls another agent (via AsAIFunction), this tracks the root orchestrator.
-    ///
-    /// NOTE: This is used for metadata/debugging purposes only.
-    /// Event bubbling uses explicit parent-child linking via SetParent().
-    ///
-    /// Flow example:
-    /// <code>
-    /// User → Orchestrator.RunAsync()
-    ///   Agent.RootAgent = orchestrator  // Set by Orchestrator
-    ///   ↓
-    ///   Orchestrator calls: CodingAgent(query)
-    ///     Agent.RootAgent is still orchestrator ✓ (AsyncLocal flows!)
-    ///     SubAgent generator calls: SetParent(orchestrator.EventCoordinator)
-    ///     ↓
-    ///     CodingAgent.Emit(event)
-    ///       → Writes to CodingAgent's channel
-    ///       → Bubbles to orchestrator via _parentCoordinator chain
-    /// </code>
-    ///
-    /// This is set automatically by RunAgenticLoopInternal when starting execution.
-    /// The SubAgent source generator uses this to establish parent-child relationships via SetParent().
-    /// </remarks>
     public static Agent? RootAgent
     {
         get => _rootAgent.Value;
@@ -172,10 +85,6 @@ public sealed class Agent
     /// Gets or sets the current conversation thread in the execution context.
     /// This flows across async calls and provides access to thread context throughout agent execution.
     /// </summary>
-    /// <remarks>
-    /// This property enables Middlewares and other components to access thread-specific context
-    /// such as project information, conversation history, and thread metadata.
-    /// </remarks>
     public static ConversationThread? CurrentThread
     {
         get => _currentThread.Value;
@@ -196,7 +105,6 @@ public sealed class Agent
     /// Model ID from the configuration
     /// </summary>
     public string? ModelId => Config?.Provider?.ModelName;
-
 
     /// <summary>
     /// Execution context for this agent (agent name, ID, hierarchy).
@@ -237,7 +145,6 @@ public sealed class Agent
     /// <summary>
     /// Sends a response to a Middleware waiting for a specific request.
     /// Called by external handlers when user provides input.
-    /// Thread-safe: Can be called from any thread.
     /// Delegates to the event coordinator.
     /// </summary>
     /// <param name="requestId">The unique identifier for the request</param>
@@ -286,13 +193,8 @@ public sealed class Agent
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = config.Name ?? "Agent"; // Default to "Agent" to prevent null dictionary key exceptions
-        _maxFunctionCalls = config.MaxAgenticIterations;
 
-        // Initialize scope tracking maps for middleware scoping
-        _functionToPluginMap = functionToPluginMap ?? new Dictionary<string, string>();
-        _functionToSkillMap = functionToSkillMap ?? new Dictionary<string, string>();
-
-        // Inject the resolved handler into the config object (inline without storing field)
+        // Initialize unified middleware pipeline
         // so that FunctionCallProcessor can access it without changing its signature yet.
         if (Config.ErrorHandling == null) Config.ErrorHandling = new ErrorHandlingConfig();
         Config.ErrorHandling.ProviderHandler = providerErrorHandler;
@@ -322,24 +224,12 @@ public sealed class Agent
             config.MaxAgenticIterations,
             config.ErrorHandling,
             config.ServerConfiguredTools,
-            config.AgenticLoop,  // Pass agentic loop config for TerminateOnUnknownCalls
-            _functionToPluginMap,
-            _functionToSkillMap);
+            config.AgenticLoop);  // Pass agentic loop config for TerminateOnUnknownCalls
         _agentTurn = new AgentTurn(
             _baseClient,
             config.ConfigureOptions,
             config.ChatClientMiddleware,
-            serviceProvider);
-
-        // NOTE: Tool scoping is now fully handled by ToolScopingMiddleware (Phase 1 complete)
-        // The middleware creates its own ToolVisibilityManager and is auto-registered in AgentBuilder
-        // when config.Scoping.Enabled == true. Agent.cs no longer has any scoping logic.
-
-        // ToolScheduler removed - FunctionCallProcessor now handles all tool execution
-
-        // ═══════════════════════════════════════════════════════
-        // INITIALIZE OBSERVABILITY SERVICES
-        // ═══════════════════════════════════════════════════════
+            serviceProvider);  
 
         // Resolve optional dependencies from service provider
         var loggerFactory = serviceProvider?.GetService(typeof(ILoggerFactory))
@@ -397,37 +287,12 @@ public sealed class Agent
         _middlewarePipeline.Middlewares;
 
     /// <summary>
-    /// Maximum number of function calls allowed in a single conversation turn
-    /// </summary>
-    public int MaxFunctionCalls => _maxFunctionCalls;
-
-    #region internal loop
-    /// <summary>
-    /// Protocol-agnostic core agentic loop that emits internal events.
-    /// This method contains all the agent logic without any protocol-specific concerns.
-    /// Adapters convert internal events to protocol-specific formats as needed.
-    ///
-    /// ARCHITECTURE (Option 2 Pattern - Clean Break):
-    /// - Accepts PreparedTurn (functional preparation from MessageProcessor.PrepareTurnAsync)
-    /// - Uses AgentDecisionEngine (pure, testable) for all decision logic
-    /// - Executes decisions INLINE to preserve real-time streaming
-    /// - State managed via immutable AgentLoopState for testability
-    ///
-    /// This delivers:
-    /// - Clean separation: Preparation (MessageProcessor) vs Execution (this method)
-    /// - Type-safe prepared state (PreparedTurn record)
-    /// - Testable decision logic (unit tests in microseconds)
-    /// - Real-time streaming (no buffering overhead)
-    /// - Cache-aware history reduction (90% cost savings)
-    /// </summary>
-
-    /// <summary>
     /// Validates and migrates middleware state schema when resuming from checkpoint.
     /// Detects added/removed middleware and logs changes for operational visibility.
     /// </summary>
     /// <param name="checkpointState">Middleware state from checkpoint</param>
     /// <returns>Updated middleware state with current schema metadata</returns>
-    private MiddlewareStateContainer ValidateAndMigrateSchema(MiddlewareStateContainer checkpointState)
+    private MiddlewareState ValidateAndMigrateSchema(MiddlewareState checkpointState)
     {
         // Case 1: Pre-versioning checkpoint (SchemaSignature is null)
         if (checkpointState.SchemaSignature == null)
@@ -438,7 +303,7 @@ public sealed class Agent
 
             var upgradeEvent = new SchemaChangedEvent(
                 OldSignature: null,
-                NewSignature: MiddlewareStateContainer.CompiledSchemaSignature,
+                NewSignature: MiddlewareState.CompiledSchemaSignature,
                 RemovedTypes: Array.Empty<string>(),
                 AddedTypes: Array.Empty<string>(),
                 IsUpgrade: true,
@@ -447,24 +312,24 @@ public sealed class Agent
             // Notify observers using existing NotifyObservers method
             NotifyObservers(upgradeEvent);
 
-            return new MiddlewareStateContainer
+            return new MiddlewareState
             {
                 States = checkpointState.States,
-                SchemaSignature = MiddlewareStateContainer.CompiledSchemaSignature,
-                SchemaVersion = MiddlewareStateContainer.CompiledSchemaVersion,
-                StateVersions = MiddlewareStateContainer.CompiledStateVersions
+                SchemaSignature = MiddlewareState.CompiledSchemaSignature,
+                SchemaVersion = MiddlewareState.CompiledSchemaVersion,
+                StateVersions = MiddlewareState.CompiledStateVersions
             };
         }
 
         // Case 2: Schema matches (common case - no changes)
-        if (checkpointState.SchemaSignature == MiddlewareStateContainer.CompiledSchemaSignature)
+        if (checkpointState.SchemaSignature == MiddlewareState.CompiledSchemaSignature)
         {
             return checkpointState;
         }
 
         // Case 3: Schema changed - detect and log differences
         var oldTypes = checkpointState.SchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        var newTypes = MiddlewareStateContainer.CompiledSchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var newTypes = MiddlewareState.CompiledSchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
 
         var removed = oldTypes.Except(newTypes).ToList();
         var added = newTypes.Except(oldTypes).ToList();
@@ -496,7 +361,7 @@ public sealed class Agent
         // Emit telemetry event for monitoring
         var schemaEvent = new SchemaChangedEvent(
             OldSignature: checkpointState.SchemaSignature,
-            NewSignature: MiddlewareStateContainer.CompiledSchemaSignature,
+            NewSignature: MiddlewareState.CompiledSchemaSignature,
             RemovedTypes: removed,
             AddedTypes: added,
             IsUpgrade: false,
@@ -506,12 +371,12 @@ public sealed class Agent
         NotifyObservers(schemaEvent);
 
         // Update to current schema metadata
-        return new MiddlewareStateContainer
+        return new MiddlewareState
         {
             States = checkpointState.States,
-            SchemaSignature = MiddlewareStateContainer.CompiledSchemaSignature,
-            SchemaVersion = MiddlewareStateContainer.CompiledSchemaVersion,
-            StateVersions = MiddlewareStateContainer.CompiledStateVersions
+            SchemaSignature = MiddlewareState.CompiledSchemaSignature,
+            SchemaVersion = MiddlewareState.CompiledSchemaVersion,
+            StateVersions = MiddlewareState.CompiledStateVersions
         };
     }
 
@@ -597,7 +462,12 @@ public sealed class Agent
             }
         }
     }
-
+        /// <summary>
+    /// - Accepts PreparedTurn (functional preparation from MessageProcessor.PrepareTurnAsync)
+    /// - Uses AgentDecisionEngine (pure, testable) for all decision logic
+    /// - Executes decisions INLINE to preserve real-time streaming
+    /// - State managed via immutable AgentLoopState for testability
+    /// </summary>
     private async IAsyncEnumerable<AgentEvent> RunAgenticLoopInternal(
         PreparedTurn turn,
         List<ChatMessage> turnHistory,
@@ -605,9 +475,6 @@ public sealed class Agent
         ConversationThread? thread = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // ═══════════════════════════════════════════════════════
-        // OBSERVABILITY: Track orchestration start time
-        // ═══════════════════════════════════════════════════════
         var orchestrationStartTime = DateTime.UtcNow;
 
         // Create orchestration activity to group all agent turns and function calls
@@ -616,7 +483,6 @@ public sealed class Agent
             ActivityKind.Internal);
 
         orchestrationActivity?.SetTag("agent.name", _name);
-        orchestrationActivity?.SetTag("agent.max_iterations", _maxFunctionCalls);
         orchestrationActivity?.SetTag("agent.provider", ProviderKey);
         orchestrationActivity?.SetTag("agent.model", ModelId);
 
@@ -640,19 +506,8 @@ public sealed class Agent
             _eventCoordinator.SetExecutionContext(ExecutionContext);
         }
 
-        // ═══════════════════════════════════════════════════════
-        // EXTRACT PREPARED STATE (Option 2 Pattern)
-        // ═══════════════════════════════════════════════════════
-        // PreparedTurn contains:
-        // - MessagesForLLM: Full history + new input (optionally reduced by middleware)
-        // - NewInputMessages: Only the NEW messages (for persistence)
-        // - Options: Merged options with system instructions
         IReadOnlyList<ChatMessage> messages = turn.MessagesForLLM;
         var newInputMessages = turn.NewInputMessages;
-
-        // NOTE: Document processing is now handled by DocumentHandlingMiddleware
-        // Documents should be attached to messages as DataContent, UriContent, or HostedFileContent
-        // and will be processed via middleware pipeline before reaching this point.
 
         // Create linked cancellation token for turn timeout
         using var turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -694,24 +549,16 @@ public sealed class Agent
                 conversationId,
                 _name,
                 DateTimeOffset.UtcNow);
-
-            // ═══════════════════════════════════════════════════════════════════════════
+ 
             // MESSAGE PREPARATION: Split logic between Fresh Run vs Resume
-            //
             // FRESH RUN: Process documents → PrepareMessages → Create initial state
             // RESUME:    Use state.CurrentMessages as-is (already prepared)
-            // ═══════════════════════════════════════════════════════════════════════════
-
             AgentLoopState state;
             IEnumerable<ChatMessage> effectiveMessages;
             ChatOptions? effectiveOptions;
 
             if (thread?.ExecutionState is { } executionState)
             {
-                // ═══════════════════════════════════════════════════════════════════════
-                // RESUME PATH: Skip preparation (state already has prepared messages)
-                // ═══════════════════════════════════════════════════════════════════════
-
                 var checkpointRestoreStart = DateTimeOffset.UtcNow;
                 var restoreStopwatch = Stopwatch.StartNew();
 
@@ -741,9 +588,9 @@ public sealed class Agent
                     Iteration: state.Iteration,
                     MessageCount: state.CurrentMessages.Count);
 
-                // ═══════════════════════════════════════════════════════════════════════
+                //     
                 // RESTORE PENDING WRITES (partial failure recovery)
-                // ═══════════════════════════════════════════════════════════════════════
+                //     
                 if (Config?.EnablePendingWrites == true &&
                     Config?.ThreadStore != null &&
                     state.ETag != null)
@@ -789,9 +636,9 @@ public sealed class Agent
             }
             else
             {
-                // ═══════════════════════════════════════════════════════════════════════
+                //     
                 // FRESH RUN PATH: Use PreparedTurn directly (all preparation already done)
-                // ═══════════════════════════════════════════════════════════════════════
+                //     
 
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
@@ -801,34 +648,19 @@ public sealed class Agent
                 // Use PreparedTurn's already-prepared messages and options
                 effectiveMessages = turn.MessagesForLLM;
                 effectiveOptions = turn.Options;  // Already merged + Middlewareed
-
-                // Note: History reduction is now handled by HistoryReductionMiddleware
-                // Events are emitted from the middleware directly
-                // Reduction metadata is in state.MiddlewareState.HistoryReduction (if reduced)
-
-                // ✅ NOTE: state.CurrentMessages contains FULL history (unreduced)
-                // ✅ NOTE: Reduction metadata is in state.MiddlewareState.HistoryReduction (if reduced)
-                // ✅ NOTE: effectiveMessages contains REDUCED history (for LLM calls only)
-                // ✅ NOTE: All preparation done in PrepareTurnAsync - no duplicate work!
             }
 
-            // ═══════════════════════════════════════════════════════════════════════════
+            //     
             // BUILD CONFIGURATION & DECISION ENGINE (common to both paths)
-            // ═══════════════════════════════════════════════════════════════════════════
+            //     
 
             var config = BuildDecisionConfiguration(effectiveOptions);
             var decisionEngine = new AgentDecisionEngine();
-
-            // ✅ REMOVED: Duplicate state snapshot emission
-            // State snapshots are emitted at the start of each iteration inside the main loop (line 753)
-            // Emitting here caused duplicate snapshots at iteration 0, breaking StateSnapshotTests
-            // This was added in commit 6646836 (2025-11-15) and caused test failures
-
-            // ═══════════════════════════════════════════════════════
+            
             // INITIALIZE TURN HISTORY: Add only NEW input messages (Option 2 pattern)
             // All NEW messages from this turn will be saved to thread at the end
             // PreparedTurn separates MessagesForLLM (full history) from NewInputMessages (to persist)
-            // ═══════════════════════════════════════════════════════
+            
             foreach (var msg in newInputMessages)
             {
                 turnHistory.Add(msg);
@@ -839,14 +671,13 @@ public sealed class Agent
             // Collect all response updates to build final history
             var responseUpdates = new List<ChatResponseUpdate>();
 
-            // ═══════════════════════════════════════════════════════
             // OBSERVABILITY: Start telemetry and logging
-            // ═══════════════════════════════════════════════════════
+            
             var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-            // ═══════════════════════════════════════════════════════
+   
             // INITIALIZE TURN CONTEXT (turn-scoped, for BeforeMessageTurn/AfterMessageTurn hooks)
-            // ═══════════════════════════════════════════════════════
+            
             var turnContext = new AgentMiddlewareContext
             {
                 AgentName = _name,
@@ -856,12 +687,10 @@ public sealed class Agent
             };
             turnContext.SetOriginalState(state);
 
-            // ═══════════════════════════════════════════════════════
-            // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
-            // ═══════════════════════════════════════════════════════
+     
             turnContext.UserMessage = newInputMessages.FirstOrDefault();
-            turnContext.ConversationHistory = effectiveMessages.ToList();
-            
+            turnContext.ConversationHistory = effectiveMessages.ToList();    
+            // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(turnContext, effectiveCancellationToken);
             
             // Apply any pending state updates from middleware
@@ -876,14 +705,12 @@ public sealed class Agent
                 yield return middlewareEvt;
 
 
-            // ═══════════════════════════════════════════════════════
             // MAIN AGENTIC LOOP (Hybrid: Pure Decisions + Inline Execution)
-            // ═══════════════════════════════════════════════════════
-            // NOTE: Use <= so that when MaxAgenticIterations=2, we allow iterations 0, 1, AND 2.
-            // Iteration 2 will hit the continuation Middleware before attempting the 3rd LLM call.
-            // This allows the Middleware to emit the continuation request event.
+            // NOTE: Iteration limit enforcement is handled by ContinuationPermissionMiddleware.
+            // The middleware checks the limit and requests user permission to continue.
+            // This allows clean separation: loop continues until middleware signals termination.
 
-            while (!state.IsTerminated && state.Iteration <= config.MaxIterations)
+            while (!state.IsTerminated)
             {
                 // Generate message ID for this iteration
                 var assistantMessageId = Guid.NewGuid().ToString();
@@ -894,7 +721,7 @@ public sealed class Agent
                 // Emit state snapshot for testing/debugging
                 yield return new StateSnapshotEvent(
                     CurrentIteration: state.Iteration,
-                    MaxIterations: _maxFunctionCalls,
+                    MaxIterations: state.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? config.MaxIterations,
                     IsTerminated: state.IsTerminated,
                     TerminationReason: state.TerminationReason,
                     ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
@@ -902,19 +729,19 @@ public sealed class Agent
                     AgentName: _name,
                     Timestamp: DateTimeOffset.UtcNow);
 
-                // Drain Middleware events before decision
+                // Drain middleware events before decision
                 while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
                     yield return MiddlewareEvt;
 
-                // ═══════════════════════════════════════════════════
+                //      
                 // FUNCTIONAL CORE: Pure Decision (No I/O)
-                // ═══════════════════════════════════════════════════
+                //      
 
                 var decision = decisionEngine.DecideNextAction(state, lastResponse, config);
 
-                // ═══════════════════════════════════════════════════
+                //      
                 // OBSERVABILITY: Emit iteration and decision events
-                // ═══════════════════════════════════════════════════
+                //      
 
                 // Emit iteration start event
                 yield return new IterationStartEvent(
@@ -939,43 +766,24 @@ public sealed class Agent
                 // NOTE: Circuit breaker events are now emitted directly by CircuitBreakerIterationMiddleware
                 // via context.Emit() in BeforeToolExecutionAsync.
 
-                // Drain Middleware events after decision-making, before execution
+                // Drain middleware events after decision-making, before execution
                 // CRITICAL: Ensures events emitted during decision logic are yielded before LLM streaming starts
                 while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
                     yield return MiddlewareEvt;
 
-                // ═══════════════════════════════════════════════════════════════
+                //     
                 // ARCHITECTURAL DECISION: Inline Execution for Zero-Latency Streaming
-                // ═══════════════════════════════════════════════════════════════
+                //     
                 //
                 // LLM calls and tool execution happen INLINE (not extracted to methods)
                 // to preserve real-time streaming. Extracting would add 200-3000ms latency
                 // due to buffering events before returning them.
                 //
-                // Why inline?
-                // - Zero latency: Events yielded immediately as they arrive from LLM
-                // - True streaming: No buffering overhead between method boundaries
-                // - Testability: Decision logic extracted to AgentDecisionEngine (pure & fast)
-                //
-                // Trade-offs:
-                // - Longer main method (~800 lines vs ~200 if extracted)
-                // - Execution logic tested via integration tests (not unit tests)
-                //
-                // See: Proposals/Urgent/TESTABILITY_REFACTORING_PROPOSAL.md
-                //      Section: "Event Streaming Architecture Deep Dive" for full analysis
-                // ═══════════════════════════════════════════════════════════════
-
-                // ═══════════════════════════════════════════════════
-                // IMPERATIVE SHELL: Execute Decision INLINE with Real-time Streaming
-                // ═══════════════════════════════════════════════════
 
                 if (decision is AgentDecision.CallLLM)
-                {
-                    // ═══════════════════════════════════════════════════════
-                    // EXECUTE LLM CALL WITH ITERATION Middlewares
-                    // ═══════════════════════════════════════════════════════
+                {    
 
-                    // ✅ NEW: Determine messages to send with cache-aware reduction
+                    // Determine messages to send with cache-aware reduction
                     IEnumerable<ChatMessage> messagesToSend;
                     int messageCountToSend;  // Track actual count sent for history tracking
 
@@ -987,7 +795,7 @@ public sealed class Agent
                     }
                     else if (state.Iteration == 0)
                     {
-                        // ✅ FIRST ITERATION: Use effectiveMessages (reduced) from PrepareTurnAsync
+                        // First iteration: Use effectiveMessages (reduced) from PrepareTurnAsync
                         // This applies history reduction for the initial LLM call
                         // effectiveMessages already contains reduced history if reduction was applied
                         messagesToSend = effectiveMessages;
@@ -995,7 +803,7 @@ public sealed class Agent
                     }
                     else
                     {
-                        // ✅ SUBSEQUENT ITERATIONS (iteration > 0):
+                        // Subsequent iterations (iteration > 0):
                         // Option 1: Apply reduction if configured and available (optimal tokens)
                         // Option 2: Use full history (simpler, current default)
 
@@ -1006,31 +814,9 @@ public sealed class Agent
                         messageCountToSend = state.CurrentMessages.Count;
                     }
 
-                    // Note: Tool scoping is now handled by ToolScopingMiddleware in BeforeIterationAsync
-                    // The middleware will filter tools and emit ScopedToolsVisibleEvent
-                    var scopedOptions = effectiveOptions;
-                    if (state.InnerClientTracksHistory && scopedOptions != null && scopedOptions.ConversationId != thread?.ConversationId)
-                    {
-                        scopedOptions = new ChatOptions
-                        {
-                            ModelId = scopedOptions.ModelId,
-                            Tools = scopedOptions.Tools,
-                            ToolMode = scopedOptions.ToolMode,
-                            Temperature = scopedOptions.Temperature,
-                            MaxOutputTokens = scopedOptions.MaxOutputTokens,
-                            TopP = scopedOptions.TopP,
-                            FrequencyPenalty = scopedOptions.FrequencyPenalty,
-                            PresencePenalty = scopedOptions.PresencePenalty,
-                            StopSequences = scopedOptions.StopSequences,
-                            ResponseFormat = scopedOptions.ResponseFormat,
-                            AdditionalProperties = scopedOptions.AdditionalProperties,
-                            ConversationId = thread?.ConversationId
-                        };
-                    }
-
-                    // ═══════════════════════════════════════════════════════
                     // CREATE MIDDLEWARE CONTEXT
-                    // ═══════════════════════════════════════════════════════
+                    // Note: Tool scoping is handled by ToolScopingMiddleware in BeforeIterationAsync
+                    // The middleware will filter tools and emit ScopedToolsVisibleEvent
                     var middlewareContext = new Middleware.AgentMiddlewareContext
                     {
                         AgentName = _name,
@@ -1038,14 +824,12 @@ public sealed class Agent
                         CancellationToken = effectiveCancellationToken,
                         Iteration = state.Iteration,
                         Messages = messagesToSend.ToList(),
-                        Options = scopedOptions,
+                        Options = effectiveOptions,
                         EventCoordinator = _eventCoordinator
                     };
                     middlewareContext.SetOriginalState(state);
 
-                    // ═══════════════════════════════════════════════════════
                     // EXECUTE BEFORE ITERATION MIDDLEWARES
-                    // ═══════════════════════════════════════════════════════
                     await _middlewarePipeline.ExecuteBeforeIterationAsync(
                         middlewareContext,
                         effectiveCancellationToken).ConfigureAwait(false);
@@ -1068,7 +852,7 @@ public sealed class Agent
 
                     // Use potentially modified values from Middlewares
                     messagesToSend = middlewareContext.Messages;
-                    scopedOptions = middlewareContext.Options;
+                    var scopedOptions = middlewareContext.Options;
 
                     // Streaming state
                     var assistantContents = new List<AIContent>();
@@ -1077,9 +861,7 @@ public sealed class Agent
                     bool reasoningStarted = false;
                     bool reasoningMessageStarted = false;
 
-                    // ═══════════════════════════════════════════════════════
                     // Execute LLM call (unless skipped by Middleware)
-                    // ═══════════════════════════════════════════════════════
 
                     if (middlewareContext.SkipLLMCall)
                     {
@@ -1272,11 +1054,8 @@ public sealed class Agent
                     {
                         yield return new TextMessageEndEvent(assistantMessageId);
                     }
-
-                    // ═══════════════════════════════════════════════════════
-                    // ✅ NEW: Populate context with results
-                    // ═══════════════════════════════════════════════════════
-
+   
+                    // Populate context with results
                     middlewareContext.Response = new ChatMessage(
                         ChatRole.Assistant, assistantContents);
                     middlewareContext.ToolCalls = toolRequests.AsReadOnly();
@@ -1291,12 +1070,10 @@ public sealed class Agent
                         var currentMessages = state.CurrentMessages.ToList();
                         currentMessages.Add(assistantMessage);
 
-                        // ✅ FIXED: Update state immediately after modifying messages
+                        // Update state immediately after modifying messages
                         state = state.WithMessages(currentMessages);
 
-                        // ✅ FIX: Use messageCountToSend (actual messages sent to server)
-                        // NOT state.CurrentMessages.Count (which may be unreduced full history)
-                        // This ensures delta sending works correctly with history reduction
+                        // Use messageCountToSend (actual messages sent to server)
                         if (_agentTurn.LastResponseConversationId != null)
                         {
                             state = state.EnableHistoryTracking(messageCountToSend);
@@ -1308,21 +1085,13 @@ public sealed class Agent
                             ? assistantContents.ToList()
                             : assistantContents.Where(c => c is not TextReasoningContent).ToList();
 
-                        // ✅ FIX: Add to history if there's ANY content (text OR tool calls)
-                        // Previous code checked hasNonEmptyText which excluded tool-only messages
-                        // This caused assistant messages with ONLY tool calls to be lost from history
+                        // Add to history if there's ANY content (text OR tool calls)
                         if (historyContents.Count > 0)
                         {
                             var historyMessage = new ChatMessage(ChatRole.Assistant, historyContents);
                             turnHistory.Add(historyMessage);
                         }
 
-                        // ═══════════════════════════════════════════════════════
-                        // TOOL EXECUTION (Inline - NOT via decision engine)
-                        // ═══════════════════════════════════════════════════════
-
-                        // Note: Tool scoping is handled by ToolScopingMiddleware in BeforeIterationAsync
-                        // At this point, middlewareContext.Options already has scoped tools
                         var effectiveOptionsForTools = middlewareContext.Options ?? effectiveOptions;
 
                         // Yield Middleware events before tool execution
@@ -1331,11 +1100,9 @@ public sealed class Agent
                             yield return MiddlewareEvt;
                         }
 
-                        // ═══════════════════════════════════════════════════════
                         // EXECUTE BEFORE TOOL EXECUTION MIDDLEWARES
                         // Allows middlewares (e.g., circuit breaker) to inspect pending
                         // tool calls and prevent execution if needed.
-                        // ═══════════════════════════════════════════════════════
                         middlewareContext.ToolCalls = toolRequests.AsReadOnly();
 
                         await _middlewarePipeline.ExecuteBeforeToolExecutionAsync(
@@ -1396,9 +1163,7 @@ public sealed class Agent
                             yield return MiddlewareEvt;
                         }
 
-                        // ═══════════════════════════════════════════════════════
                         // EXECUTE AFTER ITERATION MIDDLEWARES (post-tool execution)
-                        // ═══════════════════════════════════════════════════════
                         middlewareContext.ToolResults = toolResultMessage.Contents
                             .OfType<FunctionResultContent>()
                             .ToList()
@@ -1422,9 +1187,9 @@ public sealed class Agent
                             break;
                         }
 
-                        // ═══════════════════════════════════════════════════════
+                        //      
                         // PENDING WRITES (save successful function results immediately)
-                        // ═══════════════════════════════════════════════════════
+                        //      
                         if (Config?.EnablePendingWrites == true &&
                             Config?.ThreadStore != null &&
                             thread != null &&
@@ -1432,44 +1197,20 @@ public sealed class Agent
                         {
                             SavePendingWritesFireAndForget(toolResultMessage, state, Config.ThreadStore, thread.Id);
                         }
-
-                        // NOTE: Error tracking logic has been moved to ErrorTrackingIterationMiddleware
-                        // which runs in AfterIterationAsync (after tool execution).
-                        // The middleware signals state updates via Properties["ShouldIncrementFailures"]
-                        // and Properties["ShouldResetFailures"], processed by ProcessIterationMiddleWareSignals.
-                        // This provides configurable error detection and is registered via WithErrorTracking().
-
-                        // NOTE: Container expansion state updates are handled by ToolScopingMiddleware
-                        // which runs in AfterIterationAsync. The middleware updates MiddlewareState.Scoping.
-                        // State changes flow back via ProcessIterationMiddleWareSignals.
-
-                        // ═══════════════════════════════════════════════════════
-                        // UPDATE STATE WITH COMPLETED FUNCTIONS  
-                        // ═══════════════════════════════════════════════════════
+     
+                        // UPDATE STATE WITH COMPLETED FUNCTIONS   
                         foreach (var functionName in successfulFunctions)
                         {
                             state = state.CompleteFunction(functionName);
                         }
 
-
-
-                        // ═══════════════════════════════════════════════════════
-                        // ADD RESULTS TO MESSAGE LISTS
-                        // ═══════════════════════════════════════════════════════
-                        
-                        // ✅ ALWAYS add unfiltered results to currentMessages (LLM needs to see container expansions)
+                        // ALWAYS add unfiltered results to currentMessages (LLM needs to see container expansions)
                         currentMessages.Add(toolResultMessage);
 
-                        // ✅ Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
-                        // ToolScopingMiddleware marks container results as ephemeral and filters them before persistence
+                        // Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
                         turnHistory.Add(toolResultMessage);
-
-                        // Note: Ephemeral filtering is handled by ToolScopingMiddleware.AfterMessageTurnAsync
-                        // Container expansions are visible to LLM but filtered from persistent thread storage
-
-                        // ═══════════════════════════════════════════════════════
-                        // EMIT TOOL RESULT EVENTS
-                        // ═══════════════════════════════════════════════════════
+     
+                        // EMIT TOOL RESULT EVENTS   
                         foreach (var content in toolResultMessage.Contents)
                         {
                             if (content is FunctionResultContent result)
@@ -1478,18 +1219,13 @@ public sealed class Agent
                                 yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null");
                             }
                         }
-
-                        // Note: Circuit breaker tracking is now handled by CircuitBreakerIterationMiddleware
-                        // via context.UpdateState<CircuitBreakerState>() in AfterIterationAsync.
-                        // The middleware updates CircuitBreakerState with tool signatures after execution.
-
                         // Update state with new messages
                         state = state.WithMessages(currentMessages);
 
                         // Build ChatResponse for decision engine (after execution)
                         lastResponse = new ChatResponse(currentMessages.Where(m => m.Role == ChatRole.Assistant).ToList());
 
-                        // ✅ FIXED: Clear responseUpdates AFTER building the response
+                        // Clear responseUpdates after building the response
                         responseUpdates.Clear();
                     }
                     else
@@ -1507,7 +1243,7 @@ public sealed class Agent
                         var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
                         lastResponse = finalResponse;
 
-                        // ✅ FIX: Add final assistant message to turnHistory BEFORE clearing responseUpdates
+                        // Add final assistant message to turnHistory before clearing responseUpdates
                         // This ensures the assistant's response is persisted to the thread
                         if (finalResponse.Messages.Count > 0)
                         {
@@ -1524,10 +1260,10 @@ public sealed class Agent
                             }
                         }
 
-                        // ✅ FIXED: Clear responseUpdates AFTER constructing final response
+                        // Clear responseUpdates after constructing final response
                         responseUpdates.Clear();
 
-                        // ✅ FIX: Update history tracking if we have ConversationId
+                        // Update history tracking if we have ConversationId
                         if (_agentTurn.LastResponseConversationId != null)
                         {
                             // For non-tool responses, use messageCountToSend (actual messages sent)
@@ -1566,9 +1302,9 @@ public sealed class Agent
                 // Advance to next iteration
                 state = state.NextIteration();
 
-                // ═══════════════════════════════════════════════════════
-                // ✅ NEW: CHECKPOINT AFTER EACH ITERATION (if configured)
-                // ═══════════════════════════════════════════════════════
+                //      
+                // CHECKPOINT AFTER EACH ITERATION (if configured)
+                //      
 
                 if (thread != null &&
                     Config?.CheckpointFrequency == CheckpointFrequency.PerIteration &&
@@ -1653,20 +1389,6 @@ public sealed class Agent
                 }
             }
 
-            // ═══════════════════════════════════════════════════════
-            // FINALIZATION
-            // ═══════════════════════════════════════════════════════
-            // NOTE: Do NOT auto-generate termination messages for max iterations.
-            // Iteration Middlewares (like ContinuationPermissionIterationMiddleWare) are responsible
-            // for emitting bidirectional events (ContinuationRequestEvent) that the
-            // consumer can handle. The fallback termination message would mask these events,
-            // defeating the purpose of bidirectional communication.
-            // Let the event flow to the consumer - they decide what to do.
-
-            // Build the complete history including the final assistant message
-            // ✅ FIX: Always check for pending responseUpdates, regardless of tool history
-            // The previous condition (!hadAnyToolCalls) prevented final messages from being
-            // added after tool execution, causing message loss in multi-iteration scenarios.
             if (responseUpdates.Any())
             {
                 var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
@@ -1676,8 +1398,7 @@ public sealed class Agent
 
                     if (finalAssistantMessage.Contents.Count > 0)
                     {
-                        // ✅ FIX: Add final message to BOTH state and turnHistory
-                        // This ensures state consistency for checkpointing
+                        // Add final message to both state and turnHistory for consistency
                         var currentMessages = state.CurrentMessages.ToList();
                         currentMessages.Add(finalAssistantMessage);
                         state = state.WithMessages(currentMessages);
@@ -1688,7 +1409,7 @@ public sealed class Agent
                 }
             }
 
-            // Final drain of Middleware events after loop
+            // Final drain of middleware events after loop
             while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
                 yield return MiddlewareEvt;
 
@@ -1707,11 +1428,6 @@ public sealed class Agent
             orchestrationActivity?.SetTag("agent.termination_reason", state.TerminationReason ?? "completed");
             orchestrationActivity?.SetTag("agent.was_terminated", state.IsTerminated);
 
-            // ═══════════════════════════════════════════════════════
-            // OBSERVABILITY: Record completion metrics
-            // ═══════════════════════════════════════════════════════
-            // Note: Token usage, duration, and finish reason are tracked by Microsoft's OpenTelemetryChatClient
-            // Metrics are tracked by TelemetryEventObserver via observer pattern
 
             // Emit agent completion event
             yield return new AgentCompletionEvent(
@@ -1719,11 +1435,8 @@ public sealed class Agent
                 state.Iteration,
                 turnStopwatch.Elapsed,
                 DateTimeOffset.UtcNow);
-
-            // ═══════════════════════════════════════════════════════
-            // ✅ NEW: FINAL CHECKPOINT (if configured)
-            // ═══════════════════════════════════════════════════════
-
+    
+            // FINAL CHECKPOINT (if configured)
             if (thread != null && Config?.ThreadStore != null)
             {
                 var finalState = state with
@@ -1801,9 +1514,7 @@ public sealed class Agent
                 await checkpointTask;
             }
 
-            // ═══════════════════════════════════════════════════════
             // MIDDLEWARE: AfterMessageTurnAsync (turn-level hook)
-            // ═══════════════════════════════════════════════════════
             turnContext.FinalResponse = lastResponse;
             turnContext.TurnHistory = turnHistory;
             
@@ -1817,9 +1528,7 @@ public sealed class Agent
             while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
 
-            // ═══════════════════════════════════════════════════════
             // PERSISTENCE: Save complete turn history to thread
-            // ═══════════════════════════════════════════════════════
             if (thread != null && turnHistory.Count > 0)
             {
                 try
@@ -1934,18 +1643,6 @@ public sealed class Agent
         });
     }
 
-    #endregion
-
-    #region IChatClient Implementation
-
-
-
-    /// <summary>
-    /// Protocol-agnostic core agentic loop that emits internal events.
-    /// This method contains all the agent logic without any protocol-specific concerns.
-    /// Adapters convert internal events to protocol-specific formats as needed.
-    /// </summary>
-
     /// <summary>
     /// Constructs a final ChatResponse from collected streaming updates
     /// </summary>
@@ -2028,9 +1725,6 @@ public sealed class Agent
         _eventCoordinator?.Dispose();
     }
 
-    #endregion
-
- 
     /// <summary>
     /// Builds lightweight configuration for decision engine from full agent config.
     /// </summary>
@@ -2053,25 +1747,20 @@ public sealed class Agent
         // Build configuration from AgentConfig fields
         return AgentConfiguration.FromAgentConfig(
             Config,
-            _maxFunctionCalls,
+            Config?.MaxAgenticIterations ?? 10,
             availableTools);
     }
 
     #region Testing and Advanced API
 
     /// <summary>
-    /// Runs the agentic loop and streams internal agent events (for testing and advanced scenarios).
-    /// This exposes the raw internal event stream without protocol conversion.
-    /// Use this for testing to verify event sequences and agent behavior.
-    ///
-    /// <strong>Thread Safety:</strong> This method is fully thread-safe and supports concurrent execution.
-    /// Multiple calls on the same agent instance can execute concurrently without interference.
+    /// Runs the agentic loop and streams  agent events.
     /// The agent is stateless; all conversation state is managed externally or in thread parameters.
     /// </summary>
     /// <param name="messages">The conversation messages</param>
     /// <param name="options">Chat options including tools</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
+    /// <returns>Stream of agent events</returns>
     public async IAsyncEnumerable<AgentEvent> RunAgenticLoopAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options = null,
@@ -2109,7 +1798,7 @@ public sealed class Agent
 
     #endregion
 
-    #region Thread-Aware Public API
+
 
     /// <summary>
     /// Creates a new conversation thread.
@@ -2125,10 +1814,6 @@ public sealed class Agent
     /// Runs the agent with messages (streaming). Returns the internal event stream.
     /// This is the primary public API method for agent execution.
     ///
-    /// <strong>Thread Safety:</strong> This method is fully thread-safe and supports concurrent execution.
-    /// Multiple calls on the same agent instance can execute concurrently without interference.
-    /// For multi-turn conversations, pass a ConversationThread to maintain state across runs.
-    /// </summary>
     /// <param name="messages">Messages to process</param>
     /// <param name="options">Optional chat options</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -2237,9 +1922,9 @@ public sealed class Agent
             thread.ExecutionState?.ValidateConsistency(currentMessageCount);
         }
 
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         // PREPARE TURN: Load history, apply reduction, merge options (Option 2 pattern)
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
         var turn = await _messageProcessor.PrepareTurnAsync(
             thread,
@@ -2254,11 +1939,11 @@ public sealed class Agent
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         // EXECUTE AGENTIC LOOP with PreparedTurn
-        // ═══════════════════════════════════════════════════════════════════════════
+        //     
         var internalStream = RunAgenticLoopInternal(
-            turn,  // ✅ PreparedTurn contains MessagesForLLM, NewInputMessages, and Options
+            turn,
             turnHistory,
             historyCompletionSource,
             thread: thread,  // ← CRITICAL: Pass thread for persistence and checkpointing
@@ -2277,9 +1962,9 @@ public sealed class Agent
         }
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // ITERATION Middleware SUPPORT
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Processes signals from iteration Middlewares (cleanup requests, etc.).
@@ -2291,12 +1976,6 @@ public sealed class Agent
         Middleware.AgentMiddlewareContext context,
         ref AgentLoopState state)
     {
-        // ═══════════════════════════════════════════════════════
-        // APPLY PENDING STATE UPDATES FROM MIDDLEWARE
-        // ═══════════════════════════════════════════════════════
-        // Middleware schedules state updates via context.UpdateState<T>().
-        // These are applied AFTER the middleware chain completes to ensure
-        // all middleware sees consistent state during the chain.
         if (context.GetPendingState() is { } pendingState)
         {
             state = pendingState;
@@ -2312,13 +1991,7 @@ public sealed class Agent
 
             state = state.Terminate(terminationReason);
         }
-
-        // Note: Error tracking is now handled via context.UpdateState<ErrorTrackingState>()
-        // in the ErrorTrackingIterationMiddleware. Pending state updates are applied
-        // after the middleware chain completes via context.GetPendingState().
     }
-
-    #endregion
 
 }
 
@@ -2328,19 +2001,6 @@ public sealed class Agent
 /// Contains ZERO I/O operations - all decisions are deterministic and testable.
 /// This is the "Functional Core" of the agent architecture.
 /// </summary>
-/// <remarks>
-/// Key principles:
-/// - Pure functions: Same inputs always produce same outputs
-/// - No side effects: Doesn't modify external state
-/// - No I/O: Doesn't call LLM, execute tools, or access network/disk
-/// - Synchronous: All operations complete immediately
-/// - Testable: Can be tested in microseconds without mocking
-///
-/// Design rationale:
-/// By extracting decision logic from I/O operations, we achieve:
-/// - Easy to reason about (pure state in, decision out)
-/// - Property-based testing possible
-/// </remarks>
 internal sealed class AgentDecisionEngine
 {
     /// <summary>
@@ -2351,50 +2011,19 @@ internal sealed class AgentDecisionEngine
     /// <param name="lastResponse">Response from last LLM call (null on first iteration)</param>
     /// <param name="config">Agent configuration (max iterations, available tools, etc.)</param>
     /// <returns>Decision for what action to take next</returns>
-    /// <remarks>
-    /// Decision priority (checked in this order):
-    /// 1. Termination conditions (already terminated - set by middleware or external signal)
-    /// 2. First iteration (must call LLM)
-    /// 3. Extract tool requests from LLM response
-    /// 4. No tools = completion
-    /// 5. Unknown tools check (optional)
-    /// 6. Execute tools
-    ///
-    /// Note: Error tracking and circuit breaker logic are now handled by middleware:
-    /// - ErrorTrackingIterationMiddleware: Tracks consecutive failures, signals termination
-    /// - CircuitBreakerIterationMiddleware: Prevents infinite loops, signals termination
-    /// Middleware signals termination via state.IsTerminated (checked in step 1).
-    /// </remarks>
     public AgentDecision DecideNextAction(
         AgentLoopState state,
         ChatResponse? lastResponse,
         AgentConfiguration config)
     {
-        // ═══════════════════════════════════════════════════════
-        // PRIORITY 1: TERMINATION CONDITIONS
-        // These checks happen first - most important
-        // ═══════════════════════════════════════════════════════
-
         // Check: Already terminated by external source (e.g., permission Middleware, manual termination)
         if (state.IsTerminated)
             return new AgentDecision.Terminate(state.TerminationReason ?? "Terminated");
 
-        // NOTE: Consecutive error checking is now handled by ErrorTrackingIterationMiddleware
-        // which runs in AfterIterationAsync and signals termination via Properties["IsTerminated"].
-        // The middleware provides configurable error detection and is registered via WithErrorTracking().
-
-        // ═══════════════════════════════════════════════════════
-        // PRIORITY 2: FIRST ITERATION
         // If no response yet, must call LLM
-        // ═══════════════════════════════════════════════════════
 
         if (lastResponse == null)
             return AgentDecision.CallLLM.Instance;
-
-        // ═══════════════════════════════════════════════════════
-        // PRIORITY 3: CHECK IF RESPONSE IS COMPLETE
-        // If last response has no tool calls, we're done
-        // ═══════════════════════════════════════════════════════
 
         // Check if response has any tool calls
         bool hasToolCalls = lastResponse.Messages
@@ -2402,15 +2031,7 @@ internal sealed class AgentDecisionEngine
 
         if (!hasToolCalls)
             return new AgentDecision.Complete(lastResponse);
-
-        // NOTE: Circuit breaker logic has been moved to CircuitBreakerIterationMiddleware
-        // which runs in BeforeToolExecutionAsync (after LLM call, before tool execution).
-        // This provides predictive checking and is configurable via WithCircuitBreaker().
-
-        // ═══════════════════════════════════════════════════════
-        // PRIORITY 4: UNKNOWN TOOLS CHECK
         // Check if all requested tools are available (optional)
-        // ═══════════════════════════════════════════════════════
 
         if (config.TerminateOnUnknownCalls && config.AvailableTools != null)
         {
@@ -2426,12 +2047,8 @@ internal sealed class AgentDecisionEngine
                     $"Unknown tools requested: {string.Join(", ", unknownTools)}");
             }
         }
-
-        // ═══════════════════════════════════════════════════════
-        // PRIORITY 6: CALL LLM AGAIN
         // If response had tool calls, they will be executed inline
         // and we need to call the LLM again with the results
-        // ═══════════════════════════════════════════════════════
 
         return AgentDecision.CallLLM.Instance;
     }
@@ -2473,23 +2090,6 @@ internal sealed class AgentDecisionEngine
 /// The decision engine returns one of these sealed record types.
 /// Pattern matching ensures exhaustive handling of all cases.
 /// </summary>
-/// <remarks>
-/// This is a sealed hierarchy - no new decision types can be added outside this file.
-/// This ensures the decision logic is complete and all cases are handled.
-///
-/// Example usage:
-/// <code>
-/// var decision = decisionEngine.DecideNextAction(state, lastResponse, config);
-/// var result = decision switch
-/// {
-///     AgentDecision.CallLLM => await ExecuteCallLLMAsync(...),
-///     AgentDecision.ExecuteTools et => await ExecuteToolsAsync(et.Tools, ...),
-///     AgentDecision.Complete c => ExecutionResult.Completed(state, c.FinalResponse),
-///     AgentDecision.Terminate t => ExecutionResult.Terminated(state, t.Reason),
-///     _ => throw new InvalidOperationException($"Unknown decision: {decision}")
-/// };
-/// </code>
-/// </remarks>
 internal abstract record AgentDecision
 {
     /// <summary>
@@ -2555,17 +2155,8 @@ internal sealed record AgentToolCallRequest(
 /// Consolidates all 11 state variables that were scattered in RunAgenticLoopInternal.
 /// Thread-safe and testable - enables pure decision-making logic.
 /// </summary>
-/// <remarks>
-/// This record is the foundation of the "Functional Core" pattern.
-/// All state transitions create new instances via 'with' expressions,
-/// making state changes explicit and testable.
-/// </remarks>
 public sealed record AgentLoopState
 {
-    // ═══════════════════════════════════════════════════════
-    // CORE STATE
-    // ═══════════════════════════════════════════════════════
-
     /// <summary>
     /// Unique identifier for this agent run/turn.
     /// </summary>
@@ -2616,9 +2207,9 @@ public sealed record AgentLoopState
     /// </summary>
     public string? TerminationReason { get; init; }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // FUNCTION TRACKING
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Functions completed in this run (for telemetry and deduplication).
@@ -2626,19 +2217,15 @@ public sealed record AgentLoopState
     /// </summary>
     public required ImmutableHashSet<string> CompletedFunctions { get; init; }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HISTORY OPTIMIZATION STATE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Whether the LLM service manages conversation history server-side.
     /// When true, we only send delta messages (significant token savings).
     /// Detected automatically when service returns a ConversationId.
     /// </summary>
-    /// <remarks>
-    /// Note: History reduction is now handled by HistoryReductionMiddleware,
-    /// which stores its state in MiddlewareState.HistoryReduction.
-    /// </remarks>
     public required bool InnerClientTracksHistory { get; init; }
 
     /// <summary>
@@ -2647,9 +2234,9 @@ public sealed record AgentLoopState
     /// </summary>
     public required int MessagesSentToInnerClient { get; init; }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // STREAMING STATE
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Last assistant message ID (for event correlation).
@@ -2663,40 +2250,20 @@ public sealed record AgentLoopState
     /// </summary>
     public required IReadOnlyList<ChatResponseUpdate> ResponseUpdates { get; init; }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // MIDDLEWARE STATE (extensible, owned by middlewares)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Source-generated middleware state container.
     /// Provides strongly-typed properties for each middleware state type marked with [MiddlewareState].
     /// </summary>
-    /// <remarks>
-    /// <para><b>Usage:</b></para>
-    /// <code>
-    /// // Read state
-    /// var cbState = state.MiddlewareState.CircuitBreaker ?? new();
-    ///
-    /// // Update state immutably
-    /// state = state with
-    /// {
-    ///     MiddlewareState = state.MiddlewareState.WithCircuitBreaker(newState)
-    /// };
-    /// </code>
-    ///
-    /// <para><b>Thread Safety:</b></para>
-    /// <para>
-    /// This enables stateless middleware instances. State flows through context,
-    /// not stored in middleware fields. This preserves Agent's thread-safety
-    /// guarantee for concurrent RunAsync() calls.
-    /// </para>
-    /// </remarks>
-    public MiddlewareStateContainer MiddlewareState { get; init; }
-        = new MiddlewareStateContainer();
+    public MiddlewareState MiddlewareState { get; init; }
+        = new MiddlewareState();
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // FACTORY METHOD
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Creates initial state for a new agent execution.
@@ -2732,10 +2299,10 @@ public sealed record AgentLoopState
         ETag = null // Will be generated on first serialize
     };
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // STATE TRANSITIONS (Immutable Updates)
     // All methods return NEW instances - never mutate existing state
-    // ═══════════════════════════════════════════════════════
+    //      
 
     /// <summary>
     /// Advances to the next iteration.
@@ -2832,61 +2399,19 @@ public sealed record AgentLoopState
     /// Clears accumulated response updates (after building final response).
     /// </summary>
     public AgentLoopState ClearResponseUpdates() =>
-        this with { ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty };
-
-    // ═══════════════════════════════════════════════════════
-    // CHECKPOINTING METADATA (NEW)
-    // ═══════════════════════════════════════════════════════
-
-    // ═══════════════════════════════════════════════════════
-    // PENDING WRITES (FOR PARTIAL FAILURE RECOVERY)
-    // ═══════════════════════════════════════════════════════
+        this with { ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty };  
 
     /// <summary>
     /// Pending writes from function calls that completed successfully
     /// but before the iteration checkpoint was saved.
     /// Used for partial failure recovery in parallel execution scenarios.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// When parallel function calls execute, successful results are saved immediately
-    /// as "pending writes" before the full iteration checkpoint completes. If a crash
-    /// occurs, these pending writes can be restored on resume to avoid re-executing
-    /// successful operations.
-    /// </para>
-    /// <para>
-    /// <strong>Lifecycle:</strong>
-    /// <list type="number">
-    /// <item>Function completes → Added to PendingWrites</item>
-    /// <item>Checkpoint saves → PendingWrites cleared (captured in checkpoint)</item>
-    /// <item>On resume → Pending writes restored from checkpointer as tool messages</item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// <strong>Note:</strong> Pending writes are NOT serialized in AgentLoopState itself.
-    /// They are stored separately by IConversationThreadStore and restored during resume.
-    /// This property tracks them during execution only.
-    /// </para>
-    /// </remarks>
     public ImmutableList<PendingWrite> PendingWrites { get; init; }
         = ImmutableList<PendingWrite>.Empty;
 
     /// <summary>
     /// Schema version for forward/backward compatibility.
     /// Increment when making breaking changes to this record.
-    ///
-    /// Version History:
-    /// - v1: Initial implementation (all current fields)
-    /// - v2: Added PendingWrites support for parallel execution recovery
-    ///
-    /// Breaking changes requiring version bump:
-    /// - Removing/renaming required properties
-    /// - Changing ImmutableDictionary key types
-    /// - Changing collection types (e.g., List to ImmutableList)
-    ///
-    /// Non-breaking changes (OK to keep same version):
-    /// - Adding new optional properties (init with default)
-    /// - Adding metadata fields
     /// </summary>
     public int Version { get; init; } = 2;
 
@@ -2902,11 +2427,7 @@ public sealed record AgentLoopState
     /// Format: GUID string
     /// </summary>
     public string? ETag { get; init; }
-
-    // ═══════════════════════════════════════════════════════
-    // SERIALIZATION (NEW) - Leverages Microsoft.Extensions.AI
-    // ═══════════════════════════════════════════════════════
-
+    
     /// <summary>
     /// Serializes this state to JSON for checkpointing.
     /// Uses Microsoft.Extensions.AI's built-in serialization for ChatMessage and AIContent.
@@ -2916,12 +2437,6 @@ public sealed record AgentLoopState
     {
         // Generate new ETag for optimistic concurrency
         var stateWithETag = this with { ETag = Guid.NewGuid().ToString() };
-
-        // Use AIJsonUtilities.DefaultOptions which provides:
-        // - ChatMessage serialization (with [JsonConstructor])
-        // - AIContent polymorphism (via [JsonPolymorphic])
-        // - ChatResponseUpdate serialization
-        // - Native AOT compatibility
         return JsonSerializer.Serialize(stateWithETag, (JsonTypeInfo<object?>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(object)));
     }
 
@@ -3010,12 +2525,6 @@ public sealed record AgentLoopState
 /// Immutable and easily testable.
 /// </summary>
 /// <remarks>
-/// This is intentionally separate from AgentConfig (the full agent configuration).
-/// AgentConfiguration contains ONLY what the decision engine needs, making it:
-/// - Easy to test (no complex dependencies)
-/// - Easy to understand (minimal surface area)
-/// - Easy to evolve (changes don't ripple through the system)
-/// </remarks>
 internal sealed record AgentConfiguration
 {
     /// <summary>
@@ -3233,7 +2742,7 @@ internal static class ContentExtractor
                     break;
                 case FunctionCallContent fc:
                     sb.Append("|F:").Append(fc.Name).Append(":").Append(fc.CallId).Append(":");
-                    sb.Append(System.Text.Json.JsonSerializer.Serialize(
+                    sb.Append(JsonSerializer.Serialize(
                         fc.Arguments ?? new Dictionary<string, object?>(),
                         HPDJsonContext.Default.DictionaryStringObject));
                     break;
@@ -3411,8 +2920,6 @@ internal class FunctionCallProcessor
     private readonly ErrorHandlingConfig? _errorHandlingConfig;
     private readonly IList<AITool>? _serverConfiguredTools;
     private readonly AgenticLoopConfig? _agenticLoopConfig;
-    private readonly IReadOnlyDictionary<string, string> _functionToPluginMap;
-    private readonly IReadOnlyDictionary<string, string> _functionToSkillMap;
 
     public FunctionCallProcessor(
         IEventCoordinator eventCoordinator,
@@ -3420,17 +2927,13 @@ internal class FunctionCallProcessor
         int maxFunctionCalls,
         ErrorHandlingConfig? errorHandlingConfig = null,
         IList<AITool>? serverConfiguredTools = null,
-        AgenticLoopConfig? agenticLoopConfig = null,
-        IReadOnlyDictionary<string, string>? functionToPluginMap = null,
-        IReadOnlyDictionary<string, string>? functionToSkillMap = null)
+        AgenticLoopConfig? agenticLoopConfig = null)
     {
         _eventCoordinator = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
         _middlewarePipeline = middlewarePipeline ?? throw new ArgumentNullException(nameof(middlewarePipeline));
         _errorHandlingConfig = errorHandlingConfig;
         _serverConfiguredTools = serverConfiguredTools;
         _agenticLoopConfig = agenticLoopConfig;
-        _functionToPluginMap = functionToPluginMap ?? new Dictionary<string, string>();
-        _functionToSkillMap = functionToSkillMap ?? new Dictionary<string, string>();
     }
 
 
@@ -3536,23 +3039,12 @@ internal class FunctionCallProcessor
                 pluginTypeName = pluginNameProp as string;
             }
 
-            if (string.IsNullOrEmpty(pluginTypeName) && toolRequest.Name != null)
-            {
-                _functionToPluginMap.TryGetValue(toolRequest.Name, out pluginTypeName);
-            }
-
             string? skillName = null;
-            bool isSkillContainer = false;
 
             if (function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillValueCtx) == true
                 && isSkillValueCtx is bool isSCtx && isSCtx)
             {
-                isSkillContainer = true;
-            }
-
-            if (string.IsNullOrEmpty(skillName) && !isSkillContainer && toolRequest.Name != null)
-            {
-                _functionToSkillMap.TryGetValue(toolRequest.Name, out skillName);
+                // This function is a skill container
             }
 
             parallelFunctions.Add(new ParallelFunctionInfo(
@@ -3764,7 +3256,7 @@ internal class FunctionCallProcessor
             // Fallback: Try function-to-plugin mapping
             if (string.IsNullOrEmpty(pluginTypeName) && functionCall.Name != null)
             {
-                _functionToPluginMap.TryGetValue(functionCall.Name, out pluginTypeName);
+                // Plugin metadata comes from AIFunction.AdditionalProperties (set by source generator)
             }
 
             // Extract skill metadata
@@ -3778,12 +3270,6 @@ internal class FunctionCallProcessor
                 isSkillContainer = true;
                 // Note: When invoking a skill container, skillName remains null
                 // The container IS the skill, it doesn't have a "parent skill"
-            }
-
-            // Fallback: Try function-to-skill mapping for regular functions
-            if (string.IsNullOrEmpty(skillName) && !isSkillContainer && functionCall.Name != null)
-            {
-                _functionToSkillMap.TryGetValue(functionCall.Name, out skillName);
             }
 
             // Create unified AgentMiddlewareContext for this function call
@@ -3956,39 +3442,6 @@ internal class FunctionCallProcessor
 /// Encapsulates all prepared state for a single agent turn.
 /// Separates message preparation (functional, pure) from execution (I/O, stateful).
 /// </summary>
-/// <remarks>
-/// <para>
-/// <b>Design Philosophy:</b> "Functional Core, Imperative Shell"
-/// - <b>Preparation</b> (MessageProcessor.PrepareTurnAsync): Load history, merge options, apply middleware → PreparedTurn
-/// - <b>Execution</b> (RunAgenticLoopInternal): LLM calls, tool invocations, checkpointing, persistence
-/// </para>
-/// <para>
-/// <b>Why This Design?</b>
-/// <list type="bullet">
-/// <item>Clean separation: Preparation logic isolated from execution logic</item>
-/// <item>Type safety: Strongly typed properties vs scattered variables</item>
-/// <item>Testability: PreparedTurn can be constructed and tested without I/O</item>
-/// <item>Middleware integration: HistoryReductionMiddleware handles reduction with caching</item>
-/// <item>Microsoft alignment: Similar to ChatClientAgent.PrepareThreadAndMessagesAsync pattern</item>
-/// </list>
-/// </para>
-/// <para>
-/// <b>Usage Pattern:</b>
-/// <code>
-/// // Step 1: Prepare turn (functional - loads history, merges options, etc.)
-/// var turn = await _messageProcessor.PrepareTurnAsync(thread, inputMessages, options, ct);
-///
-/// // Step 2: Initialize state
-/// var state = AgentLoopState.Initial(turn.MessagesForLLM, runId, conversationId, agentName);
-///
-/// // Step 3: Execute agentic loop (imperative - LLM calls, tool execution, persistence)
-/// await foreach (var evt in RunAgenticLoopInternal(turn, state, ...))
-/// {
-///     yield return evt;
-/// }
-/// </code>
-/// </para>
-/// </remarks>
 internal record PreparedTurn
 {
     /// <summary>
@@ -4049,28 +3502,6 @@ internal class MessageProcessor
     /// <param name="agentName">Agent name for logging/Middlewareing.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>PreparedTurn with all state needed for execution.</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>This is the SINGLE ENTRY POINT for all turn preparation</b>.
-    /// All message preparation logic is consolidated here - no more layering through PrepareMessagesAsync.
-    /// </para>
-    /// <para>
-    /// <b>Steps:</b>
-    /// <list type="number">
-    /// <item>Load thread history (if thread provided)</item>
-    /// <item>Add new input messages to history</item>
-    /// <item>Merge ChatOptions and inject system instructions</item>
-    /// <item>Check reduction cache (thread.LastReduction.IsValidFor)</item>
-    /// <item>Apply cached reduction OR perform new reduction via IChatReducer</item>
-    /// <item>Apply prompt Middlewares (can modify messages, options, instructions)</item>
-    /// <item>Return PreparedTurn with all prepared state</item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// <b>Cache Optimization:</b>
-    /// If thread.LastReduction exists and IsValidFor(currentMessageCount), reuses reduction without LLM call (90% cost savings).
-    /// </para>
-    /// </remarks>
     public async Task<PreparedTurn> PrepareTurnAsync(
         ConversationThread? thread,
         IEnumerable<ChatMessage> inputMessages,
@@ -4359,22 +3790,6 @@ internal class AgentTurn
 
 #endregion
 
-#region Streaming Turn Result
-
-// NOTE: ReductionMetadata and StreamingTurnResult classes removed - history reduction is now handled by
-// HistoryReductionMiddleware in HPD.Agent.Middleware namespace.
-// Reduction metadata is stored in MiddlewareStateContainer.HistoryReduction.
-
-#endregion
-
-#region Document Processing Helper
-
-// NOTE: AgentDocumentProcessor class removed - document processing is now handled by
-// DocumentHandlingMiddleware in HPD.Agent.Middleware.Document namespace.
-// See FullTextExtractionStrategy for the middleware-based implementation.
-
-#endregion
-
 #region Error Formatting Helper
 
 /// <summary>
@@ -4441,30 +3856,13 @@ internal static class ErrorFormatter
 }
 
 #endregion
-
-#region
+#region BidirectionalEventCoordinator
 
 /// <summary>
 /// Manages bidirectional event coordination for request/response patterns.
 /// Used by Middlewares (permissions, clarifications) and supports nested agent communication.
 /// Thread-safe for concurrent event emission and response coordination.
 /// </summary>
-/// <remarks>
-/// This coordinator provides the infrastructure for:
-/// - Event emission from Middlewares to handlers (one-way communication)
-/// - Request/response patterns (bidirectional communication)
-/// - Event bubbling in nested agent scenarios (parent coordinator support)
-///
-/// Lifecycle:
-/// - Created once per Agent instance
-/// - Lives for entire Agent lifetime
-/// - Disposed when Agent is disposed
-///
-/// Thread-safety:
-/// - All public methods are thread-safe
-/// - Multiple Middlewares can emit concurrently
-/// - Event channel supports multiple producers, single consumer
-/// </remarks>
 public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 {
     /// <summary>
@@ -4546,23 +3944,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <param name="parent">The parent coordinator to bubble events to</param>
     /// <exception cref="ArgumentNullException">If parent is null</exception>
     /// <exception cref="InvalidOperationException">If setting this parent would create a cycle</exception>
-    /// <remarks>
-    /// Use this when an agent is being used as a tool by another agent (via AsAIFunction).
-    /// This enables events from nested agents to be visible to the orchestrator.
-    ///
-    /// <b>Cycle Detection:</b>
-    /// This method validates that setting the parent does not create a cycle in the parent chain.
-    /// A cycle would cause infinite recursion during Emit(), leading to stack overflow.
-    ///
-    /// Example:
-    /// <code>
-    /// var orchestratorAgent = new Agent(...);
-    /// var codingAgent = new Agent(...);
-    ///
-    /// // When setting up CodingAgent as a tool
-    /// codingAgent.EventCoordinator.SetParent(orchestratorAgent.EventCoordinator);
-    /// </code>
-    /// </remarks>
     public void SetParent(BidirectionalEventCoordinator parent)
     {
         if (parent == null)
@@ -4600,20 +3981,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// </summary>
     /// <param name="evt">The event to emit</param>
     /// <exception cref="ArgumentNullException">If event is null</exception>
-    /// <remarks>
-    /// This is the preferred way to emit events as it handles parent bubbling automatically.
-    ///
-    /// Event flow:
-    /// 1. Auto-attach ExecutionContext if not already set (for event attribution)
-    /// 2. Event is written to local channel (visible to this agent's background drainer)
-    /// 3. If parent coordinator is set, event is recursively emitted to parent (bubbling)
-    ///
-    /// For nested agents:
-    /// - Events bubble up the chain until reaching the root orchestrator
-    /// - Each level's event loop sees the event
-    /// - Handlers at any level can process the event
-    /// - ExecutionContext enables filtering/routing by agent name, depth, or hierarchy
-    /// </remarks>
     public void Emit(AgentEvent evt)
     {
         if (evt == null)
@@ -4647,24 +4014,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <param name="requestId">The unique identifier for the request</param>
     /// <param name="response">The response event to deliver</param>
     /// <exception cref="ArgumentNullException">If response is null</exception>
-    /// <remarks>
-    /// If requestId is not found (e.g., timeout already occurred), the call is silently ignored.
-    /// This is intentional to avoid race conditions between timeout and response.
-    ///
-    /// Example:
-    /// <code>
-    /// // In handler
-    /// await foreach (var evt in agent.RunStreamingAsync(...))
-    /// {
-    ///     if (evt is PermissionRequestEvent permReq)
-    ///     {
-    ///         var approved = PromptUser(permReq);
-    ///         coordinator.SendResponse(permReq.PermissionId,
-    ///             new PermissionResponseEvent(permReq.PermissionId, approved));
-    ///     }
-    /// }
-    /// </code>
-    /// </remarks>
     public void SendResponse(string requestId, AgentEvent response)
     {
         if (response == null)
@@ -4690,47 +4039,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <exception cref="TimeoutException">No response received within timeout</exception>
     /// <exception cref="OperationCanceledException">Operation was cancelled</exception>
     /// <exception cref="InvalidOperationException">Response type mismatch</exception>
-    /// <remarks>
-    /// This method is used by Middlewares that need bidirectional communication:
-    /// 1. Middleware emits request event (e.g., PermissionRequestEvent)
-    /// 2. Middleware calls WaitForResponseAsync() - BLOCKS HERE
-    /// 3. Handler receives request event (via agent's event loop)
-    /// 4. User provides input
-    /// 5. Handler calls SendResponse()
-    /// 6. Middleware receives response and continues
-    ///
-    /// Important: The Middleware is blocked during step 2-5, but events still flow
-    /// because of the polling mechanism in RunAgenticLoopInternal.
-    ///
-    /// Timeout vs. Cancellation:
-    /// - TimeoutException: No response received within the specified timeout
-    /// - OperationCanceledException: External cancellation (e.g., user stopped agent)
-    ///
-    /// Example:
-    /// <code>
-    /// // In Middleware
-    /// var requestId = Guid.NewGuid().ToString();
-    /// coordinator.Emit(new PermissionRequestEvent(requestId, ...));
-    ///
-    /// try
-    /// {
-    ///     var response = await coordinator.WaitForResponseAsync&lt;PermissionResponseEvent&gt;(
-    ///         requestId,
-    ///         TimeSpan.FromMinutes(5),
-    ///         cancellationToken);
-    ///
-    ///     if (response.Approved)
-    ///         await next(context);
-    ///     else
-    ///         context.IsTerminated = true;
-    /// }
-    /// catch (TimeoutException)
-    /// {
-    ///     context.Result = "Permission request timed out";
-    ///     context.IsTerminated = true;
-    /// }
-    /// </code>
-    /// </remarks>
     public async Task<T> WaitForResponseAsync<T>(
         string requestId,
         TimeSpan timeout,
@@ -4790,15 +4098,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// Disposes the coordinator, completing the event channel and cancelling all pending waiters.
     /// Should be called when the agent is being disposed.
     /// </summary>
-    /// <remarks>
-    /// Cleanup sequence:
-    /// 1. Complete the event channel (no more events can be emitted)
-    /// 2. Cancel all pending response waiters
-    /// 3. Dispose all cancellation token sources
-    /// 4. Clear the waiters dictionary
-    ///
-    /// This ensures clean shutdown even if there are pending bidirectional requests.
-    /// </remarks>
     public void Dispose()
     {
         // Complete the channel first
@@ -4813,13 +4112,10 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         _responseWaiters.Clear();
     }
 }
-
-
 #endregion
 
 
 #region Tool Execution Result Types
-
 /// <summary>
 /// Structured result from tool execution, replacing the 5-tuple return type.
 /// Provides strongly-typed access to execution outcomes.

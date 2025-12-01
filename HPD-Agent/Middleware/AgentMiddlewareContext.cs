@@ -55,16 +55,16 @@ namespace HPD.Agent.Middleware;
 /// </remarks>
 public class AgentMiddlewareContext
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // INTERNAL STATE TRACKING
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private AgentLoopState _originalState = null!;
     private AgentLoopState? _pendingState;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // IDENTITY (Always available)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Name of the agent executing this operation.
@@ -82,9 +82,9 @@ public class AgentMiddlewareContext
     /// </summary>
     public required CancellationToken CancellationToken { get; init; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // STATE (Always available, immutable with scheduled updates)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Current agent loop state. Reflects any pending updates from earlier middlewares.
@@ -131,9 +131,9 @@ public class AgentMiddlewareContext
     /// </summary>
     internal bool HasPendingStateUpdates => _pendingState != null;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // BIDIRECTIONAL EVENTS (Always available)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Event coordinator for bidirectional communication patterns.
@@ -185,10 +185,10 @@ public class AgentMiddlewareContext
             CancellationToken);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MESSAGE TURN LEVEL
     // Available in: BeforeMessageTurn, AfterMessageTurn
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// The user message that initiated this turn.
@@ -222,10 +222,10 @@ public class AgentMiddlewareContext
     /// </summary>
     public List<ChatMessage>? TurnHistory { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // ITERATION LEVEL
     // Available in: BeforeIteration, BeforeToolExecution, AfterIteration
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Current iteration number (0-based). Iteration 0 = first LLM call.
@@ -281,10 +281,10 @@ public class AgentMiddlewareContext
     /// </summary>
     public bool SkipToolExecution { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // FUNCTION LEVEL
     // Available in: BeforeParallelFunctions, BeforeFunction, AfterFunction
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Information about functions being executed in parallel.
@@ -350,9 +350,9 @@ public class AgentMiddlewareContext
     /// </summary>
     public bool BlockFunctionExecution { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // EXTENSIBILITY
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Extensible property bag for inter-middleware communication.
@@ -372,9 +372,9 @@ public class AgentMiddlewareContext
     /// </example>
     public Dictionary<string, object> Properties { get; init; } = new();
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// True if this is the first iteration (before any tool calls).
@@ -404,9 +404,9 @@ public class AgentMiddlewareContext
     /// </summary>
     public bool IsIterationFailure => IterationException != null;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONTEXT LIFECYCLE METHODS (Internal - called by Agent)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Prepares context for function-level hooks.

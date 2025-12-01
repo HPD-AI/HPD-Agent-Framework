@@ -21,9 +21,9 @@ public class CheckpointRoundTripTests
     [Fact]
     public async Task CriticalPath_StateRoundTrip_PreservesAllMiddlewareState()
     {
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 1: RUNTIME - Set middleware state during execution
-        // ═══════════════════════════════════════════════════════
+        //      
 
         var errorState = new ErrorTrackingStateData { ConsecutiveFailures = 3 };
         var cbState = new CircuitBreakerStateData()
@@ -40,7 +40,7 @@ public class CheckpointRoundTripTests
             agentName: "CheckpointAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer()
+                MiddlewareState = new MiddlewareState()
                     .WithErrorTracking(errorState)
                     .WithCircuitBreaker(cbState)
                     .WithContinuationPermission(permState)
@@ -51,9 +51,9 @@ public class CheckpointRoundTripTests
         Assert.Equal(3, runtimeState.MiddlewareState.CircuitBreaker?.ConsecutiveCountPerTool["ReadFile"]);
         Assert.Equal(30, runtimeState.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit);
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 2: CHECKPOINT - Serialize to durable storage
-        // ═══════════════════════════════════════════════════════
+        //      
 
         var json = JsonSerializer.Serialize(runtimeState, AIJsonUtilities.DefaultOptions);
         Assert.NotEmpty(json);
@@ -74,16 +74,16 @@ public class CheckpointRoundTripTests
         Assert.Contains("\"HPD.Agent.ContinuationPermissionStateData\"", json);
         Assert.Contains("\"currentExtendedLimit\": 30", json);  // camelCase property (note: space after colon due to WriteIndented)
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 3: RESUME - Deserialize from durable storage
-        // ═══════════════════════════════════════════════════════
+        //      
 
         var deserializedState = JsonSerializer.Deserialize<AgentLoopState>(json, AIJsonUtilities.DefaultOptions);
         Assert.NotNull(deserializedState);
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 4: ACCESS - Smart accessor handles JsonElement → T
-        // ═══════════════════════════════════════════════════════
+        //      
 
         // First access: JsonElement → ErrorTrackingStateData (with caching)
         var deserializedErrorState = deserializedState.MiddlewareState.ErrorTracking;
@@ -101,9 +101,9 @@ public class CheckpointRoundTripTests
         Assert.NotNull(deserializedPermState);
         Assert.Equal(30, deserializedPermState.CurrentExtendedLimit);
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 5: CACHE VERIFICATION - Second access uses cache
-        // ═══════════════════════════════════════════════════════
+        //      
 
         var cachedErrorState = deserializedState.MiddlewareState.ErrorTracking;
         Assert.Same(deserializedErrorState, cachedErrorState); // Same instance = cache hit
@@ -114,9 +114,9 @@ public class CheckpointRoundTripTests
         var cachedPermState = deserializedState.MiddlewareState.ContinuationPermission;
         Assert.Same(deserializedPermState, cachedPermState);
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // PHASE 6: STATE UPDATE - Middleware can modify state
-        // ═══════════════════════════════════════════════════════
+        //      
 
         var updatedErrorState = deserializedErrorState.IncrementFailures(); // 3 → 4
         var updatedState = deserializedState with
@@ -126,9 +126,9 @@ public class CheckpointRoundTripTests
 
         Assert.Equal(4, updatedState.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
 
-        // ═══════════════════════════════════════════════════════
+        //      
         // SUCCESS: All phases passed!
-        // ═══════════════════════════════════════════════════════
+        //      
     }
 
     /// <summary>
@@ -165,7 +165,7 @@ public class CheckpointRoundTripTests
             agentName: "PartialAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer()
+                MiddlewareState = new MiddlewareState()
                     .WithErrorTracking(new ErrorTrackingStateData { ConsecutiveFailures = 1 })
                 // Note: CircuitBreaker and ContinuationPermission NOT set
             };
@@ -193,7 +193,7 @@ public class CheckpointRoundTripTests
             agentName: "CacheAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer()
+                MiddlewareState = new MiddlewareState()
                     .WithErrorTracking(new ErrorTrackingStateData { ConsecutiveFailures = 2 })
             };
 
@@ -229,7 +229,7 @@ public class CheckpointRoundTripTests
             agentName: "ComplexAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer()
+                MiddlewareState = new MiddlewareState()
                     .WithErrorTracking(new ErrorTrackingStateData { ConsecutiveFailures = 0 })
             };
 
@@ -277,7 +277,7 @@ public class CheckpointRoundTripTests
             agentName: "WorkflowAgent")
             with
             {
-                MiddlewareState = new MiddlewareStateContainer()
+                MiddlewareState = new MiddlewareState()
                     .WithErrorTracking(new ErrorTrackingStateData { ConsecutiveFailures = 1 })
                     .WithCircuitBreaker(new CircuitBreakerStateData()
                         .RecordToolCall("Tool1", "sig1"))

@@ -55,9 +55,9 @@ namespace HPD.Agent;
 /// </example>
 public class HistoryReductionMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION (not state - set at registration time)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Chat reducer to use for history reduction.
@@ -76,9 +76,9 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// </summary>
     public string? SystemInstructions { get; init; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HOOKS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE each LLM call.
@@ -170,9 +170,9 @@ public class HistoryReductionMiddleware : IAgentMiddleware
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Determines if history reduction should be triggered based on configured thresholds.
@@ -231,9 +231,9 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
+//     
 // OBSERVABILITY EVENTS
-// ═══════════════════════════════════════════════════════════════
+//     
 
 /// <summary>
 /// Event emitted when a cached reduction is reused (cache hit).

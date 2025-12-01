@@ -39,9 +39,9 @@ namespace HPD.Agent;
 /// </example>
 public class ErrorTrackingMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION (not state - set at registration time)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Maximum number of consecutive errors allowed before triggering termination.
@@ -63,9 +63,9 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         "Maximum consecutive errors ({count}/{max}) exceeded. " +
         "Stopping execution to prevent infinite error loop.";
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HOOKS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE the LLM call begins.
@@ -142,9 +142,9 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Determines if a function result represents an error.

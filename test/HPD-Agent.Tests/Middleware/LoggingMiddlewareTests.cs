@@ -12,9 +12,9 @@ namespace HPD_Agent.Tests.Middleware;
 /// </summary>
 public class LoggingMiddlewareTests
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public void DefaultOptions_HasReasonableDefaults()
@@ -66,9 +66,9 @@ public class LoggingMiddlewareTests
         Assert.Equal(0, options.MaxStringLength); // Unlimited
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MESSAGE TURN TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task BeforeMessageTurn_WhenEnabled_LogsContext()
@@ -136,9 +136,9 @@ public class LoggingMiddlewareTests
         Assert.Contains(logOutput, s => s.Contains("END"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // ITERATION TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task BeforeIteration_WhenEnabled_LogsIterationInfo()
@@ -210,9 +210,9 @@ public class LoggingMiddlewareTests
         Assert.Contains(logOutput, s => s.Contains("ITERATION END"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // FUNCTION TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task BeforeFunction_WhenEnabled_LogsFunctionInfo()
@@ -345,9 +345,9 @@ public class LoggingMiddlewareTests
         Assert.DoesNotContain(logOutput, s => s.Contains("Secret result"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // STRING TRUNCATION TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task LogsWithMaxStringLength_TruncatesLongStrings()
@@ -393,9 +393,9 @@ public class LoggingMiddlewareTests
         Assert.Contains(logOutput, s => s.Contains("should NOT be truncated"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CUSTOM PREFIX TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task LogsWithCustomPrefix_UsesPrefix()
@@ -419,9 +419,9 @@ public class LoggingMiddlewareTests
         Assert.Contains(logOutput, s => s.Contains("[MyCustomApp]"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // TIMING/STOPWATCH TESTS (ported from IterationLoggingFilterTests)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task FunctionTiming_MeasuresExecutionTime()
@@ -514,9 +514,9 @@ public class LoggingMiddlewareTests
         Assert.DoesNotContain(logOutput, s => s.Contains("ms"));
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // NO LOGGER TESTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Fact]
     public async Task WithoutLogger_DoesNotThrow()
@@ -532,9 +532,9 @@ public class LoggingMiddlewareTests
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private static AgentMiddlewareContext CreateContext()
     {

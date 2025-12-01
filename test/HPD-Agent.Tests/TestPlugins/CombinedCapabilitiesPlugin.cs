@@ -9,9 +9,9 @@ namespace HPD_Agent.Tests.TestPlugins;
 /// </summary>
 public class CombinedCapabilitiesPlugin
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // AI FUNCTIONS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [AIFunction, AIDescription("Analyze data and return insights")]
     public string AnalyzeData(string data) => $"Analysis of: {data}";
@@ -22,9 +22,9 @@ public class CombinedCapabilitiesPlugin
     [AIFunction, AIDescription("Validate data against rules")]
     public bool ValidateData(string data) => !string.IsNullOrEmpty(data);
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // SKILLS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [Skill]
     public static Skill DataAnalysisSkill() => SkillFactory.Create(
@@ -43,9 +43,9 @@ public class CombinedCapabilitiesPlugin
         "CombinedCapabilitiesPlugin.TransformData"
     );
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // SUB-AGENTS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     [SubAgent]
     public SubAgent DataExpertAgent()

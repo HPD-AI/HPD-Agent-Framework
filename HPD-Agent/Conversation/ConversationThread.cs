@@ -568,7 +568,11 @@ public sealed class ConversationThread
             {
                 // Fallback to reflection (non-AOT scenarios)
                 // ⚠️ This will fail in Native AOT if factory not registered
+                // IL2057 suppression justified: This is a documented non-AOT fallback with factory registration recommended.
+                // Users deploying to Native AOT MUST register factories via RegisterStoreFactory() before deserializing.
+#pragma warning disable IL2057
                 var storeType = Type.GetType(snapshot.MessageStoreType);
+#pragma warning restore IL2057
                 if (storeType == null)
                 {
                     throw new InvalidOperationException(

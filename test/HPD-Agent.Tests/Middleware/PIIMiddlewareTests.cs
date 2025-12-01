@@ -12,9 +12,9 @@ namespace HPD_Agent.Tests.Middleware;
 /// </summary>
 public class PIIMiddlewareTests
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // EMAIL DETECTION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task DetectsEmail_WithRedactStrategy_ReplacesWithPlaceholder()
@@ -124,9 +124,9 @@ public class PIIMiddlewareTests
         Assert.Equal(2, CountOccurrences(processed, "[EMAIL_REDACTED]"));
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CREDIT CARD DETECTION TESTS (WITH LUHN VALIDATION)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task DetectsCreditCard_ValidLuhn_BlocksMessage()
@@ -202,9 +202,9 @@ public class PIIMiddlewareTests
         Assert.Contains("1234567890123456", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // SSN DETECTION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task DetectsSSN_WithBlockStrategy_ThrowsException()
@@ -254,9 +254,9 @@ public class PIIMiddlewareTests
         Assert.DoesNotContain("123-45-6789", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // PHONE NUMBER DETECTION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task DetectsPhone_WithMaskStrategy_PartiallyMasks()
@@ -283,9 +283,9 @@ public class PIIMiddlewareTests
         Assert.Contains("4567", processed); // Should keep last 4 digits
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // IP ADDRESS DETECTION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task DetectsIPAddress_WithHashStrategy_HashesIP()
@@ -312,9 +312,9 @@ public class PIIMiddlewareTests
         Assert.Contains("<ipaddress_hash:", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // ALLOW STRATEGY TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task AllowStrategy_PassesThrough()
@@ -340,9 +340,9 @@ public class PIIMiddlewareTests
         Assert.Contains("test@test.com", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CUSTOM DETECTOR TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task CustomDetector_DetectsCustomPattern()
@@ -370,9 +370,9 @@ public class PIIMiddlewareTests
         Assert.DoesNotContain("EMP-123456", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CONFIGURATION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public void DefaultConfiguration_UsesReasonableDefaults()
@@ -415,9 +415,9 @@ public class PIIMiddlewareTests
         Assert.Contains("test@test.com", processed);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // LUHN VALIDATION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Theory]
     [InlineData("4111111111111111", true)]   // Visa test card
@@ -455,9 +455,9 @@ public class PIIMiddlewareTests
         }
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private static AgentMiddlewareContext CreateContext(IList<ChatMessage> messages)
     {

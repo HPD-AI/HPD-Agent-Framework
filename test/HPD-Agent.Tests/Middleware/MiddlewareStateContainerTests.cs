@@ -6,16 +6,16 @@ using Xunit;
 namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
-/// Unit tests for MiddlewareStateContainer and source generator.
+/// Unit tests for MiddlewareState and source generator.
 /// Uses real middleware state types (ErrorTrackingStateData, CircuitBreakerStateData) to test the generated code.
 /// </summary>
-public class MiddlewareStateContainerTests
+public class MiddlewareStateTests
 {
     [Fact]
     public void Constructor_CreatesEmptyContainer()
     {
         // Arrange & Act
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
 
         // Assert
         Assert.NotNull(container);
@@ -25,7 +25,7 @@ public class MiddlewareStateContainerTests
     public void Constructor_IsSuccessful()
     {
         // Arrange & Act
-        var exception = Record.Exception(() => new MiddlewareStateContainer());
+        var exception = Record.Exception(() => new MiddlewareState());
 
         // Assert
         Assert.Null(exception);
@@ -35,7 +35,7 @@ public class MiddlewareStateContainerTests
     public void GeneratedProperty_ErrorTracking_Exists()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
 
         // Act
         var state = container.ErrorTracking;
@@ -48,7 +48,7 @@ public class MiddlewareStateContainerTests
     public void GeneratedMethod_WithErrorTracking_CreatesNewInstance()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
         var testState = new ErrorTrackingStateData
         {
             ConsecutiveFailures = 3
@@ -67,7 +67,7 @@ public class MiddlewareStateContainerTests
     public void GeneratedProperty_AfterSet_ReturnsCorrectValue()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
         var testState = new ErrorTrackingStateData { ConsecutiveFailures = 5 };
 
         // Act
@@ -81,7 +81,7 @@ public class MiddlewareStateContainerTests
     public void GeneratedMethod_WithNull_ReturnsOriginalContainer()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
 
         // Act
         var updated = container.WithErrorTracking(null);
@@ -94,7 +94,7 @@ public class MiddlewareStateContainerTests
     public void ImmutableUpdate_DoesNotModifyOriginal()
     {
         // Arrange
-        var original = new MiddlewareStateContainer();
+        var original = new MiddlewareState();
         var state = new ErrorTrackingStateData { ConsecutiveFailures = 10 };
 
         // Act
@@ -110,7 +110,7 @@ public class MiddlewareStateContainerTests
     public void GeneratedMethod_CalledMultipleTimes_CreatesNewInstanceEachTime()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
         var state1 = new ErrorTrackingStateData { ConsecutiveFailures = 1 };
         var state2 = new ErrorTrackingStateData { ConsecutiveFailures = 2 };
 
@@ -132,7 +132,7 @@ public class MiddlewareStateContainerTests
         // CircuitBreakerStateData -> CircuitBreaker
 
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
 
         // Act & Assert - property names should have 'StateData' suffix stripped
         var errorTracking = container.ErrorTracking;
@@ -146,7 +146,7 @@ public class MiddlewareStateContainerTests
     public void MultipleMiddlewareStates_CanCoexist()
     {
         // Arrange
-        var container = new MiddlewareStateContainer();
+        var container = new MiddlewareState();
         var errorState = new ErrorTrackingStateData { ConsecutiveFailures = 3 };
         var circuitState = new CircuitBreakerStateData
         {

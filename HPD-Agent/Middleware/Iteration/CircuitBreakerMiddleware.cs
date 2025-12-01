@@ -50,9 +50,9 @@ namespace HPD.Agent;
 /// </example>
 public class CircuitBreakerMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION (not state - set at registration time)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Maximum number of consecutive identical calls allowed before triggering.
@@ -68,9 +68,9 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
         "⚠️ Circuit breaker triggered: Function '{toolName}' with same arguments would be called {count} times consecutively. " +
         "Stopping to prevent infinite loop.";
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HOOKS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called AFTER LLM returns tool calls but BEFORE tools execute.
@@ -137,9 +137,9 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Computes a deterministic signature for a function call.

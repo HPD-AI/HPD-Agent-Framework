@@ -242,7 +242,7 @@ FINANCIAL HEALTH DASHBOARD - ACME MANUFACTURING
 Assessment Date: 12/31/2024
 Industry Comparison: Manufacturing Peers
 
-═══════════════════════════════════════════════════
+     
 
 SECTION 1: DATA QUALITY
 ───────────────────────
@@ -307,7 +307,7 @@ Red Flags:                     NONE
 Composition Changes from Prior: Minimal (stable structure)
 
 
-═══════════════════════════════════════════════════
+     
 
 OVERALL FINANCIAL HEALTH SCORE
 ───────────────────────────────
@@ -318,7 +318,7 @@ Structure:                     ✅ HEALTHY   (85/100)
 
 COMPOSITE SCORE:               78/100  ✅ GOOD FINANCIAL HEALTH
 
-═══════════════════════════════════════════════════
+     
 
 RISK ASSESSMENT
 ───────────────
@@ -405,7 +405,7 @@ For Company Management:
   Recommendation: Maintain course, target debt reduction
 
 
-═══════════════════════════════════════════════════
+     
 ```
 
 ---

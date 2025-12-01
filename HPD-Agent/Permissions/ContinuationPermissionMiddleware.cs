@@ -29,9 +29,9 @@ namespace HPD.Agent;
 /// </remarks>
 public class ContinuationPermissionMiddleware : IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CONFIGURATION (not state - set at registration time)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private readonly int _maxIterations;
     private readonly int _extensionAmount;
@@ -53,9 +53,9 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
         _middlewareName = middlewareName ?? "ContinuationPermissionMiddleware";
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HOOKS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE the LLM call begins.
@@ -109,9 +109,9 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Requests continuation permission via bidirectional events.

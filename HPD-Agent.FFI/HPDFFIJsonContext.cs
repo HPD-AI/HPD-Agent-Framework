@@ -123,7 +123,7 @@ namespace HPD_Agent.FFI;
 
 // --- Agent State Types ---
 [JsonSerializable(typeof(AgentLoopState))]
-[JsonSerializable(typeof(MiddlewareStateContainer))]
+[JsonSerializable(typeof(MiddlewareState))]
 [JsonSerializable(typeof(CircuitBreakerStateData))]
 [JsonSerializable(typeof(ErrorTrackingStateData))]
 [JsonSerializable(typeof(ContinuationPermissionStateData))]

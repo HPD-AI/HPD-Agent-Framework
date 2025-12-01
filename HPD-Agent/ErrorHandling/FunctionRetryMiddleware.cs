@@ -100,9 +100,9 @@ public class FunctionRetryMiddleware : IAgentMiddleware
         int attempt,
         CancellationToken cancellationToken)
     {
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // PRIORITY 1: Custom Retry Strategy (user-provided)
-        // ═══════════════════════════════════════════════════════════════
+        //     
         if (_config.CustomRetryStrategy != null)
         {
             var customDelay = await _config.CustomRetryStrategy(ex, attempt, cancellationToken);
@@ -110,9 +110,9 @@ public class FunctionRetryMiddleware : IAgentMiddleware
             return customDelay;
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // PRIORITY 2: Provider-Aware Handling
-        // ═══════════════════════════════════════════════════════════════
+        //     
         var errorDetails = _providerHandler.ParseError(ex);
         if (errorDetails != null)
         {
@@ -136,9 +136,9 @@ public class FunctionRetryMiddleware : IAgentMiddleware
             return providerDelay;
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // PRIORITY 3: Exponential Backoff (fallback - only if no provider)
-        // ═══════════════════════════════════════════════════════════════
+        //     
         return CalculateExponentialBackoff(attempt);
     }
 

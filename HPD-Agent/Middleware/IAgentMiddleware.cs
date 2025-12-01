@@ -67,9 +67,9 @@ namespace HPD.Agent.Middleware;
 /// </example>
 public interface IAgentMiddleware
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MESSAGE TURN LEVEL (run once per user message)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE processing a user message turn.
@@ -104,9 +104,9 @@ public interface IAgentMiddleware
     Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
         => Task.CompletedTask;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // ITERATION LEVEL (run once per LLM call within a turn)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE each LLM call within a turn.
@@ -311,9 +311,9 @@ public interface IAgentMiddleware
     Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
         => Task.CompletedTask;
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // FUNCTION LEVEL (run once per function call)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Called BEFORE a batch of functions executes in parallel.

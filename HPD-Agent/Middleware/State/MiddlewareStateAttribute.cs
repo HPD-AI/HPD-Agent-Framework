@@ -6,7 +6,7 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Marks a record as middleware state, triggering source generation
-/// of properties on MiddlewareStateContainer.
+/// of properties on MiddlewareState.
 /// </summary>
 /// <remarks>
 /// <para><b>Requirements:</b></para>
@@ -45,17 +45,17 @@ namespace HPD.Agent;
 ///
 /// <para><b>Generated Code:</b></para>
 /// <para>
-/// The source generator will create a property on MiddlewareStateContainer:
+/// The source generator will create a property on MiddlewareState:
 /// </para>
 /// <code>
-/// public sealed partial class MiddlewareStateContainer
+/// public sealed partial class MiddlewareState
 /// {
 ///     public MyMiddlewareState? MyMiddleware
 ///     {
 ///         get => GetState&lt;MyMiddlewareState&gt;("YourNamespace.MyMiddlewareState");
 ///     }
 ///
-///     public MiddlewareStateContainer WithMyMiddleware(MyMiddlewareState? value)
+///     public MiddlewareState WithMyMiddleware(MyMiddlewareState? value)
 ///     {
 ///         return value == null ? this : SetState("YourNamespace.MyMiddlewareState", value);
 ///     }

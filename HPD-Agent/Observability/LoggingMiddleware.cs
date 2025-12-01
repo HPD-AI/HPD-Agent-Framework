@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using HPD.Agent;
 
 namespace HPD.Agent.Middleware;
 
@@ -159,9 +160,9 @@ public class LoggingMiddleware : IAgentMiddleware
         _options = options ?? LoggingMiddlewareOptions.Default;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MESSAGE TURN LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <inheritdoc/>
     public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
@@ -171,7 +172,7 @@ public class LoggingMiddleware : IAgentMiddleware
         var turnNumber = Interlocked.Increment(ref _turnCounter);
         var sb = new StringBuilder();
 
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN #{turnNumber} - START");
         sb.AppendLine($"  Agent: {context.AgentName}");
         sb.AppendLine($"  Messages: {context.Messages?.Count ?? 0}");
@@ -187,7 +188,7 @@ public class LoggingMiddleware : IAgentMiddleware
             sb.AppendLine($"  Instructions: ({context.Options.Instructions.Length} chars)");
         }
 
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
@@ -200,19 +201,19 @@ public class LoggingMiddleware : IAgentMiddleware
 
         var sb = new StringBuilder();
 
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN - END");
         sb.AppendLine($"  Agent: {context.AgentName}");
         sb.AppendLine($"  Final response: {(context.Response != null ? "Yes" : "No")}");
-        sb.AppendLine("═══════════════════════════════════════════════════════");
+        sb.AppendLine("     ");
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // ITERATION LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <inheritdoc/>
     public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
@@ -258,9 +259,9 @@ public class LoggingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // FUNCTION LEVEL
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <inheritdoc/>
     public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
@@ -336,9 +337,9 @@ public class LoggingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     private void LogMessage(string message)
     {
@@ -396,11 +397,11 @@ public class LoggingMiddleware : IAgentMiddleware
         // For other objects, try JSON serialization first, fall back to ToString()
         try
         {
-            return JsonSerializer.Serialize(result, new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            });
+            // Use AOT-compatible source-generated context instead of reflection-based serialization
+            return JsonSerializer.Serialize(
+                result,
+                result.GetType(),
+                HPDJsonContext.Default);
         }
         catch
         {

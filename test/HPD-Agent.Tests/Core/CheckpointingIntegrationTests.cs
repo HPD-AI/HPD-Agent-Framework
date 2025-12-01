@@ -13,9 +13,9 @@ namespace HPD_Agent.Tests.Core;
 /// </summary>
 public class CheckpointingIntegrationTests : AgentTestBase
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // CHECKPOINT SAVE DURING AGENT EXECUTION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_WithCheckpointer_SavesCheckpointAfterIteration()
@@ -86,9 +86,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         Assert.NotNull(loadedThread.ExecutionState);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // RESUME FROM CHECKPOINT TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_ResumeFromCheckpoint_RestoresExecutionState()
@@ -106,7 +106,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
             "TestAgent")
             .NextIteration() with
             {
-                MiddlewareState = new MiddlewareStateContainer().WithScoping(scopingState)
+                MiddlewareState = new MiddlewareState().WithScoping(scopingState)
             };
         thread.ExecutionState = state;
         await checkpointer.SaveThreadAsync(thread);
@@ -143,9 +143,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         Assert.True(stateSnapshot.CurrentIteration > 0);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // RESUME VALIDATION TESTS (4 SCENARIOS)
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_Scenario1_NoCheckpoint_NoMessages_ThrowsException()
@@ -299,9 +299,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         Assert.Contains("iteration", ex.Message.ToLower());
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // FULLHISTORY MODE INTEGRATION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_FullHistoryMode_CreatesMultipleCheckpoints()
@@ -391,9 +391,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         Assert.True(restoredThread.ExecutionState.Iteration < history.MaxBy(c => c.State.Iteration)!.State.Iteration);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // STALE CHECKPOINT DETECTION
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_StaleCheckpoint_ThrowsValidationError()
@@ -446,9 +446,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         });
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // END-TO-END CRASH RECOVERY SCENARIO
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task Agent_CrashRecovery_CanResumeAfterFailure()
@@ -526,9 +526,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
         Assert.NotNull(finishEvent);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // PENDING WRITES INTEGRATION TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task PendingWrites_ParallelFunctions_SavesSuccessfulResults()

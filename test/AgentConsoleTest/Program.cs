@@ -11,7 +11,7 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "openrouter",
-        ModelName = "google/gemini-2.5-flash"
+        ModelName = "google/gemini-2.5-pro"
     },
     Mcp = new McpConfig { ManifestPath = "./MCP.json" },
     Scoping = new ScopingConfig { Enabled = true }
@@ -26,7 +26,6 @@ var agent = await new AgentBuilder(config)
     .WithPlugin<FinancialAnalysisSkills>()
     .WithPlanMode()
     .WithPermissions()
-    .WithLogging()
     .WithCircuitBreaker(maxConsecutiveCalls: 3)
     .WithErrorTracking(maxConsecutiveErrors: 3)
     .WithTotalErrorThreshold(maxTotalErrors: 10)

@@ -56,9 +56,9 @@ internal static class SubAgentCodeGenerator
         sb.AppendLine();
 
         // Set up event bubbling via parent-child linking
-        sb.AppendLine($"                // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine($"                //     ");
         sb.AppendLine($"                // SET UP EVENT BUBBLING (Parent-Child Linking)");
-        sb.AppendLine($"                // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine($"                //     ");
         sb.AppendLine($"                // currentAgent was already retrieved above for client inheritance");
         sb.AppendLine($"                if (currentAgent != null)");
         sb.AppendLine($"                {{");
@@ -69,9 +69,9 @@ internal static class SubAgentCodeGenerator
         sb.AppendLine();
 
         // Build execution context for event attribution
-        sb.AppendLine($"                // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine($"                //     ");
         sb.AppendLine($"                // BUILD EXECUTION CONTEXT (Event Attribution)");
-        sb.AppendLine($"                // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine($"                //     ");
         sb.AppendLine($"                // Build hierarchical execution context for event attribution");
         sb.AppendLine($"                var parentContext = currentAgent?.ExecutionContext;");
         sb.AppendLine($"                var randomId = System.Guid.NewGuid().ToString(\"N\")[..8];");
@@ -192,9 +192,9 @@ internal static class SubAgentCodeGenerator
             return string.Empty;
 
         var sb = new StringBuilder();
-        sb.AppendLine("        // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine("        //     ");
         sb.AppendLine($"        // SUB-AGENTS ({plugin.SubAgents.Count} total)");
-        sb.AppendLine("        // ═══════════════════════════════════════════════════════════════");
+        sb.AppendLine("        //     ");
         sb.AppendLine();
 
         foreach (var subAgent in plugin.SubAgents)

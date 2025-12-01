@@ -70,9 +70,9 @@ public static class ProviderDiscovery
         RuntimeHelpers.RunModuleConstructor(typeof(TProviderModule).Module.ModuleHandle);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
+    //     
     // PROVIDER CONFIG TYPE REGISTRATION (For FFI/JSON serialization)
-    // ═══════════════════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Registers a provider-specific configuration type for FFI serialization.

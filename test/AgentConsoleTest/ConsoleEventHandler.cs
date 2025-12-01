@@ -279,8 +279,8 @@ public class ConsoleEventHandler : IAgentEventHandler
                 // Reasoning section ended
                 if (!_isFirstReasoningChunk)
                 {
-                    Console.WriteLine();
                     Console.ResetColor();
+                    Console.WriteLine();
                     _isFirstReasoningChunk = true;
                 }
                 break;
@@ -292,7 +292,6 @@ public class ConsoleEventHandler : IAgentEventHandler
         // If transitioning from reasoning to text, ensure reasoning is closed
         if (!_isFirstReasoningChunk)
         {
-            Console.WriteLine();
             Console.ResetColor();
             _isFirstReasoningChunk = true;
         }
@@ -300,7 +299,6 @@ public class ConsoleEventHandler : IAgentEventHandler
         // Show text header on first text chunk
         if (_isFirstTextChunk)
         {
-            Console.WriteLine();
             Console.Write("📝 Response: ");
             _isFirstTextChunk = false;
         }

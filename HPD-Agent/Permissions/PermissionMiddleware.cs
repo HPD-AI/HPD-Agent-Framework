@@ -175,9 +175,9 @@ public class PermissionMiddleware : IAgentMiddleware
         var conversationId = context.ConversationId;
         var callId = context.FunctionCallId ?? string.Empty;
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // CHECK BATCH PERMISSION STATE (for parallel execution optimization)
-        // ═══════════════════════════════════════════════════════════════
+        //     
 
         var batchState = context.State.MiddlewareState.BatchPermission ?? new BatchPermissionStateData();
 
@@ -197,9 +197,9 @@ public class PermissionMiddleware : IAgentMiddleware
             return;
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // HIERARCHICAL PERMISSION LOOKUP
-        // ═══════════════════════════════════════════════════════════════
+        //     
 
         if (_storage != null)
         {
@@ -248,9 +248,9 @@ public class PermissionMiddleware : IAgentMiddleware
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // REQUEST PERMISSION VIA BIDIRECTIONAL EVENTS
-        // ═══════════════════════════════════════════════════════════════
+        //     
 
         var permissionId = Guid.NewGuid().ToString();
 
@@ -295,9 +295,9 @@ public class PermissionMiddleware : IAgentMiddleware
             return;
         }
 
-        // ═══════════════════════════════════════════════════════════════
+        //     
         // PROCESS RESPONSE
-        // ═══════════════════════════════════════════════════════════════
+        //     
 
         if (response.Approved)
         {

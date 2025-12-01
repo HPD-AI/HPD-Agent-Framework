@@ -14,9 +14,9 @@ namespace HPD_Agent.Tests.Middleware;
 /// </summary>
 public class ToolScopingMiddlewareTests
 {
-    // ═══════════════════════════════════════════════════════
+    //      
     // BEFORE ITERATION TESTS - Tool Visibility Filtering
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task BeforeIteration_WhenDisabled_DoesNotFilterTools()
@@ -145,9 +145,9 @@ public class ToolScopingMiddlewareTests
         Assert.Equal("test-conversation", context.Options.ConversationId);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // AFTER ITERATION TESTS - Container Detection
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task AfterIteration_WhenDisabled_DoesNotDetectContainers()
@@ -334,9 +334,9 @@ public class ToolScopingMiddlewareTests
         Assert.Contains("Skill1", scopingState.ExpandedSkills);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // INTEGRATION TESTS - Full Middleware Lifecycle
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task FullLifecycle_ExpandPlugin_NextIterationShowsFunctions()
@@ -376,9 +376,9 @@ public class ToolScopingMiddlewareTests
         Assert.Contains("Subtract", visibleIter2);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // SCOPING STATE DATA TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public void ScopingStateData_WithExpandedPlugin_AddsToSet()
@@ -425,9 +425,9 @@ public class ToolScopingMiddlewareTests
         Assert.Equal(2, state.ActiveSkillInstructions.Count); // Original unchanged
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // CHAT OPTIONS EXTENSIONS TESTS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public void ChatOptionsExtensions_WithTools_CopiesAllProperties()
@@ -477,9 +477,9 @@ public class ToolScopingMiddlewareTests
         Assert.Equal(originalTools, original.Tools);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // AFTER MESSAGE TURN TESTS - Ephemeral Result Filtering
-    // ═══════════════════════════════════════════════════════
+    //      
 
     [Fact]
     public async Task AfterMessageTurn_RemovesContainerExpansions()
@@ -762,9 +762,9 @@ public class ToolScopingMiddlewareTests
         Assert.Equal(2, turnHistory[0].Contents.Count);
     }
 
-    // ═══════════════════════════════════════════════════════
+    //      
     // HELPER METHODS
-    // ═══════════════════════════════════════════════════════
+    //      
 
     private static AgentLoopState CreateEmptyState()
     {

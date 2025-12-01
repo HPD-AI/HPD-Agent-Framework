@@ -21,9 +21,9 @@ namespace HPD_Agent.Providers.Anthropic;
 /// </summary>
 public class AnthropicProviderConfig
 {
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // SAMPLING PARAMETERS
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Maximum output tokens. Default: 4096.
@@ -55,9 +55,9 @@ public class AnthropicProviderConfig
     [JsonPropertyName("stopSequences")]
     public List<string>? StopSequences { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // EXTENDED THINKING
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Enable extended thinking mode by setting the token budget.
@@ -76,9 +76,9 @@ public class AnthropicProviderConfig
     [JsonPropertyName("useInterleavedThinking")]
     public bool UseInterleavedThinking { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // PROMPT CACHING
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Enable prompt caching to reduce costs on repeated prompts (up to 90% savings).
@@ -94,9 +94,9 @@ public class AnthropicProviderConfig
     [JsonPropertyName("promptCacheType")]
     public string PromptCacheType { get; set; } = "AutomaticToolsAndSystem";
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // CLAUDE SKILLS (Anthropic's built-in document processing)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Claude Skills to enable (Anthropic's built-in server-side document processing).
@@ -113,9 +113,9 @@ public class AnthropicProviderConfig
     [JsonPropertyName("containerId")]
     public string? ContainerId { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // MCP SERVERS (Anthropic's native MCP support)
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// MCP (Model Context Protocol) servers for Claude to use.
@@ -124,9 +124,9 @@ public class AnthropicProviderConfig
     [JsonPropertyName("mcpServers")]
     public List<AnthropicMCPServerConfig>? MCPServers { get; set; }
 
-    // ═══════════════════════════════════════════════════════════════
+    //     
     // SERVICE TIER
-    // ═══════════════════════════════════════════════════════════════
+    //     
 
     /// <summary>
     /// Service tier for request prioritization.
