@@ -9,7 +9,7 @@
 ```
 The HPD Agent Framework is a battery first agentic framework designed to enable you to create reliable agents as quickly as possible.
 
-The single philosophy driving this library: ***"Make Simple Things Simple, Make Complex Things Possible"***
+The single philosophy driving this framework: ***"Make Simple Things Simple, Make Complex Things Possible"***
 
 ## Main Characteristics 
 - **Native AOT First**
@@ -123,3 +123,4 @@ await foreach (var evt in agent.RunAsync("Research the latest AI trends"))
 ## License
 
 Proprietary - See LICENSE file.
+
