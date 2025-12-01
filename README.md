@@ -9,9 +9,9 @@
 ```
 The HPD Agent Framework is a battery first agentic framework designed to enable you to create reliable agents as quickly as possible.
 
-The single philosphy driving this library: ***"Make Simple Things Simple, Make Complex Things Possible"***
+The single philosophy driving this library: ***"Make Simple Things Simple, Make Complex Things Possible"***
 
-## Main Characteritics 
+## Main Characteristics 
 - **Native AOT First**
 - **Configuration First** 
 - **Provider Agnostic**
@@ -28,26 +28,26 @@ The single philosphy driving this library: ***"Make Simple Things Simple, Make C
 - **History Reduction** - Conversation summarization and context window management
 - **Tool Calling** - First-class support for function/tool calling with automatic schema generation
 - **Tool Scoping** - Innovative mechanism to reduce tool context(without RAG or Code Execution or Truncation)
-- **Skills** - Provider agnsotic way to define reusable agent skills
+- **Skills** - Provider agnostic way to define reusable agent skills
 - **Observability** - Built-in event system for logging, telemetry, and debugging
 - **Memory** - Static, Dynamic for agent knowledge persistence
 - **Planning** - Built-in plan mode for complex tasks
 - **SubAgents** - Built-in support for nested agent orchestration
 - **MCP Support** - Supports MCP
-- **Custom Event Handling Presets** - Custom Event UI handling for normal Chat consversatins, telemetry etc
+- **Custom Event Handling Presets** - Custom Event UI handling for normal Chat conversations, telemetry etc
 
 
 ## Quick Start
 
 ```csharp
 using HPD.Agent;
-using HPD.Agent.Provider.Providername;
+using HPD.Agent.Providers.OpenAI;
 
-var agent = new AgentBuilder()
-    .WithProvider("providername","model")
+var agent = await new AgentBuilder()
+    .WithProvider("openai", "gpt-4o")
     .WithName("Assistant")
     .WithInstructions("You are a helpful assistant.")
-    .WithEventHandler(ConsoleEventHandler)
+    .WithEventHandler(new ConsoleEventHandler())
     .Build();
 
 await foreach (var _ in agent.RunAsync("Hello!")) { }
@@ -57,7 +57,7 @@ await foreach (var _ in agent.RunAsync("Hello!")) { }
 - **Audio TTS->LLM->STT Support**
 - **Streaming Structured Output**
 - **Dedicated Observability Platform**
-- **Evalautors**
+- **Evaluators**
 - **Graph Support**
 - **A2A and AGUI Support**
 
