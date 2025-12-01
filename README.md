@@ -13,7 +13,7 @@ The single philosophy driving this library: ***"Make Simple Things Simple, Make 
 
 ## Main Characteristics 
 - **Native AOT First**
-- **Configuration First** 
+- **Builder and Configuration First** 
 - **Provider Agnostic**
 - **Event Streaming First**
 

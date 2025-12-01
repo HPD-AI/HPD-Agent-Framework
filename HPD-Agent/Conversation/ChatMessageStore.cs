@@ -6,7 +6,6 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Abstract base class for conversation message storage with token tracking capabilities.
-/// PROTOCOL-AGNOSTIC: This class has no dependencies on any specific agent framework.
 ///
 /// Key Features:
 /// - Token counting: Tracks both provider-accurate and estimated token counts
