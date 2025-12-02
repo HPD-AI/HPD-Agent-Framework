@@ -33,8 +33,5 @@
 		"onlyBuiltDependencies": [
 			"esbuild"
 		]
-	},
-	"dependencies": {
-		"@ag-ui/client": "^0.0.35"
 	}
 }

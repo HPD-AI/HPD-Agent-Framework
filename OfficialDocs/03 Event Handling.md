@@ -1,0 +1,1 @@
+Unlike other ai frameworks, this framework is event based. 

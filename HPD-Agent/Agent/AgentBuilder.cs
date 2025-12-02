@@ -1081,6 +1081,7 @@ public class AgentBuilder
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for async operations</param>
     [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
     /// <summary>
     /// Builds the protocol-agnostic core agent asynchronously.
     /// Required for provider validation (LLM connectivity checks) during initialization.
@@ -3305,6 +3306,7 @@ public static class AgentBuilderPluginExtensions
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
     [RequiresUnreferencedCode("Plugin loading via WithPlugin requires PluginRegistry from assembly where T is defined to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadataContext? context = null) where T : class, new()
     {
         var pluginName = typeof(T).Name;
@@ -3347,6 +3349,7 @@ public static class AgentBuilderPluginExtensions
     /// WARNING: For Native AOT, requires PluginRegistry from instance assembly to be preserved.
     /// </summary>
     [RequiresUnreferencedCode("Plugin instance registration requires PluginRegistry from instance's assembly to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
     public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadataContext? context = null) where T : class
     {
         var pluginName = typeof(T).Name;
@@ -3378,6 +3381,7 @@ public static class AgentBuilderPluginExtensions
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
     [RequiresUnreferencedCode("Plugin registration by Type requires PluginRegistry from plugin assembly to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
     public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadataContext? context = null)
     {
         var pluginName = pluginType.Name;
