@@ -1158,6 +1158,15 @@ public class AgentBuilder
                 _config.Scoping);
             _middlewares.Add(scopingMiddleware);
         }
+
+        // Register FrontendToolMiddleware automatically
+        // This enables frontend-defined tools without explicit configuration.
+        // It's a no-op if no frontend plugins are registered via AgentRunInput.
+        // Users can override with WithFrontendTools() to customize config.
+        if (!_middlewares.Any(m => m is FrontendTools.FrontendToolMiddleware))
+        {
+            _middlewares.Add(new FrontendTools.FrontendToolMiddleware());
+        }
     }
 
     /// <summary>

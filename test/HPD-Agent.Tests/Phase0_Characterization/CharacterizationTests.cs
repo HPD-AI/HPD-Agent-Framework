@@ -143,6 +143,7 @@ public class CharacterizationTests : AgentTestBase
 
     /// <summary>
     /// Test 4: Max iterations limit prevents infinite loops.
+    /// Uses MockPermissionHandler to handle ContinuationRequestEvent (auto-denies to terminate at limit).
     /// </summary>
     [Fact]
     public async Task CurrentBehavior_MaxIterations_TerminatesWhenLimitReached()
@@ -178,22 +179,23 @@ public class CharacterizationTests : AgentTestBase
 
         var messages = CreateSimpleConversation("Use the tool repeatedly");
 
-        var capturedEvents = new List<AgentEvent>();
+        // Act - Use MockPermissionHandler to handle continuation requests
+        // Configure to deny continuation requests so agent terminates at the limit
+        var eventStream = agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken);
 
-        // Act
-        await foreach (var evt in agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken))
-        {
-            capturedEvents.Add(evt);
-        }
+        using var permissionHandler = new MockPermissionHandler(agent, eventStream)
+            .AutoDenyContinuation(); // Deny continuation to terminate at limit
+
+        await permissionHandler.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
+
+        var capturedEvents = permissionHandler.CapturedEvents;
 
         // Assert - Behavior after fix
         // Loop condition uses <=, so MaxAgenticIterations=5 means iterations 0-5 (6 total)
         var agentTurnStarts = capturedEvents.OfType<AgentTurnStartedEvent>().ToList();
         agentTurnStarts.Should().HaveCountLessOrEqualTo(6, "should respect MaxAgenticIterations limit (loop uses <=)");
 
-        // NOTE: Iteration limits are now enforced by loop condition, not decision engine
-        // So there's no automatic "Maximum iteration limit" message
-        // The continuation filter would emit an event, but only if configured with lower limit
+        // NOTE: Iteration limits are now enforced by ContinuationPermissionMiddleware
         var agentTurns = agentTurnStarts;
         agentTurns.Max(t => t.Iteration).Should().BeLessThanOrEqualTo(5, "should not exceed configured max iterations");
 

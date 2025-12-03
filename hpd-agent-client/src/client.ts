@@ -4,10 +4,17 @@ import type {
   PermissionRequestEvent,
   ClarificationRequestEvent,
   ContinuationRequestEvent,
+  FrontendToolInvokeRequestEvent,
+  FrontendPluginsRegisteredEvent,
   PermissionChoice,
 } from './types/events.js';
 import { EventTypes } from './types/events.js';
 import type { AgentTransport } from './types/transport.js';
+import type {
+  FrontendPluginDefinition,
+  ContextItem,
+  FrontendToolInvokeResponse,
+} from './types/frontend-tools.js';
 import { SseTransport } from './transports/sse.js';
 import { WebSocketTransport } from './transports/websocket.js';
 
@@ -29,6 +36,18 @@ export interface PermissionResponse {
  */
 export interface StreamOptions {
   signal?: AbortSignal;
+  /** Frontend plugins to register */
+  frontendPlugins?: FrontendPluginDefinition[];
+  /** Context items to pass to the agent */
+  context?: ContextItem[];
+  /** Application state (opaque to agent) */
+  state?: unknown;
+  /** Plugins to start expanded */
+  expandedContainers?: string[];
+  /** Tools to start hidden */
+  hiddenTools?: string[];
+  /** Reset frontend state (clear all registered plugins) */
+  resetFrontendState?: boolean;
 }
 
 /**
@@ -95,6 +114,23 @@ export interface EventHandlers {
   onContinuationRequest?: (request: ContinuationRequestEvent) => Promise<boolean>;
 
   // ============================================
+  // Frontend Tool Handlers
+  // ============================================
+
+  /**
+   * Called when a frontend tool needs to be invoked.
+   * Implement this to execute tools in the browser/client context.
+   * Return the tool result to send back to the agent.
+   */
+  onFrontendToolInvoke?: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>;
+
+  /**
+   * Called when frontend plugins are successfully registered.
+   * Useful for debugging and UI updates.
+   */
+  onFrontendPluginsRegistered?: (event: FrontendPluginsRegisteredEvent) => void;
+
+  // ============================================
   // Lifecycle Handlers
   // ============================================
 
@@ -136,6 +172,15 @@ export interface AgentClientConfig {
 
   /** Custom headers for requests (SSE only) */
   headers?: Record<string, string>;
+
+  /** Frontend plugins to register automatically on every stream */
+  frontendPlugins?: FrontendPluginDefinition[];
+
+  /** Default context items to include on every stream */
+  defaultContext?: ContextItem[];
+
+  /** Handler for frontend tool invocations */
+  onFrontendToolInvoke?: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>;
 }
 
 // ============================================
@@ -221,12 +266,28 @@ export class AgentClient {
         complete();
       });
 
+      // Merge config defaults with stream options
+      const mergedPlugins = [
+        ...(this.config.frontendPlugins ?? []),
+        ...(options?.frontendPlugins ?? []),
+      ];
+      const mergedContext = [
+        ...(this.config.defaultContext ?? []),
+        ...(options?.context ?? []),
+      ];
+
       // Connect
       this.transport
         .connect({
           conversationId,
           messages,
           signal: options?.signal,
+          frontendPlugins: mergedPlugins.length > 0 ? mergedPlugins : undefined,
+          context: mergedContext.length > 0 ? mergedContext : undefined,
+          state: options?.state,
+          expandedContainers: options?.expandedContainers,
+          hiddenTools: options?.hiddenTools,
+          resetFrontendState: options?.resetFrontendState,
         })
         .catch(fail);
     });
@@ -315,6 +376,28 @@ export class AgentClient {
           }
           break;
 
+        // Bidirectional - Frontend Tool Invocation
+        case EventTypes.FRONTEND_TOOL_INVOKE_REQUEST:
+          // Use handler from stream() or fall back to config handler
+          const toolHandler = handlers.onFrontendToolInvoke ?? this.config.onFrontendToolInvoke;
+          if (toolHandler) {
+            const toolResponse = await toolHandler(event);
+            await this.transport.send({
+              type: 'frontend_tool_response',
+              requestId: toolResponse.requestId,
+              content: toolResponse.content,
+              success: toolResponse.success,
+              errorMessage: toolResponse.errorMessage,
+              augmentation: toolResponse.augmentation,
+            });
+          }
+          break;
+
+        // Frontend Plugins Registered (informational)
+        case EventTypes.FRONTEND_PLUGINS_REGISTERED:
+          handlers.onFrontendPluginsRegistered?.(event);
+          break;
+
         // Lifecycle
         case EventTypes.AGENT_TURN_STARTED:
           handlers.onTurnStart?.(event.iteration);
@@ -357,5 +440,51 @@ export class AgentClient {
    */
   get streaming(): boolean {
     return this.transport.connected;
+  }
+
+  // ============================================
+  // Frontend Plugin Management
+  // ============================================
+
+  /**
+   * Register a frontend plugin. It will be automatically included in all future streams.
+   */
+  registerPlugin(plugin: FrontendPluginDefinition): void {
+    if (!this.config.frontendPlugins) {
+      this.config.frontendPlugins = [];
+    }
+    // Remove existing plugin with same name (update)
+    this.config.frontendPlugins = this.config.frontendPlugins.filter(p => p.name !== plugin.name);
+    this.config.frontendPlugins.push(plugin);
+  }
+
+  /**
+   * Register multiple frontend plugins.
+   */
+  registerPlugins(plugins: FrontendPluginDefinition[]): void {
+    plugins.forEach(p => this.registerPlugin(p));
+  }
+
+  /**
+   * Unregister a frontend plugin by name.
+   */
+  unregisterPlugin(pluginName: string): void {
+    if (this.config.frontendPlugins) {
+      this.config.frontendPlugins = this.config.frontendPlugins.filter(p => p.name !== pluginName);
+    }
+  }
+
+  /**
+   * Get all registered plugins.
+   */
+  get plugins(): FrontendPluginDefinition[] {
+    return this.config.frontendPlugins ?? [];
+  }
+
+  /**
+   * Set the handler for frontend tool invocations.
+   */
+  setToolHandler(handler: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>): void {
+    this.config.onFrontendToolInvoke = handler;
   }
 }

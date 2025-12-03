@@ -28,7 +28,7 @@ public class PermissionTests : AgentTestBase
 
         var builder = new AgentBuilder(config, new TestProviderRegistry(client));
         builder.WithPermissions(); // Enable permission filtering
-        return builder.BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+        return builder.Build(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>

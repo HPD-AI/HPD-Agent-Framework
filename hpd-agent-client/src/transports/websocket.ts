@@ -56,8 +56,16 @@ export class WebSocketTransport implements AgentTransport {
 
       this.ws.onopen = () => {
         cleanup();
-        // Send initial messages once connected
-        this.ws!.send(JSON.stringify({ messages: options.messages }));
+        // Send initial messages and frontend options once connected
+        this.ws!.send(JSON.stringify({
+          messages: options.messages,
+          frontendPlugins: options.frontendPlugins,
+          context: options.context,
+          state: options.state,
+          expandedContainers: options.expandedContainers,
+          hiddenTools: options.hiddenTools,
+          resetFrontendState: options.resetFrontendState,
+        }));
         resolve();
       };
 

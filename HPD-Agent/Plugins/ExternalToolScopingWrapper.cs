@@ -160,13 +160,94 @@ public static class ExternalToolScopingWrapper
     }
 
     /// <summary>
+    /// Wraps a group of frontend tools from one plugin with a container function.
+    /// Uses "Frontend_" prefix to distinguish from other plugin types.
+    /// Requires a description (since collapsed plugins need to tell the LLM what they contain).
+    /// </summary>
+    /// <param name="pluginName">Name of the frontend plugin (e.g., "ECommerce", "Settings")</param>
+    /// <param name="description">Description of the plugin (REQUIRED - tells LLM when to expand)</param>
+    /// <param name="tools">Tools in this plugin</param>
+    /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
+    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
+    /// <returns>Container function and scoped tools with metadata</returns>
+    public static (AIFunction container, List<AIFunction> scopedTools) WrapFrontendPlugin(
+        string pluginName,
+        string description,
+        List<AIFunction> tools,
+        int maxFunctionNamesInDescription = 10,
+        string? postExpansionInstructions = null)
+    {
+        if (string.IsNullOrEmpty(pluginName))
+            throw new ArgumentException("Plugin name cannot be null or empty", nameof(pluginName));
+
+        if (string.IsNullOrEmpty(description))
+            throw new ArgumentException(
+                "Description is required for frontend plugins so the LLM knows when to expand them",
+                nameof(description));
+
+        if (tools == null || tools.Count == 0)
+            throw new ArgumentException("Tools list cannot be null or empty", nameof(tools));
+
+        var containerName = $"Frontend_{pluginName}";
+        var allFunctionNames = tools.Select(t => t.Name).ToList();
+
+        // Build function list suffix
+        var displayedNames = allFunctionNames.Take(maxFunctionNamesInDescription);
+        var functionNamesList = string.Join(", ", displayedNames);
+        var moreCount = allFunctionNames.Count > maxFunctionNamesInDescription
+            ? $" and {allFunctionNames.Count - maxFunctionNamesInDescription} more"
+            : "";
+        var functionSuffix = $"Contains {allFunctionNames.Count} functions: {functionNamesList}{moreCount}";
+
+        // Build description: user-provided + function list
+        var fullDescription = $"{description}. {functionSuffix}";
+        var fullFunctionList = string.Join(", ", allFunctionNames);
+
+        // Build return message with optional post-expansion instructions
+        var returnMessage = $"{pluginName} plugin expanded. Available functions: {fullFunctionList}";
+        if (!string.IsNullOrEmpty(postExpansionInstructions))
+        {
+            returnMessage += $"\n\n{postExpansionInstructions}";
+        }
+
+        // Create container function
+        var container = HPDAIFunctionFactory.Create(
+            async (arguments, cancellationToken) =>
+            {
+                return returnMessage;
+            },
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = containerName,
+                Description = fullDescription,
+                RequiresPermission = false, // Container expansion doesn't need permission
+                Validator = _ => new List<ValidationError>(), // No validation needed
+                SchemaProvider = () => CreateEmptyContainerSchema(),
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["PluginName"] = containerName,
+                    ["FrontendPluginName"] = pluginName, // Original name without prefix
+                    ["FunctionNames"] = allFunctionNames.ToArray(),
+                    ["FunctionCount"] = allFunctionNames.Count,
+                    ["SourceType"] = "FrontendPlugin"
+                }
+            });
+
+        // Add metadata to individual tools
+        var scopedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "FrontendPlugin")).ToList();
+
+        return (container, scopedTools);
+    }
+
+    /// <summary>
     /// Adds ParentPlugin metadata to an existing AIFunction by wrapping it.
     /// This is necessary because AIFunction.AdditionalProperties is read-only,
     /// so we create a new function that delegates to the original.
     /// </summary>
     /// <param name="tool">Original tool to wrap</param>
     /// <param name="parentPluginName">Parent container name</param>
-    /// <param name="sourceType">Source type (MCP, Frontend)</param>
+    /// <param name="sourceType">Source type (MCP, Frontend, FrontendPlugin)</param>
     /// <returns>New AIFunction with metadata</returns>
     private static AIFunction AddParentPluginMetadata(AIFunction tool, string parentPluginName, string sourceType)
     {

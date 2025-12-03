@@ -29,9 +29,9 @@ namespace HPD.Agent;
 /// </remarks>
 public class ContinuationPermissionMiddleware : IAgentMiddleware
 {
-    //     
+    //
     // CONFIGURATION (not state - set at registration time)
-    //     
+    //
 
     private readonly int _maxIterations;
     private readonly int _extensionAmount;
@@ -133,7 +133,12 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
                 currentState.CurrentExtendedLimit);
 
             // Emit continuation request event
-            context.Emit(evt);
+            // If no EventCoordinator is configured (e.g., unit tests), terminate gracefully
+            if (!context.TryEmit(evt))
+            {
+                // No event handler available - terminate at the limit
+                return false;
+            }
 
             // Wait for response from external handler (BLOCKS during user interaction)
             var response = await context.WaitForResponseAsync<ContinuationResponseEvent>(

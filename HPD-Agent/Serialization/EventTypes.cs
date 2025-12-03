@@ -122,6 +122,20 @@ public static partial class EventTypes
 
     #endregion
 
+    #region Frontend Tool Events
+
+    /// <summary>
+    /// Frontend tool bidirectional events.
+    /// </summary>
+    public static class FrontendTool
+    {
+        public const string FRONTEND_TOOL_INVOKE_REQUEST = "FRONTEND_TOOL_INVOKE_REQUEST";
+        public const string FRONTEND_TOOL_INVOKE_RESPONSE = "FRONTEND_TOOL_INVOKE_RESPONSE";
+        public const string FRONTEND_PLUGINS_REGISTERED = "FRONTEND_PLUGINS_REGISTERED";
+    }
+
+    #endregion
+
     #region Observability Events
 
     /// <summary>

@@ -45,6 +45,11 @@ export const EventTypes = {
   MIDDLEWARE_PROGRESS: 'MIDDLEWARE_PROGRESS',
   MIDDLEWARE_ERROR: 'MIDDLEWARE_ERROR',
 
+  // Frontend Tools (bidirectional)
+  FRONTEND_TOOL_INVOKE_REQUEST: 'FRONTEND_TOOL_INVOKE_REQUEST',
+  FRONTEND_TOOL_INVOKE_RESPONSE: 'FRONTEND_TOOL_INVOKE_RESPONSE',
+  FRONTEND_PLUGINS_REGISTERED: 'FRONTEND_PLUGINS_REGISTERED',
+
   // Observability (optional, for debugging)
   SCOPED_TOOLS_VISIBLE: 'SCOPED_TOOLS_VISIBLE',
   CONTAINER_EXPANDED: 'CONTAINER_EXPANDED',
@@ -313,6 +318,35 @@ export interface MiddlewareErrorEvent extends BaseEvent {
 }
 
 // ============================================
+// Frontend Tool Events (Bidirectional)
+// ============================================
+
+export interface FrontendToolInvokeRequestEvent extends BaseEvent {
+  type: typeof EventTypes.FRONTEND_TOOL_INVOKE_REQUEST;
+  requestId: string;
+  toolName: string;
+  callId: string;
+  arguments: Record<string, unknown>;
+  description?: string;
+}
+
+export interface FrontendToolInvokeResponseEvent extends BaseEvent {
+  type: typeof EventTypes.FRONTEND_TOOL_INVOKE_RESPONSE;
+  requestId: string;
+  content: Array<{ type: string; [key: string]: unknown }>;
+  success: boolean;
+  errorMessage?: string;
+  augmentation?: Record<string, unknown>;
+}
+
+export interface FrontendPluginsRegisteredEvent extends BaseEvent {
+  type: typeof EventTypes.FRONTEND_PLUGINS_REGISTERED;
+  registeredPlugins: string[];
+  totalTools: number;
+  timestamp: string;
+}
+
+// ============================================
 // Union Type (Core Events)
 // ============================================
 
@@ -353,7 +387,11 @@ export type AgentEvent =
   | ClarificationResponseEvent
   // Middleware Events
   | MiddlewareProgressEvent
-  | MiddlewareErrorEvent;
+  | MiddlewareErrorEvent
+  // Frontend Tool Events
+  | FrontendToolInvokeRequestEvent
+  | FrontendToolInvokeResponseEvent
+  | FrontendPluginsRegisteredEvent;
 
 // ============================================
 // Type Guards
@@ -389,4 +427,16 @@ export function isClarificationRequestEvent(event: BaseEvent): event is Clarific
 
 export function isContinuationRequestEvent(event: BaseEvent): event is ContinuationRequestEvent {
   return event.type === EventTypes.CONTINUATION_REQUEST;
+}
+
+export function isFrontendToolInvokeRequestEvent(
+  event: BaseEvent
+): event is FrontendToolInvokeRequestEvent {
+  return event.type === EventTypes.FRONTEND_TOOL_INVOKE_REQUEST;
+}
+
+export function isFrontendPluginsRegisteredEvent(
+  event: BaseEvent
+): event is FrontendPluginsRegisteredEvent {
+  return event.type === EventTypes.FRONTEND_PLUGINS_REGISTERED;
 }

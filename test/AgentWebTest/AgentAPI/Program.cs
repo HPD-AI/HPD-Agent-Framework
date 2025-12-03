@@ -2,15 +2,15 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using HPD.Agent.Permissions;
-using HPD.Agent.Serialization;
+using HPD.Agent.FrontendTools;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-// Configure JSON serialization
+// Configure JSON serialization - chain app context with library context
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(1, HPDJsonContext.Default);
 });
 
 // CORS Configuration
@@ -101,6 +101,42 @@ agentApi.MapPost("/conversations/{conversationId}/permissions/respond",
     return Results.Ok(new SuccessResponse(true));
 });
 
+// Frontend tool response endpoint
+agentApi.MapPost("/conversations/{conversationId}/frontend-tools/respond",
+    (string conversationId, FrontendToolResponseRequest request, ConversationManager cm) =>
+{
+    var agent = cm.GetRunningAgent(conversationId);
+    if (agent == null)
+        return Results.NotFound(new ErrorResponse("No active agent for this conversation"));
+
+    // Convert content to IToolResultContent list
+    var content = request.Content?.Select<FrontendToolContentDto, HPD.Agent.FrontendTools.IToolResultContent>(c => c.Type switch
+    {
+        "text" => new HPD.Agent.FrontendTools.TextContent(c.Text ?? ""),
+        "json" => new HPD.Agent.FrontendTools.JsonContent(
+            JsonSerializer.SerializeToElement(c.Value ?? new object())),
+        "binary" => new BinaryContent(
+            c.MimeType ?? "application/octet-stream",
+            c.Data,
+            c.Url,
+            c.Id,
+            c.Filename),
+        _ => new HPD.Agent.FrontendTools.TextContent(c.Text ?? "")
+    }).ToList() ?? new List<IToolResultContent>();
+
+    // Send response to waiting FrontendToolMiddleware
+    agent.SendMiddlewareResponse(
+        request.RequestId,
+        new FrontendToolInvokeResponseEvent(
+            RequestId: request.RequestId,
+            Content: content,
+            Success: request.Success,
+            ErrorMessage: request.ErrorMessage,
+            Augmentation: null)); // TODO: Add augmentation support if needed
+
+    return Results.Ok(new SuccessResponse(true));
+});
+
 // Streaming SSE endpoint
 agentApi.MapPost("/conversations/{conversationId}/stream",
     async (string conversationId, StreamRequest request, ConversationManager cm, HttpContext context) =>
@@ -126,11 +162,22 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
         var agent = await cm.GetAgentAsync(conversationId);
         var chatMessages = request.Messages.Select(m => new ChatMessage(ChatRole.User, m.Content)).ToList();
 
+        // Convert StreamRequest to AgentRunInput for frontend tools
+        var runInput = BuildRunInput(request);
+
         Console.WriteLine($"[ENDPOINT] Starting agent.RunAsync for conversation {conversationId}");
+        if (runInput?.FrontendPlugins?.Count > 0)
+        {
+            Console.WriteLine($"[ENDPOINT] Registered {runInput.FrontendPlugins.Count} frontend plugin(s)");
+            foreach (var plugin in runInput.FrontendPlugins)
+            {
+                Console.WriteLine($"[ENDPOINT]   - {plugin.Name}: {plugin.Tools.Count} tools");
+            }
+        }
 
         // Run agent - manually send each event through SSE handler
         int eventCount = 0;
-        await foreach (var evt in agent.RunAsync(chatMessages, options: null, thread: thread, cancellationToken: context.RequestAborted))
+        await foreach (var evt in agent.RunAsync(chatMessages, options: null, thread: thread, runInput: runInput, cancellationToken: context.RequestAborted))
         {
             eventCount++;
             Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
@@ -236,6 +283,26 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
     }
 });
 
+// Build AgentRunInput directly from StreamRequest
+static AgentRunInput? BuildRunInput(StreamRequest request)
+{
+    if (request.FrontendPlugins == null && request.Context == null &&
+        request.State == null && request.ExpandedContainers == null && request.HiddenTools == null)
+    {
+        return null;
+    }
+
+    return new AgentRunInput
+    {
+        FrontendPlugins = request.FrontendPlugins?.ToList(),
+        Context = request.Context?.ToList(),
+        State = request.State,
+        ExpandedContainers = request.ExpandedContainers?.ToHashSet(),
+        HiddenTools = request.HiddenTools?.ToHashSet(),
+        ResetFrontendState = request.ResetFrontendState
+    };
+}
+
 app.Run();
 
 // Conversation Manager
@@ -327,7 +394,14 @@ internal class InMemoryPermissionStorage : IPermissionStorage
 
 // DTOs
 public record ConversationDto(string Id, string Name, DateTime CreatedAt, DateTime LastActivity, int MessageCount);
-public record StreamRequest(StreamMessage[] Messages);
+public record StreamRequest(
+    StreamMessage[] Messages,
+    FrontendPluginDefinition[]? FrontendPlugins = null,
+    ContextItem[]? Context = null,
+    JsonElement? State = null,
+    string[]? ExpandedContainers = null,
+    string[]? HiddenTools = null,
+    bool ResetFrontendState = false);
 public record StreamMessage(string Content);
 public record PermissionResponseRequest(
     string PermissionId,
@@ -338,4 +412,21 @@ public record PermissionResponseRequest(
 // API Response DTOs for AOT serialization
 public record SuccessResponse(bool Success);
 public record ErrorResponse(string Message);
+
+// Frontend tool response DTOs
+public record FrontendToolResponseRequest(
+    string RequestId,
+    FrontendToolContentDto[]? Content,
+    bool Success = true,
+    string? ErrorMessage = null);
+
+public record FrontendToolContentDto(
+    string Type,
+    string? Text = null,
+    object? Value = null,
+    string? MimeType = null,
+    string? Data = null,
+    string? Url = null,
+    string? Id = null,
+    string? Filename = null);
 

@@ -177,7 +177,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         var agent = new AgentBuilder(config, providerRegistry)
             .WithObserver(_eventObserver)
             .WithServiceProvider(serviceProvider)
-            .BuildCoreAsync(CancellationToken.None).GetAwaiter().GetResult();
+            .Build(CancellationToken.None).GetAwaiter().GetResult();
 
         return agent;
     }

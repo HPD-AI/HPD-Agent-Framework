@@ -104,7 +104,7 @@ public class AgentMiddlewareContext
     /// <summary>
     /// Sets the original state. Called by Agent when creating the context.
     /// </summary>
-    internal void SetOriginalState(AgentLoopState state)
+    public void SetOriginalState(AgentLoopState state)
     {
         _originalState = state ?? throw new ArgumentNullException(nameof(state));
     }
@@ -124,7 +124,7 @@ public class AgentMiddlewareContext
     /// Gets pending state updates (called by Agent after middleware chain).
     /// Returns null if no updates were scheduled.
     /// </summary>
-    internal AgentLoopState? GetPendingState() => _pendingState;
+    public AgentLoopState? GetPendingState() => _pendingState;
 
     /// <summary>
     /// Returns true if any state updates have been scheduled.
@@ -157,6 +157,22 @@ public class AgentMiddlewareContext
             throw new InvalidOperationException("Event coordination not configured for this context");
 
         EventCoordinator.Emit(evt);
+    }
+
+    /// <summary>
+    /// Tries to emit an event if event coordination is configured.
+    /// Returns false if EventCoordinator is not available (silently skips).
+    /// Use this for optional events that shouldn't fail the middleware if events aren't being handled.
+    /// </summary>
+    /// <param name="evt">The event to emit</param>
+    /// <returns>True if event was emitted, false if EventCoordinator is not configured</returns>
+    public bool TryEmit(AgentEvent evt)
+    {
+        if (evt == null || EventCoordinator == null)
+            return false;
+
+        EventCoordinator.Emit(evt);
+        return true;
     }
 
     /// <summary>

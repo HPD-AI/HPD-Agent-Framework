@@ -1,7 +1,6 @@
 using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
-using HPD.Agent.Conversation;
 using HPD.Agent.Checkpointing;
 using HPD_Agent.Tests.Infrastructure;
 using System.Text.Json;

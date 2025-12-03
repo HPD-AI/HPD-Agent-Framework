@@ -92,6 +92,21 @@ using HPD.Agent;
 // --- Document store types ---
 [JsonSerializable(typeof(HPD_Agent.Skills.DocumentStore.GlobalDocumentInfo))]
 
+// --- Frontend Tools types ---
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendPluginDefinition))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendPluginDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendToolDefinition))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendToolDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDefinition))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillReference))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillReference[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDocument))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDocument[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.ContextItem))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.ContextItem[]))]
+[JsonSerializable(typeof(HPD.Agent.FrontendTools.AgentRunInput))]
+
 // --- Internal storage state types (nested classes) ---
 // Note: Nested classes need full type paths for AOT
 // These are internal implementation details but need serialization support

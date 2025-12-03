@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false
 )]
+// App-specific DTOs only - FrontendTools types come from HPDJsonContext in the library
 [JsonSerializable(typeof(ConversationDto))]
 [JsonSerializable(typeof(StreamRequest))]
 [JsonSerializable(typeof(StreamMessage))]
@@ -12,6 +13,9 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(PermissionResponseRequest))]
 [JsonSerializable(typeof(SuccessResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
+[JsonSerializable(typeof(FrontendToolResponseRequest))]
+[JsonSerializable(typeof(FrontendToolContentDto))]
+[JsonSerializable(typeof(FrontendToolContentDto[]))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext
 {
 }

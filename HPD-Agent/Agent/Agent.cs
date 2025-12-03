@@ -473,6 +473,7 @@ public sealed class Agent
         List<ChatMessage> turnHistory,
         TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
         ConversationThread? thread = null,
+        Dictionary<string, object>? initialContextProperties = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var orchestrationStartTime = DateTime.UtcNow;
@@ -687,9 +688,17 @@ public sealed class Agent
             };
             turnContext.SetOriginalState(state);
 
-     
+            // Apply initial properties from caller (e.g., AgentRunInput for frontend tools)
+            if (initialContextProperties != null)
+            {
+                foreach (var kvp in initialContextProperties)
+                {
+                    turnContext.Properties[kvp.Key] = kvp.Value;
+                }
+            }
+
             turnContext.UserMessage = newInputMessages.FirstOrDefault();
-            turnContext.ConversationHistory = effectiveMessages.ToList();    
+            turnContext.ConversationHistory = effectiveMessages.ToList();
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(turnContext, effectiveCancellationToken);
             
@@ -830,11 +839,27 @@ public sealed class Agent
                     middlewareContext.SetOriginalState(state);
 
                     // EXECUTE BEFORE ITERATION MIDDLEWARES
-                    await _middlewarePipeline.ExecuteBeforeIterationAsync(
+                    // Run with event polling to support bidirectional events (e.g., ContinuationPermissionMiddleware)
+                    var beforeIterationTask = _middlewarePipeline.ExecuteBeforeIterationAsync(
                         middlewareContext,
-                        effectiveCancellationToken).ConfigureAwait(false);
+                        effectiveCancellationToken);
 
-                    // Drain events from middleware
+                    // Poll for events while middleware is executing (CRITICAL for permission requests)
+                    while (!beforeIterationTask.IsCompleted)
+                    {
+                        var delayTask = Task.Delay(10, effectiveCancellationToken);
+                        await Task.WhenAny(beforeIterationTask, delayTask).ConfigureAwait(false);
+
+                        while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                        {
+                            yield return middlewareEvt;
+                        }
+                    }
+
+                    // Await to propagate any exceptions
+                    await beforeIterationTask.ConfigureAwait(false);
+
+                    // Final drain of events from middleware
                     while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
                     {
                         yield return middlewareEvt;
@@ -1060,6 +1085,17 @@ public sealed class Agent
                         ChatRole.Assistant, assistantContents);
                     middlewareContext.ToolCalls = toolRequests.AsReadOnly();
                     middlewareContext.IterationException = null;
+
+                    // Check for termination from BeforeIteration middleware (e.g., ContinuationPermissionMiddleware)
+                    if (middlewareContext.Properties.TryGetValue("IsTerminated", out var isTerminatedEarly) &&
+                        isTerminatedEarly is true)
+                    {
+                        var reason = middlewareContext.Properties.TryGetValue("TerminationReason", out var r)
+                            ? r?.ToString() ?? "Middleware requested termination"
+                            : "Middleware requested termination";
+                        state = state.Terminate(reason);
+                        break;
+                    }
 
                     // If there are tool requests, execute them immediately
                     if (toolRequests.Count > 0)
@@ -1783,7 +1819,8 @@ public sealed class Agent
             turnHistory,
             historyCompletionSource,
             thread: null,
-            cancellationToken))
+            initialContextProperties: null,
+            cancellationToken: cancellationToken))
         {
             // 1. Event handlers FIRST (awaited, ordered) - for UI
             await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
@@ -1840,7 +1877,8 @@ public sealed class Agent
             turnHistory,
             historyCompletionSource,
             thread: null,
-            cancellationToken);
+            initialContextProperties: null,
+            cancellationToken: cancellationToken);
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
@@ -1941,13 +1979,14 @@ public sealed class Agent
 
         //     
         // EXECUTE AGENTIC LOOP with PreparedTurn
-        //     
+        //
         var internalStream = RunAgenticLoopInternal(
             turn,
             turnHistory,
             historyCompletionSource,
             thread: thread,  // ← CRITICAL: Pass thread for persistence and checkpointing
-            cancellationToken);
+            initialContextProperties: null,
+            cancellationToken: cancellationToken);
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
@@ -1962,9 +2001,111 @@ public sealed class Agent
         }
     }
 
-    //      
+    /// <summary>
+    /// Runs the agent with frontend tool support via AgentRunInput.
+    /// This overload allows frontend applications to register plugins and tools dynamically.
+    /// </summary>
+    /// <param name="userMessage">The user's message text</param>
+    /// <param name="thread">Thread containing conversation history</param>
+    /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of internal agent events</returns>
+    public IAsyncEnumerable<AgentEvent> RunAsync(
+        string userMessage,
+        ConversationThread thread,
+        FrontendTools.AgentRunInput? runInput,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(
+            [new ChatMessage(ChatRole.User, userMessage)],
+            options: null,
+            thread: thread,
+            runInput: runInput,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the agent with frontend tool support via AgentRunInput.
+    /// This overload allows frontend applications to register plugins and tools dynamically.
+    /// </summary>
+    /// <param name="messages">Messages to process</param>
+    /// <param name="options">Chat options</param>
+    /// <param name="thread">Thread containing conversation history</param>
+    /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of internal agent events</returns>
+    public async IAsyncEnumerable<AgentEvent> RunAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options,
+        ConversationThread thread,
+        FrontendTools.AgentRunInput? runInput,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Validate resume semantics (same as base overload)
+        var hasMessages = messages?.Any() ?? false;
+        var hasCheckpoint = thread.ExecutionState != null;
+        var currentMessageCount = (await thread.GetMessagesAsync(cancellationToken)).Count;
+        var hasHistory = currentMessageCount > 0;
+
+        if (!hasCheckpoint && !hasMessages && !hasHistory)
+        {
+            throw new InvalidOperationException(
+                "Cannot run agent with empty thread and no messages.");
+        }
+
+        if (hasCheckpoint && hasMessages)
+        {
+            throw new InvalidOperationException(
+                $"Cannot add new messages when resuming mid-execution.");
+        }
+
+        if (hasCheckpoint && !hasMessages)
+        {
+            thread.ExecutionState?.ValidateConsistency(currentMessageCount);
+        }
+
+        // Prepare turn
+        var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
+        var turn = await _messageProcessor.PrepareTurnAsync(
+            thread,
+            inputMessages,
+            options,
+            Name,
+            cancellationToken);
+
+        var turnHistory = new List<ChatMessage>();
+        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Build initial context properties with AgentRunInput
+        Dictionary<string, object>? initialProperties = null;
+        if (runInput != null)
+        {
+            initialProperties = new Dictionary<string, object>
+            {
+                ["AgentRunInput"] = runInput
+            };
+        }
+
+        // Execute with initial properties
+        var internalStream = RunAgenticLoopInternal(
+            turn,
+            turnHistory,
+            historyCompletionSource,
+            thread: thread,
+            initialContextProperties: initialProperties,
+            cancellationToken: cancellationToken);
+
+        await foreach (var evt in internalStream.WithCancellation(cancellationToken))
+        {
+            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
+            yield return evt;
+            NotifyObservers(evt);
+        }
+    }
+
+    //
     // ITERATION Middleware SUPPORT
-    //      
+    //
 
     /// <summary>
     /// Processes signals from iteration Middlewares (cleanup requests, etc.).

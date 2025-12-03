@@ -55,5 +55,9 @@
     <ProjectReference Include="..\HPD-Agent.TextExtraction\HPD-Agent.TextExtraction.csproj" />
   </ItemGroup>
 
+  <!-- Expose internals to test project -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent.Tests" />
+  </ItemGroup>
 
 </Project>

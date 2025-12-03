@@ -1,4 +1,10 @@
 import type { AgentEvent, PermissionChoice } from './events.js';
+import type {
+  FrontendPluginDefinition,
+  ContextItem,
+  ToolResultContent,
+  FrontendToolAugmentation,
+} from './frontend-tools.js';
 
 /**
  * Options for connecting to an agent stream.
@@ -10,6 +16,18 @@ export interface ConnectOptions {
   messages: Array<{ content: string; role?: string }>;
   /** Optional AbortSignal for cancellation */
   signal?: AbortSignal;
+  /** Frontend plugins to register */
+  frontendPlugins?: FrontendPluginDefinition[];
+  /** Context items to pass to the agent */
+  context?: ContextItem[];
+  /** Application state (opaque to agent) */
+  state?: unknown;
+  /** Plugins to start expanded */
+  expandedContainers?: string[];
+  /** Tools to start hidden */
+  hiddenTools?: string[];
+  /** Reset frontend state (clear all registered plugins) */
+  resetFrontendState?: boolean;
 }
 
 /**
@@ -18,7 +36,8 @@ export interface ConnectOptions {
 export type ClientMessage =
   | PermissionResponseMessage
   | ClarificationResponseMessage
-  | ContinuationResponseMessage;
+  | ContinuationResponseMessage
+  | FrontendToolResponseMessage;
 
 export interface PermissionResponseMessage {
   type: 'permission_response';
@@ -38,6 +57,15 @@ export interface ContinuationResponseMessage {
   type: 'continuation_response';
   continuationId: string;
   shouldContinue: boolean;
+}
+
+export interface FrontendToolResponseMessage {
+  type: 'frontend_tool_response';
+  requestId: string;
+  content: ToolResultContent[];
+  success: boolean;
+  errorMessage?: string;
+  augmentation?: FrontendToolAugmentation;
 }
 
 /**

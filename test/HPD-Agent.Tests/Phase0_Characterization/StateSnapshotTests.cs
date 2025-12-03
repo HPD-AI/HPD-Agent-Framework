@@ -166,6 +166,7 @@ public class StateSnapshotTests : AgentTestBase
     /// <summary>
     /// Test 4: State when max iterations is reached.
     /// Verifies iteration counter reaches max and termination is triggered.
+    /// Uses MockPermissionHandler to handle ContinuationRequestEvent.
     /// </summary>
     [Fact]
     public async Task StateSnapshot_MaxIterations_ReachesLimit()
@@ -201,13 +202,16 @@ public class StateSnapshotTests : AgentTestBase
 
         var messages = CreateSimpleConversation("Use the tool repeatedly");
 
-        var capturedEvents = new List<AgentEvent>();
+        // Act - Use MockPermissionHandler to handle continuation requests
+        // Configure to deny continuation requests so agent terminates at the limit
+        var eventStream = agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken);
 
-        // Act
-        await foreach (var evt in agent.RunAgenticLoopAsync(messages, cancellationToken: TestCancellationToken))
-        {
-            capturedEvents.Add(evt);
-        }
+        using var permissionHandler = new MockPermissionHandler(agent, eventStream)
+            .AutoDenyContinuation(); // Deny continuation to terminate at limit
+
+        await permissionHandler.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
+
+        var capturedEvents = permissionHandler.CapturedEvents;
 
         // Assert - State snapshots show progression to max
         // Loop condition uses <=, so MaxAgenticIterations=5 means iterations 0-5 (6 snapshots)

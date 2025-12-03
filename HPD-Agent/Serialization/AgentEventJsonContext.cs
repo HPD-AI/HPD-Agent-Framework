@@ -69,6 +69,16 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(MiddlewareProgressEvent))]
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
 
+// Frontend Tool Events
+[JsonSerializable(typeof(FrontendTools.FrontendToolInvokeRequestEvent))]
+[JsonSerializable(typeof(FrontendTools.FrontendToolInvokeResponseEvent))]
+[JsonSerializable(typeof(FrontendTools.FrontendPluginsRegisteredEvent))]
+[JsonSerializable(typeof(FrontendTools.IToolResultContent))]
+[JsonSerializable(typeof(FrontendTools.TextContent))]
+[JsonSerializable(typeof(FrontendTools.BinaryContent))]
+[JsonSerializable(typeof(FrontendTools.JsonContent))]
+[JsonSerializable(typeof(FrontendTools.FrontendToolAugmentation))]
+
 // Observability Events
 [JsonSerializable(typeof(ScopedToolsVisibleEvent))]
 [JsonSerializable(typeof(ContainerExpandedEvent))]

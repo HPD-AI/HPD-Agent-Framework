@@ -15,6 +15,8 @@ public sealed class MockPermissionHandler : IDisposable
     private readonly object _lock = new();
     private bool _autoApprove = false;
     private bool _autoDeny = false;
+    private bool _autoApproveContinuation = true; // Default: auto-approve continuations
+    private bool _autoDenyContinuation = false;
 
     /// <summary>
     /// Permission response configuration.
@@ -80,6 +82,20 @@ public sealed class MockPermissionHandler : IDisposable
         {
             _autoApprove = false;
             _autoDeny = true;
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Configures handler to automatically deny continuation requests.
+    /// This causes the agent to terminate when the iteration limit is reached.
+    /// </summary>
+    public MockPermissionHandler AutoDenyContinuation()
+    {
+        lock (_lock)
+        {
+            _autoApproveContinuation = false;
+            _autoDenyContinuation = true;
         }
         return this;
     }
@@ -167,13 +183,19 @@ public sealed class MockPermissionHandler : IDisposable
                 }
                 else if (evt is ContinuationRequestEvent continuationRequest)
                 {
-                    // Auto-approve continuation requests by default
+                    // Respond to continuation requests based on configuration
+                    bool approved;
+                    lock (_lock)
+                    {
+                        approved = _autoApproveContinuation && !_autoDenyContinuation;
+                    }
+
                     _agent.SendMiddlewareResponse(
                         continuationRequest.ContinuationId,
                         new ContinuationResponseEvent(
                             continuationRequest.ContinuationId,
                             "MockPermissionHandler",
-                            true));
+                            approved));
                 }
             }
         }

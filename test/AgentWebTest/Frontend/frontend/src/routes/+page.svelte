@@ -1,6 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { AgentClient, type PermissionRequestEvent, type PermissionChoice } from '@hpd/hpd-agent-client';
+    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type FrontendToolInvokeRequestEvent } from '@hpd/hpd-agent-client';
+    import Artifact from '$lib/artifacts/Artifact.svelte';
+    import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
+    import { artifactPlugin, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
 
     const API_BASE = 'http://localhost:5135';
 
@@ -28,8 +31,15 @@
     let pendingPermission: PendingPermission | null = null;
     let showPermissionDialog = false;
 
-    // Create the client
-    const client = new AgentClient(API_BASE);
+    // Artifact state (reactive)
+    let artifact: ArtifactState;
+    artifactStore.subscribe(value => artifact = value);
+
+    // Create the client with artifact plugin
+    const client = new AgentClient({
+        baseUrl: API_BASE,
+        frontendPlugins: [artifactPlugin]
+    });
 
     onMount(async () => {
         const saved = localStorage.getItem('conversationId');
@@ -55,6 +65,8 @@
         conversationId = data.id;
         localStorage.setItem('conversationId', conversationId!);
         messages = [];
+        // Close any open artifact on new conversation
+        artifactStore.close();
     }
 
     async function sendMessage() {
@@ -121,6 +133,28 @@
                             };
                             showPermissionDialog = true;
                         });
+                    },
+
+                    // Frontend tool handler - handles artifact tools
+                    onFrontendToolInvoke: async (request: FrontendToolInvokeRequestEvent) => {
+                        console.log('Frontend tool invoke:', request.toolName, request.arguments);
+                        currentThinking = `Executing ${request.toolName}...`;
+                        updateLastMessage();
+
+                        // Handle artifact tools
+                        const response = handleArtifactTool(
+                            request.toolName,
+                            request.arguments,
+                            request.requestId
+                        );
+
+                        console.log('Frontend tool response:', response);
+                        return response;
+                    },
+
+                    // Frontend plugins registered
+                    onFrontendPluginsRegistered: (event) => {
+                        console.log('Frontend plugins registered:', event.registeredPlugins, 'Total tools:', event.totalTools);
                     },
 
                     // Lifecycle handlers
@@ -206,56 +240,69 @@
         </button>
     </div>
 
-    <!-- Messages -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-4">
-        {#each messages as message}
-            <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
-                <div class="max-w-2xl px-4 py-3 rounded-lg {
-                    message.role === 'user'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white border shadow-sm'
-                }">
-                    <div class="text-xs font-medium mb-1 opacity-70">
-                        {message.role === 'user' ? 'You' : 'Agent'}
+    <!-- Main Content - Split View when artifact is open -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Chat Panel -->
+        <div class="flex-1 flex flex-col {artifact.isOpen ? 'w-1/3 min-w-[300px] border-r' : ''}">
+            <!-- Messages -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-4">
+                {#each messages as message}
+                    <div class="flex {message.role === 'user' ? 'justify-end' : 'justify-start'}">
+                        <div class="max-w-full px-4 py-3 rounded-lg {
+                            message.role === 'user'
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-white border shadow-sm'
+                        }">
+                            <div class="text-xs font-medium mb-1 opacity-70">
+                                {message.role === 'user' ? 'You' : 'Agent'}
+                            </div>
+
+                            {#if message.thinking}
+                                <div class="text-xs italic opacity-60 mb-2">
+                                    {message.thinking}
+                                </div>
+                            {/if}
+
+                            <div class="whitespace-pre-wrap">{message.content}</div>
+
+                            {#if isLoading && message === messages[messages.length - 1]}
+                                <div class="mt-2 flex items-center text-xs opacity-60">
+                                    <div class="animate-spin rounded-full h-3 w-3 border-b-2 mr-2"></div>
+                                    Thinking...
+                                </div>
+                            {/if}
+                        </div>
                     </div>
+                {/each}
+            </div>
 
-                    {#if message.thinking}
-                        <div class="text-xs italic opacity-60 mb-2">
-                            {message.thinking}
-                        </div>
-                    {/if}
-
-                    <div class="whitespace-pre-wrap">{message.content}</div>
-
-                    {#if isLoading && message === messages[messages.length - 1]}
-                        <div class="mt-2 flex items-center text-xs opacity-60">
-                            <div class="animate-spin rounded-full h-3 w-3 border-b-2 mr-2"></div>
-                            Thinking...
-                        </div>
-                    {/if}
+            <!-- Input -->
+            <div class="bg-white border-t p-4">
+                <div class="flex gap-2">
+                    <input
+                        bind:value={currentMessage}
+                        onkeypress={handleKeypress}
+                        placeholder="Type a message..."
+                        disabled={isLoading}
+                        class="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <button
+                        onclick={sendMessage}
+                        disabled={isLoading || !currentMessage.trim()}
+                        class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        {isLoading ? '...' : 'Send'}
+                    </button>
                 </div>
             </div>
-        {/each}
-    </div>
-
-    <!-- Input -->
-    <div class="bg-white border-t p-4">
-        <div class="flex gap-2 max-w-4xl mx-auto">
-            <input
-                bind:value={currentMessage}
-                onkeypress={handleKeypress}
-                placeholder="Type a message..."
-                disabled={isLoading}
-                class="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            />
-            <button
-                onclick={sendMessage}
-                disabled={isLoading || !currentMessage.trim()}
-                class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-            >
-                {isLoading ? 'Sending...' : 'Send'}
-            </button>
         </div>
+
+        <!-- Artifact Panel (2/3 width when open) -->
+        {#if artifact.isOpen}
+            <div class="w-2/3 flex flex-col">
+                <Artifact />
+            </div>
+        {/if}
     </div>
 </div>
 

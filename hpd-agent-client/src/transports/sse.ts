@@ -36,13 +36,38 @@ export class SseTransport implements AgentTransport {
 
     const url = `${this.baseUrl}/agent/conversations/${options.conversationId}/stream`;
 
+    // Build request body with all stream options
+    const requestBody: Record<string, unknown> = {
+      messages: options.messages,
+    };
+
+    // Include frontend tools configuration
+    if (options.frontendPlugins && options.frontendPlugins.length > 0) {
+      requestBody.frontendPlugins = options.frontendPlugins;
+    }
+    if (options.context && options.context.length > 0) {
+      requestBody.context = options.context;
+    }
+    if (options.state !== undefined) {
+      requestBody.state = options.state;
+    }
+    if (options.expandedContainers && options.expandedContainers.length > 0) {
+      requestBody.expandedContainers = options.expandedContainers;
+    }
+    if (options.hiddenTools && options.hiddenTools.length > 0) {
+      requestBody.hiddenTools = options.hiddenTools;
+    }
+    if (options.resetFrontendState) {
+      requestBody.resetFrontendState = options.resetFrontendState;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },
-      body: JSON.stringify({ messages: options.messages }),
+      body: JSON.stringify(requestBody),
       signal,
     });
 
@@ -121,6 +146,10 @@ export class SseTransport implements AgentTransport {
         return `/agent/conversations/${this.conversationId}/clarifications/respond`;
       case 'continuation_response':
         return `/agent/conversations/${this.conversationId}/continuations/respond`;
+      case 'frontend_tool_response':
+        return `/agent/conversations/${this.conversationId}/frontend-tools/respond`;
+      default:
+        throw new Error(`Unknown message type: ${(message as { type: string }).type}`);
     }
   }
 
