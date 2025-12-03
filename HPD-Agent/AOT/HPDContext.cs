@@ -49,7 +49,6 @@ using HPD.Agent;
 [JsonSerializable(typeof(AgentConfig))]
 [JsonSerializable(typeof(ProviderConfig))]
 [JsonSerializable(typeof(string))]
-[JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(McpConfig))]
 
 // --- Conversation and messaging types ---
@@ -82,15 +81,8 @@ using HPD.Agent;
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]
 
-// --- Plan mode types ---
-[JsonSerializable(typeof(AgentPlan))]
-[JsonSerializable(typeof(PlanStep))]
-[JsonSerializable(typeof(PlanStepStatus))]
-[JsonSerializable(typeof(List<PlanStep>))]
-[JsonSerializable(typeof(List<string>))]
-
 // --- Document store types ---
-[JsonSerializable(typeof(HPD_Agent.Skills.DocumentStore.GlobalDocumentInfo))]
+[JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]
 
 // --- Frontend Tools types ---
 [JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendPluginDefinition))]

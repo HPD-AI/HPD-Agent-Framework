@@ -1,9 +1,9 @@
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using HPD_Agent.TextExtraction.Models;
+using HPD.Agent.TextExtraction.Models;
 
-namespace HPD_Agent.TextExtraction.Interfaces
+namespace HPD.Agent.TextExtraction.Interfaces
 {
     /// <summary>
     /// Interface for content decoders that extract text from various file formats

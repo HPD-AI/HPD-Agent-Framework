@@ -110,7 +110,7 @@ public Agent(
     ScopedFunctionMiddlewareManager ScopedFunctionMiddlewareManager,
     HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
     IProviderRegistry providerRegistry,
-    HPD_Agent.Skills.SkillScopingManager? skillScopingManager = null,
+    HPD.Agent.Skills.SkillScopingManager? skillScopingManager = null,
     IReadOnlyList<IPermissionMiddleware>? PermissionMiddlewares = null,
     IReadOnlyList<IAIFunctionMiddleware>? AIFunctionMiddlewares = null,
     IReadOnlyList<IMessageTurnMiddleware>? MessageTurnMiddlewares = null)

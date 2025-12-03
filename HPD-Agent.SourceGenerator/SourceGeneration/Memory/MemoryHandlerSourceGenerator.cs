@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace HPD_Agent.SourceGenerator.Memory;
+namespace HPD.Agent.SourceGenerator.Memory;
 
 /// <summary>
 /// Source generator for HPD-Agent.Memory pipeline handlers.

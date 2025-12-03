@@ -2,7 +2,7 @@ using System.Threading.Channels;
 using HPD.Agent;
 
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Test double for BidirectionalEventCoordinator that captures all events

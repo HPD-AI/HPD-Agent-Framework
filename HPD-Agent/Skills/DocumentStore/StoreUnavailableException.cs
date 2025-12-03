@@ -1,5 +1,5 @@
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 /// <summary>
 /// Exception thrown when the document store is unavailable (health check failed)

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.Providers.OpenRouter;
+namespace HPD.Agent.Providers.OpenRouter;
 
 /// <summary>
 /// Source-generated JSON type information for OpenRouter client.

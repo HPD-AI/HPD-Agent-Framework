@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.Ollama;
+namespace HPD.Agent.Providers.Ollama;
 
 internal class OllamaErrorHandler : IProviderErrorHandler
 {

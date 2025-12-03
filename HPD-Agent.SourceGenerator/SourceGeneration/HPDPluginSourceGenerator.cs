@@ -242,7 +242,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
 // HPD Source Generator Diagnostic Report
 // Generated at: {DateTime.Now}
 // Plugins found: {plugins.Length}
-namespace HPD_Agent.Diagnostics {{
+namespace HPD.Agent.Diagnostics {{
     public static class SourceGeneratorDiagnostic {{
         public const string Message = ""Source generator executed successfully"";
         public const int PluginsFound = {plugins.Length};
@@ -535,13 +535,13 @@ namespace HPD_Agent.Diagnostics {{
         sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Text;");
-        sb.AppendLine("using HPD_Agent.Skills.DocumentStore;");
+        sb.AppendLine("using HPD.Agent.Skills.DocumentStore;");
 
         // Add HPD.Agent namespace for AgentBuilder, ConversationThread, etc.
         sb.AppendLine("using HPD.Agent;");
 
-        // Add HPD_Agent namespace for SubAgent types
-        sb.AppendLine("using HPD_Agent;");
+        // Add HPD.Agent namespace for SubAgent types
+        sb.AppendLine("using HPD.Agent;");
 
         // Add using directive for the plugin's namespace if it's not empty
         if (!string.IsNullOrEmpty(plugin.Namespace))

@@ -1,4 +1,4 @@
-namespace HPD_Agent.Skills.DocumentStore
+namespace HPD.Agent.Skills.DocumentStore
 {
     /// <summary>
     /// Exception thrown when a requested document does not exist in the store

@@ -76,10 +76,10 @@ internal static class SubAgentAnalyzer
             return false;
         }
 
-        // Check if return type is SubAgent (in HPD_Agent namespace or global namespace)
+        // Check if return type is SubAgent (in HPD.Agent namespace or global namespace)
         var isSubAgentType = returnTypeSymbol.Name == "SubAgent" &&
                              (returnTypeSymbol.ContainingNamespace?.IsGlobalNamespace == true ||
-                              returnTypeSymbol.ContainingNamespace?.ToDisplayString() == "HPD_Agent");
+                              returnTypeSymbol.ContainingNamespace?.ToDisplayString() == "HPD.Agent");
 
         if (!isSubAgentType)
         {

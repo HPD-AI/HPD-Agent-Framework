@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Tracks tool visibility changes across agent iterations.

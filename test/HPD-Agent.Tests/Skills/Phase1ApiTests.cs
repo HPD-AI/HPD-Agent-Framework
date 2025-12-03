@@ -1,7 +1,7 @@
 using Xunit;
-using HPD_Agent.Skills;
+using HPD.Agent.Skills;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for Phase 1: Foundation Classes API

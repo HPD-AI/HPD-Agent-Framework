@@ -117,7 +117,7 @@ public class CustomEventSourceGenerator : IIncrementalGenerator
 
         // Skip framework events (HPD.Agent namespace)
         var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
-        if (namespaceName.StartsWith("HPD.Agent") || namespaceName.StartsWith("HPD_Agent"))
+        if (namespaceName.StartsWith("HPD.Agent") || namespaceName.StartsWith("HPD.Agent"))
             return null;
 
         // Skip generic types with warning

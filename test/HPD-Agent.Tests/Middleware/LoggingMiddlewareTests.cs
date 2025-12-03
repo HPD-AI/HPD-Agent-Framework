@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Tests for LoggingMiddleware - the unified logging middleware that replaces

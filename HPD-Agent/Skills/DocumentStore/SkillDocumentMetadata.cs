@@ -1,5 +1,5 @@
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 /// <summary>
 /// Skill-specific metadata for a linked document

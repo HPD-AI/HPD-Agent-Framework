@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
 
-namespace HPD_Agent.Providers.Anthropic;
+namespace HPD.Agent.Providers.Anthropic;
 
 /// <summary>
 /// Auto-discovers and registers the Anthropic provider on assembly load.
@@ -10,7 +10,9 @@ namespace HPD_Agent.Providers.Anthropic;
 /// </summary>
 public static class AnthropicProviderModule
 {
+#pragma warning disable CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     [ModuleInitializer]
+#pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     public static void Initialize()
     {
         // Register provider factory

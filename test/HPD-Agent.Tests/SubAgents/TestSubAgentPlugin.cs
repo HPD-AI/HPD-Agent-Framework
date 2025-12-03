@@ -1,5 +1,5 @@
 using HPD.Agent;
-using HPD_Agent;
+using HPD.Agent;
 
 /// <summary>
 /// Test plugin with various sub-agent patterns for validation

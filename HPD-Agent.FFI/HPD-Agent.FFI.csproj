@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>HPD_Agent.FFI</RootNamespace>
+    <RootNamespace>HPD.Agent.FFI</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     
@@ -23,6 +23,7 @@
 
   <!-- Core HPD-Agent reference -->
   <ItemGroup>
+    <ProjectReference Include="../HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
     <ProjectReference Include="../HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
   </ItemGroup>

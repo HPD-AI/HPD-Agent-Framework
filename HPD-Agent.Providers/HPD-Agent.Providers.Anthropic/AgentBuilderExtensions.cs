@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Anthropic.SDK.Constants;
 using HPD.Agent;
 
-namespace HPD_Agent.Providers.Anthropic;
+namespace HPD.Agent.Providers.Anthropic;
 
 /// <summary>
 /// Extension methods for AgentBuilder to configure Anthropic (Claude) as the AI provider.

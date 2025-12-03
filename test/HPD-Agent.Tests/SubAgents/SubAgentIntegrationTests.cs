@@ -3,7 +3,7 @@ using HPD.Agent;
 using Microsoft.Extensions.AI;
 using System.Threading.Tasks;
 
-namespace HPD_Agent.Tests.SubAgents;
+namespace HPD.Agent.Tests.SubAgents;
 
 /// <summary>
 /// SubAgent Integration Tests

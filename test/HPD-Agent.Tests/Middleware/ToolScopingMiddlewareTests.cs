@@ -1,12 +1,12 @@
 using HPD.Agent;
 using HPD.Agent.Middleware;
-using HPD_Agent.Scoping;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Scoping;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Comprehensive tests for ToolScopingMiddleware.

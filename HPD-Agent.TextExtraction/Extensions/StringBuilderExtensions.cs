@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace HPD_Agent.TextExtraction.Extensions
+namespace HPD.Agent.TextExtraction.Extensions
 {
     public static class StringBuilderExtensions
     {

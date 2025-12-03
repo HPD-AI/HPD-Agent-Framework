@@ -1,7 +1,7 @@
 using HPD.Agent;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace HPD_Agent.MCP;
+namespace HPD.Agent.MCP;
 
 /// <summary>
 /// Extension methods for configuring Model Context Protocol (MCP) capabilities for the AgentBuilder.

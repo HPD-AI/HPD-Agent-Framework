@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Tests for AgentExecutionContext functionality including creation, hierarchy, and event attribution

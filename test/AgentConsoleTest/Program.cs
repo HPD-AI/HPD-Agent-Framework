@@ -1,5 +1,6 @@
 ﻿using HPD.Agent;
-using HPD_Agent.MCP;
+using HPD.Agent.MCP;
+using HPD.Agent.Memory;
 
 Console.WriteLine("🚀 HPD-Agent Console Test\n");
 

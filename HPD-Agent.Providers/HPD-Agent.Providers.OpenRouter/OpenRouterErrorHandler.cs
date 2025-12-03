@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.OpenRouter;
+namespace HPD.Agent.Providers.OpenRouter;
 
 internal class OpenRouterErrorHandler : IProviderErrorHandler
 {

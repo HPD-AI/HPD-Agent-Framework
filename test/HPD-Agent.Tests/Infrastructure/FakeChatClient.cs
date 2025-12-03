@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Runtime.CompilerServices;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Fake chat client for testing that allows queuing predefined responses.

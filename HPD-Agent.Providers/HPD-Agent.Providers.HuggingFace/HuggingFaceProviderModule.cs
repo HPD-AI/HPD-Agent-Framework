@@ -1,14 +1,16 @@
 using System.Runtime.CompilerServices;
 using HPD.Agent.Providers;
 
-namespace HPD_Agent.Providers.HuggingFace;
+namespace HPD.Agent.Providers.HuggingFace;
 
 /// <summary>
 /// Auto-discovers and registers the HuggingFace provider on assembly load.
 /// </summary>
 public static class HuggingFaceProviderModule
 {
+#pragma warning disable CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     [ModuleInitializer]
+#pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     public static void Initialize()
     {
         ProviderDiscovery.RegisterProviderFactory(() => new HuggingFaceProvider());

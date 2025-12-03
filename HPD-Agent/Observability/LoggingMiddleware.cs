@@ -172,7 +172,7 @@ public class LoggingMiddleware : IAgentMiddleware
         var turnNumber = Interlocked.Increment(ref _turnCounter);
         var sb = new StringBuilder();
 
-        sb.AppendLine("     ");
+        sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN #{turnNumber} - START");
         sb.AppendLine($"  Agent: {context.AgentName}");
         sb.AppendLine($"  Messages: {context.Messages?.Count ?? 0}");
@@ -188,7 +188,7 @@ public class LoggingMiddleware : IAgentMiddleware
             sb.AppendLine($"  Instructions: ({context.Options.Instructions.Length} chars)");
         }
 
-        sb.AppendLine("     ");
+        sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
@@ -201,11 +201,13 @@ public class LoggingMiddleware : IAgentMiddleware
 
         var sb = new StringBuilder();
 
-        sb.AppendLine("     ");
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN - END");
         sb.AppendLine($"  Agent: {context.AgentName}");
         sb.AppendLine($"  Final response: {(context.Response != null ? "Yes" : "No")}");
-        sb.AppendLine("     ");
+        sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
@@ -279,6 +281,7 @@ public class LoggingMiddleware : IAgentMiddleware
         }
 
         var sb = new StringBuilder();
+        sb.AppendLine("─────────────────────────────────────────────────────────────────────────────────────────────────");
         sb.Append($"{_options.LogPrefix}[PRE] {functionName}");
 
         if (_options.IncludeArguments)
@@ -286,6 +289,7 @@ public class LoggingMiddleware : IAgentMiddleware
             var args = FormatArgs(context.FunctionArguments);
             sb.Append($" | Args: {TruncateString(args)}");
         }
+        sb.AppendLine();
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
@@ -332,6 +336,8 @@ public class LoggingMiddleware : IAgentMiddleware
                 sb.Append($" | Result: {TruncateString(result)}");
             }
         }
+        sb.AppendLine();
+        sb.AppendLine("─────────────────────────────────────────────────────────────────────────────────────────────────");
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;

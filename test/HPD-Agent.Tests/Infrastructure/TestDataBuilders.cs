@@ -2,7 +2,7 @@ using Microsoft.Extensions.AI;
 using System;
 using System.Collections.Generic;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Factory methods for creating common test data.

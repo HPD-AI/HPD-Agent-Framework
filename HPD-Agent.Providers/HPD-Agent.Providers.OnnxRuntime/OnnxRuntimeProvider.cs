@@ -6,7 +6,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.OnnxRuntime;
+namespace HPD.Agent.Providers.OnnxRuntime;
 
 internal class OnnxRuntimeProvider : IProviderFeatures
 {

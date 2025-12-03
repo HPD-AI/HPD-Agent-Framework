@@ -13,7 +13,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Buffers;
 
-namespace HPD_Agent.Providers.OpenRouter;
+namespace HPD.Agent.Providers.OpenRouter;
 
 /// <summary>
 /// OpenRouter-specific IChatClient that properly exposes reasoning content from reasoning_details field.

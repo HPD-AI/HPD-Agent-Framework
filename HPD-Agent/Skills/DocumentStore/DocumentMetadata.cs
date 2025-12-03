@@ -1,5 +1,5 @@
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 /// <summary>
 /// Default metadata for a document in the global store

@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using HPD_Agent.TextExtraction.Decoders;
-using HPD_Agent.TextExtraction.Interfaces;
-using HPD_Agent.TextExtraction.Models;
+using HPD.Agent.TextExtraction.Decoders;
+using HPD.Agent.TextExtraction.Interfaces;
+using HPD.Agent.TextExtraction.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace HPD_Agent.TextExtraction
+namespace HPD.Agent.TextExtraction
 {
     /// <summary>
     /// Factory for creating and managing content decoders

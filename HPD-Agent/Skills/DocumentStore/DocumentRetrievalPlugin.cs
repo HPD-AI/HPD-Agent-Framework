@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using System.ComponentModel;
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 
 

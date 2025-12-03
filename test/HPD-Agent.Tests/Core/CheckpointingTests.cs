@@ -2,10 +2,10 @@ using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
 using HPD.Agent.Checkpointing;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 using System.Text.Json;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Comprehensive tests for thread-scoped durable execution (checkpointing).

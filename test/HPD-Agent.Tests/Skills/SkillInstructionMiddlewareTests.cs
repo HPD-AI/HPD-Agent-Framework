@@ -3,7 +3,7 @@ using HPD.Agent;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for SkillInstructionMiddleware - validates that it prefers new type-safe format

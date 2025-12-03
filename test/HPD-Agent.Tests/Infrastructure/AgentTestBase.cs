@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
 using HPD.Agent.Providers;
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Base class for all agent tests with AsyncLocal cleanup and background task tracking.

@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.Mistral;
+namespace HPD.Agent.Providers.Mistral;
 
 internal class MistralErrorHandler : IProviderErrorHandler
 {

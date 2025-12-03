@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 
 using System.Text.Json;
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 
 

@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.Anthropic;
+namespace HPD.Agent.Providers.Anthropic;
 
 internal class AnthropicErrorHandler : IProviderErrorHandler
 {

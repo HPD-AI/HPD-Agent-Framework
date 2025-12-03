@@ -1,5 +1,5 @@
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 /// <summary>
 /// Exception thrown when document content extraction fails (e.g., corrupted PDF, invalid file)

@@ -2,9 +2,9 @@ using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
 using HPD.Agent.Checkpointing;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Integration tests for checkpointing with the full agent loop.

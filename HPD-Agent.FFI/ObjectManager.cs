@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace HPD_Agent.FFI;
+namespace HPD.Agent.FFI;
 
 internal static class ObjectManager
 {

@@ -57,11 +57,11 @@ public static class ProviderDiscovery
     /// Required for Native AOT scenarios where automatic assembly loading is not available.
     /// In non-AOT scenarios, AgentBuilder automatically discovers and loads provider assemblies.
     /// </summary>
-    /// <typeparam name="TProviderModule">The provider module type (e.g., HPD_Agent.Providers.OpenRouter.OpenRouterProviderModule)</typeparam>
+    /// <typeparam name="TProviderModule">The provider module type (e.g., HPD.Agent.Providers.OpenRouter.OpenRouterProviderModule)</typeparam>
     /// <example>
     /// <code>
     /// // Native AOT: Explicitly load providers before creating AgentBuilder
-    /// ProviderDiscovery.LoadProvider&lt;HPD_Agent.Providers.OpenRouter.OpenRouterProviderModule&gt;();
+    /// ProviderDiscovery.LoadProvider&lt;HPD.Agent.Providers.OpenRouter.OpenRouterProviderModule&gt;();
     /// var agent = new AgentBuilder(config).Build();
     /// </code>
     /// </example>

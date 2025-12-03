@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.GoogleAI;
+namespace HPD.Agent.Providers.GoogleAI;
 
 internal class GoogleAIErrorHandler : IProviderErrorHandler
 {

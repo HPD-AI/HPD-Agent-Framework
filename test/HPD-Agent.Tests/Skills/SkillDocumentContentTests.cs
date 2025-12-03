@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Xunit;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for SkillDocumentContent - validates Phase 2 (type-safe records) functionality

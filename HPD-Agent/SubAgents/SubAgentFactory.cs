@@ -1,6 +1,6 @@
 using HPD.Agent;
 
-namespace HPD_Agent;
+namespace HPD.Agent;
 
 /// <summary>
 /// Factory for creating SubAgent objects with AgentConfig

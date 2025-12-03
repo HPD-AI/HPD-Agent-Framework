@@ -3,7 +3,7 @@ using System.Collections.Immutable;
 using Xunit;
 using HPD.Agent;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Unit tests for AgentDecisionEngine - demonstrates 1000x faster testing

@@ -1,9 +1,9 @@
 using HPD.Agent;
-using HPD_Agent.Skills.DocumentStore;
+using HPD.Agent.Skills.DocumentStore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Phase 6: Agent Retrieval Functions

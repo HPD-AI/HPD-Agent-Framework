@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
-using HPD_Agent.Skills.DocumentStore;
+using HPD.Agent.Skills.DocumentStore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -3,7 +3,7 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.OpenAI;
+namespace HPD.Agent.Providers.OpenAI;
 
 /// <summary>
 /// Error handler for OpenAI and Azure OpenAI providers.

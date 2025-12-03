@@ -5,7 +5,7 @@ using HPD.Agent.Middleware.Function;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Integration tests for ExecuteFunctionAsync pipeline in AgentMiddlewarePipeline.

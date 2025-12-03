@@ -1,12 +1,12 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using HPD.Agent;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using System.Text.Json;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// CRITICAL CHECKPOINT ROUND-TRIP TEST (Appendix C from proposal).

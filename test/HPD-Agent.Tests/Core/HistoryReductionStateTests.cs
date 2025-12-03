@@ -6,7 +6,7 @@ using HPD.Agent;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Unit tests for HistoryReductionState class.

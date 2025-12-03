@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Xunit;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for SkillOptions - validates Phase 1 (URL support) functionality

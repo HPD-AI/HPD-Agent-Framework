@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Collections.Generic;
 
-namespace HPD_Agent.FFI
+namespace HPD.Agent.FFI
 {
     /// <summary>
     /// Language-agnostic FFI bindings for external plugin systems.

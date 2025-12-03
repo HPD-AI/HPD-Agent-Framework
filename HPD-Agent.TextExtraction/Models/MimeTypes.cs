@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace HPD_Agent.TextExtraction.Models
+namespace HPD.Agent.TextExtraction.Models
 {
     public static class MimeTypes
     {

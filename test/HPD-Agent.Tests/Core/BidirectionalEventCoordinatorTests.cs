@@ -1,9 +1,9 @@
 using HPD.Agent;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Tests for BidirectionalEventCoordinator cycle detection and event bubbling.

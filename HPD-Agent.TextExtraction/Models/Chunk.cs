@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.TextExtraction.Models
+namespace HPD.Agent.TextExtraction.Models
 {
     public class Chunk
     {

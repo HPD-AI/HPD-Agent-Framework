@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.Providers.OpenRouter;
+namespace HPD.Agent.Providers.OpenRouter;
 
 /// <summary>
 /// OpenRouter-specific response models for handling reasoning content

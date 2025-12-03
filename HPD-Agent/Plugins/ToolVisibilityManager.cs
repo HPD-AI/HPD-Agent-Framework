@@ -2,7 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Collections.Immutable;
 
-namespace HPD_Agent.Scoping;
+namespace HPD.Agent.Scoping;
 
 public class ToolVisibilityManager
 {

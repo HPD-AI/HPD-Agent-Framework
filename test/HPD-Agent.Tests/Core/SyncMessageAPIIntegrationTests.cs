@@ -1,9 +1,9 @@
 using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 
-namespace HPD_Agent.Tests.Core;
+namespace HPD.Agent.Tests.Core;
 
 /// <summary>
 /// Integration tests for synchronous message API with the full agent.

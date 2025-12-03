@@ -2,7 +2,7 @@ using HPD.Agent;
 using HPD.Agent.ErrorHandling;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Quick test to verify the new WithErrorHandling() convenience method works correctly.

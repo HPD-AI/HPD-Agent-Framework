@@ -2,7 +2,7 @@ using System;
 using System.Text.RegularExpressions;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.AzureAIInference;
+namespace HPD.Agent.Providers.AzureAIInference;
 
 internal partial class AzureAIInferenceErrorHandler : IProviderErrorHandler
 {

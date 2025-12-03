@@ -13,7 +13,6 @@ using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
-using HPD_Agent.Memory.Agent.PlanMode;
 
 namespace HPD.Agent;
 
@@ -47,15 +46,15 @@ public class AgentBuilder
     /// Instance-based registrations for DI-required plugins (e.g., AgentPlanPlugin, DynamicMemoryPlugin).
     /// These plugins cannot be instantiated via the catalog because they require constructor parameters.
     /// </summary>
-    internal readonly List<PluginInstanceRegistration> _instanceRegistrations = new();
+    public readonly List<PluginInstanceRegistration> _instanceRegistrations = new();
     // store individual plugin contexts
     internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
     // Phase 5: Document store for skill instruction documents
-    internal HPD_Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
+    internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
     // Track explicitly registered plugins (for scoping manager)
     internal readonly HashSet<string> _explicitlyRegisteredPlugins = new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<Middleware.IAgentMiddleware> _middlewares = new(); // Unified middleware list
-    internal readonly HPD_Agent.Permissions.PermissionOverrideRegistry _permissionOverrides = new(); // Permission overrides
+    internal readonly HPD.Agent.Permissions.PermissionOverrideRegistry _permissionOverrides = new(); // Permission overrides
 
     // Function scope tracking for middleware scoping
     internal readonly Dictionary<string, string> _functionToPluginMap = new(); // functionName -> pluginTypeName
@@ -78,7 +77,7 @@ public class AgentBuilder
     internal object? _contextProviderFactory;
 
     // Text extraction utility for document processing (shared instance)
-    internal HPD_Agent.TextExtraction.TextExtractionUtility? _textExtractor;
+    public HPD.Agent.TextExtraction.TextExtractionUtility? _textExtractor;
 
     //     
     // AOT-COMPATIBLE PLUGIN REGISTRY (Phase: AOT Plugin Registry Hybrid)
@@ -427,7 +426,7 @@ public class AgentBuilder
     /// Documents are uploaded and validated during Build().
     /// </summary>
     /// <param name="documentStore">Document store implementation (InMemoryInstructionStore, FileSystemInstructionStore, etc.)</param>
-    public AgentBuilder WithDocumentStore(HPD_Agent.Skills.DocumentStore.IInstructionDocumentStore documentStore)
+    public AgentBuilder WithDocumentStore(HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore documentStore)
     {
         _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
         return this;
@@ -1223,11 +1222,11 @@ public class AgentBuilder
 
     /// <summary>
     /// Builds all dependencies needed for agent construction.
-    /// WARNING: This method uses reflection for MCP tool loading. It requires HPD_Agent.MCP assembly
+    /// WARNING: This method uses reflection for MCP tool loading. It requires HPD.Agent.MCP assembly
     /// and its public types to be preserved during AOT compilation. For Native AOT deployment,
     /// ensure MCPClientManager type is explicitly preserved in your rd.xml or RootDescriptor.
     /// </summary>
-    [RequiresUnreferencedCode("MCP tool loading via reflection. Requires HPD_Agent.MCP types preserved.")]
+    [RequiresUnreferencedCode("MCP tool loading via reflection. Requires HPD.Agent.MCP types preserved.")]
     private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
         // === PHASE 1: PROCESS SKILL DOCUMENTS (Before provider validation) ===
@@ -1678,9 +1677,9 @@ public class AgentBuilder
         if (_documentStore == null)
         {
             var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "agent-skills", "skill-documents");
-            var storeLogger = _logger?.CreateLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>()
-                ?? NullLogger<HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
-            _documentStore = new HPD_Agent.Skills.DocumentStore.FileSystemInstructionStore(
+            var storeLogger = _logger?.CreateLogger<HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore>()
+                ?? NullLogger<HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
+            _documentStore = new HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore(
                 storeLogger,
                 defaultPath);
             Console.WriteLine($"[ProcessSkillDocuments] Created default store at: {defaultPath}");
@@ -1765,7 +1764,7 @@ public class AgentBuilder
                 }
 
                 // ✅ Step 3: Pass content (not path) to store
-                var metadata = new HPD_Agent.Skills.DocumentStore.DocumentMetadata
+                var metadata = new HPD.Agent.Skills.DocumentStore.DocumentMetadata
                 {
                     Name = documentId,
                     Description = description
@@ -1799,7 +1798,7 @@ public class AgentBuilder
                     "Either upload it with AddDocumentFromFile() in another skill, upload externally via CLI/API, " +
                     "or ensure the skill that uploads it is registered.";
                 logger?.LogError(message);
-                throw new HPD_Agent.Skills.DocumentStore.DocumentNotFoundException(message, documentId);
+                throw new HPD.Agent.Skills.DocumentStore.DocumentNotFoundException(message, documentId);
             }
 
             logger?.LogDebug("Validated document reference {DocumentId} for skill {SkillName}", documentId, skillName);
@@ -1840,7 +1839,7 @@ public class AgentBuilder
                     var docMetadata = await _documentStore!.GetDocumentMetadataAsync(documentId, cancellationToken)
                         .ConfigureAwait(false);
 
-                    var skillDocMetadata = new HPD_Agent.Skills.DocumentStore.SkillDocumentMetadata
+                    var skillDocMetadata = new HPD.Agent.Skills.DocumentStore.SkillDocumentMetadata
                     {
                         Description = descriptionOverride ?? docMetadata?.Description ?? "No description"
                     };
@@ -2044,14 +2043,14 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Internal access to plugin contexts for extension methods
+    /// Public access to plugin contexts for extension methods and external configuration
     /// </summary>
-    internal Dictionary<string, IPluginMetadataContext?> PluginContexts => _pluginContexts;
+    public Dictionary<string, IPluginMetadataContext?> PluginContexts => _pluginContexts;
 
     /// <summary>
-    /// Internal access to unified middlewares for extension methods
+    /// Public access to unified middlewares for extension methods and external configuration
     /// </summary>
-    internal List<Middleware.IAgentMiddleware> Middlewares => _middlewares;
+    public List<Middleware.IAgentMiddleware> Middlewares => _middlewares;
 
     /// <summary>
     /// Internal access to permission Middlewares for extension methods
@@ -2972,52 +2971,6 @@ public static class AgentBuilderMemoryExtensions
     
 
     /// <summary>
-    /// Configures the agent's dynamic, editable working memory.
-    /// This enables a Full Text Injection (formerly CAG) system and provides the agent
-    /// with tools to manage its own persistent facts.
-    /// </summary>
-    public static AgentBuilder WithDynamicMemory(this AgentBuilder builder, Action<DynamicMemoryOptions> configure)
-    {
-        var options = new DynamicMemoryOptions();
-        configure(options);
-
-        // Set the config on the builder
-        builder.Config.DynamicMemory = new DynamicMemoryConfig
-        {
-            StorageDirectory = options.StorageDirectory,
-            MaxTokens = options.MaxTokens,
-            EnableAutoEviction = options.EnableAutoEviction,
-            AutoEvictionThreshold = options.AutoEvictionThreshold
-        };
-
-        // Use custom store if provided, otherwise create JsonDynamicMemoryStore (default)
-        var store = options.Store ?? new JsonDynamicMemoryStore(
-            options.StorageDirectory,
-            builder.Logger?.CreateLogger<JsonDynamicMemoryStore>());
-
-        // Use MemoryId if provided, otherwise fall back to agent name
-        var memoryId = options.MemoryId ?? builder.AgentName;
-        var plugin = new DynamicMemoryPlugin(store, memoryId, builder.Logger?.CreateLogger<DynamicMemoryPlugin>());
-        var middleware = new DynamicMemoryAgentMiddleware(store, options, builder.Logger?.CreateLogger<DynamicMemoryAgentMiddleware>());
-
-        // Register plugin and Middleware directly without cross-extension dependencies
-        RegisterDynamicMemoryPlugin(builder, plugin);
-        builder.Middlewares.Add(middleware);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Registers the memory plugin directly with the builder's instance registrations.
-    /// Uses AOT-compatible instance registration (generated Registration class for function creation).
-    /// </summary>
-    private static void RegisterDynamicMemoryPlugin(AgentBuilder builder, DynamicMemoryPlugin plugin)
-    {
-        var pluginName = typeof(DynamicMemoryPlugin).Name;
-        builder._instanceRegistrations.Add(new PluginInstanceRegistration(plugin, pluginName));
-        builder.PluginContexts[pluginName] = null; // No special context needed for memory plugin
-    }
-
     /// <summary>
     /// Configures conversation history reduction to manage context window size.
     /// Supports message-based reduction (keeps last N messages) or summarization (uses LLM to compress old messages).
@@ -3143,156 +3096,6 @@ public static class AgentBuilderMemoryExtensions
         historyConfig.SummarizerProvider = summarizerConfig;
 
         builder.Config.HistoryReduction = historyConfig;
-        return builder;
-    }
-
-    /// <summary>
-    /// Configures the agent's static knowledge base with FullTextInjection or IndexedRetrieval strategy.
-    /// This is read-only domain expertise (e.g., Python docs, design patterns, API references).
-    /// Different from DynamicMemory (which is dynamic and editable).
-    /// </summary>
-    /// <param name="builder">The agent builder instance</param>
-    /// <param name="configure">Configuration action for agent knowledge settings</param>
-    /// <returns>The builder for method chaining</returns>
-    /// <example>
-    /// <code>
-    /// builder.WithKnowledge(opts => {
-    ///     opts.Strategy = AgentKnowledgeStrategy.FullTextInjection;
-    ///     opts.StorageDirectory = "./knowledge/python-expert";
-    ///     opts.MaxTokens = 8000;
-    ///     opts.AddDocument("./docs/python-best-practices.md");
-    ///     opts.AddDocument("./docs/fastapi-patterns.md");
-    /// });
-    /// </code>
-    /// </example>
-    public static AgentBuilder WithStaticMemory(this AgentBuilder builder, Action<StaticMemoryOptions> configure)
-    {
-        var options = new StaticMemoryOptions();
-        configure(options);
-
-        var knowledgeId = options.KnowledgeId ?? options.AgentName ?? builder.AgentName;
-
-        if (options.Store == null)
-        {
-            // Reuse shared text extractor instance if available, otherwise create new one
-            builder._textExtractor ??= new HPD_Agent.TextExtraction.TextExtractionUtility();
-            options.Store = new JsonStaticMemoryStore(
-                options.StorageDirectory,
-                builder._textExtractor,
-                builder.Logger?.CreateLogger<JsonStaticMemoryStore>());
-        }
-
-        if (options.DocumentsToAdd.Any())
-        {
-            var store = options.Store;
-            // Get existing documents to avoid re-extracting
-            var existingDocs = store.GetDocumentsAsync(knowledgeId).GetAwaiter().GetResult();
-            
-            foreach (var doc in options.DocumentsToAdd)
-            {
-                if (store is JsonStaticMemoryStore jsonStore)
-                {
-                    // Check if document with this path already exists
-                    var fileName = Path.GetFileName(doc.PathOrUrl);
-                    var alreadyExists = existingDocs.Any(d => 
-                        d.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase) ||
-                        d.OriginalPath.Equals(doc.PathOrUrl, StringComparison.OrdinalIgnoreCase));
-                    
-                    if (alreadyExists)
-                    {
-                        // Skip - document already extracted and stored
-                        continue;
-                    }
-                    
-                    if (doc.PathOrUrl.StartsWith("http") || doc.PathOrUrl.StartsWith("https"))
-                    {
-                        jsonStore.AddDocumentFromUrlAsync(knowledgeId, doc.PathOrUrl, doc.Description, doc.Tags).GetAwaiter().GetResult();
-                    }
-                    else
-                    {
-                        jsonStore.AddDocumentFromFileAsync(knowledgeId, doc.PathOrUrl, doc.Description, doc.Tags).GetAwaiter().GetResult();
-                    }
-                }
-            }
-        }
-
-        if (options.Strategy == MemoryStrategy.FullTextInjection)
-        {
-            var middleware = new StaticMemoryAgentMiddleware(
-                options.Store,
-                knowledgeId,
-                options.MaxTokens,
-                builder.Logger?.CreateLogger<StaticMemoryAgentMiddleware>());
-            builder.Middlewares.Add(middleware);
-        }
-        else if (options.Strategy == MemoryStrategy.IndexedRetrieval)
-        {
-            // This is the placeholder for the future, more nuanced implementation.
-            throw new NotImplementedException(
-                "The IndexedRetrieval strategy is not yet implemented. A future version will use a flexible callback system.");
-        }
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Enables plan mode for the agent, allowing it to create and manage execution plans.
-    /// Plan mode provides AIFunctions for creating plans, updating steps, and tracking progress.
-    /// </summary>
-    public static AgentBuilder WithPlanMode(this AgentBuilder builder, Action<PlanModeOptions>? configure = null)
-    {
-        var options = new PlanModeOptions();
-        configure?.Invoke(options);
-
-        if (!options.Enabled)
-        {
-            return builder;
-        }
-
-        // Determine which store to use
-        AgentPlanStore store;
-        if (options.Store != null)
-        {
-            // Use custom store provided by user
-            store = options.Store;
-        }
-        else if (options.EnablePersistence)
-        {
-            // Use JSON file-based storage for persistence
-            store = new JsonAgentPlanStore(
-                options.StorageDirectory,
-                builder.Logger?.CreateLogger<JsonAgentPlanStore>());
-        }
-        else
-        {
-            // Default to in-memory storage (non-persistent)
-            store = new InMemoryAgentPlanStore(
-                builder.Logger?.CreateLogger<InMemoryAgentPlanStore>());
-        }
-
-        // Create config
-        var config = new PlanModeConfig
-        {
-            Enabled = options.Enabled,
-            CustomInstructions = options.CustomInstructions
-        };
-        builder.Config.PlanMode = config;
-
-        // Create plugin and middleware with store and config
-        var plugin = new AgentPlanPlugin(store, builder.Logger?.CreateLogger<AgentPlanPlugin>());
-        var middleware = new AgentPlanAgentMiddleware(
-            store,
-            config, // Pass config so middleware can inject instructions
-            builder.Logger?.CreateLogger<AgentPlanAgentMiddleware>());
-
-        // Register plugin directly (instance-based for DI plugins)
-        var pluginName = typeof(AgentPlanPlugin).Name;
-        builder._instanceRegistrations.Add(new PluginInstanceRegistration(plugin, pluginName));
-        builder.PluginContexts[pluginName] = null;
-
-        // Register middleware directly
-        builder.Middlewares.Add(middleware);
-
         return builder;
     }
 }

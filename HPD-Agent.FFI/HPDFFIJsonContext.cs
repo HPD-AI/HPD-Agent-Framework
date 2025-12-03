@@ -2,11 +2,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using HPD.Agent.Conversation;
-using HPD_Agent.FFI;
-using HPD_Agent.MCP;
+using HPD.Agent.FFI;
+using HPD.Agent.MCP;
+using HPD.Agent.Memory;
 
-namespace HPD_Agent.FFI;
+namespace HPD.Agent.FFI;
 
 /// <summary>
 /// JSON serialization context for HPD-Agent FFI exports (AOT-compatible).
@@ -53,13 +53,20 @@ namespace HPD_Agent.FFI;
 // --- Agent configuration types ---
 [JsonSerializable(typeof(AgentConfig))]
 [JsonSerializable(typeof(ProviderConfig))]
-[JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(McpConfig))]
 [JsonSerializable(typeof(ValidationConfig))]
 [JsonSerializable(typeof(ErrorHandlingConfig))]
 [JsonSerializable(typeof(DocumentHandlingConfig))]
 [JsonSerializable(typeof(HistoryReductionConfig))]
+
+// --- Memory configuration and types (from HPD-Agent.Memory) ---
+[JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(StaticMemoryConfig))]
+[JsonSerializable(typeof(PlanModeConfig))]
+[JsonSerializable(typeof(AgentPlan))]
+[JsonSerializable(typeof(PlanStep))]
+[JsonSerializable(typeof(PlanStepStatus))]
+[JsonSerializable(typeof(List<PlanStep>))]
 
 // --- Conversation and messaging types ---
 [JsonSerializable(typeof(ChatMessage))]
@@ -140,45 +147,14 @@ namespace HPD_Agent.FFI;
 [JsonSerializable(typeof(PermissionDecision))]
 
 // --- AGUI Protocol Types ---
-[JsonSerializable(typeof(RunAgentInput))]
-[JsonSerializable(typeof(BaseMessage))]
-[JsonSerializable(typeof(UserMessage))]
-[JsonSerializable(typeof(AssistantMessage))]
-[JsonSerializable(typeof(SystemMessage))]
-[JsonSerializable(typeof(DeveloperMessage))]
-[JsonSerializable(typeof(ToolMessage))]
-[JsonSerializable(typeof(BaseEvent))]
-[JsonSerializable(typeof(RunStartedEvent))]
-[JsonSerializable(typeof(RunFinishedEvent))]
-[JsonSerializable(typeof(RunErrorEvent))]
+
 [JsonSerializable(typeof(TextMessageStartEvent))]
-[JsonSerializable(typeof(TextMessageContentEvent))]
 [JsonSerializable(typeof(TextMessageEndEvent))]
-[JsonSerializable(typeof(TextMessageChunkEvent))]
-[JsonSerializable(typeof(ReasoningStartEvent))]
-[JsonSerializable(typeof(ReasoningEndEvent))]
-[JsonSerializable(typeof(ReasoningMessageStartEvent))]
-[JsonSerializable(typeof(ReasoningMessageContentEvent))]
-[JsonSerializable(typeof(ReasoningMessageEndEvent))]
 [JsonSerializable(typeof(ToolCallStartEvent))]
 [JsonSerializable(typeof(ToolCallArgsEvent))]
 [JsonSerializable(typeof(ToolCallEndEvent))]
-[JsonSerializable(typeof(ToolCallChunkEvent))]
 [JsonSerializable(typeof(ToolCallResultEvent))]
-[JsonSerializable(typeof(StepStartedEvent))]
-[JsonSerializable(typeof(StepFinishedEvent))]
-[JsonSerializable(typeof(StateDeltaEvent))]
 [JsonSerializable(typeof(StateSnapshotEvent))]
-[JsonSerializable(typeof(MessagesSnapshotEvent))]
-[JsonSerializable(typeof(FunctionPermissionRequestEvent))]
-[JsonSerializable(typeof(ContinuationPermissionRequestEvent))]
-[JsonSerializable(typeof(CustomEvent))]
-[JsonSerializable(typeof(RawEvent))]
-[JsonSerializable(typeof(Tool))]
-[JsonSerializable(typeof(Context))]
-[JsonSerializable(typeof(IReadOnlyList<BaseMessage>))]
-[JsonSerializable(typeof(IReadOnlyList<Tool>))]
-[JsonSerializable(typeof(IReadOnlyList<Context>))]
 
 public partial class HPDFFIJsonContext : JsonSerializerContext
 {

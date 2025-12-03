@@ -1,7 +1,7 @@
 using System;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.OnnxRuntime;
+namespace HPD.Agent.Providers.OnnxRuntime;
 
 internal class OnnxRuntimeErrorHandler : IProviderErrorHandler
 {

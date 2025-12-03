@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Helper for creating scoped plugins and testing container expansion.

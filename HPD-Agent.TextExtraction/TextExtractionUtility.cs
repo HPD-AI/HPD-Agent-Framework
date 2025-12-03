@@ -2,11 +2,11 @@ using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using HPD_Agent.TextExtraction.Interfaces;
-using HPD_Agent.TextExtraction.Models;
-using HPD_Agent.TextExtraction.Extensions;
+using HPD.Agent.TextExtraction.Interfaces;
+using HPD.Agent.TextExtraction.Models;
+using HPD.Agent.TextExtraction.Extensions;
 
-namespace HPD_Agent.TextExtraction
+namespace HPD.Agent.TextExtraction
 {
     /// <summary>
     /// Legacy interface for backward compatibility

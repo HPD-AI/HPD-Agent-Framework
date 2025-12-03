@@ -1,10 +1,10 @@
 using Xunit;
 using FluentAssertions;
 using Microsoft.Extensions.AI;
-using HPD_Agent.Scoping;
+using HPD.Agent.Scoping;
 using System.Collections.Immutable;
 
-namespace HPD_Agent.Tests.Scoping;
+namespace HPD.Agent.Tests.Scoping;
 
 /// <summary>
 /// Comprehensive tests for ToolVisibilityManager to validate all scoping scenarios.

@@ -45,16 +45,6 @@ public class AgentConfig
     public ValidationConfig? Validation { get; set; }
 
     /// <summary>
-    /// Configuration for the agent's Dynamic memory (Full Text Injection).
-    /// </summary>
-    public DynamicMemoryConfig? DynamicMemory { get; set; }
-
-    /// <summary>
-    /// Configuration for the agent's static knowledge base (read-only expertise).
-    /// </summary>
-    public StaticMemoryConfig? StaticMemory { get; set; }
-
-    /// <summary>
     /// Configuration for the Model Context Protocol (MCP).
     /// </summary>
     public McpConfig? Mcp { get; set; }
@@ -73,11 +63,6 @@ public class AgentConfig
     /// Configuration for conversation history reduction to manage context window size.
     /// </summary>
     public HistoryReductionConfig? HistoryReduction { get; set; }
-
-    /// <summary>
-    /// Configuration for plan mode - enables agents to create and manage execution plans.
-    /// </summary>
-    public PlanModeConfig? PlanMode { get; set; }
 
     /// <summary>
     /// Configuration for agentic loop safety controls (timeouts, circuit breakers).
@@ -341,66 +326,6 @@ public class AgentConfig
 }
 
 #region Supporting Configuration Classes
-
-/// <summary>
-/// Configuration for the agent's dynamic, editable working memory.
-/// Mirrors properties from AgentDynamicMemoryOptions.
-/// </summary>
-public class DynamicMemoryConfig
-{
-    /// <summary>
-    /// The root directory where agent memories will be stored.
-    /// </summary>
-    public string StorageDirectory { get; set; } = "./agent-Dynamic-memory-storage";
-
-    /// <summary>
-    /// The maximum number of tokens to include from the Dynamic memory.
-    /// </summary>
-    public int MaxTokens { get; set; } = 4000;
-
-    /// <summary>
-    /// Automatically evict old memories when approaching token limit.
-    /// </summary>
-    public bool EnableAutoEviction { get; set; } = true;
-
-    /// <summary>
-    /// Token threshold for triggering auto-eviction (percentage).
-    /// </summary>
-    public int AutoEvictionThreshold { get; set; } = 85;
-}
-
-/// <summary>
-/// Configuration for the agent's static knowledge base.
-/// This is read-only domain expertise (e.g., Python docs, design patterns, API references).
-/// Mirrors properties from AgentKnowledgeOptions.
-/// </summary>
-public class StaticMemoryConfig
-{
-    /// <summary>
-    /// Strategy for handling agent knowledge (FullTextInjection or IndexedRetrieval).
-    /// </summary>
-    public MemoryStrategy Strategy { get; set; } = MemoryStrategy.FullTextInjection;
-
-    /// <summary>
-    /// Directory where knowledge documents are stored.
-    /// </summary>
-    public string StorageDirectory { get; set; } = "./agent-static-memory";
-
-    /// <summary>
-    /// Maximum tokens to inject when using FullTextInjection strategy.
-    /// </summary>
-    public int MaxTokens { get; set; } = 8000;
-
-    /// <summary>
-    /// Optional agent name for scoping knowledge storage.
-    /// </summary>
-    public string? AgentName { get; set; }
-
-    /// <summary>
-    /// List of document paths or URLs to add at agent build time.
-    /// </summary>
-    public List<string> DocumentPaths { get; set; } = new();
-}
 
 /// <summary>
 /// Configuration for the Model Context Protocol (MCP).
@@ -867,24 +792,7 @@ public enum HistoryReductionStrategy
     Summarizing
 }
 
-/// <summary>
-/// Configuration for plan mode capabilities.
-/// Enables agents to create and manage execution plans for complex multi-step tasks.
-/// </summary>
-public class PlanModeConfig
-{
-    /// <summary>
-    /// Whether plan mode is enabled for this agent.
-    /// Default is true when configured via WithPlanMode().
-    /// </summary>
-    public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// Custom instructions to add to system prompt explaining plan mode usage.
-    /// If null, uses default instructions.
-    /// </summary>
-    public string? CustomInstructions { get; set; }
-}
 
 /// <summary>
 /// Configuration for agentic loop safety controls to prevent runaway execution.

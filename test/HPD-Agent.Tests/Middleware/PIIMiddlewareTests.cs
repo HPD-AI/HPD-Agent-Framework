@@ -3,7 +3,7 @@ using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Tests for PIIMiddleware - PII detection and handling.

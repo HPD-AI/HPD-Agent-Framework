@@ -1,6 +1,6 @@
 using HPD.Agent;
 
-namespace HPD_Agent;
+namespace HPD.Agent;
 
 /// <summary>
 /// Represents a callable sub-agent - another agent that can be invoked as a tool/function.

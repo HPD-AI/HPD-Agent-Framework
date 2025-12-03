@@ -54,25 +54,6 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
                 });
             });
 
-        // Memory configuration validation
-        When(config => config.DynamicMemory != null, () =>
-        {
-            RuleFor(config => config.DynamicMemory!.MaxTokens)
-                .GreaterThan(0)
-                .LessThanOrEqualTo(100000)
-                .WithMessage("InjectedMemory MaxTokens must be between 1 and 100,000.");
-
-            RuleFor(config => config.DynamicMemory!.AutoEvictionThreshold)
-                .InclusiveBetween(50, 95)
-                .WithMessage("AutoEvictionThreshold must be between 50 and 95 percent.");
-
-            RuleFor(config => config.DynamicMemory!.StorageDirectory)
-                .NotEmpty()
-                .WithMessage("InjectedMemory StorageDirectory must be specified.")
-                .Must(BeValidPath)
-                .WithMessage("InjectedMemory StorageDirectory must be a valid path.");
-        });
-
         // MCP configuration validation
         When(config => config.Mcp != null && !string.IsNullOrEmpty(config.Mcp.ManifestPath), () =>
         {
@@ -240,12 +221,11 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
     private static bool HaveReasonableResourceLimits(AgentConfig config)
     {
         // Check if the combination of settings might cause issues
-        var maxTokens = config.DynamicMemory?.MaxTokens ?? 0;
         var maxFunctionCalls = config.MaxAgenticIterations;
         var maxHistory = config.HistoryReduction?.TargetMessageCount ?? 20;
 
         // Warn if total potential token usage is very high
-        var estimatedMaxTokens = maxTokens + (maxHistory * 500) + (maxFunctionCalls * 200);
+        var estimatedMaxTokens = (maxHistory * 500) + (maxFunctionCalls * 200);
         return estimatedMaxTokens < 200000; // Reasonable upper limit
     }
 }

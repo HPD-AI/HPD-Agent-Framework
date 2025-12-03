@@ -1,9 +1,9 @@
 using Xunit;
-using HPD_Agent.Skills.DocumentStore;
+using HPD.Agent.Skills.DocumentStore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for Phase 2: Document Store Infrastructure

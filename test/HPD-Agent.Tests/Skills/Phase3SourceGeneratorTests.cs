@@ -1,8 +1,8 @@
 using Xunit;
 using HPD.Agent;
-using HPD_Agent.Skills;
+using HPD.Agent.Skills;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Phase 3: Source Generator Tests

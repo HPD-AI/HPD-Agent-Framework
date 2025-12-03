@@ -1,7 +1,7 @@
 using System.Text;
 using System.IO;
 using System.Text.Json;
-using HPD_Agent.TextExtraction;
+using HPD.Agent.TextExtraction;
 
 internal class JsonTextDecoder : ITextDecoder
 {

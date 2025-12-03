@@ -8,7 +8,7 @@ public class ViewDiagnostics
     public static void Main(string[] args)
     {
         var asm = Assembly.GetExecutingAssembly();
-        var diagnosticType = asm.GetType("HPD_Agent.Diagnostics.SourceGeneratorDiagnostic");
+        var diagnosticType = asm.GetType("HPD.Agent.Diagnostics.SourceGeneratorDiagnostic");
 
         if (diagnosticType != null)
         {

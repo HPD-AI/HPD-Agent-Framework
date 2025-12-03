@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 using HPD.Agent.FrontendTools;
-
+using HPD.Agent.Memory;
 var builder = WebApplication.CreateSlimBuilder(args);
 
 // Configure JSON serialization - chain app context with library context

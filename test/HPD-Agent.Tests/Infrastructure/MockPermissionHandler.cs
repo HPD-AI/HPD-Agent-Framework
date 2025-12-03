@@ -1,4 +1,4 @@
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 using HPD.Agent;
 /// <summary>
 /// Mock permission handler that automatically responds to permission requests during tests.

@@ -1,4 +1,4 @@
-namespace HPD_Agent.Tests.TestPlugins;
+namespace HPD.Agent.Tests.TestPlugins;
 
 /// <summary>
 /// Mock plugin with multiple functions for testing selective registration

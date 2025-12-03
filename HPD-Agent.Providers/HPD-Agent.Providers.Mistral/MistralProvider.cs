@@ -6,7 +6,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.Mistral;
+namespace HPD.Agent.Providers.Mistral;
 
 internal class MistralProvider : IProviderFeatures
 {

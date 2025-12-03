@@ -1,5 +1,5 @@
-using HPD_Agent.TextExtraction;
-using HPD_Agent.TextExtraction.Decoders;
+using HPD.Agent.TextExtraction;
+using HPD.Agent.TextExtraction.Decoders;
 
 namespace HPD.Agent.Middleware.Document;
 

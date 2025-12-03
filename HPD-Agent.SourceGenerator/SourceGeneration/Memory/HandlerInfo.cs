@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace HPD_Agent.SourceGenerator.Memory;
+namespace HPD.Agent.SourceGenerator.Memory;
 
 /// <summary>
 /// Information about a pipeline handler discovered during source generation.

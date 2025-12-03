@@ -1,15 +1,15 @@
 using Xunit;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
-using HPD_Agent.Skills;
-using HPD_Agent.Skills.DocumentStore;
+using HPD.Agent.Skills;
+using HPD.Agent.Skills.DocumentStore;
 using HPD.Agent;
 using System.IO;
 using System.Threading.Tasks;
 using System.Linq;
 using System;
 
-namespace HPD_Agent.Tests.Skills;
+namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
 /// Tests for Phase 5: Document Linking & Explicit Init

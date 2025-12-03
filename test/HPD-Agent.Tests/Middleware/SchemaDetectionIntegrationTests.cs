@@ -2,7 +2,7 @@
 
 using HPD.Agent;
 using HPD.Agent.Checkpointing;
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

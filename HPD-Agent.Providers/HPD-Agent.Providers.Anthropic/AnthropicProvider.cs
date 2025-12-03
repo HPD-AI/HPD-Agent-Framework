@@ -11,7 +11,7 @@ using Microsoft.Extensions.AI;
 using AnthropicChatOptionsExtensions = Anthropic.SDK.Extensions.ChatOptionsExtensions;
 using AnthropicSkill = Anthropic.SDK.Messaging.Skill;
 
-namespace HPD_Agent.Providers.Anthropic;
+namespace HPD.Agent.Providers.Anthropic;
 
 internal class AnthropicProvider : IProviderFeatures
 {

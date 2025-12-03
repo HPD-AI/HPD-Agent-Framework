@@ -2,7 +2,7 @@
 
 using System.Collections.Immutable;
 using HPD.Agent.Middleware;
-using HPD_Agent.Scoping;
+using HPD.Agent.Scoping;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent;

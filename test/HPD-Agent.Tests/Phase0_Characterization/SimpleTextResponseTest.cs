@@ -1,9 +1,9 @@
-using HPD_Agent.Tests.Infrastructure;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Xunit;
 using FluentAssertions;
 using HPD.Agent;
-namespace HPD_Agent.Tests.Phase0_Characterization;
+namespace HPD.Agent.Tests.Phase0_Characterization;
 
 /// <summary>
 /// Phase 0: Characterization Test - Simple Text Response

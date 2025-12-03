@@ -1,4 +1,4 @@
-﻿namespace HPD_Agent.Tests;
+﻿namespace HPD.Agent.Tests;
 
 public class UnitTest1
 {

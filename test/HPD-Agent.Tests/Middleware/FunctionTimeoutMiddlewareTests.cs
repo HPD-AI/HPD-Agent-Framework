@@ -3,7 +3,7 @@ using HPD.Agent.Middleware.Function;
 using Microsoft.Extensions.AI;
 using Xunit;
 
-namespace HPD_Agent.Tests.Middleware;
+namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Comprehensive tests for FunctionTimeoutMiddleware.

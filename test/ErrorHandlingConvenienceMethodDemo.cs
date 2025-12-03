@@ -1,7 +1,7 @@
 using HPD.Agent;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Demo;
+namespace HPD.Agent.Demo;
 
 /// <summary>
 /// Demonstrates the new WithErrorHandling() convenience method.

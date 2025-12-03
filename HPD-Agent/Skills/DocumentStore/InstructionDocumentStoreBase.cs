@@ -6,7 +6,7 @@ using System.Security.Cryptography;
 
 using System.Text;
 
-namespace HPD_Agent.Skills.DocumentStore;
+namespace HPD.Agent.Skills.DocumentStore;
 
 
 

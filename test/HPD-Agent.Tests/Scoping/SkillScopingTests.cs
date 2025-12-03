@@ -1,9 +1,9 @@
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
-using HPD_Agent.Scoping;
+using HPD.Agent.Scoping;
 using Xunit;
 
-namespace HPD_Agent.Tests.Scoping;
+namespace HPD.Agent.Tests.Scoping;
 
 /// <summary>
 /// Tests for skill scoping functionality in ToolVisibilityManager.

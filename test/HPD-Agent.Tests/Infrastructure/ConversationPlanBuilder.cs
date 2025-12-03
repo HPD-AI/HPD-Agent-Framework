@@ -1,7 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Collections.Generic;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Fluent API for scripting conversations using Microsoft's Plan Pattern.

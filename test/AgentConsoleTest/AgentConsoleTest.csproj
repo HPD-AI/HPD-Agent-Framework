@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
     <ProjectReference Include="../../HPD-Agent.Plugins/HPD-Agent.Plugins.FileSystem/HPD-Agent.Plugins.FileSystem.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj" />

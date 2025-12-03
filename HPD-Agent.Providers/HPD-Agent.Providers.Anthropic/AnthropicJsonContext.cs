@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.Providers.Anthropic;
+namespace HPD.Agent.Providers.Anthropic;
 
 /// <summary>
 /// JSON serialization context for Anthropic provider types.

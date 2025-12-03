@@ -342,7 +342,6 @@ public class ConsoleEventHandler : IAgentEventHandler
     {
         if (!_isFirstReasoningChunk || !_isFirstTextChunk)
         {
-            Console.WriteLine();
             Console.ResetColor();
             _isFirstReasoningChunk = true;
             _isFirstTextChunk = true;

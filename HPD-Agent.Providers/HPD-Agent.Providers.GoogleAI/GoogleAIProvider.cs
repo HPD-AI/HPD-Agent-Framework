@@ -7,7 +7,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.GoogleAI;
+namespace HPD.Agent.Providers.GoogleAI;
 
 internal class GoogleAIProvider : IProviderFeatures
 {

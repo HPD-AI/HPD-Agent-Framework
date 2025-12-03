@@ -9,7 +9,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.OpenAI;
+namespace HPD.Agent.Providers.OpenAI;
 
 internal class OpenAIProvider : IProviderFeatures
 {

@@ -3,13 +3,13 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using HPD_Agent.TextExtraction.Extensions;
-using HPD_Agent.TextExtraction.Interfaces;
-using HPD_Agent.TextExtraction.Models;
+using HPD.Agent.TextExtraction.Extensions;
+using HPD.Agent.TextExtraction.Interfaces;
+using HPD.Agent.TextExtraction.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace HPD_Agent.TextExtraction.Decoders
+namespace HPD.Agent.TextExtraction.Decoders
 {
     /// <summary>
     /// Image decoder with OCR support

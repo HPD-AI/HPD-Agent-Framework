@@ -9,7 +9,7 @@ using HPD.Agent;
 using HPD.Agent.AGUI;
 using ConversationThread = HPD.Agent.ConversationThread;
 
-namespace HPD_Agent.FFI;
+namespace HPD.Agent.FFI;
 
 
 /// <summary>

@@ -6,7 +6,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.Ollama;
+namespace HPD.Agent.Providers.Ollama;
 
 internal class OllamaProvider : IProviderFeatures
 {

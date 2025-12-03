@@ -1,5 +1,5 @@
 using System.Text;
-using HPD_Agent.TextExtraction;
+using HPD.Agent.TextExtraction;
 
 internal class MarkdownTextDecoder : ITextDecoder
 {

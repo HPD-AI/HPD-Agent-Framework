@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using HPD.Agent;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// In-memory implementation of IPermissionStorage for testing.

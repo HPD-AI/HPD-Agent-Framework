@@ -6,7 +6,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.HuggingFace;
+namespace HPD.Agent.Providers.HuggingFace;
 
 internal class HuggingFaceProvider : IProviderFeatures
 {

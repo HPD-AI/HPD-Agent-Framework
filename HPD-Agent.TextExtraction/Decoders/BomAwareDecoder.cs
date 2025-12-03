@@ -1,5 +1,5 @@
 using System.Text;
-using HPD_Agent.TextExtraction;
+using HPD.Agent.TextExtraction;
 
 // --- BomAwareDecoder ---
 public sealed class BomAwareDecoder : ITextDecoder

@@ -1,5 +1,5 @@
 using HPD.Agent.Middleware;
-using HPD_Agent.Permissions;
+using HPD.Agent.Permissions;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Permissions;

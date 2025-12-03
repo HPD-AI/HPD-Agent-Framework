@@ -1,7 +1,7 @@
 using HPD.Agent;
-using HPD_Agent;
+using HPD.Agent;
 
-namespace HPD_Agent.Tests.TestPlugins;
+namespace HPD.Agent.Tests.TestPlugins;
 
 /// <summary>
 /// Test plugin that combines all three capability types: AIFunctions, Skills, and SubAgents.

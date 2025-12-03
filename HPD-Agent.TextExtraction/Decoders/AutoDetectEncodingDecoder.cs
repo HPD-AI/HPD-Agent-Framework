@@ -1,6 +1,6 @@
 using System.Text;
 using UtfUnknown; // Required for AutoDetectEncodingDecoder
-using HPD_Agent.TextExtraction;
+using HPD.Agent.TextExtraction;
 
 // --- AutoDetectEncodingDecoder ---
 public sealed class AutoDetectEncodingDecoder : ITextDecoder

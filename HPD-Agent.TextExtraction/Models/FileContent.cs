@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace HPD_Agent.TextExtraction.Models
+namespace HPD.Agent.TextExtraction.Models
 {
     public class FileContent
     {

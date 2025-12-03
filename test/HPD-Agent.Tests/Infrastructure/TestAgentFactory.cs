@@ -2,7 +2,7 @@ using Microsoft.Extensions.AI;
 using HPD.Agent.Providers;
 using HPD.Agent;
 
-namespace HPD_Agent.Tests.Infrastructure;
+namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Factory for creating Agent instances in tests with minimal setup.

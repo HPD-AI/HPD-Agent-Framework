@@ -7,7 +7,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.AzureAIInference;
+namespace HPD.Agent.Providers.AzureAIInference;
 
 internal class AzureAIInferenceProvider : IProviderFeatures
 {

@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-namespace HPD_Agent.Permissions;
+namespace HPD.Agent.Permissions;
 
 /// <summary>
 /// Registry for overriding permission requirements at runtime.

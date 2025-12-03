@@ -1,7 +1,7 @@
 using Xunit;
 using HPD.Agent;
 
-namespace HPD_Agent.Tests.SubAgents;
+namespace HPD.Agent.Tests.SubAgents;
 
 /// <summary>
 /// SubAgent Source Generator Tests

@@ -1,5 +1,5 @@
 using HPD.Agent;
-using HPD_Agent;
+using HPD.Agent;
 
 /// <summary>
 /// Example specialized agents that can be called as tools by parent agents

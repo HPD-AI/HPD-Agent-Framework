@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using HPD.Agent.ErrorHandling;
 
-namespace HPD_Agent.Providers.Bedrock;
+namespace HPD.Agent.Providers.Bedrock;
 
 internal class BedrockErrorHandler : IProviderErrorHandler
 {

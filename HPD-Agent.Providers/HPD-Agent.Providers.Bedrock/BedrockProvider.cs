@@ -7,7 +7,7 @@ using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
-namespace HPD_Agent.Providers.Bedrock;
+namespace HPD.Agent.Providers.Bedrock;
 
 internal class BedrockProvider : IProviderFeatures
 {
