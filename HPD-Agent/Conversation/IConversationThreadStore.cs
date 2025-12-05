@@ -25,28 +25,18 @@ public enum CheckpointRetentionMode
 }
 
 /// <summary>
-/// Interface for persisting and loading ConversationThread state.
-/// Implementations can use databases, file systems, cloud storage, etc.
-///
-/// This interface combines thread storage with checkpointing capabilities:
-/// - Save/Load entire conversation threads (messages + metadata)
-/// - Preserve execution state (AgentLoopState) for resumption
-/// - Support pending writes for partial failure recovery
-/// - Optional full history for time-travel debugging
-///
-/// INTERNAL: Framework-level interface for thread persistence and checkpointing.
+/// Basic interface for persisting and loading ConversationThread state.
+/// Provides simple CRUD operations for conversation threads.
 /// </summary>
-internal interface IConversationThreadStore
+/// <remarks>
+/// Use this interface when you only need basic thread persistence without
+/// advanced checkpoint management features like history, pruning, or pending writes.
+/// </remarks>
+public interface IThreadStore
 {
-    /// <summary>
-    /// Gets the checkpoint retention mode for this store.
-    /// </summary>
-    CheckpointRetentionMode RetentionMode { get; }
-
     /// <summary>
     /// Load a thread from persistent storage by ID.
     /// Returns null if thread doesn't exist.
-    /// If RetentionMode is FullHistory, loads the latest checkpoint.
     /// </summary>
     Task<ConversationThread?> LoadThreadAsync(
         string threadId,
@@ -59,10 +49,6 @@ internal interface IConversationThreadStore
     /// - Messages (via MessageStore)
     /// - ExecutionState (AgentLoopState, if present)
     /// - Custom metadata
-    ///
-    /// Behavior depends on RetentionMode:
-    /// - LatestOnly: UPSERT (overwrites existing checkpoint)
-    /// - FullHistory: INSERT (creates new checkpoint with unique ID)
     /// </summary>
     Task SaveThreadAsync(
         ConversationThread thread,
@@ -77,13 +63,31 @@ internal interface IConversationThreadStore
 
     /// <summary>
     /// Delete a thread from persistent storage.
-    /// If RetentionMode is FullHistory, deletes all checkpoints for the thread.
     /// </summary>
     Task DeleteThreadAsync(
         string threadId,
         CancellationToken cancellationToken = default);
+}
 
-    // ===== CLEANUP METHODS (REQUIRED) =====
+/// <summary>
+/// Extended interface for checkpoint management with advanced features.
+/// Extends IThreadStore with checkpoint history, pruning, cleanup, and pending writes.
+/// </summary>
+/// <remarks>
+/// Use this interface when you need:
+/// - Checkpoint history (time-travel debugging)
+/// - Checkpoint pruning and cleanup
+/// - Pending writes for partial failure recovery
+/// - Age-based or inactivity-based cleanup
+/// </remarks>
+public interface ICheckpointStore : IThreadStore
+{
+    /// <summary>
+    /// Gets the checkpoint retention mode for this store.
+    /// </summary>
+    CheckpointRetentionMode RetentionMode { get; }
+
+    // ===== CLEANUP METHODS =====
 
     /// <summary>
     /// Prune old checkpoints for a thread (FullHistory mode only).
@@ -94,13 +98,7 @@ internal interface IConversationThreadStore
     Task PruneCheckpointsAsync(
         string threadId,
         int keepLatest = 10,
-        CancellationToken cancellationToken = default)
-    {
-        if (RetentionMode != CheckpointRetentionMode.FullHistory)
-            return Task.CompletedTask; // No-op for LatestOnly
-
-        throw new NotImplementedException("Implement checkpoint pruning logic");
-    }
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Delete all checkpoints older than the specified cutoff date.
@@ -108,10 +106,7 @@ internal interface IConversationThreadStore
     /// </summary>
     Task DeleteOlderThanAsync(
         DateTime cutoff,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Implement age-based cleanup logic");
-    }
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Delete threads that have been inactive for longer than the threshold.
@@ -123,12 +118,9 @@ internal interface IConversationThreadStore
     Task<int> DeleteInactiveThreadsAsync(
         TimeSpan inactivityThreshold,
         bool dryRun = false,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotImplementedException("Implement inactive thread cleanup logic");
-    }
+        CancellationToken cancellationToken = default);
 
-    // ===== PENDING WRITES METHODS (REQUIRED) =====
+    // ===== PENDING WRITES METHODS =====
 
     /// <summary>
     /// Save pending writes for a specific checkpoint.
@@ -170,8 +162,8 @@ internal interface IConversationThreadStore
         string checkpointId,
         CancellationToken cancellationToken = default);
 
-    // ===== OPTIONAL: Full History Methods =====
-    // Only implement these if RetentionMode == FullHistory
+    // ===== FULL HISTORY METHODS =====
+    // These methods are only meaningful when RetentionMode == FullHistory
 
     /// <summary>
     /// Load a specific checkpoint by ID (FullHistory mode only).
@@ -180,10 +172,7 @@ internal interface IConversationThreadStore
     Task<ConversationThread?> LoadThreadAtCheckpointAsync(
         string threadId,
         string checkpointId,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotSupportedException($"LoadThreadAtCheckpointAsync requires RetentionMode.FullHistory");
-    }
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Get checkpoint history for a thread (FullHistory mode only).
@@ -193,10 +182,16 @@ internal interface IConversationThreadStore
         string threadId,
         int? limit = null,
         DateTime? before = null,
-        CancellationToken cancellationToken = default)
-    {
-        throw new NotSupportedException($"GetCheckpointHistoryAsync requires RetentionMode.FullHistory");
-    }
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Combined interface for backward compatibility.
+/// Equivalent to ICheckpointStore - use IThreadStore or ICheckpointStore directly for new code.
+/// </summary>
+[Obsolete("Use IThreadStore for simple persistence or ICheckpointStore for advanced features")]
+public interface IConversationThreadStore : ICheckpointStore
+{
 }
 
 /// <summary>

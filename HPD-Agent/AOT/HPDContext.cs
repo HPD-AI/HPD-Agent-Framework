@@ -81,6 +81,10 @@ using HPD.Agent;
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]
 
+// --- Checkpointing types ---
+[JsonSerializable(typeof(HPD.Agent.Checkpointing.PendingWrite))]
+[JsonSerializable(typeof(List<HPD.Agent.Checkpointing.PendingWrite>))]
+
 // --- Document store types ---
 [JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]
 

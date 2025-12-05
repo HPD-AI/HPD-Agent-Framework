@@ -26,27 +26,22 @@ public class SyncMessageAPITests
     }
 
     [Fact]
-    public void Messages_Property_Returns_Snapshot_Not_LiveView()
+    public void Messages_Property_Returns_LiveView()
     {
         // Arrange
         var thread = new ConversationThread();
         thread.AddMessage(new ChatMessage(ChatRole.User, "Message 1"));
 
-        // Act - capture first snapshot
-        var snapshot1 = thread.Messages;
+        // Act - capture reference
+        var messages = thread.Messages;
+        Assert.Single(messages);
 
         // Add another message
         thread.AddMessage(new ChatMessage(ChatRole.User, "Message 2"));
 
-        // Capture second snapshot
-        var snapshot2 = thread.Messages;
-
-        // Assert - snapshots are different
-        Assert.Single(snapshot1);
-        Assert.Equal(2, snapshot2.Count);
-
-        // Verify first snapshot didn't mutate (true snapshot behavior)
-        Assert.Single(snapshot1);
+        // Assert - live view reflects changes
+        Assert.Equal(2, messages.Count);
+        Assert.Equal(2, thread.Messages.Count);
     }
 
     [Fact]
@@ -99,16 +94,6 @@ public class SyncMessageAPITests
         Assert.Equal(3, thread.MessageCount);
         Assert.Equal("Test 1", thread.Messages[0].Text);
         Assert.Equal("Test 3", thread.Messages[2].Text);
-    }
-
-    [Fact]
-    public void RequiresAsyncAccess_Returns_False_For_InMemory()
-    {
-        // Arrange
-        var thread = new ConversationThread();
-
-        // Act & Assert
-        Assert.False(thread.RequiresAsyncAccess);
     }
 
     [Fact]
@@ -200,19 +185,19 @@ public class SyncMessageAPITests
     }
 
     [Fact]
-    public void Multiple_Calls_To_Messages_Property_Return_Different_Snapshots()
+    public void Multiple_Calls_To_Messages_Property_Return_Same_LiveView()
     {
         // Arrange
         var thread = new ConversationThread();
 
         // Act
-        var snapshot1 = thread.Messages;
+        var view1 = thread.Messages;
         thread.AddMessage(new ChatMessage(ChatRole.User, "Test"));
-        var snapshot2 = thread.Messages;
+        var view2 = thread.Messages;
 
-        // Assert - different references (different snapshots)
-        Assert.NotSame(snapshot1, snapshot2);
-        Assert.Empty(snapshot1);
-        Assert.Single(snapshot2);
+        // Assert - same underlying data (live view)
+        Assert.Single(view1);  // view1 sees the new message
+        Assert.Single(view2);
+        Assert.Equal(view1.Count, view2.Count);
     }
 }

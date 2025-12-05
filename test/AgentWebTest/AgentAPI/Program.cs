@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
+using HPD.Agent.Checkpointing;
 using HPD.Agent.FrontendTools;
 using HPD.Agent.Memory;
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -36,6 +37,9 @@ builder.Services.AddCors(options =>
 });
 
 // Register services
+var checkpointPath = Path.Combine(Environment.CurrentDirectory, "checkpoints");
+builder.Services.AddSingleton<IThreadStore>(
+    new JsonConversationThreadStore(checkpointPath, CheckpointRetentionMode.LatestOnly));
 builder.Services.AddSingleton<ConversationManager>();
 
 var app = builder.Build();
@@ -68,6 +72,29 @@ conversationsApi.MapGet("/{conversationId}", (string conversationId, Conversatio
 
 conversationsApi.MapDelete("/{conversationId}", (string conversationId, ConversationManager cm) =>
     cm.DeleteConversation(conversationId) ? Results.NoContent() : Results.NotFound());
+
+// List all persisted conversations
+conversationsApi.MapGet("/", async (ConversationManager cm) =>
+{
+    var ids = await cm.ListConversationIdsAsync();
+    var conversations = new List<ConversationDto>();
+
+    foreach (var id in ids)
+    {
+        var thread = await cm.GetConversationAsync(id);
+        if (thread != null)
+        {
+            conversations.Add(new ConversationDto(
+                thread.Id,
+                thread.DisplayName ?? "Conversation",
+                thread.CreatedAt,
+                thread.LastActivity,
+                thread.MessageCount));
+        }
+    }
+
+    return Results.Ok(conversations);
+});
 
 // Agent API
 var agentApi = app.MapGroup("/agent").WithTags("Agent");
@@ -188,6 +215,10 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
 
         Console.WriteLine($"[ENDPOINT] Completed agent.RunAsync - total events: {eventCount}");
 
+        // Save checkpoint after successful completion
+        await cm.SaveCheckpointAsync(thread);
+        Console.WriteLine($"[ENDPOINT] Checkpoint saved for conversation {conversationId}");
+
         // Send completion event using standard format
         await writer.WriteAsync("data: {\"version\":\"1.0\",\"type\":\"COMPLETE\"}\n\n");
         await writer.FlushAsync();
@@ -269,6 +300,9 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
             }
         }
 
+        // Save checkpoint after successful completion
+        await cm.SaveCheckpointAsync(thread);
+
         await webSocket.CloseAsync(
             System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
             "Completed",
@@ -308,25 +342,94 @@ app.Run();
 // Conversation Manager
 internal class ConversationManager
 {
-    private readonly Dictionary<string, ConversationThread> _conversations = new();
+    private readonly IThreadStore _store;
+    private readonly Dictionary<string, ConversationThread> _threadCache = new(); // In-memory cache
     private readonly Dictionary<string, Agent> _runningAgents = new(); // Track active agents
     private readonly InMemoryPermissionStorage _permissionStorage = new();
 
-    public ConversationThread CreateConversation()
+    public ConversationManager(IThreadStore store)
+    {
+        _store = store;
+    }
+
+    public async Task<ConversationThread> CreateConversationAsync()
     {
         var thread = new ConversationThread();
-        _conversations[thread.Id] = thread;
+        _threadCache[thread.Id] = thread;
+        await _store.SaveThreadAsync(thread);
         return thread;
     }
 
-    public ConversationThread? GetConversation(string conversationId) =>
-        _conversations.GetValueOrDefault(conversationId);
+    // Sync version for backward compatibility (creates without persisting initially)
+    public ConversationThread CreateConversation()
+    {
+        var thread = new ConversationThread();
+        _threadCache[thread.Id] = thread;
+        // Fire-and-forget save
+        _ = _store.SaveThreadAsync(thread);
+        return thread;
+    }
 
+    public async Task<ConversationThread?> GetConversationAsync(string conversationId)
+    {
+        // Check cache first
+        if (_threadCache.TryGetValue(conversationId, out var cached))
+            return cached;
+
+        // Load from store
+        var thread = await _store.LoadThreadAsync(conversationId);
+        if (thread != null)
+            _threadCache[conversationId] = thread;
+
+        return thread;
+    }
+
+    // Sync version for backward compatibility
+    public ConversationThread? GetConversation(string conversationId)
+    {
+        // Check cache first
+        if (_threadCache.TryGetValue(conversationId, out var cached))
+            return cached;
+
+        // Sync-over-async (not ideal but maintains compatibility)
+        var thread = _store.LoadThreadAsync(conversationId).GetAwaiter().GetResult();
+        if (thread != null)
+            _threadCache[conversationId] = thread;
+
+        return thread;
+    }
+
+    public async Task<bool> DeleteConversationAsync(string conversationId)
+    {
+        _threadCache.Remove(conversationId);
+        _runningAgents.Remove(conversationId);
+        await _store.DeleteThreadAsync(conversationId);
+        return true;
+    }
+
+    // Sync version for backward compatibility
     public bool DeleteConversation(string conversationId)
     {
-        _conversations.Remove(conversationId);
-        _runningAgents.Remove(conversationId); // Clean up agent reference
+        _threadCache.Remove(conversationId);
+        _runningAgents.Remove(conversationId);
+        _ = _store.DeleteThreadAsync(conversationId);
         return true;
+    }
+
+    /// <summary>
+    /// Save a conversation thread checkpoint after agent run completes.
+    /// </summary>
+    public async Task SaveCheckpointAsync(ConversationThread thread)
+    {
+        await _store.SaveThreadAsync(thread);
+    }
+
+    /// <summary>
+    /// List all conversation IDs (from persistent storage).
+    /// </summary>
+    public async Task<List<string>> ListConversationIdsAsync()
+    {
+        return await _store.ListThreadIdsAsync();
     }
 
     public async Task<Agent> GetAgentAsync(string conversationId, IAgentEventHandler? eventHandler = null)

@@ -1625,7 +1625,7 @@ public sealed class Agent
     private void SavePendingWritesFireAndForget(
         ChatMessage toolResultMessage,
         AgentLoopState state,
-        IConversationThreadStore threadStore,
+        ICheckpointStore threadStore,
         string threadId)
     {
         // Extract successful function results

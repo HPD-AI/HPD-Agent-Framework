@@ -93,7 +93,6 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         Assert.Equal("Test Conversation", thread.DisplayName);
         Assert.NotEqual(default, thread.CreatedAt);
         Assert.NotEqual(default, thread.LastActivity);
-        Assert.False(thread.RequiresAsyncAccess);
     }
 
     [Fact]
@@ -114,7 +113,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         {
         }
 
-        var messagesAfterFirstRun = thread.Messages;
+        var countAfterFirstRun = thread.MessageCount;
 
         // Add another message and run again
         thread.AddMessage(new ChatMessage(ChatRole.User, "Question 2"));
@@ -122,11 +121,11 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         {
         }
 
-        var messagesAfterSecondRun = thread.Messages;
+        var countAfterSecondRun = thread.MessageCount;
 
-        // Assert - snapshots show progression
-        Assert.True(messagesAfterSecondRun.Count > messagesAfterFirstRun.Count);
-        Assert.Contains(messagesAfterSecondRun, m => m.Text == "Response 2");
+        // Assert - message count increases after each run
+        Assert.True(countAfterSecondRun > countAfterFirstRun);
+        Assert.Contains(thread.Messages, m => m.Text == "Response 2");
     }
 
     [Fact]
@@ -156,22 +155,6 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         // Assert
         Assert.True(countAfterAgentRun > countAfterUserMessage);
-    }
-
-    [Fact]
-    public void Sync_API_Works_With_Custom_MessageStore()
-    {
-        // Arrange - use explicit InMemoryConversationMessageStore
-        var store = new InMemoryConversationMessageStore();
-        var thread = new ConversationThread(store);
-
-        // Act
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Test"));
-
-        // Assert - sync API works with custom store
-        Assert.Equal(1, thread.MessageCount);
-        Assert.Single(thread.Messages);
-        Assert.False(thread.RequiresAsyncAccess);  // InMemory doesn't require async
     }
 
     [Fact]

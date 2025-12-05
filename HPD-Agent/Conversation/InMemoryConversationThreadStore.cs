@@ -13,7 +13,7 @@ namespace HPD.Agent.Checkpointing;
 /// Thread-safe for concurrent access using ConcurrentDictionary.
 /// In production, use a database-backed store (e.g., PostgresConversationThreadStore).
 /// </remarks>
-public class InMemoryConversationThreadStore : IConversationThreadStore
+public class InMemoryConversationThreadStore : ICheckpointStore
 {
     // LatestOnly mode: single checkpoint per thread (stored as JSON element)
     private readonly ConcurrentDictionary<string, JsonElement> _checkpoints = new();

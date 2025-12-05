@@ -135,7 +135,7 @@ public class AgentConfig
     /// </para>
     /// </remarks>
     [JsonIgnore]
-    internal IConversationThreadStore? ThreadStore { get; set; }
+    internal ICheckpointStore? ThreadStore { get; set; }
 
     /// <summary>
     /// Checkpoint frequency (per turn, per iteration, or manual).
