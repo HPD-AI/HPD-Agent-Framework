@@ -18,6 +18,13 @@ internal class OnnxRuntimeProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Creates an IChatClient configured to use an ONNX Runtime model.
+    /// </summary>
+    /// <param name="config">Provider configuration. Must provide the model path via AdditionalProperties["ModelPath"] or the ONNX_MODEL_PATH environment variable. Optional AdditionalProperties keys: "StopSequences" (IList&lt;string&gt;), "EnableCaching" (bool), and "PromptFormatter" (Func&lt;IEnumerable&lt;ChatMessage&gt;, ChatOptions?, string&gt;).</param>
+    /// <param name="services">Optional service provider for dependency resolution (may be null).</param>
+    /// <returns>An IChatClient instance configured to use the specified ONNX model and options.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no model path is configured.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         string modelPath = null;

@@ -22,6 +22,13 @@ internal class OpenAIProvider : IProviderFeatures
         ProviderCapabilities.Audio |
         ProviderCapabilities.Embeddings;
 
+    /// <summary>
+    /// Creates an IChatClient configured for the specified OpenAI model and API key.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the API key and model/deployment name; the API key must be provided and the model name selects the target model or deployment.</param>
+    /// <param name="services">Optional service provider for additional dependencies (may be null).</param>
+    /// <returns>An IChatClient instance configured to communicate with OpenAI using the provided model and API key.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="config"/>.ApiKey is null or empty.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))
@@ -77,6 +84,12 @@ internal class AzureOpenAIProvider : IProviderFeatures
         ProviderCapabilities.Vision |
         ProviderCapabilities.Embeddings;
 
+    /// <summary>
+    /// Creates an IChatClient connected to the specified Azure OpenAI deployment.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the Azure endpoint (Endpoint), API key (ApiKey), and model/deployment name (ModelName).</param>
+    /// <returns>An IChatClient for the configured Azure OpenAI model/deployment.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="config"/>.Endpoint is null or empty ("Azure OpenAI requires an endpoint") or when <paramref name="config"/>.ApiKey is null or empty ("Azure OpenAI requires an API key").</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.Endpoint))

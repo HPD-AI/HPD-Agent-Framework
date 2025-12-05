@@ -117,6 +117,14 @@ public class AgentBuilder
     /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
 #pragma warning disable IL2026
+    /// <summary>
+    /// Initializes a new AgentBuilder configured for the calling assembly.
+    /// </summary>
+    /// <remarks>
+    /// Captures the caller's assembly to drive plugin discovery, creates a default <see cref="AgentConfig"/>,
+    /// obtains the provider registry singleton, loads the plugin registry from the captured assembly,
+    /// and registers any discovered providers.
+    /// </remarks>
     public AgentBuilder()
     {
         // Capture calling assembly FIRST, before any method calls
@@ -135,6 +143,11 @@ public class AgentBuilder
     /// Provider assemblies are automatically discovered via ProviderAutoDiscovery ModuleInitializer.
     /// </summary>
 #pragma warning disable IL2026
+    /// <summary>
+    /// Initializes a new AgentBuilder using the provided agent configuration and loads plugin registry and discovered providers from the calling assembly.
+    /// </summary>
+    /// <param name="config">Configuration settings used to construct and configure the agent.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is null.</exception>
     public AgentBuilder(AgentConfig config)
     {
         // Capture calling assembly FIRST, before any method calls
@@ -166,7 +179,12 @@ public class AgentBuilder
     /// <summary>
     /// Registers all providers that were discovered by ProviderAutoDiscovery ModuleInitializer.
     /// Provider assemblies are loaded and their ModuleInitializers run before this is called.
+    /// <summary>
+    /// Acknowledges that provider implementations are already registered in the ProviderRegistry singleton.
     /// </summary>
+    /// <remarks>
+    /// This method is intentionally a no-op because providers are auto-registered via ModuleInitializers to ProviderRegistry.Instance.
+    /// </remarks>
     private void RegisterDiscoveredProviders()
     {
         // Providers now auto-register via ModuleInitializers to ProviderRegistry.Instance
@@ -354,7 +372,13 @@ public class AgentBuilder
     /// <param name="jsonFilePath">Path to the JSON file containing AgentConfig data.</param>
     /// <exception cref="ArgumentException">Thrown when the file path is null or empty.</exception>
     /// <exception cref="FileNotFoundException">Thrown when the specified file does not exist.</exception>
-    /// <exception cref="JsonException">Thrown when the JSON is invalid or cannot be deserialized.</exception>
+    /// <summary>
+    /// Initializes a new AgentBuilder by loading configuration from the specified JSON file and registering discovered providers and plugins.
+    /// </summary>
+    /// <param name="jsonFilePath">Path to a JSON file containing an AgentConfig document.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="jsonFilePath"/> is null, empty, or whitespace.</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the file at <paramref name="jsonFilePath"/> does not exist.</exception>
+    /// <exception cref="JsonException">Thrown when the file cannot be read, the JSON is invalid, or deserialization to <see cref="AgentConfig"/> fails.</exception>
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly loading uses reflection in non-AOT scenarios")]
     public AgentBuilder(string jsonFilePath)
     {

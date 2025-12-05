@@ -18,6 +18,11 @@ internal class OllamaProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Creates an IChatClient configured to talk to the specified Ollama model endpoint.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the model name and an optional endpoint; when <see cref="ProviderConfig.Endpoint"/> is not set, the local endpoint http://localhost:11434 is used.</param>
+    /// <returns>An IChatClient instance configured for the configured Ollama model and endpoint.</returns>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         var endpoint = string.IsNullOrEmpty(config.Endpoint) ? new Uri("http://localhost:11434") : new Uri(config.Endpoint);

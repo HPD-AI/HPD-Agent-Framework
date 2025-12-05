@@ -9,6 +9,9 @@ namespace HPD.Providers.Ollama;
 public static class OllamaProviderModule
 {
     #pragma warning disable CA2255
+    /// <summary>
+    /// Registers the Ollama provider with the global provider registry when the assembly is initialized.
+    /// </summary>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

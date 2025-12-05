@@ -9,6 +9,12 @@ namespace HPD.Providers.Mistral;
 public static class MistralProviderModule
 {
     #pragma warning disable CA2255
+    /// <summary>
+    /// Registers a MistralProvider instance with the global ProviderRegistry when the assembly is initialized.
+    /// </summary>
+    /// <remarks>
+    /// Invoked automatically at module initialization time via the ModuleInitializer attribute.
+    /// </remarks>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

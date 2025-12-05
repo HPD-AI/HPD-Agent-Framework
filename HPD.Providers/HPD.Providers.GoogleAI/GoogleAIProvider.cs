@@ -19,6 +19,13 @@ internal class GoogleAIProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Creates an IChatClient configured for Google AI (Gemini).
+    /// </summary>
+    /// <param name="config">Provider configuration; must include a non-empty <c>ApiKey</c> and a <c>ModelName</c>.</param>
+    /// <returns>An <see cref="IChatClient"/> configured with the provided API key and model name.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when <c>config.ApiKey</c> is null or empty.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         ArgumentNullException.ThrowIfNull(config);

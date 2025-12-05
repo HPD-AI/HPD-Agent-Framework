@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.AI;
+using Microsoft.Extensions.AI;
 using System.Threading.Channels;
 using HPD.Agent.Middleware;
 using System.Runtime.CompilerServices;
@@ -177,7 +177,20 @@ public sealed class Agent
     /// <returns>Merged ChatOptions ready for agent execution</returns>
     /// <summary>
     /// Initializes a new Agent instance from an AgentConfig object
+    /// <summary>
+    /// Initializes a new Agent configured to run the agentic orchestration loop, with middleware, function-mapping, event coordination, and optional observers/handlers.
     /// </summary>
+    /// <param name="config">Agent configuration controlling behavior, tools, error handling, and orchestration settings.</param>
+    /// <param name="baseClient">The underlying chat client used for LLM interactions.</param>
+    /// <param name="mergedOptions">Optional chat options to merge with the agent's defaults; if null, the provider's default options from <paramref name="config"/> are used.</param>
+    /// <param name="providerErrorHandler">Provider-specific error handler to use for formatting and handling provider errors.</param>
+    /// <param name="functionToPluginMap">Optional mapping of function names to plugin identifiers used to resolve function implementations.</param>
+    /// <param name="functionToSkillMap">Optional mapping of function names to skill identifiers used to resolve function implementations.</param>
+    /// <param name="middlewares">Optional ordered list of agent middlewares to include in the unified middleware pipeline.</param>
+    /// <param name="serviceProvider">Optional service provider used to resolve auxiliary services (logging, meters, etc.).</param>
+    /// <param name="observers">Optional observers that receive fire-and-forget agent events for telemetry or logging.</param>
+    /// <param name="eventHandlers">Optional ordered event handlers invoked synchronously for UI or external handling.</param>
+    /// <exception cref="System.ArgumentNullException">Thrown when <paramref name="config"/> or <paramref name="baseClient"/> is null.</exception>
     public Agent(
         AgentConfig config,
         IChatClient baseClient,
@@ -3800,7 +3813,12 @@ internal static class ErrorFormatter
     /// <summary>
     /// Formats an exception with detailed error information for display to users.
     /// Extracts provider-specific error details using the error handler.
+    /// <summary>
+    /// Builds a human-readable, detailed error message using provider-specific details when available.
     /// </summary>
+    /// <param name="ex">The exception to format.</param>
+    /// <param name="errorHandler">Optional provider error handler used to extract structured provider error details.</param>
+    /// <returns>A formatted error string containing provider-specific fields when present (category, message, HTTP status, error code/type, request id, retry-after, raw details) and otherwise the exception type and message; includes inner exception message if available.</returns>
     internal static string FormatDetailedError(Exception ex, HPD.Providers.Core.IProviderErrorHandler? errorHandler)
     {
         var sb = new StringBuilder();

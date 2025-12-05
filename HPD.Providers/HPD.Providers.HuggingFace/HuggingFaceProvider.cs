@@ -18,6 +18,12 @@ internal class HuggingFaceProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Creates a Hugging Face chat client configured from the given provider settings.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the API key and model settings; <see cref="ProviderConfig.ApiKey"/> must be non-empty.</param>
+    /// <returns>An <see cref="IChatClient"/> instance configured to use the Hugging Face API.</returns>
+    /// <exception cref="ArgumentException">Thrown when <see cref="ProviderConfig.ApiKey"/> is null or empty.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))

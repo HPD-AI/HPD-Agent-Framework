@@ -9,6 +9,12 @@ namespace HPD.Providers.OpenRouter;
 public static class OpenRouterProviderModule
 {
     #pragma warning disable CA2255
+    /// <summary>
+    /// Registers the OpenRouter provider with the global ProviderRegistry when the assembly is initialized.
+    /// </summary>
+    /// <remarks>
+    /// Invoked automatically at module initialization to ensure the OpenRouterProvider is discovered and available.
+    /// </remarks>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

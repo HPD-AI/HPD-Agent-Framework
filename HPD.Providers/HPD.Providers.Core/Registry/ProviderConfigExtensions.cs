@@ -26,7 +26,15 @@ public static class ProviderConfigExtensions
     /// </summary>
     /// <typeparam name="T">The strongly-typed configuration class</typeparam>
     /// <param name="config">The provider config instance</param>
-    /// <returns>Parsed configuration object, or null if no config is present</returns>
+    /// <summary>
+    /// Retrieves a strongly-typed provider configuration instance for the given provider config.
+    /// </summary>
+    /// <param name="config">The provider configuration to read the typed settings from.</param>
+    /// <returns>The parsed configuration of type <typeparamref name="T"/>, or <c>null</c> if no configuration is present.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is <c>null</c>.</exception>
+    /// <remarks>
+    /// Prefers deserializing <see cref="ProviderConfig.ProviderOptionsJson"/> using a registered provider deserializer; if that is not available or not appropriate for <typeparamref name="T"/>, falls back to deserializing <see cref="ProviderConfig.AdditionalProperties"/>. Results are cached per <see cref="ProviderConfig"/> instance to avoid repeated deserialization. Dictionary-based fallback deserialization requires runtime type information and may not be suitable for AOT scenarios.
+    /// </remarks>
     public static T? GetTypedProviderConfig<T>(this ProviderConfig config) where T : class
     {
         if (config == null)
@@ -60,7 +68,17 @@ public static class ProviderConfigExtensions
     /// </summary>
     /// <typeparam name="T">The strongly-typed configuration class</typeparam>
     /// <param name="config">The provider config instance</param>
-    /// <param name="providerConfig">The configuration object to set</param>
+    /// <summary>
+    /// Sets and caches a strongly-typed provider configuration on the given ProviderConfig.
+    /// </summary>
+    /// <param name="config">The ProviderConfig instance to update.</param>
+    /// <param name="providerConfig">The configuration object to set.</param>
+    /// <remarks>
+    /// If a registration exists for the config's ProviderKey whose ConfigType equals T, the method serializes
+    /// <paramref name="providerConfig"/> into <see cref="ProviderConfig.ProviderOptionsJson"/> using that registration's serializer.
+    /// This supports AOT-friendly scenarios by preferring the provider-specific serialized representation when available.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="config"/> is null.</exception>
     public static void SetTypedProviderConfig<T>(this ProviderConfig config, T providerConfig) where T : class
     {
         if (config == null)
@@ -82,7 +100,13 @@ public static class ProviderConfigExtensions
     /// </summary>
     /// <typeparam name="T">The strongly-typed configuration class</typeparam>
     /// <param name="additionalProperties">Dictionary of additional properties</param>
-    /// <returns>Parsed configuration object, or null if dictionary is empty</returns>
+    /// <summary>
+    /// Deserialize a dictionary of additional properties into an instance of the specified provider configuration type.
+    /// </summary>
+    /// <param name="additionalProperties">A dictionary representing configuration properties; expected to match the structure of <typeparamref name="T"/>.</param>
+    /// <returns>The deserialized configuration of type <typeparamref name="T"/>, or <c>null</c> if <paramref name="additionalProperties"/> is null or empty.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when JSON serialization or deserialization fails or an unexpected error occurs while parsing the dictionary into <typeparamref name="T"/>.</exception>
+    /// <remarks>This method relies on runtime type information for generic deserialization and may not be suitable for AOT scenarios.</remarks>
     [RequiresUnreferencedCode("Generic deserialization requires runtime type information. Use typed provider config methods for AOT.")]
     private static T? GetProviderConfigFromDictionary<T>(Dictionary<string, object>? additionalProperties) where T : class
     {

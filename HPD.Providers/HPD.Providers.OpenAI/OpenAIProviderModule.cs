@@ -10,6 +10,12 @@ namespace HPD.Providers.OpenAI;
 public static class OpenAIProviderModule
 {
 #pragma warning disable CA2255
+    /// <summary>
+    /// Automatically registers OpenAI-related providers with the global provider registry when the module initializes.
+    /// </summary>
+    /// <remarks>
+    /// Registers instances of <see cref="OpenAIProvider"/> and <see cref="AzureOpenAIProvider"/> with <see cref="ProviderRegistry.Instance"/>, enabling automatic discovery of OpenAI providers (e.g., chat and embeddings) without manual registration.
+    /// </remarks>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

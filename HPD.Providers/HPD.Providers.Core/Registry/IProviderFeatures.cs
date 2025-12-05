@@ -41,21 +41,32 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="config">Provider-specific configuration</param>
     /// <param name="services">Optional service provider for DI</param>
-    /// <returns>Configured IChatClient instance, or null if not supported</returns>
+    /// <summary>
+/// Creates a chat client for this provider using the given configuration.
+/// </summary>
+/// <param name="config">Provider-specific configuration used to create the chat client.</param>
+/// <param name="services">Optional service provider used when constructing the client.</param>
+/// <returns>The configured <see cref="IChatClient"/> instance, or null if the provider does not support chat.</returns>
     IChatClient? CreateChatClient(ProviderConfig config, IServiceProvider? services = null) => null;
 
     /// <summary>
     /// Create an error handler for this provider.
     /// Returns null if provider doesn't provide custom error handling.
     /// </summary>
-    /// <returns>Provider-specific error handler instance, or null</returns>
+    /// <summary>
+/// Creates a provider-specific error handler.
+/// </summary>
+/// <returns>An `IProviderErrorHandler` instance if the provider supplies a custom error handler, `null` otherwise.</returns>
     IProviderErrorHandler? CreateErrorHandler() => null;
 
     /// <summary>
     /// Get metadata about this provider's Agent-specific capabilities.
     /// Returns null if provider doesn't support Agent features.
     /// </summary>
-    /// <returns>Provider metadata, or null if not supported</returns>
+    /// <summary>
+/// Retrieves metadata that describes the provider's Agent-specific capabilities and defaults.
+/// </summary>
+/// <returns>The provider's metadata, or null if the provider does not supply metadata.</returns>
     ProviderMetadata? GetMetadata() => null;
 
     /// <summary>
@@ -63,7 +74,11 @@ public interface IProviderFeatures
     /// Returns null if provider doesn't support validation.
     /// </summary>
     /// <param name="config">Configuration to validate</param>
-    /// <returns>Validation result, or null if not supported</returns>
+    /// <summary>
+/// Validates the given provider configuration and produces a validation result.
+/// </summary>
+/// <param name="config">Provider-specific configuration to validate.</param>
+/// <returns>A <see cref="ProviderValidationResult"/> describing validation outcome, or <c>null</c> if validation is not supported by the provider.</returns>
     ProviderValidationResult? ValidateConfiguration(ProviderConfig config) => null;
 
     /// <summary>
@@ -74,7 +89,12 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="config">Configuration to validate</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Validation result, or null if not supported</returns>
+    /// <summary>
+        /// Validates the provider configuration and produces a ProviderValidationResult.
+        /// </summary>
+        /// <param name="config">The provider-specific configuration to validate.</param>
+        /// <param name="cancellationToken">Token to cancel the validation operation.</param>
+        /// <returns>A ProviderValidationResult describing the validation outcome, or <c>null</c> if validation is not supported.</returns>
     Task<ProviderValidationResult>? ValidateConfigurationAsync(
         ProviderConfig config,
         CancellationToken cancellationToken = default) => null;
@@ -87,7 +107,11 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="services">Service provider for DI</param>
     /// <param name="config">Provider-specific configuration</param>
-    /// <returns>Embedding provider instance, or null if not supported</returns>
+    /// <summary>
+        /// Create an embedding provider instance for this provider.
+        /// </summary>
+        /// <param name="config">Provider-specific configuration used to create the embedding provider.</param>
+        /// <returns>An <see cref="IEmbeddingProvider"/> instance, or <c>null</c> if the provider does not support embeddings.</returns>
     IEmbeddingProvider? CreateEmbeddingProvider(
         IServiceProvider services,
         IConfiguration config) => null;
@@ -98,7 +122,10 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="services">Service provider for DI</param>
     /// <param name="config">Provider-specific configuration</param>
-    /// <returns>Vector store instance, or null if not supported</returns>
+    /// <summary>
+        /// Creates a vector store for the provider or returns null if the provider does not support vector stores.
+        /// </summary>
+        /// <returns>The created <see cref="IVectorStore"/> instance, or `null` if vector stores are not supported by the provider.</returns>
     IVectorStore? CreateVectorStore(
         IServiceProvider services,
         IConfiguration config) => null;
@@ -109,7 +136,10 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="services">Service provider for DI</param>
     /// <param name="config">Provider-specific configuration</param>
-    /// <returns>Document store instance, or null if not supported</returns>
+    /// <summary>
+        /// Creates a document store instance configured for this provider.
+        /// </summary>
+        /// <returns>The document store instance configured for the provider, or null if the provider does not support document storage.</returns>
     IDocumentStore? CreateDocumentStore(
         IServiceProvider services,
         IConfiguration config) => null;
@@ -120,7 +150,10 @@ public interface IProviderFeatures
     /// </summary>
     /// <param name="services">Service provider for DI</param>
     /// <param name="config">Provider-specific configuration</param>
-    /// <returns>Graph store instance, or null if not supported</returns>
+    /// <summary>
+        /// Creates a graph store instance for the provider based on the given services and configuration.
+        /// </summary>
+        /// <returns>An <see cref="IGraphStore"/> instance, or <c>null</c> if the provider does not support graph stores.</returns>
     IGraphStore? CreateGraphStore(
         IServiceProvider services,
         IConfiguration config) => null;
@@ -184,9 +217,18 @@ public class ProviderValidationResult
     public List<string> Errors { get; init; } = new();
     public List<string> Warnings { get; init; } = new();
 
-    public static ProviderValidationResult Success() => new() { IsValid = true };
+    /// <summary>
+/// Creates a ProviderValidationResult representing a successful validation.
+/// </summary>
+/// <returns>A ProviderValidationResult with IsValid = true and empty Errors and Warnings lists.</returns>
+public static ProviderValidationResult Success() => new() { IsValid = true };
 
-    public static ProviderValidationResult Failure(params string[] errors) =>
+    /// <summary>
+        /// Create a validation result representing a failed provider configuration.
+        /// </summary>
+        /// <param name="errors">Error messages describing the validation failures.</param>
+        /// <returns>A <see cref="ProviderValidationResult"/> with <c>IsValid</c> set to <c>false</c> and <c>Errors</c> populated from the provided messages.</returns>
+        public static ProviderValidationResult Failure(params string[] errors) =>
         new() { IsValid = false, Errors = new List<string>(errors) };
 }
 

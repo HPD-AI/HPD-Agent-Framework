@@ -18,6 +18,13 @@ internal class MistralProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Creates an IChatClient that sends chat completions to the Mistral service using the provided configuration.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the Mistral API key and model selection; the API key must be set.</param>
+    /// <param name="services">Optional service provider for dependency resolution (may be null).</param>
+    /// <returns>An IChatClient configured to use Mistral completions.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="config"/> does not contain an API key.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))

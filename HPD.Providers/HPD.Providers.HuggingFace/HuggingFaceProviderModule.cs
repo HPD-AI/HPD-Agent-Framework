@@ -9,6 +9,9 @@ namespace HPD.Providers.HuggingFace;
 public static class HuggingFaceProviderModule
 {
     #pragma warning disable CA2255
+    /// <summary>
+    /// Registers the HuggingFaceProvider with the central ProviderRegistry during assembly initialization.
+    /// </summary>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

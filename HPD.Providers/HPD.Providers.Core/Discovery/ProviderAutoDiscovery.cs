@@ -20,6 +20,12 @@ internal static class ProviderAutoDiscovery
     /// Attempts to load provider assemblies to trigger their ModuleInitializers.
     /// </summary>
 #pragma warning disable CA2255 // ModuleInitializer is intentionally used in library for auto-discovery
+    /// <summary>
+    /// Module initializer that ensures provider modules are discovered and their module constructors run when HPD.Providers.Core is loaded.
+    /// </summary>
+    /// <remarks>
+    /// This method is thread-safe and idempotent; it performs the discovery/initialization only once. In non-AOT builds it attempts to auto-discover and load provider assemblies from the runtime directory; in Native AOT builds it explicitly triggers initialization for a curated set of known provider modules to avoid trimming. Failures during discovery are swallowed to avoid impacting host startup.
+    /// </remarks>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255
@@ -47,7 +53,12 @@ internal static class ProviderAutoDiscovery
     /// This prevents the AOT trimmer from removing providers that appear unused.
     /// Uses conditional compilation and weak references to only include providers
     /// that the app actually references.
+    /// <summary>
+    /// Attempts to trigger module initializers for a curated set of known provider modules so they are initialized in AOT builds.
     /// </summary>
+    /// <remarks>
+    /// Each provider is attempted independently; missing or unavailable providers are ignored.
+    /// </remarks>
     private static void TryInitializeKnownProviders()
     {
         // Each provider is tried individually with weak references
@@ -75,7 +86,10 @@ internal static class ProviderAutoDiscovery
 
     /// <summary>
     /// Attempts to load and initialize a provider module by assembly-qualified type name.
+    /// <summary>
+    /// Attempts to initialize a provider module identified by its assembly-qualified type name by invoking its module initializer if the type is found; failures are ignored.
     /// </summary>
+    /// <param name="assemblyQualifiedTypeName">The assembly-qualified type name of the provider module (for example, "Namespace.TypeName, AssemblyName").</param>
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Providers.OpenAI.OpenAIProviderModule", "HPD.Providers.OpenAI")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Providers.Anthropic.AnthropicProviderModule", "HPD.Providers.Anthropic")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Providers.GoogleAI.GoogleAIProviderModule", "HPD.Providers.GoogleAI")]
@@ -112,7 +126,12 @@ internal static class ProviderAutoDiscovery
     /// <summary>
     /// Attempts to scan and load provider assemblies in non-AOT scenarios.
     /// This provides automatic discovery without requiring user configuration.
+    /// <summary>
+    /// Attempts to discover and load provider assemblies from the runtime directory to trigger their module initializers.
     /// </summary>
+    /// <remarks>
+    /// This is a best-effort operation: it determines a directory for the HPD.Providers.Core assembly (with fallbacks for single-file and entry-assembly scenarios), scans for files matching "HPD.Providers.*.dll", loads each matching assembly except HPD.Providers.Core, and invokes the assembly module constructor to ensure any ModuleInitializers run. All errors are silently ignored so discovery does not impact host startup; providers can still be registered manually if needed.
+    /// </remarks>
     private static void TryLoadProviderAssemblies()
     {
         try

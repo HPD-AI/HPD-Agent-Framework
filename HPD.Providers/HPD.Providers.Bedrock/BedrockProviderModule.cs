@@ -9,6 +9,9 @@ namespace HPD.Providers.Bedrock;
 public static class BedrockProviderModule
 {
     #pragma warning disable CA2255
+    /// <summary>
+    /// Registers the Bedrock provider with the global ProviderRegistry when the assembly is loaded.
+    /// </summary>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

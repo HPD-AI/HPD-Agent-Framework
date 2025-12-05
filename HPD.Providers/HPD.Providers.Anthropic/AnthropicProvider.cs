@@ -22,6 +22,13 @@ internal class AnthropicProvider : IProviderFeatures
         ProviderCapabilities.FunctionCalling |
         ProviderCapabilities.Vision;
 
+    /// <summary>
+    /// Creates and returns an Anthropic chat client configured from the given provider config.
+    /// </summary>
+    /// <param name="config">Provider configuration containing the Anthropic API key and optional provider-specific settings.</param>
+    /// <param name="services">Optional service provider for resolving dependencies (not used by this implementation).</param>
+    /// <returns>The configured IChatClient for Anthropic Messages.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="config"/> does not contain an API key.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))

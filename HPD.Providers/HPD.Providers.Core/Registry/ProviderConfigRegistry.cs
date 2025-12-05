@@ -30,7 +30,12 @@ public static class ProviderConfigRegistry
     ///     json => JsonSerializer.Deserialize(json, AnthropicJsonContext.Default.AnthropicProviderConfig),
     ///     config => JsonSerializer.Serialize(config, AnthropicJsonContext.Default.AnthropicProviderConfig));
     /// </code>
-    /// </example>
+    /// <summary>
+    /// Registers a provider-specific configuration type along with JSON serializer and deserializer functions under the given provider key.
+    /// </summary>
+    /// <param name="providerKey">Identifier for the provider used to look up the registration.</param>
+    /// <param name="deserializer">Function that converts JSON into an instance of <typeparamref name="TConfig"/>; may return null.</param>
+    /// <param name="serializer">Function that converts an instance of <typeparamref name="TConfig"/> into JSON.</param>
     public static void Register<TConfig>(
         string providerKey,
         Func<string, TConfig?> deserializer,
@@ -49,7 +54,11 @@ public static class ProviderConfigRegistry
     /// Gets the registered config type for a provider.
     /// </summary>
     /// <param name="providerKey">Provider key (e.g., "anthropic")</param>
-    /// <returns>Registration info, or null if not registered</returns>
+    /// <summary>
+    /// Retrieves the registration for the specified provider key from the registry.
+    /// </summary>
+    /// <param name="providerKey">The provider identifier used when registering the config type.</param>
+    /// <returns>The <see cref="ProviderConfigRegistration"/> for the provider, or <c>null</c> if no registration exists.</returns>
     public static ProviderConfigRegistration? GetRegistration(string providerKey)
     {
         lock (_lock)
@@ -63,7 +72,12 @@ public static class ProviderConfigRegistry
     /// </summary>
     /// <param name="providerKey">Provider key (e.g., "anthropic")</param>
     /// <param name="json">JSON string to deserialize</param>
-    /// <returns>Deserialized config object, or null if provider not registered or JSON is empty</returns>
+    /// <summary>
+    /// Deserializes provider-specific JSON into the registered provider config object.
+    /// </summary>
+    /// <param name="providerKey">The provider identifier used when the config type was registered.</param>
+    /// <param name="json">The JSON representation of the provider config; if null or whitespace, no deserialization is performed.</param>
+    /// <returns>The deserialized provider config object, or null if the provider is not registered or the JSON is null/empty.</returns>
     public static object? Deserialize(string providerKey, string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -78,7 +92,12 @@ public static class ProviderConfigRegistry
     /// </summary>
     /// <param name="providerKey">Provider key (e.g., "anthropic")</param>
     /// <param name="config">Config object to serialize</param>
-    /// <returns>JSON string, or null if provider not registered or config is null</returns>
+    /// <summary>
+    /// Serializes a provider-specific configuration object to JSON.
+    /// </summary>
+    /// <param name="providerKey">The provider key used to locate the registered config type.</param>
+    /// <param name="config">The provider-specific configuration object; should be an instance of the registered config type.</param>
+    /// <returns>The JSON string representing the config, or null if the provider is not registered or if <paramref name="config"/> is null.</returns>
     public static string? Serialize(string providerKey, object? config)
     {
         if (config == null)
@@ -91,7 +110,10 @@ public static class ProviderConfigRegistry
     /// <summary>
     /// Gets all registered provider config types.
     /// Used by FFI layer for schema discovery.
+    /// <summary>
+    /// Gets a snapshot of all registered provider config registrations keyed by provider key.
     /// </summary>
+    /// <returns>A read-only dictionary mapping provider keys to their ProviderConfigRegistration instances; the returned dictionary is a copy of the registry at the time of the call.</returns>
     public static IReadOnlyDictionary<string, ProviderConfigRegistration> GetAll()
     {
         lock (_lock)
@@ -102,7 +124,12 @@ public static class ProviderConfigRegistry
 
     /// <summary>
     /// For testing: clear registry.
+    /// <summary>
+    /// Clears all provider config registrations from the global registry.
     /// </summary>
+    /// <remarks>
+    /// Intended for use by tests to reset global registry state; the operation is performed under a lock.
+    /// </remarks>
     internal static void ClearForTesting()
     {
         lock (_lock)
@@ -126,6 +153,12 @@ public class ProviderConfigRegistration
     private readonly Func<string, object?> _deserializer;
     private readonly Func<object, string> _serializer;
 
+    /// <summary>
+    /// Creates a registration that associates a provider-specific config type with JSON (de)serialization delegates.
+    /// </summary>
+    /// <param name="configType">The concrete provider config type being registered.</param>
+    /// <param name="deserializer">A delegate that deserializes JSON into an instance of the config type (may return null).</param>
+    /// <param name="serializer">A delegate that serializes a config instance to its JSON representation.</param>
     public ProviderConfigRegistration(
         Type configType,
         Func<string, object?> deserializer,
@@ -138,11 +171,19 @@ public class ProviderConfigRegistration
 
     /// <summary>
     /// Deserializes JSON to the provider config type.
-    /// </summary>
+    /// <summary>
+/// Deserializes the given JSON into an instance of the registered provider config type.
+/// </summary>
+/// <param name="json">JSON representing the provider-specific configuration.</param>
+/// <returns>The deserialized config object, or null if the JSON deserializes to null.</returns>
     public object? Deserialize(string json) => _deserializer(json);
 
     /// <summary>
     /// Serializes the provider config to JSON.
-    /// </summary>
+    /// <summary>
+/// Serializes a provider-specific configuration object to its JSON representation.
+/// </summary>
+/// <param name="config">The provider configuration instance whose type must match the registration's ConfigType.</param>
+/// <returns>The JSON representation of the provided configuration.</returns>
     public string Serialize(object config) => _serializer(config);
 }

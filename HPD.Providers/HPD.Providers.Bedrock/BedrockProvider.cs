@@ -19,6 +19,13 @@ internal class BedrockProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Create an IChatClient for AWS Bedrock based on the supplied provider configuration.
+    /// </summary>
+    /// <param name="config">Provider configuration. Requires <c>ModelName</c>; may include AdditionalProperties keys: <c>Region</c>, <c>AccessKeyId</c>, and <c>SecretAccessKey</c> which override the corresponding environment variables.</param>
+    /// <param name="services">Optional service provider (not used by this implementation).</param>
+    /// <returns>An <see cref="IChatClient"/> configured to communicate with the specified Bedrock model.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the AWS region is not provided via AdditionalProperties["Region"] or the <c>AWS_REGION</c> environment variable.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         string region = null;

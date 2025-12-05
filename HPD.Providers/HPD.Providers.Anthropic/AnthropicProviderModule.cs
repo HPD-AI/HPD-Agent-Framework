@@ -11,6 +11,12 @@ namespace HPD.Providers.Anthropic;
 public static class AnthropicProviderModule
 {
 #pragma warning disable CA2255
+    /// <summary>
+    /// Auto-registers the Anthropic provider and its configuration with the global registries when the assembly is loaded.
+    /// </summary>
+    /// <remarks>
+    /// Registers an AnthropicProvider instance with ProviderRegistry and registers the AnthropicProviderConfig type with ProviderConfigRegistry using AOT-friendly JSON (de)serializers.
+    /// </remarks>
     [ModuleInitializer]
     public static void Initialize()
 #pragma warning restore CA2255

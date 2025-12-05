@@ -19,6 +19,13 @@ internal class AzureAIInferenceProvider : IProviderFeatures
         ProviderCapabilities.Chat |
         ProviderCapabilities.Streaming |
         ProviderCapabilities.FunctionCalling;
+    /// <summary>
+    /// Create an <see cref="IChatClient"/> configured to use Azure AI Inference.
+    /// </summary>
+    /// <param name="config">Provider configuration used to resolve model name, endpoint, and API key. Endpoint and API key are taken from <paramref name="config"/> first, then from <c>config.AdditionalProperties</c>, and finally from the environment variables <c>AZURE_AI_INFERENCE_ENDPOINT</c> and <c>AZURE_AI_INFERENCE_API_KEY</c>.</param>
+    /// <param name="services">Optional service provider (not required by this implementation).</param>
+    /// <returns>An <see cref="IChatClient"/> bound to the resolved endpoint and model.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if the endpoint or API key cannot be resolved from configuration or environment.</exception>
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         string? endpoint = config.Endpoint;

@@ -13,31 +13,47 @@ public interface IProviderRegistry
     /// Register a provider's features.
     /// Called by provider ModuleInitializers during assembly load.
     /// </summary>
-    /// <param name="features">Provider features implementation</param>
+    /// <summary>
+/// Registers a provider's features in the central provider registry.
+/// </summary>
+/// <param name="features">The provider's features implementation to register; typically invoked by the provider's ModuleInitializer during assembly load.</param>
     void Register(IProviderFeatures features);
 
     /// <summary>
     /// Get provider features by key (case-insensitive).
     /// </summary>
     /// <param name="providerKey">Provider identifier (e.g., "openai", "anthropic", "qdrant")</param>
-    /// <returns>Provider features, or null if not registered</returns>
+    /// <summary>
+/// Retrieves the features for a registered provider by its key (case-insensitive).
+/// </summary>
+/// <param name="providerKey">Provider identifier (for example, "openai", "anthropic", "qdrant"); lookup is case-insensitive.</param>
+/// <returns>The provider's <see cref="IProviderFeatures"/> if registered, or null if no matching provider is found.</returns>
     IProviderFeatures? GetProvider(string providerKey);
 
     /// <summary>
     /// Check if a provider is registered.
     /// </summary>
     /// <param name="providerKey">Provider identifier</param>
-    /// <returns>True if provider is registered</returns>
+    /// <summary>
+/// Determines whether a provider with the specified key is registered in the registry.
+/// </summary>
+/// <param name="providerKey">Provider identifier (case-insensitive), for example "openai", "anthropic", or "qdrant".</param>
+/// <returns>`true` if a provider with the given key is registered, `false` otherwise.</returns>
     bool IsRegistered(string providerKey);
 
     /// <summary>
     /// Get all registered provider keys.
     /// </summary>
-    /// <returns>Collection of registered provider keys</returns>
+    /// <summary>
+/// Retrieves all currently registered provider keys.
+/// </summary>
+/// <returns>An IReadOnlyCollection&lt;string&gt; containing the registered provider identifiers (for example "openai", "anthropic", "qdrant"); keys are the identifiers as registered and lookup is case-insensitive.</returns>
     IReadOnlyCollection<string> GetRegisteredProviders();
 
     /// <summary>
     /// Clear all registrations (for testing only).
-    /// </summary>
+    /// <summary>
+/// Removes all provider registrations from the registry; intended for tests to reset global registry state.
+/// </summary>
     void Clear();
 }
