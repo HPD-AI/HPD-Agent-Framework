@@ -2069,9 +2069,10 @@ public class AgentBuilder
     #endregion
 
     /// <summary>
-    /// Adds a Rust function to the agent (used by FFI layer)
+    /// Adds a native function to the agent (used by FFI layer for Rust, C++, etc.)
+    /// This method is intended primarily for FFI integration with native plugins.
     /// </summary>
-    internal void AddRustFunction(AIFunction function)
+    public AgentBuilder WithNativeFunction(AIFunction function)
     {
         // Get or create default chat options
         if (_config.Provider == null)
@@ -2085,10 +2086,11 @@ public class AgentBuilder
         tools.Add(function);
         _config.Provider.DefaultChatOptions.Tools = tools;
 
-
         // Enable auto tool mode if not already set
         if (_config.Provider.DefaultChatOptions.ToolMode == null)
             _config.Provider.DefaultChatOptions.ToolMode = ChatToolMode.Auto;
+            
+        return this;
     }
 
     /// <summary>

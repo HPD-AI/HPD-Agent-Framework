@@ -7,7 +7,7 @@ using HPD.Agent;
 /// Messages are stored in a List in local memory.
 /// This is the default storage mechanism for conversation threads.
 /// </summary>
-internal sealed class InMemoryConversationMessageStore : ChatMessageStore
+public sealed class InMemoryConversationMessageStore : ChatMessageStore
 {
     private readonly List<ChatMessage> _messages = new();
 

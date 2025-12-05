@@ -13,6 +13,7 @@
     <ProjectReference Include="../../../HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
     <ProjectReference Include="..\..\..\HPD-Agent\HPD-Agent.csproj" />
     <ProjectReference Include="..\..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../../HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
   </ItemGroup>
 
 </Project>
