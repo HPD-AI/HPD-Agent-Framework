@@ -333,18 +333,27 @@ internal class TestEventObserver : IAgentEventObserver
 
     public Task OnEventAsync(AgentEvent evt, CancellationToken cancellationToken = default)
     {
-        _events.Add(evt);
+        lock (_events)
+        {
+            _events.Add(evt);
+        }
         return Task.CompletedTask;
     }
 
     public List<T> GetEvents<T>() where T : AgentEvent
     {
-        return _events.OfType<T>().ToList();
+        lock (_events)
+        {
+            return _events.OfType<T>().ToList();
+        }
     }
 
     public void Clear()
     {
-        _events.Clear();
+        lock (_events)
+        {
+            _events.Clear();
+        }
     }
 }
 

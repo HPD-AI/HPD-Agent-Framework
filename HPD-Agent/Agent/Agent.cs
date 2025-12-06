@@ -1577,8 +1577,12 @@ public sealed class Agent
                         usage = usageContent.Details;
                     }
                     // Include TextContent in message
-                    // By default, exclude TextReasoningContent to save tokens (configurable via preserveReasoning)
-                    else if (content is TextContent && (preserveReasoning || content is not TextReasoningContent))
+                    else if (content is TextContent)
+                    {
+                        allContents.Add(content);
+                    }
+                    // Include TextReasoningContent only if preserveReasoning is true (to save tokens by default)
+                    else if (content is TextReasoningContent && preserveReasoning)
                     {
                         allContents.Add(content);
                     }
@@ -1640,11 +1644,29 @@ public sealed class Agent
 
         var result = new List<AIContent>();
         var textBuilder = new System.Text.StringBuilder();
+        var reasoningBuilder = new System.Text.StringBuilder();
 
         foreach (var content in contents)
         {
-            if (content is TextContent textContent && content is not TextReasoningContent)
+            if (content is TextReasoningContent reasoningContent)
             {
+                // Flush any accumulated regular text first
+                if (textBuilder.Length > 0)
+                {
+                    result.Add(new TextContent(textBuilder.ToString()));
+                    textBuilder.Clear();
+                }
+                // Accumulate reasoning content
+                reasoningBuilder.Append(reasoningContent.Text);
+            }
+            else if (content is TextContent textContent)
+            {
+                // Flush any accumulated reasoning first
+                if (reasoningBuilder.Length > 0)
+                {
+                    result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
+                    reasoningBuilder.Clear();
+                }
                 // Accumulate text content
                 textBuilder.Append(textContent.Text);
             }
@@ -1656,6 +1678,11 @@ public sealed class Agent
                     result.Add(new TextContent(textBuilder.ToString()));
                     textBuilder.Clear();
                 }
+                if (reasoningBuilder.Length > 0)
+                {
+                    result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
+                    reasoningBuilder.Clear();
+                }
                 // Add the non-text content
                 result.Add(content);
             }
@@ -1665,6 +1692,10 @@ public sealed class Agent
         if (textBuilder.Length > 0)
         {
             result.Add(new TextContent(textBuilder.ToString()));
+        }
+        if (reasoningBuilder.Length > 0)
+        {
+            result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
         }
 
         return result;
