@@ -23,8 +23,6 @@ public static class ServiceCollectionExtensions
     ///     opts.DurableExecution.Enabled = true;
     ///     opts.DurableExecution.Frequency = CheckpointFrequency.PerTurn;
     ///     opts.DurableExecution.Retention = RetentionPolicy.FullHistory;
-    ///
-    ///     opts.Branching.Enabled = true;
     /// });
     /// </code>
     /// </example>
@@ -48,13 +46,6 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<DurableExecution>();
         }
 
-        // Register BranchingService if enabled
-        if (options.Branching.Enabled)
-        {
-            services.AddSingleton(options.Branching);
-            services.AddSingleton<Branching>();
-        }
-
         return services;
     }
 
@@ -76,11 +67,8 @@ public static class ServiceCollectionExtensions
         return services.AddCheckpointing(opts =>
         {
             // Set default options
-            opts.Store = new JsonConversationThreadStore(
-                storagePath,
-                CheckpointRetentionMode.FullHistory);
+            opts.Store = new JsonConversationThreadStore(storagePath);
             opts.DurableExecution.Enabled = true;
-            opts.Branching.Enabled = true;
 
             // Allow caller to override
             configure?.Invoke(opts);
@@ -101,10 +89,8 @@ public static class ServiceCollectionExtensions
         return services.AddCheckpointing(opts =>
         {
             // Set default options
-            opts.Store = new InMemoryConversationThreadStore(
-                CheckpointRetentionMode.FullHistory);
+            opts.Store = new InMemoryConversationThreadStore();
             opts.DurableExecution.Enabled = true;
-            opts.Branching.Enabled = true;
 
             // Allow caller to override
             configure?.Invoke(opts);
@@ -127,9 +113,4 @@ public class CheckpointingOptions
     /// Configuration for DurableExecutionService.
     /// </summary>
     public DurableExecutionConfig DurableExecution { get; set; } = new();
-
-    /// <summary>
-    /// Configuration for BranchingService.
-    /// </summary>
-    public BranchingConfig Branching { get; set; } = new();
 }

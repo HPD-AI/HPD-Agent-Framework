@@ -555,9 +555,7 @@ public class AgentBuilder
         Checkpointing.CheckpointFrequency frequency = Checkpointing.CheckpointFrequency.PerTurn)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
-        var store = new Checkpointing.JsonConversationThreadStore(
-            storagePath,
-            Checkpointing.CheckpointRetentionMode.LatestOnly);
+        var store = new Checkpointing.JsonConversationThreadStore(storagePath);
         return WithDurableExecution(store, frequency);
     }
 

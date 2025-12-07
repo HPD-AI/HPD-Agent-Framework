@@ -159,12 +159,7 @@ public class AgentConfig
     [JsonIgnore]
     public DurableExecutionConfig? DurableExecutionConfig { get; set; }
 
-    /// <summary>
-    /// Configuration for the BranchingService.
-    /// When set via WithBranching(), enables branching features.
-    /// </summary>
-    [JsonIgnore]
-    public BranchingConfig? BranchingConfig { get; set; }
+    // Branching config removed - branching is now an application-level concern
 
     /// <summary>
     /// Tools that the agent can invoke but are NOT sent to the LLM in each request.

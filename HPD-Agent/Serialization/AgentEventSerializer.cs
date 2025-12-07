@@ -72,14 +72,7 @@ public static partial class AgentEventSerializer
         [typeof(MiddlewareProgressEvent)] = EventTypes.Middleware.MIDDLEWARE_PROGRESS,
         [typeof(MiddlewareErrorEvent)] = EventTypes.Middleware.MIDDLEWARE_ERROR,
 
-        // Branch Events
-        [typeof(HPD.Agent.Checkpointing.Services.BranchCreatedEvent)] = EventTypes.Branch.BRANCH_CREATED,
-        [typeof(HPD.Agent.Checkpointing.Services.BranchSwitchedEvent)] = EventTypes.Branch.BRANCH_SWITCHED,
-        [typeof(HPD.Agent.Checkpointing.Services.BranchDeletedEvent)] = EventTypes.Branch.BRANCH_DELETED,
-        [typeof(HPD.Agent.Checkpointing.Services.BranchRenamedEvent)] = EventTypes.Branch.BRANCH_RENAMED,
-
-        // Thread Events (cross-thread operations)
-        [typeof(HPD.Agent.Checkpointing.Services.ThreadCopiedEvent)] = EventTypes.Thread.THREAD_COPIED,
+        // Branch events removed - branching is now an application-level concern
 
         // Observability Events
         [typeof(ScopedToolsVisibleEvent)] = EventTypes.Observability.SCOPED_TOOLS_VISIBLE,

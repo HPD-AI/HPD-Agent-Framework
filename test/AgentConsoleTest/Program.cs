@@ -8,7 +8,7 @@ Console.WriteLine("🚀 HPD-Agent Console Test\n");
 
 // Setup checkpoint store for persistence across restarts
 var checkpointPath = Path.Combine(Environment.CurrentDirectory, "console-checkpoints");
-var store = new JsonConversationThreadStore(checkpointPath, CheckpointRetentionMode.LatestOnly);
+var store = new JsonConversationThreadStore(checkpointPath);
 Console.WriteLine($"📁 Checkpoints: {checkpointPath}");
 
 // Configure agent

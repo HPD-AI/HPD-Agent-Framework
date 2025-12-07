@@ -45,7 +45,7 @@ public abstract record RetentionPolicy
 
     /// <summary>
     /// Keep all checkpoints (full history).
-    /// Enables time-travel debugging, branching, and audit trails.
+    /// Enables time-travel debugging and audit trails.
     /// </summary>
     public static readonly RetentionPolicy FullHistory = new FullHistoryPolicy();
 

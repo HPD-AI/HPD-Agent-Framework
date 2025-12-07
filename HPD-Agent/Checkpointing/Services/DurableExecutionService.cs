@@ -34,7 +34,7 @@ public class DurableExecution
     /// <summary>
     /// Creates a new DurableExecutionService.
     /// </summary>
-    /// <param name="store">The checkpoint store (shared with BranchingService)</param>
+    /// <param name="store">The checkpoint store</param>
     /// <param name="config">Configuration for durable execution</param>
     public DurableExecution(ICheckpointStore store, DurableExecutionConfig config)
     {

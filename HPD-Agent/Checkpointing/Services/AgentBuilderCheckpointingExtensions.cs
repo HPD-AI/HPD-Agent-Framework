@@ -9,7 +9,6 @@ namespace HPD.Agent.Checkpointing.Services;
 /// <list type="bullet">
 /// <item><c>WithCheckpointStore()</c> - Configure the storage backend</item>
 /// <item><c>WithDurableExecution()</c> - Configure auto-checkpointing + retention</item>
-/// <item><c>WithBranching()</c> - Enable branching features</item>
 /// </list>
 /// </para>
 /// <para>
@@ -19,7 +18,6 @@ namespace HPD.Agent.Checkpointing.Services;
 ///     .WithProvider("openai", "gpt-4")
 ///     .WithCheckpointStore(new JsonCheckpointStore("./checkpoints"))
 ///     .WithDurableExecution(CheckpointFrequency.PerTurn, RetentionPolicy.FullHistory)
-///     .WithBranching(enabled: true)
 ///     .Build();
 /// </code>
 /// </para>
@@ -28,8 +26,7 @@ public static class AgentBuilderCheckpointingExtensions
 {
     /// <summary>
     /// Configures the checkpoint store for the agent.
-    /// This is the storage backend only - use WithDurableExecution and WithBranching
-    /// to configure features.
+    /// This is the storage backend only - use WithDurableExecution to configure features.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="store">The checkpoint store</param>
@@ -84,41 +81,13 @@ public static class AgentBuilderCheckpointingExtensions
     }
 
     /// <summary>
-    /// Enables branching features for the agent.
-    /// </summary>
-    /// <param name="builder">The agent builder</param>
-    /// <param name="enabled">Whether branching is enabled</param>
-    /// <returns>The builder for chaining</returns>
-    /// <remarks>
-    /// <para>
-    /// Branching allows forking conversations from any checkpoint,
-    /// </para>
-    /// <para>
-    /// <strong>Note:</strong> You must call <c>WithCheckpointStore()</c> first to set the storage backend.
-    /// Branching works with whatever checkpoints exist (based on retention policy).
-    /// </para>
-    /// </remarks>
-    public static AgentBuilder WithBranching(
-        this AgentBuilder builder,
-        bool enabled = true)
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-
-        var config = new BranchingConfig { Enabled = enabled };
-        builder.Config.BranchingConfig = config;
-
-        return builder;
-    }
-
-    /// <summary>
     /// Full configuration overload for advanced scenarios.
-    /// Configures store, durable execution, and branching in one call.
+    /// Configures store and durable execution in one call.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="store">The checkpoint store</param>
     /// <param name="frequency">How often to checkpoint</param>
     /// <param name="retention">Retention policy for checkpoints</param>
-    /// <param name="enableBranching">Whether to enable branching</param>
     /// <param name="enablePendingWrites">Enable pending writes for partial failure recovery</param>
     /// <returns>The builder for chaining</returns>
     public static AgentBuilder WithCheckpointing(
@@ -126,7 +95,6 @@ public static class AgentBuilderCheckpointingExtensions
         ICheckpointStore store,
         CheckpointFrequency frequency = CheckpointFrequency.PerTurn,
         RetentionPolicy? retention = null,
-        bool enableBranching = false,
         bool enablePendingWrites = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -136,8 +104,7 @@ public static class AgentBuilderCheckpointingExtensions
 
         return builder
             .WithCheckpointStore(store)
-            .WithDurableExecution(frequency, retention, enablePendingWrites)
-            .WithBranching(enableBranching);
+            .WithDurableExecution(frequency, retention, enablePendingWrites);
     }
 
     /// <summary>
@@ -147,27 +114,20 @@ public static class AgentBuilderCheckpointingExtensions
     /// <param name="storagePath">Directory to store checkpoint files</param>
     /// <param name="frequency">How often to checkpoint</param>
     /// <param name="retention">Retention policy for checkpoints</param>
-    /// <param name="enableBranching">Whether to enable branching</param>
     /// <returns>The builder for chaining</returns>
     public static AgentBuilder WithCheckpointing(
         this AgentBuilder builder,
         string storagePath,
         CheckpointFrequency frequency = CheckpointFrequency.PerTurn,
-        RetentionPolicy? retention = null,
-        bool enableBranching = false)
+        RetentionPolicy? retention = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
 
         retention ??= RetentionPolicy.LatestOnly;
 
-        // Determine retention mode for store based on policy
-        var retentionMode = retention == RetentionPolicy.LatestOnly
-            ? CheckpointRetentionMode.LatestOnly
-            : CheckpointRetentionMode.FullHistory;
+        var store = new JsonConversationThreadStore(storagePath);
 
-        var store = new JsonConversationThreadStore(storagePath, retentionMode);
-
-        return builder.WithCheckpointing(store, frequency, retention, enableBranching);
+        return builder.WithCheckpointing(store, frequency, retention);
     }
 }

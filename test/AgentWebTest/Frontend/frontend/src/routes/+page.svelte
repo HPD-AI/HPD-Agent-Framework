@@ -1,17 +1,11 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type FrontendToolInvokeRequestEvent, type BranchCreatedEvent, type BranchSwitchedEvent, type BranchDeletedEvent, type BranchRenamedEvent } from '@hpd/hpd-agent-client';
+    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type FrontendToolInvokeRequestEvent } from '@hpd/hpd-agent-client';
     import Artifact from '$lib/artifacts/Artifact.svelte';
     import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
     import { artifactPlugin, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
-    import BranchSelector from '$lib/branches/BranchSelector.svelte';
-    import EditableMessage from '$lib/branches/EditableMessage.svelte';
-    import { branchStore } from '$lib/branches/branch-store.js';
 
     const API_BASE = 'http://localhost:5135';
-
-    // Track checkpoint IDs for each message (needed for forking)
-    let messageCheckpoints: string[] = [];
 
     interface Message {
         role: 'user' | 'assistant';
@@ -55,8 +49,6 @@
                 const res = await fetch(`${API_BASE}/conversations/${saved}`);
                 if (res.ok) {
                     conversationId = saved;
-                    // Load branches for existing conversation
-                    await loadBranches();
                     return;
                 }
             } catch (e) {
@@ -71,127 +63,11 @@
         const res = await fetch(`${API_BASE}/conversations`, { method: 'POST' });
         const data = await res.json();
         conversationId = data.id;
+        console.log('[CREATE] Created new conversation:', conversationId);
         localStorage.setItem('conversationId', conversationId!);
         messages = [];
         // Close any open artifact on new conversation
         artifactStore.close();
-        // Reset branch state
-        branchStore.reset();
-    }
-
-    // Load branches for current conversation
-    async function loadBranches() {
-        if (!conversationId) return;
-
-        try {
-            const res = await fetch(`${API_BASE}/conversations/${conversationId}/branches/tree`);
-            if (res.ok) {
-                const tree = await res.json();
-                branchStore.setTree(tree);
-            }
-        } catch (e) {
-            console.error('Failed to load branches:', e);
-        }
-    }
-
-    // Handle branch switch - reload the conversation at the new branch state
-    async function handleBranchSwitch(messageCount: number) {
-        if (!conversationId) return;
-
-        console.log('Branch switched, message count:', messageCount);
-
-        // Reload messages from the API
-        try {
-            const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`);
-            if (res.ok) {
-                const data = await res.json();
-                messages = data.map((m: { role: string; content: string; thinking?: string }) => ({
-                    role: m.role as 'user' | 'assistant',
-                    content: m.content,
-                    thinking: m.thinking
-                }));
-            }
-        } catch (e) {
-            console.error('Failed to reload messages:', e);
-            messages = [];
-        }
-
-        streamingContent = '';
-        currentThinking = '';
-    }
-
-    // Handle variant selection - loads conversation at that checkpoint
-    async function handleVariantSelect(event: CustomEvent<{ checkpointId: string; messageIndex: number }>) {
-        if (!conversationId) return;
-
-        const { checkpointId } = event.detail;
-        console.log('Selecting variant at checkpoint:', checkpointId);
-
-        try {
-            // Load the thread at this checkpoint
-            const res = await fetch(`${API_BASE}/conversations/${conversationId}/checkpoints/${checkpointId}`);
-            if (res.ok) {
-                // Reload messages
-                await handleBranchSwitch(0);
-            }
-        } catch (e) {
-            console.error('Failed to select variant:', e);
-        }
-    }
-
-    // Handle message edit - creates a fork from current state and resends with new content
-    async function handleMessageEdit(event: CustomEvent<{ index: number; newContent: string }>) {
-        if (!conversationId || isLoading) return;
-
-        const { index, newContent } = event.detail;
-        console.log('Editing message at index:', index, 'New content:', newContent);
-
-        try {
-            // Fork from current state (automatically saves snapshot)
-            const forkRes = await fetch(`${API_BASE}/conversations/${conversationId}/branches`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    branchName: `edit-${Date.now()}`
-                })
-            });
-
-            if (!forkRes.ok) {
-                const error = await forkRes.json();
-                console.error('Failed to fork:', error.message);
-                return;
-            }
-
-            const forkData = await forkRes.json();
-            console.log('Created branch:', forkData.branchName, 'with', forkData.messageIndex, 'messages');
-
-            // Reload messages from the forked state
-            const messagesRes = await fetch(`${API_BASE}/conversations/${conversationId}/messages`);
-            if (messagesRes.ok) {
-                const data = await messagesRes.json();
-                messages = data.map((m: { role: string; content: string; thinking?: string }) => ({
-                    role: m.role as 'user' | 'assistant',
-                    content: m.content,
-                    thinking: m.thinking
-                }));
-
-                // Truncate to the edit point
-                messages = messages.slice(0, index);
-            } else {
-                console.error('Failed to reload messages after fork');
-                return;
-            }
-
-            // Update branch state
-            await loadBranches();
-
-            // Send the edited message
-            currentMessage = newContent;
-            await sendMessage();
-
-        } catch (e) {
-            console.error('Failed to edit message:', e);
-        }
     }
 
     async function sendMessage() {
@@ -200,6 +76,7 @@
         const userMsg = currentMessage.trim();
         currentMessage = '';
 
+        console.log('[SEND] Sending message to conversation:', conversationId);
         messages = [...messages, { role: 'user', content: userMsg }];
         messages = [...messages, { role: 'assistant', content: '', thinking: '' }];
 
@@ -303,27 +180,6 @@
                         isLoading = false;
                     },
 
-                    // Branch event handlers
-                    onBranchCreated: (event: BranchCreatedEvent) => {
-                        console.log('Branch created:', event.branchName);
-                        branchStore.onBranchCreated(event.branchName, event.checkpointId, event.forkMessageIndex);
-                    },
-
-                    onBranchSwitched: (event: BranchSwitchedEvent) => {
-                        console.log('Branch switched:', event.previousBranch, '->', event.newBranch);
-                        branchStore.onBranchSwitched(event.newBranch ?? null);
-                    },
-
-                    onBranchDeleted: (event: BranchDeletedEvent) => {
-                        console.log('Branch deleted:', event.branchName);
-                        branchStore.onBranchDeleted(event.branchName);
-                    },
-
-                    onBranchRenamed: (event: BranchRenamedEvent) => {
-                        console.log('Branch renamed:', event.oldName, '->', event.newName);
-                        branchStore.onBranchRenamed(event.oldName, event.newName);
-                    },
-
                     // Raw event access for debugging
                     onEvent: (event) => {
                         console.log(`[v${event.version}] ${event.type}:`, event);
@@ -378,21 +234,12 @@
             <h1 class="text-xl font-semibold">HPD-Agent Chat</h1>
             <p class="text-sm text-gray-500">{messages.length} messages</p>
         </div>
-        <div class="flex items-center gap-3">
-            {#if conversationId}
-                <BranchSelector
-                    {conversationId}
-                    apiBase={API_BASE}
-                    onBranchSwitch={handleBranchSwitch}
-                />
-            {/if}
-            <button
-                onclick={createConversation}
-                class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm"
-            >
-                New Chat
-            </button>
-        </div>
+        <button
+            onclick={createConversation}
+            class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm"
+        >
+            New Chat
+        </button>
     </div>
 
     <!-- Main Content - Split View when artifact is open -->
@@ -402,18 +249,18 @@
             <!-- Messages -->
             <div class="flex-1 overflow-y-auto p-6 space-y-4">
                 {#each messages as message, index}
-                    <EditableMessage
-                        {index}
-                        role={message.role}
-                        content={message.content}
-                        thinking={message.thinking}
-                        isLastMessage={index === messages.length - 1}
-                        {isLoading}
-                        conversationId={conversationId ?? ''}
-                        apiBase={API_BASE}
-                        on:edit={handleMessageEdit}
-                        on:selectVariant={handleVariantSelect}
-                    />
+                    <div class="flex gap-3 {message.role === 'user' ? 'justify-end' : ''}">
+                        <div class="max-w-[80%] {message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white border'} rounded-lg p-4">
+                            {#if message.thinking && index === messages.length - 1 && isLoading}
+                                <div class="text-sm italic opacity-70 mb-2">
+                                    {message.thinking}
+                                </div>
+                            {/if}
+                            <div class="whitespace-pre-wrap">
+                                {message.content}
+                            </div>
+                        </div>
+                    </div>
                 {/each}
             </div>
 

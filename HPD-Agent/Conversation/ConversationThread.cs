@@ -129,60 +129,8 @@ public sealed class ConversationThread
         return _middlewarePersistentState.TryGetValue(key, out var value) ? value : null;
     }
 
-    #region Branch Tracking
-
-    private readonly ConcurrentDictionary<string, string> _branches = new();
-
-    /// <summary>
-    /// Current position in the checkpoint tree.
-    /// Null if no checkpoints have been created yet.
-    /// </summary>
-    public string? CurrentCheckpointId { get; set; }
-
-    /// <summary>
-    /// Named branches mapping branch name to head checkpoint ID.
-    /// Default branch is "main".
-    /// </summary>
-    public IReadOnlyDictionary<string, string> Branches => _branches;
-
-    /// <summary>
-    /// Active branch name. Null means detached/anonymous state.
-    /// </summary>
-    public string? ActiveBranch { get; set; }
-
-    /// <summary>
-    /// Try to add a new branch pointing to a checkpoint.
-    /// </summary>
-    /// <returns>True if added, false if branch name already exists.</returns>
-    public bool TryAddBranch(string name, string checkpointId)
-        => _branches.TryAdd(name, checkpointId);
-
-    /// <summary>
-    /// Update an existing branch to point to a new checkpoint.
-    /// </summary>
-    /// <returns>True if updated, false if branch doesn't exist.</returns>
-    public bool TryUpdateBranch(string name, string checkpointId)
-    {
-        if (!_branches.ContainsKey(name))
-            return false;
-        _branches[name] = checkpointId;
-        return true;
-    }
-
-    /// <summary>
-    /// Remove a branch by name.
-    /// </summary>
-    /// <returns>True if removed, false if branch didn't exist.</returns>
-    public bool TryRemoveBranch(string name)
-        => _branches.TryRemove(name, out _);
-
-    /// <summary>
-    /// Get the checkpoint ID for a named branch.
-    /// </summary>
-    public string? GetBranchHead(string name)
-        => _branches.TryGetValue(name, out var id) ? id : null;
-
-    #endregion
+    // Branch tracking removed - now an application-level concern (see BranchManager)
+    // Applications should use ConversationId to link threads to conversations
 
     /// <summary>
     /// Creates a new conversation thread.
@@ -361,9 +309,6 @@ public sealed class ConversationThread
                 ? _middlewarePersistentState.ToDictionary(kv => kv.Key, kv => kv.Value)
                 : null,
             // Branch state
-            CurrentCheckpointId = CurrentCheckpointId,
-            Branches = _branches.IsEmpty ? null : _branches.ToDictionary(kv => kv.Key, kv => kv.Value),
-            ActiveBranch = ActiveBranch
         };
     }
 
@@ -411,15 +356,6 @@ public sealed class ConversationThread
         }
 
         // Restore branch state
-        thread.CurrentCheckpointId = snapshot.CurrentCheckpointId;
-        thread.ActiveBranch = snapshot.ActiveBranch;
-        if (snapshot.Branches != null)
-        {
-            foreach (var (name, checkpointId) in snapshot.Branches)
-            {
-                thread._branches[name] = checkpointId;
-            }
-        }
 
         return thread;
     }
@@ -441,9 +377,6 @@ public sealed class ConversationThread
             LastActivity = LastActivity,
             ServiceThreadId = ServiceThreadId,
             ConversationId = ConversationId,
-            CurrentCheckpointId = CurrentCheckpointId,
-            Branches = _branches.IsEmpty ? null : _branches.ToDictionary(kv => kv.Key, kv => kv.Value),
-            ActiveBranch = ActiveBranch
         };
     }
 
@@ -472,14 +405,6 @@ public sealed class ConversationThread
 
         thread._serviceThreadId = snapshot.ServiceThreadId;
         thread.ConversationId = snapshot.ConversationId;
-        thread.CurrentCheckpointId = snapshot.CurrentCheckpointId;
-        thread.ActiveBranch = snapshot.ActiveBranch;
-
-        if (snapshot.Branches != null)
-        {
-            foreach (var (name, checkpointId) in snapshot.Branches)
-                thread._branches[name] = checkpointId;
-        }
 
         // ExecutionState is null - that's intentional for snapshots
         thread.ExecutionState = null;
@@ -508,9 +433,6 @@ public sealed class ConversationThread
             LastActivity = LastActivity,
             ServiceThreadId = ServiceThreadId,
             ConversationId = ConversationId,
-            CurrentCheckpointId = CurrentCheckpointId,
-            Branches = _branches.IsEmpty ? null : _branches.ToDictionary(kv => kv.Key, kv => kv.Value),
-            ActiveBranch = ActiveBranch
         };
     }
 
@@ -529,9 +451,6 @@ public sealed class ConversationThread
             LastActivity = checkpoint.LastActivity,
             ServiceThreadId = checkpoint.ServiceThreadId,
             ConversationId = checkpoint.ConversationId,
-            CurrentCheckpointId = checkpoint.CurrentCheckpointId,
-            Branches = checkpoint.Branches,
-            ActiveBranch = checkpoint.ActiveBranch
         });
 
         thread.ExecutionState = checkpoint.ExecutionState;
@@ -574,24 +493,7 @@ public record ConversationThreadSnapshot
     /// </summary>
     public Dictionary<string, string>? MiddlewarePersistentState { get; init; }
 
-    #region Branch State
-
-    /// <summary>
-    /// Current position in the checkpoint tree.
-    /// </summary>
-    public string? CurrentCheckpointId { get; init; }
-
-    /// <summary>
-    /// Named branches mapping branch name to head checkpoint ID.
-    /// </summary>
-    public Dictionary<string, string>? Branches { get; init; }
-
-    /// <summary>
-    /// Active branch name. Null means detached/anonymous state.
-    /// </summary>
-    public string? ActiveBranch { get; init; }
-
-    #endregion
+    // Branch tracking removed - application-level concern
 }
 
 //──────────────────────────────────────────────────────────────────
@@ -639,12 +541,7 @@ public record ThreadSnapshot
     /// </summary>
     public string? ConversationId { get; init; }
 
-    /// <summary>
-    /// Branch tracking state.
-    /// </summary>
-    public string? CurrentCheckpointId { get; init; }
-    public Dictionary<string, string>? Branches { get; init; }
-    public string? ActiveBranch { get; init; }
+    // Branch tracking removed - application-level concern
 
     /// <summary>
     /// Message count at the time of snapshot.
@@ -681,9 +578,8 @@ public record ExecutionCheckpoint
     public required DateTime LastActivity { get; init; }
     public string? ServiceThreadId { get; init; }
     public string? ConversationId { get; init; }
-    public string? CurrentCheckpointId { get; init; }
-    public Dictionary<string, string>? Branches { get; init; }
-    public string? ActiveBranch { get; init; }
+
+    // Branch tracking removed - application-level concern
 
     /// <summary>
     /// Version for schema evolution.

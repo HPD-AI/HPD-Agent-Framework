@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Checkpointing;
 
@@ -23,16 +24,6 @@ public class InMemoryConversationThreadStore : ICheckpointStore
 
     // Pending writes: key = "{threadId}:{checkpointId}"
     private readonly ConcurrentDictionary<string, List<PendingWrite>> _pendingWrites = new();
-
-    /// <summary>
-    /// Creates a new InMemoryConversationThreadStore.
-    /// </summary>
-    /// <param name="retentionMode">Deprecated - kept for backwards compatibility. Use InMemoryThreadStore for LatestOnly.</param>
-    [Obsolete("RetentionMode is deprecated. Use InMemoryThreadStore for LatestOnly, or this class for FullHistory.")]
-    public InMemoryConversationThreadStore(CheckpointRetentionMode retentionMode)
-    {
-        // Ignore retentionMode - always use FullHistory behavior
-    }
 
     /// <summary>
     /// Creates a new InMemoryConversationThreadStore with full checkpoint history.
@@ -104,7 +95,6 @@ public class InMemoryConversationThreadStore : ICheckpointStore
                 ParentCheckpointId = null
             },
             ParentCheckpointId = null,
-            BranchName = null,
             MessageIndex = -1
         };
         list.Add(rootCheckpoint);
@@ -158,7 +148,6 @@ public class InMemoryConversationThreadStore : ICheckpointStore
             Step = state.Iteration,
             ParentCheckpointId = source.ParentCheckpointId,
             ParentThreadId = source.ParentThreadId,
-            BranchName = source.BranchName,
             MessageIndex = source.MessageIndex
         };
     }
@@ -222,7 +211,6 @@ public class InMemoryConversationThreadStore : ICheckpointStore
                 ?? throw new InvalidOperationException("Cannot checkpoint thread without ExecutionState"),
             Metadata = metadata,
             ParentCheckpointId = metadata.ParentCheckpointId,
-            BranchName = metadata.BranchName,
             MessageIndex = metadata.MessageIndex
         };
 
@@ -244,33 +232,39 @@ public class InMemoryConversationThreadStore : ICheckpointStore
         DateTime? before = null,
         CancellationToken cancellationToken = default)
     {
-        if (!_checkpointHistory.TryGetValue(threadId, out var history))
-            return Task.FromResult(new List<CheckpointManifestEntry>());
+        var allEntries = new List<CheckpointManifestEntry>();
 
-        List<CheckpointManifestEntry> entries;
-        lock (history)
+        // Add full checkpoints
+        if (_checkpointHistory.TryGetValue(threadId, out var history))
         {
-            var query = history.AsEnumerable();
-
-            if (before.HasValue)
-                query = query.Where(c => c.CreatedAt < before.Value);
-
-            if (limit.HasValue)
-                query = query.Take(limit.Value);
-
-            entries = query.Select(c => new CheckpointManifestEntry
+            lock (history)
             {
-                CheckpointId = c.CheckpointId,
-                CreatedAt = c.CreatedAt,
-                Step = c.Metadata?.Step ?? 0,
-                Source = c.Metadata?.Source ?? CheckpointSource.Loop,
-                ParentCheckpointId = c.ParentCheckpointId,
-                BranchName = c.BranchName,
-                MessageIndex = c.MessageIndex
-            }).ToList();
+                foreach (var c in history)
+                {
+                    allEntries.Add(new CheckpointManifestEntry
+                    {
+                        CheckpointId = c.CheckpointId,
+                        CreatedAt = c.CreatedAt,
+                        Step = c.Metadata?.Step ?? 0,
+                        Source = c.Metadata?.Source ?? CheckpointSource.Loop,
+                        ParentCheckpointId = c.ParentCheckpointId,
+                        MessageIndex = c.MessageIndex,
+                        IsSnapshot = false
+                    });
+                }
+            }
         }
 
-        return Task.FromResult(entries);
+        // Sort by creation time (newest first)
+        var query = allEntries.OrderByDescending(e => e.CreatedAt).AsEnumerable();
+
+        if (before.HasValue)
+            query = query.Where(c => c.CreatedAt < before.Value);
+
+        if (limit.HasValue)
+            query = query.Take(limit.Value);
+
+        return Task.FromResult(query.ToList());
     }
 
     public Task UpdateCheckpointManifestEntryAsync(
@@ -295,12 +289,10 @@ public class InMemoryConversationThreadStore : ICheckpointStore
                 Step = checkpoint.Metadata?.Step ?? 0,
                 Source = checkpoint.Metadata?.Source ?? CheckpointSource.Loop,
                 ParentCheckpointId = checkpoint.ParentCheckpointId,
-                BranchName = checkpoint.BranchName,
                 MessageIndex = checkpoint.MessageIndex
             };
 
             update(tempEntry);
-            checkpoint.BranchName = tempEntry.BranchName;
         }
 
         return Task.CompletedTask;
@@ -457,101 +449,5 @@ public class InMemoryConversationThreadStore : ICheckpointStore
         return Task.CompletedTask;
     }
 
-    // ===== Lightweight Snapshot Methods =====
-
-    private readonly ConcurrentDictionary<string, List<(string SnapshotId, ThreadSnapshot Snapshot, CheckpointMetadata Metadata, DateTime CreatedAt)>> _snapshots = new();
-
-    public Task<string> SaveSnapshotAsync(
-        string threadId,
-        ThreadSnapshot snapshot,
-        CheckpointMetadata metadata,
-        CancellationToken cancellationToken = default)
-    {
-        // Auto-generate unique snapshot ID
-        var snapshotId = Guid.NewGuid().ToString();
-        
-        var entry = (snapshotId, snapshot, metadata, DateTime.UtcNow);
-
-        _snapshots.AddOrUpdate(
-            threadId,
-            _ => new List<(string, ThreadSnapshot, CheckpointMetadata, DateTime)> { entry },
-            (_, existing) =>
-            {
-                lock (existing)
-                {
-                    existing.Insert(0, entry); // Insert at beginning (newest first)
-                }
-                return existing;
-            });
-
-        // Also add to checkpoint history for unified manifest
-        _checkpointHistory.AddOrUpdate(
-            threadId,
-            _ => new List<CheckpointTuple>(),
-            (_, existing) =>
-            {
-                lock (existing)
-                {
-                    // Don't add actual checkpoint, just track in manifest
-                }
-                return existing;
-            });
-
-        return Task.FromResult(snapshotId);
-    }
-
-    public Task<ThreadSnapshot?> LoadSnapshotAsync(
-        string threadId,
-        string snapshotId,
-        CancellationToken cancellationToken = default)
-    {
-        if (_snapshots.TryGetValue(threadId, out var snapshots))
-        {
-            lock (snapshots)
-            {
-                var snapshot = snapshots.FirstOrDefault(s => s.SnapshotId == snapshotId);
-                if (snapshot.SnapshotId != null)
-                    return Task.FromResult<ThreadSnapshot?>(snapshot.Snapshot);
-            }
-        }
-
-        return Task.FromResult<ThreadSnapshot?>(null);
-    }
-
-    public Task DeleteSnapshotsAsync(
-        string threadId,
-        IEnumerable<string> snapshotIds,
-        CancellationToken cancellationToken = default)
-    {
-        var idsToDelete = snapshotIds.ToHashSet();
-
-        if (_snapshots.TryGetValue(threadId, out var snapshots))
-        {
-            lock (snapshots)
-            {
-                snapshots.RemoveAll(s => idsToDelete.Contains(s.SnapshotId));
-            }
-        }
-
-        return Task.CompletedTask;
-    }
-
-    public Task PruneSnapshotsAsync(
-        string threadId,
-        int keepLatest = 50,
-        CancellationToken cancellationToken = default)
-    {
-        if (_snapshots.TryGetValue(threadId, out var snapshots))
-        {
-            lock (snapshots)
-            {
-                if (snapshots.Count > keepLatest)
-                {
-                    snapshots.RemoveRange(keepLatest, snapshots.Count - keepLatest);
-                }
-            }
-        }
-
-        return Task.CompletedTask;
-    }
+    // Snapshot methods removed - branching is now an application-level concern
 }

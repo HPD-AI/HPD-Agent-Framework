@@ -81,10 +81,9 @@ public interface IThreadStore
 /// <remarks>
 /// <para>
 /// This is a CRUD-only interface. The store is "dumb" - it just reads/writes data.
-/// Business logic (branching, retention policies) lives in services:
+/// Business logic (retention policies) lives in services:
 /// <list type="bullet">
 /// <item><see cref="Services.DurableExecution"/> - checkpointing + retention</item>
-/// <item><see cref="Services.Branching"/> - fork/switch/delete branches</item>
 /// </list>
 /// </para>
 /// <para>
@@ -225,46 +224,8 @@ public interface ICheckpointStore : IThreadStore
         Action<CheckpointManifestEntry> update,
         CancellationToken cancellationToken = default);
 
-    // ===== LIGHTWEIGHT SNAPSHOT STORAGE =====
-
-    /// <summary>
-    /// Save a lightweight snapshot (messages + metadata + persistent middleware state only).
-    /// Used by BranchingService for fork operations.
-    /// Storage size: ~20KB vs ~120KB for full checkpoint.
-    /// Automatically generates a unique snapshot ID.
-    /// </summary>
-    /// <returns>The generated snapshot ID</returns>
-    Task<string> SaveSnapshotAsync(
-        string threadId,
-        ThreadSnapshot snapshot,
-        CheckpointMetadata metadata,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Load a lightweight snapshot by ID.
-    /// Returns null if snapshot doesn't exist.
-    /// </summary>
-    Task<ThreadSnapshot?> LoadSnapshotAsync(
-        string threadId,
-        string snapshotId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete specific snapshots by ID.
-    /// </summary>
-    Task DeleteSnapshotsAsync(
-        string threadId,
-        IEnumerable<string> snapshotIds,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Prune old snapshots for a thread.
-    /// Keeps the N most recent snapshots and deletes the rest.
-    /// </summary>
-    Task PruneSnapshotsAsync(
-        string threadId,
-        int keepLatest = 50,
-        CancellationToken cancellationToken = default);
+    // Snapshot storage removed - branching is now an application-level concern
+    // Applications should use separate threads for branches instead of snapshots
 }
 
 /// <summary>
@@ -280,12 +241,6 @@ public class CheckpointTuple
     public AgentLoopState? State { get; set; }
     public required CheckpointMetadata Metadata { get; set; }
     public string? ParentCheckpointId { get; set; }
-
-    /// <summary>
-    /// Optional branch label for named branches.
-    /// Null for anonymous/detached checkpoints.
-    /// </summary>
-    public string? BranchName { get; set; }
 
     /// <summary>
     /// Message index this checkpoint was created after.
@@ -324,11 +279,6 @@ public class CheckpointMetadata
     public string? ParentThreadId { get; set; }
 
     /// <summary>
-    /// Branch name if this checkpoint is a branch head.
-    /// </summary>
-    public string? BranchName { get; set; }
-
-    /// <summary>
     /// Message count at this checkpoint.
     /// </summary>
     public int MessageIndex { get; set; }
@@ -348,11 +298,6 @@ public class CheckpointManifestEntry
     /// Parent checkpoint ID for tree structure.
     /// </summary>
     public string? ParentCheckpointId { get; set; }
-
-    /// <summary>
-    /// Branch name if this checkpoint is a branch head.
-    /// </summary>
-    public string? BranchName { get; set; }
 
     /// <summary>
     /// Message count at this checkpoint.

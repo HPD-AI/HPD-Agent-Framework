@@ -86,21 +86,8 @@ public class SseEventHandler : IAgentEventHandler
                 Console.WriteLine($"[SSE] Sending {typeName}: {permDenied.Reason}");
                 break;
 
-            case BranchCreatedEvent branchCreated:
-                Console.WriteLine($"[SSE] Sending {typeName}: branch '{branchCreated.BranchName}' from checkpoint {branchCreated.ParentCheckpointId} at message index {branchCreated.ForkMessageIndex}");
-                break;
-
-            case BranchSwitchedEvent branchSwitched:
-                Console.WriteLine($"[SSE] Sending {typeName}: switched to branch '{branchSwitched.NewBranch}' at checkpoint {branchSwitched.CheckpointId}");
-                break;
-
-            case BranchDeletedEvent branchDeleted:
-                Console.WriteLine($"[SSE] Sending {typeName}: deleted branch '{branchDeleted.BranchName}', pruned {branchDeleted.CheckpointsPruned} checkpoints");
-                break;
-
-            case BranchRenamedEvent branchRenamed:
-                Console.WriteLine($"[SSE] Sending {typeName}: renamed branch '{branchRenamed.OldName}' to '{branchRenamed.NewName}'");
-                break;
+            // Branch events removed - branching is now application-level (not part of AgentEvent hierarchy)
+            // Branch events are handled separately by ConversationManager
 
             default:
                 // All other events are logged with their type name

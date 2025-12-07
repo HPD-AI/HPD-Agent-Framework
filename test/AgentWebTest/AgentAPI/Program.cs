@@ -3,7 +3,6 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 using HPD.Agent.Checkpointing;
-using HPD.Agent.Checkpointing.Services;
 using HPD.Agent.FrontendTools;
 using HPD.Agent.Memory;
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -37,15 +36,11 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register checkpointing services (branching only)
-builder.Services.AddCheckpointing(opts =>
-{
-    opts.Store = new JsonConversationThreadStore(
-        Path.Combine(Environment.CurrentDirectory, "checkpoints"));
-    
-    opts.Branching.Enabled = true;
-});
+// Register checkpointing services
+var threadStore = new JsonConversationThreadStore(
+    Path.Combine(Environment.CurrentDirectory, "threads"));
 
+builder.Services.AddSingleton<IThreadStore>(threadStore);
 builder.Services.AddSingleton<ConversationManager>();
 
 var app = builder.Build();
@@ -112,176 +107,11 @@ conversationsApi.MapGet("/", async (ConversationManager cm) =>
     return Results.Ok(conversations);
 });
 
-// ===== Branching API =====
-
-// Get branch tree for visualization
-conversationsApi.MapGet("/{conversationId}/branches/tree", async (string conversationId, ConversationManager cm) =>
-{
-    try
-    {
-        var tree = await cm.GetBranchTreeAsync(conversationId);
-        return Results.Ok(new BranchTreeDto(
-            tree.ThreadId,
-            tree.RootCheckpointId,
-            tree.Nodes.ToDictionary(
-                kvp => kvp.Key,
-                kvp => new BranchNodeDto(
-                    kvp.Value.CheckpointId,
-                    kvp.Value.ParentCheckpointId,
-                    kvp.Value.MessageCount,
-                    kvp.Value.ChildCheckpointIds.ToList(),
-                    kvp.Value.BranchName)),
-            tree.NamedBranches.ToDictionary(
-                kvp => kvp.Key,
-                kvp => new BranchMetadataDto(
-                    kvp.Value.Name,
-                    kvp.Value.HeadCheckpointId,
-                    kvp.Value.CreatedAt)),
-            tree.ActiveBranch));
-    }
-    catch (KeyNotFoundException)
-    {
-        return Results.NotFound(new ErrorResponse("Conversation not found"));
-    }
-});
-
-// List all branches for a conversation
-conversationsApi.MapGet("/{conversationId}/branches", async (string conversationId, ConversationManager cm) =>
-{
-    try
-    {
-        var tree = await cm.GetBranchTreeAsync(conversationId);
-        var branches = tree.NamedBranches.Select(kvp => new BranchDto(
-            kvp.Key,
-            kvp.Value.HeadCheckpointId,
-            tree.Nodes.TryGetValue(kvp.Value.HeadCheckpointId, out var node) ? node.MessageCount : 0,
-            kvp.Value.CreatedAt)).ToList();
-        return Results.Ok(branches);
-    }
-    catch (KeyNotFoundException)
-    {
-        return Results.NotFound(new ErrorResponse("Conversation not found"));
-    }
-});
-
-// Create a new branch (fork from current state)
-conversationsApi.MapPost("/{conversationId}/branches", async (string conversationId, ForkRequest request, ConversationManager cm) =>
-{
-    Console.WriteLine($"[FORK] Request to fork conversation {conversationId} from current state");
-    try
-    {
-        var (thread, evt) = await cm.ForkAsync(conversationId, request.BranchName);
-        Console.WriteLine($"[FORK] Created branch '{evt.BranchName}' at checkpoint {evt.CheckpointId}");
-        Console.WriteLine($"[FORK] Fork point: checkpoint {evt.ParentCheckpointId}, message index {evt.ForkMessageIndex}");
-        Console.WriteLine($"[FORK] Thread now has {thread.MessageCount} messages");
-        foreach (var msg in thread.Messages.Take(10))
-        {
-            var preview = msg.Text?.Length > 50 ? msg.Text.Substring(0, 50) + "..." : msg.Text;
-            Console.WriteLine($"[FORK]   - {msg.Role}: {preview}");
-        }
-        return Results.Created(
-            $"/conversations/{conversationId}/branches/{evt.BranchName}",
-            new BranchCreatedDto(evt.BranchName, evt.CheckpointId, evt.ParentCheckpointId, evt.ForkMessageIndex));
-    }
-    catch (KeyNotFoundException)
-    {
-        Console.WriteLine($"[FORK] ERROR: Conversation or checkpoint not found");
-        return Results.NotFound(new ErrorResponse("Conversation or checkpoint not found"));
-    }
-    catch (InvalidOperationException ex)
-    {
-        Console.WriteLine($"[FORK] ERROR: {ex.Message}");
-        return Results.BadRequest(new ErrorResponse(ex.Message));
-    }
-});
-
-// Switch to a branch
-conversationsApi.MapPost("/{conversationId}/branches/{branchName}/switch", async (string conversationId, string branchName, ConversationManager cm) =>
-{
-    var result = await cm.SwitchBranchAsync(conversationId, branchName);
-    if (result == null)
-        return Results.NotFound(new ErrorResponse("Branch not found"));
-
-    var (thread, evt) = result.Value;
-    return Results.Ok(new BranchSwitchedDto(evt.NewBranch ?? branchName, evt.CheckpointId, thread.MessageCount));
-});
-
-// Delete a branch
-conversationsApi.MapDelete("/{conversationId}/branches/{branchName}", async (string conversationId, string branchName, ConversationManager cm) =>
-{
-    var evt = await cm.DeleteBranchAsync(conversationId, branchName);
-    if (evt == null)
-        return Results.NotFound(new ErrorResponse("Branch not found"));
-
-    return Results.Ok(new BranchDeletedDto(evt.BranchName, evt.CheckpointsPruned));
-});
-
-// Rename a branch
-conversationsApi.MapPut("/{conversationId}/branches/{branchName}", async (string conversationId, string branchName, RenameBranchRequest request, ConversationManager cm) =>
-{
-    var evt = await cm.RenameBranchAsync(conversationId, branchName, request.NewName);
-    if (evt == null)
-        return Results.NotFound(new ErrorResponse("Branch not found"));
-
-    return Results.Ok(new BranchRenamedDto(evt.OldName, evt.NewName));
-});
-
-// Get checkpoint history
-conversationsApi.MapGet("/{conversationId}/checkpoints", async (string conversationId, int? limit, ConversationManager cm) =>
-{
-    try
-    {
-        var history = await cm.GetCheckpointHistoryAsync(conversationId, limit);
-        var checkpoints = history.Select(cp => new CheckpointDto(
-            cp.CheckpointId,
-            cp.MessageIndex,
-            cp.ParentCheckpointId,
-            cp.BranchName)).ToList();
-        return Results.Ok(checkpoints);
-    }
-    catch (KeyNotFoundException)
-    {
-        return Results.NotFound(new ErrorResponse("Conversation not found"));
-    }
-});
-
-// Load conversation at specific checkpoint
-conversationsApi.MapGet("/{conversationId}/checkpoints/{checkpointId}", async (string conversationId, string checkpointId, ConversationManager cm) =>
-{
-    var thread = await cm.LoadAtCheckpointAsync(conversationId, checkpointId);
-    if (thread == null)
-        return Results.NotFound(new ErrorResponse("Checkpoint not found"));
-
-    return Results.Ok(new ConversationDto(
-        thread.Id,
-        thread.DisplayName ?? "Conversation",
-        thread.CreatedAt,
-        thread.LastActivity,
-        thread.MessageCount));
-});
-
-// Get message variants at index (for ChatGPT-style 1/3 navigation)
-conversationsApi.MapGet("/{conversationId}/variants/{messageIndex:int}", async (string conversationId, int messageIndex, ConversationManager cm) =>
-{
-    try
-    {
-        var variants = await cm.GetVariantsAtMessageAsync(conversationId, messageIndex);
-        var result = variants.Select(v => new VariantDto(
-            v.CheckpointId,
-            v.MessageIndex,
-            v.BranchName)).ToList();
-        return Results.Ok(result);
-    }
-    catch (KeyNotFoundException)
-    {
-        return Results.NotFound(new ErrorResponse("Conversation not found"));
-    }
-});
-
 // Get messages for a conversation
 conversationsApi.MapGet("/{conversationId}/messages", async (string conversationId, ConversationManager cm) =>
 {
     Console.WriteLine($"[MESSAGES] Getting messages for conversation {conversationId}");
+    
     var thread = await cm.GetConversationAsync(conversationId);
     if (thread == null)
     {
@@ -289,7 +119,7 @@ conversationsApi.MapGet("/{conversationId}/messages", async (string conversation
         return Results.NotFound(new ErrorResponse("Conversation not found"));
     }
 
-    Console.WriteLine($"[MESSAGES] Thread has {thread.MessageCount} messages, active branch: {thread.ActiveBranch}");
+    Console.WriteLine($"[MESSAGES] Thread has {thread.MessageCount} messages");
     var messages = thread.Messages.Select((m, i) => new MessageDto(
         i,
         m.Role.Value,
@@ -385,6 +215,10 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
         return;
     }
 
+    // Ensure events use conversationId (not internal threadId)
+    // Frontend expects consistent conversationId across all requests
+    thread.ConversationId = conversationId;
+
     // SSE headers
     context.Response.Headers.Append("Content-Type", "text/event-stream");
     context.Response.Headers.Append("Cache-Control", "no-cache");
@@ -463,6 +297,9 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
             CancellationToken.None);
         return;
     }
+
+    // Ensure events use conversationId (not internal threadId)
+    thread.ConversationId = conversationId;
 
     try
     {
@@ -544,166 +381,41 @@ app.Run();
 
 /// <summary>
 /// Validates that checkpointing services are properly configured.
-/// Ensures services are registered and share the same ICheckpointStore instance.
+/// Validates that thread store is properly configured.
 /// </summary>
 static void ValidateCheckpointingConfiguration(IServiceProvider services)
 {
     try
     {
-        var store = services.GetRequiredService<ICheckpointStore>();
-        var branching = services.GetService<Branching>();
-        
-        Console.WriteLine("\n✓ Checkpointing configuration validated:");
-        Console.WriteLine($"  - Checkpoint store: {store.GetType().Name}");
-        
-        if (branching != null)
-            Console.WriteLine($"  - Branching: Enabled");
-        
+        var threadStore = services.GetRequiredService<IThreadStore>();
+        Console.WriteLine("\n✓ Thread store configured:");
+        Console.WriteLine($"  - Thread store: {threadStore.GetType().Name}");
         Console.WriteLine();
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"\n⚠ Warning: Could not fully validate checkpointing configuration: {ex.Message}\n");
+        Console.WriteLine($"\n⚠ Warning: Could not validate thread store configuration: {ex.Message}\n");
     }
 }
 
 // Conversation Manager
 internal class ConversationManager
 {
-    private readonly ICheckpointStore _store;
-    private readonly Branching _branchingService;
+    private readonly IThreadStore _threadStore;
     private readonly Dictionary<string, ConversationThread> _threadCache = new(); // In-memory cache
     private readonly Dictionary<string, Agent> _runningAgents = new(); // Track active agents
     private readonly InMemoryPermissionStorage _permissionStorage = new();
 
-    public ConversationManager(
-        ICheckpointStore store,
-        Branching branchingService)
+    public ConversationManager(IThreadStore threadStore)
     {
-        _store = store;
-        _branchingService = branchingService;
-    }
-
-    // ===== Branching Methods (via BranchingService) =====
-
-    /// <summary>
-    /// Fork from the current conversation state to create a new branch.
-    /// Creates a snapshot of the current state and branches from it.
-    /// </summary>
-    public async Task<(ConversationThread Thread, BranchCreatedEvent Event)> ForkAsync(
-        string conversationId,
-        string? branchName = null)
-    {
-        // Get current thread from cache
-        var currentThread = await GetConversationAsync(conversationId);
-        if (currentThread == null)
-            throw new KeyNotFoundException($"Conversation '{conversationId}' not found");
-
-        // Fork from current state (library will save snapshot automatically)
-        var (thread, evt) = await _branchingService.ForkFromCurrentAsync(currentThread, branchName);
-        _threadCache[conversationId] = thread; // Update cache with forked state
-        return (thread, evt);
-    }
-
-    /// <summary>
-    /// Switch to a different branch.
-    /// </summary>
-    public async Task<(ConversationThread Thread, BranchSwitchedEvent Event)?> SwitchBranchAsync(
-        string conversationId,
-        string branchName)
-    {
-        var result = await _branchingService.SwitchBranchAsync(conversationId, branchName);
-        if (result.HasValue)
-        {
-            _threadCache[conversationId] = result.Value.Thread; // Update cache
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// Delete a branch.
-    /// </summary>
-    public async Task<BranchDeletedEvent?> DeleteBranchAsync(
-        string conversationId,
-        string branchName,
-        bool pruneOrphans = true)
-    {
-        return await _branchingService.DeleteBranchAsync(conversationId, branchName, pruneOrphans);
-    }
-
-    /// <summary>
-    /// Rename a branch.
-    /// </summary>
-    public async Task<BranchRenamedEvent?> RenameBranchAsync(
-        string conversationId,
-        string oldName,
-        string newName)
-    {
-        return await _branchingService.RenameBranchAsync(conversationId, oldName, newName);
-    }
-
-    /// <summary>
-    /// Get the branch tree for visualization.
-    /// </summary>
-    public async Task<BranchTree> GetBranchTreeAsync(string conversationId)
-    {
-        return await _branchingService.GetBranchTreeAsync(conversationId);
-    }
-
-    /// <summary>
-    /// Get checkpoint history for a conversation.
-    /// </summary>
-    public async Task<List<CheckpointTuple>> GetCheckpointHistoryAsync(
-        string conversationId,
-        int? limit = null)
-    {
-        return await _branchingService.GetCheckpointsAsync(conversationId, limit);
-    }
-
-    /// <summary>
-    /// Get checkpoint variants at a specific message index (for ChatGPT-style 1/3 navigation).
-    /// </summary>
-    public async Task<List<CheckpointTuple>> GetVariantsAtMessageAsync(
-        string conversationId,
-        int messageIndex)
-    {
-        return await _branchingService.GetVariantsAtMessageAsync(conversationId, messageIndex);
-    }
-
-    /// <summary>
-    /// Load thread at a specific checkpoint.
-    /// </summary>
-    public async Task<ConversationThread?> LoadAtCheckpointAsync(
-        string conversationId,
-        string checkpointId)
-    {
-        // Use store's LoadThreadAtCheckpointAsync method (part of ICheckpointStore)
-        var thread = await _store.LoadThreadAtCheckpointAsync(conversationId, checkpointId);
-        if (thread != null)
-        {
-            _threadCache[conversationId] = thread;
-        }
-        return thread;
+        _threadStore = threadStore;
     }
 
     public async Task<ConversationThread> CreateConversationAsync()
     {
         var thread = new ConversationThread();
+        await _threadStore.SaveThreadAsync(thread);
         _threadCache[thread.Id] = thread;
-        
-        // Save initial snapshot for branching from root
-        // Snapshots are lightweight (~6x smaller) and sufficient for branching
-        await _store.SaveSnapshotAsync(
-            thread.Id,
-            thread.ToSnapshot(),
-            new CheckpointMetadata
-            {
-                Source = CheckpointSource.Root,
-                Step = -1,
-                MessageIndex = -1,
-                BranchName = thread.ActiveBranch
-            });
-        
         return thread;
     }
 
@@ -713,8 +425,7 @@ internal class ConversationManager
         if (_threadCache.TryGetValue(conversationId, out var cached))
             return cached;
 
-        // Load from store
-        var thread = await _store.LoadThreadAsync(conversationId);
+        var thread = await _threadStore.LoadThreadAsync(conversationId);
         if (thread != null)
             _threadCache[conversationId] = thread;
 
@@ -725,16 +436,13 @@ internal class ConversationManager
     {
         _threadCache.Remove(conversationId);
         _runningAgents.Remove(conversationId);
-        await _store.DeleteThreadAsync(conversationId);
+        await _threadStore.DeleteThreadAsync(conversationId);
         return true;
     }
 
-    /// <summary>
-    /// List all conversation IDs (from persistent storage).
-    /// </summary>
     public async Task<List<string>> ListConversationIdsAsync()
     {
-        return await _store.ListThreadIdsAsync();
+        return await _threadStore.ListThreadIdsAsync();
     }
 
     public async Task<Agent> GetAgentAsync(string conversationId, IAgentEventHandler? eventHandler = null)
@@ -845,28 +553,5 @@ public record FrontendToolContentDto(
     string? Id = null,
     string? Filename = null);
 
-// Branch DTOs
-public record BranchDto(string Name, string HeadCheckpointId, int MessageCount, DateTime CreatedAt);
-public record BranchTreeDto(
-    string ThreadId,
-    string? RootCheckpointId,
-    Dictionary<string, BranchNodeDto> Nodes,
-    Dictionary<string, BranchMetadataDto> NamedBranches,
-    string? ActiveBranch);
-public record BranchNodeDto(
-    string CheckpointId,
-    string? ParentCheckpointId,
-    int MessageCount,
-    List<string> ChildCheckpointIds,
-    string? BranchName);
-public record BranchMetadataDto(string Name, string HeadCheckpointId, DateTime CreatedAt);
-public record ForkRequest(string? BranchName = null);
-public record RenameBranchRequest(string NewName);
-public record BranchCreatedDto(string BranchName, string CheckpointId, string ForkPointCheckpointId, int MessageIndex);
-public record BranchSwitchedDto(string BranchName, string CheckpointId, int MessageCount);
-public record BranchDeletedDto(string BranchName, int CheckpointsPruned);
-public record BranchRenamedDto(string OldName, string NewName);
-public record CheckpointDto(string CheckpointId, int MessageIndex, string? ParentCheckpointId, string? BranchName);
-public record VariantDto(string CheckpointId, int MessageIndex, string? BranchName);
 public record MessageDto(int Index, string Role, string Content, string? Thinking = null);
 
