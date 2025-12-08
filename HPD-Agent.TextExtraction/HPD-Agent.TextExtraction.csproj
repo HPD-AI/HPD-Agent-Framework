@@ -13,7 +13,7 @@
   <!-- NuGet Package Metadata -->
   <PropertyGroup>
     <PackageId>HPD.Agent.TextExtraction</PackageId>
-    <Version>0.1.1-alpha</Version>
+    <Version>0.1.1</Version>
     <Authors>Einstein Essibu</Authors>
     <Company>HPD</Company>
     <Description>Text extraction utilities for HPD Agent framework, supporting PDF, DOCX, HTML and other document formats.</Description>

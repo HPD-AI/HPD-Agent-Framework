@@ -15,7 +15,7 @@
   <!-- NuGet Package Metadata -->
   <PropertyGroup>
     <PackageId>HPD.Agent.Framework</PackageId>
-    <Version>0.1.1-alpha</Version>
+    <Version>0.1.1</Version>
     <Authors>Einstein Essibu</Authors>
     <Company>HPD</Company>
     <Description>A middleware-driven agentic AI framework built on Microsoft.Extensions.AI for building intelligent, tool-using agents.</Description>
