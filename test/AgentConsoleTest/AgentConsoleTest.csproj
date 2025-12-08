@@ -31,10 +31,4 @@
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.14.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
 </Project>
