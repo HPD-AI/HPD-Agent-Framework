@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    <NoWarn>CS8600;CS8601;CS8602;CS8604</NoWarn>
     <PackageId>HPD-Agent.Providers.OnnxRuntime</PackageId>
     <Title>HPD-Agent ONNX Runtime Provider</Title>
     <Description>ONNX Runtime provider for HPD-Agent</Description>

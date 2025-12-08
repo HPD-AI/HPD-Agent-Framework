@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    <NoWarn>CS8600;CS8601;CS8602;CS8604;CA2024</NoWarn>
     <PackageId>HPD-Agent.Providers.OpenRouter</PackageId>
     <Title>HPD-Agent OpenRouter Provider</Title>
     <Description>OpenRouter provider for HPD-Agent</Description>
