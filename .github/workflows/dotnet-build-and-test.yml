@@ -83,7 +83,7 @@ jobs:
         echo "Version: $VERSION"
     
     # Pack all NuGet packages
-    - name: Pack HPD.Agent.Framework
+    - name: Pack HPD-Agent.Framework
       run: dotnet pack HPD-Agent/HPD-Agent.csproj --configuration Release --no-build --output ./nupkg -p:PackageVersion=${{ steps.version.outputs.version }}
     
     - name: Pack HPD.Agent.Plugins.FileSystem
@@ -150,17 +150,17 @@ jobs:
           
           ### Install
           ```bash
-          dotnet add package HPD.Agent.Framework --version ${{ steps.version.outputs.version }}
-          dotnet add package HPD.Agent.Memory --version ${{ steps.version.outputs.version }}
-          dotnet add package HPD.Agent.MCP --version ${{ steps.version.outputs.version }}
+          dotnet add package HPD-Agent.Framework --version ${{ steps.version.outputs.version }}
+          dotnet add package HPD-Agent.Memory --version ${{ steps.version.outputs.version }}
+          dotnet add package HPD-Agent.MCP --version ${{ steps.version.outputs.version }}
           ```
           
           ### Packages Released
-          - HPD.Agent.Framework
-          - HPD.Agent.Plugins.FileSystem
-          - HPD.Agent.Plugins.WebSearch
-          - HPD.Agent.Memory
-          - HPD.Agent.MCP
+          - HPD-Agent.Framework
+          - HPD-Agent.Plugins.FileSystem
+          - HPD-Agent.Plugins.WebSearch
+          - HPD-Agent.Memory
+          - HPD-Agent.MCP
           - HPD-Agent.Providers.OpenAI
           - HPD-Agent.Providers.Anthropic
           - HPD-Agent.Providers.GoogleAI

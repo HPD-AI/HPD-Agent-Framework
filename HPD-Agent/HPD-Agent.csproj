@@ -14,7 +14,7 @@
 
   <!-- NuGet Package Metadata -->
   <PropertyGroup>
-    <PackageId>HPD.Agent.Framework</PackageId>
+    <PackageId>HPD-Agent.Framework</PackageId>
     <Version>0.1.0</Version>
     <Authors>Einstein Essibu</Authors>
     <Company>HPD</Company>
