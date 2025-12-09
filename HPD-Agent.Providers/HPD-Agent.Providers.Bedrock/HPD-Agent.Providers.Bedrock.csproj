@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <NoWarn>CS8600;CS8601;CS8602;CS8604</NoWarn>
-    <PackageId>HPD.Agent.Providers.Bedrock</PackageId>
+    <PackageId>HPD-Agent.Providers.Bedrock</PackageId>
     <Title>HPD-Agent AWS Bedrock Provider</Title>
     <Description>AWS Bedrock provider for HPD-Agent</Description>
     <PackageTags>ai;agent;aws;bedrock;llm</PackageTags>

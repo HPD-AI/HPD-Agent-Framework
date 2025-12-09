@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>HPD.Agent.FFI</PackageId>
+    <PackageId>HPD-Agent.FFI</PackageId>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>HPD.Agent.FFI</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>

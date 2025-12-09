@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>HPD.Agent.MCP</PackageId>
+    <PackageId>HPD-Agent.MCP</PackageId>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>HPD.Agent.MCP</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>

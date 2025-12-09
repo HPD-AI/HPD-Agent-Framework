@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <PackageId>HPD.Agent.Providers.OpenAI</PackageId>
+    <PackageId>HPD-Agent.Providers.OpenAI</PackageId>
     <Title>HPD-Agent OpenAI Provider</Title>
     <Description>OpenAI and Azure OpenAI provider for HPD-Agent</Description>
     <PackageTags>ai;agent;openai;azure;gpt;llm</PackageTags>

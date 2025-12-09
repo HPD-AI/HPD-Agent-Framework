@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <PackageId>HPD.Agent.Providers.Ollama</PackageId>
+    <PackageId>HPD-Agent.Providers.Ollama</PackageId>
     <Title>HPD-Agent Ollama Provider</Title>
     <Description>Ollama provider for HPD-Agent</Description>
     <PackageTags>ai;agent;ollama;local;llm</PackageTags>

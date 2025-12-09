@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <PackageId>HPD.Agent.Providers.HuggingFace</PackageId>
+    <PackageId>HPD-Agent.Providers.HuggingFace</PackageId>
     <Title>HPD-Agent HuggingFace Provider</Title>
     <Description>HuggingFace Inference API provider for HPD-Agent</Description>
     <PackageTags>ai;agent;huggingface;inference;llm</PackageTags>

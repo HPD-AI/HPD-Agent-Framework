@@ -14,7 +14,7 @@
   <!-- NuGet Package Metadata -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>HPD.Agent.TextExtraction</PackageId>
+    <PackageId>HPD-Agent.TextExtraction</PackageId>
     <Version>0.1.1</Version>
     <Authors>Einstein Essibu</Authors>
     <Company>HPD</Company>

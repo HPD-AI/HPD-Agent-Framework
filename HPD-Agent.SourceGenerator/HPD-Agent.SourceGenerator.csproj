@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <PackageId>HPD.Agent.SourceGenerator</PackageId>
+    <PackageId>HPD-Agent.SourceGenerator</PackageId>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>HPD.Agent.SourceGenerator</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>

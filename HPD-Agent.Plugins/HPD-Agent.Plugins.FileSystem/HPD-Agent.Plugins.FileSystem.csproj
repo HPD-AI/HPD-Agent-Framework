@@ -6,7 +6,7 @@
     <RootNamespace>HPD.Agent.Plugins.FileSystem</RootNamespace>
 
     <!-- Package Metadata (inherits Version, Authors, License from Directory.Build.props) -->
-    <PackageId>HPD.Agent.Plugins.FileSystem</PackageId>
+    <PackageId>HPD-Agent.Plugins.FileSystem</PackageId>
     <Description>File system operations plugin for HPD-Agent. Provides AI functions for reading, writing, editing, searching, and discovering files.</Description>
     <PackageTags>ai;agent;filesystem;plugin;hpd-agent</PackageTags>
   </PropertyGroup>

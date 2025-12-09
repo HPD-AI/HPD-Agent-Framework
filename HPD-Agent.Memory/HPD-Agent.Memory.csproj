@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>HPD.Agent.Memory</PackageId>
+    <PackageId>HPD-Agent.Memory</PackageId>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>HPD.Agent.Memory</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>

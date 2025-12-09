@@ -6,7 +6,7 @@
     <RootNamespace>HPD.Agent.Plugins.WebSearch</RootNamespace>
 
     <!-- Package Metadata (inherits Version, Authors, License from Directory.Build.props) -->
-    <PackageId>HPD.Agent.Plugins.WebSearch</PackageId>
+    <PackageId>HPD-Agent.Plugins.WebSearch</PackageId>
     <Description>Web search plugin for HPD-Agent. Provides AI functions for searching the web using Tavily, Brave, and Bing search APIs.</Description>
     <PackageTags>ai;agent;websearch;search;plugin;hpd-agent;tavily;brave;bing</PackageTags>
   </PropertyGroup>

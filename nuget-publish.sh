@@ -40,26 +40,26 @@ PROJECTS=(
     "HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj"
 )
 
-# Expected package IDs (with dots, not hyphens)
-# Note: HPD.Agent.SourceGenerator is NOT a separate package - it's embedded in HPD.Agent.Framework
+# Expected package IDs (with hyphens - matching NuGet namespace ownership)
+# Note: HPD-Agent.SourceGenerator is NOT a separate package - it's embedded in HPD-Agent.Framework
 PACKAGE_IDS=(
-    "HPD.Agent.Framework"
-    "HPD.Agent.FFI"
-    "HPD.Agent.MCP"
-    "HPD.Agent.Memory"
-    "HPD.Agent.TextExtraction"
-    "HPD.Agent.Plugins.FileSystem"
-    "HPD.Agent.Plugins.WebSearch"
-    "HPD.Agent.Providers.Anthropic"
-    "HPD.Agent.Providers.AzureAIInference"
-    "HPD.Agent.Providers.Bedrock"
-    "HPD.Agent.Providers.GoogleAI"
-    "HPD.Agent.Providers.HuggingFace"
-    "HPD.Agent.Providers.Mistral"
-    "HPD.Agent.Providers.Ollama"
-    "HPD.Agent.Providers.OnnxRuntime"
-    "HPD.Agent.Providers.OpenAI"
-    "HPD.Agent.Providers.OpenRouter"
+    "HPD-Agent.Framework"
+    "HPD-Agent.FFI"
+    "HPD-Agent.MCP"
+    "HPD-Agent.Memory"
+    "HPD-Agent.TextExtraction"
+    "HPD-Agent.Plugins.FileSystem"
+    "HPD-Agent.Plugins.WebSearch"
+    "HPD-Agent.Providers.Anthropic"
+    "HPD-Agent.Providers.AzureAIInference"
+    "HPD-Agent.Providers.Bedrock"
+    "HPD-Agent.Providers.GoogleAI"
+    "HPD-Agent.Providers.HuggingFace"
+    "HPD-Agent.Providers.Mistral"
+    "HPD-Agent.Providers.Ollama"
+    "HPD-Agent.Providers.OnnxRuntime"
+    "HPD-Agent.Providers.OpenAI"
+    "HPD-Agent.Providers.OpenRouter"
 )
 
 function show_usage() {
@@ -191,30 +191,38 @@ function push_packages() {
 
     local PUBLISHED=0
     local FAILED=0
+    local PIDS=()
 
     for nupkg in "$NUPKG_DIR"/*."$VERSION".nupkg; do
         if [ -f "$nupkg" ] && [[ "$nupkg" != *.snupkg ]]; then
             filename=$(basename "$nupkg")
             echo "Publishing $filename..."
 
-            if dotnet nuget push "$nupkg" -k "$API_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate; then
-                echo "  ✓ Published"
-                ((PUBLISHED++))
-            else
-                echo "  ✗ Failed"
-                ((FAILED++))
-            fi
+            # Push in background for parallelism
+            dotnet nuget push "$nupkg" -k "$API_KEY" -s https://api.nuget.org/v3/index.json --skip-duplicate > /dev/null 2>&1 &
+            PIDS+=($!)
         fi
     done
 
     echo ""
+    echo "Waiting for all packages to publish..."
+    echo ""
+
+    # Wait for all background jobs and count results
+    for pid in "${PIDS[@]}"; do
+        if wait $pid; then
+            ((PUBLISHED++))
+        else
+            ((FAILED++))
+        fi
+    done
     echo "=========================================="
     echo "Push Results:"
     echo "  Published: $PUBLISHED"
     echo "  Failed: $FAILED"
     echo "=========================================="
     echo ""
-    echo "Verify at: https://www.nuget.org/packages?q=HPD.Agent"
+    echo "Verify at: https://www.nuget.org/packages?q=HPD-Agent"
 }
 
 # Main script
