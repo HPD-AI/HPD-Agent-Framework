@@ -31,5 +31,5 @@ public class PluginMetadata
     /// If true, the container should be Collapse (container generated).
     /// If false, all functions are always visible.
     /// </summary>
-    public bool HasScopeAttribute { get; set; }
+    public bool HasCollapseAttribute { get; set; }
 }

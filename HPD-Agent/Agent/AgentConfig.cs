@@ -82,13 +82,13 @@ public class AgentConfig
     public ToolSelectionConfig? ToolSelection { get; set; }
 
     /// <summary>
-    /// Configuration for scoping - hierarchical organization of functions to reduce token usage.
+    /// Configuration for Collapsing - hierarchical organization of functions to reduce token usage.
     /// When enabled, functions are hidden behind container functions, reducing initial tool list by up to 87.5%.
     /// </summary>
-    public ScopingConfig? Scoping { get; set; }
+    public CollapsingConfig? Collapsing { get; set; }
 
     /// <summary>
-    /// Internal: Set of explicitly registered plugin names (for scoping manager).
+    /// Internal: Set of explicitly registered plugin names (for Collapsing manager).
     /// This is set by the builder and used to distinguish explicit vs implicit plugin registration.
     /// </summary>
     [JsonIgnore]
@@ -838,23 +838,23 @@ public enum SkillInstructionMode
 }
 
 /// <summary>
-/// Configuration for scoping feature.
+/// Configuration for Collapsing feature.
 /// Controls hierarchical organization of functions to reduce token usage.
 /// </summary>
-public class ScopingConfig
+public class CollapsingConfig
 {
     /// <summary>
-    /// Enable scoping for C# plugins. When true, plugin functions are hidden behind container functions.
-    /// Default: false (disabled - all functions visible immediately).
+    /// Enable Collapsing for C# plugins. When true, plugin functions are hidden behind container functions.
+    /// Default: true (enabled - plugins with [Collapse] attribute are collapsed).
     /// </summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Enable scoping for Frontend (AGUI) tools. When true, all frontend tools are grouped in a FrontendTools container.
+    /// Enable Collapsing for Frontend (AGUI) tools. When true, all frontend tools are grouped in a FrontendTools container.
     /// Frontend tools are human-in-the-loop tools executed by the UI.
     /// Default: false (frontend tools always visible).
     /// </summary>
-    public bool ScopeFrontendTools { get; set; } = false;
+    public bool CollapseFrontendTools { get; set; } = false;
 
     /// <summary>
     /// Maximum number of function names to include in auto-generated container descriptions.

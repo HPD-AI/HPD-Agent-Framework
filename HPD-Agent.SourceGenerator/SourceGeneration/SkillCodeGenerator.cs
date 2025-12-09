@@ -106,7 +106,7 @@ internal static class SkillCodeGenerator
 
     /// <summary>
     /// Generates skill registration code to be added to CreatePlugin() method
-    /// Handles both class-level scoping (if [Scope] on class) and individual skill containers
+    /// Handles both class-level Collapsing (if [Collapse] on class) and individual skill containers
     /// </summary>
     public static string GenerateSkillRegistrations(PluginInfo plugin)
     {
@@ -116,11 +116,11 @@ internal static class SkillCodeGenerator
         var sb = new StringBuilder();
         sb.AppendLine();
         
-        // If the plugin (skill class) has [Scope], create a class-level container first
-        if (plugin.HasScopeAttribute)
+        // If the plugin (skill class) has [Collapse], create a class-level container first
+        if (plugin.HasCollapseAttribute)
         {
-            sb.AppendLine("        // Register skill class scope container");
-            sb.AppendLine($"        functions.Add(Create{plugin.Name}ScopeContainer());");
+            sb.AppendLine("        // Register skill class Collapse container");
+            sb.AppendLine($"        functions.Add(Create{plugin.Name}CollapseContainer());");
             sb.AppendLine();
         }
         
@@ -156,7 +156,7 @@ internal static class SkillCodeGenerator
 
         var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
 
-        // Build description like plugin scoping: append function list
+        // Build description like plugin Collapsing: append function list
         var functionNames = string.Join(", ", skill.ResolvedFunctionReferences);
         var fullDescription = $"{skill.Description}. References {skill.ResolvedFunctionReferences.Count} functions: {functionNames}";
 
@@ -180,7 +180,7 @@ internal static class SkillCodeGenerator
             sb.AppendLine("                async (arguments, cancellationToken) =>");
             sb.AppendLine("                {");
             sb.AppendLine("                    // Check if instructions should be included in function result");
-            sb.AppendLine("                    var mode = HPD.Agent.AgentConfig.GlobalConfig?.Scoping?.SkillInstructionMode ?? HPD.Agent.SkillInstructionMode.Both;");
+            sb.AppendLine("                    var mode = HPD.Agent.AgentConfig.GlobalConfig?.Collapsing?.SkillInstructionMode ?? HPD.Agent.SkillInstructionMode.Both;");
             sb.AppendLine("                    if (mode == HPD.Agent.SkillInstructionMode.Both)");
             sb.AppendLine("                    {");
             sb.AppendLine($"                        return @\"{escapedBaseMessage}");
@@ -284,12 +284,12 @@ internal static class SkillCodeGenerator
     }
 
     /// <summary>
-    /// Generates the scope container function for a skill class marked with [Scope].
+    /// Generates the Collapse container function for a skill class marked with [Collapse].
     /// This groups all skills in the class under a single collapsible container.
     /// </summary>
-    public static string GenerateSkillClassScopeContainer(PluginInfo plugin)
+    public static string GenerateSkillClassCollapseContainer(PluginInfo plugin)
     {
-        if (!plugin.HasScopeAttribute || !plugin.Skills.Any())
+        if (!plugin.HasCollapseAttribute || !plugin.Skills.Any())
             return string.Empty;
 
         var sb = new StringBuilder();
@@ -301,21 +301,21 @@ internal static class SkillCodeGenerator
         var capabilitiesList = string.Join(", ", allCapabilities);
         var totalCount = plugin.Functions.Count + plugin.Skills.Count;
 
-        var description = !string.IsNullOrEmpty(plugin.ScopeDescription)
-            ? plugin.ScopeDescription
+        var description = !string.IsNullOrEmpty(plugin.CollapseDescription)
+            ? plugin.CollapseDescription
             : plugin.Description ?? string.Empty;
 
         // Use shared helper to generate description and return message
-        var fullDescription = ScopeContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
-        var returnMessage = ScopeContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
+        var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
+        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
 
         // Escape the return message for C# verbatim string literal (@"...")
         var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
 
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Scope container for {plugin.Name} skill class.");
+        sb.AppendLine($"        /// Collapse container for {plugin.Name} skill class.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine($"        private static AIFunction Create{plugin.Name}ScopeContainer()");
+        sb.AppendLine($"        private static AIFunction Create{plugin.Name}CollapseContainer()");
         sb.AppendLine("        {");
         sb.AppendLine("            return HPDAIFunctionFactory.Create(");
         sb.AppendLine("                async (arguments, cancellationToken) =>");
@@ -330,7 +330,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine("                    AdditionalProperties = new Dictionary<string, object>");
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
-        sb.AppendLine("                        [\"IsScope\"] = true,");
+        sb.AppendLine("                        [\"IsCollapse\"] = true,");
         sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount}");
         sb.AppendLine("                    }");
@@ -353,10 +353,10 @@ internal static class SkillCodeGenerator
 
         var sb = new StringBuilder();
 
-        // Generate skill class scope container if needed (class-level scoping)
-        if (plugin.HasScopeAttribute)
+        // Generate skill class Collapse container if needed (class-level Collapsing)
+        if (plugin.HasCollapseAttribute)
         {
-            sb.AppendLine(GenerateSkillClassScopeContainer(plugin));
+            sb.AppendLine(GenerateSkillClassCollapseContainer(plugin));
             sb.AppendLine();
         }
 
@@ -398,7 +398,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine("        private static PluginMetadata? _cachedMetadata;");
         sb.AppendLine();
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for scoping).");
+        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for Collapsing).");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static PluginMetadata GetPluginMetadata()");
         sb.AppendLine("        {");
@@ -406,8 +406,8 @@ internal static class SkillCodeGenerator
         sb.AppendLine("            {");
         sb.AppendLine($"                Name = \"{plugin.Name}\",");
 
-        var description = plugin.HasScopeAttribute && !string.IsNullOrEmpty(plugin.ScopeDescription)
-            ? plugin.ScopeDescription
+        var description = plugin.HasCollapseAttribute && !string.IsNullOrEmpty(plugin.CollapseDescription)
+            ? plugin.CollapseDescription
             : plugin.Description;
         sb.AppendLine($"                Description = \"{description}\",");
 
@@ -419,7 +419,7 @@ internal static class SkillCodeGenerator
 
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
         sb.AppendLine($"                FunctionCount = {allFunctionNames.Count},");
-        sb.AppendLine($"                HasScopeAttribute = {plugin.HasScopeAttribute.ToString().ToLower()}");
+        sb.AppendLine($"                HasCollapseAttribute = {plugin.HasCollapseAttribute.ToString().ToLower()}");
         sb.AppendLine("            };");
         sb.AppendLine("        }");
 

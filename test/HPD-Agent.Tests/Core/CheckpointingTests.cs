@@ -8,7 +8,7 @@ using System.Text.Json;
 namespace HPD.Agent.Tests.Core;
 
 /// <summary>
-/// Comprehensive tests for thread-scoped durable execution (checkpointing).
+/// Comprehensive tests for thread-Collapsed durable execution (checkpointing).
 /// Tests serialization, persistence, resume semantics, and checkpoint retention modes.
 /// </summary>
 public class CheckpointingTests : AgentTestBase
@@ -335,8 +335,8 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(loadedThread);
         Assert.NotNull(loadedThread.ExecutionState);
         Assert.Equal(0, loadedThread.ExecutionState.Iteration);
-        var scopingState = loadedThread.ExecutionState.MiddlewareState.Scoping;
-        Assert.True(scopingState == null || scopingState.ExpandedPlugins.Count == 0);
+        var CollapsingState = loadedThread.ExecutionState.MiddlewareState.Collapsing;
+        Assert.True(CollapsingState == null || CollapsingState.ExpandedPlugins.Count == 0);
     }
 
     [Fact]
@@ -474,12 +474,12 @@ public class CheckpointingTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Hello"));
         await thread.AddMessageAsync(AssistantMessage("Hi"));
 
-        var scopingState = new ScopingStateData().WithExpandedPlugin("TestPlugin");
+        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
         var originalState = AgentLoopState.Initial(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent")
             .NextIteration() with
             {
-                MiddlewareState = new MiddlewareState().WithScoping(scopingState)
+                MiddlewareState = new MiddlewareState().WithCollapsing(CollapsingState)
             };
         thread.ExecutionState = originalState;
 
@@ -495,8 +495,8 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(restoredThread.ExecutionState);
         Assert.Equal(originalState.Iteration, restoredThread.ExecutionState.Iteration);
         Assert.Equal(originalState.AgentName, restoredThread.ExecutionState.AgentName);
-        var restoredScoping = restoredThread.ExecutionState.MiddlewareState.Scoping;
-        Assert.Equal(1, restoredScoping?.ExpandedPlugins.Count ?? 0);
+        var restoredCollapsing = restoredThread.ExecutionState.MiddlewareState.Collapsing;
+        Assert.Equal(1, restoredCollapsing?.ExpandedPlugins.Count ?? 0);
     }
 
     //      

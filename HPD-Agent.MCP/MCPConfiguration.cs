@@ -37,13 +37,13 @@ public class MCPServerConfig
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Enable scoping for this MCP server's tools.
+    /// Enable Collapsing for this MCP server's tools.
     /// When true, tools are grouped behind a container (e.g., MCP_filesystem).
     /// When false, tools are exposed directly (e.g., filesystem_read_file).
-    /// If not specified, defaults to false (no scoping).
+    /// If not specified, defaults to false (no Collapsing).
     /// </summary>
-    [JsonPropertyName("enableScoping")]
-    public bool? EnableScoping { get; set; }
+    [JsonPropertyName(" enablecollapsing")]
+    public bool?  enablecollapsing { get; set; }
 
     /// <summary>
     /// Whether tools from this MCP server require user permission before execution.

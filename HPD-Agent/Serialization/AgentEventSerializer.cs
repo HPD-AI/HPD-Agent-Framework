@@ -75,7 +75,7 @@ public static partial class AgentEventSerializer
         // Branch events removed - branching is now an application-level concern
 
         // Observability Events
-        [typeof(ScopedToolsVisibleEvent)] = EventTypes.Observability.SCOPED_TOOLS_VISIBLE,
+        [typeof(CollapsedToolsVisibleEvent)] = EventTypes.Observability.CollapseD_TOOLS_VISIBLE,
         [typeof(ContainerExpandedEvent)] = EventTypes.Observability.CONTAINER_EXPANDED,
         [typeof(MiddlewarePipelineStartEvent)] = EventTypes.Observability.MIDDLEWARE_PIPELINE_START,
         [typeof(MiddlewarePipelineEndEvent)] = EventTypes.Observability.MIDDLEWARE_PIPELINE_END,
@@ -97,7 +97,7 @@ public static partial class AgentEventSerializer
         [typeof(AgentCompletionEvent)] = EventTypes.Observability.AGENT_COMPLETION,
         [typeof(IterationMessagesEvent)] = EventTypes.Observability.ITERATION_MESSAGES,
         [typeof(SchemaChangedEvent)] = EventTypes.Observability.SCHEMA_CHANGED,
-        [typeof(ScopingStateEvent)] = EventTypes.Observability.SCOPING_STATE,
+        [typeof(CollapsingStateEvent)] = EventTypes.Observability.Collapsing_STATE,
     };
 
     /// <summary>

@@ -51,12 +51,12 @@ public class AgentBuilder
     internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
     // Phase 5: Document store for skill instruction documents
     internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
-    // Track explicitly registered plugins (for scoping manager)
+    // Track explicitly registered plugins (for Collapsing manager)
     internal readonly HashSet<string> _explicitlyRegisteredPlugins = new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<Middleware.IAgentMiddleware> _middlewares = new(); // Unified middleware list
     internal readonly HPD.Agent.Permissions.PermissionOverrideRegistry _permissionOverrides = new(); // Permission overrides
 
-    // Function scope tracking for middleware scoping
+    // Function Collapse tracking for middleware Collapsing
     internal readonly Dictionary<string, string> _functionToPluginMap = new(); // functionName -> pluginTypeName
     internal readonly Dictionary<string, string> _functionToSkillMap = new(); // functionName -> skillName
 
@@ -626,7 +626,7 @@ public class AgentBuilder
     // │   - Completion logging with iteration counts                           │
     // │                                                                         │
     // │ Applied: Created in Agent constructor, invoked throughout orchestration│
-    // │ Scope: Agent orchestration loop, not individual LLM calls              │
+    // │ Collapse: Agent orchestration loop, not individual LLM calls              │
     // └────────────────────────────────────────────────────────────────────────┘
     //
     // WHY DUAL-LAYER?
@@ -1174,12 +1174,12 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Registers all auto-middleware (error handling, history reduction, tool scoping, etc).
+    /// Registers all auto-middleware (error handling, history reduction, tool Collapsing, etc).
     /// Called by both sync and async build paths to eliminate code duplication.
     /// </summary>
     private void RegisterAutoMiddleware(AgentBuildDependencies buildData)
     {
-        // Set explicitly registered plugins in config for scoping manager
+        // Set explicitly registered plugins in config for Collapsing manager
         _config.ExplicitlyRegisteredPlugins = _explicitlyRegisteredPlugins
             .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -1228,15 +1228,15 @@ public class AgentBuilder
             _middlewares.Add(new Middleware.Function.FunctionTimeoutMiddleware(_config.ErrorHandling.SingleFunctionTimeout.Value));
         }
 
-        // Register ToolScopingMiddleware if enabled
-        // This middleware owns the ToolVisibilityManager and handles all tool scoping logic
-        if (_config.Scoping?.Enabled == true && buildData.MergedOptions?.Tools != null)
+        // Register ToolCollapsingMiddleware if enabled
+        // This middleware owns the ToolVisibilityManager and handles all tool Collapsing logic
+        if (_config.Collapsing?.Enabled == true && buildData.MergedOptions?.Tools != null)
         {
-            var scopingMiddleware = new ToolScopingMiddleware(
+            var CollapsingMiddleware = new ToolCollapsingMiddleware(
                 buildData.MergedOptions.Tools,
                 _explicitlyRegisteredPlugins.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
-                _config.Scoping);
-            _middlewares.Add(scopingMiddleware);
+                _config.Collapsing);
+            _middlewares.Add(CollapsingMiddleware);
         }
 
         // Register FrontendToolMiddleware automatically
@@ -1575,9 +1575,9 @@ public class AgentBuilder
 
         var pluginFunctions = CreateFunctionsFromCatalog();
 
-        // Middleware out container functions if scoping is disabled
-        // Container functions are only needed when scoping is enabled for the two-turn expansion flow
-        if (_config.Scoping?.Enabled != true)
+        // Middleware out container functions if Collapsing is disabled
+        // Container functions are only needed when Collapsing is enabled for the two-turn expansion flow
+        if (_config.Collapsing?.Enabled != true)
         {
             pluginFunctions = pluginFunctions.Where(f =>
                 !(f.AdditionalProperties?.TryGetValue("IsContainer", out var isContainer) == true &&
@@ -1593,8 +1593,8 @@ public class AgentBuilder
                 List<AIFunction> mcpTools;
                 if (_config.Mcp != null && !string.IsNullOrEmpty(_config.Mcp.ManifestPath))
                 {
-                    // Get max function names configuration (no longer using global MCP scoping - that's per-server now)
-                    var maxFunctionNames = _config.Scoping?.MaxFunctionNamesInDescription ?? 10;
+                    // Get max function names configuration (no longer using global MCP Collapsing - that's per-server now)
+                    var maxFunctionNames = _config.Collapsing?.MaxFunctionNamesInDescription ?? 10;
 
                     // Check if this is actually content vs path based on if it starts with '{'
                     if (_config.Mcp.ManifestPath.TrimStart().StartsWith("{"))
@@ -1675,8 +1675,6 @@ public class AgentBuilder
     private async Task ProcessSkillDocumentsAsync(CancellationToken cancellationToken)
     {
         var logger = _logger?.CreateLogger<AgentBuilder>();
-
-        Console.WriteLine("[ProcessSkillDocuments] Starting document processing...");
         logger?.LogInformation("Starting skill document processing");
 
         // ========== PHASE 1: Collect skill containers ==========
@@ -1747,12 +1745,10 @@ public class AgentBuilder
         if (documentUploads.Count == 0 && documentReferences.Count == 0)
         {
             logger?.LogDebug("No documents found in any skills - document store not needed");
-            Console.WriteLine("[ProcessSkillDocuments] No documents found - skipping document store creation");
             // IMPORTANT: Leave _documentStore as null so DocumentRetrievalPlugin is NOT registered
             return;
         }
 
-        Console.WriteLine($"[ProcessSkillDocuments] Found {documentUploads.Count} uploads and {documentReferences.Count} references");
 
         // ========== PHASE 3: NOW create document store (only if needed) ==========
         if (_documentStore == null)
@@ -1763,14 +1759,12 @@ public class AgentBuilder
             _documentStore = new HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore(
                 storeLogger,
                 defaultPath);
-            Console.WriteLine($"[ProcessSkillDocuments] Created default store at: {defaultPath}");
             logger?.LogInformation(
                 "No document store configured. Using default FileSystemInstructionStore at: {Path}",
                 defaultPath);
         }
         else
         {
-            Console.WriteLine("[ProcessSkillDocuments] Using provided document store");
         }
 
         // ========== PHASE 4: Upload documents with deduplication ==========
@@ -1778,11 +1772,9 @@ public class AgentBuilder
         // The store only cares about content and where to persist it.
         var uploadedDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        Console.WriteLine($"[ProcessSkillDocuments] Processing {documentUploads.Count} document uploads");
 
         foreach (var (skillName, documentId, filePath, description) in documentUploads)
         {
-            Console.WriteLine($"[ProcessSkillDocuments] Processing: {documentId} from {filePath}");
             // Skip duplicates (same document ID from multiple skills)
             if (uploadedDocuments.Contains(documentId))
             {
@@ -2111,7 +2103,7 @@ public class AgentBuilder
     public ILoggerFactory? Logger => _logger;
 
     /// <summary>
-    /// Internal access to scoped Middleware manager for extension methods
+    /// Internal access to Collapsed Middleware manager for extension methods
     /// </summary>
 
     /// <summary>
@@ -2239,7 +2231,7 @@ public static class AgentBuilderMiddlewareExtensions
 {
     /// <summary>
     /// Adds a unified agent middleware instance.
-    /// Supports scoping via extension methods (.AsGlobal(), .ForPlugin(), .ForSkill(), .ForFunction()).
+    /// Supports Collapsing via extension methods (.AsGlobal(), .ForPlugin(), .ForSkill(), .ForFunction()).
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="middleware">The unified middleware to add</param>
@@ -2936,11 +2928,11 @@ public static class AgentBuilderMiddlewareExtensions
     }
 
     //      
-    // TOOL SCOPING
+    // TOOL Collapsing
     //      
 
     /// <summary>
-    /// Enables tool scoping middleware for plugin collapsing and skills architecture.
+    /// Enables tool Collapsing middleware for plugin collapsing and skills architecture.
     /// When enabled, plugins and skills are hidden behind container functions,
     /// reducing the initial tool list and cognitive load on the LLM.
     /// </summary>
@@ -2948,7 +2940,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <returns>The builder for chaining</returns>
     /// <remarks>
     /// <para>
-    /// Tool scoping allows you to organize functions hierarchically:
+    /// Tool Collapsing allows you to organize functions hierarchically:
     /// - Plugin containers: Hide member functions until plugin is expanded
     /// - Skill containers: Hide skill-specific functions until skill is activated
     /// </para>
@@ -2957,7 +2949,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// and reducing token usage.
     /// </para>
     /// <para>
-    /// <b>Phase 1 Note:</b> This middleware integrates with the existing scoping
+    /// <b>Phase 1 Note:</b> This middleware integrates with the existing Collapsing
     /// infrastructure in Agent.cs. Future phases will migrate more logic to middleware.
     /// </para>
     /// </remarks>
@@ -2965,17 +2957,17 @@ public static class AgentBuilderMiddlewareExtensions
     /// <code>
     /// var agent = new AgentBuilder()
     ///     .WithPlugin&lt;FinancialPlugin&gt;()
-    ///     .WithToolScoping()  // Enable tool scoping
+    ///     .WithToolCollapsing()  // Enable tool Collapsing
     ///     .Build();
     /// </code>
     /// </example>
-    public static AgentBuilder WithToolScoping(this AgentBuilder builder)
+    public static AgentBuilder WithToolCollapsing(this AgentBuilder builder)
     {
-        // Enable scoping in config
-        builder.Config.Scoping ??= new ScopingConfig();
-        builder.Config.Scoping.Enabled = true;
+        // Enable Collapsing in config
+        builder.Config.Collapsing ??= new CollapsingConfig();
+        builder.Config.Collapsing.Enabled = true;
 
-        // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
+        // NOTE: The ToolCollapsingMiddleware will be instantiated and added to the pipeline
         // during Build() after the Agent is constructed (since it needs the ToolVisibilityManager
         // which is created in the Agent constructor). See Build() for registration logic.
 
@@ -2983,37 +2975,37 @@ public static class AgentBuilderMiddlewareExtensions
     }
 
     /// <summary>
-    /// Enables tool scoping middleware with custom configuration.
+    /// Enables tool Collapsing middleware with custom configuration.
     /// </summary>
     /// <param name="builder">The agent builder</param>
-    /// <param name="configure">Action to configure scoping behavior</param>
+    /// <param name="configure">Action to configure Collapsing behavior</param>
     /// <returns>The builder for chaining</returns>
     /// <example>
     /// <code>
     /// var agent = new AgentBuilder()
     ///     .WithPlugin&lt;FinancialPlugin&gt;()
-    ///     .WithToolScoping(config =>
+    ///     .WithToolCollapsing(config =>
     ///     {
-    ///         config.ScopeFrontendTools = true;
+    ///         config.CollapseFrontendTools = true;
     ///         config.MaxFunctionNamesInDescription = 5;
     ///     })
     ///     .Build();
     /// </code>
     /// </example>
-    public static AgentBuilder WithToolScoping(this AgentBuilder builder, Action<ScopingConfig> configure)
+    public static AgentBuilder WithToolCollapsing(this AgentBuilder builder, Action<CollapsingConfig> configure)
     {
-        builder.Config.Scoping ??= new ScopingConfig();
-        builder.Config.Scoping.Enabled = true;
-        configure(builder.Config.Scoping);
+        builder.Config.Collapsing ??= new CollapsingConfig();
+        builder.Config.Collapsing.Enabled = true;
+        configure(builder.Config.Collapsing);
         
-        // NOTE: The ToolScopingMiddleware will be instantiated and added to the pipeline
+        // NOTE: The ToolCollapsingMiddleware will be instantiated and added to the pipeline
         // during Build() after the Agent is constructed. See Build() for registration logic.
         
         return builder;
     }
 
     /// <summary>
-    /// Disables tool scoping, making all tools visible to the LLM at all times.
+    /// Disables tool Collapsing, making all tools visible to the LLM at all times.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <returns>The builder for chaining</returns>
@@ -3026,14 +3018,14 @@ public static class AgentBuilderMiddlewareExtensions
     /// <code>
     /// var agent = new AgentBuilder()
     ///     .WithPlugin&lt;FinancialPlugin&gt;()
-    ///     .WithoutToolScoping()  // All tools always visible
+    ///     .WithoutToolCollapsing()  // All tools always visible
     ///     .Build();
     /// </code>
     /// </example>
-    public static AgentBuilder WithoutToolScoping(this AgentBuilder builder)
+    public static AgentBuilder WithoutToolCollapsing(this AgentBuilder builder)
     {
-        builder.Config.Scoping ??= new ScopingConfig();
-        builder.Config.Scoping.Enabled = false;
+        builder.Config.Collapsing ??= new CollapsingConfig();
+        builder.Config.Collapsing.Enabled = false;
         return builder;
     }
 }

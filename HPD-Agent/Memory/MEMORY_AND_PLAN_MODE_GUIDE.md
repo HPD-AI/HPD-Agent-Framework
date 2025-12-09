@@ -42,7 +42,7 @@ All three systems support **pluggable storage backends** (in-memory, JSON files,
 var agent = new AgentBuilder("MyAgent")
     .WithDynamicMemory(opts => opts
         .WithMaxTokens(4000)              // Max tokens to inject into prompt
-        .WithStorageKey("user-123")       // Scope memories by user/session
+        .WithStorageKey("user-123")       // Collapse memories by user/session
         .WithStorageDirectory("./memories"))
     .Build();
 ```
@@ -82,7 +82,7 @@ delete_memory(memory_id)                   // Remove memory
 1. **Automatic Injection**: Memories are automatically injected into the system prompt on every request
 2. **Token Limit**: Only the most relevant memories are included (up to `MaxTokens`)
 3. **Agent Control**: The agent decides when to create/update/delete memories
-4. **Scope**: Memories are scoped by `StorageKey` (e.g., per-user or per-conversation)
+4. **Collapse**: Memories are Collapsed by `StorageKey` (e.g., per-user or per-conversation)
 
 ### Example Flow
 
@@ -116,7 +116,7 @@ Agent: "I'll compose that email in Spanish as you prefer..."
 var agent = new AgentBuilder("MyAgent")
     .WithStaticMemory(opts => opts
         .WithMaxTokens(8000)
-        .WithAgentName("MyAgent")  // Scope knowledge per agent
+        .WithAgentName("MyAgent")  // Collapse knowledge per agent
         .WithStrategy(MemoryStrategy.FullTextInjection))
     .Build();
 ```
@@ -191,7 +191,7 @@ Two strategies are available:
 
 1. **Automatic Injection**: Knowledge is automatically injected into the system prompt
 2. **Read-Only**: Agent cannot modify static memory (no AI functions provided)
-3. **Scope**: Knowledge is scoped by agent name
+3. **Collapse**: Knowledge is Collapsed by agent name
 4. **Text Extraction**: Supports multiple formats (`.txt`, `.md`, `.pdf`, `.docx`, URLs)
 
 ### Example Flow
@@ -292,9 +292,9 @@ Agent: [Calls add_plan_step("Set up CI/CD pipeline", afterStepId="5")]
        [Calls add_context_note("Need to integrate Stripe for payments")]
 ```
 
-### Plan Storage Scope
+### Plan Storage Collapse
 
-Plans are **conversation-scoped** (more precisely: **thread-scoped**), meaning:
+Plans are **conversation-Collapsed** (more precisely: **thread-Collapsed**), meaning:
 - Each conversation thread has its own plan (or no plan)
 - Plans are keyed by `ConversationId` (which is actually the `ThreadId`)
 - With persistence, plans survive app restarts
@@ -802,7 +802,7 @@ ConversationContext.Clear()               ← Cleanup
 
 1. **Automatic Injection**: Memory/plans are automatically available to the agent - no manual prompt engineering needed
 2. **Pluggable Storage**: All systems support custom backends via abstract store classes
-3. **Scoped Context**: Each system has appropriate scoping (user, agent, conversation)
+3. **Collapsed Context**: Each system has appropriate Collapsing (user, agent, conversation)
 4. **Serializable**: All stores can snapshot/restore state for backup/migration
 5. **AsyncLocal Context**: ConversationId flows through async calls for plugins to access
 
@@ -885,10 +885,10 @@ A: No, automatic injection is core to the design. The agent always sees the curr
    - Conversation history: 4-8K
    - User message: 1-2K
 
-2. **Storage Keys**: Use meaningful keys that reflect scope
-   - User-scoped: `user-{userId}`
-   - Session-scoped: `session-{sessionId}`
-   - Task-scoped: `task-{taskId}`
+2. **Storage Keys**: Use meaningful keys that reflect Collapse
+   - User-Collapsed: `user-{userId}`
+   - Session-Collapsed: `session-{sessionId}`
+   - Task-Collapsed: `task-{taskId}`
 
 3. **Static vs Dynamic**:
    - Use **Static** for content that rarely changes

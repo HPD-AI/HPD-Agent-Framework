@@ -9,7 +9,7 @@ namespace HPD.Agent.Tests.SubAgents;
 /// SubAgent Integration Tests
 /// Tests the AIFunction metadata and structure that the source generator creates for sub-agents.
 /// Since source generators don't run on test projects, we manually create AIFunction objects
-/// that simulate the source generator output, similar to how SkillScopingTests works.
+/// that simulate the source generator output, similar to how SkillCollapsingTests works.
 /// </summary>
 public class SubAgentIntegrationTests
 {

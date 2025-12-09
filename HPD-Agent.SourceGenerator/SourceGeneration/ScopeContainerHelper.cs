@@ -2,13 +2,13 @@ using System.Collections.Generic;
 using System.Linq;
 
 /// <summary>
-/// Shared helper for generating scope container descriptions and metadata.
+/// Shared helper for generating Collapse container descriptions and metadata.
 /// Used by both HPDPluginSourceGenerator and SkillCodeGenerator to avoid code duplication.
 /// </summary>
-internal static class ScopeContainerHelper
+internal static class CollapseContainerHelper
 {
     /// <summary>
-    /// Generates a Mermaid flowchart showing the invocation flow for a scoped container.
+    /// Generates a Mermaid flowchart showing the invocation flow for a Collapsed container.
     /// Format: A[Invoke PluginName] --> B{Access Granted} B --> C[Function1] & D[Function2] & ...
     /// </summary>
     public static string GenerateMermaidFlow(string pluginName, List<string> capabilities)

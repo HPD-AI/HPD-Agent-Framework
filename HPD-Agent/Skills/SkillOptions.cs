@@ -1,6 +1,6 @@
 /// <summary>
 /// Configuration options for skills.
-/// Skills are ALWAYS scoped - functions are hidden until the skill is activated.
+/// Skills are ALWAYS Collapsed - functions are hidden until the skill is activated.
 /// This prevents token bloat when you have many skills.
 /// </summary>
 public class SkillOptions

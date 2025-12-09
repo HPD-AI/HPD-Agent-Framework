@@ -2,7 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Collections.Immutable;
 
-namespace HPD.Agent.Scoping;
+namespace HPD.Agent.Collapsing;
 
 public class ToolVisibilityManager
 {
@@ -32,28 +32,28 @@ public class ToolVisibilityManager
     /// Handles plugin containers and type-safe Skill containers.
     ///
     /// Ordering strategy:
-    /// 1. Scope containers (skill class containers with [Collapse])
+    /// 1. Collapse containers (skill class containers with [Collapse])
     /// 2. Plugin containers (Collapse plugins with [Collapse])
     /// 3. Skill containers (type-safe Skills with IsContainer=true)
-    /// 4. Non-scoped functions (always visible)
+    /// 4. Non-Collapsed functions (always visible)
     /// 5. Expanded plugin functions
     /// 6. Expanded skill functions
     ///
-    /// Key insight: Functions in plugins that are ONLY referenced by scoped skills
+    /// Key insight: Functions in plugins that are ONLY referenced by Collapsed skills
     /// are hidden until their parent skill is expanded. This prevents "orphan" functions
-    /// from appearing when the skill class scope is not expanded.
+    /// from appearing when the skill class Collapse is not expanded.
     /// </summary>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
-        ImmutableHashSet<string> expandedScopedPluginContainers,
+        ImmutableHashSet<string> expandedCollapsedPluginContainers,
         ImmutableHashSet<string> expandedSkillContainers)
     {
         // Phase 1: Build context (first pass - identify relationships)
-        var context = BuildVisibilityContext(allTools, expandedScopedPluginContainers, expandedSkillContainers);
+        var context = BuildVisibilityContext(allTools, expandedCollapsedPluginContainers, expandedSkillContainers);
 
-        var scopeContainers = new List<AIFunction>();
+        var CollapseContainers = new List<AIFunction>();
         var skillContainers = new List<AIFunction>();
-        var nonScopedFunctions = new List<AIFunction>();
+        var nonCollapsedFunctions = new List<AIFunction>();
         var expandedPluginFunctions = new List<AIFunction>();
         var expandedSkillFunctions = new List<AIFunction>();
 
@@ -64,12 +64,12 @@ public class ToolVisibilityManager
 
             switch (containerType)
             {
-                case ContainerType.ScopeAttributeContainer:
-                case ContainerType.ScopedPluginContainer:
-                    // Both types are scope/plugin containers - treat identically
-                    if (IsScopeContainerVisible(tool, context))
+                case ContainerType.CollapseAttributeContainer:
+                case ContainerType.CollapsedPluginContainer:
+                    // Both types are Collapse/plugin containers - treat identically
+                    if (IsCollapseContainerVisible(tool, context))
                     {
-                        scopeContainers.Add(tool);
+                        CollapseContainers.Add(tool);
                     }
                     break;
 
@@ -96,8 +96,8 @@ public class ToolVisibilityManager
 
                         switch (visibility)
                         {
-                            case FunctionVisibility.NonScoped:
-                                nonScopedFunctions.Add(tool);
+                            case FunctionVisibility.NonCollapsed:
+                                nonCollapsedFunctions.Add(tool);
                                 break;
 
                             case FunctionVisibility.ExpandedPlugin:
@@ -118,10 +118,10 @@ public class ToolVisibilityManager
         }
 
         // Phase 3: Combine in priority order and deduplicate
-        // Order: scope containers -> skill containers -> non-scoped -> expanded functions
-        var result = scopeContainers.OrderBy(c => c.Name)
+        // Order: Collapse containers -> skill containers -> non-Collapsed -> expanded functions
+        var result = CollapseContainers.OrderBy(c => c.Name)
             .Concat(skillContainers.OrderBy(c => c.Name))
-            .Concat(nonScopedFunctions.OrderBy(f => f.Name))
+            .Concat(nonCollapsedFunctions.OrderBy(f => f.Name))
             .Concat(expandedPluginFunctions.OrderBy(f => f.Name))
             .Concat(expandedSkillFunctions.OrderBy(f => f.Name))
             .DistinctBy(f => f.Name)
@@ -178,7 +178,7 @@ public class ToolVisibilityManager
     private string? GetParentSkillContainer(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
 
-    private string? GetParentScopeContainer(AIFunction function) =>
+    private string? GetParentCollapseContainer(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
 
     private string[] GetReferencedFunctions(AIFunction skillContainer)
@@ -236,11 +236,11 @@ public class ToolVisibilityManager
         if (!IsContainer(function))
             return ContainerType.NotAContainer;
 
-        // Check for IsScope flag (highest priority - [Collapse] attribute)
-        if (function.AdditionalProperties?.TryGetValue("IsScope", out var scopeVal) == true &&
-            scopeVal is bool scopeFlag && scopeFlag)
+        // Check for IsCollapse flag (highest priority - [Collapse] attribute)
+        if (function.AdditionalProperties?.TryGetValue("IsCollapse", out var CollapseVal) == true &&
+            CollapseVal is bool CollapseFlag && CollapseFlag)
         {
-            return ContainerType.ScopeAttributeContainer;
+            return ContainerType.CollapseAttributeContainer;
         }
 
         // Check for IsSkill flag ([Skill] method container)
@@ -250,8 +250,8 @@ public class ToolVisibilityManager
             return ContainerType.SkillMethodContainer;
         }
 
-        // Container with no special flags = legacy scoped plugin
-        return ContainerType.ScopedPluginContainer;
+        // Container with no special flags = legacy Collapsed plugin
+        return ContainerType.CollapsedPluginContainer;
     }
 
     // ============================================
@@ -269,19 +269,19 @@ public class ToolVisibilityManager
         /// <summary>
         /// Container created by [Collapse] attribute on skill class WITH skills.
         /// Example: [Collapse("Analysis")] on FinancialAnalysisSkills class that has [Skill] methods
-        /// Metadata: IsScope=true, IsContainer=true
-        /// Generated by SkillCodeGenerator.GenerateScopeContainer()
+        /// Metadata: IsCollapse=true, IsContainer=true
+        /// Generated by SkillCodeGenerator.GenerateCollapseContainer()
         /// </summary>
-        ScopeAttributeContainer,
+        CollapseAttributeContainer,
 
         /// <summary>
-        /// Container for a scoped plugin WITHOUT skills (plugin-level scoping only).
+        /// Container for a Collapsed plugin WITHOUT skills (plugin-level Collapsing only).
         /// Example: [Collapse("Math")] on MathPlugin class with only [AIFunction] methods
-        /// Metadata: IsContainer=true, no IsSkill/IsScope flags
+        /// Metadata: IsContainer=true, no IsSkill/IsCollapse flags
         /// Generated by HPDPluginSourceGenerator.GeneratePluginContainer()
-        /// Note: Both ScopeAttributeContainer and ScopedPluginContainer are treated identically at runtime.
+        /// Note: Both CollapseAttributeContainer and CollapsedPluginContainer are treated identically at runtime.
         /// </summary>
-        ScopedPluginContainer,
+        CollapsedPluginContainer,
 
         /// <summary>
         /// Container created by [Skill] method.
@@ -298,52 +298,52 @@ public class ToolVisibilityManager
     private enum FunctionVisibility
     {
         Hidden,           // Not visible
-        NonScoped,        // Always visible (goes into nonScopedFunctions list)
+        NonCollapsed,        // Always visible (goes into nonCollapsedFunctions list)
         ExpandedPlugin,   // Visible because parent plugin expanded (goes into expandedPluginFunctions list)
         ExpandedSkill     // Visible because skill expanded (goes into expandedSkillFunctions list)
     }
 
     /// <summary>
-    /// Rule: Scope container is visible IFF:
+    /// Rule: Collapse container is visible IFF:
     /// 1. It is NOT expanded, AND
     /// 2. It is NOT implicitly registered via skills (unless explicitly registered)
-    /// Scope containers can be tracked in either expandedScopedPluginContainers or ExpandedSkillContainers.
+    /// Collapse containers can be tracked in either expandedCollapsedPluginContainers or ExpandedSkillContainers.
     /// </summary>
-    private bool IsScopeContainerVisible(AIFunction container, VisibilityContext context)
+    private bool IsCollapseContainerVisible(AIFunction container, VisibilityContext context)
     {
-        // For ScopedPluginContainer, use PluginName. For ScopeAttributeContainer, use Name.
-        // Both should work with the same string since they represent the same scope.
-        var scopeName = GetPluginName(container);
-        if (string.IsNullOrEmpty(scopeName))
+        // For CollapsedPluginContainer, use PluginName. For CollapseAttributeContainer, use Name.
+        // Both should work with the same string since they represent the same Collapse.
+        var CollapseName = GetPluginName(container);
+        if (string.IsNullOrEmpty(CollapseName))
         {
-            scopeName = container.Name ?? string.Empty;
+            CollapseName = container.Name ?? string.Empty;
         }
 
-        // Hide scope containers for plugins that were ONLY implicitly registered via skills
+        // Hide Collapse containers for plugins that were ONLY implicitly registered via skills
         // (i.e., referenced by skills but NOT explicitly registered by the user)
-        if (context.PluginsWithScopedSkills.Contains(scopeName) &&
-            !_explicitlyRegisteredPlugins.Contains(scopeName))
+        if (context.PluginsWithCollapsedSkills.Contains(CollapseName) &&
+            !_explicitlyRegisteredPlugins.Contains(CollapseName))
         {
-            _logger?.LogDebug($"[VISIBILITY] Scope container {scopeName}: HIDDEN (implicitly registered via skills)");
+            _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (implicitly registered via skills)");
             return false;
         }
 
         // Hide if expanded (in either set)
-        if (context.ExpandedScopedPluginContainers.Contains(scopeName) ||
-            context.ExpandedSkillContainers.Contains(scopeName))
+        if (context.ExpandedCollapsedPluginContainers.Contains(CollapseName) ||
+            context.ExpandedSkillContainers.Contains(CollapseName))
         {
-            _logger?.LogDebug($"[VISIBILITY] Scope container {scopeName}: HIDDEN (expanded)");
+            _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (expanded)");
             return false;
         }
 
-        _logger?.LogDebug($"[VISIBILITY] Scope container {scopeName}: VISIBLE (not expanded)");
+        _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: VISIBLE (not expanded)");
         return true;
     }
 
     /// <summary>
     /// Rule: Skill container is visible IFF:
     /// 1. It is NOT expanded, AND
-    /// 2. Parent scope is expanded (if it has a parent scope)
+    /// 2. Parent Collapse is expanded (if it has a parent Collapse)
     /// </summary>
     private bool IsSkillContainerVisible(AIFunction container, VisibilityContext context)
     {
@@ -356,32 +356,32 @@ public class ToolVisibilityManager
             return false;
         }
 
-        var parentScope = GetParentScopeContainer(container);
+        var parentCollapse = GetParentCollapseContainer(container);
 
-        // Case 1: No parent scope - treat like regular skill
-        if (string.IsNullOrEmpty(parentScope))
+        // Case 1: No parent Collapse - treat like regular skill
+        if (string.IsNullOrEmpty(parentCollapse))
         {
-            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (no parent scope)");
+            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (no parent Collapse)");
             return true;
         }
 
-        // Case 2: Parent scope doesn't exist - treat like standalone skill
-        if (!context.SkillClassesWithScope.Contains(parentScope))
+        // Case 2: Parent Collapse doesn't exist - treat like standalone skill
+        if (!context.SkillClassesWithCollapse.Contains(parentCollapse))
         {
-            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (parent scope {parentScope} doesn't exist)");
+            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (parent Collapse {parentCollapse} doesn't exist)");
             return true;
         }
 
-        // Case 3: Parent scope exists - must be expanded
-        if (context.ExpandedSkillContainers.Contains(parentScope) ||
-            context.ExpandedScopedPluginContainers.Contains(parentScope))
+        // Case 3: Parent Collapse exists - must be expanded
+        if (context.ExpandedSkillContainers.Contains(parentCollapse) ||
+            context.ExpandedCollapsedPluginContainers.Contains(parentCollapse))
         {
-            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (parent scope {parentScope} expanded)");
+            _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (parent Collapse {parentCollapse} expanded)");
             return true;
         }
 
-        // Otherwise: parent scope not expanded - hide
-        _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: HIDDEN (parent scope {parentScope} not expanded)");
+        // Otherwise: parent Collapse not expanded - hide
+        _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: HIDDEN (parent Collapse {parentCollapse} not expanded)");
         return false;
     }
 
@@ -413,7 +413,7 @@ public class ToolVisibilityManager
     /// Determines visibility and categorization for a function.
     /// Returns the visibility reason, which determines which list the function goes into.
     ///
-    /// PRIORITY 1: Parent plugin scope check with skill bypass
+    /// PRIORITY 1: Parent plugin Collapse check with skill bypass
     ///   - If plugin has [Collapse] container AND function is referenced by an expanded skill → VISIBLE (skill bypass)
     ///   - If plugin has [Collapse] container AND parent plugin is expanded → VISIBLE
     ///   - If plugin has [Collapse] container AND not expanded → HIDDEN
@@ -421,7 +421,7 @@ public class ToolVisibilityManager
     /// PRIORITY 3: Skill reference check (show if any referencing skill is expanded)
     /// PRIORITY 4: Special case - read_skill_document
     /// PRIORITY 5: Orphan check (hide functions in implicitly-registered plugins that aren't referenced)
-    /// DEFAULT: Non-scoped, non-referenced, non-orphan functions are always visible
+    /// DEFAULT: Non-Collapsed, non-referenced, non-orphan functions are always visible
     /// </summary>
     private FunctionVisibility GetFunctionVisibility(AIFunction function, VisibilityContext context)
     {
@@ -431,7 +431,7 @@ public class ToolVisibilityManager
         // PRIORITY 1: If plugin has [Collapse] container, check skill bypass first
         if (parentPlugin != null && context.PluginsWithContainers.Contains(parentPlugin))
         {
-            // Check if this function is referenced by an expanded skill (skill bypass for scoped plugins)
+            // Check if this function is referenced by an expanded skill (skill bypass for Collapsed plugins)
             if (context.FunctionsReferencedBySkills.Contains(functionName))
             {
                 var referencingSkills = context.SkillsReferencingFunction.GetValueOrDefault(functionName, new List<string>());
@@ -439,29 +439,29 @@ public class ToolVisibilityManager
 
                 if (anySkillExpanded)
                 {
-                    _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (skill bypass for scoped plugin {parentPlugin})");
+                    _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (skill bypass for Collapsed plugin {parentPlugin})");
                     return FunctionVisibility.ExpandedSkill;
                 }
             }
 
-            // Otherwise, scoped plugin function - only show if parent expanded
-            if (context.ExpandedScopedPluginContainers.Contains(parentPlugin))
+            // Otherwise, Collapsed plugin function - only show if parent expanded
+            if (context.ExpandedCollapsedPluginContainers.Contains(parentPlugin))
             {
-                _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (scoped parent {parentPlugin} expanded)");
+                _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (Collapsed parent {parentPlugin} expanded)");
                 return FunctionVisibility.ExpandedPlugin;
             }
 
-            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (scoped parent {parentPlugin} not expanded)");
+            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (Collapsed parent {parentPlugin} not expanded)");
             return FunctionVisibility.Hidden;
         }
 
-        // PRIORITY 2: If plugin is explicitly registered (and NOT scoped), show all its functions
+        // PRIORITY 2: If plugin is explicitly registered (and NOT Collapsed), show all its functions
         // (Explicit registration takes precedence over skill references)
         if (parentPlugin != null && _explicitlyRegisteredPlugins.Contains(parentPlugin))
         {
             // Explicitly registered plugin - always show functions
             _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (explicitly registered plugin)");
-            return FunctionVisibility.NonScoped;
+            return FunctionVisibility.NonCollapsed;
         }
 
         // PRIORITY 3: Check if this function is referenced by any skills
@@ -513,39 +513,39 @@ public class ToolVisibilityManager
         }
 
         // PRIORITY 5: Orphan check
-        if (parentPlugin != null && context.PluginsWithScopedSkills.Contains(parentPlugin))
+        if (parentPlugin != null && context.PluginsWithCollapsedSkills.Contains(parentPlugin))
         {
-            // This function is in a plugin that was auto-registered via scoped skills
+            // This function is in a plugin that was auto-registered via Collapsed skills
             // BUT this function is NOT referenced by any skill (it's an orphan)
             // Hide it - don't add to any list
             _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (orphan in implicitly-registered plugin {parentPlugin})");
             return FunctionVisibility.Hidden;
         }
 
-        // DEFAULT: Non-scoped function - always visible
-        _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (non-scoped, default)");
-        return FunctionVisibility.NonScoped;
+        // DEFAULT: Non-Collapsed function - always visible
+        _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (non-Collapsed, default)");
+        return FunctionVisibility.NonCollapsed;
     }
 
     /// <summary>
     /// Builds the visibility context by analyzing all tools and computing relationships.
-    /// This is the first pass that identifies scoped items and parent-child relationships.
+    /// This is the first pass that identifies Collapsed items and parent-child relationships.
     /// </summary>
     private VisibilityContext BuildVisibilityContext(
         List<AIFunction> allTools,
-        ImmutableHashSet<string> expandedScopedPluginContainers,
+        ImmutableHashSet<string> expandedCollapsedPluginContainers,
         ImmutableHashSet<string> expandedSkillContainers)
     {
         var context = new VisibilityContext
         {
             AllTools = allTools,
-            ExpandedScopedPluginContainers = expandedScopedPluginContainers,
+            ExpandedCollapsedPluginContainers = expandedCollapsedPluginContainers,
             ExpandedSkillContainers = expandedSkillContainers,
             PluginsWithContainers = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            SkillClassesWithScope = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            SkillClassesWithCollapse = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             FunctionsReferencedBySkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             SkillsReferencingFunction = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase),
-            PluginsWithScopedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            PluginsWithCollapsedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         };
 
         foreach (var tool in allTools)
@@ -554,15 +554,15 @@ public class ToolVisibilityManager
 
             switch (containerType)
             {
-                case ContainerType.ScopeAttributeContainer:
-                    // Scope container (can be class-level or plugin-level)
-                    var scopeName = tool.Name ?? string.Empty;
-                    context.SkillClassesWithScope.Add(scopeName);
+                case ContainerType.CollapseAttributeContainer:
+                    // Collapse container (can be class-level or plugin-level)
+                    var CollapseName = tool.Name ?? string.Empty;
+                    context.SkillClassesWithCollapse.Add(CollapseName);
                     // Also track as a plugin with container so functions get hidden/shown properly
-                    context.PluginsWithContainers.Add(scopeName);
+                    context.PluginsWithContainers.Add(CollapseName);
                     break;
 
-                case ContainerType.ScopedPluginContainer:
+                case ContainerType.CollapsedPluginContainer:
                     var pluginName = GetPluginName(tool);
                     context.PluginsWithContainers.Add(pluginName);
                     break;
@@ -574,14 +574,14 @@ public class ToolVisibilityManager
                     var referencedPlugins = GetReferencedPlugins(tool);
                     var parentSkillContainer = GetParentSkillContainer(tool);
 
-                    // Mark plugins as having scoped skills ONLY if they are from a DIFFERENT plugin
+                    // Mark plugins as having Collapsed skills ONLY if they are from a DIFFERENT plugin
                     // (i.e., skills referencing functions from external plugins)
                     foreach (var referencedPlugin in referencedPlugins)
                     {
                         // Only add if the referenced plugin is different from the skill's parent container
                         if (!string.Equals(referencedPlugin, parentSkillContainer, StringComparison.OrdinalIgnoreCase))
                         {
-                            context.PluginsWithScopedSkills.Add(referencedPlugin);
+                            context.PluginsWithCollapsedSkills.Add(referencedPlugin);
                         }
                     }
 
@@ -614,12 +614,12 @@ public class ToolVisibilityManager
     private class VisibilityContext
     {
         public required List<AIFunction> AllTools { get; init; }
-        public required ImmutableHashSet<string> ExpandedScopedPluginContainers { get; init; }
+        public required ImmutableHashSet<string> ExpandedCollapsedPluginContainers { get; init; }
         public required ImmutableHashSet<string> ExpandedSkillContainers { get; init; }
         public required HashSet<string> PluginsWithContainers { get; init; }
-        public required HashSet<string> SkillClassesWithScope { get; init; }
+        public required HashSet<string> SkillClassesWithCollapse { get; init; }
         public required HashSet<string> FunctionsReferencedBySkills { get; init; }
         public required Dictionary<string, List<string>> SkillsReferencingFunction { get; init; }
-        public required HashSet<string> PluginsWithScopedSkills { get; init; }
+        public required HashSet<string> PluginsWithCollapsedSkills { get; init; }
     }
 }

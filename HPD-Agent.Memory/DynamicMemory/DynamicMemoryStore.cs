@@ -13,7 +13,7 @@ public abstract class DynamicMemoryStore
     /// <summary>
     /// Asynchronously retrieves all memories for a specific agent.
     /// </summary>
-    /// <param name="agentName">The agent name to scope memories to</param>
+    /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of memories ordered by LastAccessed (most recent first)</returns>
     public abstract Task<List<DynamicMemory>> GetMemoriesAsync(string agentName, CancellationToken cancellationToken = default);
@@ -21,7 +21,7 @@ public abstract class DynamicMemoryStore
     /// <summary>
     /// Asynchronously retrieves a specific memory by ID.
     /// </summary>
-    /// <param name="agentName">The agent name to scope memories to</param>
+    /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="memoryId">The memory ID to retrieve</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The memory if found, null otherwise</returns>
@@ -30,7 +30,7 @@ public abstract class DynamicMemoryStore
     /// <summary>
     /// Creates a new memory for the agent.
     /// </summary>
-    /// <param name="agentName">The agent name to scope memories to</param>
+    /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="title">Memory title</param>
     /// <param name="content">Memory content</param>
     /// <param name="cancellationToken">Cancellation token</param>
@@ -40,7 +40,7 @@ public abstract class DynamicMemoryStore
     /// <summary>
     /// Updates an existing memory.
     /// </summary>
-    /// <param name="agentName">The agent name to scope memories to</param>
+    /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="memoryId">The memory ID to update</param>
     /// <param name="title">New memory title</param>
     /// <param name="content">New memory content</param>
@@ -51,7 +51,7 @@ public abstract class DynamicMemoryStore
     /// <summary>
     /// Deletes a memory.
     /// </summary>
-    /// <param name="agentName">The agent name to scope memories to</param>
+    /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="memoryId">The memory ID to delete</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public abstract Task DeleteMemoryAsync(string agentName, string memoryId, CancellationToken cancellationToken = default);

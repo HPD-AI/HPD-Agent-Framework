@@ -86,9 +86,9 @@ public class SkillInstructionMiddlewareTests
         Assert.True(context.IsFinalIteration);
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
-        var scopingState = pendingState!.MiddlewareState.Scoping;
-        Assert.NotNull(scopingState);
-        Assert.Empty(scopingState!.ActiveSkillInstructions);
+        var CollapsingState = pendingState!.MiddlewareState.Collapsing;
+        Assert.NotNull(CollapsingState);
+        Assert.Empty(CollapsingState!.ActiveSkillInstructions);
     }
 
     [Fact]
@@ -173,9 +173,9 @@ public class SkillInstructionMiddlewareTests
         // Assert - State updated to clear skills
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
-        var scopingState = pendingState!.MiddlewareState.Scoping;
-        Assert.NotNull(scopingState);
-        Assert.Empty(scopingState!.ActiveSkillInstructions);
+        var CollapsingState = pendingState!.MiddlewareState.Collapsing;
+        Assert.NotNull(CollapsingState);
+        Assert.Empty(CollapsingState!.ActiveSkillInstructions);
     }
 
     [Fact]
@@ -206,8 +206,8 @@ public class SkillInstructionMiddlewareTests
             agentName: "TestAgent")
             with
             {
-                MiddlewareState = new MiddlewareState().WithScoping(
-                    new ScopingStateData { ActiveSkillInstructions = activeSkills })
+                MiddlewareState = new MiddlewareState().WithCollapsing(
+                    new CollapsingStateData { ActiveSkillInstructions = activeSkills })
             };
 
         var context = new AgentMiddlewareContext

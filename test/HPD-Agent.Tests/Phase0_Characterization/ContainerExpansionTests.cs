@@ -43,16 +43,16 @@ public class ContainerExpansionTests : AgentTestBase
         // Turn 3: LLM provides final response
         fakeLLM.EnqueueTextResponse("Math operation completed successfully");
 
-        // Create scoped plugin with container and members
-        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+        // Create Collapsed plugin with container and members
+        var (container, members) = CollapsedPluginTestHelper.CreateCollapsedPlugin(
             "MathPlugin",
             "Mathematical operations",
-            ScopedPluginTestHelper.MemberFunc("Add", "Adds numbers", () => "Sum: 42"),
-            ScopedPluginTestHelper.MemberFunc("Multiply", "Multiplies numbers", () => "Product: 100"));
+            CollapsedPluginTestHelper.MemberFunc("Add", "Adds numbers", () => "Sum: 42"),
+            CollapsedPluginTestHelper.MemberFunc("Multiply", "Multiplies numbers", () => "Product: 100"));
 
-        // Note: We need scoping enabled for container expansion to work
+        // Note: We need Collapsing enabled for container expansion to work
         var config = DefaultConfig();
-        config.Scoping = new ScopingConfig
+        config.Collapsing = new CollapsingConfig
         {
             Enabled = true
         };
@@ -135,14 +135,14 @@ public class ContainerExpansionTests : AgentTestBase
         // Turn 4: Final response
         fakeLLM.EnqueueTextResponse("String operations completed");
 
-        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+        var (container, members) = CollapsedPluginTestHelper.CreateCollapsedPlugin(
             "StringPlugin",
             "String operations",
-            ScopedPluginTestHelper.MemberFunc("Uppercase", "Convert to uppercase", () => "HELLO"),
-            ScopedPluginTestHelper.MemberFunc("Lowercase", "Convert to lowercase", () => "hello"));
+            CollapsedPluginTestHelper.MemberFunc("Uppercase", "Convert to uppercase", () => "HELLO"),
+            CollapsedPluginTestHelper.MemberFunc("Lowercase", "Convert to lowercase", () => "hello"));
 
         var config = DefaultConfig();
-        config.Scoping = new ScopingConfig { Enabled = true };
+        config.Collapsing = new CollapsingConfig { Enabled = true };
         config.Provider ??= new ProviderConfig();
         config.Provider.ProviderKey = "test";
         config.Provider.ModelName = "test-model";
@@ -178,16 +178,16 @@ public class ContainerExpansionTests : AgentTestBase
     }
 
     /// <summary>
-    /// Test 3: Non-scoped functions remain visible alongside containers.
-    /// Verifies that regular (non-scoped) functions coexist with scoped plugins.
+    /// Test 3: Non-Collapsed functions remain visible alongside containers.
+    /// Verifies that regular (non-Collapsed) functions coexist with Collapsed plugins.
     /// </summary>
     [Fact]
-    public async Task CurrentBehavior_ContainerExpansion_MixedScopedAndNonScoped()
+    public async Task CurrentBehavior_ContainerExpansion_MixedCollapsedAndNonCollapsed()
     {
         // Arrange
         var fakeLLM = new FakeChatClient();
 
-        // Call a non-scoped function (should work immediately)
+        // Call a non-Collapsed function (should work immediately)
         fakeLLM.EnqueueToolCall(
             functionName: "GetTime",
             callId: "call_time",
@@ -208,20 +208,20 @@ public class ContainerExpansionTests : AgentTestBase
         // Final response
         fakeLLM.EnqueueTextResponse("Operations completed");
 
-        // Create non-scoped function
-        var getTime = ScopedPluginTestHelper.CreateSimpleFunction(
+        // Create non-Collapsed function
+        var getTime = CollapsedPluginTestHelper.CreateSimpleFunction(
             "GetTime",
             "Gets current time",
             () => DateTime.UtcNow.ToString("O"));
 
-        // Create scoped plugin
-        var (container, members) = ScopedPluginTestHelper.CreateScopedPlugin(
+        // Create Collapsed plugin
+        var (container, members) = CollapsedPluginTestHelper.CreateCollapsedPlugin(
             "UtilsPlugin",
             "Utility functions",
-            ScopedPluginTestHelper.MemberFunc("Echo", "Echoes input", () => "Echo: test"));
+            CollapsedPluginTestHelper.MemberFunc("Echo", "Echoes input", () => "Echo: test"));
 
         var config = DefaultConfig();
-        config.Scoping = new ScopingConfig { Enabled = true };
+        config.Collapsing = new CollapsingConfig { Enabled = true };
         config.Provider ??= new ProviderConfig();
         config.Provider.ProviderKey = "test";
         config.Provider.ModelName = "test-model";
@@ -246,9 +246,9 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Assert - All three tools should be called
         var toolCalls = capturedEvents.OfType<ToolCallStartEvent>().ToList();
-        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "non-scoped + container + member");
+        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "non-Collapsed + container + member");
 
-        toolCalls.Should().Contain(e => e.Name == "GetTime", "non-scoped function should be callable");
+        toolCalls.Should().Contain(e => e.Name == "GetTime", "non-Collapsed function should be callable");
         toolCalls.Should().Contain(e => e.Name == "UtilsPlugin", "container should be callable");
         toolCalls.Should().Contain(e => e.Name == "Echo", "member should be callable after expansion");
     }

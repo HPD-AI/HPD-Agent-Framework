@@ -27,12 +27,12 @@ The single philosophy driving this library: ***"Make Simple Things Simple, Make 
 - **Permissions** - Permission system for tool execution control
 - **History Reduction** - Conversation summarization and context window management
 - **Tool Calling** - First-class support for function/tool calling with automatic schema generation
-- **Tool Scoping** - Innovative mechanism to reduce tool context(without RAG or Code Execution or Truncation)
+- **Tool Collapsing** - Innovative mechanism to reduce tool context(without RAG or Code Execution or Truncation)
 - **Skills** - Provider agnostic way to define reusable agent skills
 - **Observability** - Built-in event system for logging, telemetry, and debugging
 - **Planning** - Built-in plan mode for complex tasks
 - **SubAgents** - Built-in support for nested agent orchestration
-- **MCP Support** - Supports MCP with Scoping/Collapsing Mechanism
+- **MCP Support** - Supports MCP with Collapsing/Collapsing Mechanism
 - **Custom Event Handling Presets** - Custom Event UI handling for normal Chat conversations, telemetry etc
 
 ## Quick Start
@@ -64,7 +64,7 @@ var agent = await new AgentBuilder()
     // Plugins & Tools
     .WithPlugin<WebSearchPlugin>()
     .WithPlugin<FileSystemPlugin>()
-    .WithToolScoping()                              // Reduces tool context for better performance
+    .WithToolCollapsing()                              // Reduces tool context for better performance
     // Middleware
     .WithPermissions()                              // Require approval for sensitive operations
     .WithPIIProtection()                            // Filter sensitive data

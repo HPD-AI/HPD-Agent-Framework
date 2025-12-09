@@ -37,12 +37,12 @@ public class StaticMemoryOptions
     public int MaxTokens { get; set; } = int.MaxValue;
 
     /// <summary>
-    /// Optional knowledge identifier for scoping knowledge storage.
+    /// Optional knowledge identifier for Collapsing knowledge storage.
     /// </summary>
     public string? KnowledgeId { get; set; }
 
     /// <summary>
-    /// Optional agent name for scoping knowledge storage.
+    /// Optional agent name for Collapsing knowledge storage.
     /// </summary>
     public string? AgentName { get; set; }
 
@@ -89,7 +89,7 @@ public class StaticMemoryOptions
     }
 
     /// <summary>
-    /// Set the knowledge identifier for scoping knowledge storage.
+    /// Set the knowledge identifier for Collapsing knowledge storage.
     /// </summary>
     public StaticMemoryOptions WithKnowledgeId(string knowledgeId)
     {
@@ -98,7 +98,7 @@ public class StaticMemoryOptions
     }
 
     /// <summary>
-    /// Set the agent name for scoping knowledge storage.
+    /// Set the agent name for Collapsing knowledge storage.
     /// </summary>
     public StaticMemoryOptions WithAgentName(string agentName)
     {

@@ -146,10 +146,10 @@ Available functions:
 - complete_plan(): Mark the entire plan as complete when goal is achieved
 
 Best practices:
-- Create plans for tasks requiring 3+ steps, affecting multiple files, or with uncertain scope
+- Create plans for tasks requiring 3+ steps, affecting multiple files, or with uncertain Collapse
 - Update step status as you progress to maintain context across conversation turns
 - Add context notes when discovering important information (e.g., ""Found auth uses JWT, not sessions"")
-- Plans are conversation-scoped working memory - they help you maintain progress and avoid repeating failed approaches
+- Plans are conversation-Collapsed working memory - they help you maintain progress and avoid repeating failed approaches
 - When a step is blocked, mark it as 'blocked' with notes explaining why, then continue with other steps if possible";
     }
 }

@@ -23,7 +23,7 @@ var config = new AgentConfig
         ModelName = "google/gemini-2.5-pro"
     },
     Mcp = new McpConfig { ManifestPath = "./MCP.json" },
-    Scoping = new ScopingConfig { Enabled = true }
+    Collapsing = new CollapsingConfig { Enabled = true }
 };
 
 // Build agent with event handler (synchronous, ordered for UI)

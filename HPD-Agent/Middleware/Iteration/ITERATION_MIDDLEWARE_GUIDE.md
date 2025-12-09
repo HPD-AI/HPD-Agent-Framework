@@ -646,9 +646,9 @@ context.Properties["ShouldClearActiveSkills"] = true;
 
 ### Potential Extensions (Not Implemented)
 
-1. **Middleware Scoping**:
+1. **Middleware Collapsing**:
    ```csharp
-   builder.WithIterationMiddleWare(new MyMiddleware(), scope: Middleware =>
+   builder.WithIterationMiddleWare(new MyMiddleware(), Collapse: Middleware =>
        Middleware.Iteration > 0); // Only iterations 1+
    ```
 

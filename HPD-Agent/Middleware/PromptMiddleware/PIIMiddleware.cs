@@ -42,7 +42,7 @@ public class PIIMiddleware : IAgentMiddleware
     public PIIStrategy IPAddressStrategy { get; set; } = PIIStrategy.Hash;
 
     //     
-    // CONFIGURATION - Application Scope
+    // CONFIGURATION - Application Collapse
     //     
 
     /// <summary>Apply PII detection to user input messages. Default: true.</summary>

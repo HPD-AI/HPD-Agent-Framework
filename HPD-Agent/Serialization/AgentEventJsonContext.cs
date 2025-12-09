@@ -83,7 +83,7 @@ namespace HPD.Agent.Serialization;
 // Applications should define their own branch event types if needed
 
 // Observability Events
-[JsonSerializable(typeof(ScopedToolsVisibleEvent))]
+[JsonSerializable(typeof(CollapsedToolsVisibleEvent))]
 [JsonSerializable(typeof(ContainerExpandedEvent))]
 [JsonSerializable(typeof(ContainerType))]
 [JsonSerializable(typeof(MiddlewarePipelineStartEvent))]
@@ -108,7 +108,7 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(AgentCompletionEvent))]
 [JsonSerializable(typeof(IterationMessagesEvent))]
 [JsonSerializable(typeof(SchemaChangedEvent))]
-[JsonSerializable(typeof(ScopingStateEvent))]
+[JsonSerializable(typeof(CollapsingStateEvent))]
 
 // Common types for IDictionary<string, object?> serialization (e.g., PermissionRequestEvent.Arguments)
 [JsonSerializable(typeof(JsonElement))]

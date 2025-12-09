@@ -94,12 +94,12 @@ Memory/plans are automatically injected into prompts via the filter pipeline:
 - Agent always has access to relevant context
 - Token limits are enforced at filter level
 
-### 3. Scoped Context
+### 3. Collapsed Context
 
-Each system has appropriate scoping:
-- **DynamicMemory**: User/session scoped (`StorageKey`)
-- **StaticMemory**: Agent scoped (`AgentName`)
-- **Plan Mode**: Conversation scoped (`ConversationId`)
+Each system has appropriate Collapsing:
+- **DynamicMemory**: User/session Collapsed (`StorageKey`)
+- **StaticMemory**: Agent Collapsed (`AgentName`)
+- **Plan Mode**: Conversation Collapsed (`ConversationId`)
 
 ### 4. AsyncLocal Context Flow
 

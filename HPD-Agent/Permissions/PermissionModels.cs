@@ -10,9 +10,9 @@ public class PermissionDecision
 
     /// <summary>
     /// Optional: Remember this choice for future invocations.
-    /// If set, the permission will be stored according to the scope implied by
+    /// If set, the permission will be stored according to the Collapse implied by
     /// the conversationId parameter passed to SavePermissionAsync.
-    /// Pass conversationId to scope to the current conversation, or omit for global scope.
+    /// Pass conversationId to Collapse to the current conversation, or omit for global Collapse.
     /// </summary>
     public PermissionChoice? RememberAs { get; set; }
 }

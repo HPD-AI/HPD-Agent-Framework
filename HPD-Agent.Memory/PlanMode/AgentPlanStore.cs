@@ -7,7 +7,7 @@ namespace HPD.Agent.Memory;
 
 /// <summary>
 /// Abstract base class for agent plan storage implementations.
-/// Provides conversation-scoped plan storage with pluggable backends (in-memory, JSON files, SQL, Redis, etc.).
+/// Provides conversation-Collapsed plan storage with pluggable backends (in-memory, JSON files, SQL, Redis, etc.).
 /// </summary>
 public abstract class AgentPlanStore
 {

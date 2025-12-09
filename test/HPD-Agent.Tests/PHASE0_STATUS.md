@@ -64,7 +64,7 @@ Total tests: 20
 #### 5. Container Expansion Tests (3 BONUS tests) ✅
 - ✅ Two-turn expansion flow - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
 - ✅ Multiple member functions - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
-- ✅ Mixed scoped and non-scoped - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
+- ✅ Mixed Collapsed and non-Collapsed - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
 
 ---
 
@@ -130,14 +130,14 @@ Total tests: 20
 
 **Status**: Fully functional, fixed dual event stream consumption issue
 
-#### 6. ScopedPluginTestHelper ✅
-**File**: [Infrastructure/ScopedPluginTestHelper.cs](Infrastructure/ScopedPluginTestHelper.cs)
+#### 6. CollapsedPluginTestHelper ✅
+**File**: [Infrastructure/CollapsedPluginTestHelper.cs](Infrastructure/CollapsedPluginTestHelper.cs)
 
 **Features**:
-- Creates scoped plugins for testing container expansion
-- `CreateScopedPlugin()` generates container + member functions
+- Creates Collapsed plugins for testing container expansion
+- `CreateCollapsedPlugin()` generates container + member functions
 - `MemberFunc()` helper for creating member functions
-- `CreateSimpleFunction()` for non-scoped functions
+- `CreateSimpleFunction()` for non-Collapsed functions
 
 **Status**: Fully functional, used by container expansion tests
 
@@ -185,7 +185,7 @@ Total tests: 20
 
 **Features**:
 - In-memory `IPermissionStorage` implementation
-- Respects permission scoping (Conversation > Project > Global)
+- Respects permission Collapsing (Conversation > Project > Global)
 - Methods: `GetStoredPermissionAsync()`, `SavePermissionAsync()`
 - Test helpers: `GetAll()`, `Clear()`, `Count`
 
@@ -252,7 +252,7 @@ test/HPD-Agent.Tests/
 │   ├── TestBidirectionalCoordinator.cs ✅
 │   ├── TestAgentFactory.cs ✅
 │   ├── MockPermissionHandler.cs ✅
-│   ├── ScopedPluginTestHelper.cs ✅
+│   ├── CollapsedPluginTestHelper.cs ✅
 │   ├── ToolVisibilityTracker.cs ✅
 │   ├── ConversationPlanBuilder.cs ✅ NEW
 │   ├── AssertExtensions.cs ✅ NEW (partial)

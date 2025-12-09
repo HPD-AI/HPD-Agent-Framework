@@ -9,7 +9,7 @@ namespace HPD.Agent.Memory;
 
 /// <summary>
 /// Manages the lifecycle of agent plans across conversations.
-/// Plans are conversation-scoped and stored in-memory (indexed by conversation ID).
+/// Plans are conversation-Collapsed and stored in-memory (indexed by conversation ID).
 /// </summary>
 public class AgentPlanManager
 {

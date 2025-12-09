@@ -1,6 +1,6 @@
 using HPD.Agent;
 using HPD.Agent.Middleware;
-using HPD.Agent.Scoping;
+using HPD.Agent.Collapsing;
 using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
@@ -9,10 +9,10 @@ using Xunit;
 namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
-/// Comprehensive tests for ToolScopingMiddleware.
+/// Comprehensive tests for ToolCollapsingMiddleware.
 /// Tests the full lifecycle: visibility filtering (BeforeIteration) and container detection (AfterIteration).
 /// </summary>
-public class ToolScopingMiddlewareTests
+public class ToolCollapsingMiddlewareTests
 {
     //      
     // BEFORE ITERATION TESTS - Tool Visibility Filtering
@@ -22,13 +22,13 @@ public class ToolScopingMiddlewareTests
     public async Task BeforeIteration_WhenDisabled_DoesNotFilterTools()
     {
         // Arrange
-        var (container, members) = CreateScopedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new ScopingConfig { Enabled = false });
+            new CollapsingConfig { Enabled = false });
 
         var context = CreateContext();
         context.Options = new ChatOptions { Tools = allTools };
@@ -44,14 +44,14 @@ public class ToolScopingMiddlewareTests
     public async Task BeforeIteration_WhenEnabled_FiltersToVisibleTools()
     {
         // Arrange
-        var (container, members) = CreateScopedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
-        var nonScoped = CreateNonScopedFunction("Echo");
-        var allTools = new List<AITool> { container, members[0], members[1], nonScoped };
+        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var nonCollapsed = CreateNonCollapsedFunction("Echo");
+        var allTools = new List<AITool> { container, members[0], members[1], nonCollapsed };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new ScopingConfig { Enabled = true });
+            new CollapsingConfig { Enabled = true });
 
         var context = CreateContext();
         context.Options = new ChatOptions { Tools = allTools };
@@ -59,7 +59,7 @@ public class ToolScopingMiddlewareTests
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - only container and non-scoped functions visible (members hidden)
+        // Assert - only container and non-Collapsed functions visible (members hidden)
         var toolNames = context.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
         Assert.Contains("TestPlugin", toolNames);
         Assert.Contains("Echo", toolNames);
@@ -71,18 +71,18 @@ public class ToolScopingMiddlewareTests
     public async Task BeforeIteration_WhenPluginExpanded_ShowsMemberFunctions()
     {
         // Arrange
-        var (container, members) = CreateScopedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new ScopingConfig { Enabled = true });
+            new CollapsingConfig { Enabled = true });
 
         // State with expanded plugin
         var state = CreateEmptyState();
-        var scopingState = new ScopingStateData().WithExpandedPlugin("TestPlugin");
-        state = state with { MiddlewareState = state.MiddlewareState.WithScoping(scopingState) };
+        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
+        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState) };
 
         var context = CreateContext(state: state);
         context.Options = new ChatOptions { Tools = allTools };
@@ -100,7 +100,7 @@ public class ToolScopingMiddlewareTests
     public async Task BeforeIteration_WhenNoTools_DoesNothing()
     {
         // Arrange
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             Array.Empty<AITool>(),
             ImmutableHashSet<string>.Empty);
 
@@ -118,10 +118,10 @@ public class ToolScopingMiddlewareTests
     public async Task BeforeIteration_PreservesOtherChatOptionsProperties()
     {
         // Arrange
-        var function = CreateNonScopedFunction("TestFunc");
+        var function = CreateNonCollapsedFunction("TestFunc");
         var allTools = new List<AITool> { function };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -153,13 +153,13 @@ public class ToolScopingMiddlewareTests
     public async Task AfterIteration_WhenDisabled_DoesNotDetectContainers()
     {
         // Arrange
-        var (container, _) = CreateScopedPlugin("TestPlugin", "Test plugin", "Add");
+        var (container, _) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add");
         var allTools = new List<AITool> { container };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new ScopingConfig { Enabled = false });
+            new CollapsingConfig { Enabled = false });
 
         var context = CreateContext();
         context.Options = new ChatOptions { Tools = allTools };
@@ -176,7 +176,7 @@ public class ToolScopingMiddlewareTests
     public async Task AfterIteration_WhenNoToolCalls_DoesNothing()
     {
         // Arrange
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             Array.Empty<AITool>(),
             ImmutableHashSet<string>.Empty);
 
@@ -194,10 +194,10 @@ public class ToolScopingMiddlewareTests
     public async Task AfterIteration_DetectsPluginContainer_UpdatesState()
     {
         // Arrange
-        var (container, members) = CreateScopedPlugin("FinancialPlugin", "Financial tools", "Add", "Subtract");
+        var (container, members) = CreateCollapsedPlugin("FinancialPlugin", "Financial tools", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -213,8 +213,8 @@ public class ToolScopingMiddlewareTests
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
 
-        // Check scoping state
-        Assert.Contains("FinancialPlugin", pendingState.MiddlewareState.Scoping?.ExpandedPlugins ?? ImmutableHashSet<string>.Empty);
+        // Check Collapsing state
+        Assert.Contains("FinancialPlugin", pendingState.MiddlewareState.Collapsing?.ExpandedPlugins ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -222,11 +222,11 @@ public class ToolScopingMiddlewareTests
     {
         // Arrange
         var skill = CreateSkillContainer("TestSkill", "Test skill description", "func1", "func2");
-        var func1 = CreateNonScopedFunction("func1");
-        var func2 = CreateNonScopedFunction("func2");
+        var func1 = CreateNonCollapsedFunction("func1");
+        var func2 = CreateNonCollapsedFunction("func2");
         var allTools = new List<AITool> { skill, func1, func2 };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -242,8 +242,8 @@ public class ToolScopingMiddlewareTests
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
 
-        // Check scoping state
-        Assert.Contains("TestSkill", pendingState.MiddlewareState.Scoping?.ExpandedSkills ?? ImmutableHashSet<string>.Empty);
+        // Check Collapsing state
+        Assert.Contains("TestSkill", pendingState.MiddlewareState.Collapsing?.ExpandedSkills ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public class ToolScopingMiddlewareTests
         var skill = CreateSkillContainerWithInstructions("MetricSkill", "Metric calculations", instructions);
         var allTools = new List<AITool> { skill };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -269,21 +269,21 @@ public class ToolScopingMiddlewareTests
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
 
-        // Check instructions in scoping state
-        var scopingState = pendingState.MiddlewareState.Scoping;
-        Assert.NotNull(scopingState);
-        Assert.True(scopingState!.ActiveSkillInstructions.ContainsKey("MetricSkill"));
-        Assert.Equal(instructions, scopingState.ActiveSkillInstructions["MetricSkill"]);
+        // Check instructions in Collapsing state
+        var CollapsingState = pendingState.MiddlewareState.Collapsing;
+        Assert.NotNull(CollapsingState);
+        Assert.True(CollapsingState!.ActiveSkillInstructions.ContainsKey("MetricSkill"));
+        Assert.Equal(instructions, CollapsingState.ActiveSkillInstructions["MetricSkill"]);
     }
 
     [Fact]
     public async Task AfterIteration_NonContainerToolCall_DoesNotUpdateState()
     {
         // Arrange
-        var regularFunc = CreateNonScopedFunction("RegularFunction");
+        var regularFunc = CreateNonCollapsedFunction("RegularFunction");
         var allTools = new List<AITool> { regularFunc };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -302,12 +302,12 @@ public class ToolScopingMiddlewareTests
     public async Task AfterIteration_MultipleContainers_ExpandsAll()
     {
         // Arrange
-        var (plugin1, _) = CreateScopedPlugin("Plugin1", "First plugin", "A");
-        var (plugin2, _) = CreateScopedPlugin("Plugin2", "Second plugin", "B");
+        var (plugin1, _) = CreateCollapsedPlugin("Plugin1", "First plugin", "A");
+        var (plugin2, _) = CreateCollapsedPlugin("Plugin2", "Second plugin", "B");
         var skill = CreateSkillContainer("Skill1", "First skill");
         var allTools = new List<AITool> { plugin1, plugin2, skill };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -327,11 +327,11 @@ public class ToolScopingMiddlewareTests
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
 
-        var scopingState = pendingState.MiddlewareState.Scoping;
-        Assert.NotNull(scopingState);
-        Assert.Contains("Plugin1", scopingState!.ExpandedPlugins);
-        Assert.Contains("Plugin2", scopingState.ExpandedPlugins);
-        Assert.Contains("Skill1", scopingState.ExpandedSkills);
+        var CollapsingState = pendingState.MiddlewareState.Collapsing;
+        Assert.NotNull(CollapsingState);
+        Assert.Contains("Plugin1", CollapsingState!.ExpandedPlugins);
+        Assert.Contains("Plugin2", CollapsingState.ExpandedPlugins);
+        Assert.Contains("Skill1", CollapsingState.ExpandedSkills);
     }
 
     //      
@@ -342,10 +342,10 @@ public class ToolScopingMiddlewareTests
     public async Task FullLifecycle_ExpandPlugin_NextIterationShowsFunctions()
     {
         // Arrange
-        var (container, members) = CreateScopedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
@@ -377,13 +377,13 @@ public class ToolScopingMiddlewareTests
     }
 
     //      
-    // SCOPING STATE DATA TESTS
+    // Collapsing STATE DATA TESTS
     //      
 
     [Fact]
-    public void ScopingStateData_WithExpandedPlugin_AddsToSet()
+    public void CollapsingStateData_WithExpandedPlugin_AddsToSet()
     {
-        var state = new ScopingStateData();
+        var state = new CollapsingStateData();
 
         var updated = state.WithExpandedPlugin("Plugin1");
 
@@ -392,9 +392,9 @@ public class ToolScopingMiddlewareTests
     }
 
     [Fact]
-    public void ScopingStateData_WithExpandedSkill_AddsToSet()
+    public void CollapsingStateData_WithExpandedSkill_AddsToSet()
     {
-        var state = new ScopingStateData();
+        var state = new CollapsingStateData();
 
         var updated = state.WithExpandedSkill("Skill1");
 
@@ -402,9 +402,9 @@ public class ToolScopingMiddlewareTests
     }
 
     [Fact]
-    public void ScopingStateData_WithSkillInstructions_AddsToDict()
+    public void CollapsingStateData_WithSkillInstructions_AddsToDict()
     {
-        var state = new ScopingStateData();
+        var state = new CollapsingStateData();
 
         var updated = state.WithSkillInstructions("Skill1", "Some instructions");
 
@@ -413,9 +413,9 @@ public class ToolScopingMiddlewareTests
     }
 
     [Fact]
-    public void ScopingStateData_ClearSkillInstructions_EmptiesDict()
+    public void CollapsingStateData_ClearSkillInstructions_EmptiesDict()
     {
-        var state = new ScopingStateData()
+        var state = new CollapsingStateData()
             .WithSkillInstructions("Skill1", "Instructions 1")
             .WithSkillInstructions("Skill2", "Instructions 2");
 
@@ -433,8 +433,8 @@ public class ToolScopingMiddlewareTests
     public void ChatOptionsExtensions_WithTools_CopiesAllProperties()
     {
         // Arrange
-        var originalTools = new List<AITool> { CreateNonScopedFunction("Original") };
-        var newTools = new List<AITool> { CreateNonScopedFunction("New") };
+        var originalTools = new List<AITool> { CreateNonCollapsedFunction("Original") };
+        var newTools = new List<AITool> { CreateNonCollapsedFunction("New") };
 
         var original = new ChatOptions
         {
@@ -503,7 +503,7 @@ public class ToolScopingMiddlewareTests
             new AIFunctionFactoryOptions { Name = "GetGreeting", Description = "Gets greeting" });
 
         var allTools = new List<AITool> { containerFunc, regularFunc1, regularFunc2 };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -540,7 +540,7 @@ public class ToolScopingMiddlewareTests
             new AIFunctionFactoryOptions { Name = "RegularFunction", Description = "Regular" });
 
         var allTools = new List<AITool> { regularFunc };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -564,7 +564,7 @@ public class ToolScopingMiddlewareTests
     public async Task AfterMessageTurn_HandlesEmptyTurnHistory()
     {
         // Arrange
-        var middleware = new ToolScopingMiddleware(
+        var middleware = new ToolCollapsingMiddleware(
             Array.Empty<AITool>(),
             ImmutableHashSet<string>.Empty);
 
@@ -604,7 +604,7 @@ public class ToolScopingMiddlewareTests
             new AIFunctionFactoryOptions { Name = "DoWork", Description = "Does work" });
 
         var allTools = new List<AITool> { containerA, containerB, regularFunc };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -645,7 +645,7 @@ public class ToolScopingMiddlewareTests
             });
 
         var allTools = new List<AITool> { containerFunc };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -672,7 +672,7 @@ public class ToolScopingMiddlewareTests
     public async Task AfterMessageTurn_MixedSkillAndPluginContainers()
     {
         // Arrange
-        var scopedPluginContainer = AIFunctionFactory.Create(
+        var CollapsedPluginContainer = AIFunctionFactory.Create(
             (object? args, CancellationToken ct) => Task.FromResult<object?>("Plugin expanded"),
             new AIFunctionFactoryOptions
             {
@@ -701,8 +701,8 @@ public class ToolScopingMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("Result"),
             new AIFunctionFactoryOptions { Name = "Calculate", Description = "Calculates" });
 
-        var allTools = new List<AITool> { scopedPluginContainer, skillContainer, regularFunc };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var allTools = new List<AITool> { CollapsedPluginContainer, skillContainer, regularFunc };
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -739,7 +739,7 @@ public class ToolScopingMiddlewareTests
             new AIFunctionFactoryOptions { Name = "Calculate", Description = "Calculates" });
 
         var allTools = new List<AITool> { regularFunc };
-        var middleware = new ToolScopingMiddleware(allTools, ImmutableHashSet<string>.Empty);
+        var middleware = new ToolCollapsingMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
         {
@@ -790,27 +790,27 @@ public class ToolScopingMiddlewareTests
         return context;
     }
 
-    private static (AIFunction Container, AIFunction[] Members) CreateScopedPlugin(
+    private static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
         string pluginName,
         string description,
         params string[] memberNames)
     {
         var members = memberNames.Select(name =>
-            ScopedPluginTestHelper.CreatePluginMemberFunction(
+            CollapsedPluginTestHelper.CreatePluginMemberFunction(
                 name,
                 $"{name} function",
                 (args, ct) => Task.FromResult<object?>($"{name} result"),
                 pluginName)
         ).ToArray();
 
-        var container = ScopedPluginTestHelper.CreateContainerFunction(pluginName, description, members);
+        var container = CollapsedPluginTestHelper.CreateContainerFunction(pluginName, description, members);
 
         return (container, members);
     }
 
-    private static AIFunction CreateNonScopedFunction(string name)
+    private static AIFunction CreateNonCollapsedFunction(string name)
     {
-        return ScopedPluginTestHelper.CreateNonScopedFunction(
+        return CollapsedPluginTestHelper.CreateNonCollapsedFunction(
             name,
             $"{name} function",
             (args, ct) => Task.FromResult<object?>($"{name} result"));

@@ -26,17 +26,17 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from the specified manifest file
     /// </summary>
     /// <param name="manifestPath">Path to the MCP manifest file</param>
-    /// <param name="enableScoping">Enable plugin scoping (groups tools by server behind containers)</param>
+    /// <param name=" enablecollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestAsync(
         string manifestPath,
-        bool enableScoping = false,
+        bool  enablecollapsing = false,
         int maxFunctionNamesInDescription = 10,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Loading MCP tools from manifest: {ManifestPath} (Scoping: {Scoping})",
-            manifestPath, enableScoping);
+        _logger.LogInformation("Loading MCP tools from manifest: {ManifestPath} (Collapsing: {Collapsing})",
+            manifestPath,  enablecollapsing);
 
         var manifest = await LoadManifestAsync(manifestPath, cancellationToken);
         var allTools = new List<AIFunction>();
@@ -50,14 +50,14 @@ public class MCPClientManager : IDisposable
             {
                 var tools = await LoadServerToolsAsync(serverConfig, cancellationToken);
 
-                // Determine scoping for this specific server
+                // Determine Collapsing for this specific server
                 // Per-server setting takes precedence over global setting
-                var enableScopingForThisServer = serverConfig.EnableScoping ?? enableScoping;
+                var  enablecollapsingForThisServer = serverConfig. enablecollapsing ??  enablecollapsing;
 
-                if (enableScopingForThisServer && tools.Count > 0)
+                if ( enablecollapsingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
-                    var (container, scopedTools) = ExternalToolScopingWrapper.WrapMCPServerTools(
+                    var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
@@ -65,14 +65,14 @@ public class MCPClientManager : IDisposable
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);
-                    allTools.AddRange(scopedTools);
+                    allTools.AddRange(CollapsedTools);
 
-                    _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (scoped with container '{ContainerName}')",
+                    _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (Collapsed with container '{ContainerName}')",
                         tools.Count, serverConfig.Name, container.Name);
                 }
                 else
                 {
-                    // Original behavior - no scoping
+                    // Original behavior - no Collapsing
                     allTools.AddRange(tools);
                     _logger.LogInformation("Loaded {Count} tools from server '{ServerName}'",
                         tools.Count, serverConfig.Name);
@@ -101,16 +101,16 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from manifest content
     /// </summary>
     /// <param name="manifestContent">JSON content of the MCP manifest</param>
-    /// <param name="enableScoping">Enable plugin scoping (groups tools by server behind containers)</param>
+    /// <param name=" enablecollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestContentAsync(
         string manifestContent,
-        bool enableScoping = false,
+        bool  enablecollapsing = false,
         int maxFunctionNamesInDescription = 10,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Loading MCP tools from manifest content (Scoping: {Scoping})", enableScoping);
+        _logger.LogInformation("Loading MCP tools from manifest content (Collapsing: {Collapsing})",  enablecollapsing);
 
         var manifest = ParseManifest(manifestContent);
         var allTools = new List<AIFunction>();
@@ -124,14 +124,14 @@ public class MCPClientManager : IDisposable
             {
                 var tools = await LoadServerToolsAsync(serverConfig, cancellationToken);
 
-                // Determine scoping for this specific server
+                // Determine Collapsing for this specific server
                 // Per-server setting takes precedence over global setting
-                var enableScopingForThisServer = serverConfig.EnableScoping ?? enableScoping;
+                var  enablecollapsingForThisServer = serverConfig. enablecollapsing ??  enablecollapsing;
 
-                if (enableScopingForThisServer && tools.Count > 0)
+                if ( enablecollapsingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
-                    var (container, scopedTools) = ExternalToolScopingWrapper.WrapMCPServerTools(
+                    var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
@@ -139,14 +139,14 @@ public class MCPClientManager : IDisposable
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);
-                    allTools.AddRange(scopedTools);
+                    allTools.AddRange(CollapsedTools);
 
-                    _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (scoped with container '{ContainerName}')",
+                    _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (Collapsed with container '{ContainerName}')",
                         tools.Count, serverConfig.Name, container.Name);
                 }
                 else
                 {
-                    // Original behavior - no scoping
+                    // Original behavior - no Collapsing
                     allTools.AddRange(tools);
                     _logger.LogInformation("Loaded {Count} tools from server '{ServerName}'",
                         tools.Count, serverConfig.Name);

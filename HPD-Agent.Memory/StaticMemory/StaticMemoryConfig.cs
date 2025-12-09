@@ -24,7 +24,7 @@ public class StaticMemoryConfig
     public int MaxTokens { get; set; } = 8000;
 
     /// <summary>
-    /// Optional agent name for scoping knowledge storage.
+    /// Optional agent name for Collapsing knowledge storage.
     /// </summary>
     public string? AgentName { get; set; }
 }

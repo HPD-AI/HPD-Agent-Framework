@@ -1,27 +1,27 @@
 using Xunit;
 using FluentAssertions;
 using Microsoft.Extensions.AI;
-using HPD.Agent.Scoping;
+using HPD.Agent.Collapsing;
 using System.Collections.Immutable;
 
-namespace HPD.Agent.Tests.Scoping;
+namespace HPD.Agent.Tests.Collapsing;
 
 /// <summary>
-/// Comprehensive tests for ToolVisibilityManager to validate all scoping scenarios.
+/// Comprehensive tests for ToolVisibilityManager to validate all Collapsing scenarios.
 /// These tests cover explicit/implicit plugin registration, [Collapse] attribute behavior,
-/// orphan function hiding, and skill parent scope detection.
+/// orphan function hiding, and skill parent Collapse detection.
 /// </summary>
 public class ToolVisibilityManagerTests
 {
-    #region Test Scenario 1: Both Plugin and Skills with [Scope], Both Explicit
+    #region Test Scenario 1: Both Plugin and Skills with [Collapse], Both Explicit
 
     [Fact]
-    public void Scenario1_BothScoped_BothExplicit_ShowsOnlyContainers()
+    public void Scenario1_BothCollapsed_BothExplicit_ShowsOnlyContainers()
     {
-        // Arrange: Plugin has [Scope], Skills have [Scope], both explicitly registered
+        // Arrange: Plugin has [Collapse], Skills have [Collapse], both explicitly registered
         var tools = CreateTestTools(
-            pluginHasScope: true,
-            skillsHaveScope: true,
+            pluginHasCollapse: true,
+            skillsHaveCollapse: true,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -40,8 +40,8 @@ public class ToolVisibilityManagerTests
 
         // Assert
         visibleTools.Should().HaveCount(2); // Only containers, no read_skill_document (no skills expanded)
-        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisPlugin"); // Scope container
-        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisSkills"); // Scope container
+        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisPlugin"); // Collapse container
+        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisSkills"); // Collapse container
 
         // Should NOT contain individual plugin functions
         visibleTools.Should().NotContain(t => t.Name == "CalculateCurrentRatio");
@@ -56,15 +56,15 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Test Scenario 2: Plugin Explicit WITHOUT [Scope], Skills With [Scope]
+    #region Test Scenario 2: Plugin Explicit WITHOUT [Collapse], Skills With [Collapse]
 
     [Fact]
-    public void Scenario2_PluginNotScoped_SkillsScoped_ShowsAllPluginFunctions()
+    public void Scenario2_PluginNotCollapsed_SkillsCollapsed_ShowsAllPluginFunctions()
     {
-        // Arrange: Plugin NO [Scope] but explicit, Skills have [Scope]
+        // Arrange: Plugin NO [Collapse] but explicit, Skills have [Collapse]
         var tools = CreateTestTools(
-            pluginHasScope: false,
-            skillsHaveScope: true,
+            pluginHasCollapse: false,
+            skillsHaveCollapse: true,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -81,15 +81,15 @@ public class ToolVisibilityManagerTests
             ImmutableHashSet<string>.Empty,
             ImmutableHashSet<string>.Empty);
 
-        // Assert - Should show all plugin functions (explicit, no scope)
+        // Assert - Should show all plugin functions (explicit, no Collapse)
         visibleTools.Should().Contain(t => t.Name == "CalculateCurrentRatio");
         visibleTools.Should().Contain(t => t.Name == "CalculateQuickRatio");
         visibleTools.Should().Contain(t => t.Name == "ComprehensiveBalanceSheetAnalysis");
 
-        // Should show skills scope container
+        // Should show skills Collapse container
         visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisSkills");
 
-        // Should NOT show individual skills (parent scope not expanded)
+        // Should NOT show individual skills (parent Collapse not expanded)
         visibleTools.Should().NotContain(t => t.Name == "QuickLiquidityAnalysis");
 
         // Should NOT contain read_skill_document (no skills with documents expanded)
@@ -98,15 +98,15 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Test Scenario 3: Plugin With [Scope], Skills WITHOUT [Scope], Both Explicit
+    #region Test Scenario 3: Plugin With [Collapse], Skills WITHOUT [Collapse], Both Explicit
 
     [Fact]
-    public void Scenario3_PluginScoped_SkillsNotScoped_ShowsIndividualSkills()
+    public void Scenario3_PluginCollapsed_SkillsNotCollapsed_ShowsIndividualSkills()
     {
-        // Arrange: Plugin has [Scope], Skills NO [Scope], both explicit
+        // Arrange: Plugin has [Collapse], Skills NO [Collapse], both explicit
         var tools = CreateTestTools(
-            pluginHasScope: true,
-            skillsHaveScope: false,
+            pluginHasCollapse: true,
+            skillsHaveCollapse: false,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -124,11 +124,11 @@ public class ToolVisibilityManagerTests
             ImmutableHashSet<string>.Empty);
 
         // Assert
-        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisPlugin"); // Scope container
+        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisPlugin"); // Collapse container
         visibleTools.Should().Contain(t => t.Name == "QuickLiquidityAnalysis"); // Individual skill
         visibleTools.Should().Contain(t => t.Name == "CapitalStructureAnalysis"); // Individual skill
 
-        // Should NOT show plugin functions (scoped plugin not expanded)
+        // Should NOT show plugin functions (Collapsed plugin not expanded)
         visibleTools.Should().NotContain(t => t.Name == "CalculateCurrentRatio");
         visibleTools.Should().NotContain(t => t.Name == "ComprehensiveBalanceSheetAnalysis");
 
@@ -141,15 +141,15 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Test Scenario 4: Only Skills Registered (No Explicit Plugin), Skills WITHOUT [Scope]
+    #region Test Scenario 4: Only Skills Registered (No Explicit Plugin), Skills WITHOUT [Collapse]
 
     [Fact]
-    public void Scenario4_OnlySkillsExplicit_NoScope_HidesOrphanFunctions()
+    public void Scenario4_OnlySkillsExplicit_NoCollapse_HidesOrphanFunctions()
     {
-        // Arrange: Only skills registered (plugin auto-registered), skills NO [Scope]
+        // Arrange: Only skills registered (plugin auto-registered), skills NO [Collapse]
         var tools = CreateTestTools(
-            pluginHasScope: false,
-            skillsHaveScope: false,
+            pluginHasCollapse: false,
+            skillsHaveCollapse: false,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -181,15 +181,15 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Test Scenario 5: Only Skills Registered, Skills WITH [Scope]
+    #region Test Scenario 5: Only Skills Registered, Skills WITH [Collapse]
 
     [Fact]
-    public void Scenario5_OnlySkillsExplicit_WithScope_ShowsOnlyScopeContainer()
+    public void Scenario5_OnlySkillsExplicit_WithCollapse_ShowsOnlyCollapseContainer()
     {
-        // Arrange: Only skills registered, skills HAVE [Scope]
+        // Arrange: Only skills registered, skills HAVE [Collapse]
         var tools = CreateTestTools(
-            pluginHasScope: false,
-            skillsHaveScope: true,
+            pluginHasCollapse: false,
+            skillsHaveCollapse: true,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -206,9 +206,9 @@ public class ToolVisibilityManagerTests
             ImmutableHashSet<string>.Empty);
 
         // Assert
-        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisSkills"); // Scope container
+        visibleTools.Should().Contain(t => t.Name == "FinancialAnalysisSkills"); // Collapse container
 
-        // Individual skills hidden (parent scope not expanded)
+        // Individual skills hidden (parent Collapse not expanded)
         visibleTools.Should().NotContain(t => t.Name == "QuickLiquidityAnalysis");
 
         // Should NOT contain read_skill_document (no skills expanded)
@@ -218,20 +218,20 @@ public class ToolVisibilityManagerTests
         visibleTools.Should().NotContain(t => t.Name == "ComprehensiveBalanceSheetAnalysis");
         visibleTools.Should().NotContain(t => t.Name == "CalculateCurrentRatio");
 
-        visibleTools.Should().HaveCount(1); // Only scope container, no read_skill_document
+        visibleTools.Should().HaveCount(1); // Only Collapse container, no read_skill_document
     }
 
     #endregion
 
-    #region Test Scenario 6: Scoped Plugin Explicit, No Skills
+    #region Test Scenario 6: Collapsed Plugin Explicit, No Skills
 
     [Fact]
-    public void Scenario6_ScopedPluginExplicit_NoSkills_HidesFunctions()
+    public void Scenario6_CollapsedPluginExplicit_NoSkills_HidesFunctions()
     {
-        // Arrange: Plugin has [Scope], explicit, no skills
+        // Arrange: Plugin has [Collapse], explicit, no skills
         var tools = CreateTestTools(
-            pluginHasScope: true,
-            skillsHaveScope: false,
+            pluginHasCollapse: true,
+            skillsHaveCollapse: false,
             includePluginFunctions: true,
             includeSkills: false);
         
@@ -271,12 +271,12 @@ public class ToolVisibilityManagerTests
     #region Test Expansion Behavior
 
     [Fact]
-    public void ExpandSkillScope_ShowsIndividualSkills()
+    public void ExpandSkillCollapse_ShowsIndividualSkills()
     {
         // Arrange
         var tools = CreateTestTools(
-            pluginHasScope: true,
-            skillsHaveScope: true,
+            pluginHasCollapse: true,
+            skillsHaveCollapse: true,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -287,7 +287,7 @@ public class ToolVisibilityManagerTests
         
         var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
-        // Act - Expand FinancialAnalysisSkills scope
+        // Act - Expand FinancialAnalysisSkills Collapse
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
             ImmutableHashSet<string>.Empty,
@@ -306,8 +306,8 @@ public class ToolVisibilityManagerTests
     {
         // Arrange
         var tools = CreateTestTools(
-            pluginHasScope: true,
-            skillsHaveScope: false,
+            pluginHasCollapse: true,
+            skillsHaveCollapse: false,
             includePluginFunctions: true,
             includeSkills: true);
         
@@ -335,23 +335,23 @@ public class ToolVisibilityManagerTests
     #region Helper Methods
 
     private IEnumerable<AIFunction> CreateTestTools(
-        bool pluginHasScope,
-        bool skillsHaveScope,
+        bool pluginHasCollapse,
+        bool skillsHaveCollapse,
         bool includePluginFunctions,
         bool includeSkills)
     {
         var tools = new List<AIFunction>();
 
-        // Add plugin container if scoped
-        if (pluginHasScope)
+        // Add plugin container if Collapsed
+        if (pluginHasCollapse)
         {
             tools.Add(CreatePluginContainer("FinancialAnalysisPlugin"));
         }
 
-        // Add skills scope container if scoped
-        if (skillsHaveScope)
+        // Add skills Collapse container if Collapsed
+        if (skillsHaveCollapse)
         {
-            tools.Add(CreateScopeContainer("FinancialAnalysisSkills"));
+            tools.Add(CreateCollapseContainer("FinancialAnalysisSkills"));
         }
 
         // Add plugin functions
@@ -363,11 +363,11 @@ public class ToolVisibilityManagerTests
         // Add skills
         if (includeSkills)
         {
-            tools.AddRange(CreateSkills(skillsHaveScope ? "FinancialAnalysisSkills" : null));
+            tools.AddRange(CreateSkills(skillsHaveCollapse ? "FinancialAnalysisSkills" : null));
         }
 
-        // Add non-scoped function
-        tools.Add(CreateNonScopedFunction("ReadSkillDocument"));
+        // Add non-Collapsed function
+        tools.Add(CreateNonCollapsedFunction("ReadSkillDocument"));
 
         return tools;
     }
@@ -379,7 +379,7 @@ public class ToolVisibilityManagerTests
             new AIFunctionFactoryOptions
             {
                 Name = pluginName,
-                Description = $"{pluginName} scope container",
+                Description = $"{pluginName} Collapse container",
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsContainer"] = true,
@@ -390,18 +390,18 @@ public class ToolVisibilityManagerTests
             });
     }
 
-    private AIFunction CreateScopeContainer(string scopeName)
+    private AIFunction CreateCollapseContainer(string CollapseName)
     {
         return AIFunctionFactory.Create(
-            (object? args, CancellationToken ct) => Task.FromResult<object?>($"{scopeName} expanded"),
+            (object? args, CancellationToken ct) => Task.FromResult<object?>($"{CollapseName} expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = scopeName,
-                Description = $"{scopeName} scope container",
+                Name = CollapseName,
+                Description = $"{CollapseName} Collapse container",
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsContainer"] = true,
-                    ["IsScope"] = true
+                    ["IsCollapse"] = true
                 }
             });
     }
@@ -431,7 +431,7 @@ public class ToolVisibilityManagerTests
             }));
     }
 
-    private IEnumerable<AIFunction> CreateSkills(string? parentScope)
+    private IEnumerable<AIFunction> CreateSkills(string? parentCollapse)
     {
         var skillNames = new[]
         {
@@ -452,9 +452,9 @@ public class ToolVisibilityManagerTests
                 ["ReferencedPlugins"] = new[] { "FinancialAnalysisPlugin" }
             };
 
-            if (parentScope != null)
+            if (parentCollapse != null)
             {
-                props["ParentSkillContainer"] = parentScope;
+                props["ParentSkillContainer"] = parentCollapse;
             }
 
             return AIFunctionFactory.Create(
@@ -487,7 +487,7 @@ public class ToolVisibilityManagerTests
         };
     }
 
-    private AIFunction CreateNonScopedFunction(string name)
+    private AIFunction CreateNonCollapsedFunction(string name)
     {
         return AIFunctionFactory.Create(
             (object? args, CancellationToken ct) => Task.FromResult<object?>($"{name} result"),
@@ -513,7 +513,7 @@ public class ToolVisibilityManagerTests
             });
     }
 
-    private IEnumerable<AIFunction> CreateSkillsWithDocuments(string? parentScope, bool withDocuments)
+    private IEnumerable<AIFunction> CreateSkillsWithDocuments(string? parentCollapse, bool withDocuments)
     {
         var skillNames = new[]
         {
@@ -531,9 +531,9 @@ public class ToolVisibilityManagerTests
                 ["ReferencedPlugins"] = new[] { "FinancialAnalysisPlugin" }
             };
 
-            if (parentScope != null)
+            if (parentCollapse != null)
             {
-                props["ParentSkillContainer"] = parentScope;
+                props["ParentSkillContainer"] = parentCollapse;
             }
 
             // Add documents metadata if requested
@@ -570,7 +570,7 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Skills with documents exist, but none expanded
         var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: true));
+        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
         tools.Add(CreateReadSkillDocumentFunction());
         tools.AddRange(CreatePluginFunctions("FinancialAnalysisPlugin"));
 
@@ -596,7 +596,7 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Skill with documents
         var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: true));
+        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
         tools.Add(CreateReadSkillDocumentFunction());
         tools.AddRange(CreatePluginFunctions("FinancialAnalysisPlugin"));
 
@@ -626,7 +626,7 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Skills WITHOUT documents
         var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: false));
+        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: false));
         tools.Add(CreateReadSkillDocumentFunction());
         tools.AddRange(CreatePluginFunctions("FinancialAnalysisPlugin"));
 
@@ -656,7 +656,7 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Multiple skills with documents
         var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentScope: null, withDocuments: true));
+        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
         tools.Add(CreateReadSkillDocumentFunction());
         tools.AddRange(CreatePluginFunctions("FinancialAnalysisPlugin"));
 
@@ -688,8 +688,8 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Mix of skills with and without documents
         var tools = new List<AIFunction>();
-        var skillsWithDocs = CreateSkillsWithDocuments(parentScope: null, withDocuments: true).ToList();
-        var skillsWithoutDocs = CreateSkillsWithDocuments(parentScope: null, withDocuments: false)
+        var skillsWithDocs = CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true).ToList();
+        var skillsWithoutDocs = CreateSkillsWithDocuments(parentCollapse: null, withDocuments: false)
             .Select(s =>
             {
                 // Rename to avoid conflicts
@@ -733,12 +733,12 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Scoped Plugin/Skill Expansion Tests
+    #region Collapsed Plugin/Skill Expansion Tests
 
     [Fact]
-    public void ScopedPlugin_HidesAfterExpansion()
+    public void CollapsedPlugin_HidesAfterExpansion()
     {
-        // Arrange: Create MathPlugin with [Scope], containing functions and skills
+        // Arrange: Create MathPlugin with [Collapse], containing functions and skills
         var tools = CreateMathPluginTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
@@ -771,7 +771,7 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPlugin_ShowsFunctionsAfterExpansion()
+    public void CollapsedPlugin_ShowsFunctionsAfterExpansion()
     {
         // Arrange
         var tools = CreateMathPluginTools();
@@ -797,7 +797,7 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillContainers()
+    public void CollapsedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillContainers()
     {
         // Arrange
         var tools = CreateMathPluginTools();
@@ -818,7 +818,7 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillsParameter()
+    public void CollapsedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillsParameter()
     {
         // Arrange
         var tools = CreateMathPluginTools();
@@ -839,12 +839,12 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPlugin_OnlyHidesItself_NotOtherContainers()
+    public void CollapsedPlugin_OnlyHidesItself_NotOtherContainers()
     {
-        // Arrange: Two separate scope containers
+        // Arrange: Two separate Collapse containers
         var tools = new List<AIFunction>();
         tools.AddRange(CreateMathPluginTools());
-        tools.Add(CreateScopeContainer("OtherPlugin", "Other plugin for testing"));
+        tools.Add(CreateCollapseContainer("OtherPlugin", "Other plugin for testing"));
 
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
@@ -864,13 +864,13 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void SkillContainer_VisibleWhenParentScopeExpandedInPlugins()
+    public void SkillContainer_VisibleWhenParentCollapseExpandedInPlugins()
     {
-        // Arrange: Skill with parent scope
+        // Arrange: Skill with parent Collapse
         var tools = CreateMathPluginTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Expand parent scope in ExpandedSkillContainers
+        // Act: Expand parent Collapse in ExpandedSkillContainers
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
             "MathPlugin");
@@ -894,8 +894,8 @@ public class ToolVisibilityManagerTests
     {
         var tools = new List<AIFunction>();
 
-        // 1. Scope container for MathPlugin
-        tools.Add(CreateScopeContainer(
+        // 1. Collapse container for MathPlugin
+        tools.Add(CreateCollapseContainer(
             "MathPlugin",
             "Math Operations. Contains 7 functions: Add, Multiply, Abs, Square, Subtract, Min, SolveQuadratic"));
 
@@ -918,7 +918,7 @@ public class ToolVisibilityManagerTests
         return tools;
     }
 
-    private AIFunction CreateScopeContainer(string name, string description)
+    private AIFunction CreateCollapseContainer(string name, string description)
     {
         return AIFunctionFactory.Create(
             async (AIFunctionArguments args, CancellationToken ct) => name + " expanded",
@@ -929,7 +929,7 @@ public class ToolVisibilityManagerTests
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsContainer"] = true,
-                    ["IsScope"] = true,
+                    ["IsCollapse"] = true,
                     ["FunctionNames"] = new string[] { },
                     ["FunctionCount"] = 0
                 }
@@ -979,7 +979,7 @@ public class ToolVisibilityManagerTests
     private AIFunction CreateSkillWithReferences(
         string name,
         string description,
-        string? parentScope,
+        string? parentCollapse,
         string[] referencedFunctions,
         string[] referencedPlugins)
     {
@@ -991,9 +991,9 @@ public class ToolVisibilityManagerTests
             ["ReferencedPlugins"] = referencedPlugins
         };
 
-        if (parentScope != null)
+        if (parentCollapse != null)
         {
-            additionalProps["ParentSkillContainer"] = parentScope;
+            additionalProps["ParentSkillContainer"] = parentCollapse;
         }
 
         return AIFunctionFactory.Create(
@@ -1008,25 +1008,25 @@ public class ToolVisibilityManagerTests
 
     #endregion
 
-    #region Scoped Plugin Referenced by Skill Tests
+    #region Collapsed Plugin Referenced by Skill Tests
 
     [Fact]
-    public void ScopedPluginReferencedBySkill_HidesPluginContainer_ShowsOnlySkill()
+    public void CollapsedPluginReferencedBySkill_HidesPluginContainer_ShowsOnlySkill()
     {
-        // Arrange: Scoped plugin referenced by a skill (NOT explicitly registered)
+        // Arrange: Collapsed plugin referenced by a skill (NOT explicitly registered)
         var tools = new List<AIFunction>();
 
-        // Add scoped plugin container
+        // Add Collapsed plugin container
         tools.Add(CreatePluginContainer("FinancialAnalysisPlugin"));
 
         // Add plugin functions
         tools.AddRange(CreatePluginFunctions("FinancialAnalysisPlugin"));
 
-        // Add skill that references the scoped plugin
+        // Add skill that references the Collapsed plugin
         tools.Add(CreateSkillWithReferences(
             "QuickLiquidityAnalysis",
             "Quick liquidity analysis skill",
-            parentScope: null,
+            parentCollapse: null,
             referencedFunctions: new[]
             {
                 "FinancialAnalysisPlugin.CalculateCurrentRatio",
@@ -1045,7 +1045,7 @@ public class ToolVisibilityManagerTests
             ImmutableHashSet<string>.Empty,
             ImmutableHashSet<string>.Empty);
 
-        // Assert: Should show ONLY the skill container, NOT the plugin scope container
+        // Assert: Should show ONLY the skill container, NOT the plugin Collapse container
         visibleTools.Should().Contain(t => t.Name == "QuickLiquidityAnalysis");
         visibleTools.Should().NotContain(t => t.Name == "FinancialAnalysisPlugin");
 
@@ -1055,9 +1055,9 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPluginReferencedBySkill_ExpandSkill_ShowsReferencedFunctions()
+    public void CollapsedPluginReferencedBySkill_ExpandSkill_ShowsReferencedFunctions()
     {
-        // Arrange: Scoped plugin referenced by a skill
+        // Arrange: Collapsed plugin referenced by a skill
         var tools = new List<AIFunction>();
 
         tools.Add(CreatePluginContainer("FinancialAnalysisPlugin"));
@@ -1066,7 +1066,7 @@ public class ToolVisibilityManagerTests
         tools.Add(CreateSkillWithReferences(
             "QuickLiquidityAnalysis",
             "Quick liquidity analysis skill",
-            parentScope: null,
+            parentCollapse: null,
             referencedFunctions: new[]
             {
                 "FinancialAnalysisPlugin.CalculateCurrentRatio",
@@ -1080,7 +1080,7 @@ public class ToolVisibilityManagerTests
         // Act: Expand the skill (NOT the plugin)
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
-            ImmutableHashSet<string>.Empty, // Plugin scope NOT expanded
+            ImmutableHashSet<string>.Empty, // Plugin Collapse NOT expanded
             ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "QuickLiquidityAnalysis")); // Skill expanded
 
         // Assert: Skill bypass should make referenced functions visible
@@ -1090,14 +1090,14 @@ public class ToolVisibilityManagerTests
         // Skill container should be hidden (it's expanded)
         visibleTools.Should().NotContain(t => t.Name == "QuickLiquidityAnalysis");
 
-        // Plugin scope container should still be hidden (implicitly registered)
+        // Plugin Collapse container should still be hidden (implicitly registered)
         visibleTools.Should().NotContain(t => t.Name == "FinancialAnalysisPlugin");
     }
 
     [Fact]
-    public void ScopedPluginReferencedBySkill_OrphanFunctions_StayHidden()
+    public void CollapsedPluginReferencedBySkill_OrphanFunctions_StayHidden()
     {
-        // Arrange: Scoped plugin with some functions referenced by skill, others are orphans
+        // Arrange: Collapsed plugin with some functions referenced by skill, others are orphans
         var tools = new List<AIFunction>();
 
         tools.Add(CreatePluginContainer("FinancialAnalysisPlugin"));
@@ -1107,7 +1107,7 @@ public class ToolVisibilityManagerTests
         tools.Add(CreateSkillWithReferences(
             "QuickLiquidityAnalysis",
             "Quick liquidity analysis skill",
-            parentScope: null,
+            parentCollapse: null,
             referencedFunctions: new[]
             {
                 "FinancialAnalysisPlugin.CalculateCurrentRatio",
@@ -1136,9 +1136,9 @@ public class ToolVisibilityManagerTests
     }
 
     [Fact]
-    public void ScopedPluginReferencedBySkill_ExpandPlugin_ShowsAllFunctions()
+    public void CollapsedPluginReferencedBySkill_ExpandPlugin_ShowsAllFunctions()
     {
-        // Arrange: Scoped plugin referenced by skill
+        // Arrange: Collapsed plugin referenced by skill
         var tools = new List<AIFunction>();
 
         tools.Add(CreatePluginContainer("FinancialAnalysisPlugin"));
@@ -1147,7 +1147,7 @@ public class ToolVisibilityManagerTests
         tools.Add(CreateSkillWithReferences(
             "QuickLiquidityAnalysis",
             "Quick liquidity analysis skill",
-            parentScope: null,
+            parentCollapse: null,
             referencedFunctions: new[]
             {
                 "FinancialAnalysisPlugin.CalculateCurrentRatio",
@@ -1158,14 +1158,14 @@ public class ToolVisibilityManagerTests
         var explicitPlugins = ImmutableHashSet<string>.Empty;
         var manager = new ToolVisibilityManager(tools, explicitPlugins);
 
-        // Act: Expand the PLUGIN scope (not the skill)
+        // Act: Expand the PLUGIN Collapse (not the skill)
         // This is an edge case - user manually expands the plugin even though it was implicitly registered
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
             ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "FinancialAnalysisPlugin"), // Plugin expanded
             ImmutableHashSet<string>.Empty);
 
-        // Assert: ALL plugin functions should be visible (plugin scope expanded)
+        // Assert: ALL plugin functions should be visible (plugin Collapse expanded)
         visibleTools.Should().Contain(t => t.Name == "CalculateCurrentRatio");
         visibleTools.Should().Contain(t => t.Name == "CalculateQuickRatio");
         visibleTools.Should().Contain(t => t.Name == "CalculateWorkingCapital");

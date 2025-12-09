@@ -1,15 +1,15 @@
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
-using HPD.Agent.Scoping;
+using HPD.Agent.Collapsing;
 using Xunit;
 
-namespace HPD.Agent.Tests.Scoping;
+namespace HPD.Agent.Tests.Collapsing;
 
 /// <summary>
-/// Tests for skill scoping functionality in ToolVisibilityManager.
+/// Tests for skill Collapsing functionality in ToolVisibilityManager.
 /// Ensures skills work like plugin containers - hiding referenced functions until expanded.
 /// </summary>
-public class SkillScopingTests
+public class SkillCollapsingTests
 {
     private static AIFunction CreateSkillContainer(
         string name, 
@@ -59,9 +59,9 @@ public class SkillScopingTests
         var skill = CreateSkillContainer("TestSkill", "Test skill", "Function1", "Function2");
         var func1 = CreateFunction("Function1");
         var func2 = CreateFunction("Function2");
-        var nonScoped = CreateFunction("AlwaysVisible");
+        var nonCollapsed = CreateFunction("AlwaysVisible");
 
-        var allTools = new List<AIFunction> { skill, func1, func2, nonScoped };
+        var allTools = new List<AIFunction> { skill, func1, func2, nonCollapsed };
         var manager = new ToolVisibilityManager(allTools);
 
         // Act
@@ -74,7 +74,7 @@ public class SkillScopingTests
         Assert.Contains(visible, f => f.Name == "TestSkill"); // Skill container visible
         Assert.DoesNotContain(visible, f => f.Name == "Function1"); // Referenced function hidden
         Assert.DoesNotContain(visible, f => f.Name == "Function2"); // Referenced function hidden
-        Assert.Contains(visible, f => f.Name == "AlwaysVisible"); // Non-scoped function visible
+        Assert.Contains(visible, f => f.Name == "AlwaysVisible"); // Non-Collapsed function visible
     }
 
     [Fact]
@@ -84,9 +84,9 @@ public class SkillScopingTests
         var skill = CreateSkillContainer("TestSkill", "Test skill", "Function1", "Function2");
         var func1 = CreateFunction("Function1");
         var func2 = CreateFunction("Function2");
-        var nonScoped = CreateFunction("AlwaysVisible");
+        var nonCollapsed = CreateFunction("AlwaysVisible");
 
-        var allTools = new List<AIFunction> { skill, func1, func2, nonScoped };
+        var allTools = new List<AIFunction> { skill, func1, func2, nonCollapsed };
         var manager = new ToolVisibilityManager(allTools);
 
         // Act - expand the skill
@@ -99,7 +99,7 @@ public class SkillScopingTests
         Assert.DoesNotContain(visible, f => f.Name == "TestSkill"); // Skill container hidden when expanded
         Assert.Contains(visible, f => f.Name == "Function1"); // Referenced function now visible
         Assert.Contains(visible, f => f.Name == "Function2"); // Referenced function now visible
-        Assert.Contains(visible, f => f.Name == "AlwaysVisible"); // Non-scoped function still visible
+        Assert.Contains(visible, f => f.Name == "AlwaysVisible"); // Non-Collapsed function still visible
     }
 
     [Fact]

@@ -107,10 +107,10 @@ public Agent(
     IChatClient baseClient,
     ChatOptions? mergedOptions,
     List<IPromptMiddleware> PromptMiddlewares,
-    ScopedFunctionMiddlewareManager ScopedFunctionMiddlewareManager,
+    CollapsedFunctionMiddlewareManager CollapsedFunctionMiddlewareManager,
     HPD.Agent.ErrorHandling.IProviderErrorHandler providerErrorHandler,
     IProviderRegistry providerRegistry,
-    HPD.Agent.Skills.SkillScopingManager? skillScopingManager = null,
+    HPD.Agent.Skills.SkillCollapsingManager? skillCollapsingManager = null,
     IReadOnlyList<IPermissionMiddleware>? PermissionMiddlewares = null,
     IReadOnlyList<IAIFunctionMiddleware>? AIFunctionMiddlewares = null,
     IReadOnlyList<IMessageTurnMiddleware>? MessageTurnMiddlewares = null)
@@ -215,11 +215,11 @@ protected Agent CreateAgent(AgentConfig? config = null, IChatClient? client = nu
     // Create minimal dependencies
     var options = new ChatOptions { Tools = tools.ToList() };
     var PromptMiddlewares = new List<IPromptMiddleware>();
-    var ScopedFunctionMiddlewareManager = new ScopedFunctionMiddlewareManager(/* ... */);
+    var CollapsedFunctionMiddlewareManager = new CollapsedFunctionMiddlewareManager(/* ... */);
     var errorHandler = new DefaultProviderErrorHandler();
     var providerRegistry = new DefaultProviderRegistry();
 
-    return new Agent(config, client, options, PromptMiddlewares, ScopedFunctionMiddlewareManager, errorHandler, providerRegistry);
+    return new Agent(config, client, options, PromptMiddlewares, CollapsedFunctionMiddlewareManager, errorHandler, providerRegistry);
 }
 ```
 

@@ -479,7 +479,7 @@ internal class InMemoryPermissionStorage : IPermissionStorage
 
     public Task<PermissionChoice?> GetStoredPermissionAsync(string functionName, string? conversationId = null)
     {
-        // Try conversation-scoped first
+        // Try conversation-Collapsed first
         if (!string.IsNullOrEmpty(conversationId))
         {
             var conversationKey = $"conv:{conversationId}:{functionName}";
@@ -487,7 +487,7 @@ internal class InMemoryPermissionStorage : IPermissionStorage
                 return Task.FromResult<PermissionChoice?>(conversationPerm);
         }
 
-        // Try global-scoped
+        // Try global-Collapsed
         var globalKey = $"global:{functionName}";
         if (_permissions.TryGetValue(globalKey, out var globalPerm))
             return Task.FromResult<PermissionChoice?>(globalPerm);

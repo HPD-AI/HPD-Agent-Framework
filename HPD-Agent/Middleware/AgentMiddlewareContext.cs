@@ -73,7 +73,7 @@ public class AgentMiddlewareContext
 
     /// <summary>
     /// Unique identifier for this conversation/session.
-    /// Used for scoping permissions, memory, and other per-conversation state.
+    /// Used for Collapsing permissions, memory, and other per-conversation state.
     /// </summary>
     public string? ConversationId { get; init; }
 
@@ -96,7 +96,7 @@ public class AgentMiddlewareContext
     /// </para>
     /// <para>
     /// Includes: ActiveSkillInstructions, CompletedFunctions, MiddlewareStates,
-    /// ExpandedSkillContainers, expandedScopedPluginContainers, etc.
+    /// ExpandedSkillContainers, expandedCollapsedPluginContainers, etc.
     /// </para>
     /// </remarks>
     public AgentLoopState State => _pendingState ?? _originalState;
@@ -328,14 +328,14 @@ public class AgentMiddlewareContext
 
     /// <summary>
     /// Name of the plugin that contains this function, if any.
-    /// Used by middleware to implement plugin-scoped logic.
+    /// Used by middleware to implement plugin-Collapsed logic.
     /// Available in BeforeFunction and AfterFunction.
     /// </summary>
     public string? PluginName { get; set; }
 
     /// <summary>
     /// Name of the skill that referenced this function, if any.
-    /// Used by middleware to implement skill-scoped logic.
+    /// Used by middleware to implement skill-Collapsed logic.
     /// Available in BeforeFunction and AfterFunction.
     /// </summary>
     public string? SkillName { get; set; }

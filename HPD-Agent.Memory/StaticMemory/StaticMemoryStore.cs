@@ -15,7 +15,7 @@ public abstract class StaticMemoryStore
     /// <summary>
     /// Asynchronously retrieves all knowledge documents for a specific agent.
     /// </summary>
-    /// <param name="agentName">The agent name to scope knowledge to</param>
+    /// <param name="agentName">The agent name to Collapse knowledge to</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of documents ordered by LastAccessed (most recent first)</returns>
     public abstract Task<List<StaticMemoryDocument>> GetDocumentsAsync(string agentName, CancellationToken cancellationToken = default);
@@ -23,7 +23,7 @@ public abstract class StaticMemoryStore
     /// <summary>
     /// Asynchronously retrieves a specific document by ID.
     /// </summary>
-    /// <param name="agentName">The agent name to scope knowledge to</param>
+    /// <param name="agentName">The agent name to Collapse knowledge to</param>
     /// <param name="documentId">The document ID to retrieve</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The document if found, null otherwise</returns>
@@ -32,7 +32,7 @@ public abstract class StaticMemoryStore
     /// <summary>
     /// Adds a new knowledge document for the agent.
     /// </summary>
-    /// <param name="agentName">The agent name to scope knowledge to</param>
+    /// <param name="agentName">The agent name to Collapse knowledge to</param>
     /// <param name="document">The document to add</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The added document</returns>
@@ -41,7 +41,7 @@ public abstract class StaticMemoryStore
     /// <summary>
     /// Deletes a knowledge document.
     /// </summary>
-    /// <param name="agentName">The agent name to scope knowledge to</param>
+    /// <param name="agentName">The agent name to Collapse knowledge to</param>
     /// <param name="documentId">The document ID to delete</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public abstract Task DeleteDocumentAsync(string agentName, string documentId, CancellationToken cancellationToken = default);
@@ -50,7 +50,7 @@ public abstract class StaticMemoryStore
     /// Gets combined text from all knowledge documents up to a token limit.
     /// Used for FullTextInjection strategy.
     /// </summary>
-    /// <param name="agentName">The agent name to scope knowledge to</param>
+    /// <param name="agentName">The agent name to Collapse knowledge to</param>
     /// <param name="maxTokens">Maximum tokens to include</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Combined knowledge text</returns>

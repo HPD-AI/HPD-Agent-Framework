@@ -589,7 +589,7 @@ public class LoggingMiddlewareTests
             _output = output;
         }
 
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public IDisposable? BeginCollapse<TState>(TState state) where TState : notnull => null;
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(

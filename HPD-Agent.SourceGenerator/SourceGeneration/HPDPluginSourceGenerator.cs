@@ -139,8 +139,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         // Must have at least one function, skill, or sub-agent
         if (!functions.Any() && !skills.Any() && !subAgents.Any()) return null;
 
-        // Check for [Scope] attribute
-        var (hasScopeAttribute, scopeDescription, postExpansionInstructions) = GetScopeAttribute(classDecl);
+        // Check for [Collapse] attribute
+        var (hasCollapseAttribute, CollapseDescription, postExpansionInstructions) = GetCollapseAttribute(classDecl);
 
         // Check if the class has a parameterless constructor (either explicit or implicit)
         var hasParameterlessConstructor = HasParameterlessConstructor(classDecl);
@@ -160,8 +160,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             Functions = functions!,
             Skills = skills!,
             SubAgents = subAgents!,
-            HasScopeAttribute = hasScopeAttribute,
-            ScopeDescription = scopeDescription,
+            HasCollapseAttribute = hasCollapseAttribute,
+            CollapseDescription = CollapseDescription,
             PostExpansionInstructions = postExpansionInstructions,
             HasParameterlessConstructor = hasParameterlessConstructor,
             IsPubliclyAccessible = isPubliclyAccessible
@@ -236,25 +236,8 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
     
     private static void GeneratePluginRegistrations(SourceProductionContext context, ImmutableArray<PluginInfo?> plugins)
     {
-        // DIAGNOSTIC: Generate detailed diagnostic report
-        var reportLines = string.Join("\\n", _diagnosticMessages.Select(m => m.Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "")));
-        var diagnosticCode = $@"
-// HPD Source Generator Diagnostic Report
-// Generated at: {DateTime.Now}
-// Plugins found: {plugins.Length}
-namespace HPD.Agent.Diagnostics {{
-    public static class SourceGeneratorDiagnostic {{
-        public const string Message = ""Source generator executed successfully"";
-        public const int PluginsFound = {plugins.Length};
-        public const string DetailedReport = @""{reportLines}"";
-    }}
-}}";
-        context.AddSource("_SourceGeneratorDiagnostic.g.cs", diagnosticCode);
-
-        // Clear for next compilation
-        _diagnosticMessages.Clear();
-
-        // Group plugins by name+namespace to handle partial classes
+        // Group plugins by name+namespace to handle partial classes FIRST
+        // This prevents duplicate generation by merging partial classes before validation
         var pluginGroups = plugins
             .Where(p => p != null)
             .GroupBy(p => $"{p!.Namespace}.{p.Name}")
@@ -266,10 +249,10 @@ namespace HPD.Agent.Diagnostics {{
                 var allSkills = group.SelectMany(p => p!.Skills).ToList();
                 var allSubAgents = group.SelectMany(p => p!.SubAgents).ToList();
 
-                // Preserve HasScopeAttribute, ScopeDescription, and PostExpansionInstructions from any partial class that has it
-                var hasScopeAttribute = group.Any(p => p!.HasScopeAttribute);
-                var scopeDescription = group.FirstOrDefault(p => p!.HasScopeAttribute)?.ScopeDescription;
-                var postExpansionInstructions = group.FirstOrDefault(p => p!.HasScopeAttribute)?.PostExpansionInstructions;
+                // Preserve HasCollapseAttribute, CollapseDescription, and PostExpansionInstructions from any partial class that has it
+                var hasCollapseAttribute = group.Any(p => p!.HasCollapseAttribute);
+                var CollapseDescription = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.CollapseDescription;
+                var postExpansionInstructions = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.PostExpansionInstructions;
 
                 // All partial class parts must have parameterless constructor for the plugin to be AOT-instantiable
                 // (If any part declares a constructor with parameters, no implicit parameterless constructor is generated)
@@ -286,14 +269,32 @@ namespace HPD.Agent.Diagnostics {{
                     Functions = allFunctions,
                     Skills = allSkills,
                     SubAgents = allSubAgents,
-                    HasScopeAttribute = hasScopeAttribute,
-                    ScopeDescription = scopeDescription,
+                    HasCollapseAttribute = hasCollapseAttribute,
+                    CollapseDescription = CollapseDescription,
                     PostExpansionInstructions = postExpansionInstructions,
                     HasParameterlessConstructor = hasParameterlessConstructor,
                     IsPubliclyAccessible = isPubliclyAccessible
                 };
             })
             .ToList();
+
+        // DIAGNOSTIC: Generate detailed diagnostic report AFTER grouping
+        var reportLines = string.Join("\\n", _diagnosticMessages.Select(m => m.Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "")));
+        var diagnosticCode = $@"
+// HPD Source Generator Diagnostic Report
+// Generated at: {DateTime.Now}
+// Plugins found: {plugins.Length} raw, {pluginGroups.Count} after merging
+namespace HPD.Agent.Diagnostics {{
+    public static class SourceGeneratorDiagnostic {{
+        public const string Message = ""Source generator executed successfully"";
+        public const int PluginsFound = {pluginGroups.Count};
+        public const string DetailedReport = @""{reportLines}"";
+    }}
+}}";
+        context.AddSource("HPD.Agent.Diagnostics.SourceGeneratorDiagnostic.g.cs", diagnosticCode);
+
+        // Clear for next compilation
+        _diagnosticMessages.Clear();
 
         var debugInfo = new StringBuilder();
         debugInfo.AppendLine($"// Found {plugins.Length} plugin parts total");
@@ -302,7 +303,7 @@ namespace HPD.Agent.Diagnostics {{
         {
             debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.Functions.Count} functions, {plugin.Skills.Count} skills, and {plugin.SubAgents.Count} sub-agents");
         }
-        context.AddSource("_SourceGeneratorDebug.g.cs", debugInfo.ToString());
+        context.AddSource("HPD.Agent.Generated.SourceGeneratorDebug.g.cs", debugInfo.ToString());
 
         // Resolve skills before validation and code generation
         var allSkills = pluginGroups.SelectMany(p => p.Skills).ToList();
@@ -346,14 +347,18 @@ namespace HPD.Agent.Diagnostics {{
             }
 
             var source = GeneratePluginRegistration(plugin);
-            context.AddSource($"{plugin.Name}Registration.g.cs", source);
+            // Use fully qualified name as hint to prevent duplicates
+            var hintName = string.IsNullOrEmpty(plugin.Namespace)
+                ? $"{plugin.Name}Registration.g.cs"
+                : $"{plugin.Namespace}.{plugin.Name}Registration.g.cs";
+            context.AddSource(hintName, source);
         }
 
         // NEW: Generate plugin registry catalog for AOT-compatible plugin discovery
         if (pluginGroups.Any())
         {
             var registrySource = GeneratePluginRegistry(pluginGroups);
-            context.AddSource("PluginRegistry.g.cs", registrySource);
+            context.AddSource("HPD.Agent.Generated.PluginRegistry.g.cs", registrySource);
         }
     }
 
@@ -468,11 +473,11 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine("    {");
         sb.AppendLine("        var functions = new List<AIFunction>();");
 
-        // Add container function first if plugin is scoped (but NOT if it has skills - SkillCodeGenerator handles that)
-        if (plugin.HasScopeAttribute && !plugin.Skills.Any())
+        // Add container function first if plugin is Collapsed (but NOT if it has skills - SkillCodeGenerator handles that)
+        if (plugin.HasCollapseAttribute && !plugin.Skills.Any())
         {
             sb.AppendLine();
-            sb.AppendLine("        // Container function for plugin scoping");
+            sb.AppendLine("        // Container function for plugin Collapsing");
             sb.AppendLine($"        functions.Add(Create{plugin.Name}Container());");
         }
 
@@ -580,10 +585,10 @@ namespace HPD.Agent.Diagnostics {{
         }
         sb.AppendLine();
 
-        // Generate container function and helper if plugin is scoped OR has skills
-        if (plugin.HasScopeAttribute || plugin.Skills.Any())
+        // Generate container function and helper if plugin is Collapsed OR has skills
+        if (plugin.HasCollapseAttribute || plugin.Skills.Any())
         {
-            if (plugin.HasScopeAttribute)
+            if (plugin.HasCollapseAttribute)
             {
                 sb.AppendLine(GenerateContainerFunction(plugin));
                 sb.AppendLine();
@@ -631,7 +636,7 @@ namespace HPD.Agent.Diagnostics {{
         var sb = new StringBuilder();
         var contextSerializableTypes = new List<string>();
 
-        // Generate SubAgentQueryArgs if there are sub-agents (scoped per plugin to avoid conflicts)
+        // Generate SubAgentQueryArgs if there are sub-agents (Collapsed per plugin to avoid conflicts)
         if (plugin.SubAgents.Any())
         {
             sb.AppendLine(
@@ -848,8 +853,8 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         options.AppendLine($"                ParameterDescriptions = {GenerateParameterDescriptions(function)},");
 
         // ALWAYS add ParentPlugin metadata (enables PluginReferences to work with any plugin)
-        // Note: Plugins without [Scope] remain "always visible" by default
-        // Skills can use PluginReferences to scope them on-demand
+        // Note: Plugins without [Collapse] remain "always visible" by default
+        // Skills can use PluginReferences to Collapse them on-demand
         options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
         options.AppendLine("                {");
         options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
@@ -1553,15 +1558,15 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     }
 
     /// <summary>
-    /// Detects [Collapse] or [Scope] attribute on a class and extracts its description and post-expansion instructions.
-    /// [Scope] is deprecated but still supported for backward compatibility.
+    /// Detects [Collapse] or [Collapse] attribute on a class and extracts its description and post-expansion instructions.
+    /// [Collapse] is deprecated but still supported for backward compatibility.
     /// </summary>
-    private static (bool hasScopeAttribute, string? scopeDescription, string? postExpansionInstructions) GetScopeAttribute(ClassDeclarationSyntax classDecl)
+    private static (bool hasCollapseAttribute, string? CollapseDescription, string? postExpansionInstructions) GetCollapseAttribute(ClassDeclarationSyntax classDecl)
     {
-        // Check for both [Collapse] (new) and [Scope] (deprecated) attributes
+        // Check for both [Collapse] (new) and [Collapse] (deprecated) attributes
         var CollapseAttributes = classDecl.AttributeLists
             .SelectMany(attrList => attrList.Attributes)
-            .Where(attr => attr.Name.ToString() == "Collapse" || attr.Name.ToString() == "Scope");
+            .Where(attr => attr.Name.ToString() == "Collapse" || attr.Name.ToString() == "Collapse");
 
         foreach (var attr in CollapseAttributes)
         {
@@ -1785,21 +1790,21 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     }
 
     /// <summary>
-    /// Generates the GetPluginMetadata() method for plugin scoping support.
+    /// Generates the GetPluginMetadata() method for plugin Collapsing support.
     /// </summary>
     private static string GeneratePluginMetadataMethod(PluginInfo plugin)
     {
         var sb = new StringBuilder();
 
         var functionNamesArray = string.Join(", ", plugin.Functions.Select(f => $"\"{f.FunctionName}\""));
-        var description = plugin.HasScopeAttribute && !string.IsNullOrEmpty(plugin.ScopeDescription)
-            ? plugin.ScopeDescription
+        var description = plugin.HasCollapseAttribute && !string.IsNullOrEmpty(plugin.CollapseDescription)
+            ? plugin.CollapseDescription
             : plugin.Description;
 
         sb.AppendLine("        private static PluginMetadata? _cachedMetadata;");
         sb.AppendLine();
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for scoping).");
+        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for Collapsing).");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static PluginMetadata GetPluginMetadata()");
         sb.AppendLine("        {");
@@ -1809,7 +1814,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine($"                Description = \"{description}\",");
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
         sb.AppendLine($"                FunctionCount = {plugin.Functions.Count},");
-        sb.AppendLine($"                HasScopeAttribute = {plugin.HasScopeAttribute.ToString().ToLower()}");
+        sb.AppendLine($"                HasCollapseAttribute = {plugin.HasCollapseAttribute.ToString().ToLower()}");
         sb.AppendLine("            };");
         sb.AppendLine("        }");
 
@@ -1817,7 +1822,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     }
 
     /// <summary>
-    /// Generates the container function for a scoped plugin.
+    /// Generates the container function for a Collapsed plugin.
     /// </summary>
     private static string GenerateContainerFunction(PluginInfo plugin)
     {
@@ -1830,20 +1835,20 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         var capabilitiesList = string.Join(", ", allCapabilities);
         var totalCount = plugin.Functions.Count + plugin.Skills.Count;
 
-        var description = !string.IsNullOrEmpty(plugin.ScopeDescription)
-            ? plugin.ScopeDescription
+        var description = !string.IsNullOrEmpty(plugin.CollapseDescription)
+            ? plugin.CollapseDescription
             : plugin.Description ?? string.Empty;
 
         // Use shared helper to generate description and return message
-        var fullDescription = ScopeContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
-        var returnMessage = ScopeContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
+        var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
+        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
 
         // Escape the return message for C# verbatim string literal (@"...")
         // In verbatim strings, quotes are escaped by doubling them
         var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
 
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Container function for {plugin.Name} plugin scoping.");
+        sb.AppendLine($"        /// Container function for {plugin.Name} plugin Collapsing.");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine($"        private static AIFunction Create{plugin.Name}Container()");
         sb.AppendLine("        {");

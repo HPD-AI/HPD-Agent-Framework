@@ -6,7 +6,7 @@
 
   <PropertyGroup>
     <!-- Centralized version for ALL packages -->
-    <VersionPrefix>0.1.2</VersionPrefix>
+    <VersionPrefix>0.1.3</VersionPrefix>
     <!-- Uncomment to add suffix like "alpha", "beta", "preview" -->
     <!-- <VersionSuffix>preview</VersionSuffix> -->
 
@@ -23,7 +23,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!-- Package defaults (individual projects can override) -->
     <IsPackable>false</IsPackable>

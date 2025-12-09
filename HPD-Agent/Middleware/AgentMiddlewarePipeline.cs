@@ -269,7 +269,7 @@ public class AgentMiddlewarePipeline
 
     /// <summary>
     /// Executes BeforeSequentialFunctionAsync on all middlewares in registration order.
-    /// Filters middlewares by scope - only executes those that apply to the current function context.
+    /// Filters middlewares by Collapse - only executes those that apply to the current function context.
     /// </summary>
     /// <returns>True if function should execute, false if blocked by middleware</returns>
     public async Task<bool> ExecuteBeforeSequentialFunctionAsync(
@@ -278,7 +278,7 @@ public class AgentMiddlewarePipeline
     {
         foreach (var middleware in _middlewares)
         {
-            // Check if middleware should execute based on its scope
+            // Check if middleware should execute based on its Collapse
             if (!middleware.ShouldExecute(context))
                 continue;
 
@@ -341,7 +341,7 @@ public class AgentMiddlewarePipeline
         {
             var middleware = _middlewares[i];
 
-            // Check if middleware should execute based on scope
+            // Check if middleware should execute based on Collapse
             if (!middleware.ShouldExecute(context))
                 continue;
 
@@ -357,7 +357,7 @@ public class AgentMiddlewarePipeline
 
     /// <summary>
     /// Executes AfterFunctionAsync on all middlewares in reverse order.
-    /// Filters middlewares by scope - only executes those that apply to the current function context.
+    /// Filters middlewares by Collapse - only executes those that apply to the current function context.
     /// Always runs even if function execution failed.
     /// </summary>
     public async Task ExecuteAfterFunctionAsync(
@@ -368,7 +368,7 @@ public class AgentMiddlewarePipeline
 
         foreach (var middleware in _reversedMiddlewares)
         {
-            // Check if middleware should execute based on its scope
+            // Check if middleware should execute based on its Collapse
             if (!middleware.ShouldExecute(context))
                 continue;
 

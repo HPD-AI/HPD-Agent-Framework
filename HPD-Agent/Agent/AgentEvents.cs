@@ -377,10 +377,10 @@ public record MiddlewareErrorEvent(
 public interface IObservabilityEvent { }
 
 /// <summary>
-/// Emitted when scoped tools visibility is determined for an iteration.
+/// Emitted when Collapsed tools visibility is determined for an iteration.
 /// Contains full snapshot of what tools the LLM can see.
 /// </summary>
-public record ScopedToolsVisibleEvent(
+public record CollapsedToolsVisibleEvent(
     string AgentName,
     int Iteration,
     IReadOnlyList<string> VisibleToolNames,
@@ -683,10 +683,10 @@ public record SchemaChangedEvent(
 }
 
 /// <summary>
-/// Emitted by ToolScopingMiddleware at iteration start to report scoping state.
+/// Emitted by ToolCollapsingMiddleware at iteration start to report Collapsing state.
 /// Tracks how many plugins and skills have been expanded.
 /// </summary>
-public record ScopingStateEvent(
+public record CollapsingStateEvent(
     string AgentName,
     int Iteration,
     int ExpandedPluginsCount,

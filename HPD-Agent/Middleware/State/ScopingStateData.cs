@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 namespace HPD.Agent;
 
 /// <summary>
-/// State for tool scoping middleware. Tracks which plugin and skill containers
+/// State for tool Collapsing middleware. Tracks which plugin and skill containers
 /// have been expanded during the current message turn.
 /// </summary>
 /// <remarks>
@@ -19,14 +19,14 @@ namespace HPD.Agent;
 /// <para><b>Usage:</b></para>
 /// <code>
 /// // Read state
-/// var scopingState = context.State.MiddlewareState.Scoping ?? new();
-/// var isExpanded = scopingState.ExpandedPlugins.Contains("FinancialPlugin");
+/// var CollapsingState = context.State.MiddlewareState.Collapsing ?? new();
+/// var isExpanded = CollapsingState.ExpandedPlugins.Contains("FinancialPlugin");
 ///
 /// // Update state
 /// context.UpdateState(s => s with
 /// {
-///     MiddlewareState = s.MiddlewareState.WithScoping(
-///         scopingState.WithExpandedPlugin("FinancialPlugin"))
+///     MiddlewareState = s.MiddlewareState.WithCollapsing(
+///         CollapsingState.WithExpandedPlugin("FinancialPlugin"))
 /// });
 /// </code>
 ///
@@ -37,7 +37,7 @@ namespace HPD.Agent;
 /// </para>
 /// </remarks>
 [MiddlewareState]
-public sealed record ScopingStateData
+public sealed record CollapsingStateData
 {
     /// <summary>
     /// Plugin containers that have been expanded this turn.
@@ -66,7 +66,7 @@ public sealed record ScopingStateData
     /// </summary>
     /// <param name="pluginName">Name of the plugin being expanded</param>
     /// <returns>New state with plugin added to expanded set</returns>
-    public ScopingStateData WithExpandedPlugin(string pluginName)
+    public CollapsingStateData WithExpandedPlugin(string pluginName)
     {
         return this with
         {
@@ -79,7 +79,7 @@ public sealed record ScopingStateData
     /// </summary>
     /// <param name="skillName">Name of the skill being expanded</param>
     /// <returns>New state with skill added to expanded set</returns>
-    public ScopingStateData WithExpandedSkill(string skillName)
+    public CollapsingStateData WithExpandedSkill(string skillName)
     {
         return this with
         {
@@ -93,7 +93,7 @@ public sealed record ScopingStateData
     /// <param name="skillName">Name of the skill</param>
     /// <param name="instructions">Instruction text to inject</param>
     /// <returns>New state with updated instructions</returns>
-    public ScopingStateData WithSkillInstructions(string skillName, string instructions)
+    public CollapsingStateData WithSkillInstructions(string skillName, string instructions)
     {
         return this with
         {
@@ -105,7 +105,7 @@ public sealed record ScopingStateData
     /// Clears all active skill instructions (typically at end of message turn).
     /// </summary>
     /// <returns>New state with cleared instructions</returns>
-    public ScopingStateData ClearSkillInstructions()
+    public CollapsingStateData ClearSkillInstructions()
     {
         return this with
         {

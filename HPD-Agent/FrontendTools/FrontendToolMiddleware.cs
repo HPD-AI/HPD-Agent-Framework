@@ -317,7 +317,7 @@ public class FrontendToolMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Converts frontend plugins to AIFunctions using ExternalToolScopingWrapper.
+    /// Converts frontend plugins to AIFunctions using ExternalToolCollapsingWrapper.
     /// </summary>
     private List<AIFunction> ConvertPluginsToAIFunctions(FrontendToolStateData state)
     {
@@ -347,8 +347,8 @@ public class FrontendToolMiddleware : IAgentMiddleware
 
             if (shouldCollapse)
             {
-                // Use ExternalToolScopingWrapper pattern - creates container + scoped tools
-                var (container, scopedTools) = ExternalToolScopingWrapper.WrapFrontendPlugin(
+                // Use ExternalToolCollapsingWrapper pattern - creates container + Collapsed tools
+                var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapFrontendPlugin(
                     pluginName,
                     plugin.Description!,  // Validated to exist for collapsed plugins
                     toolAIFunctions,
@@ -356,7 +356,7 @@ public class FrontendToolMiddleware : IAgentMiddleware
                     postExpansionInstructions: plugin.PostExpansionInstructions);
 
                 allFunctions.Add(container);
-                allFunctions.AddRange(scopedTools);
+                allFunctions.AddRange(CollapsedTools);
 
                 // Skills are always visible (collapsed state) - they're entry points
                 allFunctions.AddRange(skillAIFunctions);

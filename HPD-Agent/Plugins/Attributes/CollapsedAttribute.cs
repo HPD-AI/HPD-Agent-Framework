@@ -79,39 +79,3 @@ public sealed class CollapseAttribute : Attribute
         PostExpansionInstructions = postExpansionInstructions;
     }
 }
-
-/// <summary>
-/// Marks a plugin class as Collapse. Alias for CollapseAttribute.
-/// </summary>
-[Obsolete("Use [Collapse] instead. This attribute will be removed in a future version.")]
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
-public sealed class ScopeAttribute : Attribute
-{
-    /// <summary>
-    /// Description of the container shown in the Collapse function.
-    /// </summary>
-    public string Description { get; }
-
-    /// <summary>
-    /// Optional instructions provided to the agent after container expansion.
-    /// </summary>
-    public string? PostExpansionInstructions { get; }
-
-    /// <summary>
-    /// Initializes a new instance of the ScopeAttribute with the specified description.
-    /// </summary>
-    public ScopeAttribute(string description)
-    {
-        Description = description ?? throw new ArgumentNullException(nameof(description));
-        PostExpansionInstructions = null;
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the ScopeAttribute with description and post-expansion instructions.
-    /// </summary>
-    public ScopeAttribute(string description, string? postExpansionInstructions)
-    {
-        Description = description ?? throw new ArgumentNullException(nameof(description));
-        PostExpansionInstructions = postExpansionInstructions;
-    }
-}

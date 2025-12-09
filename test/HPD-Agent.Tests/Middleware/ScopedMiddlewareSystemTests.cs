@@ -6,10 +6,10 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
-/// Tests for the scoped middleware system using the new ConditionalWeakTable-based architecture.
-/// Ported from ScopedFilterSystemTests.cs with updates for middleware pattern.
+/// Tests for the Collapsed middleware system using the new ConditionalWeakTable-based architecture.
+/// Ported from CollapsedFilterSystemTests.cs with updates for middleware pattern.
 /// </summary>
-public class ScopedMiddlewareSystemTests
+public class CollapsedMiddlewareSystemTests
 {
     private class TestMiddleware : IAgentMiddleware
     {
@@ -46,21 +46,21 @@ public class ScopedMiddlewareSystemTests
             => Task.CompletedTask;
     }
 
-    #region MiddlewareScope Enum Tests
+    #region MiddlewareCollapse Enum Tests
 
     [Fact]
-    public void MiddlewareScope_HasCorrectValues()
+    public void MiddlewareCollapse_HasCorrectValues()
     {
-        // Ensure scope values are in correct order for priority
-        Assert.Equal(0, (int)MiddlewareScope.Global);
-        Assert.Equal(1, (int)MiddlewareScope.Plugin);
-        Assert.Equal(2, (int)MiddlewareScope.Skill);
-        Assert.Equal(3, (int)MiddlewareScope.Function);
+        // Ensure Collapse values are in correct order for priority
+        Assert.Equal(0, (int)MiddlewareCollapse.Global);
+        Assert.Equal(1, (int)MiddlewareCollapse.Plugin);
+        Assert.Equal(2, (int)MiddlewareCollapse.Skill);
+        Assert.Equal(3, (int)MiddlewareCollapse.Function);
     }
 
     #endregion
 
-    #region Scoped Middleware ShouldExecute Tests
+    #region Collapsed Middleware ShouldExecute Tests
 
     [Fact]
     public void GlobalMiddleware_AppliesToAllFunctions()
@@ -175,7 +175,7 @@ public class ScopedMiddlewareSystemTests
     #region Pipeline Integration Tests
 
     [Fact]
-    public async Task Pipeline_FiltersMiddlewaresByScope()
+    public async Task Pipeline_FiltersMiddlewaresByCollapse()
     {
         // Arrange
         var globalMiddleware = new TestMiddleware("Global");
@@ -319,9 +319,9 @@ public class ScopedMiddlewareSystemTests
     #region Edge Cases
 
     [Fact]
-    public void Middleware_WithoutScope_DefaultsToGlobal()
+    public void Middleware_WithoutCollapse_DefaultsToGlobal()
     {
-        // Arrange - middleware without explicit scope
+        // Arrange - middleware without explicit Collapse
         var middleware = new TestMiddleware("default");
 
         // Act & Assert - should behave as global

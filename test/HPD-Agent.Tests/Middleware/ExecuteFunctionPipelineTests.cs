@@ -221,16 +221,16 @@ public class ExecuteFunctionPipelineTests
 
     #endregion
 
-    #region Scope Filtering
+    #region Collapse Filtering
 
     [Fact]
-    public async Task ExecuteFunctionAsync_ScopedMiddleware_OnlyExecutesWhenScopeMatches()
+    public async Task ExecuteFunctionAsync_CollapsedMiddleware_OnlyExecutesWhenCollapseMatches()
     {
         // Arrange
         var globalMiddleware = new TrackingMiddleware("Global");
-        var scopedMiddleware = new ScopedTrackingMiddleware("Scoped", scope: MiddlewareScope.Function);
+        var CollapsedMiddleware = new CollapsedTrackingMiddleware("Collapsed", Collapse: MiddlewareCollapse.Function);
 
-        var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[] { globalMiddleware, scopedMiddleware });
+        var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[] { globalMiddleware, CollapsedMiddleware });
         var context = CreateContext();
 
         Func<ValueTask<object?>> innerCall = () => ValueTask.FromResult<object?>("Result");
@@ -240,7 +240,7 @@ public class ExecuteFunctionPipelineTests
 
         // Assert
         Assert.Equal(2, globalMiddleware.ExecutionOrder.Count); // Global executes (Before and After)
-        Assert.Equal(2, scopedMiddleware.ExecutionOrder.Count); // Scoped executes (function scope, Before and After)
+        Assert.Equal(2, CollapsedMiddleware.ExecutionOrder.Count); // Collapsed executes (function Collapse, Before and After)
     }
 
     #endregion
@@ -334,16 +334,16 @@ public class ExecuteFunctionPipelineTests
         }
     }
 
-    private class ScopedTrackingMiddleware : TrackingMiddleware
+    private class CollapsedTrackingMiddleware : TrackingMiddleware
     {
-        private readonly MiddlewareScope _scope;
+        private readonly MiddlewareCollapse _Collapse;
 
-        public ScopedTrackingMiddleware(string name, MiddlewareScope scope) : base(name)
+        public CollapsedTrackingMiddleware(string name, MiddlewareCollapse Collapse) : base(name)
         {
-            _scope = scope;
+            _Collapse = Collapse;
         }
 
-        public MiddlewareScope Scope => _scope;
+        public MiddlewareCollapse Collapse => _Collapse;
     }
 
     private class ResultTransformMiddleware : IAgentMiddleware

@@ -19,7 +19,7 @@ namespace HPD.Agent.Permissions;
 /// <para><b>Permission Checking Order:</b></para>
 /// <list type="number">
 /// <item>Check if function has [RequiresPermission] attribute (or runtime override)</item>
-/// <item>Check conversation-scoped stored permission (if available)</item>
+/// <item>Check conversation-Collapsed stored permission (if available)</item>
 /// <item>Check global stored permission (fallback)</item>
 /// <item>If no stored permission, emit PermissionRequestEvent and wait for response</item>
 /// </list>
@@ -205,7 +205,7 @@ public class PermissionMiddleware : IAgentMiddleware
         {
             PermissionChoice? storedChoice = null;
 
-            // 1. Try conversation-scoped permission first
+            // 1. Try conversation-Collapsed permission first
             if (!string.IsNullOrEmpty(conversationId))
             {
                 storedChoice = await _storage.GetStoredPermissionAsync(functionName, conversationId)
@@ -364,7 +364,7 @@ public class PermissionMiddleware : IAgentMiddleware
     {
         var conversationId = context.ConversationId;
 
-        // Check stored permissions (conversation-scoped first, then global)
+        // Check stored permissions (conversation-Collapsed first, then global)
         if (_storage != null)
         {
             PermissionChoice? storedChoice = null;

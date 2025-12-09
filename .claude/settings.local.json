@@ -23,7 +23,8 @@
       "Bash(./set-version.sh:*)",
       "Bash(curl:*)",
       "Bash(python3:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(dotnet pack:*)"
     ],
     "deny": [],
     "ask": []

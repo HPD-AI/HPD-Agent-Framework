@@ -66,7 +66,7 @@ public sealed record PendingWrite
 
     /// <summary>
     /// Thread ID this write belongs to.
-    /// Used for scoping pending writes to specific conversation threads.
+    /// Used for Collapsing pending writes to specific conversation threads.
     /// </summary>
     public required string ThreadId { get; init; }
 }

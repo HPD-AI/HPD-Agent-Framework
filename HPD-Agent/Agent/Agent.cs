@@ -294,7 +294,7 @@ public sealed class Agent
 
     /// <summary>
     /// Agent middlewares applied to the agent lifecycle (message turns, iterations, functions).
-    /// These are the unified IAgentMiddleware instances with built-in scoping support.
+    /// These are the unified IAgentMiddleware instances with built-in Collapsing support.
     /// </summary>
     public IReadOnlyList<IAgentMiddleware> Middlewares =>
         _middlewarePipeline.Middlewares;
@@ -654,15 +654,6 @@ public sealed class Agent
                 // We store the full history in state for proper message counting
                 state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name);
 
-                // Load middleware persistent state (generic - agent doesn't know what!)
-                if (thread != null)
-                {
-                    state = state with
-                    {
-                        MiddlewareState = MiddlewareState.LoadFromThread(thread)
-                    };
-                }
-
                 // Use PreparedTurn's already-prepared messages and options
                 effectiveMessages = turn.MessagesForLLM;
                 effectiveOptions = turn.Options;  // Already merged + Middlewareed
@@ -694,7 +685,7 @@ public sealed class Agent
             var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
    
-            // INITIALIZE TURN CONTEXT (turn-scoped, for BeforeMessageTurn/AfterMessageTurn hooks)
+            // INITIALIZE TURN CONTEXT (turn-Collapsed, for BeforeMessageTurn/AfterMessageTurn hooks)
             
             var turnContext = new AgentMiddlewareContext
             {
@@ -841,8 +832,8 @@ public sealed class Agent
                     }
 
                     // CREATE MIDDLEWARE CONTEXT
-                    // Note: Tool scoping is handled by ToolScopingMiddleware in BeforeIterationAsync
-                    // The middleware will filter tools and emit ScopedToolsVisibleEvent
+                    // Note: Tool Collapsing is handled by ToolCollapsingMiddleware in BeforeIterationAsync
+                    // The middleware will filter tools and emit CollapsedToolsVisibleEvent
                     var middlewareContext = new Middleware.AgentMiddlewareContext
                     {
                         AgentName = _name,
@@ -894,7 +885,7 @@ public sealed class Agent
 
                     // Use potentially modified values from Middlewares
                     messagesToSend = middlewareContext.Messages;
-                    var scopedOptions = middlewareContext.Options;
+                    var CollapsedOptions = middlewareContext.Options;
 
                     // Streaming state
                     var assistantContents = new List<AIContent>();
@@ -960,7 +951,7 @@ public sealed class Agent
                         // Stream LLM response through middleware pipeline with IMMEDIATE event yielding
                         await foreach (var update in _middlewarePipeline.ExecuteLLMCallAsync(
                             middlewareContext,
-                            () => _agentTurn.RunAsync(messagesToSend, scopedOptions, effectiveCancellationToken),
+                            () => _agentTurn.RunAsync(messagesToSend, CollapsedOptions, effectiveCancellationToken),
                             effectiveCancellationToken))
                     {
                         // Store update for building final history
@@ -1506,20 +1497,14 @@ public sealed class Agent
                 yield return middlewareEvt;
 
             // PERSISTENCE: Save complete turn history to thread
-            if (thread != null)
+            if (thread != null && turnHistory.Count > 0)
             {
                 try
                 {
-                    // Save middleware persistent state (generic - agent doesn't know what!)
-                    state.MiddlewareState.SaveToThread(thread);
-
                     // Save ALL messages from this turn (user + assistant + tool)
                     // Input messages were added to turnHistory at the start of execution
                     // Middleware may have filtered this list (e.g., removed ephemeral container results)
-                    if (turnHistory.Count > 0)
-                    {
-                        await thread.AddMessagesAsync(turnHistory, effectiveCancellationToken).ConfigureAwait(false);
-                    }
+                    await thread.AddMessagesAsync(turnHistory, effectiveCancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -3356,7 +3341,7 @@ internal class FunctionCallProcessor
             // Resolve the function from the merged function map
             var function = FunctionMapBuilder.FindFunction(functionCall.Name, functionMap);
 
-            // Extract scope information for middleware scoping
+            // Extract Collapse information for middleware Collapsing
             string? pluginTypeName = null;
             if (function?.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginCtx) == true)
             {
@@ -3445,7 +3430,7 @@ internal class FunctionCallProcessor
                 if (middlewareContext.Function is null)
                 {
                     // Generate basic error message
-                    // Note: ToolScopingMiddleware may have already set a more detailed message in BeforeToolExecutionAsync
+                    // Note: ToolCollapsingMiddleware may have already set a more detailed message in BeforeToolExecutionAsync
                     if (middlewareContext.FunctionResult == null)
                     {
                         middlewareContext.FunctionResult = $"Function '{functionCall.Name ?? "Unknown"}' not found.";

@@ -174,7 +174,7 @@ public static partial class EventTypes
     /// </summary>
     public static class Observability
     {
-        public const string SCOPED_TOOLS_VISIBLE = "SCOPED_TOOLS_VISIBLE";
+        public const string CollapseD_TOOLS_VISIBLE = "CollapseD_TOOLS_VISIBLE";
         public const string CONTAINER_EXPANDED = "CONTAINER_EXPANDED";
         public const string MIDDLEWARE_PIPELINE_START = "MIDDLEWARE_PIPELINE_START";
         public const string MIDDLEWARE_PIPELINE_END = "MIDDLEWARE_PIPELINE_END";
@@ -196,7 +196,7 @@ public static partial class EventTypes
         public const string AGENT_COMPLETION = "AGENT_COMPLETION";
         public const string ITERATION_MESSAGES = "ITERATION_MESSAGES";
         public const string SCHEMA_CHANGED = "SCHEMA_CHANGED";
-        public const string SCOPING_STATE = "SCOPING_STATE";
+        public const string Collapsing_STATE = "Collapsing_STATE";
     }
 
     #endregion

@@ -23,7 +23,7 @@ public class InMemoryPermissionStorage : IPermissionStorage
     {
         lock (_lock)
         {
-            // Try conversation-scoped first (if conversationId provided)
+            // Try conversation-Collapsed first (if conversationId provided)
             if (!string.IsNullOrEmpty(conversationId))
             {
                 var conversationKey = $"conv:{conversationId}:{functionName}";
@@ -33,7 +33,7 @@ public class InMemoryPermissionStorage : IPermissionStorage
                 }
             }
 
-            // Try global-scoped (no conversationId in key)
+            // Try global-Collapsed (no conversationId in key)
             var globalKey = $"global:{functionName}";
             if (_permissions.TryGetValue(globalKey, out var globalPerm))
             {

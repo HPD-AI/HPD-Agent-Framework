@@ -5,7 +5,7 @@ namespace HPD.Agent.Memory;
 
 /// <summary>
 /// Represents an agent's plan for completing a complex task.
-/// Plans are conversation-scoped working memory that helps agents maintain context and progress.
+/// Plans are conversation-Collapsed working memory that helps agents maintain context and progress.
 /// </summary>
 public class AgentPlan
 {

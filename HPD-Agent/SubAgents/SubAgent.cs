@@ -72,7 +72,7 @@ public enum SubAgentThreadMode
     /// <summary>
     /// Per-session - User manages thread lifecycle externally.
     /// Thread passed in at invocation time.
-    /// Use when: Custom thread management needed (e.g., per-user sessions, custom scoping)
+    /// Use when: Custom thread management needed (e.g., per-user sessions, custom Collapsing)
     /// </summary>
     PerSession
 }

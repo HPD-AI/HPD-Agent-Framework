@@ -27,7 +27,7 @@ public class StaticMemoryManager
     private readonly List<Action> _invalidationCallbacks = new();
     private readonly object _fileLock = new();
 
-    /// <summary>Current agent context (agent name) for scoping knowledge storage</summary>
+    /// <summary>Current agent context (agent name) for Collapsing knowledge storage</summary>
     public string? CurrentAgentName { get; private set; }
 
     public StaticMemoryManager(

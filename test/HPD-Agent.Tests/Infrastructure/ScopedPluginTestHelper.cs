@@ -3,14 +3,14 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
-/// Helper for creating scoped plugins and testing container expansion.
+/// Helper for creating Collapsed plugins and testing container expansion.
 /// Provides utilities for building test plugins with container functions using HPDAIFunctionFactory.
 /// </summary>
-public static class ScopedPluginTestHelper
+public static class CollapsedPluginTestHelper
 {
     /// <summary>
-    /// Creates a container function for a scoped plugin.
-    /// This simulates what the source generator creates for [Scope] attributes.
+    /// Creates a container function for a Collapsed plugin.
+    /// This simulates what the source generator creates for [Collapse] attributes.
     /// </summary>
     public static AIFunction CreateContainerFunction(
         string pluginName,
@@ -46,7 +46,7 @@ public static class ScopedPluginTestHelper
     }
 
     /// <summary>
-    /// Creates a function that belongs to a scoped plugin.
+    /// Creates a function that belongs to a Collapsed plugin.
     /// Adds the necessary metadata to mark it as a plugin member.
     /// </summary>
     public static AIFunction CreatePluginMemberFunction(
@@ -70,10 +70,10 @@ public static class ScopedPluginTestHelper
     }
 
     /// <summary>
-    /// Creates a complete scoped plugin with container and member functions.
+    /// Creates a complete Collapsed plugin with container and member functions.
     /// Returns (containerFunction, memberFunctions[]).
     /// </summary>
-    public static (AIFunction Container, AIFunction[] Members) CreateScopedPlugin(
+    public static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
         string pluginName,
         string description,
         params (string name, string desc, Func<AIFunctionArguments, CancellationToken, Task<object?>> func)[] functions)
@@ -130,9 +130,9 @@ public static class ScopedPluginTestHelper
     }
 
     /// <summary>
-    /// Creates a non-scoped function (regular function without plugin scoping).
+    /// Creates a non-Collapsed function (regular function without plugin Collapsing).
     /// </summary>
-    public static AIFunction CreateNonScopedFunction(
+    public static AIFunction CreateNonCollapsedFunction(
         string name,
         string description,
         Func<AIFunctionArguments, CancellationToken, Task<object?>> invocation)
@@ -151,7 +151,7 @@ public static class ScopedPluginTestHelper
     /// </summary>
     public static AIFunction CreateSimpleFunction(string name, string description, Func<object?> syncFunc)
     {
-        return CreateNonScopedFunction(name, description, (args, ct) => Task.FromResult(syncFunc()));
+        return CreateNonCollapsedFunction(name, description, (args, ct) => Task.FromResult(syncFunc()));
     }
 
     /// <summary>
@@ -177,9 +177,9 @@ public static class ScopedPluginTestHelper
 }
 
 /// <summary>
-/// Extension methods for working with scoped plugins in tests.
+/// Extension methods for working with Collapsed plugins in tests.
 /// </summary>
-public static class ScopedPluginExtensions
+public static class CollapsedPluginExtensions
 {
     /// <summary>
     /// Converts a list of AIFunctions to their names for easy assertion.
@@ -194,7 +194,7 @@ public static class ScopedPluginExtensions
     /// </summary>
     public static IEnumerable<AIFunction> OnlyContainers(this IEnumerable<AIFunction> functions)
     {
-        return functions.Where(ScopedPluginTestHelper.IsContainer);
+        return functions.Where(CollapsedPluginTestHelper.IsContainer);
     }
 
     /// <summary>
@@ -202,7 +202,7 @@ public static class ScopedPluginExtensions
     /// </summary>
     public static IEnumerable<AIFunction> ExcludeContainers(this IEnumerable<AIFunction> functions)
     {
-        return functions.Where(f => !ScopedPluginTestHelper.IsContainer(f));
+        return functions.Where(f => !CollapsedPluginTestHelper.IsContainer(f));
     }
 
     /// <summary>
@@ -210,6 +210,6 @@ public static class ScopedPluginExtensions
     /// </summary>
     public static IEnumerable<AIFunction> FromPlugin(this IEnumerable<AIFunction> functions, string pluginName)
     {
-        return functions.Where(f => ScopedPluginTestHelper.GetPluginName(f) == pluginName);
+        return functions.Where(f => CollapsedPluginTestHelper.GetPluginName(f) == pluginName);
     }
 }

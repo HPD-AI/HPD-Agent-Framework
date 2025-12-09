@@ -57,8 +57,8 @@ public class SkillInstructionMiddleware : IAgentMiddleware
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
-        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
-        var activeSkills = scopingState.ActiveSkillInstructions;
+        var CollapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        var activeSkills = CollapsingState.ActiveSkillInstructions;
 
         if (activeSkills.Any() && context.Options != null)
         {
@@ -90,20 +90,20 @@ public class SkillInstructionMiddleware : IAgentMiddleware
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
-        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
-        var activeSkills = scopingState.ActiveSkillInstructions;
+        var CollapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        var activeSkills = CollapsingState.ActiveSkillInstructions;
 
         // If this is the final iteration (no tool calls), clear active skill instructions
         // This ensures skills don't leak across message turns
         if (context.IsFinalIteration && activeSkills.Any())
         {
-            var updatedScoping = scopingState with
+            var updatedCollapsing = CollapsingState with
             {
                 ActiveSkillInstructions = ImmutableDictionary<string, string>.Empty
             };
             context.UpdateState(s => s with
             {
-                MiddlewareState = s.MiddlewareState.WithScoping(updatedScoping)
+                MiddlewareState = s.MiddlewareState.WithCollapsing(updatedCollapsing)
             });
         }
 

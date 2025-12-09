@@ -21,12 +21,12 @@ public class LoggingEventObserver : IAgentEventObserver
     {
         switch (evt)
         {
-            // Scoping
-            case ScopedToolsVisibleEvent e:
+            // Collapsing
+            case CollapsedToolsVisibleEvent e:
                 if (_logger.IsEnabled(LogLevel.Trace))
                 {
                     _logger.LogTrace(
-                        "Agent '{AgentName}' iteration {Iteration}: Scoped tools sent to LLM (count={Count}): [{Tools}]",
+                        "Agent '{AgentName}' iteration {Iteration}: Collapsed tools sent to LLM (count={Count}): [{Tools}]",
                         e.AgentName, e.Iteration, e.TotalToolCount,
                         string.Join(", ", e.VisibleToolNames));
                 }
@@ -253,12 +253,12 @@ public class LoggingEventObserver : IAgentEventObserver
                 }
                 break;
 
-            // Scoping state (from ToolScopingMiddleware)
-            case ScopingStateEvent e:
+            // Collapsing state (from ToolCollapsingMiddleware)
+            case CollapsingStateEvent e:
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
                     _logger.LogDebug(
-                        "Agent '{AgentName}' iteration {Iteration}: Scoping(ExpandedPlugins={Plugins}, ExpandedSkills={Skills})",
+                        "Agent '{AgentName}' iteration {Iteration}: Collapsing(ExpandedPlugins={Plugins}, ExpandedSkills={Skills})",
                         e.AgentName, e.Iteration, e.ExpandedPluginsCount, e.ExpandedSkillsCount);
                 }
                 break;

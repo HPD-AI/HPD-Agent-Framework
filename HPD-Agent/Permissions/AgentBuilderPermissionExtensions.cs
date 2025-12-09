@@ -93,7 +93,7 @@ public static class AgentBuilderPermissionExtensions
 
 /// <summary>
 /// A default, non-persistent implementation of IPermissionStorage for development and testing.
-/// Uses implicit scoping based on the parameters provided.
+/// Uses implicit Collapsing based on the parameters provided.
 /// </summary>
 public class InMemoryPermissionStorage : IPermissionStorage
 {
@@ -122,12 +122,12 @@ public class InMemoryPermissionStorage : IPermissionStorage
     }
 
     /// <summary>
-    /// Builds a storage key with implicit scoping based on provided parameters.
+    /// Builds a storage key with implicit Collapsing based on provided parameters.
     /// </summary>
     private static string BuildKey(string functionName, string? conversationId)
     {
-        // Scoping is implicit in the key structure:
-        // - conversation-scoped: "conversationId:functionName"
+        // Collapsing is implicit in the key structure:
+        // - conversation-Collapsed: "conversationId:functionName"
         // - global: "functionName"
         if (!string.IsNullOrEmpty(conversationId))
             return $"{conversationId}:{functionName}";

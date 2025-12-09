@@ -27,7 +27,7 @@ public static class SkillFactory
     /// <param name="name">Skill name (REQUIRED - becomes AIFunction name)</param>
     /// <param name="description">Description shown before activation (REQUIRED - becomes AIFunction description shown to agent in tools list)</param>
     /// <param name="instructions">Instructions shown after activation (REQUIRED - fallback when document store not available)</param>
-    /// <param name="options">Skill configuration options (scoping, documents, etc.)</param>
+    /// <param name="options">Skill configuration options (Collapsing, documents, etc.)</param>
     /// <param name="references">Function or skill references in "PluginName.FunctionName" format</param>
     /// <returns>Skill object processed by source generator</returns>
     public static Skill Create(

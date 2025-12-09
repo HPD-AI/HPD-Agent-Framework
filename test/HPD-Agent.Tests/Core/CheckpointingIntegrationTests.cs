@@ -108,7 +108,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var scopingState = new ScopingStateData().WithExpandedPlugin("TestPlugin");
+        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
         var state = AgentLoopState.Initial(
             await thread.GetMessagesAsync(),
             "run-123",
@@ -116,7 +116,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
             "TestAgent")
             .NextIteration() with
             {
-                MiddlewareState = new MiddlewareState().WithScoping(scopingState)
+                MiddlewareState = new MiddlewareState().WithCollapsing(CollapsingState)
             };
         thread.ExecutionState = state;
         await checkpointer.SaveThreadAsync(thread);

@@ -2,19 +2,19 @@
 
 using System.Collections.Immutable;
 using HPD.Agent.Middleware;
-using HPD.Agent.Scoping;
+using HPD.Agent.Collapsing;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent;
 
 /// <summary>
-/// Middleware for plugin collapsing and skills scoping architecture.
+/// Middleware for plugin collapsing and skills Collapsing architecture.
 /// Manages tool visibility based on container expansion state.
 /// </summary>
 /// <remarks>
 /// <para><b>Purpose:</b></para>
 /// <para>
-/// This middleware implements the tool scoping feature, which allows plugins and skills
+/// This middleware implements the tool Collapsing feature, which allows plugins and skills
 /// to be "collapsed" (hidden) until explicitly expanded by the LLM. This reduces cognitive
 /// load on the LLM by only showing relevant tools.
 /// </para>
@@ -27,54 +27,54 @@ namespace HPD.Agent;
 ///
 /// <para><b>State Management:</b></para>
 /// <para>
-/// Uses <see cref="ScopingStateData"/> stored in <c>context.State.MiddlewareState.Scoping</c>.
+/// Uses <see cref="CollapsingStateData"/> stored in <c>context.State.MiddlewareState.Collapsing</c>.
 /// State is immutable and flows through the context, preserving thread-safety.
 /// </para>
 ///
 /// <para><b>Phase 1 Implementation:</b></para>
 /// <para>
 /// This is Phase 1 of the migration. The middleware reads from existing AgentLoopState fields
-/// (<c>expandedScopedPluginContainers</c>, <c>ExpandedSkillContainers</c>) for backward
-/// compatibility. Future phases will migrate fully to <c>MiddlewareState.Scoping</c>.
+/// (<c>expandedCollapsedPluginContainers</c>, <c>ExpandedSkillContainers</c>) for backward
+/// compatibility. Future phases will migrate fully to <c>MiddlewareState.Collapsing</c>.
 /// </para>
 /// </remarks>
 /// <example>
 /// <code>
 /// // Register via AgentBuilder
 /// var agent = new AgentBuilder()
-///     .WithToolScoping()
+///     .WithToolCollapsing()
 ///     .Build();
 ///
 /// // Or with configuration
 /// var agent = new AgentBuilder()
-///     .WithToolScoping(config => config.Enabled = true)
+///     .WithToolCollapsing(config => config.Enabled = true)
 ///     .Build();
 /// </code>
 /// </example>
-public class ToolScopingMiddleware : IAgentMiddleware
+public class ToolCollapsingMiddleware : IAgentMiddleware
 {
     //     
     // DEPENDENCIES (owned by middleware)
     //     
 
     private readonly ToolVisibilityManager _visibilityManager;
-    private readonly ScopingConfig _config;
+    private readonly CollapsingConfig _config;
 
     //     
     // CONSTRUCTOR
     //     
 
     /// <summary>
-    /// Creates a new ToolScopingMiddleware instance with its own ToolVisibilityManager.
-    /// The middleware owns the visibility manager for complete encapsulation of scoping logic.
+    /// Creates a new ToolCollapsingMiddleware instance with its own ToolVisibilityManager.
+    /// The middleware owns the visibility manager for complete encapsulation of Collapsing logic.
     /// </summary>
     /// <param name="initialTools">All available tools for the agent</param>
     /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithPlugin (always visible)</param>
-    /// <param name="config">Scoping configuration (optional, defaults to enabled)</param>
-    public ToolScopingMiddleware(
+    /// <param name="config">Collapsing configuration (optional, defaults to enabled)</param>
+    public ToolCollapsingMiddleware(
         IList<AITool> initialTools,
         ImmutableHashSet<string> explicitlyRegisteredPlugins,
-        ScopingConfig? config = null)
+        CollapsingConfig? config = null)
     {
         if (initialTools == null)
             throw new ArgumentNullException(nameof(initialTools));
@@ -87,7 +87,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
         // Create our own ToolVisibilityManager
         _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredPlugins);
         
-        _config = config ?? new ScopingConfig();
+        _config = config ?? new CollapsingConfig();
         // Ensure Enabled is true when middleware is explicitly added
         if (config == null)
         {
@@ -96,7 +96,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
     }
 
     //     
-    // BEFORE ITERATION: Apply tool visibility scoping
+    // BEFORE ITERATION: Apply tool visibility Collapsing
     //     
 
     /// <summary>
@@ -114,10 +114,10 @@ public class ToolScopingMiddleware : IAgentMiddleware
             return Task.CompletedTask;
         }
 
-        // Get expanded containers from scoping state
-        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
-        var expandedPlugins = scopingState.ExpandedPlugins;
-        var expandedSkills = scopingState.ExpandedSkills;
+        // Get expanded containers from Collapsing state
+        var CollapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        var expandedPlugins = CollapsingState.ExpandedPlugins;
+        var expandedSkills = CollapsingState.ExpandedSkills;
 
         // Extract AIFunctions from tools (single-pass for performance)
         var aiFunctions = new List<AIFunction>(context.Options.Tools.Count);
@@ -142,13 +142,13 @@ public class ToolScopingMiddleware : IAgentMiddleware
             visibleTools.Add(visibleFunctions[i]);
         }
 
-        // Update options with scoped tool list using Clone() + mutation
+        // Update options with Collapsed tool list using Clone() + mutation
         var clonedOptions = context.Options.Clone();
         clonedOptions.Tools = visibleTools;
         context.Options = clonedOptions;
 
-        // Emit scoping state event for observability
-        EmitScopingStateEvent(context, expandedPlugins, expandedSkills);
+        // Emit Collapsing state event for observability
+        EmitCollapsingStateEvent(context, expandedPlugins, expandedSkills);
 
         // Emit visibility event for observability
         EmitVisibilityEvent(context, visibleFunctions, expandedPlugins, expandedSkills);
@@ -161,7 +161,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
     //     
 
     /// <summary>
-    /// Called before tool execution. Provides enhanced error messages for scoped functions.
+    /// Called before tool execution. Provides enhanced error messages for Collapsed functions.
     /// </summary>
     public Task BeforeToolExecutionAsync(
         AgentMiddlewareContext context,
@@ -173,15 +173,15 @@ public class ToolScopingMiddleware : IAgentMiddleware
             return Task.CompletedTask;
         }
 
-        // Function not found - check if it's a scoped function
+        // Function not found - check if it's a Collapsed function
         var functionName = context.FunctionCallId ?? "Unknown";
-        var scopingState = context.State.MiddlewareState.Scoping ?? new ScopingStateData();
+        var CollapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
         
         // Try to find the function in all registered tools to provide helpful error
         var errorMessage = GenerateFunctionNotFoundMessage(
             functionName,
-            scopingState.ExpandedPlugins,
-            scopingState.ExpandedSkills,
+            CollapsingState.ExpandedPlugins,
+            CollapsingState.ExpandedSkills,
             context.Options?.Tools);
 
         // Set the error message in context
@@ -196,7 +196,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Called after each iteration. Detects container expansions from tool calls
-    /// and updates scoping state accordingly.
+    /// and updates Collapsing state accordingly.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -206,7 +206,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
     /// </para>
     /// <para>
     /// When containers are detected, it:
-    /// 1. Updates MiddlewareState.Scoping with expanded plugins/skills
+    /// 1. Updates MiddlewareState.Collapsing with expanded plugins/skills
     /// 2. Stores skill instructions for prompt injection
     /// 3. Emits ContainerExpandedEvent for observability
     /// </para>
@@ -235,30 +235,30 @@ public class ToolScopingMiddleware : IAgentMiddleware
         // Update state with container expansions
         context.UpdateState(state =>
         {
-            var scopingState = state.MiddlewareState.Scoping ?? new ScopingStateData();
+            var CollapsingState = state.MiddlewareState.Collapsing ?? new CollapsingStateData();
 
             // Add plugin expansions
             foreach (var pluginName in pluginExpansions)
             {
-                scopingState = scopingState.WithExpandedPlugin(pluginName);
+                CollapsingState = CollapsingState.WithExpandedPlugin(pluginName);
             }
 
             // Add skill expansions
             foreach (var skillName in skillExpansions)
             {
-                scopingState = scopingState.WithExpandedSkill(skillName);
+                CollapsingState = CollapsingState.WithExpandedSkill(skillName);
             }
 
             // Add skill instructions
             foreach (var (skillName, instructions) in skillInstructions)
             {
-                scopingState = scopingState.WithSkillInstructions(skillName, instructions);
+                CollapsingState = CollapsingState.WithSkillInstructions(skillName, instructions);
             }
 
             // Also update the legacy AgentLoopState fields for backward compatibility
             return state with
             {
-                MiddlewareState = state.MiddlewareState.WithScoping(scopingState)
+                MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState)
             };
         });
 
@@ -406,7 +406,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Filters ephemeral container results from turnHistory before persistence.
-    /// Container expansion results are temporary (turn-scoped only) and should NOT be
+    /// Container expansion results are temporary (turn-Collapsed only) and should NOT be
     /// saved to persistent history or thread storage, but MUST be visible to the LLM
     /// within the current turn.
     /// </summary>
@@ -457,7 +457,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
     //     
 
     /// <summary>
-    /// Emits a ScopedToolsVisibleEvent for observability.
+    /// Emits a CollapsedToolsVisibleEvent for observability.
     /// </summary>
     private static void EmitVisibilityEvent(
         AgentMiddlewareContext context,
@@ -476,7 +476,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
 
         try
         {
-            context.Emit(new ScopedToolsVisibleEvent(
+            context.Emit(new CollapsedToolsVisibleEvent(
                 AgentName: context.AgentName,
                 Iteration: context.Iteration,
                 VisibleToolNames: visibleToolNames,
@@ -492,16 +492,16 @@ public class ToolScopingMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Emits scoping state event for observability (expanded plugins/skills counts).
+    /// Emits Collapsing state event for observability (expanded plugins/skills counts).
     /// </summary>
-    private static void EmitScopingStateEvent(
+    private static void EmitCollapsingStateEvent(
         AgentMiddlewareContext context,
         ImmutableHashSet<string> expandedPlugins,
         ImmutableHashSet<string> expandedSkills)
     {
         try
         {
-            context.Emit(new ScopingStateEvent(
+            context.Emit(new CollapsingStateEvent(
                 AgentName: context.AgentName,
                 Iteration: context.Iteration,
                 ExpandedPluginsCount: expandedPlugins.Count,
@@ -524,7 +524,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
         ImmutableHashSet<string> expandedSkills,
         IList<AITool>? tools)
     {
-        // Check if this function belongs to a scoped plugin by searching all registered tools
+        // Check if this function belongs to a Collapsed plugin by searching all registered tools
         if (tools != null)
         {
             foreach (var tool in tools)
@@ -536,7 +536,7 @@ public class ToolScopingMiddleware : IAgentMiddleware
                     // A function can belong to BOTH a plugin container AND a skill container
                     var unexpandedContainers = new List<string>();
 
-                    // Check if it belongs to a scoped plugin
+                    // Check if it belongs to a Collapsed plugin
                     if (func.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginObj) == true &&
                         parentPluginObj is string parentPlugin &&
                         !string.IsNullOrEmpty(parentPlugin))

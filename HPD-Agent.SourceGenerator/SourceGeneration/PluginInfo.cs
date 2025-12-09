@@ -52,17 +52,17 @@ internal class PluginInfo
     public bool IsPubliclyAccessible { get; set; } = true;
 
     /// <summary>
-    /// Whether this container has the [Scope] attribute
+    /// Whether this container has the [Collapse] attribute
     /// </summary>
-    public bool HasScopeAttribute { get; set; }
+    public bool HasCollapseAttribute { get; set; }
 
     /// <summary>
-    /// Description from [Scope] attribute (if present)
+    /// Description from [Collapse] attribute (if present)
     /// </summary>
-    public string? ScopeDescription { get; set; }
+    public string? CollapseDescription { get; set; }
 
     /// <summary>
-    /// Post-expansion instructions from [Scope] attribute (if present)
+    /// Post-expansion instructions from [Collapse] attribute (if present)
     /// These instructions are shown to the agent after the container is expanded.
     /// </summary>
     public string? PostExpansionInstructions { get; set; }

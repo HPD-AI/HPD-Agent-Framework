@@ -156,7 +156,7 @@ public class HPDAIFunctionFactoryOptions
     // Type-safe skill documents (Phase 2 - Native Content Types)
     public SkillDocumentContent[]? SkillDocuments { get; set; }
 
-    // Additional metadata properties for plugin scoping and other features
+    // Additional metadata properties for plugin Collapsing and other features
     public Dictionary<string, object?>? AdditionalProperties { get; set; }
 }
 

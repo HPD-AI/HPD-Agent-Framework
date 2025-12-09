@@ -2,11 +2,11 @@ using Microsoft.Extensions.AI;
 using System.Text.Json;
 
 /// <summary>
-/// Wraps external tools (MCP, Frontend) with plugin scoping metadata at runtime.
+/// Wraps external tools (MCP, Frontend) with plugin Collapsing metadata at runtime.
 /// Unlike C# plugins which get metadata from the source generator, external tools
-/// need runtime wrapping to support the plugin scoping architecture.
+/// need runtime wrapping to support the plugin Collapsing architecture.
 /// </summary>
-public static class ExternalToolScopingWrapper
+public static class ExternalToolCollapsingWrapper
 {
     /// <summary>
     /// Wraps a group of MCP tools from one server with a container function.
@@ -17,8 +17,8 @@ public static class ExternalToolScopingWrapper
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
     /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
     /// <param name="customDescription">Optional custom description from JSON config. If provided, replaces auto-generated description.</param>
-    /// <returns>Container function and scoped tools with metadata</returns>
-    public static (AIFunction container, List<AIFunction> scopedTools) WrapMCPServerTools(
+    /// <returns>Container function and Collapsed tools with metadata</returns>
+    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapMCPServerTools(
         string serverName,
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
@@ -89,9 +89,9 @@ public static class ExternalToolScopingWrapper
             });
 
         // Add metadata to individual tools
-        var scopedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "MCP")).ToList();
+        var CollapsedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "MCP")).ToList();
 
-        return (container, scopedTools);
+        return (container, CollapsedTools);
     }
 
     /// <summary>
@@ -101,8 +101,8 @@ public static class ExternalToolScopingWrapper
     /// <param name="tools">Frontend tools to wrap</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
     /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
-    /// <returns>Container function and scoped tools with metadata</returns>
-    public static (AIFunction container, List<AIFunction> scopedTools) WrapFrontendTools(
+    /// <returns>Container function and Collapsed tools with metadata</returns>
+    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapFrontendTools(
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
         string? postExpansionInstructions = null)
@@ -154,9 +154,9 @@ public static class ExternalToolScopingWrapper
             });
 
         // Add metadata to individual tools
-        var scopedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "Frontend")).ToList();
+        var CollapsedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "Frontend")).ToList();
 
-        return (container, scopedTools);
+        return (container, CollapsedTools);
     }
 
     /// <summary>
@@ -169,8 +169,8 @@ public static class ExternalToolScopingWrapper
     /// <param name="tools">Tools in this plugin</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
     /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
-    /// <returns>Container function and scoped tools with metadata</returns>
-    public static (AIFunction container, List<AIFunction> scopedTools) WrapFrontendPlugin(
+    /// <returns>Container function and Collapsed tools with metadata</returns>
+    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapFrontendPlugin(
         string pluginName,
         string description,
         List<AIFunction> tools,
@@ -235,9 +235,9 @@ public static class ExternalToolScopingWrapper
             });
 
         // Add metadata to individual tools
-        var scopedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "FrontendPlugin")).ToList();
+        var CollapsedTools = tools.Select(tool => AddParentPluginMetadata(tool, containerName, "FrontendPlugin")).ToList();
 
-        return (container, scopedTools);
+        return (container, CollapsedTools);
     }
 
     /// <summary>
@@ -251,7 +251,7 @@ public static class ExternalToolScopingWrapper
     /// <returns>New AIFunction with metadata</returns>
     private static AIFunction AddParentPluginMetadata(AIFunction tool, string parentPluginName, string sourceType)
     {
-        // Check if tool already has scoping metadata (avoid double-wrapping)
+        // Check if tool already has Collapsing metadata (avoid double-wrapping)
         if (tool.AdditionalProperties?.ContainsKey("ParentPlugin") == true)
         {
             return tool;

@@ -609,7 +609,7 @@ public class FrontendToolMiddlewareTests
 
         // When a plugin is collapsed:
         // - Container function (Frontend_ECommerce) is added
-        // - Scoped tools (with ParentPlugin metadata) are added for ToolScopingMiddleware
+        // - Collapsed tools (with ParentPlugin metadata) are added for ToolCollapsingMiddleware
         // - Skills are ALWAYS added (they're entry points)
         var skill = new FrontendSkillDefinition(
             Name: "QuickCheckout",
@@ -651,11 +651,11 @@ public class FrontendToolMiddlewareTests
         // Skill is visible (skills are always available as entry points)
         Assert.Contains("QuickCheckout", functionNames);
 
-        // Tools exist (with ParentPlugin metadata for ToolScopingMiddleware to filter)
+        // Tools exist (with ParentPlugin metadata for ToolCollapsingMiddleware to filter)
         Assert.Contains("AddToCart", functionNames);
         Assert.Contains("RemoveFromCart", functionNames);
 
-        // Verify tools have ParentPlugin metadata (for scoping middleware)
+        // Verify tools have ParentPlugin metadata (for Collapsing middleware)
         var addToCart = functions.First(f => f.Name == "AddToCart");
         Assert.True(addToCart.AdditionalProperties?.ContainsKey("ParentPlugin") == true);
         Assert.Equal("Frontend_ECommerce", addToCart.AdditionalProperties!["ParentPlugin"]);
