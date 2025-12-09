@@ -19,23 +19,16 @@ namespace HPD.Agent.Checkpointing;
 /// </remarks>
 public class InMemoryThreadStore : IThreadStore
 {
-    private readonly ConcurrentDictionary<string, JsonElement> _threads = new();
+    private readonly ConcurrentDictionary<string, ExecutionCheckpoint> _threads = new();
 
     public Task<ConversationThread?> LoadThreadAsync(
         string threadId,
         CancellationToken cancellationToken = default)
     {
-        if (_threads.TryGetValue(threadId, out var snapshotJson))
+        if (_threads.TryGetValue(threadId, out var checkpoint))
         {
-            var snapshot = JsonSerializer.Deserialize(
-                snapshotJson.GetRawText(),
-                HPDJsonContext.Default.ConversationThreadSnapshot);
-
-            if (snapshot != null)
-            {
-                var thread = ConversationThread.Deserialize(snapshot, null);
-                return Task.FromResult<ConversationThread?>(thread);
-            }
+            var thread = ConversationThread.FromExecutionCheckpoint(checkpoint);
+            return Task.FromResult<ConversationThread?>(thread);
         }
 
         return Task.FromResult<ConversationThread?>(null);
@@ -45,12 +38,12 @@ public class InMemoryThreadStore : IThreadStore
         ConversationThread thread,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = thread.Serialize(null);
-        var snapshotJson = JsonSerializer.SerializeToElement(
-            snapshot,
-            HPDJsonContext.Default.ConversationThreadSnapshot);
-
-        _threads[thread.Id] = snapshotJson;
+        // Only save if ExecutionState is set (don't save empty threads)
+        if (thread.ExecutionState != null)
+        {
+            var checkpoint = thread.ToExecutionCheckpoint();
+            _threads[thread.Id] = checkpoint;
+        }
         return Task.CompletedTask;
     }
 
@@ -81,11 +74,7 @@ public class InMemoryThreadStore : IThreadStore
 
         foreach (var kvp in _threads)
         {
-            var snapshot = JsonSerializer.Deserialize(
-                kvp.Value.GetRawText(),
-                HPDJsonContext.Default.ConversationThreadSnapshot);
-
-            if (snapshot != null && snapshot.LastActivity < cutoff)
+            if (kvp.Value.LastActivity < cutoff)
             {
                 toRemove.Add(kvp.Key);
             }

@@ -77,8 +77,6 @@ using HPD.Agent;
 [JsonSerializable(typeof(IEnumerable<Microsoft.Extensions.AI.ChatMessage>))]
 
 // --- Conversation storage and serialization types ---
-[JsonSerializable(typeof(ConversationThreadSnapshot))]
-[JsonSerializable(typeof(ThreadSnapshot))]
 [JsonSerializable(typeof(ExecutionCheckpoint))]
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]

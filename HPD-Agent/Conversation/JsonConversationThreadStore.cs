@@ -99,7 +99,13 @@ public class JsonConversationThreadStore : ICheckpointStore
         var checkpointId = Guid.NewGuid().ToString();
         var checkpointPath = Path.Combine(threadDir, $"{checkpointId}.json");
 
-        // Use ExecutionCheckpoint for durable execution (includes ExecutionState)
+        // Use ExecutionCheckpoint only if ExecutionState is set
+        // Otherwise skip (threads without execution state don't need durable checkpointing)
+        if (thread.ExecutionState == null)
+        {
+            return Task.CompletedTask;
+        }
+
         var checkpoint = thread.ToExecutionCheckpoint();
         var json = JsonSerializer.Serialize(checkpoint, HPDJsonContext.Default.ExecutionCheckpoint);
 
@@ -155,18 +161,8 @@ public class JsonConversationThreadStore : ICheckpointStore
             IsSnapshot = false
         };
 
-        var rootSnapshot = new ConversationThreadSnapshot
-        {
-            Id = threadId,
-            Messages = new List<ChatMessage>(),
-            Metadata = new Dictionary<string, object>(),
-            CreatedAt = DateTime.UtcNow,
-            LastActivity = DateTime.UtcNow
-        };
-
-        var rootJson = JsonSerializer.Serialize(rootSnapshot, HPDJsonContext.Default.ConversationThreadSnapshot);
+        // Root checkpoint is empty - no need to serialize
         var rootPath = Path.Combine(threadDir, $"{rootCheckpointId}.json");
-        WriteAtomically(rootPath, rootJson);
 
         manifest.Checkpoints.Add(rootEntry);
         return rootCheckpointId;
@@ -243,8 +239,12 @@ public class JsonConversationThreadStore : ICheckpointStore
         var threadDir = GetThreadDirectoryPath(thread.Id);
         Directory.CreateDirectory(threadDir);
 
-        var snapshot = thread.Serialize(null);
-        var json = JsonSerializer.Serialize(snapshot, HPDJsonContext.Default.ConversationThreadSnapshot);
+        // Only save if ExecutionState is set
+        if (thread.ExecutionState == null)
+            return Task.CompletedTask;
+
+        var checkpoint = thread.ToExecutionCheckpoint();
+        var json = JsonSerializer.Serialize(checkpoint, HPDJsonContext.Default.ExecutionCheckpoint);
         var checkpointPath = Path.Combine(threadDir, $"{checkpointId}.json");
 
         lock (_lock)
