@@ -444,60 +444,6 @@ public class CheckpointingTests : AgentTestBase
     // CONVERSATIONTHREAD SERIALIZATION WITH EXECUTIONSTATE
     //      
 
-    [Fact]
-    public async Task ConversationThread_Serialize_IncludesExecutionState()
-    {
-        // Arrange: Thread with execution state
-        var thread = new ConversationThread();
-        await thread.AddMessageAsync(UserMessage("Hello"));
-
-        var state = AgentLoopState.Initial(
-            await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent")
-            .NextIteration();
-        thread.ExecutionState = state;
-
-        // Act: Serialize
-        var snapshot = thread.Serialize(null);
-
-        // Assert: Should include ExecutionStateJson
-        var snapshotJson = JsonSerializer.Serialize(snapshot);
-        var doc = JsonDocument.Parse(snapshotJson);
-        Assert.True(doc.RootElement.TryGetProperty("ExecutionStateJson", out var stateJson));
-        Assert.NotEqual(JsonValueKind.Null, stateJson.ValueKind);
-    }
-
-    [Fact]
-    public async Task ConversationThread_Deserialize_RestoresExecutionState()
-    {
-        // Arrange: Thread with execution state
-        var thread = new ConversationThread();
-        await thread.AddMessageAsync(UserMessage("Hello"));
-        await thread.AddMessageAsync(AssistantMessage("Hi"));
-
-        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
-        var originalState = AgentLoopState.Initial(
-            await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent")
-            .NextIteration() with
-            {
-                MiddlewareState = new MiddlewareState().WithCollapsing(CollapsingState)
-            };
-        thread.ExecutionState = originalState;
-
-        // Serialize
-        var snapshot = thread.Serialize(null);
-        var snapshotJson = JsonSerializer.Serialize(snapshot);
-        var snapshotDeserialized = JsonSerializer.Deserialize<ConversationThreadSnapshot>(snapshotJson);
-
-        // Act: Deserialize
-        var restoredThread = ConversationThread.Deserialize(snapshotDeserialized!, null);
-
-        // Assert: Should restore execution state
-        Assert.NotNull(restoredThread.ExecutionState);
-        Assert.Equal(originalState.Iteration, restoredThread.ExecutionState.Iteration);
-        Assert.Equal(originalState.AgentName, restoredThread.ExecutionState.AgentName);
-        var restoredCollapsing = restoredThread.ExecutionState.MiddlewareState.Collapsing;
-        Assert.Equal(1, restoredCollapsing?.ExpandedPlugins.Count ?? 0);
-    }
 
     //      
     // CHECKPOINT METADATA TESTS

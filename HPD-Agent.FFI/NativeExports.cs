@@ -604,9 +604,10 @@ public static partial class NativeExports
     }
 
     //    
-    // CHECKPOINTING & RESUME APIs (Durable Execution)
+    // CHECKPOINTING & RESUME APIs (Durable Execution) - DISABLED (Snapshot functionality removed)
     //    
 
+    /*
     /// <summary>
     /// Serializes a conversation thread to JSON for persistence (checkpointing).
     /// Enables crash recovery and durable execution.
@@ -664,6 +665,7 @@ public static partial class NativeExports
             return IntPtr.Zero;
         }
     }
+    */
 
     //    
     // PERMISSION SYSTEM APIs (Human-in-the-Loop)

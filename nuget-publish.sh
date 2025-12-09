@@ -128,28 +128,28 @@ function pack_packages() {
     echo "=========================================="
     echo ""
 
-    # Verify PackageIds
+    # Verify PackageIds (accept both HPD-Agent.* and HPD.Agent.* formats)
     echo "Verifying package names..."
-    local WRONG_NAMES=0
+    local INVALID_NAMES=0
     for nupkg in "$NUPKG_DIR"/*."$VERSION".nupkg; do
         if [ -f "$nupkg" ]; then
             filename=$(basename "$nupkg")
-            if [[ "$filename" == *"HPD-Agent"* ]] && [[ "$filename" != *"HPD.Agent"* ]]; then
-                echo "  ⚠ WARNING: Found hyphenated package: $filename"
-                ((WRONG_NAMES++))
+            # Accept either HPD-Agent.* or HPD.Agent.* format
+            if ! [[ "$filename" =~ ^(HPD-Agent|HPD\.Agent)\. ]]; then
+                echo "  ⚠ WARNING: Found invalid package: $filename"
+                ((INVALID_NAMES++))
             fi
         fi
     done
 
-    if [ $WRONG_NAMES -gt 0 ]; then
+    if [ $INVALID_NAMES -gt 0 ]; then
         echo ""
-        echo "ERROR: Found $WRONG_NAMES packages with hyphens instead of dots!"
-        echo "Check your .csproj files have <PackageId>HPD.Agent.*</PackageId>"
+        echo "ERROR: Found $INVALID_NAMES packages with invalid naming!"
         exit 1
     fi
 
     echo ""
-    echo "✓ All packages have correct naming (HPD.Agent.*)"
+    echo "✓ All packages have correct naming (HPD-Agent.* or HPD.Agent.*)"
     echo ""
     echo "Packages location: $NUPKG_DIR"
     echo ""
