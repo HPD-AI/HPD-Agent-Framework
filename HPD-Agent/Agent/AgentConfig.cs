@@ -84,8 +84,9 @@ public class AgentConfig
     /// <summary>
     /// Configuration for Collapsing - hierarchical organization of functions to reduce token usage.
     /// When enabled, functions are hidden behind container functions, reducing initial tool list by up to 87.5%.
+    /// Default: Collapsing enabled.
     /// </summary>
-    public CollapsingConfig? Collapsing { get; set; }
+    public CollapsingConfig Collapsing { get; set; } = new CollapsingConfig { Enabled = true };
 
     /// <summary>
     /// Internal: Set of explicitly registered plugin names (for Collapsing manager).
