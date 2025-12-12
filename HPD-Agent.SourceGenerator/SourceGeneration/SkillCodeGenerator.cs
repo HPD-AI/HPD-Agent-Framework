@@ -120,7 +120,7 @@ internal static class SkillCodeGenerator
         if (plugin.HasCollapseAttribute)
         {
             sb.AppendLine("        // Register skill class Collapse container");
-            sb.AppendLine($"        functions.Add(Create{plugin.Name}CollapseContainer());");
+            sb.AppendLine($"        functions.Add(Create{plugin.Name}CollapseContainer(instance));");
             sb.AppendLine();
         }
         
@@ -129,7 +129,7 @@ internal static class SkillCodeGenerator
         foreach (var skill in plugin.Skills)
         {
             // Each skill generates exactly one container function
-            sb.AppendLine($"        functions.Add(Create{skill.MethodName}Skill());");
+            sb.AppendLine($"        functions.Add(Create{skill.MethodName}Skill(instance));");
         }
 
         return sb.ToString();
@@ -139,7 +139,7 @@ internal static class SkillCodeGenerator
     /// Generates skill container function.
     /// Skills ARE containers - there's only one function per skill.
     /// </summary>
-    public static string GenerateSkillContainerFunction(SkillInfo skill)
+    public static string GenerateSkillContainerFunction(SkillInfo skill, PluginInfo plugin)
     {
         var sb = new StringBuilder();
 
@@ -163,7 +163,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine($"        /// <summary>");
         sb.AppendLine($"        /// Container function for {skill.Name} skill.");
         sb.AppendLine($"        /// </summary>");
-        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill()");
+        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill({plugin.Name} instance)");
         sb.AppendLine("        {");
 
         // Generate runtime function body that checks configuration
@@ -307,7 +307,7 @@ internal static class SkillCodeGenerator
 
         // Use shared helper to generate description and return message
         var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
-        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
+        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.PostExpansionInstructions);
 
         // Escape the return message for C# verbatim string literal (@"...")
         var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
@@ -315,7 +315,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine("        /// <summary>");
         sb.AppendLine($"        /// Collapse container for {plugin.Name} skill class.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine($"        private static AIFunction Create{plugin.Name}CollapseContainer()");
+        sb.AppendLine($"        private static AIFunction Create{plugin.Name}CollapseContainer({plugin.Name} instance)");
         sb.AppendLine("        {");
         sb.AppendLine("            return HPDAIFunctionFactory.Create(");
         sb.AppendLine("                async (arguments, cancellationToken) =>");
@@ -365,7 +365,7 @@ internal static class SkillCodeGenerator
         {
             sb.AppendLine();
             // Skills ARE containers - only one function per skill
-            sb.AppendLine(GenerateSkillContainerFunction(skill));
+            sb.AppendLine(GenerateSkillContainerFunction(skill, plugin));
         }
 
         return sb.ToString();

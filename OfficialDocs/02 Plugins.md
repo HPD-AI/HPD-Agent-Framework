@@ -104,9 +104,9 @@ Collapsed containers keep your agent's tool surface small; the agent expands a c
 
 Constructor parameters:
 - `description` (required): Short explanation of what the container provides and when to expand it.
-- `postExpansionInstructions` (optional): Guidance shown after expansion (best practices, safety notes, or workflow tips). These instructions only consume tokens when the container is expanded.
+- `postExpansionInstructions` (optional): Guidance shown after expansion (best practices, safety notes, or workflow tips). These instructions only consume tokens when the container is expanded. This can be a string literal or a call to a `static` method/property that returns a string.
 
-Example:
+**Example with string literal:**
 
 ```csharp
 [Collapse("Search operations across web, code, and documentation",
@@ -120,6 +120,29 @@ public class SearchPlugin
     [AIFunction]
     public Task<string> CodeSearch(string query) => ...;
 }
+```
+
+**Example with dynamic instructions from a method call:**
+
+```csharp
+public static class SearchInstructionBuilder
+{
+    public static string GetInstructions()
+    {
+        // Instructions could be loaded from a file, a database, or built dynamically
+        return $"Search instructions for version {GetVersion()}. Always use safe search.";
+    }
+
+    private static string GetVersion() => "2.1";
+}
+
+[Collapse("Search operations across web, code, and documentation",
+    postExpansionInstructions: SearchInstructionBuilder.GetInstructions())]
+public class DynamicSearchPlugin 
+{
+    // ... plugin functions
+}
+
 ```
 ---
 ## Dependency Injection

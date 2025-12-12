@@ -645,14 +645,17 @@ public sealed class Agent
             }
             else
             {
-                //     
+                //
                 // FRESH RUN PATH: Use PreparedTurn directly (all preparation already done)
-                //     
+                //
+
+                // Load persistent middleware state from thread (cross-run caching)
+                var persistentState = MiddlewareState.LoadFromThread(thread);
 
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
                 // We store the full history in state for proper message counting
-                state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name);
+                state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name, persistentState);
 
                 // Use PreparedTurn's already-prepared messages and options
                 effectiveMessages = turn.MessagesForLLM;
@@ -1512,6 +1515,18 @@ public sealed class Agent
                 }
             }
 
+            // PERSISTENCE: Save persistent middleware state to thread (cross-run caching)
+            if (thread != null)
+            {
+                try
+                {
+                    state.MiddlewareState.SaveToThread(thread);
+                }
+                catch (Exception)
+                {
+                    // Ignore errors - middleware state persistence is not critical to execution
+                }
+            }
 
             historyCompletionSource.TrySetResult(turnHistory);
         }
@@ -2368,7 +2383,12 @@ public sealed record AgentLoopState
     /// The messages collection is defensively copied to ensure immutability.
     /// This prevents bugs where the caller modifies the original collection after state creation.
     /// </remarks>
-    public static AgentLoopState Initial(IReadOnlyList<ChatMessage> messages, string runId, string conversationId, string agentName) => new()
+    public static AgentLoopState Initial(
+        IReadOnlyList<ChatMessage> messages,
+        string runId,
+        string conversationId,
+        string agentName,
+        MiddlewareState? persistentState = null) => new()
     {
         RunId = runId,
         ConversationId = conversationId,
@@ -2392,7 +2412,8 @@ public sealed record AgentLoopState
             Source = CheckpointSource.Input,
             Step = -1 // -1 indicates initial state before first iteration
         },
-        ETag = null // Will be generated on first serialize
+        ETag = null, // Will be generated on first serialize
+        MiddlewareState = persistentState ?? new MiddlewareState()
     };
 
     //      

@@ -140,7 +140,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         if (!functions.Any() && !skills.Any() && !subAgents.Any()) return null;
 
         // Check for [Collapse] attribute
-        var (hasCollapseAttribute, CollapseDescription, postExpansionInstructions) = GetCollapseAttribute(classDecl);
+        var (hasCollapseAttribute, CollapseDescription, postExpansionInstructions, postExpansionInstructionsExpression) = GetCollapseAttribute(classDecl, semanticModel);
 
         // Check if the class has a parameterless constructor (either explicit or implicit)
         var hasParameterlessConstructor = HasParameterlessConstructor(classDecl);
@@ -163,6 +163,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             HasCollapseAttribute = hasCollapseAttribute,
             CollapseDescription = CollapseDescription,
             PostExpansionInstructions = postExpansionInstructions,
+            PostExpansionInstructionsExpression = postExpansionInstructionsExpression,
             HasParameterlessConstructor = hasParameterlessConstructor,
             IsPubliclyAccessible = isPubliclyAccessible
         };
@@ -253,6 +254,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
                 var hasCollapseAttribute = group.Any(p => p!.HasCollapseAttribute);
                 var CollapseDescription = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.CollapseDescription;
                 var postExpansionInstructions = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.PostExpansionInstructions;
+                var postExpansionInstructionsExpression = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.PostExpansionInstructionsExpression;
 
                 // All partial class parts must have parameterless constructor for the plugin to be AOT-instantiable
                 // (If any part declares a constructor with parameters, no implicit parameterless constructor is generated)
@@ -272,6 +274,7 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
                     HasCollapseAttribute = hasCollapseAttribute,
                     CollapseDescription = CollapseDescription,
                     PostExpansionInstructions = postExpansionInstructions,
+                    PostExpansionInstructionsExpression = postExpansionInstructionsExpression,
                     HasParameterlessConstructor = hasParameterlessConstructor,
                     IsPubliclyAccessible = isPubliclyAccessible
                 };
@@ -478,7 +481,7 @@ namespace HPD.Agent.Diagnostics {{
         {
             sb.AppendLine();
             sb.AppendLine("        // Container function for plugin Collapsing");
-            sb.AppendLine($"        functions.Add(Create{plugin.Name}Container());");
+            sb.AppendLine($"        functions.Add(Create{plugin.Name}Container(instance));");
         }
 
         if (unconditionalFunctions.Any())
@@ -1036,7 +1039,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     // Additional helper methods would go here...
     // (GetCustomFunctionName, GetFunctionDescription, GetRequiredPermissions, etc.)
     
-    private static string ExtractStringLiteral(ExpressionSyntax expression)
+    private static string ExtractStringLiteral(ExpressionSyntax? expression)
     {
         if (expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
         {
@@ -1561,7 +1564,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     /// Detects [Collapse] or [Collapse] attribute on a class and extracts its description and post-expansion instructions.
     /// [Collapse] is deprecated but still supported for backward compatibility.
     /// </summary>
-    private static (bool hasCollapseAttribute, string? CollapseDescription, string? postExpansionInstructions) GetCollapseAttribute(ClassDeclarationSyntax classDecl)
+    private static (bool hasCollapseAttribute, string? CollapseDescription, string? postExpansionInstructions, string? postExpansionInstructionsExpression) GetCollapseAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
     {
         // Check for both [Collapse] (new) and [Collapse] (deprecated) attributes
         var CollapseAttributes = classDecl.AttributeLists
@@ -1574,17 +1577,30 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
             if (arguments.HasValue && arguments.Value.Count >= 1)
             {
                 var description = ExtractStringLiteral(arguments.Value[0].Expression);
-                var postExpansionInstructions = arguments.Value.Count >= 2
-                    ? ExtractStringLiteral(arguments.Value[1].Expression)
-                    : null;
-                return (true, description, postExpansionInstructions);
+                string? postExpansionInstructions = null;
+                string? postExpansionInstructionsExpression = null;
+
+                if (arguments.Value.Count >= 2)
+                {
+                    var instructionArgument = arguments.Value[1].Expression;
+                    if (instructionArgument is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                    {
+                        postExpansionInstructions = literal.Token.ValueText;
+                    }
+                    else
+                    {
+                        postExpansionInstructionsExpression = instructionArgument.ToString();
+                    }
+                }
+                
+                return (true, description, postExpansionInstructions, postExpansionInstructionsExpression);
             }
 
             // Attribute present but no description
-            return (true, null, null);
+            return (true, null, null, null);
         }
 
-        return (false, null, null);
+        return (false, null, null, null);
     }
 
     /// <summary>
@@ -1841,21 +1857,53 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
 
         // Use shared helper to generate description and return message
         var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
-        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(plugin.Name, allCapabilities, plugin.PostExpansionInstructions);
-
-        // Escape the return message for C# verbatim string literal (@"...")
-        // In verbatim strings, quotes are escaped by doubling them
-        var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
 
         sb.AppendLine("        /// <summary>");
         sb.AppendLine($"        /// Container function for {plugin.Name} plugin Collapsing.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine($"        private static AIFunction Create{plugin.Name}Container()");
+        sb.AppendLine($"        private static AIFunction Create{plugin.Name}Container({plugin.Name} instance)");
         sb.AppendLine("        {");
         sb.AppendLine("            return HPDAIFunctionFactory.Create(");
         sb.AppendLine("                async (arguments, cancellationToken) =>");
         sb.AppendLine("                {");
-        sb.AppendLine($"                    return @\"{escapedReturnMessage}\";");  // Using @ for verbatim string
+        
+        string postExpansionInstructions;
+        if (!string.IsNullOrEmpty(plugin.PostExpansionInstructionsExpression))
+        {
+            // If it's a method call or property access, call it dynamically
+            postExpansionInstructions = plugin.PostExpansionInstructionsExpression;
+        }
+        else
+        {
+            // Otherwise, use the string literal
+            postExpansionInstructions = $"\"{plugin.PostExpansionInstructions?.Replace("\"", "\\\"") ?? ""}\"";
+        }
+
+        // Use the CollapseDescription (or plugin description as fallback) in the return message
+        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.PostExpansionInstructions);
+        
+        if (!string.IsNullOrEmpty(plugin.PostExpansionInstructionsExpression))
+        {
+            // Using an interpolated string to combine the base message and the dynamic instructions
+            var baseMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
+            // Escape special characters for the interpolated string - we need to convert \n\n to \\n\\n in source code
+            baseMessage = baseMessage.Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\"", "\\\"");
+            // Add separator between capabilities list and dynamic instructions
+            var separator = "\\n\\n";  // This will be two backslash-n sequences in the source code
+            sb.AppendLine($"                    var dynamicInstructions = {plugin.PostExpansionInstructionsExpression};");
+            sb.AppendLine($"                    return $\"{baseMessage}{separator}{{dynamicInstructions}}\";");
+        }
+        else
+        {
+            // Using a verbatim string literal for static content
+            // In a verbatim string, actual newlines are allowed but we need to represent them as \n
+            var escapedReturnMessage = returnMessage
+                .Replace("\\", "\\\\")  // Escape backslashes first
+                .Replace("\"", "\"\"")  // Escape quotes (double them in verbatim strings)
+                .Replace("\n", "\\n"); // Convert actual newlines to backslash-n
+            sb.AppendLine($"                    return @\"{escapedReturnMessage}\";");
+        }
+
         sb.AppendLine("                },");
         sb.AppendLine("                new HPDAIFunctionFactoryOptions");
         sb.AppendLine("                {");

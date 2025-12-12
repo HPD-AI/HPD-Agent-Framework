@@ -25,10 +25,10 @@ internal class PluginInfo
 
     /// <summary>
     /// Whether this plugin requires an instance parameter in CreatePlugin().
-    /// AIFunctions and SubAgents need instance access; Skills are static.
-    /// When adding new capability types, add them here if they need instance access.
+    /// All capability types (Functions, Skills, SubAgents) can access instance state.
+    /// This enables dynamic container instructions via instance methods.
     /// </summary>
-    public bool RequiresInstance => Functions.Any() || SubAgents.Any();
+    public bool RequiresInstance => Functions.Any() || Skills.Any() || SubAgents.Any();
 
     /// <summary>
     /// Whether any functions have conditional logic requiring context resolution
@@ -66,6 +66,12 @@ internal class PluginInfo
     /// These instructions are shown to the agent after the container is expanded.
     /// </summary>
     public string? PostExpansionInstructions { get; set; }
+
+    /// <summary>
+    /// Post-expansion instructions from [Collapse] attribute (if it's an expression)
+    /// This stores the method call or property access as a string.
+    /// </summary>
+    public string? PostExpansionInstructionsExpression { get; set; }
 }
 
 /// <summary>
