@@ -31,13 +31,14 @@ public class FunctionRetryMiddleware : IAgentMiddleware
     private readonly IProviderErrorHandler _providerHandler;
 
     /// <summary>
-    /// Creates a new function retry middleware with the specified configuration.
+    /// Creates a new function retry middleware with the specified configuration and error handler.
     /// </summary>
     /// <param name="config">Error handling configuration</param>
-    public FunctionRetryMiddleware(ErrorHandlingConfig config)
+    /// <param name="providerErrorHandler">Provider-specific error handler for intelligent retry logic</param>
+    public FunctionRetryMiddleware(ErrorHandlingConfig config, IProviderErrorHandler? providerErrorHandler = null)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
-        _providerHandler = config.ProviderHandler ?? new GenericErrorHandler();
+        _providerHandler = providerErrorHandler ?? new GenericErrorHandler();
     }
 
     /// <summary>

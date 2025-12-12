@@ -16,6 +16,10 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
 {
     private static readonly System.Collections.Generic.List<string> _diagnosticMessages = new();
 
+    /// <summary>
+    /// Initializes the incremental generator with syntax providers and output callbacks.
+    /// </summary>
+    /// <param name="context">The generator initialization context.</param>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var pluginClasses = context.SyntaxProvider
@@ -1165,7 +1169,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     // V3.0 New Helper Methods
     
     /// <summary>
-    /// Extracts context type from AIFunction<TContext> attribute.
+    /// Extracts context type from AIFunction&lt;TContext&gt; attribute.
     /// </summary>
     private static (string? contextTypeName, bool isGeneric) GetAIFunctionContextType(MethodDeclarationSyntax method, SemanticModel semanticModel)
     {

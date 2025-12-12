@@ -186,10 +186,9 @@ public class FunctionRetryMiddlewareTests
         var config = new ErrorHandlingConfig
         {
             MaxRetries = 3,
-            ProviderHandler = providerHandler,
             UseProviderRetryDelays = true
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new FunctionRetryMiddleware(config, providerHandler);
         var context = CreateContext();
 
         int attempts = 0;
@@ -227,10 +226,9 @@ public class FunctionRetryMiddlewareTests
 
         var config = new ErrorHandlingConfig
         {
-            MaxRetries = 3,
-            ProviderHandler = providerHandler
+            MaxRetries = 3
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new FunctionRetryMiddleware(config, providerHandler);
         var context = CreateContext();
 
         int attempts = 0;
@@ -266,10 +264,9 @@ public class FunctionRetryMiddlewareTests
             {
                 [ErrorCategory.RateLimitRetryable] = 2 // Category-specific limit
             },
-            ProviderHandler = providerHandler,
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new FunctionRetryMiddleware(config, providerHandler);
         var context = CreateContext();
 
         int attempts = 0;

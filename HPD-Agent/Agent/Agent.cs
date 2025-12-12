@@ -186,7 +186,6 @@ public sealed class Agent
         AgentConfig config,
         IChatClient baseClient,
         ChatOptions? mergedOptions,
-        ErrorHandling.IProviderErrorHandler providerErrorHandler,
         IReadOnlyDictionary<string, string>? functionToPluginMap = null,
         IReadOnlyDictionary<string, string>? functionToSkillMap = null,
         IReadOnlyList<IAgentMiddleware>? middlewares = null,
@@ -199,9 +198,8 @@ public sealed class Agent
         _name = config.Name ?? "Agent"; // Default to "Agent" to prevent null dictionary key exceptions
 
         // Initialize unified middleware pipeline
-        // so that FunctionCallProcessor can access it without changing its signature yet.
+        // Note: Error handler is now passed directly to FunctionRetryMiddleware, not stored here
         if (Config.ErrorHandling == null) Config.ErrorHandling = new ErrorHandlingConfig();
-        Config.ErrorHandling.ProviderHandler = providerErrorHandler;
 
 
         // Initialize Microsoft.Extensions.AI compliance metadata

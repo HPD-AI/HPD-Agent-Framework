@@ -562,14 +562,6 @@ public class ErrorHandlingConfig
     /// Example: { ErrorCategory.RateLimitRetryable: 5, ErrorCategory.ServerError: 3 }
     /// </summary>
     public Dictionary<HPD.Agent.ErrorHandling.ErrorCategory, int>? MaxRetriesByCategory { get; set; }
-
-    /// <summary>
-    /// Provider-specific error handler. If null, auto-detects based on ProviderKey.
-    /// Set this to customize error parsing for specific providers or use custom handlers.
-    /// </summary>
-    [System.Text.Json.Serialization.JsonIgnore]
-    public HPD.Agent.ErrorHandling.IProviderErrorHandler? ProviderHandler { get; set; }
-
     /// <summary>
     /// Custom retry strategy that overrides default behavior.
     /// Parameters: (exception, attemptNumber, cancellationToken)

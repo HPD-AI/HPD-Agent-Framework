@@ -23,12 +23,11 @@ public class MiddlewareChainEndToEndTests
         var config = new ErrorHandlingConfig
         {
             MaxRetries = 3,
-            ProviderHandler = providerHandler,
             UseProviderRetryDelays = true,
             RetryDelay = TimeSpan.FromMilliseconds(50)
         };
 
-        var retryMiddleware = new FunctionRetryMiddleware(config);
+        var retryMiddleware = new FunctionRetryMiddleware(config, providerHandler);
         var pipeline = new AgentMiddlewarePipeline(new[] { retryMiddleware });
         var context = CreateContext();
 
@@ -165,11 +164,10 @@ public class MiddlewareChainEndToEndTests
 
         var config = new ErrorHandlingConfig
         {
-            MaxRetries = 5, // Would retry up to 5 times
-            ProviderHandler = providerHandler
+            MaxRetries = 5 // Would retry up to 5 times
         };
 
-        var retryMiddleware = new FunctionRetryMiddleware(config);
+        var retryMiddleware = new FunctionRetryMiddleware(config, providerHandler);
         var pipeline = new AgentMiddlewarePipeline(new[] { retryMiddleware });
         var context = CreateContext();
 
@@ -200,11 +198,10 @@ public class MiddlewareChainEndToEndTests
                 [ErrorCategory.RateLimitRetryable] = 2,
                 [ErrorCategory.ServerError] = 1
             },
-            ProviderHandler = providerHandler,
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
 
-        var retryMiddleware = new FunctionRetryMiddleware(config);
+        var retryMiddleware = new FunctionRetryMiddleware(config, providerHandler);
         var pipeline = new AgentMiddlewarePipeline(new[] { retryMiddleware });
         var context = CreateContext();
 

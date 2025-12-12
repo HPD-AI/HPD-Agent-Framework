@@ -1219,7 +1219,7 @@ public class AgentBuilder
         // Register FunctionRetryMiddleware if retry is enabled
         if (_config.ErrorHandling?.MaxRetries > 0)
         {
-            _middlewares.Add(new Middleware.Function.FunctionRetryMiddleware(_config.ErrorHandling));
+            _middlewares.Add(new Middleware.Function.FunctionRetryMiddleware(_config.ErrorHandling, buildData.ErrorHandler));
         }
 
         // Register FunctionTimeoutMiddleware if timeout is configured
@@ -1259,7 +1259,6 @@ public class AgentBuilder
             _config!,
             buildData.ClientToUse,
             buildData.MergedOptions,
-            buildData.ErrorHandler,
             _functionToPluginMap,
             _functionToSkillMap,
             _middlewares,
@@ -1553,10 +1552,8 @@ public class AgentBuilder
                 throw new InvalidOperationException($"The factory for provider '{providerKey}' returned a null chat client.");
         }
 
-        var errorHandler = providerFeatures.CreateErrorHandler();
-        if (errorHandler == null)
-            throw new InvalidOperationException($"The factory for provider '{providerKey}' returned a null error handler.");
-
+        // Note: Error handler is now created in the middleware registration phase above,
+        // not here. This ensures it's only created if retry is actually enabled.
 
         // Use base client directly (no middleware pipeline)
         // Observability (telemetry, logging, caching) is integrated directly into Agent.cs
@@ -1657,6 +1654,11 @@ public class AgentBuilder
                 _config.HistoryReduction.SummarizerProvider,
                 _serviceProvider);
         }
+
+        // Create the provider-specific error handler
+        var errorHandler = providerFeatures.CreateErrorHandler();
+        if (errorHandler == null)
+            throw new InvalidOperationException($"The factory for provider '{providerKey}' returned a null error handler.");
 
         // Return dependencies instead of creating agent
         return new AgentBuildDependencies(
@@ -2496,6 +2498,9 @@ public static class AgentBuilderMiddlewareExtensions
     public static AgentBuilder WithFunctionRetry(this AgentBuilder builder)
     {
         var config = builder.Config.ErrorHandling ?? new ErrorHandlingConfig();
+        // Note: When manually adding via extension method, no provider-specific error handler is available.
+        // The middleware will use GenericErrorHandler. If provider-specific handling is needed,
+        // use the automatic registration in Build() which has access to the provider.
         var middleware = new FunctionRetryMiddleware(config);
         builder.Middlewares.Add(middleware);
         return builder;
@@ -2527,6 +2532,9 @@ public static class AgentBuilderMiddlewareExtensions
     {
         var config = new ErrorHandlingConfig();
         configure(config);
+        // Note: When manually adding via extension method, no provider-specific error handler is available.
+        // The middleware will use GenericErrorHandler. If provider-specific handling is needed,
+        // use the automatic registration in Build() which has access to the provider.
         var middleware = new FunctionRetryMiddleware(config);
         builder.Middlewares.Add(middleware);
         return builder;
