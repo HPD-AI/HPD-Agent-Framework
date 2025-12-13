@@ -889,18 +889,6 @@ public class CollapsingConfig
     /// </summary>
     public string? FrontendToolsInstructions { get; set; }
 
-    /// <summary>
-    /// When true, ONLY functions referenced by skills are visible to the agent.
-    /// All plugin containers and unreferenced functions are hidden.
-    /// Skills become the exclusive interface for accessing functions.
-    /// Default: false (plugins and unreferenced functions remain visible).
-    ///
-    /// Use this for "pure skills mode" where:
-    /// - Plugins must be registered (for validation), but won't be visible
-    /// - Functions only accessible through skill expansion
-    /// - Skills provide the ONLY interface to the agent
-    /// </summary>
-    public bool SkillsOnlyMode { get; set; } = false;
 }
 /// <summary>
 /// Configuration for agent system messages.

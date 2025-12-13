@@ -49,7 +49,7 @@ public partial class FileSystemPlugin
     #region Core File Operations
 
     [AIFunction<FileSystemContext>]
-    [AIDescription("Reads and returns the content of a specified file. Handles text files with optional line range. Maximum file size: {context.MaxFileSize} bytes.")]
+    [AIDescription("Reads and returns the content of a specified file. Handles text files with optional line range. Maximum file size: {metadata.MaxFileSize} bytes.")]
     public async Task<string> ReadFile(
         [AIDescription("The absolute path to the file to read")] string absolutePath,
         [AIDescription("Optional: For text files, the 0-based line number to start reading from")] int? offset = null,

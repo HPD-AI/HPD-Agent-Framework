@@ -158,11 +158,11 @@ The plugin uses HPD-Agent's V2 conditional function system with type-safe expres
 
 ```csharp
 [ConditionalFunction<WebSearchContext>("HasTavilyProvider || HasBraveProvider || HasBingProvider")]
-[Description("Search the web using {context.DefaultProvider}")]
+[Description("Search the web using {metadata.DefaultProvider}")]
 public async Task<string> WebSearchAsync(
     [Description("Search query")] string query,
     [Description("Number of results (1-20)")] int count = 10,
-    [Description("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] string? provider = null)
+    [Description("Provider: {metadata.ConfiguredProviders} (optional, defaults to {metadata.DefaultProvider})")] string? provider = null)
 ```
 
 **V2 Benefits:**

@@ -270,6 +270,7 @@ internal static class SkillCodeGenerator
             sb.AppendLine($"                    Description = \"{staticFullDescription}\",");
         }
 
+        sb.AppendLine($"                    RequiresPermission = {skill.RequiresPermission.ToString().ToLower()},");
         sb.AppendLine("                    SchemaProvider = () => CreateEmptyContainerSchema(),");
 
         // Type-safe SkillDocuments property

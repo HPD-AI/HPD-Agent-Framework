@@ -193,10 +193,11 @@ internal static class CapabilityAnalyzer
         // Extract conditional and context metadata (same as Functions)
         var conditionalExpression = GetConditionalExpression(attrs);
         var contextTypeName = GetMetadataTypeName(method, semanticModel);
+        var requiresPermission = HasAttribute(attrs, "RequiresPermission");
 
         System.Diagnostics.Debug.WriteLine($"[AnalyzeSkillCapability] Skill={name}, Description={description}");
         System.Diagnostics.Debug.WriteLine($"[AnalyzeSkillCapability] ContextTypeName={contextTypeName ?? "NULL"}");
-        System.Diagnostics.Debug.WriteLine($"[AnalyzeSkillCapability] HasDynamicDescription={description.Contains("{context.")}");
+        System.Diagnostics.Debug.WriteLine($"[AnalyzeSkillCapability] HasDynamicDescription={description.Contains("{metadata.")}");
 
         return new SkillCapability
         {
@@ -208,6 +209,7 @@ internal static class CapabilityAnalyzer
             ParentNamespace = namespaceName,
             Options = options ?? new SkillOptionsInfo(),
             UnresolvedReferences = references,
+            RequiresPermission = requiresPermission,
 
             // Context and conditionals (feature parity with Functions!)
             ContextTypeName = contextTypeName,
@@ -257,6 +259,12 @@ internal static class CapabilityAnalyzer
         var conditionalExpression = GetConditionalExpression(attrs);
         var contextTypeName = GetMetadataTypeName(method, semanticModel);
 
+        // SubAgents default to requiring permission (true), but can be overridden
+        // If [RequiresPermission] is NOT present, default is true (for safety)
+        // If [RequiresPermission] IS present, it's explicitly true
+        // To disable permission requirement, we'd need a different mechanism (future enhancement)
+        var requiresPermission = true;  // SubAgents always require permission by default
+
         var subAgentCapability = new SubAgentCapability
         {
             Name = name,  // Actual sub-agent name from SubAgentFactory.Create()
@@ -267,6 +275,7 @@ internal static class CapabilityAnalyzer
             ParentNamespace = namespaceName,
             IsStatic = isStatic,
             ThreadMode = threadMode,  // Extracted from factory method (Create vs CreateStateful vs CreatePerSession)
+            RequiresPermission = requiresPermission,
 
             // Context and conditionals (feature parity with Functions and Skills!)
             ContextTypeName = contextTypeName,
@@ -458,11 +467,17 @@ internal static class CapabilityAnalyzer
     }
 
     /// <summary>
-    /// Extracts conditional expression from [ConditionalFunction] attribute.
+    /// Extracts conditional expression from [ConditionalFunction], [ConditionalSkill], or [ConditionalSubAgent] attribute.
+    /// All three attribute types use the same PropertyExpression parameter.
     /// </summary>
     private static string? GetConditionalExpression(List<AttributeSyntax> attrs)
     {
-        var conditionalAttr = attrs.FirstOrDefault(a => a.Name.ToString().Contains("ConditionalFunction"));
+        // Look for any of the conditional attributes (ConditionalFunction, ConditionalSkill, ConditionalSubAgent)
+        var conditionalAttr = attrs.FirstOrDefault(a =>
+            a.Name.ToString().Contains("ConditionalFunction") ||
+            a.Name.ToString().Contains("ConditionalSkill") ||
+            a.Name.ToString().Contains("ConditionalSubAgent"));
+
         if (conditionalAttr != null)
         {
             var arg = conditionalAttr.ArgumentList?.Arguments.FirstOrDefault();

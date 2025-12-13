@@ -271,8 +271,8 @@ $@"HPDAIFunctionFactory.Create(
         {
             foreach (var param in Parameters.Where(p => p.HasDynamicDescription))
             {
-                // Convert {context.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
-                var interpolatedDescription = param.Description.Replace("{context.", "{typedMetadata.");
+                // Convert {metadata.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
+                var interpolatedDescription = param.Description.Replace("{metadata.", "{typedMetadata.");
 
                 sb.AppendLine($"    private static string Resolve{Name}Parameter{param.Name}Description(IPluginMetadata? context)");
                 sb.AppendLine("    {");
@@ -292,7 +292,7 @@ $@"HPDAIFunctionFactory.Create(
                 {
                     expression = System.Text.RegularExpressions.Regex.Replace(
                         expression,
-                        @"(?<!typedMetadata\.)(?<!context\.)(\b[A-Z][a-zA-Z0-9_]*\b)",
+                        @"(?<!typedMetadata\.)(?<!metadata\.)(\b[A-Z][a-zA-Z0-9_]*\b)",
                         "typedMetadata.$1"
                     );
                 }
@@ -354,7 +354,7 @@ internal class ParameterInfo
     /// <summary>
     /// Whether this parameter has dynamic description templates.
     /// </summary>
-    public bool HasDynamicDescription => Description.Contains("{context.");
+    public bool HasDynamicDescription => Description.Contains("{metadata.");
 
     /// <summary>
     /// Whether this parameter should be serialized (not special framework types).

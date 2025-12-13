@@ -19,7 +19,7 @@ internal abstract class BaseCapability : ICapability
 
     /// <summary>
     /// The description of the capability shown to the LLM.
-    /// Can contain dynamic templates like "{context.PropertyName}".
+    /// Can contain dynamic templates like "{metadata.PropertyName}".
     /// </summary>
     public string Description { get; set; } = string.Empty;
 
@@ -48,8 +48,8 @@ internal abstract class BaseCapability : ICapability
     public string? ContextTypeName { get; set; }
 
     /// <summary>
-    /// Conditional expression from [ConditionalFunction] attribute (null if always visible).
-    /// Example: "context.IsPremiumUser" or "context.FeatureFlags.Contains(\"advanced\")"
+    /// Conditional expression from [ConditionalFunction], [ConditionalSkill], or [ConditionalSubAgent] attribute (null if always visible).
+    /// Example: "IsPremiumUser" or "FeatureFlags.Contains(\"advanced\")"
     /// </summary>
     public string? ConditionalExpression { get; set; }
 
@@ -59,10 +59,10 @@ internal abstract class BaseCapability : ICapability
     public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpression);
 
     /// <summary>
-    /// Whether this capability has a dynamic description that uses context interpolation.
-    /// Example: "Analyze {context.ProjectType} code"
+    /// Whether this capability has a dynamic description that uses metadata interpolation.
+    /// Example: "Analyze {metadata.ProjectType} code"
     /// </summary>
-    public bool HasDynamicDescription => Description.Contains("{context.");
+    public bool HasDynamicDescription => Description.Contains("{metadata.");
 
     /// <summary>
     /// Whether this capability uses the generic AIFunction&lt;TMetadata&gt; attribute.
@@ -186,8 +186,8 @@ internal abstract class BaseCapability : ICapability
         // Generate dynamic description resolver if needed
         if (HasDynamicDescription && HasTypedMetadata)
         {
-            // Convert {context.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
-            var interpolatedDescription = Description.Replace("{context.", "{typedMetadata.");
+            // Convert {metadata.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
+            var interpolatedDescription = Description.Replace("{metadata.", "{typedMetadata.");
 
             sb.AppendLine($"    private static string Resolve{Name}Description(IPluginMetadata? context)");
             sb.AppendLine("    {");
@@ -209,10 +209,10 @@ internal abstract class BaseCapability : ICapability
                 // Use regex to find property names (identifiers starting with uppercase letter)
                 // and prefix them with "typedMetadata." if they're not already prefixed
                 // Matches: word boundary + uppercase letter + word characters
-                // Negative lookbehind: not preceded by "typedMetadata." or "context."
+                // Negative lookbehind: not preceded by "typedMetadata." or "metadata."
                 expression = System.Text.RegularExpressions.Regex.Replace(
                     expression,
-                    @"(?<!typedMetadata\.)(?<!context\.)(\b[A-Z][a-zA-Z0-9_]*\b)",
+                    @"(?<!typedMetadata\.)(?<!metadata\.)(\b[A-Z][a-zA-Z0-9_]*\b)",
                     "typedMetadata.$1"
                 );
             }

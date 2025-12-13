@@ -22,6 +22,12 @@ internal class SkillCapability : BaseCapability
     public string MethodName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whether the skill is marked with [RequiresPermission].
+    /// When true, invoking this skill requires user approval.
+    /// </summary>
+    public bool RequiresPermission { get; set; }
+
+    /// <summary>
     /// Skill options extracted from Skill builder
     /// </summary>
     public SkillOptionsInfo Options { get; set; } = new();
@@ -91,6 +97,7 @@ internal class SkillCapability : BaseCapability
         props["ParentSkillContainer"] = ParentPluginName;
         props["ReferencedFunctions"] = ResolvedFunctionReferences.ToArray();
         props["ReferencedPlugins"] = ResolvedPluginTypes.ToArray();
+        props["RequiresPermission"] = RequiresPermission;
 
         // Dual-context support (CRITICAL for runtime compatibility)
         if (!string.IsNullOrEmpty(SystemPrompt))

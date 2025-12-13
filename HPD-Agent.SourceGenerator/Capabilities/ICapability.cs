@@ -38,8 +38,8 @@ internal interface ICapability
     bool RequiresInstance { get; }
 
     /// <summary>
-    /// Indicates whether this capability has a dynamic description that uses context interpolation.
-    /// Example: "Analyze {context.ProjectType} code"
+    /// Indicates whether this capability has a dynamic description that uses metadata interpolation.
+    /// Example: "Analyze {metadata.ProjectType} code"
     /// </summary>
     bool HasDynamicDescription { get; }
 
@@ -77,8 +77,8 @@ internal interface ICapability
     /// <summary>
     /// Generates context resolver methods for dynamic descriptions and conditional evaluation.
     /// This enables all capability types (Functions, Skills, SubAgents) to use:
-    /// - Dynamic descriptions with context interpolation (e.g., "{context.PropertyName}")
-    /// - Conditional visibility based on context (e.g., [ConditionalFunction("context.IsEnabled")])
+    /// - Dynamic descriptions with metadata interpolation (e.g., "{metadata.PropertyName}")
+    /// - Conditional visibility based on metadata (e.g., [ConditionalFunction], [ConditionalSkill], [ConditionalSubAgent])
     /// Returns empty string if no resolvers are needed.
     /// </summary>
     /// <returns>Generated C# code for resolver methods, or empty string if not needed.</returns>

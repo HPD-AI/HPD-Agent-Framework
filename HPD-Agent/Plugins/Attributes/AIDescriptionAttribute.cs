@@ -1,15 +1,15 @@
 using System;
 
 /// <summary>
-/// Provides dynamic descriptions for AI functions and parameters with context template support.
+/// Provides dynamic descriptions for AI functions and parameters with metadata template support.
 /// Replaces System.ComponentModel.DescriptionAttribute for all AI-facing metadata.
-/// Supports templates like "Search using {context.ProviderName}".
+/// Supports templates like "Search using {metadata.ProviderName}".
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Parameter, AllowMultiple = false)]
 public sealed class AIDescriptionAttribute : Attribute
 {
     /// <summary>
-    /// The description template, which may contain context expressions like {context.PropertyName}.
+    /// The description template, which may contain metadata expressions like {metadata.PropertyName}.
     /// </summary>
     public string Description { get; }
     

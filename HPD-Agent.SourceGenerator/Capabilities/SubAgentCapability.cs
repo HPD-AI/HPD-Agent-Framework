@@ -39,6 +39,13 @@ internal class SubAgentCapability : BaseCapability
     /// </summary>
     public string ThreadMode { get; set; } = "Stateless";
 
+    /// <summary>
+    /// Whether the sub-agent requires permission to invoke.
+    /// Defaults to true since delegating to another agent is a significant action.
+    /// Can be overridden with [RequiresPermission] attribute (absence = default true).
+    /// </summary>
+    public bool RequiresPermission { get; set; } = true;
+
     // ========== Code Generation ==========
 
     /// <summary>
@@ -188,7 +195,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("    {");
         sb.AppendLine($"        Name = \"{SubAgentName}\",");
         sb.AppendLine($"        Description = \"{EscapeString(Description)}\",");
-        sb.AppendLine("        RequiresPermission = true, // Sub-agent invocations require permission");
+        sb.AppendLine($"        RequiresPermission = {RequiresPermission.ToString().ToLower()},");
         sb.AppendLine("        SchemaProvider = () =>");
         sb.AppendLine("        {");
         sb.AppendLine("            var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions { IncludeSchemaKeyword = false };");
@@ -237,6 +244,7 @@ internal class SubAgentCapability : BaseCapability
         props["IsSubAgent"] = true;
         props["ThreadMode"] = ThreadMode;
         props["PluginName"] = ParentPluginName;
+        props["RequiresPermission"] = RequiresPermission;
 
         return props;
     }

@@ -24,11 +24,11 @@ public class WebSearchPlugin
     // === Multi-Provider Functions (include provider parameter) ===
     
     [AIFunction<WebSearchContext>]
-    [AIDescription("Search the web using {context.DefaultProvider}")]
+    [AIDescription("Search the web using {metadata.DefaultProvider}")]
     public async Task<string> WebSearch(
         [AIDescription("Search query")] string query,
         [AIDescription("Number of results to return")] int count = 5,
-        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("Provider: {metadata.ConfiguredProviders} (optional, defaults to {metadata.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Search query cannot be empty", nameof(query));
@@ -43,7 +43,7 @@ public class WebSearchPlugin
     public async Task<string> NewsSearch(
         [AIDescription("News search query")] string query,
         [AIDescription("Time range: day, week, month")] string timeRange = "week",
-        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("Provider: {metadata.ConfiguredProviders} (optional, defaults to {metadata.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("News query cannot be empty", nameof(query));
@@ -59,7 +59,7 @@ public class WebSearchPlugin
     public async Task<string> VideoSearch(
         [AIDescription("Video search query")] string query,
         [AIDescription("Number of videos to return")] int count = 5,
-        [AIDescription("Provider: {context.ConfiguredProviders} (optional, defaults to {context.DefaultProvider})")] 
+        [AIDescription("Provider: {metadata.ConfiguredProviders} (optional, defaults to {metadata.DefaultProvider})")] 
         string? provider = null)
     {
         if (string.IsNullOrWhiteSpace(query)) throw new ArgumentException("Video query cannot be empty", nameof(query));
