@@ -96,8 +96,9 @@ public class Phase5DocumentLinkingTests : IDisposable
         var skill = SkillFactory.Create(
             "TestSkill",
             "Test skill with document upload",
-            "Instructions",
-            new SkillOptions()
+            functionResult: "Skill activated",
+            systemPrompt: "Instructions",
+            options: new SkillOptions()
                 .AddDocumentFromFile(testDocPath, "Test upload document", "upload-test"),
             "MockPlugin.TestFunction"
         );
@@ -411,8 +412,9 @@ public class Phase5DocumentLinkingTests : IDisposable
             return SkillFactory.Create(
                 "TestSkill",
                 "Test skill with document",
-                "Instructions",
-                new SkillOptions()
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
+                options: new SkillOptions()
                     .AddDocumentFromFile(_documentPath, "Test document", "test-doc"),
                 "MockPlugin.TestFunction"
             );

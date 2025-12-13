@@ -336,7 +336,7 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(loadedThread.ExecutionState);
         Assert.Equal(0, loadedThread.ExecutionState.Iteration);
         var CollapsingState = loadedThread.ExecutionState.MiddlewareState.Collapsing;
-        Assert.True(CollapsingState == null || CollapsingState.ExpandedPlugins.Count == 0);
+        Assert.True(CollapsingState == null || CollapsingState.ExpandedContainers.Count == 0);
     }
 
     [Fact]

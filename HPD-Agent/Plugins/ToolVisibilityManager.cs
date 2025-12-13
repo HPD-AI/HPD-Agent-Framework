@@ -43,6 +43,39 @@ public class ToolVisibilityManager
     /// are hidden until their parent skill is expanded. This prevents "orphan" functions
     /// from appearing when the skill class Collapse is not expanded.
     /// </summary>
+    /// <param name="allTools">All available tools</param>
+    /// <param name="expandedContainers">Unified set of expanded containers (both plugins and skills)</param>
+    public List<AIFunction> GetToolsForAgentTurn(
+        List<AIFunction> allTools,
+        ImmutableHashSet<string> expandedContainers)
+    {
+        // Use the same set for both plugins and skills (unified container tracking)
+        return GetToolsForAgentTurn(allTools, expandedContainers, expandedContainers);
+    }
+
+    /// <summary>
+    /// Gets tools visible for the current agent turn based on expansion state.
+    /// Handles plugin containers and type-safe Skill containers.
+    ///
+    /// Ordering strategy:
+    /// 1. Collapse containers (skill class containers with [Collapse])
+    /// 2. Plugin containers (Collapse plugins with [Collapse])
+    /// 3. Skill containers (type-safe Skills with IsContainer=true)
+    /// 4. Non-Collapsed functions (always visible)
+    /// 5. Expanded plugin functions
+    /// 6. Expanded skill functions
+    ///
+    /// Key insight: Functions in plugins that are ONLY referenced by Collapsed skills
+    /// are hidden until their parent skill is expanded. This prevents "orphan" functions
+    /// from appearing when the skill class Collapse is not expanded.
+    /// </summary>
+    /// <param name="allTools">All available tools</param>
+    /// <param name="expandedCollapsedPluginContainers">Set of expanded plugin containers</param>
+    /// <param name="expandedSkillContainers">Set of expanded skill containers</param>
+    /// <remarks>
+    /// This overload is maintained for backward compatibility. Prefer using the single-parameter
+    /// overload with unified ExpandedContainers.
+    /// </remarks>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
         ImmutableHashSet<string> expandedCollapsedPluginContainers,

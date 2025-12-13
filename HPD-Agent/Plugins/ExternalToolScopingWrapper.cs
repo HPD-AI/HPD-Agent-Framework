@@ -86,7 +86,12 @@ public static class ExternalToolCollapsingWrapper
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
                     ["SourceType"] = "MCP",
-                    ["MCPServerName"] = serverName
+                    ["MCPServerName"] = serverName,
+                    // Dual-context architecture: FunctionResult for ephemeral, SystemPrompt for persistent
+                    ["FunctionResult"] = FunctionResult,
+                    ["SystemPrompt"] = SystemPrompt,
+                    // Legacy key for backward compatibility with ContainerMiddleware
+                    ["Instructions"] = SystemPrompt
                 }
             });
 
@@ -236,7 +241,12 @@ public static class ExternalToolCollapsingWrapper
                     ["FrontendPluginName"] = pluginName, // Original name without prefix
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
-                    ["SourceType"] = "FrontendPlugin"
+                    ["SourceType"] = "FrontendPlugin",
+                    // Dual-context architecture: FunctionResult for ephemeral, SystemPrompt for persistent
+                    ["FunctionResult"] = FunctionResult,
+                    ["SystemPrompt"] = SystemPrompt,
+                    // Legacy key for backward compatibility with ContainerMiddleware
+                    ["Instructions"] = SystemPrompt
                 }
             });
 

@@ -83,7 +83,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromFile(""./docs/guide.md"", ""User documentation guide""));
         }
@@ -128,7 +129,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromFile(""./docs/file.pdf"", ""Important document"", ""custom-id""));
         }
@@ -172,7 +174,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromFile(""./docs/Debugging_Workflow.md"", ""Debugging guide""));
         }
@@ -219,7 +222,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromUrl(
                         ""https://docs.company.com/sops/financial-health.md"",
@@ -266,7 +270,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromUrl(
                         ""https://internal.company.com/policies/Data_Privacy_Policy.pdf"",
@@ -312,7 +317,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""FinancialAnalysis"",
                 ""Financial analysis skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromFile(
                         ""./docs/accounting-standards.pdf"",
@@ -377,7 +383,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocumentFromUrl(
                         ""https://example.com"",
@@ -426,7 +433,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocument(""existing-doc-id"", ""Custom description for existing doc""));
         }
@@ -471,7 +479,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""TestSkill"",
                 ""Test skill"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocument(""doc-id""));
         }
@@ -514,7 +523,8 @@ namespace TestPlugins
             return SkillFactory.Create(
                 ""ComplexSkill"",
                 ""Skill with multiple document types"",
-                ""Instructions"",
+                functionResult: ""Activated"",
+                systemPrompt: ""Instructions"",
                 options: new SkillOptions()
                     .AddDocument(""existing-doc"", ""Reference to existing"")
                     .AddDocumentFromFile(""./local/file.pdf"", ""Local file"")

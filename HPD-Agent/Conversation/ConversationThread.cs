@@ -358,9 +358,27 @@ public sealed class ConversationThread
 /// </remarks>
 public record ExecutionCheckpoint
 {
+    /// <summary>
+    /// Gets the identifier of the conversation thread this checkpoint represents.
+    /// </summary>
     public required string ThreadId { get; init; }
+
+    /// <summary>
+    /// Gets the ordered list of chat messages captured in the checkpoint.
+    /// May be empty but is never <c>null</c> for a valid checkpoint.
+    /// </summary>
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
+
+    /// <summary>
+    /// Gets the conversation metadata persisted with this checkpoint.
+    /// Keys are metadata names and values are the serialized objects stored.
+    /// </summary>
     public required Dictionary<string, object> Metadata { get; init; }
+
+    /// <summary>
+    /// Gets optional persistent state maintained by middleware components.
+    /// This is a nullable dictionary of string keys and string values.
+    /// </summary>
     public Dictionary<string, string>? MiddlewarePersistentState { get; init; }
 
     /// <summary>
@@ -369,9 +387,25 @@ public record ExecutionCheckpoint
     /// </summary>
     public required AgentLoopState ExecutionState { get; init; }
 
+    /// <summary>
+    /// Gets the UTC date/time when this checkpoint was created.
+    /// </summary>
     public required DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// Gets the UTC date/time of the last activity recorded in this checkpoint.
+    /// </summary>
     public required DateTime LastActivity { get; init; }
+
+    /// <summary>
+    /// Gets an optional service-specific thread identifier. May be <c>null</c>.
+    /// </summary>
     public string? ServiceThreadId { get; init; }
+
+    /// <summary>
+    /// Gets an optional conversation identifier associated with this checkpoint.
+    /// May be <c>null</c> when not applicable.
+    /// </summary>
     public string? ConversationId { get; init; }
 
     // Branch tracking removed - application-level concern

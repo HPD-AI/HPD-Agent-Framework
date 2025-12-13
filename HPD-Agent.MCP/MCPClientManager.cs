@@ -26,17 +26,17 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from the specified manifest file
     /// </summary>
     /// <param name="manifestPath">Path to the MCP manifest file</param>
-    /// <param name=" enablecollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
+    /// <param name="enableCollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestAsync(
         string manifestPath,
-        bool  enablecollapsing = false,
+        bool enableCollapsing = false,
         int maxFunctionNamesInDescription = 10,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading MCP tools from manifest: {ManifestPath} (Collapsing: {Collapsing})",
-            manifestPath,  enablecollapsing);
+            manifestPath, enableCollapsing);
 
         var manifest = await LoadManifestAsync(manifestPath, cancellationToken);
         var allTools = new List<AIFunction>();
@@ -52,17 +52,17 @@ public class MCPClientManager : IDisposable
 
                 // Determine Collapsing for this specific server
                 // Per-server setting takes precedence over global setting
-                var  enablecollapsingForThisServer = serverConfig. enablecollapsing ??  enablecollapsing;
+                var enableCollapsingForThisServer = serverConfig.EnableCollapsing ?? enableCollapsing;
 
-                if ( enablecollapsingForThisServer && tools.Count > 0)
+                if (enableCollapsingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
                     var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
-                        FunctionResult: null,
-                       SystemPrompt: null,
+                        FunctionResult: serverConfig.FunctionResult,
+                        SystemPrompt: serverConfig.SystemPrompt,
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);
@@ -102,16 +102,16 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from manifest content
     /// </summary>
     /// <param name="manifestContent">JSON content of the MCP manifest</param>
-    /// <param name=" enablecollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
+    /// <param name="enableCollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestContentAsync(
         string manifestContent,
-        bool  enablecollapsing = false,
+        bool enableCollapsing = false,
         int maxFunctionNamesInDescription = 10,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Loading MCP tools from manifest content (Collapsing: {Collapsing})",  enablecollapsing);
+        _logger.LogInformation("Loading MCP tools from manifest content (Collapsing: {Collapsing})", enableCollapsing);
 
         var manifest = ParseManifest(manifestContent);
         var allTools = new List<AIFunction>();
@@ -127,17 +127,17 @@ public class MCPClientManager : IDisposable
 
                 // Determine Collapsing for this specific server
                 // Per-server setting takes precedence over global setting
-                var  enablecollapsingForThisServer = serverConfig. enablecollapsing ??  enablecollapsing;
+                var enableCollapsingForThisServer = serverConfig.EnableCollapsing ?? enableCollapsing;
 
-                if ( enablecollapsingForThisServer && tools.Count > 0)
+                if (enableCollapsingForThisServer && tools.Count > 0)
                 {
                     // Wrap tools with container for this server
                     var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapMCPServerTools(
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
-                        FunctionResult: null,
-                       SystemPrompt: null,
+                        FunctionResult: serverConfig.FunctionResult,
+                        SystemPrompt: serverConfig.SystemPrompt,
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);

@@ -81,7 +81,7 @@ public class ContainerMiddlewareTests
 
         // State with expanded plugin
         var state = CreateEmptyState();
-        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
+        var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestPlugin");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState) };
 
         var context = CreateContext(state: state);
@@ -214,7 +214,7 @@ public class ContainerMiddlewareTests
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
-        Assert.Contains("FinancialPlugin", pendingState.MiddlewareState.Collapsing?.ExpandedPlugins ?? ImmutableHashSet<string>.Empty);
+        Assert.Contains("FinancialPlugin", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -243,7 +243,7 @@ public class ContainerMiddlewareTests
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
-        Assert.Contains("TestSkill", pendingState.MiddlewareState.Collapsing?.ExpandedSkills ?? ImmutableHashSet<string>.Empty);
+        Assert.Contains("TestSkill", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -272,8 +272,8 @@ public class ContainerMiddlewareTests
         // Check instructions in Collapsing state
         var CollapsingState = pendingState.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
-        Assert.True(CollapsingState!.ActiveSkillInstructions.ContainsKey("MetricSkill"));
-        Assert.Equal(instructions, CollapsingState.ActiveSkillInstructions["MetricSkill"]);
+        Assert.True(CollapsingState!.ActiveContainerInstructions.ContainsKey("MetricSkill"));
+        Assert.Equal(instructions, CollapsingState.ActiveContainerInstructions["MetricSkill"].SystemPrompt);
     }
 
     [Fact]
@@ -329,9 +329,9 @@ public class ContainerMiddlewareTests
 
         var CollapsingState = pendingState.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
-        Assert.Contains("Plugin1", CollapsingState!.ExpandedPlugins);
-        Assert.Contains("Plugin2", CollapsingState.ExpandedPlugins);
-        Assert.Contains("Skill1", CollapsingState.ExpandedSkills);
+        Assert.Contains("Plugin1", CollapsingState!.ExpandedContainers);
+        Assert.Contains("Plugin2", CollapsingState.ExpandedContainers);
+        Assert.Contains("Skill1", CollapsingState.ExpandedContainers);
     }
 
     //      
@@ -376,53 +376,54 @@ public class ContainerMiddlewareTests
         Assert.Contains("Subtract", visibleIter2);
     }
 
-    //      
+    //
     // Collapsing STATE DATA TESTS
-    //      
+    //
 
     [Fact]
-    public void CollapsingStateData_WithExpandedPlugin_AddsToSet()
+    public void CollapsingStateData_WithExpandedContainer_AddsToSet()
     {
         var state = new CollapsingStateData();
 
-        var updated = state.WithExpandedPlugin("Plugin1");
+        var updated = state.WithExpandedContainer("Plugin1");
 
-        Assert.Contains("Plugin1", updated.ExpandedPlugins);
-        Assert.DoesNotContain("Plugin1", state.ExpandedPlugins); // Original unchanged
+        Assert.Contains("Plugin1", updated.ExpandedContainers);
+        Assert.DoesNotContain("Plugin1", state.ExpandedContainers); // Original unchanged
     }
 
     [Fact]
-    public void CollapsingStateData_WithExpandedSkill_AddsToSet()
+    public void CollapsingStateData_WithExpandedContainer_AddsSkillToSet()
     {
         var state = new CollapsingStateData();
 
-        var updated = state.WithExpandedSkill("Skill1");
+        var updated = state.WithExpandedContainer("Skill1");
 
-        Assert.Contains("Skill1", updated.ExpandedSkills);
+        Assert.Contains("Skill1", updated.ExpandedContainers);
     }
 
     [Fact]
-    public void CollapsingStateData_WithSkillInstructions_AddsToDict()
+    public void CollapsingStateData_WithContainerInstructions_AddsToDict()
     {
         var state = new CollapsingStateData();
 
-        var updated = state.WithSkillInstructions("Skill1", "Some instructions");
+        var updated = state.WithContainerInstructions("Skill1", new ContainerInstructionSet("Result", "Some instructions"));
 
-        Assert.True(updated.ActiveSkillInstructions.ContainsKey("Skill1"));
-        Assert.Equal("Some instructions", updated.ActiveSkillInstructions["Skill1"]);
+        Assert.True(updated.ActiveContainerInstructions.ContainsKey("Skill1"));
+        Assert.Equal("Some instructions", updated.ActiveContainerInstructions["Skill1"].SystemPrompt);
+        Assert.Equal("Result", updated.ActiveContainerInstructions["Skill1"].FunctionResult);
     }
 
     [Fact]
-    public void CollapsingStateData_ClearSkillInstructions_EmptiesDict()
+    public void CollapsingStateData_ClearContainerInstructions_EmptiesDict()
     {
         var state = new CollapsingStateData()
-            .WithSkillInstructions("Skill1", "Instructions 1")
-            .WithSkillInstructions("Skill2", "Instructions 2");
+            .WithContainerInstructions("Skill1", new ContainerInstructionSet(null, "Instructions 1"))
+            .WithContainerInstructions("Skill2", new ContainerInstructionSet(null, "Instructions 2"));
 
-        var cleared = state.ClearSkillInstructions();
+        var cleared = state.ClearContainerInstructions();
 
-        Assert.Empty(cleared.ActiveSkillInstructions);
-        Assert.Equal(2, state.ActiveSkillInstructions.Count); // Original unchanged
+        Assert.Empty(cleared.ActiveContainerInstructions);
+        Assert.Equal(2, state.ActiveContainerInstructions.Count); // Original unchanged
     }
 
     //      

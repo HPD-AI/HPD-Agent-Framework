@@ -121,8 +121,7 @@ public class ContainerMiddleware : IAgentMiddleware
         // STEP 1: Filter tool visibility
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        var expandedPlugins = collapsingState.ExpandedPlugins;
-        var expandedSkills = collapsingState.ExpandedSkills;
+        var expandedContainers = collapsingState.ExpandedContainers;
 
         // Extract AIFunctions from tools (single-pass for performance)
         var aiFunctions = new List<AIFunction>(context.Options.Tools.Count);
@@ -134,11 +133,10 @@ public class ContainerMiddleware : IAgentMiddleware
             }
         }
 
-        // Apply visibility rules
+        // Apply visibility rules (unified container tracking)
         var visibleFunctions = _visibilityManager.GetToolsForAgentTurn(
             aiFunctions,
-            expandedPlugins,
-            expandedSkills);
+            expandedContainers);
 
         // Convert back to AITool list
         var visibleTools = new List<AITool>(visibleFunctions.Count);
@@ -156,18 +154,13 @@ public class ContainerMiddleware : IAgentMiddleware
         // STEP 2: InjectSystemPrompt for active containers
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        // UNIFIED: Use ActiveContainerInstructions (supports both plugins and skills)
+        // Use ActiveContainerInstructions (supports both plugins and skills)
         var activeContainers = collapsingState.ActiveContainerInstructions;
 
-        // FALLBACK: Legacy ActiveSkillInstructions for backward compatibility
-        var activeSkills = collapsingState.ActiveSkillInstructions;
-
-        if ((activeContainers.Any() || activeSkills.Any()) && context.Options != null)
+        if (activeContainers.Any() && context.Options != null)
         {
-            // Build rich container protocols section (unified approach)
-            var protocolsSection = activeContainers.Any()
-                ? BuildContainerProtocolsSection(activeContainers, context.Options)
-                : BuildSkillProtocolsSection(activeSkills, context.Options); // Legacy fallback
+            // Build rich container protocols section
+            var protocolsSection = BuildContainerProtocolsSection(activeContainers, context.Options);
 
             // Inject with proper formatting - append AFTER original instructions
             var currentInstructions = context.Options.Instructions ?? string.Empty;
@@ -200,11 +193,11 @@ public class ContainerMiddleware : IAgentMiddleware
         if (!_config.Enabled || context.ToolCalls.Count == 0)
             return Task.CompletedTask;
 
-        // Detect plugin and skill container expansions
-        var (pluginExpansions, skillExpansions, skillInstructions, containerInstructions) =
+        // Detect container expansions (unified for plugins and skills)
+        var (containerExpansions, containerInstructions) =
             DetectContainers(context.ToolCalls, context.Options?.Tools);
 
-        if (pluginExpansions.Count == 0 && skillExpansions.Count == 0)
+        if (containerExpansions.Count == 0)
             return Task.CompletedTask;
 
         // Update state with expanded containers
@@ -212,27 +205,17 @@ public class ContainerMiddleware : IAgentMiddleware
         {
             var collapsingState = state.MiddlewareState.Collapsing ?? new CollapsingStateData();
 
-            // Expand plugins
-            foreach (var plugin in pluginExpansions)
+            // Expand containers (unified - both plugins and skills)
+            foreach (var container in containerExpansions)
             {
-                collapsingState = collapsingState.WithExpandedPlugin(plugin);
+                collapsingState = collapsingState.WithExpandedContainer(container);
             }
 
-            // Expand skills
-            foreach (var skill in skillExpansions)
-            {
-                collapsingState = collapsingState.WithExpandedSkill(skill);
-            }
-
-            // Store unified container instructions (forSystemPrompt injection)
+            // Store container instructions (for SystemPrompt injection)
             foreach (var (containerName, instructions) in containerInstructions)
             {
                 collapsingState = collapsingState.WithContainerInstructions(containerName, instructions);
             }
-
-            // LEGACY: Maintain backward compatibility
-            // (WithExpandedContainer already updates ExpandedPlugins/ExpandedSkills)
-            // (WithContainerInstructions already updates ActiveSkillInstructions)
 
             return state with
             {
@@ -323,11 +306,7 @@ public class ContainerMiddleware : IAgentMiddleware
 
         var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
 
-        // Check both ActiveContainerInstructions and legacy ActiveSkillInstructions
-        var hasActiveContainers = collapsingState.ActiveContainerInstructions.Any();
-        var hasActiveSkills = collapsingState.ActiveSkillInstructions.Any();
-
-        if (!_config.PersistSystemPromptInjections && (hasActiveContainers || hasActiveSkills))
+        if (!_config.PersistSystemPromptInjections && collapsingState.ActiveContainerInstructions.Any())
         {
             // Clear instructions at end of message turn (NOT during iteration)
             // This prevents instructions from leaking across message turns
@@ -346,20 +325,16 @@ public class ContainerMiddleware : IAgentMiddleware
     //═════════════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Detects plugin and skill containers from tool calls.
-    /// Extracts both FunctionResult andSystemPrompt.
+    /// Detects containers from tool calls (unified for plugins and skills).
+    /// Extracts both FunctionResult and SystemPrompt.
     /// </summary>
     private static (
-        HashSet<string> plugins,
-        HashSet<string> skills,
-        Dictionary<string, string> instructions,
+        HashSet<string> containerExpansions,
         Dictionary<string, ContainerInstructionSet> containerInstructions)
         DetectContainers(IReadOnlyList<FunctionCallContent> toolCalls, IList<AITool>? tools)
     {
-        var pluginExpansions = new HashSet<string>();
-        var skillExpansions = new HashSet<string>();
-        var skillInstructions = new Dictionary<string, string>(); // Legacy
-        var containerInstructions = new Dictionary<string, ContainerInstructionSet>(); // Unified
+        var containerExpansions = new HashSet<string>();
+        var containerInstructions = new Dictionary<string, ContainerInstructionSet>();
 
         foreach (var toolCall in toolCalls)
         {
@@ -378,55 +353,47 @@ public class ContainerMiddleware : IAgentMiddleware
             var isSkill = function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkillVal) == true
                 && isSkillVal is bool isS && isS;
 
+            // Determine container name
             string containerName;
             if (isSkill)
             {
-                // Skill container
+                // Skill container - use function name
                 containerName = function.Name ?? toolCall.Name;
-                skillExpansions.Add(containerName);
-
-                // Legacy: Extract instructions for backward compatibility
-                if (function.AdditionalProperties?.TryGetValue("Instructions", out var instructionsObj) == true
-                    && instructionsObj is string instructions
-                    && !string.IsNullOrWhiteSpace(instructions))
-                {
-                    skillInstructions[containerName] = instructions;
-                }
             }
             else
             {
-                // Plugin container
+                // Plugin container - use PluginName metadata or function name
                 containerName = function.AdditionalProperties
                     ?.TryGetValue("PluginName", out var pnVal) == true && pnVal is string pn
                     ? pn
                     : toolCall.Name;
-
-                pluginExpansions.Add(containerName);
             }
 
-            // UNIFIED: Extract both contexts from metadata
+            containerExpansions.Add(containerName);
+
+            // Extract both contexts from metadata
             var funcResultCtx = ExtractStringMetadata(function, "FunctionResult");
             var sysPromptCtx = ExtractStringMetadata(function, "SystemPrompt");
 
-            // Fallback to legacy "Instructions" for skills ifSystemPrompt not present
+            // Fallback to legacy "Instructions" for skills if SystemPrompt not present
             if (string.IsNullOrEmpty(sysPromptCtx) && isSkill)
             {
                 sysPromptCtx = ExtractStringMetadata(function, "Instructions");
             }
 
-            // Store unified instruction contexts
+            // Store instruction contexts
             if (funcResultCtx != null || sysPromptCtx != null)
             {
                 containerInstructions[containerName] = new ContainerInstructionSet(funcResultCtx, sysPromptCtx);
             }
         }
 
-        return (pluginExpansions, skillExpansions, skillInstructions, containerInstructions);
+        return (containerExpansions, containerInstructions);
     }
 
     /// <summary>
-    /// Builds a rich, formatted container protocols section with metadata (UNIFIED approach).
-    /// InjectsSystemPrompt for all containers (plugins + skills).
+    /// Builds a rich, formatted container protocols section with metadata.
+    /// Injects SystemPrompt for all containers (plugins + skills).
     /// </summary>
     private static string BuildContainerProtocolsSection(
         ImmutableDictionary<string, ContainerInstructionSet> activeContainers,
@@ -484,55 +451,6 @@ public class ContainerMiddleware : IAgentMiddleware
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Builds a rich, formatted skill protocols section with metadata (LEGACY approach).
-    /// Maintained for backward compatibility with ActiveSkillInstructions.
-    /// </summary>
-    private static string BuildSkillProtocolsSection(
-        ImmutableDictionary<string, string> activeSkills,
-        ChatOptions options)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("═════════════════════════════════════════════════════════════════════════════════════════════════");
-        sb.AppendLine("🔧 ACTIVE SKILL PROTOCOLS (Execute ALL steps completely)");
-        sb.AppendLine("═════════════════════════════════════════════════════════════════════════════════════════════════");
-        sb.AppendLine();
-
-        // Order alphabetically for consistency
-        foreach (var (skillName, instructions) in activeSkills.OrderBy(kvp => kvp.Key))
-        {
-            sb.AppendLine($"## {skillName}:");
-            sb.AppendLine();
-
-            // Find the skill's AIFunction to extract metadata
-            var skillFunction = options.Tools?.OfType<AIFunction>()
-                .FirstOrDefault(f => f.Name == skillName);
-
-            if (skillFunction != null)
-            {
-                // Add function list from metadata
-                if (skillFunction.AdditionalProperties?.TryGetValue("ReferencedFunctions", out var functionsObj) == true
-                    && functionsObj is string[] functions && functions.Length > 0)
-                {
-                    sb.AppendLine($"**Available functions:** {string.Join(", ", functions)}");
-                    sb.AppendLine();
-                }
-
-                // Add document information from metadata
-                var hasDocuments = BuildDocumentSection(skillFunction, sb);
-                if (hasDocuments)
-                {
-                    sb.AppendLine();
-                }
-            }
-
-            // Add the skill instructions
-            sb.AppendLine(instructions);
-            sb.AppendLine();
-        }
-
-        return sb.ToString();
-    }
 
     /// <summary>
     /// Builds the document section for a skill, showing available documents.

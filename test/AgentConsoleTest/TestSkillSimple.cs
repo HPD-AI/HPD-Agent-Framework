@@ -6,9 +6,10 @@ public class TestSkillSimple
     public Skill SimpleTest(SkillOptions? options = null)
     {
         return SkillFactory.Create(
-            "Test",
-            "Test skill",
-            "Test instructions",
+            name: "Test",
+            description: "Test skill",
+            functionResult: "Test instructions",
+            systemPrompt: null,
             "TestPlugin.TestFunction"
         );
     }

@@ -1,4 +1,3 @@
-
 // <summary>
 /// Represents a type-safe skill - a semantic grouping of functions with instructions.
 /// Created via SkillFactory.Create() and processed by source generator.
@@ -18,10 +17,18 @@ public class Skill
     public string Description { get; internal set; } = string.Empty;
 
     /// <summary>
-    /// Inline instructions shown after skill activation (shown in function response).
-    /// This is returned to the agent after it invokes the skill.
+    /// Instructions returned as FUNCTION RESULT when skill is activated.
+    /// Visible to LLM once, as contextual acknowledgment.
+    /// Use for: Status messages, operation lists, dynamic feedback.
     /// </summary>
-    public string? Instructions { get; internal set; }
+    public string? FunctionResult { get; internal set; }
+
+    /// <summary>
+    /// Instructions injected into SYSTEM PROMPT persistently.
+    /// Visible to LLM on every iteration after activation.
+    /// Use for: Core rules, safety guidelines, best practices, permanent context.
+    /// </summary>
+    public string? SystemPrompt { get; internal set; }
 
     /// <summary>
     /// String-based references to functions or skills in "PluginName.FunctionName" format.

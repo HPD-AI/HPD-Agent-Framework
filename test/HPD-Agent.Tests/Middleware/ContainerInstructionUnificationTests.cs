@@ -355,52 +355,27 @@ Use `decimal` type for precision.";
 
     #endregion
 
-    #region Backward Compatibility Tests
+    #region Unified Container Tests
 
     [Fact]
-    public async Task LegacySkillInstructions_StillWork()
-    {
-        // Arrange
-        var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Legacy trading skill instructions");
-        var context = CreateContextWithLegacySkills(activeSkills);
-
-        // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
-
-        // Assert - Legacy skill instructions should still be injected
-        Assert.Contains("🔧 ACTIVE SKILL PROTOCOLS", context.Options!.Instructions!);
-        Assert.Contains("trading", context.Options.Instructions);
-        Assert.Contains("Legacy trading skill instructions", context.Options.Instructions);
-    }
-
-    [Fact]
-    public async Task UnifiedContainers_TakePrecedenceOverLegacySkills()
+    public async Task UnifiedContainers_InjectSystemPromptOnly()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
 
-        // Mix of new unified containers and legacy skills
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
                 FunctionResult: null,
-               SystemPrompt: "Financial plugin rules"));
+                SystemPrompt: "Financial plugin rules"));
 
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("weather", "Legacy weather skill instructions");
-
-        var context = CreateContextWithBoth(containerInstructions, activeSkills);
+        var context = CreateContext(containerInstructions);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - Unified containers take precedence (fallback logic)
+        // Assert - Unified containers inject system prompt
         Assert.Contains("ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
         Assert.Contains("Financial plugin rules", context.Options.Instructions);
-
-        // Legacy skills are NOT injected when unified containers are present (OR logic, not AND)
-        Assert.DoesNotContain("ACTIVE SKILL PROTOCOLS", context.Options.Instructions);
     }
 
     #endregion
@@ -478,87 +453,6 @@ Use `decimal` type for precision.";
             {
                 MiddlewareState = new MiddlewareState().WithCollapsing(
                     new CollapsingStateData { ActiveContainerInstructions = containerInstructions })
-            };
-
-        // Create dummy tools for the context (required by ContainerMiddleware)
-        var dummyTool = AIFunctionFactory.Create(
-            () => "test",
-            name: "DummyFunction",
-            description: "Dummy");
-
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions
-            {
-                Instructions = "Base instructions",
-                Tools = new List<AITool> { dummyTool }
-            },
-            ToolCalls = Array.Empty<FunctionCallContent>(),
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(state);
-        return context;
-    }
-
-    private static AgentMiddlewareContext CreateContextWithLegacySkills(
-        ImmutableDictionary<string, string> activeSkills)
-    {
-        var state = AgentLoopState.Initial(
-            messages: new List<ChatMessage>(),
-            runId: "test-run-id",
-            conversationId: "test-conv-id",
-            agentName: "TestAgent")
-            with
-            {
-                MiddlewareState = new MiddlewareState().WithCollapsing(
-                    new CollapsingStateData { ActiveSkillInstructions = activeSkills })
-            };
-
-        // Create dummy tools for the context (required by ContainerMiddleware)
-        var dummyTool = AIFunctionFactory.Create(
-            () => "test",
-            name: "DummyFunction",
-            description: "Dummy");
-
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions
-            {
-                Instructions = "Base instructions",
-                Tools = new List<AITool> { dummyTool }
-            },
-            ToolCalls = Array.Empty<FunctionCallContent>(),
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(state);
-        return context;
-    }
-
-    private static AgentMiddlewareContext CreateContextWithBoth(
-        ImmutableDictionary<string, ContainerInstructionSet> containerInstructions,
-        ImmutableDictionary<string, string> activeSkills)
-    {
-        var state = AgentLoopState.Initial(
-            messages: new List<ChatMessage>(),
-            runId: "test-run-id",
-            conversationId: "test-conv-id",
-            agentName: "TestAgent")
-            with
-            {
-                MiddlewareState = new MiddlewareState().WithCollapsing(
-                    new CollapsingStateData
-                    {
-                        ActiveContainerInstructions = containerInstructions,
-                        ActiveSkillInstructions = activeSkills
-                    })
             };
 
         // Create dummy tools for the context (required by ContainerMiddleware)

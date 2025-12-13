@@ -42,8 +42,8 @@ public class MCPServerConfig
     /// When false, tools are exposed directly (e.g., filesystem_read_file).
     /// If not specified, defaults to false (no Collapsing).
     /// </summary>
-    [JsonPropertyName(" enablecollapsing")]
-    public bool?  enablecollapsing { get; set; }
+    [JsonPropertyName("enablecollapsing")]
+    public bool? EnableCollapsing { get; set; }
 
     /// <summary>
     /// Whether tools from this MCP server require user permission before execution.
@@ -53,6 +53,21 @@ public class MCPServerConfig
     /// </summary>
     [JsonPropertyName("requiresPermission")]
     public bool RequiresPermission { get; set; } = true;
+
+    /// <summary>
+    /// Ephemeral instructions returned in function result when container is expanded (one-time).
+    /// This is appended to the auto-generated expansion message.
+    /// Use for additional context like working directory, connection info, or tips.
+    /// </summary>
+    [JsonPropertyName("functionResult")]
+    public string? FunctionResult { get; set; }
+
+    /// <summary>
+    /// Persistent instructions injected into system prompt after expansion (every iteration).
+    /// Use for critical rules, workflow guidance, and constraints.
+    /// </summary>
+    [JsonPropertyName("systemPrompt")]
+    public string? SystemPrompt { get; set; }
 
     [JsonPropertyName("timeout")]
     public int TimeoutMs { get; set; } = 30000;
@@ -70,15 +85,26 @@ public class MCPServerConfig
     {
         if (string.IsNullOrWhiteSpace(Name))
             throw new ArgumentException("Server name is required", nameof(Name));
-            
+
         if (string.IsNullOrWhiteSpace(Command))
             throw new ArgumentException("Server command is required", nameof(Command));
-            
+
         if (TimeoutMs <= 0)
             throw new ArgumentException("Timeout must be positive", nameof(TimeoutMs));
-            
+
         if (RetryAttempts < 0)
             throw new ArgumentException("Retry attempts cannot be negative", nameof(RetryAttempts));
+
+        // Warn if instructions are provided but collapsing is disabled
+        // (instructions only work when tools are grouped behind a container)
+        if (EnableCollapsing == false && (!string.IsNullOrWhiteSpace(FunctionResult) || !string.IsNullOrWhiteSpace(SystemPrompt)))
+        {
+            throw new ArgumentException(
+                $"Server '{Name}' has 'functionResult' or 'systemPrompt' but 'enablecollapsing' is false. " +
+                "Instructions are only used when collapsing is enabled (tools are grouped behind a container). " +
+                "Either set 'enablecollapsing: true' or remove the instructions.",
+                nameof(EnableCollapsing));
+        }
     }
 }
 

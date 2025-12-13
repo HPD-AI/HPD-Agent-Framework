@@ -409,8 +409,12 @@ public class FrontendToolMiddleware : IAgentMiddleware
     /// </summary>
     private static AIFunction ConvertSkillToAIFunction(FrontendSkillDefinition skill, string pluginName)
     {
-        // Build a return message with the skill instructions
-        var returnMessage = $"Skill '{skill.Name}' activated.\n\n{skill.Instructions}";
+        // Build a return message with the FunctionResult (ephemeral, one-time)
+        var returnMessage = $"Skill '{skill.Name}' activated.";
+        if (!string.IsNullOrWhiteSpace(skill.FunctionResult))
+        {
+            returnMessage += $"\n\n{skill.FunctionResult}";
+        }
 
         // Build document references for visibility manager (uses "frontend:" prefix)
         var documentReferences = Array.Empty<string>();
@@ -471,7 +475,11 @@ public class FrontendToolMiddleware : IAgentMiddleware
                     ["IsFrontendSkill"] = true,
                     ["FrontendPluginName"] = pluginName,
                     ["SourceType"] = "FrontendPlugin",
-                    ["Instructions"] = skill.Instructions,
+                    // Dual-context architecture: FunctionResult for ephemeral, SystemPrompt for persistent
+                    ["FunctionResult"] = skill.FunctionResult,
+                    ["SystemPrompt"] = skill.SystemPrompt,
+                    // Legacy key for backward compatibility with ContainerMiddleware
+                    ["Instructions"] = skill.SystemPrompt,
                     // These are checked by ToolVisibilityManager.HasDocuments()
                     ["DocumentReferences"] = documentReferences,
                     // These are used by ToolVisibilityManager for visibility rules

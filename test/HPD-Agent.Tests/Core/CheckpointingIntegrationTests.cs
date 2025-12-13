@@ -108,7 +108,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         var thread = new ConversationThread();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var CollapsingState = new CollapsingStateData().WithExpandedPlugin("TestPlugin");
+        var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestPlugin");
         var state = AgentLoopState.Initial(
             await thread.GetMessagesAsync(),
             "run-123",

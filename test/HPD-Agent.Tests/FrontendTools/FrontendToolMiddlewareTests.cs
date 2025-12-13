@@ -370,7 +370,7 @@ public class FrontendToolMiddlewareTests
         var skill = new FrontendSkillDefinition(
             Name: "CheckoutWorkflow",
             Description: "Guides through checkout process",
-            Instructions: "1. Verify cart\n2. Get payment\n3. Confirm order",
+            SystemPrompt: "1. Verify cart\n2. Get payment\n3. Confirm order",
             References: new[] { new FrontendSkillReference("AddToCart") }
         );
 
@@ -406,7 +406,7 @@ public class FrontendToolMiddlewareTests
         var skill = new FrontendSkillDefinition(
             Name: "CheckoutWorkflow",
             Description: "Guides through checkout process",
-            Instructions: "1. Verify cart\n2. Get payment\n3. Confirm order"
+            SystemPrompt: "1. Verify cart\n2. Get payment\n3. Confirm order"
         );
 
         var plugin = new FrontendPluginDefinition(
@@ -447,7 +447,7 @@ public class FrontendToolMiddlewareTests
         var skill = new FrontendSkillDefinition(
             Name: "CheckoutWorkflow",
             Description: "Guides through checkout process",
-            Instructions: "Follow these steps for checkout",
+            SystemPrompt: "Follow these steps for checkout",
             Documents: new[]
             {
                 new FrontendSkillDocument("checkout-guide", "Detailed checkout documentation", Content: "# Checkout Guide\n..."),
@@ -498,7 +498,7 @@ public class FrontendToolMiddlewareTests
         var skill = new FrontendSkillDefinition(
             Name: "CheckoutWorkflow",
             Description: "Guides through checkout process",
-            Instructions: "Follow these steps",
+            SystemPrompt: "Follow these steps",
             References: new[] { new FrontendSkillReference("NonExistentTool") }
         );
 
@@ -529,7 +529,7 @@ public class FrontendToolMiddlewareTests
         var skillWithCrossRef = new FrontendSkillDefinition(
             Name: "FullOrderWorkflow",
             Description: "Complete order workflow",
-            Instructions: "Use tools from both plugins",
+            SystemPrompt: "Use tools from both plugins",
             References: new[]
             {
                 new FrontendSkillReference("AddToCart"),  // Local tool
@@ -578,7 +578,7 @@ public class FrontendToolMiddlewareTests
         var skillWithBadRef = new FrontendSkillDefinition(
             Name: "BadWorkflow",
             Description: "Workflow with invalid reference",
-            Instructions: "This will fail",
+            SystemPrompt: "This will fail",
             References: new[]
             {
                 new FrontendSkillReference("SomeTool", "NonExistentPlugin")
@@ -614,7 +614,7 @@ public class FrontendToolMiddlewareTests
         var skill = new FrontendSkillDefinition(
             Name: "QuickCheckout",
             Description: "Fast checkout process",
-            Instructions: "Use this for quick orders"
+            SystemPrompt: "Use this for quick orders"
         );
 
         var plugin = new FrontendPluginDefinition(
@@ -669,7 +669,7 @@ public class FrontendToolMiddlewareTests
             new FrontendSkillDefinition(
                 Name: "",
                 Description: "Description",
-                Instructions: "Instructions"
+                SystemPrompt: "Instructions"
             ).Validate());
     }
 
@@ -681,19 +681,20 @@ public class FrontendToolMiddlewareTests
             new FrontendSkillDefinition(
                 Name: "Skill",
                 Description: "",
-                Instructions: "Instructions"
+                SystemPrompt: "Instructions"
             ).Validate());
     }
 
     [Fact]
-    public void SkillDefinition_Validation_RequiresInstructions()
+    public void SkillDefinition_Validation_RequiresFunctionResultOrSystemPrompt()
     {
-        // Act & Assert
+        // Act & Assert - at least one of FunctionResult or SystemPrompt must be provided
         Assert.Throws<ArgumentException>(() =>
             new FrontendSkillDefinition(
                 Name: "Skill",
                 Description: "Description",
-                Instructions: ""
+                FunctionResult: null,
+                SystemPrompt: null
             ).Validate());
     }
 

@@ -8,13 +8,15 @@ namespace HPD.Agent.FrontendTools;
 /// </summary>
 /// <param name="Name">Skill name (becomes AIFunction name, shown to agent)</param>
 /// <param name="Description">Shown BEFORE activation - helps agent decide whether to use skill</param>
-/// <param name="Instructions">Shown AFTER activation - workflow guidance and best practices</param>
+/// <param name="FunctionResult">Ephemeral instructions returned in function result when skill is activated (one-time)</param>
+/// <param name="SystemPrompt">Persistent instructions injected into system prompt after activation (every iteration)</param>
 /// <param name="References">Tool references - these become visible when skill is activated</param>
 /// <param name="Documents">Optional documents the agent can read for detailed guidance</param>
 public record FrontendSkillDefinition(
     string Name,
     string Description,
-    string Instructions,
+    string? FunctionResult = null,
+    string? SystemPrompt = null,
     IReadOnlyList<FrontendSkillReference>? References = null,
     IReadOnlyList<FrontendSkillDocument>? Documents = null
 )
@@ -31,11 +33,12 @@ public record FrontendSkillDefinition(
         if (string.IsNullOrWhiteSpace(Description))
             throw new ArgumentException("Skill description is required", nameof(Description));
 
-        if (string.IsNullOrWhiteSpace(Instructions))
+        if (string.IsNullOrWhiteSpace(FunctionResult) && string.IsNullOrWhiteSpace(SystemPrompt))
             throw new ArgumentException(
-                "Skill instructions are required. They serve as workflow guidance " +
-                "and fallback when documents are not available.",
-                nameof(Instructions));
+                "At least one of FunctionResult or SystemPrompt must be provided. " +
+                "FunctionResult is shown once when skill is activated. " +
+                "SystemPrompt is injected into the system prompt persistently.",
+                nameof(FunctionResult));
 
         // Validate documents if present
         if (Documents != null)

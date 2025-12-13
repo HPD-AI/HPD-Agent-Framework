@@ -28,14 +28,16 @@ public class Phase1ApiTests
         var skill = SkillFactory.Create(
             name: "TestSkill",
             description: "Test description",
-            instructions: "Test instructions",
+            functionResult: "Skill activated",
+            systemPrompt: "Test instructions",
             "MockFileSystemPlugin.ReadFile"
         );
 
         // Assert
         Assert.Equal("TestSkill", skill.Name);
         Assert.Equal("Test description", skill.Description);
-        Assert.Equal("Test instructions", skill.Instructions);
+        Assert.Equal("Skill activated", skill.FunctionResult);
+        Assert.Equal("Test instructions", skill.SystemPrompt);
         Assert.Single(skill.References);
         Assert.NotNull(skill.Options);
     }
@@ -51,7 +53,8 @@ public class Phase1ApiTests
         var skill = SkillFactory.Create(
             name: "TestSkill",
             description: "Test description",
-            instructions: "Test instructions",
+            functionResult: "Skill activated",
+            systemPrompt: "Test instructions",
             options: options,
             "MockFileSystemPlugin.ReadFile",
             "MockDebugPlugin.GetStackTrace"
@@ -68,7 +71,7 @@ public class Phase1ApiTests
     {
         // Act & Assert
         Assert.Throws<ArgumentException>(() =>
-            SkillFactory.Create("", "Description", "Instructions"));
+            SkillFactory.Create("", "Description", "FunctionResult", "SystemPrompt"));
     }
 
     [Fact]
@@ -76,7 +79,15 @@ public class Phase1ApiTests
     {
         // Act & Assert
         Assert.Throws<ArgumentException>(() =>
-            SkillFactory.Create("Name", "", "Instructions"));
+            SkillFactory.Create("Name", "", "FunctionResult", "SystemPrompt"));
+    }
+
+    [Fact]
+    public void SkillFactory_Create_NoBothInstructions_ThrowsArgumentException()
+    {
+        // Act & Assert - At least one of FunctionResult or SystemPrompt must be provided
+        Assert.Throws<ArgumentException>(() =>
+            SkillFactory.Create("Name", "Description", null, null));
     }
 
     [Fact]
@@ -233,7 +244,7 @@ public class Phase1ApiTests
         [Skill]
         Skill TestMethod()
         {
-            return SkillFactory.Create("Test", "Test", "Test");
+            return SkillFactory.Create("Test", "Test", "FunctionResult", "SystemPrompt");
         }
 
         var skill = TestMethod();
@@ -246,7 +257,7 @@ public class Phase1ApiTests
         [Skill]
         Skill TestMethod()
         {
-            return SkillFactory.Create("Test", "Test", "Test");
+            return SkillFactory.Create("Test", "Test", "FunctionResult", "SystemPrompt");
         }
 
         var skill = TestMethod();
@@ -289,7 +300,7 @@ public class Phase1ApiTests
     public void Skill_InternalProperties_CanBeSet()
     {
         // Arrange
-        var skill = SkillFactory.Create("Test", "Test", "Test");
+        var skill = SkillFactory.Create("Test", "Test", "FunctionResult", "SystemPrompt");
 
         // Act
         skill.ResolvedFunctionReferences = new[] { "Plugin1.Func1", "Plugin2.Func2" };

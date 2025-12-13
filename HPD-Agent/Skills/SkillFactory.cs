@@ -5,35 +5,39 @@
 public static class SkillFactory
 {
     /// <summary>
-    /// Creates a skill with type-safe function/skill references
+    /// Creates a skill with type-safe function/skill references and dual-context instructions.
     /// </summary>
     /// <param name="name">Skill name (REQUIRED - becomes AIFunction name)</param>
     /// <param name="description">Description shown before activation (REQUIRED - becomes AIFunction description shown to agent in tools list)</param>
-    /// <param name="instructions">Instructions shown after activation</param>
+    /// <param name="functionResult">Instructions returned as function result when activated (ephemeral, one-time)</param>
+    /// <param name="systemPrompt">Instructions injected into system prompt (persistent, every iteration)</param>
     /// <param name="references">Function or skill references in "PluginName.FunctionName" format</param>
     /// <returns>Skill object processed by source generator</returns>
     public static Skill Create(
         string name,
         string description,
-        string instructions,
+        string? functionResult = null,
+        string? systemPrompt = null,
         params string[] references)
     {
-        return Create(name, description, instructions, null, references);
+        return Create(name, description, functionResult, systemPrompt, null, references);
     }
 
     /// <summary>
-    /// Creates a skill with type-safe function/skill references and options
+    /// Creates a skill with type-safe function/skill references, dual-context instructions, and options.
     /// </summary>
     /// <param name="name">Skill name (REQUIRED - becomes AIFunction name)</param>
     /// <param name="description">Description shown before activation (REQUIRED - becomes AIFunction description shown to agent in tools list)</param>
-    /// <param name="instructions">Instructions shown after activation (REQUIRED - fallback when document store not available)</param>
+    /// <param name="functionResult">Instructions returned as function result when activated (ephemeral, one-time)</param>
+    /// <param name="systemPrompt">Instructions injected into system prompt (persistent, every iteration)</param>
     /// <param name="options">Skill configuration options (Collapsing, documents, etc.)</param>
     /// <param name="references">Function or skill references in "PluginName.FunctionName" format</param>
     /// <returns>Skill object processed by source generator</returns>
     public static Skill Create(
         string name,
         string description,
-        string instructions,
+        string? functionResult,
+        string? systemPrompt,
         SkillOptions? options,
         params string[] references)
     {
@@ -43,17 +47,20 @@ public static class SkillFactory
         if (string.IsNullOrWhiteSpace(description))
             throw new ArgumentException("Skill description cannot be empty", nameof(description));
 
-        if (string.IsNullOrWhiteSpace(instructions))
+        // At least one of FunctionResult or SystemPrompt should be provided for the skill to be useful
+        if (string.IsNullOrWhiteSpace(functionResult) && string.IsNullOrWhiteSpace(systemPrompt))
             throw new ArgumentException(
-                "Skill instructions cannot be empty. Instructions are required as they serve as the fallback " +
-                "when document store is not configured. Provide at least a brief step-by-step workflow.",
-                nameof(instructions));
+                "At least one of FunctionResult or SystemPrompt must be provided. " +
+                "FunctionResult is shown once when skill is activated. " +
+                "SystemPrompt is injected into the system prompt persistently.",
+                nameof(functionResult));
 
         return new Skill
         {
             Name = name,
             Description = description,
-            Instructions = instructions,
+            FunctionResult = functionResult,
+            SystemPrompt = systemPrompt,
             References = references ?? Array.Empty<string>(),
             Options = options ?? new SkillOptions()
         };

@@ -201,7 +201,7 @@ public class Phase3SkillRuntimeTests
         // Assert - SkillFactory.Create() was called
         Assert.NotNull(skill.Name);
         Assert.NotNull(skill.Description);
-        Assert.NotNull(skill.Instructions);
+        Assert.True(skill.FunctionResult != null || skill.SystemPrompt != null);
     }
 
     // ===== P0: Generated Metadata =====
@@ -231,7 +231,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "ValidSkill",
                 "A valid skill",
-                "Instructions here");
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions here");
         }
 
         [Skill]
@@ -240,7 +241,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "CategorizedSkill",
                 "A categorized skill",
-                "Instructions");
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions");
         }
 
         [Skill]
@@ -249,7 +251,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "SkillWithRefs",
                 "Skill with function references",
-                "Instructions",
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
                 "TestPlugin.TestFunction1",
                 "TestPlugin.TestFunction2");
         }
@@ -260,7 +263,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "MultiRefSkill",
                 "Multiple references",
-                "Instructions",
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
                 "PluginA.Function1",
                 "PluginB.Function2",
                 "PluginC.Function3");
@@ -272,7 +276,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "DocRefSkill",
                 "Skill with document reference",
-                "Instructions",
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
                 options: new SkillOptions()
                     .AddDocument("test-document"));
         }
@@ -283,7 +288,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "DocUploadSkill",
                 "Skill with document upload",
-                "Instructions",
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
                 options: new SkillOptions()
                     .AddDocumentFromFile("./docs/test.md", "Test document"));
         }
@@ -294,7 +300,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "MultiDocSkill",
                 "Skill with multiple documents",
-                "Instructions",
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions",
                 options: new SkillOptions()
                     .AddDocument("doc1")
                     .AddDocument("doc2")
@@ -307,7 +314,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "InstanceSkill",
                 "Instance method skill",
-                "Instructions");
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions");
         }
 
         [Skill]
@@ -316,7 +324,8 @@ public class Phase3SkillRuntimeTests
             return SkillFactory.Create(
                 "StaticSkill",
                 "Static method skill",
-                "Instructions");
+                functionResult: "Skill activated",
+                systemPrompt: "Instructions");
         }
     }
 }

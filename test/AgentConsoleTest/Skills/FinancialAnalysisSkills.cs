@@ -6,8 +6,6 @@ using System.Collections.Generic;
 /// Skills teach Claude how to approach financial analysis tasks optimally
 /// Each skill recommends best approaches while providing tactical alternatives
 /// </summary>
-
-[Collapse("Financial Analysis Skills")]
 public class FinancialAnalysisSkills
 {
     /// <summary>
@@ -20,7 +18,8 @@ public class FinancialAnalysisSkills
         return SkillFactory.Create(
             name: "FinancialHealthDashboard",
             description: "Comprehensive balance sheet analysis covering liquidity, solvency, structure, and trends",
-            instructions: @"
+            functionResult: "Financial Health Dashboard activated. Ready to analyze balance sheets.",
+            systemPrompt: @"
 RECOMMENDED APPROACH:
 For comprehensive multi-period balance sheet analysis, use a single call:
 
@@ -38,7 +37,7 @@ Validate first (if needed):
 
 Additional liquidity metrics:
 → CalculateCurrentRatio(currentAssets, currentLiabilities)
-→ CalculateQuickRatio(currentAssets, currentLiabilities, inventory)  
+→ CalculateQuickRatio(currentAssets, currentLiabilities, inventory)
 → CalculateWorkingCapital(currentAssets, currentLiabilities)
 
 Additional leverage metrics:
@@ -83,7 +82,8 @@ For interpretation guidance: read_skill_document('05-financialhealthdashboard-so
         return SkillFactory.Create(
             name: "QuickLiquidityAnalysis",
             description: "Focused liquidity assessment - current ratio, quick ratio, working capital",
-            instructions: @"
+            functionResult: "Quick Liquidity Analysis activated.",
+            systemPrompt: @"
 WHEN TO USE THIS SKILL:
 Use when the user specifically requests liquidity analysis, current ratio, quick ratio, or working capital.
 For comprehensive analysis, use FinancialHealthDashboard instead.
@@ -124,7 +124,8 @@ For benchmarks: read_skill_document('01-quickliquidityanalysis-sop')",
         return SkillFactory.Create(
             name: "CapitalStructureAnalysis",
             description: "Focused capital structure assessment - debt ratios and financial leverage",
-            instructions: @"
+            functionResult: "Capital Structure Analysis activated.",
+            systemPrompt: @"
 WHEN TO USE THIS SKILL:
 Use when the user specifically requests leverage analysis, debt ratios, or capital structure.
 For comprehensive analysis, use FinancialHealthDashboard instead.
@@ -169,7 +170,8 @@ For benchmarks: read_skill_document('02-capitalstructureanalysis-sop')",
         return SkillFactory.Create(
             name: "PeriodChangeAnalysis",
             description: "Period-over-period change analysis using absolute and relative measures",
-            instructions: @"
+            functionResult: "Period Change Analysis activated.",
+            systemPrompt: @"
 WHEN TO USE THIS SKILL:
 Use when the user asks about changes, trends, or period-over-period analysis.
 For comprehensive analysis, use FinancialHealthDashboard instead.
@@ -188,7 +190,7 @@ For each line item you're analyzing, use these functions (can be parallel):
 
 WHEN TO USE EACH:
 - Absolute Change: Understanding total dollar impact
-- Percentage Change: Comparing growth rates of different-sized items  
+- Percentage Change: Comparing growth rates of different-sized items
 - Percentage Point Change: Analyzing structural shifts in balance sheet
 
 SYNTHESIS:
@@ -215,7 +217,8 @@ For examples: read_skill_document('03-periodchangeanalysis-sop')",
         return SkillFactory.Create(
             name: "CommonSizeBalanceSheet",
             description: "Common-size balance sheet - express items as percentages for comparison",
-            instructions: @"
+            functionResult: "Common-Size Balance Sheet analysis activated.",
+            systemPrompt: @"
 WHEN TO USE THIS SKILL:
 Use when the user requests common-size analysis, percentage breakdowns, or structural composition.
 For comprehensive analysis, use FinancialHealthDashboard instead.
@@ -261,7 +264,8 @@ For interpretation: read_skill_document('04-commonsizebalancesheet-sop')",
         return SkillFactory.Create(
             name: "UrlDocumentTest",
             description: "Test skill demonstrating URL document support",
-            instructions: @"
+            functionResult: "URL Document Test skill activated.",
+            systemPrompt: @"
 This skill demonstrates the new URL document feature.
 The documentation is loaded from a URL instead of a local file.
 

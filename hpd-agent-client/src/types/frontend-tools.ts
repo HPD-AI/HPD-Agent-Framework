@@ -51,10 +51,16 @@ export interface FrontendPluginDefinition {
   skills?: FrontendSkillDefinition[];
 
   /**
-   * Instructions shown to the agent after plugin expansion.
+   * Ephemeral instructions returned in function result when container is expanded (one-time).
+   * Use for initial guidance that doesn't need to persist.
+   */
+  functionResult?: string;
+
+  /**
+   * Persistent instructions injected into system prompt after expansion (every iteration).
    * Use for workflow guidance, best practices, etc.
    */
-  postExpansionInstructions?: string;
+  systemPrompt?: string;
 
   /**
    * Start with plugin collapsed (tools hidden behind container).
@@ -78,8 +84,17 @@ export interface FrontendSkillDefinition {
   /** Description shown to the LLM */
   description: string;
 
-  /** Instructions injected when the skill is invoked */
-  instructions: string;
+  /**
+   * Ephemeral instructions returned in function result when skill is activated (one-time).
+   * Use for initial guidance that doesn't need to persist across iterations.
+   */
+  functionResult?: string;
+
+  /**
+   * Persistent instructions injected into system prompt after activation (every iteration).
+   * Use for workflow guidance, best practices, etc.
+   */
+  systemPrompt?: string;
 
   /** Tools this skill references */
   references?: FrontendSkillReference[];
@@ -309,7 +324,10 @@ export function createCollapsedPlugin(
   tools: FrontendToolDefinition[],
   options?: {
     skills?: FrontendSkillDefinition[];
-    postExpansionInstructions?: string;
+    /** Ephemeral instructions returned when container is expanded (one-time) */
+    functionResult?: string;
+    /** Persistent instructions injected into system prompt after expansion (every iteration) */
+    systemPrompt?: string;
   }
 ): FrontendPluginDefinition {
   return {
@@ -317,7 +335,8 @@ export function createCollapsedPlugin(
     description,
     tools,
     skills: options?.skills,
-    postExpansionInstructions: options?.postExpansionInstructions,
+    functionResult: options?.functionResult,
+    systemPrompt: options?.systemPrompt,
     startCollapsed: true,
   };
 }
@@ -332,7 +351,10 @@ export function createExpandedPlugin(
   options?: {
     description?: string;
     skills?: FrontendSkillDefinition[];
-    postExpansionInstructions?: string;
+    /** Ephemeral instructions returned when container is expanded (one-time) */
+    functionResult?: string;
+    /** Persistent instructions injected into system prompt after expansion (every iteration) */
+    systemPrompt?: string;
   }
 ): FrontendPluginDefinition {
   return {
@@ -340,7 +362,8 @@ export function createExpandedPlugin(
     description: options?.description,
     tools,
     skills: options?.skills,
-    postExpansionInstructions: options?.postExpansionInstructions,
+    functionResult: options?.functionResult,
+    systemPrompt: options?.systemPrompt,
     startCollapsed: false,
   };
 }

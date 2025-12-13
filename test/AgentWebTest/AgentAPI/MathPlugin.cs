@@ -91,7 +91,8 @@ public class MathPlugin
         return SkillFactory.Create(
             name: "SolveQuadratic",
             description: "Solves quadratic equations (ax² + bx + c = 0)",
-            instructions: @"
+            functionResult: "Quadratic solver activated",
+            systemPrompt: @"
                     Step 1: Calculate discriminant (b² - 4ac)
                     Step 2: Calculate square root using sqrt function
                     Step 3: Calculate two solutions using Add/Subtract",

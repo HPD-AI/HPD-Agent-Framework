@@ -14,11 +14,11 @@ namespace HPD.Agent.Tests.Middleware;
 public class SkillInstructionMiddlewareTests
 {
     [Fact]
-    public async Task Middleware_DoesNotModifyInstructions_WhenNoActiveSkills()
+    public async Task Middleware_DoesNotModifyInstructions_WhenNoActiveContainers()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var context = CreateContext(activeSkills: ImmutableDictionary<string, string>.Empty);
+        var context = CreateContext(activeContainers: ImmutableDictionary<string, ContainerInstructionSet>.Empty);
         var originalInstructions = context.Options!.Instructions;
 
         // Act
@@ -29,33 +29,33 @@ public class SkillInstructionMiddlewareTests
     }
 
     [Fact]
-    public async Task Middleware_InjectsSkillInstructions_WhenActiveSkillsExist()
+    public async Task Middleware_InjectsContainerInstructions_WhenActiveContainersExist()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading skill instructions for buying and selling stocks");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions for buying and selling stocks"));
+        var context = CreateContext(activeContainers: activeContainers);
         var originalInstructions = context.Options!.Instructions;
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Contains("🔧 ACTIVE SKILL PROTOCOLS", context.Options.Instructions!);
+        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options.Instructions!);
         Assert.Contains("trading", context.Options.Instructions);
         Assert.Contains("Trading skill instructions", context.Options.Instructions);
     }
 
     [Fact]
-    public async Task Middleware_InjectsMultipleSkillInstructions_WhenMultipleActiveSkills()
+    public async Task Middleware_InjectsMultipleContainerInstructions_WhenMultipleActiveContainers()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading skill instructions")
-            .Add("weather", "Weather skill instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions"))
+            .Add("weather", new ContainerInstructionSet(null, "Weather skill instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -68,33 +68,33 @@ public class SkillInstructionMiddlewareTests
     }
 
     [Fact]
-    public async Task Middleware_ClearsSkills_AfterMessageTurn()
+    public async Task Middleware_ClearsContainers_AfterMessageTurn()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading skill instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
 
         // Act - Cleanup happens at AfterMessageTurnAsync
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert - Check that middleware cleared active skill instructions
+        // Assert - Check that middleware cleared active container instructions
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
         var CollapsingState = pendingState!.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
-        Assert.Empty(CollapsingState!.ActiveSkillInstructions);
+        Assert.Empty(CollapsingState!.ActiveContainerInstructions);
     }
 
     [Fact]
-    public async Task Middleware_DoesNotSignalClearSkills_WhenNotFinalIteration()
+    public async Task Middleware_DoesNotSignalClearContainers_WhenNotFinalIteration()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading skill instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
 
         // Simulate LLM response with tool calls (NOT final iteration)
         context.Response = new ChatMessage(ChatRole.Assistant, "Response with tools");
@@ -109,11 +109,11 @@ public class SkillInstructionMiddlewareTests
     }
 
     [Fact]
-    public async Task Middleware_DoesNotSignalClearSkills_WhenNoActiveSkills()
+    public async Task Middleware_DoesNotSignalClearContainers_WhenNoActiveContainers()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var context = CreateContext(activeSkills: ImmutableDictionary<string, string>.Empty);
+        var context = CreateContext(activeContainers: ImmutableDictionary<string, ContainerInstructionSet>.Empty);
 
         // Simulate final iteration
         context.Response = new ChatMessage(ChatRole.Assistant, "Final response");
@@ -132,9 +132,9 @@ public class SkillInstructionMiddlewareTests
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading skill instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
         context.Options = null; // Simulate null options
 
         // Act
@@ -149,9 +149,9 @@ public class SkillInstructionMiddlewareTests
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
 
         // Act - Before phase
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -162,12 +162,12 @@ public class SkillInstructionMiddlewareTests
         // Act - Cleanup happens at AfterMessageTurnAsync
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert - State updated to clear skills
+        // Assert - State updated to clear containers
         var pendingState = context.GetPendingState();
         Assert.NotNull(pendingState);
         var CollapsingState = pendingState!.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
-        Assert.Empty(CollapsingState!.ActiveSkillInstructions);
+        Assert.Empty(CollapsingState!.ActiveContainerInstructions);
     }
 
     [Fact]
@@ -175,9 +175,9 @@ public class SkillInstructionMiddlewareTests
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
-        var activeSkills = ImmutableDictionary<string, string>.Empty
-            .Add("trading", "Trading instructions");
-        var context = CreateContext(activeSkills: activeSkills);
+        var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+            .Add("trading", new ContainerInstructionSet(null, "Trading instructions"));
+        var context = CreateContext(activeContainers: activeContainers);
         var originalInstructions = "Original system instructions";
         context.Options!.Instructions = originalInstructions;
 
@@ -204,7 +204,7 @@ public class SkillInstructionMiddlewareTests
         return new ContainerMiddleware(tools, emptyPlugins, config);
     }
 
-    private static AgentMiddlewareContext CreateContext(ImmutableDictionary<string, string> activeSkills)
+    private static AgentMiddlewareContext CreateContext(ImmutableDictionary<string, ContainerInstructionSet> activeContainers)
     {
         // Create dummy tools for the context (required by ContainerMiddleware)
         var dummyTool = AIFunctionFactory.Create(
@@ -220,7 +220,7 @@ public class SkillInstructionMiddlewareTests
             with
             {
                 MiddlewareState = new MiddlewareState().WithCollapsing(
-                    new CollapsingStateData { ActiveSkillInstructions = activeSkills })
+                    new CollapsingStateData { ActiveContainerInstructions = activeContainers })
             };
 
         var context = new AgentMiddlewareContext

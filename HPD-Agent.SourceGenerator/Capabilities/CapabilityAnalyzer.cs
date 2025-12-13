@@ -113,16 +113,87 @@ internal static class CapabilityAnalyzer
 
         var arguments = invocation.ArgumentList.Arguments;
 
-        // Minimum 3 arguments: name, description, instructions
-        if (arguments.Count < 3)
+        // Minimum 2 arguments: name, description (functionResult/systemPrompt are optional but one is required)
+        if (arguments.Count < 2)
         {
             return null;
         }
 
-        // Extract arguments
+        // Extract required positional arguments (name, description)
         var name = ExtractStringLiteral(arguments[0].Expression, semanticModel);
         var description = ExtractStringLiteral(arguments[1].Expression, semanticModel);
-        var instructions = ExtractStringLiteral(arguments[2].Expression, semanticModel);
+
+        // Extract dual-context instructions (functionResult and systemPrompt)
+        // These can be positional (args 2,3) or named
+        string? functionResult = null;
+        string? systemPrompt = null;
+        SkillOptionsInfo? options = null;
+        int referencesStartIndex = 2;
+
+        // Build a dictionary of named arguments for easy lookup
+        var namedArgs = arguments
+            .Where(a => a.NameColon != null)
+            .ToDictionary(
+                a => a.NameColon!.Name.Identifier.ValueText,
+                a => a);
+
+        // Extract functionResult (named or positional at index 2)
+        if (namedArgs.TryGetValue("functionResult", out var funcResultArg))
+        {
+            functionResult = ExtractStringLiteral(funcResultArg.Expression, semanticModel);
+        }
+        else if (arguments.Count > 2 && arguments[2].NameColon == null)
+        {
+            // Legacy: positional argument at index 2 (was "instructions")
+            functionResult = ExtractStringLiteral(arguments[2].Expression, semanticModel);
+            referencesStartIndex = 3;
+        }
+
+        // Extract systemPrompt (named or positional at index 3)
+        if (namedArgs.TryGetValue("systemPrompt", out var sysPromptArg))
+        {
+            systemPrompt = ExtractStringLiteral(sysPromptArg.Expression, semanticModel);
+        }
+        else if (arguments.Count > 3 && arguments[3].NameColon == null && referencesStartIndex == 3)
+        {
+            // Legacy: positional argument at index 3
+            systemPrompt = ExtractStringLiteral(arguments[3].Expression, semanticModel);
+            referencesStartIndex = 4;
+        }
+
+        // For backward compatibility: if only old "instructions" arg provided, use it as both contexts
+        // The old API was: Create(name, description, instructions, options?, refs...)
+        // Check if this looks like the old signature (no named params, index 2 is a string, not options)
+        if (functionResult != null && systemPrompt == null && !namedArgs.ContainsKey("functionResult"))
+        {
+            // Old signature: use instructions as systemPrompt (persistent context)
+            systemPrompt = functionResult;
+            functionResult = null;
+        }
+
+        // Extract options (named parameter)
+        if (namedArgs.TryGetValue("options", out var optionsArg))
+        {
+            System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Found named 'options' parameter in {methodName}");
+            options = ExtractSkillOptions(optionsArg.Expression, semanticModel);
+        }
+        else
+        {
+            // Check remaining positional args for SkillOptions
+            for (int i = referencesStartIndex; i < arguments.Count; i++)
+            {
+                if (arguments[i].NameColon != null) continue; // Skip named args
+
+                var argType = semanticModel.GetTypeInfo(arguments[i].Expression).Type;
+                if (argType?.Name == "SkillOptions")
+                {
+                    System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Found SkillOptions at position {i} in {methodName}");
+                    options = ExtractSkillOptions(arguments[i].Expression, semanticModel);
+                    referencesStartIndex = i + 1;
+                    break;
+                }
+            }
+        }
 
         // Check for [AIDescription] attribute override (supports dynamic descriptions like Functions)
         var attributeDescription = GetDescription(attrs);
@@ -134,35 +205,6 @@ internal static class CapabilityAnalyzer
         if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(description))
         {
             return null;
-        }
-
-        // Find SkillOptions argument (optional, can be at position 3 or named)
-        SkillOptionsInfo? options = null;
-        int referencesStartIndex = 3;
-
-        // Check if position 3 is SkillOptions or a reference
-        if (arguments.Count > 3)
-        {
-            var thirdArg = arguments[3];
-
-            // Check if named parameter "options"
-            if (thirdArg.NameColon?.Name.Identifier.ValueText == "options")
-            {
-                System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Found named 'options' parameter in {methodName}");
-                options = ExtractSkillOptions(thirdArg.Expression, semanticModel);
-                referencesStartIndex = 4;
-            }
-            else
-            {
-                // Check type to determine if it's SkillOptions or a reference
-                var thirdArgType = semanticModel.GetTypeInfo(thirdArg.Expression).Type;
-                if (thirdArgType?.Name == "SkillOptions")
-                {
-                    System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Found SkillOptions at position 3 in {methodName}");
-                    options = ExtractSkillOptions(thirdArg.Expression, semanticModel);
-                    referencesStartIndex = 4;
-                }
-            }
         }
 
         // DIAGNOSTIC: Log document uploads found
@@ -204,7 +246,8 @@ internal static class CapabilityAnalyzer
             Name = name,
             MethodName = methodName,
             Description = description,
-            FunctionResult = instructions,  // Map Instructions to FunctionResult
+            FunctionResult = functionResult,
+            SystemPrompt = systemPrompt,
             ParentPluginName = className,
             ParentNamespace = namespaceName,
             Options = options ?? new SkillOptionsInfo(),
