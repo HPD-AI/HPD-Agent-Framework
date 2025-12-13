@@ -39,7 +39,7 @@ public record PluginFactory(
     /// Direct delegate to generated CreatePlugin method
     /// Example: (instance, ctx) => MathPluginRegistration.CreatePlugin((MathPlugin)instance, ctx)
     /// </summary>
-    Func<object, IPluginMetadataContext?, List<AIFunction>> CreateFunctions,
+    Func<object, IPluginMetadata?, List<AIFunction>> CreateFunctions,
 
     /// <summary>
     /// Direct delegate to generated GetReferencedPlugins method

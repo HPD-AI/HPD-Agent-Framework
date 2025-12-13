@@ -59,12 +59,12 @@ public async Task<IEnumerable<ChatMessage>> InvokeAsync(
     if (context.Properties.TryGetValue("Project", out var proj) && proj is Project project)
     {
         var documents = await project.DocumentManager.GetDocumentsAsync();
-        var documentContext = BuildDocumentContext(documents);
+        var documenTMetadata = BuildDocumenTMetadata(documents);
 
         // Prepend document context as system message
         var messages = new List<ChatMessage>
         {
-            new ChatMessage(ChatRole.System, documentContext)
+            new ChatMessage(ChatRole.System, documenTMetadata)
         };
         messages.AddRange(context.Messages);
         context.Messages = messages;

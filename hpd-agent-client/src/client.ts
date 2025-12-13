@@ -197,7 +197,7 @@ export interface AgentClientConfig {
   frontendPlugins?: FrontendPluginDefinition[];
 
   /** Default context items to include on every stream */
-  defaultContext?: ContextItem[];
+  defaulTMetadata?: ContextItem[];
 
   /** Handler for frontend tool invocations */
   onFrontendToolInvoke?: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>;
@@ -292,7 +292,7 @@ export class AgentClient {
         ...(options?.frontendPlugins ?? []),
       ];
       const mergedContext = [
-        ...(this.config.defaultContext ?? []),
+        ...(this.config.defaulTMetadata ?? []),
         ...(options?.context ?? []),
       ];
 

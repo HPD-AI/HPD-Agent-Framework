@@ -297,7 +297,7 @@ public class FrontendToolMiddleware : IAgentMiddleware
         {
             foreach (var key in aug.RemoveContext)
             {
-                state = state.WithoutContext(key);
+                state = state.WithouTMetadata(key);
             }
         }
 
@@ -353,7 +353,8 @@ public class FrontendToolMiddleware : IAgentMiddleware
                     plugin.Description!,  // Validated to exist for collapsed plugins
                     toolAIFunctions,
                     maxFunctionNamesInDescription: 10,
-                    postExpansionInstructions: plugin.PostExpansionInstructions);
+                    FunctionResult: plugin.FunctionResult,
+                   SystemPrompt: plugin.SystemPrompt);
 
                 allFunctions.Add(container);
                 allFunctions.AddRange(CollapsedTools);

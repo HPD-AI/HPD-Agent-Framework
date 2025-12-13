@@ -5,7 +5,7 @@ using System.Linq;
 /// <summary>
 /// The complete and corrected context for the WebSearch plugin.
 /// </summary>
-public class WebSearchContext : IPluginMetadataContext
+public class WebSearchContext : IPluginMetadata
 {
     private readonly IReadOnlyDictionary<string, IWebSearchConnector> _connectors;
 
@@ -61,7 +61,7 @@ public class WebSearchContext : IPluginMetadataContext
         return GetConnector(DefaultProvider);
     }
 
-    #region IPluginMetadataContext Implementation
+    #region IPluginMetadata Implementation
     public T? GetProperty<T>(string propertyName, T? defaultValue = default)
     {
         object? value = propertyName.ToLowerInvariant() switch

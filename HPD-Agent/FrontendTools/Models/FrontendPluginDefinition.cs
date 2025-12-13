@@ -14,14 +14,16 @@ namespace HPD.Agent.FrontendTools;
 /// <param name="Description">Description shown to LLM (REQUIRED if StartCollapsed=true)</param>
 /// <param name="Tools">Tools contained in this plugin</param>
 /// <param name="Skills">Optional skills that reference tools in this or other plugins</param>
-/// <param name="PostExpansionInstructions">Instructions shown after container is expanded</param>
+/// <param name="FunctionResult">Ephemeral instructions returned in function result when container is expanded</param>
+/// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
 /// <param name="StartCollapsed">Whether container starts collapsed (default: true)</param>
 public record FrontendPluginDefinition(
     string Name,
     string? Description,
     IReadOnlyList<FrontendToolDefinition> Tools,
     IReadOnlyList<FrontendSkillDefinition>? Skills = null,
-    string? PostExpansionInstructions = null,
+    string? FunctionResult = null,
+    string?SystemPrompt = null,
     bool StartCollapsed = true
 )
 {

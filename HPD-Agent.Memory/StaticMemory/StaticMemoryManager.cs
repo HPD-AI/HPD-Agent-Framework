@@ -41,12 +41,12 @@ public class StaticMemoryManager
         _logger = logger;
     }
 
-    public void SetAgentContext(string? agentName)
+    public void SetAgenTMetadata(string? agentName)
     {
         CurrentAgentName = agentName;
     }
 
-    public void ClearAgentContext() => CurrentAgentName = null;
+    public void ClearAgenTMetadata() => CurrentAgentName = null;
 
     public void RegisterCacheInvalidationCallback(Action invalidateCallback)
     {

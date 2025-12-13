@@ -5,7 +5,7 @@ using Microsoft.Extensions.AI;
 /// <summary>
 /// Simple math plugin for testing plugin registration and invocation.
 /// </summary>
-public class MathPluginMetadataContext : IPluginMetadataContext
+public class MathPluginMetadataContext : IPluginMetadata
 {
     private readonly Dictionary<string, object> _properties = new();
 

@@ -41,7 +41,7 @@ internal class OpenAIProvider : IProviderFeatures
             SupportsFunctionCalling = true,
             SupportsVision = true,
             SupportsAudio = true,
-            DefaultContextWindow = 128000, // GPT-4 Turbo
+            DefaulTMetadataWindow = 128000, // GPT-4 Turbo
             DocumentationUrl = "https://platform.openai.com/docs"
         };
     }
@@ -94,7 +94,7 @@ internal class AzureOpenAIProvider : IProviderFeatures
             SupportsStreaming = true,
             SupportsFunctionCalling = true,
             SupportsVision = true,
-            DefaultContextWindow = 128000,
+            DefaulTMetadataWindow = 128000,
             DocumentationUrl = "https://learn.microsoft.com/azure/ai-services/openai/"
         };
     }

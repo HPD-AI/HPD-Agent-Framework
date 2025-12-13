@@ -133,7 +133,7 @@ WebSearch/
 ├── Models/
 │   └── SearchModels.cs             # SearchResult, AnswerResult models
 ├── Context/
-│   └── WebSearchContext.cs         # IPluginMetadataContext implementation
+│   └── WebSearchContext.cs         # IPluginMetadata implementation
 ├── Builders/
 │   ├── IWebSearchProviderBuilders.cs  # Type-safe builder interfaces
 │   ├── TavilyWebSearchBuilder.cs       # Tavily-specific builder
@@ -173,7 +173,7 @@ public async Task<string> WebSearchAsync(
 ### Provider Detection Logic
 
 ```csharp
-public class WebSearchContext : IPluginMetadataContext
+public class WebSearchContext : IPluginMetadata
 {
     public bool HasProvider(string providerName) =>
         _connectors.ContainsKey(providerName.ToLowerInvariant());

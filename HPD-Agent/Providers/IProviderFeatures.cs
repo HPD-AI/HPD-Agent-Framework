@@ -74,7 +74,7 @@ public class ProviderMetadata
     public bool SupportsFunctionCalling { get; init; } = true;
     public bool SupportsVision { get; init; } = false;
     public bool SupportsAudio { get; init; } = false;
-    public int? DefaultContextWindow { get; init; }
+    public int? DefaulTMetadataWindow { get; init; }
     public string? DocumentationUrl { get; init; }
     public Dictionary<string, object>? CustomProperties { get; init; }
 }

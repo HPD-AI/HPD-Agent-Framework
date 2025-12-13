@@ -127,7 +127,7 @@ public class ExecutionContextTests
         var level2Id = $"{level1Id}-dataFetcher-ghi11111";
 
         // Act - Create contexts
-        var rootContext = new AgentExecutionContext
+        var rooTMetadata = new AgentExecutionContext
         {
             AgentName = "Orchestrator",
             AgentId = rootId,
@@ -151,7 +151,7 @@ public class ExecutionContextTests
         };
 
         // Assert - IDs show full path
-        Assert.Contains("orchestrator", rootContext.AgentId);
+        Assert.Contains("orchestrator", rooTMetadata.AgentId);
         Assert.Contains("orchestrator", level1Context.AgentId);
         Assert.Contains("weatherExpert", level1Context.AgentId);
         Assert.Contains("orchestrator", level2Context.AgentId);
@@ -380,7 +380,7 @@ public class ExecutionContextTests
         var childId = $"{parentId}-weather-def456";
 
         // Act
-        var parentContext = new AgentExecutionContext
+        var parenTMetadata = new AgentExecutionContext
         {
             AgentName = "Orchestrator",
             AgentId = parentId,
@@ -397,7 +397,7 @@ public class ExecutionContextTests
         };
 
         // Assert
-        Assert.Null(parentContext.ParentAgentId);
+        Assert.Null(parenTMetadata.ParentAgentId);
         Assert.Equal(parentId, childContext.ParentAgentId);
         Assert.StartsWith(parentId, childContext.AgentId);
     }

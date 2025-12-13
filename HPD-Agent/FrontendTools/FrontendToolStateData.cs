@@ -180,7 +180,7 @@ public sealed record FrontendToolStateData
     /// <summary>
     /// Removes a context item.
     /// </summary>
-    public FrontendToolStateData WithoutContext(string key)
+    public FrontendToolStateData WithouTMetadata(string key)
     {
         return this with
         {

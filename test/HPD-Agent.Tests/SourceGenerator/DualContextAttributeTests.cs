@@ -6,7 +6,7 @@ using Xunit;
 namespace HPD.Agent.Tests.SourceGenerator;
 
 /// <summary>
-/// Tests for dual-context attribute handling (FunctionResultContext + SystemPromptContext).
+/// Tests for dual-context attribute handling (FunctionResult +SystemPrompt).
 /// Ensures the source generator correctly parses and emits both context types.
 /// </summary>
 public class DualContextAttributeTests
@@ -21,8 +21,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    functionResultContext: ""Plugin activated with features A, B, C"",
-    systemPromptContext: ""Always validate inputs and show your work""
+    FunctionResult: ""Plugin activated with features A, B, C"",
+   SystemPrompt: ""Always validate inputs and show your work""
 )]
 public class TestPlugin
 {
@@ -37,16 +37,16 @@ public class TestPlugin
         // Assert - No compilation errors
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // Assert - FunctionResultContext appears in function result
+        // Assert - FunctionResult appears in function result
         Assert.Contains("Plugin activated with features A, B, C", generatedCode!);
 
-        // Assert - SystemPromptContext appears in AdditionalProperties
-        Assert.Contains("[\"SystemPromptContext\"]", generatedCode);
+        // Assert -SystemPrompt appears in AdditionalProperties
+        Assert.Contains("[\"SystemPrompt\"]", generatedCode);
         Assert.Contains("Always validate inputs and show your work", generatedCode);
     }
 
     [Fact]
-    public void Generator_HandlesSystemPromptContextOnly()
+    public void Generator_HandlesSystemPromptOnly()
     {
         // Arrange
         var source = @"
@@ -55,7 +55,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    systemPromptContext: ""System-level rules only""
+   SystemPrompt: ""System-level rules only""
 )]
 public class TestPlugin
 {
@@ -69,12 +69,12 @@ public class TestPlugin
 
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-        Assert.Contains("[\"SystemPromptContext\"]", generatedCode!);
+        Assert.Contains("[\"SystemPrompt\"]", generatedCode!);
         Assert.Contains("System-level rules only", generatedCode);
     }
 
     [Fact]
-    public void Generator_HandlesFunctionResultContextOnly()
+    public void Generator_HandlesFunctionResultOnly()
     {
         // Arrange
         var source = @"
@@ -83,7 +83,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    functionResultContext: ""One-time activation message""
+    FunctionResult: ""One-time activation message""
 )]
 public class TestPlugin
 {
@@ -98,11 +98,11 @@ public class TestPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.Contains("One-time activation message", generatedCode!);
-        Assert.Contains("[\"FunctionResultContext\"]", generatedCode);
+        Assert.Contains("[\"FunctionResult\"]", generatedCode);
     }
 
     [Fact]
-    public void Generator_HandlesMultilineSystemPromptContext()
+    public void Generator_HandlesMultilineSystemPrompt()
     {
         // Arrange
         var source = @"
@@ -111,7 +111,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Financial Plugin"",
-    systemPromptContext: @""# RULES
+   SystemPrompt: @""# RULES
 - Rule 1: Validate equations
 - Rule 2: Show calculations
 - Rule 3: Use decimal precision""
@@ -144,7 +144,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    systemPromptContext: @""Use """"quotes"""" properly""
+   SystemPrompt: @""Use """"quotes"""" properly""
 )]
 public class TestPlugin
 {
@@ -159,8 +159,8 @@ public class TestPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // SystemPromptContext should be present
-        Assert.Contains("[\"SystemPromptContext\"]", generatedCode!);
+        //SystemPrompt should be present
+        Assert.Contains("[\"SystemPrompt\"]", generatedCode!);
 
         // Generated code should contain the quotes properly escaped
         // In the source code: @"Use ""quotes"" properly" becomes the string: Use "quotes" properly
@@ -178,8 +178,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    functionResultContext: ""Uses $, €, ¥ symbols"",
-    systemPromptContext: ""Math: x > y, a + b = c""
+    FunctionResult: ""Uses $, €, ¥ symbols"",
+   SystemPrompt: ""Math: x > y, a + b = c""
 )]
 public class TestPlugin
 {
@@ -208,8 +208,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    functionResultContext: """",
-    systemPromptContext: """"
+    FunctionResult: """",
+   SystemPrompt: """"
 )]
 public class TestPlugin
 {
@@ -237,8 +237,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    functionResultContext: ""Plugin activated"",
-    systemPromptContext: ""Plugin rules""
+    FunctionResult: ""Plugin activated"",
+   SystemPrompt: ""Plugin rules""
 )]
 public partial class TestPlugin
 {
@@ -262,8 +262,8 @@ public partial class TestPlugin
         // Both contexts should be preserved after partial class merging
         Assert.Contains("Plugin activated", generatedCode!);
         Assert.Contains("Plugin rules", generatedCode);
-        Assert.Contains("[\"SystemPromptContext\"]", generatedCode);
-        Assert.Contains("[\"FunctionResultContext\"]", generatedCode);
+        Assert.Contains("[\"SystemPrompt\"]", generatedCode);
+        Assert.Contains("[\"FunctionResult\"]", generatedCode);
     }
 
     [Fact]
@@ -295,12 +295,12 @@ public class LegacyPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // Legacy postExpansionInstructions should map to FunctionResultContext
+        // Legacy postExpansionInstructions should map to FunctionResult
         Assert.Contains("Legacy instructions", generatedCode!);
     }
 
     [Fact]
-    public void Generator_HandlesVeryLongSystemPromptContext()
+    public void Generator_HandlesVeryLongSystemPrompt()
     {
         // Arrange
         var longRules = string.Join("\\n", Enumerable.Range(1, 50).Select(i => $"- Rule {i}"));
@@ -310,7 +310,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Test Plugin"",
-    systemPromptContext: @""{longRules}""
+   SystemPrompt: @""{longRules}""
 )]
 public class TestPlugin
 {{

@@ -25,7 +25,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\..\HPD-Agent.Plugins\HPD-Agent.Plugins.FileSystem\HPD-Agent.Plugins.FileSystem.csproj" />
   </ItemGroup>
 

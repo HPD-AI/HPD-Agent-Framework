@@ -21,7 +21,7 @@ namespace HPD.Agent;
 ///
 /// <para><b>Lifecycle Hooks Used:</b></para>
 /// <list type="bullet">
-/// <item><c>BeforeIterationAsync</c> - Filter tools + inject SystemPromptContext</item>
+/// <item><c>BeforeIterationAsync</c> - Filter tools + injectSystemPrompt</item>
 /// <item><c>AfterIterationAsync</c> - Detect container expansions, update state</item>
 /// <item><c>AfterMessageTurnAsync</c> - Filter ephemeral results + clear instructions (configurable)</item>
 /// </list>
@@ -29,8 +29,8 @@ namespace HPD.Agent;
 /// <para><b>Container Unification (V2):</b></para>
 /// <para>
 /// Treats plugins and skills uniformly as "containers" with dual-context support:
-/// - <b>FunctionResultContext</b>: Ephemeral instructions returned in function result
-/// - <b>SystemPromptContext</b>: Persistent instructions injected into system prompt
+/// - <b>FunctionResult</b>: Ephemeral instructions returned in function result
+/// - <b>SystemPrompt</b>: Persistent instructions injected into system prompt
 /// </para>
 ///
 /// <para><b>State Management:</b></para>
@@ -95,13 +95,13 @@ public class ContainerMiddleware : IAgentMiddleware
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
-    // BEFORE ITERATION: Filter tools + Inject SystemPromptContext
+    // BEFORE ITERATION: Filter tools + InjectSystemPrompt
     //═════════════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
     /// Called before each LLM call.
     /// 1. Filters tools based on expansion state (collapsing)
-    /// 2. Injects SystemPromptContext for active containers into system prompt
+    /// 2. InjectsSystemPrompt for active containers into system prompt
     /// </summary>
     public Task BeforeIterationAsync(
         AgentMiddlewareContext context,
@@ -153,7 +153,7 @@ public class ContainerMiddleware : IAgentMiddleware
         context.Options = clonedOptions;
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
-        // STEP 2: Inject SystemPromptContext for active containers
+        // STEP 2: InjectSystemPrompt for active containers
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
         // UNIFIED: Use ActiveContainerInstructions (supports both plugins and skills)
@@ -224,7 +224,7 @@ public class ContainerMiddleware : IAgentMiddleware
                 collapsingState = collapsingState.WithExpandedSkill(skill);
             }
 
-            // Store unified container instructions (for SystemPromptContext injection)
+            // Store unified container instructions (forSystemPrompt injection)
             foreach (var (containerName, instructions) in containerInstructions)
             {
                 collapsingState = collapsingState.WithContainerInstructions(containerName, instructions);
@@ -268,7 +268,7 @@ public class ContainerMiddleware : IAgentMiddleware
     /// <summary>
     /// Called after the message turn completes.
     /// 1. Filters ephemeral container results from turn history
-    /// 2. Clears SystemPromptContext injections (if configured to not persist)
+    /// 2. ClearsSystemPrompt injections (if configured to not persist)
     /// </summary>
     public Task AfterMessageTurnAsync(
         AgentMiddlewareContext context,
@@ -318,7 +318,7 @@ public class ContainerMiddleware : IAgentMiddleware
         }
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
-        // STEP 2: Clear SystemPromptContext injections (if not configured to persist)
+        // STEP 2: ClearSystemPrompt injections (if not configured to persist)
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
         var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
@@ -347,7 +347,7 @@ public class ContainerMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Detects plugin and skill containers from tool calls.
-    /// Extracts both FunctionResultContext and SystemPromptContext.
+    /// Extracts both FunctionResult andSystemPrompt.
     /// </summary>
     private static (
         HashSet<string> plugins,
@@ -405,10 +405,10 @@ public class ContainerMiddleware : IAgentMiddleware
             }
 
             // UNIFIED: Extract both contexts from metadata
-            var funcResultCtx = ExtractStringMetadata(function, "FunctionResultContext");
-            var sysPromptCtx = ExtractStringMetadata(function, "SystemPromptContext");
+            var funcResultCtx = ExtractStringMetadata(function, "FunctionResult");
+            var sysPromptCtx = ExtractStringMetadata(function, "SystemPrompt");
 
-            // Fallback to legacy "Instructions" for skills if SystemPromptContext not present
+            // Fallback to legacy "Instructions" for skills ifSystemPrompt not present
             if (string.IsNullOrEmpty(sysPromptCtx) && isSkill)
             {
                 sysPromptCtx = ExtractStringMetadata(function, "Instructions");
@@ -426,7 +426,7 @@ public class ContainerMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Builds a rich, formatted container protocols section with metadata (UNIFIED approach).
-    /// Injects SystemPromptContext for all containers (plugins + skills).
+    /// InjectsSystemPrompt for all containers (plugins + skills).
     /// </summary>
     private static string BuildContainerProtocolsSection(
         ImmutableDictionary<string, ContainerInstructionSet> activeContainers,
@@ -441,8 +441,8 @@ public class ContainerMiddleware : IAgentMiddleware
         // Order alphabetically for consistency
         foreach (var (containerName, instructionSet) in activeContainers.OrderBy(kvp => kvp.Key))
         {
-            // Only inject SystemPromptContext (not FunctionResultContext)
-            if (string.IsNullOrEmpty(instructionSet.SystemPromptContext))
+            // Only injectSystemPrompt (not FunctionResult)
+            if (string.IsNullOrEmpty(instructionSet.SystemPrompt))
                 continue;
 
             sb.AppendLine($"## {containerName}:");
@@ -476,8 +476,8 @@ public class ContainerMiddleware : IAgentMiddleware
                 }
             }
 
-            // Add the SystemPromptContext instructions
-            sb.AppendLine(instructionSet.SystemPromptContext);
+            // Add theSystemPrompt instructions
+            sb.AppendLine(instructionSet.SystemPrompt);
             sb.AppendLine();
         }
 

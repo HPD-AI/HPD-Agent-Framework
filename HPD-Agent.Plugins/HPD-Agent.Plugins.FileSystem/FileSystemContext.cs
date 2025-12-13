@@ -5,7 +5,7 @@ namespace HPD.Agent.Plugins.FileSystem;
 /// <summary>
 /// Context for FileSystem plugin operations with workspace validation.
 /// </summary>
-public class FileSystemContext : IPluginMetadataContext
+public class FileSystemContext : IPluginMetadata
 {
     private readonly Dictionary<string, object> _properties = new();
 
@@ -142,7 +142,7 @@ public class FileSystemContext : IPluginMetadataContext
         return fullPath.StartsWith(workspaceFullPath, StringComparison.OrdinalIgnoreCase);
     }
 
-    #region IPluginMetadataContext Implementation
+    #region IPluginMetadata Implementation
 
     public T? GetProperty<T>(string propertyName, T? defaultValue = default)
     {

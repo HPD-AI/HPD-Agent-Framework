@@ -159,9 +159,9 @@ public sealed record CollapsingStateData
         return this with
         {
             ActiveContainerInstructions = ActiveContainerInstructions.SetItem(containerName, instructions),
-            // Update legacy skill instructions if SystemPromptContext is present
-            ActiveSkillInstructions = !string.IsNullOrEmpty(instructions.SystemPromptContext)
-                ? ActiveSkillInstructions.SetItem(containerName, instructions.SystemPromptContext)
+            // Update legacy skill instructions ifSystemPrompt is present
+            ActiveSkillInstructions = !string.IsNullOrEmpty(instructions.SystemPrompt)
+                ? ActiveSkillInstructions.SetItem(containerName, instructions.SystemPrompt)
                 : ActiveSkillInstructions
         };
     }
@@ -185,6 +185,6 @@ public sealed record CollapsingStateData
 /// Supports dual-injection: function result (ephemeral) + system prompt (persistent).
 /// </summary>
 public sealed record ContainerInstructionSet(
-    string? FunctionResultContext,
-    string? SystemPromptContext
+    string? FunctionResult,
+    string? SystemPrompt
 );

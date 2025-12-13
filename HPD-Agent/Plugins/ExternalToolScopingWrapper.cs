@@ -15,14 +15,16 @@ public static class ExternalToolCollapsingWrapper
     /// <param name="serverName">Name of the MCP server (e.g., "filesystem", "github")</param>
     /// <param name="tools">Tools from this MCP server</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
-    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
+    /// <param name="FunctionResult">Ephemeral instructions returned in function result after expansion</param>
+    /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
     /// <param name="customDescription">Optional custom description from JSON config. If provided, replaces auto-generated description.</param>
     /// <returns>Container function and Collapsed tools with metadata</returns>
     public static (AIFunction container, List<AIFunction> CollapsedTools) WrapMCPServerTools(
         string serverName,
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
-        string? postExpansionInstructions = null,
+        string? FunctionResult = null,
+        string?SystemPrompt = null,
         string? customDescription = null)
     {
         if (string.IsNullOrEmpty(serverName))
@@ -57,11 +59,11 @@ public static class ExternalToolCollapsingWrapper
 
         var fullFunctionList = string.Join(", ", allFunctionNames);
 
-        // Build return message with optional post-expansion instructions
+        // Build return message with optional ephemeral context (function result)
         var returnMessage = $"{serverName} server expanded. Available functions: {fullFunctionList}";
-        if (!string.IsNullOrEmpty(postExpansionInstructions))
+        if (!string.IsNullOrEmpty(FunctionResult))
         {
-            returnMessage += $"\n\n{postExpansionInstructions}";
+            returnMessage += $"\n\n{FunctionResult}";
         }
 
         // Create container function
@@ -100,12 +102,14 @@ public static class ExternalToolCollapsingWrapper
     /// </summary>
     /// <param name="tools">Frontend tools to wrap</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
-    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
+    /// <param name="FunctionResult">Ephemeral instructions returned in function result after expansion</param>
+    /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
     /// <returns>Container function and Collapsed tools with metadata</returns>
     public static (AIFunction container, List<AIFunction> CollapsedTools) WrapFrontendTools(
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
-        string? postExpansionInstructions = null)
+        string? FunctionResult = null,
+        string?SystemPrompt = null)
     {
         if (tools == null || tools.Count == 0)
             throw new ArgumentException("Tools list cannot be null or empty", nameof(tools));
@@ -123,11 +127,11 @@ public static class ExternalToolCollapsingWrapper
         var description = $"Frontend UI tools for user interaction. Contains {allFunctionNames.Count} functions: {functionNamesList}{moreCount}";
         var fullFunctionList = string.Join(", ", allFunctionNames);
 
-        // Build return message with optional post-expansion instructions
+        // Build return message with optional ephemeral context (function result)
         var returnMessage = $"Frontend tools expanded. Available functions: {fullFunctionList}";
-        if (!string.IsNullOrEmpty(postExpansionInstructions))
+        if (!string.IsNullOrEmpty(FunctionResult))
         {
-            returnMessage += $"\n\n{postExpansionInstructions}";
+            returnMessage += $"\n\n{FunctionResult}";
         }
 
         // Create container function
@@ -168,14 +172,16 @@ public static class ExternalToolCollapsingWrapper
     /// <param name="description">Description of the plugin (REQUIRED - tells LLM when to expand)</param>
     /// <param name="tools">Tools in this plugin</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
-    /// <param name="postExpansionInstructions">Optional instructions shown to the agent after plugin expansion</param>
+    /// <param name="FunctionResult">Ephemeral instructions returned in function result after expansion</param>
+    /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
     /// <returns>Container function and Collapsed tools with metadata</returns>
     public static (AIFunction container, List<AIFunction> CollapsedTools) WrapFrontendPlugin(
         string pluginName,
         string description,
         List<AIFunction> tools,
         int maxFunctionNamesInDescription = 10,
-        string? postExpansionInstructions = null)
+        string? FunctionResult = null,
+        string?SystemPrompt = null)
     {
         if (string.IsNullOrEmpty(pluginName))
             throw new ArgumentException("Plugin name cannot be null or empty", nameof(pluginName));
@@ -203,11 +209,11 @@ public static class ExternalToolCollapsingWrapper
         var fullDescription = $"{description}. {functionSuffix}";
         var fullFunctionList = string.Join(", ", allFunctionNames);
 
-        // Build return message with optional post-expansion instructions
+        // Build return message with optional ephemeral context (function result)
         var returnMessage = $"{pluginName} plugin expanded. Available functions: {fullFunctionList}";
-        if (!string.IsNullOrEmpty(postExpansionInstructions))
+        if (!string.IsNullOrEmpty(FunctionResult))
         {
-            returnMessage += $"\n\n{postExpansionInstructions}";
+            returnMessage += $"\n\n{FunctionResult}";
         }
 
         // Create container function

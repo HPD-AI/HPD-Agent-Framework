@@ -866,7 +866,7 @@ public class CollapsingConfig
     public SkillInstructionMode SkillInstructionMode { get; set; } = SkillInstructionMode.Both;
 
     /// <summary>
-    /// Whether SystemPromptContext injections persist across message turns.
+    /// WhetherSystemPrompt injections persist across message turns.
     /// Default: false (instructions cleared at end of each message turn for clean prompts).
     ///
     /// Set to true if you need container instructions to remain in system prompt even after

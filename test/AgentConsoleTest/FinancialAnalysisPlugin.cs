@@ -9,7 +9,7 @@ using Microsoft.Extensions.AI;
 /// Designed to solve textbook problems and real-world financial statement analysis.
 /// </summary>
 
-public class FinancialAnalysisPluginMetadataContext : IPluginMetadataContext
+public class FinancialAnalysisPluginMetadataContext : IPluginMetadata
 {
     private readonly Dictionary<string, object> _properties = new();
 
@@ -54,7 +54,7 @@ public class FinancialAnalysisPluginMetadataContext : IPluginMetadataContext
 
 [Collapse(
     description: "Financial Analysis Plugin",
-    functionResultContext: @"Financial Analysis Plugin activated.
+    FunctionResult: @"Financial Analysis Plugin activated.
 
 Available capabilities:
 • Common-size analysis (balance sheet ratios)
@@ -63,7 +63,7 @@ Available capabilities:
 • Period-over-period change analysis
 • Balance sheet equation validation
 • Comprehensive multi-period analysis",
-    systemPromptContext: @"# FINANCIAL ANALYSIS RULES
+   SystemPrompt: @"# FINANCIAL ANALYSIS RULES
 
 ## Core Principles
 - ALWAYS validate the accounting equation: Assets = Liabilities + Equity

@@ -3,7 +3,7 @@ using System;
 /// <summary>
 /// Marks a function as conditionally available based on context properties.
 /// The function will only be included in the plugin when the condition evaluates to true.
-/// The context type is determined by the AIFunction&lt;TContext&gt; attribute on the method.
+/// The context type is determined by the AIFunction&lt;TMetadata&gt; attribute on the method.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class ConditionalFunctionAttribute : Attribute

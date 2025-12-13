@@ -61,7 +61,8 @@ public class MCPClientManager : IDisposable
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
-                        postExpansionInstructions: null,
+                        FunctionResult: null,
+                       SystemPrompt: null,
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);
@@ -135,7 +136,8 @@ public class MCPClientManager : IDisposable
                         serverConfig.Name,
                         tools,
                         maxFunctionNamesInDescription,
-                        postExpansionInstructions: null,
+                        FunctionResult: null,
+                       SystemPrompt: null,
                         customDescription: serverConfig.Description);
 
                     allTools.Add(container);

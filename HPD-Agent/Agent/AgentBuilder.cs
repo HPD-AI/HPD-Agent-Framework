@@ -40,7 +40,7 @@ public class AgentBuilder
     // Fields that are NOT part of the serializable config remain
     internal IChatClient? _baseClient;
     internal IConfiguration? _configuration;
-    internal IPluginMetadataContext? _defaultContext;
+    internal IPluginMetadata? _defaulTMetadata;
 
     /// <summary>
     /// Instance-based registrations for DI-required plugins (e.g., AgentPlanPlugin, DynamicMemoryPlugin).
@@ -48,7 +48,7 @@ public class AgentBuilder
     /// </summary>
     public readonly List<PluginInstanceRegistration> _instanceRegistrations = new();
     // store individual plugin contexts
-    internal readonly Dictionary<string, IPluginMetadataContext?> _pluginContexts = new();
+    internal readonly Dictionary<string, IPluginMetadata?> _pluginContexts = new();
     // Phase 5: Document store for skill instruction documents
     internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
     // Track explicitly registered plugins (for Collapsing manager)
@@ -265,7 +265,7 @@ public class AgentBuilder
                 var instance = factory.CreateInstance();
 
                 // Call CreateFunctions delegate (ZERO REFLECTION!)
-                var functions = factory.CreateFunctions(instance, ctx ?? _defaultContext);
+                var functions = factory.CreateFunctions(instance, ctx ?? _defaulTMetadata);
 
                 // Phase 4.5: Apply function filter if this plugin has selective registration
                 if (_pluginFunctionFilters.TryGetValue(factory.Name, out var functionFilter))
@@ -291,7 +291,7 @@ public class AgentBuilder
             try
             {
                 _pluginContexts.TryGetValue(registration.PluginTypeName, out var ctx);
-                var functions = CreateFunctionsFromInstance(registration, ctx ?? _defaultContext);
+                var functions = CreateFunctionsFromInstance(registration, ctx ?? _defaulTMetadata);
 
                 // Apply function filter if set
                 if (registration.FunctionFilter != null && registration.FunctionFilter.Length > 0)
@@ -319,7 +319,7 @@ public class AgentBuilder
     /// This is used for DI plugins that cannot be instantiated via the catalog.
     /// </summary>
     [RequiresUnreferencedCode("Uses reflection to call generated Registration class for DI plugins.")]
-    private List<AIFunction> CreateFunctionsFromInstance(PluginInstanceRegistration registration, IPluginMetadataContext? context)
+    private List<AIFunction> CreateFunctionsFromInstance(PluginInstanceRegistration registration, IPluginMetadata? context)
     {
         var instance = registration.Instance;
         var instanceType = instance.GetType();
@@ -348,12 +348,12 @@ public class AgentBuilder
 
         if (parameters.Length == 1)
         {
-            // Skill-only container: CreatePlugin(IPluginMetadataContext? context)
+            // Skill-only container: CreatePlugin(IPluginMetadata? context)
             result = createPluginMethod.Invoke(null, new object?[] { context });
         }
         else
         {
-            // Regular plugin: CreatePlugin(TPlugin instance, IPluginMetadataContext? context)
+            // Regular plugin: CreatePlugin(TPlugin instance, IPluginMetadata? context)
             result = createPluginMethod.Invoke(null, new object?[] { instance, context });
         }
 
@@ -572,7 +572,7 @@ public class AgentBuilder
     /// Internal method to set protocol-specific context provider factory.
     /// Used by protocol adapter extension methods (e.g., HPD.Agent.Microsoft.AgentBuilderExtensions).
     /// </summary>
-    internal void SetContextProviderFactory(object factory)
+    internal void SeTMetadataProviderFactory(object factory)
     {
         _contextProviderFactory = factory ?? throw new ArgumentNullException(nameof(factory));
     }
@@ -581,7 +581,7 @@ public class AgentBuilder
     /// Internal method to get protocol-specific context provider factory.
     /// Used by protocol adapter extension methods to retrieve the stored factory.
     /// </summary>
-    internal object? GetContextProviderFactory() => _contextProviderFactory;
+    internal object? GeTMetadataProviderFactory() => _contextProviderFactory;
 
     //   
     // DUAL-LAYER OBSERVABILITY ARCHITECTURE
@@ -1233,7 +1233,7 @@ public class AgentBuilder
         // Register ContainerMiddleware if enabled
         // This unified middleware handles all container operations:
         // - Tool visibility filtering (collapsing)
-        // - SystemPromptContext injection
+        // -SystemPrompt injection
         // - Expansion detection
         // - Ephemeral result filtering
         if (_config.Collapsing?.Enabled == true && buildData.MergedOptions?.Tools != null)
@@ -2125,16 +2125,16 @@ public class AgentBuilder
     /// <summary>
     /// Internal access to default plugin context for extension methods
     /// </summary>
-    internal IPluginMetadataContext? DefaultContext
+    internal IPluginMetadata? DefaulTMetadata
     {
-        get => _defaultContext;
-        set => _defaultContext = value;
+        get => _defaulTMetadata;
+        set => _defaulTMetadata = value;
     }
 
     /// <summary>
     /// Public access to plugin contexts for extension methods and external configuration
     /// </summary>
-    public Dictionary<string, IPluginMetadataContext?> PluginContexts => _pluginContexts;
+    public Dictionary<string, IPluginMetadata?> PluginContexts => _pluginContexts;
 
     /// <summary>
     /// Public access to unified middlewares for extension methods and external configuration
@@ -3216,7 +3216,7 @@ public static class AgentBuilderPluginExtensions
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
     [RequiresUnreferencedCode("Plugin loading via WithPlugin requires PluginRegistry from assembly where T is defined to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadataContext? context = null) where T : class, new()
+    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, IPluginMetadata? context = null) where T : class, new()
     {
         var pluginName = typeof(T).Name;
         var pluginAssembly = typeof(T).Assembly;
@@ -3259,7 +3259,7 @@ public static class AgentBuilderPluginExtensions
     /// </summary>
     [RequiresUnreferencedCode("Plugin instance registration requires PluginRegistry from instance's assembly to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadataContext? context = null) where T : class
+    public static AgentBuilder WithPlugin<T>(this AgentBuilder builder, T instance, IPluginMetadata? context = null) where T : class
     {
         var pluginName = typeof(T).Name;
 
@@ -3291,7 +3291,7 @@ public static class AgentBuilderPluginExtensions
     /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
     [RequiresUnreferencedCode("Plugin registration by Type requires PluginRegistry from plugin assembly to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadataContext? context = null)
+    public static AgentBuilder WithPlugin(this AgentBuilder builder, Type pluginType, IPluginMetadata? context = null)
     {
         var pluginName = pluginType.Name;
         var pluginAssembly = pluginType.Assembly;

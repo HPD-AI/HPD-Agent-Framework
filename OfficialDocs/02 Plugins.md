@@ -104,21 +104,21 @@ Collapsed containers keep your agent's tool surface small; the agent expands a c
 
 Constructor parameters:
 - `description` (required): Short explanation of what the container provides and when to expand it.
-- `functionResultContext` (optional): One-time message returned when the container first expands. Use this for activation confirmations or to list available capabilities.
-- `systemPromptContext` (optional): Persistent instructions injected into the system prompt on every iteration after expansion. Use this for behavioral rules, safety guidelines, or workflow requirements that must persist throughout the conversation.
+- `FunctionResult` (optional): One-time message returned when the container first expands. Use this for activation confirmations or to list available capabilities.
+- `SystemPrompt` (optional): Persistent instructions injected into the system prompt on every iteration after expansion. Use this for behavioral rules, safety guidelines, or workflow requirements that must persist throughout the conversation.
 
 **Important**: Both instruction contexts can be string literals or calls to methods/properties (static or instance) that return strings. Instance methods can access plugin state for dynamic instructions.
 
-> **Deprecated**: `postExpansionInstructions` is deprecated in favor of the dual-context approach. For backward compatibility, it maps to `functionResultContext`.
+> **Deprecated**: `postExpansionInstructions` is deprecated in favor of the dual-context approach. For backward compatibility, it maps to `FunctionResult`.
 
 ##### When to Use Each Context
 
-- **`functionResultContext`**: For one-time activation messages
+- **`FunctionResult`**: For one-time activation messages
   - "Search plugin activated. Available functions: WebSearch, CodeSearch, DocumentSearch"
   - "Financial analysis tools now available. Run GetStockPrice to start."
   - Shown once in the function result when the container expands
 
-- **`systemPromptContext`**: For persistent behavioral rules
+- **`SystemPrompt`**: For persistent behavioral rules
   - "Always paginate large datasets. Prefer provider-specific searches for accuracy."
   - "CRITICAL: Verify all trades before execution. Never auto-execute without confirmation."
   - Injected into system prompt on every iteration after activation
@@ -127,7 +127,7 @@ Constructor parameters:
 
 ```csharp
 [Collapse("Search operations across web, code, and documentation",
-    functionResultContext: "Search plugin activated. Available: WebSearch, CodeSearch, DocumentSearch.")]
+    FunctionResult: "Search plugin activated. Available: WebSearch, CodeSearch, DocumentSearch.")]
 public class SearchPlugin
 {
     [AIFunction]
@@ -146,7 +146,7 @@ public class SearchPlugin
 
 ```csharp
 [Collapse("Financial trading operations",
-    systemPromptContext: @"CRITICAL TRADING RULES:
+   SystemPrompt: @"CRITICAL TRADING RULES:
 - ALWAYS verify trade parameters before execution
 - NEVER auto-execute trades without explicit user confirmation
 - Check account balance before placing orders
@@ -162,8 +162,8 @@ public class TradingPlugin
 
 ```csharp
 [Collapse("Database operations for user and order management",
-    functionResultContext: "Database plugin activated. Available: QueryUsers, QueryOrders, UpdateUser.",
-    systemPromptContext: @"DATABASE SAFETY PROTOCOLS:
+    FunctionResult: "Database plugin activated. Available: QueryUsers, QueryOrders, UpdateUser.",
+   SystemPrompt: @"DATABASE SAFETY PROTOCOLS:
 - Always use parameterized queries (never string concatenation)
 - Limit query results to 100 rows by default unless user specifies otherwise
 - Log all write operations for audit trail")]
@@ -203,8 +203,8 @@ public static class SearchInstructionBuilder
 }
 
 [Collapse("Search operations across web, code, and documentation",
-    functionResultContext: SearchInstructionBuilder.GetActivationMessage(),
-    systemPromptContext: SearchInstructionBuilder.GetSearchRules())]
+    FunctionResult: SearchInstructionBuilder.GetActivationMessage(),
+   SystemPrompt: SearchInstructionBuilder.GetSearchRules())]
 public class DynamicSearchPlugin
 {
     [AIFunction]
@@ -221,8 +221,8 @@ Instance methods can access plugin state to generate dynamic instructions based 
 
 ```csharp
 [Collapse("Environment-aware configuration plugin",
-    functionResultContext: GetActivationMessage(),
-    systemPromptContext: GetEnvironmentRules())]
+    FunctionResult: GetActivationMessage(),
+   SystemPrompt: GetEnvironmentRules())]
 public class ConfigurationPlugin
 {
     private readonly string _environment;
@@ -277,7 +277,7 @@ public class ConfigurationPlugin
 
 ##### Instruction Persistence
 
-By default, `systemPromptContext` instructions are cleared at the end of each message turn to keep prompts clean. To make instructions persist across multiple turns, configure:
+By default, `SystemPrompt` instructions are cleared at the end of each message turn to keep prompts clean. To make instructions persist across multiple turns, configure:
 
 ```csharp
 agent.Config.Collapsing.PersistSystemPromptInjections = true;

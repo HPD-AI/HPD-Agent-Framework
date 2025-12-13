@@ -229,7 +229,7 @@ public class FrontendToolStateDataTests
     }
 
     [Fact]
-    public void WithoutContext_RemovesItem()
+    public void WithouTMetadata_RemovesItem()
     {
         // Arrange
         var state = new FrontendToolStateData()
@@ -237,7 +237,7 @@ public class FrontendToolStateDataTests
             .WithContextItem(new ContextItem("Desc2", "val2", "key2"));
 
         // Act
-        var updated = state.WithoutContext("key1");
+        var updated = state.WithouTMetadata("key1");
 
         // Assert
         Assert.Single(updated.Context);

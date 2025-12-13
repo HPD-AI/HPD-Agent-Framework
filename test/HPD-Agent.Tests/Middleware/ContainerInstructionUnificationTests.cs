@@ -8,21 +8,21 @@ namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
 /// Tests for Container Instruction Injection Unification V2 (dual-context architecture).
-/// Tests both FunctionResultContext (ephemeral) and SystemPromptContext (persistent) injection.
+/// Tests both FunctionResult (ephemeral) andSystemPrompt (persistent) injection.
 /// </summary>
 public class ContainerInstructionUnificationTests
 {
-    #region SystemPromptContext Injection Tests
+    #region SystemPrompt Injection Tests
 
     [Fact]
-    public async Task SystemPromptContext_InjectedIntoSystemPrompt_WhenContainerActive()
+    public async Task SystemPrompt_InjectedIntoSystemPrompt_WhenContainerActive()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Plugin activated",
-                SystemPromptContext: "Always validate calculations"));
+                FunctionResult: "Plugin activated",
+               SystemPrompt: "Always validate calculations"));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -35,39 +35,39 @@ public class ContainerInstructionUnificationTests
     }
 
     [Fact]
-    public async Task SystemPromptContext_OnlyHeaderInjected_WhenOnlyFunctionResultContextPresent()
+    public async Task SystemPrompt_OnlyHeaderInjected_WhenOnlyFunctionResultPresent()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Plugin activated",
-                SystemPromptContext: null)); // Only FunctionResultContext
+                FunctionResult: "Plugin activated",
+               SystemPrompt: null)); // Only FunctionResult
         var context = CreateContext(containerInstructions);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - Header is emitted but container content is skipped since SystemPromptContext is null
+        // Assert - Header is emitted but container content is skipped sinceSystemPrompt is null
         Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
 
-        // But the plugin name and FunctionResultContext should NOT be in system prompt
+        // But the plugin name and FunctionResult should NOT be in system prompt
         Assert.DoesNotContain("TestPlugin", context.Options.Instructions!);
         Assert.DoesNotContain("Plugin activated", context.Options.Instructions);
     }
 
     [Fact]
-    public async Task SystemPromptContext_InjectedForMultipleContainers()
+    public async Task SystemPrompt_InjectedForMultipleContainers()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Financial plugin activated",
-                SystemPromptContext: "Financial rules: Always validate equations"))
+                FunctionResult: "Financial plugin activated",
+               SystemPrompt: "Financial rules: Always validate equations"))
             .Add("WeatherPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Weather plugin activated",
-                SystemPromptContext: "Weather rules: Use metric units"));
+                FunctionResult: "Weather plugin activated",
+               SystemPrompt: "Weather rules: Use metric units"));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -81,14 +81,14 @@ public class ContainerInstructionUnificationTests
     }
 
     [Fact]
-    public async Task SystemPromptContext_PreservesOriginalInstructions()
+    public async Task SystemPrompt_PreservesOriginalInstructions()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: "Plugin-specific rules"));
+                FunctionResult: null,
+               SystemPrompt: "Plugin-specific rules"));
         var context = CreateContext(containerInstructions);
         var originalInstructions = "You are a helpful AI assistant.";
         context.Options!.Instructions = originalInstructions;
@@ -102,14 +102,14 @@ public class ContainerInstructionUnificationTests
     }
 
     [Fact]
-    public async Task SystemPromptContext_NotDuplicatedOnMultipleInvocations()
+    public async Task SystemPrompt_NotDuplicatedOnMultipleInvocations()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: "Test rules"));
+                FunctionResult: null,
+               SystemPrompt: "Test rules"));
         var context = CreateContext(containerInstructions);
 
         // Act - Call twice
@@ -125,23 +125,23 @@ public class ContainerInstructionUnificationTests
 
     #endregion
 
-    #region FunctionResultContext Tests (Legacy Behavior)
+    #region FunctionResult Tests (Legacy Behavior)
 
     [Fact]
-    public async Task FunctionResultContext_NotInjectedByMiddleware_OnlyStoredInMetadata()
+    public async Task FunctionResult_NotInjectedByMiddleware_OnlyStoredInMetadata()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "This should appear in function result",
-                SystemPromptContext: null));
+                FunctionResult: "This should appear in function result",
+               SystemPrompt: null));
         var context = CreateContext(containerInstructions);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - FunctionResultContext is NOT injected into system prompt
+        // Assert - FunctionResult is NOT injected into system prompt
         Assert.DoesNotContain("This should appear in function result", context.Options!.Instructions!);
     }
 
@@ -156,19 +156,19 @@ public class ContainerInstructionUnificationTests
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Plugin activated with capabilities X, Y, Z",
-                SystemPromptContext: "# FINANCIAL RULES\n- Always validate\n- Show work"));
+                FunctionResult: "Plugin activated with capabilities X, Y, Z",
+               SystemPrompt: "# FINANCIAL RULES\n- Always validate\n- Show work"));
         var context = CreateContext(containerInstructions);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        // SystemPromptContext should be in system instructions
+        //SystemPrompt should be in system instructions
         Assert.Contains("# FINANCIAL RULES", context.Options!.Instructions!);
         Assert.Contains("Always validate", context.Options.Instructions);
 
-        // FunctionResultContext should NOT be in system instructions (it goes in function result)
+        // FunctionResult should NOT be in system instructions (it goes in function result)
         Assert.DoesNotContain("Plugin activated with capabilities", context.Options.Instructions);
     }
 
@@ -179,8 +179,8 @@ public class ContainerInstructionUnificationTests
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "",
-                SystemPromptContext: ""));
+                FunctionResult: "",
+               SystemPrompt: ""));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -198,8 +198,8 @@ public class ContainerInstructionUnificationTests
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "   ",
-                SystemPromptContext: "\n\t  ")); // Whitespace-only (not null or empty)
+                FunctionResult: "   ",
+               SystemPrompt: "\n\t  ")); // Whitespace-only (not null or empty)
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -217,7 +217,7 @@ public class ContainerInstructionUnificationTests
     #region Special Characters and Formatting Tests
 
     [Fact]
-    public async Task SystemPromptContext_HandlesMultilineText()
+    public async Task SystemPrompt_HandlesMultilineText()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
@@ -227,8 +227,8 @@ public class ContainerInstructionUnificationTests
 - Rule 3";
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: multilineRules));
+                FunctionResult: null,
+               SystemPrompt: multilineRules));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -242,7 +242,7 @@ public class ContainerInstructionUnificationTests
     }
 
     [Fact]
-    public async Task SystemPromptContext_HandlesMarkdownFormatting()
+    public async Task SystemPrompt_HandlesMarkdownFormatting()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
@@ -257,8 +257,8 @@ Use `decimal` type for precision.";
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: markdownRules));
+                FunctionResult: null,
+               SystemPrompt: markdownRules));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -271,7 +271,7 @@ Use `decimal` type for precision.";
     }
 
     [Fact]
-    public async Task SystemPromptContext_HandlesSpecialCharacters()
+    public async Task SystemPrompt_HandlesSpecialCharacters()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
@@ -279,8 +279,8 @@ Use `decimal` type for precision.";
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: rulesWithSpecialChars));
+                FunctionResult: null,
+               SystemPrompt: rulesWithSpecialChars));
         var context = CreateContext(containerInstructions);
 
         // Act
@@ -303,8 +303,8 @@ Use `decimal` type for precision.";
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Activated",
-                SystemPromptContext: "Rules"));
+                FunctionResult: "Activated",
+               SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
 
         // Simulate message turn ending
@@ -329,8 +329,8 @@ Use `decimal` type for precision.";
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: "Activated",
-                SystemPromptContext: "Rules"));
+                FunctionResult: "Activated",
+               SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
 
         // Simulate non-final iteration (has tool calls)
@@ -384,8 +384,8 @@ Use `decimal` type for precision.";
         // Mix of new unified containers and legacy skills
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: "Financial plugin rules"));
+                FunctionResult: null,
+               SystemPrompt: "Financial plugin rules"));
 
         var activeSkills = ImmutableDictionary<string, string>.Empty
             .Add("weather", "Legacy weather skill instructions");
@@ -414,8 +414,8 @@ Use `decimal` type for precision.";
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: "Rules"));
+                FunctionResult: null,
+               SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
         context.Options = null;
 
@@ -441,7 +441,7 @@ Use `decimal` type for precision.";
     }
 
     [Fact]
-    public async Task VeryLongSystemPromptContext_IsInjectedCompletely()
+    public async Task VeryLongSystemPrompt_IsInjectedCompletely()
     {
         // Arrange
         var middleware = CreateContainerMiddleware();
@@ -449,8 +449,8 @@ Use `decimal` type for precision.";
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResultContext: null,
-                SystemPromptContext: longRules));
+                FunctionResult: null,
+               SystemPrompt: longRules));
         var context = CreateContext(containerInstructions);
 
         // Act

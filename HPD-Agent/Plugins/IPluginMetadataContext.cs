@@ -1,5 +1,5 @@
 // Base interface that any context must implement
-public interface IPluginMetadataContext
+public interface IPluginMetadata
 {
     /// <summary>
     /// Gets a property value by name with optional default

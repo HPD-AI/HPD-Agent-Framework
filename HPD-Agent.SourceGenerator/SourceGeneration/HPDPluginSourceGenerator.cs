@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using HPD.Agent.SourceGenerator.Capabilities;
 
 /// <summary>
 /// Source generator for HPD-Agent AI plugins. Generates AOT-compatible plugin registration code.
@@ -15,6 +16,8 @@ using System.Threading;
 public class HPDPluginSourceGenerator : IIncrementalGenerator
 {
     private static readonly System.Collections.Generic.List<string> _diagnosticMessages = new();
+
+    // Phase 4: Feature flag removed - new polymorphic generation is now the only path
 
     /// <summary>
     /// Initializes the incremental generator with syntax providers and output callbacks.
@@ -40,71 +43,38 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         var className = classDecl.Identifier.ValueText;
         System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator] Checking class: {className}");
 
-        // Note: We process classes with any access modifier (public, internal, private, etc.)
-        // This allows test classes and nested classes to work with source generation
+        // Skip private classes - they cannot be accessed by generated Registration classes
+        // This prevents compilation errors when private test classes have [Skill] or [AIFunction] attributes
+        if (classDecl.Modifiers.Any(SyntaxKind.PrivateKeyword))
+        {
+            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} is private - SKIPPED");
+            return false;
+        }
 
         var methods = classDecl.Members.OfType<MethodDeclarationSyntax>().ToList();
         System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has {methods.Count} methods");
 
-        // Check for [AIFunction] methods (traditional plugins)
-        var hasAIFunctionMethods = methods.Any(method => method.AttributeLists
-            .SelectMany(attrList => attrList.Attributes)
-            .Any(attr => attr.Name.ToString().Contains("AIFunction")));
-
-        if (hasAIFunctionMethods)
+        // PHASE 2: Unified detection - check for ANY capability attribute
+        // This replaces the 3 separate detection branches (AIFunction, Skill, SubAgent)
+        var hasCapabilityMethods = methods.Any(method =>
         {
-            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has [AIFunction] methods - SELECTED");
-            return true;
+            var attrs = method.AttributeLists
+                .SelectMany(attrList => attrList.Attributes)
+                .Select(attr => attr.Name.ToString());
+
+            // A plugin class has methods with any of these attributes
+            return attrs.Any(name =>
+                name.Contains("AIFunction") ||
+                name.Contains("Skill") ||
+                name.Contains("SubAgent"));
+        });
+
+        if (hasCapabilityMethods)
+        {
+            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has capability methods - SELECTED");
         }
 
-        // Check for skill methods with [Skill] attribute (Phase 3+)
-        // DIAGNOSTIC: Collect detailed info for ALL methods
-        var diagnosticInfo = new System.Text.StringBuilder();
-        diagnosticInfo.AppendLine($"Class: {className}");
-        diagnosticInfo.AppendLine($"Methods: {methods.Count}");
-
-        foreach (var method in methods)
-        {
-            var methodName = method.Identifier.ValueText;
-            var isPublic = method.Modifiers.Any(SyntaxKind.PublicKeyword);
-            var returnType = method.ReturnType.ToString();
-            var returnTypeKind = method.ReturnType.Kind();
-            var hasSkillAttr = method.AttributeLists.SelectMany(al => al.Attributes)
-                .Any(attr => attr.Name.ToString().Contains("Skill"));
-
-            diagnosticInfo.AppendLine($"  Method: {methodName}");
-            diagnosticInfo.AppendLine($"    isPublic: {isPublic}");
-            diagnosticInfo.AppendLine($"    returnType: '{returnType}'");
-            diagnosticInfo.AppendLine($"    returnTypeKind: {returnTypeKind}");
-            diagnosticInfo.AppendLine($"    returnType.Contains('Skill'): {returnType.Contains("Skill")}");
-            diagnosticInfo.AppendLine($"    hasSkillAttr: {hasSkillAttr}");
-            diagnosticInfo.AppendLine($"    MATCHES: {isPublic && returnType.Contains("Skill") && hasSkillAttr}");
-        }
-
-        // Store diagnostic info
-        _diagnosticMessages.Add(diagnosticInfo.ToString());
-
-        var hasSkillMethods = methods.Any(method =>
-            method.Modifiers.Any(SyntaxKind.PublicKeyword) &&
-            method.ReturnType.ToString().Contains("Skill") &&
-            method.AttributeLists.SelectMany(al => al.Attributes)
-                .Any(attr => attr.Name.ToString().Contains("Skill")));
-
-        // Check for sub-agent methods with [SubAgent] attribute
-        var hasSubAgentMethods = methods.Any(method =>
-            method.Modifiers.Any(SyntaxKind.PublicKeyword) &&
-            method.ReturnType.ToString().Contains("SubAgent") &&
-            method.AttributeLists.SelectMany(al => al.Attributes)
-                .Any(attr => attr.Name.ToString().Contains("SubAgent")));
-
-        if (hasSubAgentMethods)
-        {
-            System.Diagnostics.Debug.WriteLine($"[HPDPluginSourceGenerator]   Class {className} has [SubAgent] methods - SELECTED");
-        }
-
-        diagnosticInfo.AppendLine($"RESULT: {(hasSkillMethods || hasSubAgentMethods ? "SELECTED" : "SKIPPED")}");
-
-        return hasSkillMethods || hasSubAgentMethods;
+        return hasCapabilityMethods;
     }
     
     private static PluginInfo? GetPluginDeclaration(GeneratorSyntaxContext context, CancellationToken cancellationToken)
@@ -112,39 +82,28 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         var classDecl = (ClassDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
 
-        // Analyze [AIFunction] methods
-        var functions = classDecl.Members
-            .OfType<MethodDeclarationSyntax>()
-            .Where(method => HasAIFunctionAttribute(method, semanticModel))
-            .Select(method => AnalyzeFunction(method, semanticModel, context))
-            .Where(func => func != null)
-            .ToList();
-
-        // Analyze skill methods (public static Skill MethodName(...))
-        var skills = classDecl.Members
-            .OfType<MethodDeclarationSyntax>()
-            .Where(method => SkillAnalyzer.IsSkillMethod(method, semanticModel))
-            .Select(method => SkillAnalyzer.AnalyzeSkill(method, semanticModel, context))
-            .Where(skill => skill != null)
-            .ToList();
-
-        // Get class info
+        // Get class info (needed for capability analysis)
         var className = classDecl.Identifier.ValueText;
         var namespaceName = GetNamespace(classDecl);
 
-        // Analyze sub-agent methods ([SubAgent] public SubAgent MethodName(...))
-        var subAgents = classDecl.Members
+        // PHASE 5: Unified analysis for ALL capability types (Functions, Skills, SubAgents)
+        // Use CapabilityAnalyzer to discover all capabilities
+
+        var capabilities = classDecl.Members
             .OfType<MethodDeclarationSyntax>()
-            .Where(method => SubAgentAnalyzer.IsSubAgentMethod(method, semanticModel))
-            .Select(method => SubAgentAnalyzer.AnalyzeSubAgent(method, semanticModel, className, namespaceName))
-            .Where(subAgent => subAgent != null)
+            .Select(method => HPD.Agent.SourceGenerator.Capabilities.CapabilityAnalyzer.AnalyzeMethod(
+                method, semanticModel, context, className, namespaceName))
+            .Where(cap => cap != null)
             .ToList();
 
-        // Must have at least one function, skill, or sub-agent
-        if (!functions.Any() && !skills.Any() && !subAgents.Any()) return null;
+        // Must have at least one capability
+        if (!capabilities.Any())
+            return null;
 
-        // Check for [Collapse] attribute
-        var (hasCollapseAttribute, CollapseDescription, functionResultContext, functionResultContextExpression, functionResultContextIsStatic, systemPromptContext, systemPromptContextExpression, systemPromptContextIsStatic) = GetCollapseAttribute(classDecl, semanticModel);
+        // Check for [Collapse] attribute and validate dual-context configuration
+        var (hasCollapseAttribute, CollapseDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics) = GetCollapseAttribute(classDecl, semanticModel);
+
+        // Diagnostics will be stored in PluginInfo and reported in GeneratePluginRegistrations
 
         // Check if the class has a parameterless constructor (either explicit or implicit)
         var hasParameterlessConstructor = HasParameterlessConstructor(classDecl);
@@ -153,26 +112,33 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
         // A class is publicly accessible if it's public and not nested inside a non-public class
         var isPubliclyAccessible = IsClassPubliclyAccessible(classDecl);
 
-        // Build description
-        var description = BuildPluginDescription(functions.Count, skills.Count, subAgents.Count);
+        // Build description from capabilities
+        var functionCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>().Count();
+        var skillCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
+        var subAgentCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
+        var description = BuildPluginDescription(functionCount, skillCount, subAgentCount);
 
         return new PluginInfo
         {
             Name = classDecl.Identifier.ValueText,
             Description = description,
             Namespace = namespaceName,
-            Functions = functions!,
-            Skills = skills!,
-            SubAgents = subAgents!,
+
+            // PHASE 5: Unified Capabilities list (all capability types)
+            Capabilities = capabilities!,
+
             HasCollapseAttribute = hasCollapseAttribute,
             CollapseDescription = CollapseDescription,
-            FunctionResultContext = functionResultContext,
-            FunctionResultContextExpression = functionResultContextExpression,
-            FunctionResultContextIsStatic = functionResultContextIsStatic,
-            SystemPromptContext = systemPromptContext,
-            SystemPromptContextExpression = systemPromptContextExpression,
-            SystemPromptContextIsStatic = systemPromptContextIsStatic,
+            FunctionResult = FunctionResult,
+            FunctionResultExpression = FunctionResultExpression,
+            FunctionResultIsStatic = FunctionResultIsStatic,
+                    SystemPrompt = SystemPrompt,
+                    SystemPromptExpression = SystemPromptExpression,
+            SystemPromptIsStatic = SystemPromptIsStatic,
             HasParameterlessConstructor = hasParameterlessConstructor,
+
+            // Diagnostics from dual-context validation
+            Diagnostics = diagnostics,
             IsPubliclyAccessible = isPubliclyAccessible
         };
     }
@@ -254,15 +220,18 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
             {
                 // Merge all partial class parts into one plugin
                 var first = group.First()!;
-                var allFunctions = group.SelectMany(p => p!.Functions).ToList();
-                var allSkills = group.SelectMany(p => p!.Skills).ToList();
-                var allSubAgents = group.SelectMany(p => p!.SubAgents).ToList();
 
-                // Preserve HasCollapseAttribute, CollapseDescription, and PostExpansionInstructions from any partial class that has it
+                // PHASE 5: Merge unified Capabilities list (all capability types)
+                var allCapabilities = group.SelectMany(p => p!.Capabilities).ToList();
+
+                // Count capabilities by type for description
+                var functionCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>().Count();
+                var skillCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
+                var subAgentCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
+
+                // Preserve HasCollapseAttribute and CollapseDescription from any partial class that has it
                 var hasCollapseAttribute = group.Any(p => p!.HasCollapseAttribute);
                 var CollapseDescription = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.CollapseDescription;
-                var postExpansionInstructions = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.PostExpansionInstructions;
-                var postExpansionInstructionsExpression = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.PostExpansionInstructionsExpression;
 
                 // All partial class parts must have parameterless constructor for the plugin to be AOT-instantiable
                 // (If any part declares a constructor with parameters, no implicit parameterless constructor is generated)
@@ -271,31 +240,42 @@ public class HPDPluginSourceGenerator : IIncrementalGenerator
                 // All partial class parts must be publicly accessible for the plugin to be in the registry
                 var isPubliclyAccessible = group.All(p => p!.IsPubliclyAccessible);
 
+                // Merge diagnostics from all partial class parts
+                var allDiagnostics = group.SelectMany(p => p!.Diagnostics).ToList();
+
                 return new PluginInfo
                 {
                     Name = first.Name,
-                    Description = BuildPluginDescription(allFunctions.Count, allSkills.Count, allSubAgents.Count),
+                    Description = BuildPluginDescription(functionCount, skillCount, subAgentCount),
                     Namespace = first.Namespace,
-                    Functions = allFunctions,
-                    Skills = allSkills,
-                    SubAgents = allSubAgents,
+
+                    // PHASE 5: Unified Capabilities list (all capability types)
+                    Capabilities = allCapabilities,
                     HasCollapseAttribute = hasCollapseAttribute,
                     CollapseDescription = CollapseDescription,
                     // NEW: Dual-context properties
-                    FunctionResultContext = group.FirstOrDefault(p => p?.FunctionResultContext != null)?.FunctionResultContext,
-                    FunctionResultContextExpression = group.FirstOrDefault(p => p?.FunctionResultContextExpression != null)?.FunctionResultContextExpression,
-                    FunctionResultContextIsStatic = group.FirstOrDefault(p => p?.FunctionResultContextExpression != null)?.FunctionResultContextIsStatic ?? true,
-                    SystemPromptContext = group.FirstOrDefault(p => p?.SystemPromptContext != null)?.SystemPromptContext,
-                    SystemPromptContextExpression = group.FirstOrDefault(p => p?.SystemPromptContextExpression != null)?.SystemPromptContextExpression,
-                    SystemPromptContextIsStatic = group.FirstOrDefault(p => p?.SystemPromptContextExpression != null)?.SystemPromptContextIsStatic ?? true,
-                    // LEGACY: Backward compatibility
-                    PostExpansionInstructions = postExpansionInstructions,
-                    PostExpansionInstructionsExpression = postExpansionInstructionsExpression,
+                    FunctionResult = group.FirstOrDefault(p => p?.FunctionResult != null)?.FunctionResult,
+                    FunctionResultExpression = group.FirstOrDefault(p => p?.FunctionResultExpression != null)?.FunctionResultExpression,
+                    FunctionResultIsStatic = group.FirstOrDefault(p => p?.FunctionResultExpression != null)?.FunctionResultIsStatic ?? true,
+                            SystemPrompt = group.FirstOrDefault(p => p?.SystemPrompt != null)?.SystemPrompt,
+                            SystemPromptExpression = group.FirstOrDefault(p => p?.SystemPromptExpression != null)?.SystemPromptExpression,
+                    SystemPromptIsStatic = group.FirstOrDefault(p => p?.SystemPromptExpression != null)?.SystemPromptIsStatic ?? true,
                     HasParameterlessConstructor = hasParameterlessConstructor,
-                    IsPubliclyAccessible = isPubliclyAccessible
+                    IsPubliclyAccessible = isPubliclyAccessible,
+                    // Diagnostics from dual-context validation
+                    Diagnostics = allDiagnostics
                 };
             })
             .ToList();
+
+        // Report diagnostics for all plugins
+        foreach (var plugin in pluginGroups)
+        {
+            foreach (var diagnostic in plugin.Diagnostics)
+            {
+                context.ReportDiagnostic(diagnostic);
+            }
+        }
 
         // DIAGNOSTIC: Generate detailed diagnostic report AFTER grouping
         var reportLines = string.Join("\\n", _diagnosticMessages.Select(m => m.Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "")));
@@ -320,23 +300,25 @@ namespace HPD.Agent.Diagnostics {{
         debugInfo.AppendLine($"// Merged into {pluginGroups.Count} unique plugins");
         foreach (var plugin in pluginGroups)
         {
-            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.Functions.Count} functions, {plugin.Skills.Count} skills, and {plugin.SubAgents.Count} sub-agents");
+            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.FunctionCapabilities.Count()} functions, {plugin.SkillCapabilities.Count()} skills, and {plugin.SubAgentCapabilities.Count()} sub-agents");
         }
         context.AddSource("HPD.Agent.Generated.SourceGeneratorDebug.g.cs", debugInfo.ToString());
 
-        // Resolve skills before validation and code generation
-        var allSkills = pluginGroups.SelectMany(p => p.Skills).ToList();
-        if (allSkills.Any())
+        // Resolve skill references before validation and code generation
+        // PHASE 5: Use unified SkillCapabilities from Capabilities list
+        var allSkillCapabilities = pluginGroups
+            .SelectMany(p => p.SkillCapabilities)
+            .ToList();
+        if (allSkillCapabilities.Any())
         {
-            var skillResolver = new SkillResolver(allSkills);
-            skillResolver.ResolveAllSkills();
+            ResolveSkillCapabilities(allSkillCapabilities);
         }
 
         foreach (var plugin in pluginGroups)
         {
             if (plugin == null) continue;
 
-            foreach (var function in plugin.Functions)
+            foreach (var function in plugin.FunctionCapabilities)
             {
                 if (function.ValidationData?.NeedsValidation == true)
                 {
@@ -404,7 +386,7 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
-        sb.AppendLine("using HPD.Agent;  // For PluginFactory and IPluginMetadataContext types");
+        sb.AppendLine("using HPD.Agent;  // For PluginFactory and IPluginMetadata types");
         sb.AppendLine();
         sb.AppendLine("namespace HPD.Agent.Generated");
         sb.AppendLine("{");
@@ -445,7 +427,7 @@ namespace HPD.Agent.Diagnostics {{
             }
 
             // Add GetReferencedPlugins if plugin has skills
-            if (plugin.Skills.Any())
+            if (plugin.SkillCapabilities.Any())
             {
                 sb.AppendLine($"                {plugin.Name}Registration.GetReferencedPlugins,");
                 sb.AppendLine($"                {plugin.Name}Registration.GetReferencedFunctions");
@@ -466,11 +448,12 @@ namespace HPD.Agent.Diagnostics {{
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Generates the CreatePlugin method using unified polymorphic ICapability iteration.
+    /// Phase 4: Now the single unified generation path (old path removed).
+    /// </summary>
     private static string GenerateCreatePluginMethod(PluginInfo plugin)
     {
-        var unconditionalFunctions = plugin.Functions.Where(f => !f.IsConditional).ToList();
-        var conditionalFunctions = plugin.Functions.Where(f => f.IsConditional).ToList();
-
         var sb = new StringBuilder();
         sb.AppendLine("    /// <summary>");
         sb.AppendLine($"    /// Creates an AIFunction list for the {plugin.Name} plugin.");
@@ -480,66 +463,66 @@ namespace HPD.Agent.Diagnostics {{
         if (!plugin.RequiresInstance)
         {
             sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
-            sb.AppendLine($"    public static List<AIFunction> CreatePlugin(IPluginMetadataContext? context = null)");
+            sb.AppendLine($"    public static List<AIFunction> CreatePlugin(IPluginMetadata? context = null)");
         }
         else
         {
             sb.AppendLine($"    /// <param name=\"instance\">The plugin instance</param>");
             sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
-            sb.AppendLine($"    public static List<AIFunction> CreatePlugin({plugin.Name} instance, IPluginMetadataContext? context = null)");
+            sb.AppendLine($"    public static List<AIFunction> CreatePlugin({plugin.Name} instance, IPluginMetadata? context = null)");
         }
 
         sb.AppendLine("    {");
         sb.AppendLine("        var functions = new List<AIFunction>();");
-
-        // Add container function first if plugin is Collapsed (but NOT if it has skills - SkillCodeGenerator handles that)
-        if (plugin.HasCollapseAttribute && !plugin.Skills.Any())
-        {
-            sb.AppendLine();
-            sb.AppendLine("        // Container function for plugin Collapsing");
-            sb.AppendLine($"        functions.Add(Create{plugin.Name}Container(instance));");
-        }
-
-        if (unconditionalFunctions.Any())
-        {
-            sb.AppendLine();
-            sb.AppendLine("        // Always included functions");
-            foreach (var function in unconditionalFunctions)
-            {
-                sb.AppendLine($"        functions.Add({GenerateFunctionRegistration(function, plugin)});");
-            }
-        }
-
-        if (conditionalFunctions.Any())
-        {
-            sb.AppendLine();
-            sb.AppendLine("        // Conditionally included functions");
-            foreach (var function in conditionalFunctions)
-            {
-                sb.AppendLine($"        if (Evaluate{function.Name}Condition(context))");
-                sb.AppendLine("        {");
-                sb.AppendLine($"            functions.Add({GenerateFunctionRegistration(function, plugin)});");
-                sb.AppendLine("        }");
-            }
-        }
-
-        // Add skills
-        if (plugin.Skills.Any())
-        {
-            sb.Append(SkillCodeGenerator.GenerateSkillRegistrations(plugin));
-        }
-
-        // Add sub-agents
-        if (plugin.SubAgents.Any())
-        {
-            sb.Append(SubAgentCodeGenerator.GenerateAllSubAgentFunctions(plugin));
-        }
-
         sb.AppendLine();
+
+        // Add collapse container registration if needed (BEFORE individual capabilities)
+        var skillRegistrations = SkillCodeGenerator.GenerateSkillRegistrations(plugin);
+        if (!string.IsNullOrEmpty(skillRegistrations))
+        {
+            sb.Append(skillRegistrations);
+        }
+
+        // PHASE 2A: POLYMORPHIC DISPATCH - All capabilities use the same pattern
+        // All capabilities now return just the factory call, so we can treat them uniformly
+        //
+        // IMPORTANT: Skills are registered via GenerateSkillRegistrations() above,
+        // so we exclude them here to avoid duplicate registration.
+        // Skills use helper methods (CreateSkillNameSkill) while other capabilities use inline code.
+        var nonSkillCapabilities = plugin.Capabilities.Where(c => c.Type != CapabilityType.Skill);
+
+        if (nonSkillCapabilities.Any())
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // Register all non-skill capabilities (Functions, SubAgents)");
+            foreach (var capability in nonSkillCapabilities)
+            {
+                // CRITICAL: Only generate conditional check if the evaluator method was generated
+                // Conditional evaluators require a ContextTypeName to be set
+                var hasConditionalEvaluator = capability.IsConditional &&
+                                            capability is BaseCapability baseCapability &&
+                                            baseCapability.HasTypedMetadata;
+
+                if (hasConditionalEvaluator)
+                {
+                    sb.AppendLine($"        if (Evaluate{capability.Name}Condition(context))");
+                    sb.AppendLine("        {");
+                    sb.AppendLine($"            functions.Add({capability.GenerateRegistrationCode(plugin)});");
+                    sb.AppendLine("        }");
+                }
+                else
+                {
+                    sb.AppendLine($"        functions.Add({capability.GenerateRegistrationCode(plugin)});");
+                }
+                sb.AppendLine();
+            }
+        }
+
         sb.AppendLine("        return functions;");
         sb.AppendLine("    }");
         return sb.ToString();
     }
+
 
     private static string GeneratePluginRegistration(PluginInfo plugin)
     {
@@ -585,7 +568,8 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine("    {");
 
         // Generate GetReferencedPlugins() and GetReferencedFunctions() if there are skills
-        if (plugin.Skills.Any())
+        // PHASE 5: Use SkillCapabilities (fully populated with resolved references)
+        if (plugin.SkillCapabilities.Any())
         {
             sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedPluginsMethod(plugin));
             sb.AppendLine();
@@ -594,7 +578,8 @@ namespace HPD.Agent.Diagnostics {{
         }
 
         // Generate plugin metadata accessor (always generated for consistency)
-        if (plugin.Skills.Any())
+        // PHASE 5: Use SkillCapabilities instead of Skills
+        if (plugin.SkillCapabilities.Any())
         {
             sb.AppendLine(SkillCodeGenerator.UpdatePluginMetadataWithSkills(plugin, ""));
         }
@@ -605,7 +590,7 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine();
 
         // Generate container function and helper if plugin is Collapsed OR has skills
-        if (plugin.HasCollapseAttribute || plugin.Skills.Any())
+        if (plugin.HasCollapseAttribute || plugin.SkillCapabilities.Any())
         {
             if (plugin.HasCollapseAttribute)
             {
@@ -618,7 +603,7 @@ namespace HPD.Agent.Diagnostics {{
 
         sb.AppendLine(GenerateCreatePluginMethod(plugin));
 
-        foreach (var function in plugin.Functions)
+        foreach (var function in plugin.FunctionCapabilities)
         {
             sb.AppendLine();
             sb.AppendLine(GenerateSchemaValidator(function, plugin));
@@ -632,15 +617,23 @@ namespace HPD.Agent.Diagnostics {{
                 sb.AppendLine(GenerateJsonParser(function, plugin));
             }
         }
-        
-        if (plugin.RequiresContext || plugin.Functions.Any(f => f.IsConditional))
+
+        // PHASE 2B: Generate context resolvers for ALL capabilities (Functions, Skills, SubAgents)
+        // This enables Skills and SubAgents to use dynamic descriptions and conditionals (feature parity!)
+        // Replaces the old DSL-based GenerateContextResolutionMethods() which only worked for Functions
+        foreach (var capability in plugin.Capabilities)
         {
-            sb.AppendLine();
-            sb.AppendLine(GenerateContextResolutionMethods(plugin));
+            var resolvers = capability.GenerateContextResolvers();
+            if (!string.IsNullOrEmpty(resolvers))
+            {
+                sb.AppendLine();
+                sb.AppendLine(resolvers);
+            }
         }
 
-        // Generate skill code
-        if (plugin.Skills.Any())
+        // Generate skill code AND collapse container (if plugin has [Collapse] attribute)
+        // NOTE: Collapse container can exist even if there are no skills (e.g., collapsed plugin with only functions)
+        if (plugin.SkillCapabilities.Any() || plugin.HasCollapseAttribute)
         {
             sb.AppendLine(SkillCodeGenerator.GenerateAllSkillCode(plugin));
         }
@@ -656,7 +649,7 @@ namespace HPD.Agent.Diagnostics {{
         var contextSerializableTypes = new List<string>();
 
         // Generate SubAgentQueryArgs if there are sub-agents (Collapsed per plugin to avoid conflicts)
-        if (plugin.SubAgents.Any())
+        if (plugin.SubAgentCapabilities.Any())
         {
             sb.AppendLine(
 $@"    /// <summary>
@@ -672,7 +665,7 @@ $@"    /// <summary>
 ");
         }
 
-        foreach (var function in plugin.Functions)
+        foreach (var function in plugin.FunctionCapabilities)
         {
             if (!function.Parameters.Any(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider")) continue;
 
@@ -704,7 +697,7 @@ $@"    /// <summary>
         return sb.ToString();
     }
 
-    private static string GenerateSchemaValidator(FunctionInfo function, PluginInfo plugin)
+    private static string GenerateSchemaValidator(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, PluginInfo plugin)
     {
         var relevantParams = function.Parameters
             .Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider").ToList();
@@ -756,287 +749,6 @@ $@"    /// <summary>
         return param.Type.EndsWith("?");
     }
 
-    private static string GenerateFunctionRegistration(FunctionInfo function, PluginInfo plugin)
-    {
-        var nameCode = $"\"{function.FunctionName}\"";
-        var descriptionCode = function.HasDynamicDescription
-            ? $"Resolve{function.Name}Description(context)"
-            : $"\"{function.Description}\"";
-        
-        var relevantParams = function.Parameters
-            .Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider").ToList();
-        
-        var dtoName = relevantParams.Any() ? $"{function.Name}Args" : "object";
-        
-        var invocationArgs = string.Join(", ", function.Parameters.Select(p =>
-        {
-            if (p.Type == "CancellationToken") return "cancellationToken";
-            if (p.Type == "AIFunctionArguments") return "arguments";
-            if (p.Type == "IServiceProvider") return "arguments.Services";
-            return $"args.{p.Name}";
-        }));
-
-        string asyncKeyword = function.IsAsync ? "async" : "";
-        string awaitKeyword = function.IsAsync ? "await" : "";
-        string returnType = "Task<object?>";
-        string returnWrapper = function.IsAsync ? "" : "Task.FromResult";
-        
-        string schemaProviderCode = "() => { ";
-        if (relevantParams.Any())
-        {
-            // Use AIJsonUtilities to generate schema from the method signature
-            // This is AOT-compatible and uses the method's actual parameters with their [Description] attributes
-            schemaProviderCode += $@"
-    var method = typeof({plugin.Name}).GetMethod(nameof({plugin.Name}.{function.Name}));
-    var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions {{ IncludeSchemaKeyword = false }};
-    return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateFunctionJsonSchema(
-        method!,
-        serializerOptions: global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions,
-        inferenceOptions: options
-    );";
-        }
-        else
-        {
-            // Empty schema for functions with no parameters
-            schemaProviderCode += @"
-    var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions { IncludeSchemaKeyword = false };
-    return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateJsonSchema(
-        null,
-        serializerOptions: global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions,
-        inferenceOptions: options
-    );";
-        }
-        schemaProviderCode += " }";
-
-        // Check if the return type is void
-        bool isVoidReturn = function.ReturnType == "void" || function.ReturnType == "System.Void";
-
-        string invocationLogic;
-        if (relevantParams.Any())
-        {
-            string returnStatement;
-            if (isVoidReturn)
-            {
-                // For void methods, call the method and return null
-                returnStatement = function.IsAsync
-                    ? $"{awaitKeyword} instance.{function.Name}({invocationArgs}); return null;"
-                    : $"instance.{function.Name}({invocationArgs}); return null;";
-            }
-            else
-            {
-                // For non-void methods, return the result as object
-                returnStatement = function.IsAsync 
-                    ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
-                    : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
-            }
-                
-            invocationLogic = 
-$@"({asyncKeyword} (arguments, cancellationToken) =>
-            {{
-                var jsonArgs = arguments.GetJson();
-                var args = Parse{dtoName}(jsonArgs);
-                {returnStatement}
-            }})";
-        }
-        else
-        {
-            string returnStatement;
-            if (isVoidReturn)
-            {
-                // For void methods, call the method and return null
-                returnStatement = function.IsAsync
-                    ? $"{awaitKeyword} instance.{function.Name}({invocationArgs}); return null;"
-                    : $"instance.{function.Name}({invocationArgs}); return null;";
-            }
-            else
-            {
-                // For non-void methods, return the result as object
-                returnStatement = function.IsAsync 
-                    ? $"return ({awaitKeyword} instance.{function.Name}({invocationArgs})) as object;"
-                    : $"return {returnWrapper}(({awaitKeyword} instance.{function.Name}({invocationArgs})) as object);";
-            }
-                
-            invocationLogic = 
-$@"({asyncKeyword} (arguments, cancellationToken) =>
-            {{
-                {returnStatement}
-            }})";
-        }
-
-        var options = new StringBuilder();
-        options.AppendLine($"                Name = {nameCode},");
-        options.AppendLine($"                Description = {descriptionCode},");
-    options.AppendLine($"                RequiresPermission = {function.RequiresPermission.ToString().ToLower()},");
-        options.AppendLine($"                Validator = Create{function.Name}Validator(),");
-        options.AppendLine($"                SchemaProvider = {schemaProviderCode},");
-        options.AppendLine($"                ParameterDescriptions = {GenerateParameterDescriptions(function)},");
-
-        // ALWAYS add ParentPlugin metadata (enables PluginReferences to work with any plugin)
-        // Note: Plugins without [Collapse] remain "always visible" by default
-        // Skills can use PluginReferences to Collapse them on-demand
-        options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
-        options.AppendLine("                {");
-        options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
-        options.AppendLine("                    [\"IsContainer\"] = false");
-        options.Append("                }");
-
-        return
-$@"HPDAIFunctionFactory.Create(
-            new Func<AIFunctionArguments, CancellationToken, {returnType}>{invocationLogic},
-            new HPDAIFunctionFactoryOptions
-            {{
-{options}
-            }}
-        )";
-    }
-
-    private static string GenerateParameterDescriptions(FunctionInfo function)
-    {
-        var paramsWithDesc = function.Parameters.Where(p => !string.IsNullOrEmpty(p.Description)).ToList();
-        if (!paramsWithDesc.Any())
-            return "null";
-            
-        var descriptions = new StringBuilder();
-        descriptions.AppendLine("new Dictionary<string, string> {");
-        
-        for (int i = 0; i < paramsWithDesc.Count; i++)
-        {
-            var param = paramsWithDesc[i];
-            var comma = i < paramsWithDesc.Count - 1 ? "," : "";
-            var descCode = param.HasDynamicDescription 
-                ? $"Resolve{function.Name}Parameter{param.Name}Description(context)"
-                : $"\"{param.Description}\"";
-            descriptions.AppendLine($"                    {{ \"{param.Name}\", {descCode} }}{comma}");
-        }
-        
-        descriptions.Append("                }");
-        return descriptions.ToString();
-    }
-
-    // Helper Methods
-
-private static string GenerateContextResolutionMethods(PluginInfo plugin)
-    {
-        var sb = new StringBuilder();
-        
-        // Function-level description resolvers
-        foreach (var function in plugin.Functions.Where(f => f.HasDynamicDescription))
-        {
-            if (sb.Length > 0) sb.AppendLine();
-            
-            if (!string.IsNullOrEmpty(function.ContextTypeName))
-            {
-                sb.AppendLine(DSLCodeGenerator.GenerateDescriptionResolver(
-                    function.Name,
-                    function.Description,
-                    function.ContextTypeName!));
-            }
-        }
-        
-        // Parameter description resolvers  
-        foreach (var function in plugin.Functions)
-        {
-            foreach (var parameter in function.Parameters.Where(p => p.HasDynamicDescription))
-            {
-                if (sb.Length > 0) sb.AppendLine();
-                
-                if (!string.IsNullOrEmpty(function.ContextTypeName))
-                {
-                    sb.AppendLine(DSLCodeGenerator.GenerateParameterDescriptionResolver(
-                        function.Name,
-                        parameter.Name,
-                        parameter.Description,
-                        function.ContextTypeName!));
-                }
-            }
-        }
-        
-        // Function conditional evaluators
-        foreach (var function in plugin.Functions.Where(f => f.IsConditional))
-        {
-            if (sb.Length > 0) sb.AppendLine();
-            
-            if (!string.IsNullOrEmpty(function.ConditionalExpression) && !string.IsNullOrEmpty(function.ContextTypeName))
-            {
-                sb.AppendLine(DSLCodeGenerator.GenerateConditionalEvaluator(
-                    function.Name, 
-                    function.ConditionalExpression!, 
-                    function.ContextTypeName!));
-            }
-        }
-        
-        // Parameter conditional evaluators
-        foreach (var function in plugin.Functions.Where(f => f.HasConditionalParameters))
-        {
-            foreach (var parameter in function.Parameters.Where(p => p.IsConditional))
-            {
-                if (sb.Length > 0) sb.AppendLine();
-                
-                if (!string.IsNullOrEmpty(parameter.ConditionalExpression) && !string.IsNullOrEmpty(function.ContextTypeName))
-                {
-                    sb.AppendLine(DSLCodeGenerator.GenerateParameterConditionalEvaluator(
-                        function.Name,
-                        parameter.Name,
-                        parameter.ConditionalExpression!,
-                        function.ContextTypeName!));
-                }
-            }
-        }
-        
-        return sb.ToString();
-    }
-    private static bool HasAIFunctionAttribute(MethodDeclarationSyntax method, SemanticModel semanticModel)
-    {
-        return method.AttributeLists
-            .SelectMany(attrList => attrList.Attributes)
-            .Any(attr => attr.Name.ToString().Contains("AIFunction"));
-    }
-    
-    private static FunctionInfo? AnalyzeFunction(MethodDeclarationSyntax method, SemanticModel semanticModel, GeneratorSyntaxContext context)
-    {
-        if (!method.Modifiers.Any(SyntaxKind.PublicKeyword))
-            return null;
-        
-        var symbol = semanticModel.GetDeclaredSymbol(method);
-        if (symbol == null) return null;
-        
-        // Get function attributes
-        var customName = GetCustomFunctionName(method);
-        var description = GetFunctionDescription(method);
-        var permissions = GetRequiredPermissions(method);
-        
-        // Get context type from AIFunction<TContext> (V3.0)
-        var (contextTypeName, isGenericAIFunction) = GetAIFunctionContextType(method, semanticModel);
-        
-        // Get function metadata
-        var conditionalExpression = GetConditionalExpression(method);
-        
-        var requiresPermission = GetRequiresPermission(method);
-        var functionInfo = new FunctionInfo
-        {
-            Name = method.Identifier.ValueText,
-            CustomName = customName,
-            Description = description,
-            Parameters = AnalyzeParameters(method.ParameterList, semanticModel),
-            ReturnType = GetReturnType(method, semanticModel),
-            IsAsync = IsAsyncMethod(method),
-            RequiredPermissions = permissions,
-            RequiresPermission = requiresPermission,
-            ContextTypeName = contextTypeName,
-            ConditionalExpression = conditionalExpression
-        };
-        
-        // Store validation data for later processing in the main source generator method
-        functionInfo.ValidationData = new ValidationData
-        {
-            Method = method,
-            SemanticModel = semanticModel,
-            NeedsValidation = !string.IsNullOrEmpty(contextTypeName)
-        };
-        
-        return functionInfo;
-    }
-    
     private static List<ParameterInfo> AnalyzeParameters(ParameterListSyntax parameterList, SemanticModel semanticModel)
     {
         return parameterList.Parameters
@@ -1181,7 +893,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     // V3.0 New Helper Methods
     
     /// <summary>
-    /// Extracts context type from AIFunction&lt;TContext&gt; attribute.
+    /// Extracts context type from AIFunction&lt;TMetadata&gt; attribute.
     /// </summary>
     private static (string? contextTypeName, bool isGeneric) GetAIFunctionContextType(MethodDeclarationSyntax method, SemanticModel semanticModel)
     {
@@ -1196,7 +908,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
             {
                 var attributeType = methodSymbol.ContainingType;
                 
-                // Check if it's the generic AIFunction<TContext>
+                // Check if it's the generic AIFunction<TMetadata>
                 if (attributeType.IsGenericType && attributeType.TypeArguments.Length == 1)
                 {
                     var contextType = attributeType.TypeArguments[0];
@@ -1253,7 +965,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     /// <summary>
     /// Validates that template properties exist on the context type.
     /// </summary>
-    private static void ValidateTemplateProperties(SourceProductionContext context, FunctionInfo function, ITypeSymbol contextType, SyntaxNode location)
+    private static void ValidateTemplateProperties(SourceProductionContext context, HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, ITypeSymbol contextType, SyntaxNode location)
     {
         // Validate function description templates
         if (function.HasDynamicDescription)
@@ -1362,7 +1074,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     /// <summary>
     /// NEW: Check if function should use generic AIFunction attribute.
     /// </summary>
-    private static void ValidateFunctionContextUsage(SourceProductionContext context, FunctionInfo function, MethodDeclarationSyntax method)
+    private static void ValidateFunctionContextUsage(SourceProductionContext context, HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, MethodDeclarationSyntax method)
     {
         // Check if function uses dynamic features but no generic context
         bool usesDynamicFeatures = function.HasDynamicDescription || 
@@ -1377,7 +1089,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                 new DiagnosticDescriptor(
                     "HPD003",
                     "Missing context type",
-                    $"Function '{function.Name}' uses dynamic features but lacks AIFunction<TContext> attribute. Use [AIFunction<YourContext>] instead of [AIFunction].",
+                    $"Function '{function.Name}' uses dynamic features but lacks AIFunction<TMetadata> attribute. Use [AIFunction<YourContext>] instead of [AIFunction].",
                     "HPD.Context",
                     DiagnosticSeverity.Warning,
                     isEnabledByDefault: true,
@@ -1578,18 +1290,19 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
 
     /// <summary>
     /// Detects [Collapse] attribute on a class and extracts its description and instruction contexts.
-    /// Supports both legacy postExpansionInstructions and new dual-context (functionResultContext, systemPromptContext).
+    /// Supports both legacy postExpansionInstructions and new dual-context (FunctionResult,SystemPrompt).
     /// Analyzes expressions to determine if they're static or instance methods/properties.
     /// </summary>
     private static (
         bool hasCollapseAttribute,
         string? collapseDescription,
-        string? functionResultContext,
-        string? functionResultContextExpression,
-        bool functionResultContextIsStatic,
-        string? systemPromptContext,
-        string? systemPromptContextExpression,
-        bool systemPromptContextIsStatic
+        string? FunctionResult,
+        string? FunctionResultExpression,
+        bool FunctionResultIsStatic,
+        string? SystemPrompt,
+        string? SystemPromptExpression,
+        bool SystemPromptIsStatic,
+        List<Diagnostic> diagnostics
     ) GetCollapseAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
     {
         var collapseAttributes = classDecl.AttributeLists
@@ -1602,7 +1315,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
             if (!arguments.HasValue || arguments.Value.Count < 1)
             {
                 // Attribute present but no description
-                return (true, null, null, null, true, null, null, true);
+                return (true, null, null, null, true, null, null, true, new List<Diagnostic>());
             }
 
             // First argument is always the description
@@ -1620,9 +1333,9 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                 var argName = arg.NameColon?.Name.Identifier.ValueText;
 
                 // Check if argument is named or positional
-                if (argName == "functionResultContext" || (argName == null && i == 1))
+                if (argName == "FunctionResult" || (argName == null && i == 1))
                 {
-                    // functionResultContext (or 2nd positional argument)
+                    // FunctionResult (or 2nd positional argument)
                     if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
                     {
                         funcResultCtx = literal.Token.ValueText;
@@ -1633,9 +1346,9 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                         funcResultIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
                     }
                 }
-                else if (argName == "systemPromptContext" || (argName == null && i == 2))
+                else if (argName == "SystemPrompt" || (argName == null && i == 2))
                 {
-                    // systemPromptContext (or 3rd positional argument)
+                    // SystemPrompt (or 3rd positional argument)
                     if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
                     {
                         sysPromptCtx = literal.Token.ValueText;
@@ -1648,7 +1361,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                 }
                 else if (argName == "postExpansionInstructions")
                 {
-                    // Legacy parameter - maps to functionResultContext
+                    // Legacy parameter - maps to FunctionResult
                     if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
                     {
                         funcResultCtx = literal.Token.ValueText;
@@ -1661,10 +1374,125 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
                 }
             }
 
-            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic);
+            // PHASE 2C: Validate dual-context configuration before returning
+            var diagnostics = ValidateDualContextConfiguration(
+                funcResultCtx, funcResultExpr,
+                sysPromptCtx, sysPromptExpr,
+                classDecl, semanticModel);
+
+            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic, diagnostics);
         }
 
-        return (false, null, null, null, true, null, null, true);
+        return (false, null, null, null, true, null, null, true, new List<Diagnostic>());
+    }
+
+    /// <summary>
+    /// Validates dual-context configuration to prevent conflicting settings.
+    /// PHASE 2C: Compile-time validation for dual-context architecture.
+    /// </summary>
+    private static List<Diagnostic> ValidateDualContextConfiguration(
+        string? funcResultCtx, string? funcResultExpr,
+        string? sysPromptCtx, string? sysPromptExpr,
+        ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
+    {
+        var diagnostics = new List<Diagnostic>();
+        var location = classDecl.GetLocation();
+
+        // Validate: Can't have both literal AND expression for FunctionResult
+        if (!string.IsNullOrEmpty(funcResultCtx) && !string.IsNullOrEmpty(funcResultExpr))
+        {
+            var diagnostic = Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "HPDAG0101",
+                    "Conflicting FunctionResult configuration",
+                    "Plugin '{0}' specifies both FunctionResult literal and expression. Use one or the other, not both.",
+                    "HPDAgent.SourceGenerator",
+                    DiagnosticSeverity.Error,
+                    isEnabledByDefault: true,
+                    description: "FunctionResult can be either a literal string or an expression, but not both. " +
+                                "Literal: FunctionResult = \"text\". Expression: FunctionResult = MethodName."),
+                location,
+                classDecl.Identifier.ValueText);
+
+            diagnostics.Add(diagnostic);
+        }
+
+        // Validate: Can't have both literal AND expression forSystemPrompt
+        if (!string.IsNullOrEmpty(sysPromptCtx) && !string.IsNullOrEmpty(sysPromptExpr))
+        {
+            var diagnostic = Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "HPDAG0102",
+                    "ConflictingSystemPrompt configuration",
+                    "Plugin '{0}' specifies bothSystemPrompt literal and expression. Use one or the other, not both.",
+                    "HPDAgent.SourceGenerator",
+                    DiagnosticSeverity.Error,
+                    isEnabledByDefault: true,
+                    description: "SystemPrompt can be either a literal string or an expression, but not both. " +
+                                "Literal:SystemPrompt = \"text\". Expression:SystemPrompt = MethodName."),
+                location,
+                classDecl.Identifier.ValueText);
+
+            diagnostics.Add(diagnostic);
+        }
+
+        // Validate: Expression syntax (basic check)
+        if (!string.IsNullOrEmpty(funcResultExpr))
+        {
+            var exprDiagnostics = ValidateContextExpression(funcResultExpr, "FunctionResult", classDecl);
+            diagnostics.AddRange(exprDiagnostics);
+        }
+
+        if (!string.IsNullOrEmpty(sysPromptExpr))
+        {
+            var exprDiagnostics = ValidateContextExpression(sysPromptExpr, "SystemPrompt", classDecl);
+            diagnostics.AddRange(exprDiagnostics);
+        }
+
+        return diagnostics;
+    }
+
+    /// <summary>
+    /// Validates that a context expression has valid syntax.
+    /// </summary>
+    private static List<Diagnostic> ValidateContextExpression(
+        string expression,
+        string propertyName,
+        ClassDeclarationSyntax classDecl)
+    {
+        var diagnostics = new List<Diagnostic>();
+
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            // Empty expression - will be caught by other validation
+            return diagnostics;
+        }
+
+        // Basic validation: Check for common mistakes
+        // Valid examples: "MyMethod", "instance.GetInstructions", "MyClass.StaticMethod"
+        // Invalid examples: Literals ("\"text\""), operators ("1 + 2"), empty strings
+
+        // Check for string literals (user passed a string when they should use the literal parameter)
+        if (expression.StartsWith("\"") || expression.StartsWith("@\""))
+        {
+            var diagnostic = Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "HPDAG0103",
+                    $"Invalid {propertyName} expression syntax",
+                    "Plugin '{0}' uses a string literal for {1} expression. Use the literal parameter instead, or provide a method/property reference.",
+                    "HPDAgent.SourceGenerator",
+                    DiagnosticSeverity.Warning,
+                    isEnabledByDefault: true,
+                    description: $"Context expressions should reference methods or properties, not string literals. " +
+                                $"For literal text, use the non-expression parameter."),
+                classDecl.GetLocation(),
+                classDecl.Identifier.ValueText,
+                propertyName);
+
+            diagnostics.Add(diagnostic);
+        }
+
+        return diagnostics;
     }
 
     /// <summary>
@@ -1756,7 +1584,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     /// <summary>
     /// Generates a manual JSON parser for AOT compatibility - no reflection needed!
     /// </summary>
-    private static string GenerateJsonParser(FunctionInfo function, PluginInfo plugin)
+    private static string GenerateJsonParser(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, PluginInfo plugin)
     {
         var dtoName = $"{function.Name}Args";
         var relevantParams = function.Parameters
@@ -1962,7 +1790,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
     {
         var sb = new StringBuilder();
 
-        var functionNamesArray = string.Join(", ", plugin.Functions.Select(f => $"\"{f.FunctionName}\""));
+        var functionNamesArray = string.Join(", ", plugin.FunctionCapabilities.Select(f => $"\"{f.FunctionName}\""));
         var description = plugin.HasCollapseAttribute && !string.IsNullOrEmpty(plugin.CollapseDescription)
             ? plugin.CollapseDescription
             : plugin.Description;
@@ -1979,7 +1807,7 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine($"                Name = \"{plugin.Name}\",");
         sb.AppendLine($"                Description = \"{description}\",");
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
-        sb.AppendLine($"                FunctionCount = {plugin.Functions.Count},");
+        sb.AppendLine($"                FunctionCount = {plugin.FunctionCapabilities.Count()},");
         sb.AppendLine($"                HasCollapseAttribute = {plugin.HasCollapseAttribute.ToString().ToLower()}");
         sb.AppendLine("            };");
         sb.AppendLine("        }");
@@ -1995,11 +1823,11 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         var sb = new StringBuilder();
 
         // Combine both AI functions and skills
-        var allCapabilities = plugin.Functions.Select(f => f.FunctionName)
-            .Concat(plugin.Skills.Select(s => s.Name))
+        var allCapabilities = plugin.FunctionCapabilities.Select(f => f.FunctionName)
+            .Concat(plugin.SkillCapabilities.Select(s => s.Name))
             .ToList();
         var capabilitiesList = string.Join(", ", allCapabilities);
-        var totalCount = plugin.Functions.Count + plugin.Skills.Count;
+        var totalCount = plugin.FunctionCapabilities.Count() + plugin.SkillCapabilities.Count();
 
         var description = !string.IsNullOrEmpty(plugin.CollapseDescription)
             ? plugin.CollapseDescription
@@ -2018,9 +1846,9 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine("                {");
 
         // Use the CollapseDescription (or plugin description as fallback) in the return message
-        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.FunctionResultContext);
+        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.FunctionResult);
 
-        if (!string.IsNullOrEmpty(plugin.FunctionResultContextExpression))
+        if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
         {
             // Using an interpolated string to combine the base message and the dynamic instructions
             var baseMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
@@ -2030,9 +1858,9 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
             var separator = "\\n\\n";  // This will be two backslash-n sequences in the source code
 
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.FunctionResultContextIsStatic
-                ? plugin.FunctionResultContextExpression
-                : $"instance.{plugin.FunctionResultContextExpression}";
+            var expressionCall = plugin.FunctionResultIsStatic
+                ? plugin.FunctionResultExpression
+                : $"instance.{plugin.FunctionResultExpression}";
 
             sb.AppendLine($"                    var dynamicInstructions = {expressionCall};");
             sb.AppendLine($"                    return $\"{baseMessage}{separator}{{dynamicInstructions}}\";");
@@ -2061,35 +1889,35 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount},");
 
-        // Add SystemPromptContext to metadata (for middleware injection)
-        if (!string.IsNullOrEmpty(plugin.SystemPromptContext))
+        // AddSystemPrompt to metadata (for middleware injection)
+        if (!string.IsNullOrEmpty(plugin.SystemPrompt))
         {
             // Use verbatim string literal - only escape quotes (double them), NOT newlines
-            var escapedSysPrompt = plugin.SystemPromptContext.Replace("\"", "\"\"");
-            sb.AppendLine($"                        [\"SystemPromptContext\"] = @\"{escapedSysPrompt}\",");
+            var escapedSysPrompt = plugin.SystemPrompt.Replace("\"", "\"\"");
+            sb.AppendLine($"                        [\"SystemPrompt\"] = @\"{escapedSysPrompt}\",");
         }
-        else if (!string.IsNullOrEmpty(plugin.SystemPromptContextExpression))
+        else if (!string.IsNullOrEmpty(plugin.SystemPromptExpression))
         {
             // Expression - evaluate at container creation time
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.SystemPromptContextIsStatic
-                ? plugin.SystemPromptContextExpression
-                : $"instance.{plugin.SystemPromptContextExpression}";
+            var expressionCall = plugin.SystemPromptIsStatic
+                ? plugin.SystemPromptExpression
+                : $"instance.{plugin.SystemPromptExpression}";
 
-            sb.AppendLine($"                        [\"SystemPromptContext\"] = {expressionCall},");
+            sb.AppendLine($"                        [\"SystemPrompt\"] = {expressionCall},");
         }
 
-        // Optionally store FunctionResultContext for introspection
-        if (!string.IsNullOrEmpty(plugin.FunctionResultContext))
+        // Optionally store FunctionResult for introspection
+        if (!string.IsNullOrEmpty(plugin.FunctionResult))
         {
             // Use verbatim string literal - only escape quotes (double them), NOT newlines
-            var escapedFuncResult = plugin.FunctionResultContext.Replace("\"", "\"\"");
-            sb.AppendLine($"                        [\"FunctionResultContext\"] = @\"{escapedFuncResult}\"");
+            var escapedFuncResult = plugin.FunctionResult.Replace("\"", "\"\"");
+            sb.AppendLine($"                        [\"FunctionResult\"] = @\"{escapedFuncResult}\"");
         }
-        else if (!string.IsNullOrEmpty(plugin.FunctionResultContextExpression))
+        else if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
         {
             // Don't store expression in metadata (it's already executed in return statement)
-            sb.AppendLine($"                        // FunctionResultContext is dynamic: {plugin.FunctionResultContextExpression}");
+            sb.AppendLine($"                        // FunctionResult is dynamic: {plugin.FunctionResultExpression}");
         }
         else
         {
@@ -2127,6 +1955,86 @@ private static string GenerateContextResolutionMethods(PluginInfo plugin)
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Resolves SkillCapability references recursively (Phase 5 migration).
+    /// Populates ResolvedFunctionReferences and ResolvedPluginTypes from UnresolvedReferences.
+    /// </summary>
+    private static void ResolveSkillCapabilities(List<HPD.Agent.SourceGenerator.Capabilities.SkillCapability> skills)
+    {
+        // Build lookup dictionary: FullName -> SkillCapability
+        var skillLookup = skills.ToDictionary(s => s.FullQualifiedName);
+
+        // Resolve each skill
+        var visited = new HashSet<string>();
+        var stack = new Stack<string>();
+
+        foreach (var skill in skills)
+        {
+            ResolveSkillCapability(skill, skillLookup, visited, stack);
+        }
+    }
+
+    /// <summary>
+    /// Recursively resolves a single SkillCapability, handling nested skills and circular dependencies.
+    /// </summary>
+    private static void ResolveSkillCapability(
+        HPD.Agent.SourceGenerator.Capabilities.SkillCapability skill,
+        Dictionary<string, HPD.Agent.SourceGenerator.Capabilities.SkillCapability> skillLookup,
+        HashSet<string> visited,
+        Stack<string> stack,
+        int maxDepth = 50)
+    {
+        // Already resolved
+        if (visited.Contains(skill.FullQualifiedName))
+            return;
+
+        // Circular reference detected
+        if (stack.Contains(skill.FullQualifiedName))
+            return;
+
+        // Depth limit exceeded
+        if (stack.Count >= maxDepth)
+            return;
+
+        stack.Push(skill.FullQualifiedName);
+        visited.Add(skill.FullQualifiedName);
+
+        var functionRefs = new List<string>();
+        var pluginTypes = new HashSet<string>();
+
+        foreach (var reference in skill.UnresolvedReferences)
+        {
+            if (reference.ReferenceType == HPD.Agent.SourceGenerator.Capabilities.ReferenceType.Skill)
+            {
+                // It's a skill reference - resolve it recursively
+                var referencedSkillName = $"{reference.PluginType}.{reference.MethodName}";
+                if (skillLookup.TryGetValue(referencedSkillName, out var referencedSkill))
+                {
+                    // Recursively resolve the referenced skill first
+                    ResolveSkillCapability(referencedSkill, skillLookup, visited, stack, maxDepth);
+
+                    // Add all its function references to our list
+                    functionRefs.AddRange(referencedSkill.ResolvedFunctionReferences);
+                    foreach (var pt in referencedSkill.ResolvedPluginTypes)
+                    {
+                        pluginTypes.Add(pt);
+                    }
+                }
+            }
+            else
+            {
+                // It's a function reference - add directly
+                functionRefs.Add(reference.FullName);
+                pluginTypes.Add(reference.PluginType);
+            }
+        }
+
+        // Update the skill with resolved references
+        skill.ResolvedFunctionReferences = functionRefs.Distinct().OrderBy(f => f).ToList();
+        skill.ResolvedPluginTypes = pluginTypes.OrderBy(p => p).ToList();
+
+        stack.Pop();
+    }
 
 }
 

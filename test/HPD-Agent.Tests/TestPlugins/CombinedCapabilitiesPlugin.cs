@@ -7,7 +7,7 @@ namespace HPD.Agent.Tests.TestPlugins;
 /// Test plugin that combines all three capability types: AIFunctions, Skills, and SubAgents.
 /// Used to verify the source generator correctly handles plugins with mixed capabilities.
 /// </summary>
-public class CombinedCapabilitiesPlugin
+public partial class CombinedCapabilitiesPlugin
 {
     //     
     // AI FUNCTIONS
@@ -89,7 +89,7 @@ public class CombinedCapabilitiesPlugin
 /// <summary>
 /// Plugin with only AIFunctions and SubAgents (no Skills)
 /// </summary>
-public class FunctionsAndSubAgentsPlugin
+public partial class FunctionsAndSubAgentsPlugin
 {
     // AI Functions
     [AIFunction, AIDescription("Search for items")]
@@ -123,7 +123,7 @@ public class FunctionsAndSubAgentsPlugin
 /// Plugin with only Skills and SubAgents (no direct AIFunctions)
 /// Note: Skills reference functions from other plugins
 /// </summary>
-public class SkillsAndSubAgentsPlugin
+public partial class SkillsAndSubAgentsPlugin
 {
     // Skill that references functions from MockFileSystemPlugin
     [Skill]

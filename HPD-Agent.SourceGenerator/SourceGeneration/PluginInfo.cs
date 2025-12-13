@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using HPD.Agent.SourceGenerator.Capabilities;
 
 /// <summary>
 /// Information about a plugin discovered during source generation.
@@ -11,29 +12,56 @@ internal class PluginInfo
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Namespace { get; set; } = string.Empty;
-    public List<FunctionInfo> Functions { get; set; } = new();
+
+    // ========== UNIFIED DATA STRUCTURE (Phase 5: Complete) ==========
 
     /// <summary>
-    /// Skills defined in this class (empty if no skills)
+    /// Unified list of all capabilities (Functions, Skills, SubAgents).
+    /// Phase 5: Single source of truth for all capability types.
     /// </summary>
-    public List<SkillInfo> Skills { get; set; } = new();
+    public List<ICapability> Capabilities { get; set; } = new();
+
+    // ========== HELPER PROPERTIES (Type-Specific Queries) ==========
 
     /// <summary>
-    /// Sub-agents defined in this class (empty if no sub-agents)
+    /// Gets all skill capabilities from the unified Capabilities list.
+    /// This provides backward compatibility for code that needs to filter by type.
     /// </summary>
-    public List<SubAgentInfo> SubAgents { get; set; } = new();
+    public IEnumerable<SkillCapability> SkillCapabilities =>
+        Capabilities.OfType<SkillCapability>();
+
+    /// <summary>
+    /// Gets all function capabilities from the unified Capabilities list.
+    /// </summary>
+    public IEnumerable<FunctionCapability> FunctionCapabilities =>
+        Capabilities.OfType<FunctionCapability>();
+
+    /// <summary>
+    /// Gets all sub-agent capabilities from the unified Capabilities list.
+    /// </summary>
+    public IEnumerable<SubAgentCapability> SubAgentCapabilities =>
+        Capabilities.OfType<SubAgentCapability>();
+
+    /// <summary>
+    /// Total count of all capabilities.
+    /// </summary>
+    public int CapabilityCount => Capabilities.Count;
 
     /// <summary>
     /// Whether this plugin requires an instance parameter in CreatePlugin().
     /// All capability types (Functions, Skills, SubAgents) can access instance state.
     /// This enables dynamic container instructions via instance methods.
+    /// Phase 4: Uses only unified Capabilities list.
     /// </summary>
-    public bool RequiresInstance => Functions.Any() || Skills.Any() || SubAgents.Any();
+    public bool RequiresInstance =>
+        Capabilities.Any(c => c.RequiresInstance);
 
     /// <summary>
-    /// Whether any functions have conditional logic requiring context resolution
+    /// Whether any capabilities have conditional logic or dynamic descriptions requiring context resolution.
+    /// Phase 4: Uses only unified Capabilities list.
     /// </summary>
-    public bool RequiresContext => Functions.Any(f => f.RequiresContext);
+    public bool RequiresContext =>
+        Capabilities.Any(c => c.IsConditional || c.HasDynamicDescription);
 
     /// <summary>
     /// Whether this plugin has a parameterless constructor.
@@ -52,6 +80,12 @@ internal class PluginInfo
     public bool IsPubliclyAccessible { get; set; } = true;
 
     /// <summary>
+    /// Diagnostics collected during plugin analysis (e.g., dual-context validation errors).
+    /// These are reported during source generation in GeneratePluginRegistrations.
+    /// </summary>
+    public List<Diagnostic> Diagnostics { get; set; } = new();
+
+    /// <summary>
     /// Whether this container has the [Collapse] attribute
     /// </summary>
     public bool HasCollapseAttribute { get; set; }
@@ -64,164 +98,37 @@ internal class PluginInfo
     /// <summary>
     /// Instructions returned as FUNCTION RESULT when container is activated (literal value).
     /// </summary>
-    public string? FunctionResultContext { get; set; }
+    public string? FunctionResult { get; set; }
 
     /// <summary>
     /// Instructions returned as FUNCTION RESULT when container is activated (expression/method call).
     /// </summary>
-    public string? FunctionResultContextExpression { get; set; }
+    public string? FunctionResultExpression { get; set; }
 
     /// <summary>
-    /// Whether FunctionResultContextExpression is a static member (true) or instance member (false).
+    /// Whether FunctionResultExpression is a static member (true) or instance member (false).
     /// </summary>
-    public bool FunctionResultContextIsStatic { get; set; } = true;
+    public bool FunctionResultIsStatic { get; set; } = true;
 
     /// <summary>
     /// Instructions injected into SYSTEM PROMPT persistently after activation (literal value).
     /// </summary>
-    public string? SystemPromptContext { get; set; }
+    public string?SystemPrompt { get; set; }
 
     /// <summary>
     /// Instructions injected into SYSTEM PROMPT persistently after activation (expression/method call).
     /// </summary>
-    public string? SystemPromptContextExpression { get; set; }
+    public string?SystemPromptExpression { get; set; }
 
     /// <summary>
-    /// Whether SystemPromptContextExpression is a static member (true) or instance member (false).
+    /// WhetherSystemPromptExpression is a static member (true) or instance member (false).
     /// </summary>
-    public bool SystemPromptContextIsStatic { get; set; } = true;
-
-    /// <summary>
-    /// Post-expansion instructions from [Collapse] attribute (if present)
-    /// These instructions are shown to the agent after the container is expanded.
-    /// DEPRECATED: Use FunctionResultContext instead.
-    /// </summary>
-    [Obsolete("Use FunctionResultContext instead. Will be removed in v2.0.")]
-    public string? PostExpansionInstructions
-    {
-        get => FunctionResultContext;
-        set => FunctionResultContext = value;
-    }
-
-    /// <summary>
-    /// Post-expansion instructions from [Collapse] attribute (if it's an expression)
-    /// This stores the method call or property access as a string.
-    /// DEPRECATED: Use FunctionResultContextExpression instead.
-    /// </summary>
-    [Obsolete("Use FunctionResultContextExpression instead. Will be removed in v2.0.")]
-    public string? PostExpansionInstructionsExpression
-    {
-        get => FunctionResultContextExpression;
-        set => FunctionResultContextExpression = value;
-    }
+    public bool SystemPromptIsStatic { get; set; } = true;
 }
 
-/// <summary>
-/// Information about a function discovered during source generation.
-/// </summary>
-internal class FunctionInfo
-{
-    public string Name { get; set; } = string.Empty;
-    public string? CustomName { get; set; }
-    public string Description { get; set; } = string.Empty;
-    public List<ParameterInfo> Parameters { get; set; } = new();
-    public string ReturnType { get; set; } = string.Empty;
-    public bool IsAsync { get; set; }
-    public List<string> RequiredPermissions { get; set; } = new();
-    /// <summary>
-    /// Whether the function is marked with [RequiresPermission].
-    /// </summary>
-    public bool RequiresPermission { get; set; }
-    
-    /// <summary>
-    /// Context type name from [AIFunction&lt;TContext&gt;] (null for non-generic)
-    /// </summary>
-    public string? ContextTypeName { get; set; }
-    
-    /// <summary>
-    /// Conditional expression for function visibility (null if always visible)
-    /// </summary>
-    public string? ConditionalExpression { get; set; }
-    
-    /// <summary>
-    /// Whether this function uses the generic AIFunction&lt;TContext&gt; attribute
-    /// </summary>
-    public bool HasTypedContext => !string.IsNullOrEmpty(ContextTypeName);
-    
-    /// <summary>
-    /// Whether this function requires context for conditions or dynamic descriptions
-    /// </summary>
-    public bool RequiresContext => HasTypedContext && (IsConditional || HasDynamicDescription || HasConditionalParameters);
-    
-    /// <summary>
-    /// Whether this function has conditional inclusion logic
-    /// </summary>
-    public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpression);
-    
-    /// <summary>
-    /// Whether this function has dynamic description templates
-    /// </summary>
-    public bool HasDynamicDescription => Description.Contains("{context.");
-    
-    /// <summary>
-    /// Whether this function has any conditional parameters
-    /// </summary>
-    public bool HasConditionalParameters => Parameters.Any(p => p.IsConditional);
-
-    /// <summary>
-    /// Validation data for later processing
-    /// </summary>
-    public ValidationData? ValidationData { get; set; }
-
-    /// <summary>
-    /// Effective function name (custom or method name)
-    /// </summary>
-    public string FunctionName => CustomName ?? Name;
-}
-
-/// <summary>
-/// Information about a function parameter discovered during source generation.
-/// </summary>
-internal class ParameterInfo
-{
-    public string Name { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public bool HasDefaultValue { get; set; }
-    public string? DefaultValue { get; set; }
-    
-    /// <summary>
-    /// Conditional expression for parameter visibility (null if always visible)
-    /// </summary>
-    public string? ConditionalExpression { get; set; }
-    
-    /// <summary>
-    /// Whether this parameter has conditional visibility
-    /// </summary>
-    public bool IsConditional => !string.IsNullOrEmpty(ConditionalExpression);
-    
-    /// <summary>
-    /// Whether this parameter has dynamic description templates
-    /// </summary>
-    public bool HasDynamicDescription => Description.Contains("{context.");
-    
-    /// <summary>
-    /// Whether this parameter should be serialized (not special framework types)
-    /// </summary>
-    public bool IsSerializable => Type != "CancellationToken" && Type != "AIFunctionArguments" && Type != "IServiceProvider";
-    
-    /// <summary>
-    /// Whether this parameter is nullable (simple heuristic)
-    /// </summary>
-    public bool IsNullable => Type.EndsWith("?");
-}
-
-/// <summary>
-/// Validation data for functions that need validation after source generation.
-/// </summary>
-internal class ValidationData
-{
-    public MethodDeclarationSyntax Method { get; set; } = null!;
-    public SemanticModel SemanticModel { get; set; } = null!;
-    public bool NeedsValidation { get; set; }
-}
+// ========== OLD CLASSES REMOVED (Phase 4) ==========
+// FunctionInfo, ParameterInfo, and ValidationData have been removed.
+// These are now defined in the Capabilities namespace:
+// - HPD.Agent.SourceGenerator.Capabilities.FunctionCapability (replaces FunctionInfo)
+// - HPD.Agent.SourceGenerator.Capabilities.ParameterInfo (shared by all capabilities)
+// - HPD.Agent.SourceGenerator.Capabilities.ValidationData (part of FunctionCapability)

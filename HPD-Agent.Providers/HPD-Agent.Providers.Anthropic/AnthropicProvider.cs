@@ -160,7 +160,7 @@ internal class AnthropicProvider : IProviderFeatures
             SupportsStreaming = true,
             SupportsFunctionCalling = true,
             SupportsVision = true,
-            DefaultContextWindow = 200000, // Claude 3.5 Sonnet
+            DefaulTMetadataWindow = 200000, // Claude 3.5 Sonnet
             DocumentationUrl = "https://docs.anthropic.com/"
         };
     }

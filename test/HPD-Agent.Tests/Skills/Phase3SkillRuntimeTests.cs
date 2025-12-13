@@ -5,15 +5,20 @@ using HPD.Agent.Skills;
 namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
-/// Phase 3: Source Generator Tests
-/// Validates that the source generator correctly:
-/// 1. Detects [Skill] attribute (explicit intent)
-/// 2. Generates skill containers with metadata
-/// 3. Parses string-based function references
-/// 4. Handles fluent API (AddDocument/AddDocumentFromFile)
-/// 5. Validates method signatures
+/// Phase 3: Skill Runtime Tests
+/// Validates runtime behavior of skills after compilation.
+/// These tests execute actual skill methods and verify their runtime behavior.
+///
+/// NOTE: These are NOT source generator tests - they test runtime execution, not compile-time code generation.
+/// For source generator tests, see Phase3SourceGeneratorTests.cs
+///
+/// What these tests validate:
+/// 1. Skill methods execute correctly at runtime
+/// 2. SkillFactory.Create produces correct Skill objects
+/// 3. Fluent API methods (AddDocumentFromFile, AddDocumentReference) work at runtime
+/// 4. Document uploads and references are correctly populated
 /// </summary>
-public class Phase3SourceGeneratorTests
+public class Phase3SkillRuntimeTests
 {
     // ===== P0: [Skill] Attribute Detection =====
 

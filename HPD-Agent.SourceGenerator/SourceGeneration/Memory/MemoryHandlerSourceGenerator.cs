@@ -87,7 +87,7 @@ public class MemoryHandlerSourceGenerator : IIncrementalGenerator
             stepName = ToKebabCase(stepName);
         }
 
-        // Find the IPipelineHandler<TContext> interface to extract context type
+        // Find the IPipelineHandler<TMetadata> interface to extract context type
         var pipelineHandlerInterface = classSymbol.AllInterfaces
             .FirstOrDefault(i => i.Name == "IPipelineHandler" && i.IsGenericType);
 

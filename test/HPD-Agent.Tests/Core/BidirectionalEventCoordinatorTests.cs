@@ -323,7 +323,7 @@ public class BidirectionalEventCoordinatorTests
     }
 
     [Fact]
-    public void Emit_MultipleChildrenEvents_BubbleWithCorrectContexts()
+    public void Emit_MultipleChildrenEvents_BubbleWithCorrecTMetadatas()
     {
         // Arrange - Parent with two children
         var parent = TestAgentFactory.Create(new AgentConfig

@@ -3,7 +3,7 @@ using System;
 /// <summary>
 /// Marks a parameter as conditionally visible to the AI based on context properties.
 /// The parameter will only appear in the function schema when the condition evaluates to true.
-/// The context type is determined by the AIFunction&lt;TContext&gt; attribute on the method.
+/// The context type is determined by the AIFunction&lt;TMetadata&gt; attribute on the method.
 /// </summary>
 [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false)]
 public sealed class ConditionalParameterAttribute : Attribute

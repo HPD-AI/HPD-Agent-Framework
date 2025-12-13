@@ -44,7 +44,7 @@ public class InstanceMethodContextTests
     }
 
     [Fact]
-    public void Generator_SupportsInstanceMethod_InFunctionResultContext()
+    public void Generator_SupportsInstanceMethod_InFunctionResult()
     {
         // Arrange
         var source = @"
@@ -53,7 +53,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Dynamic Plugin"",
-    functionResultContext: GetActivationMessage()
+    FunctionResult: GetActivationMessage()
 )]
 public class DynamicPlugin
 {
@@ -81,7 +81,7 @@ public class DynamicPlugin
     }
 
     [Fact]
-    public void Generator_SupportsStaticMethod_InFunctionResultContext()
+    public void Generator_SupportsStaticMethod_InFunctionResult()
     {
         // Arrange
         var source = @"
@@ -90,7 +90,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Static Plugin"",
-    functionResultContext: GetStaticMessage()
+    FunctionResult: GetStaticMessage()
 )]
 public class StaticPlugin
 {
@@ -116,7 +116,7 @@ public class StaticPlugin
     }
 
     [Fact]
-    public void Generator_SupportsInstanceProperty_InSystemPromptContext()
+    public void Generator_SupportsInstanceProperty_InSystemPrompt()
     {
         // Arrange
         var source = @"
@@ -125,7 +125,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Property Plugin"",
-    systemPromptContext: Rules
+   SystemPrompt: Rules
 )]
 public class PropertyPlugin
 {
@@ -147,7 +147,7 @@ public class PropertyPlugin
     }
 
     [Fact]
-    public void Generator_SupportsStaticProperty_InSystemPromptContext()
+    public void Generator_SupportsStaticProperty_InSystemPrompt()
     {
         // Arrange
         var source = @"
@@ -156,7 +156,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Static Property Plugin"",
-    systemPromptContext: StaticRules
+   SystemPrompt: StaticRules
 )]
 public class StaticPropertyPlugin
 {
@@ -188,8 +188,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Mixed Plugin"",
-    functionResultContext: GetInstanceMessage(),
-    systemPromptContext: StaticRules
+    FunctionResult: GetInstanceMessage(),
+   SystemPrompt: StaticRules
 )]
 public class MixedPlugin
 {
@@ -213,16 +213,16 @@ public class MixedPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // FunctionResultContext should use instance method
+        // FunctionResult should use instance method
         Assert.Contains("instance.GetInstanceMessage()", generatedCode!);
 
-        // SystemPromptContext should use static property
-        Assert.Contains("[\"SystemPromptContext\"] = StaticRules", generatedCode);
+        //SystemPrompt should use static property
+        Assert.Contains("[\"SystemPrompt\"] = StaticRules", generatedCode);
         Assert.DoesNotContain("instance.StaticRules", generatedCode);
     }
 
     [Fact]
-    public void Generator_SupportsExternalStaticClass_InFunctionResultContext()
+    public void Generator_SupportsExternalStaticClass_InFunctionResult()
     {
         // Arrange
         var source = @"
@@ -236,7 +236,7 @@ public static class MessageBuilder
 
 [Collapse(
     description: ""External Plugin"",
-    functionResultContext: MessageBuilder.BuildMessage()
+    FunctionResult: MessageBuilder.BuildMessage()
 )]
 public class ExternalPlugin
 {
@@ -266,7 +266,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Complex Plugin"",
-    functionResultContext: BuildActivationMessage()
+    FunctionResult: BuildActivationMessage()
 )]
 public class ComplexPlugin
 {
@@ -309,7 +309,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Chained Plugin"",
-    systemPromptContext: GetRules().Trim()
+   SystemPrompt: GetRules().Trim()
 )]
 public class ChainedPlugin
 {
@@ -365,7 +365,7 @@ public class LegacyPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // postExpansionInstructions maps to functionResultContext, so should use instance method
+        // postExpansionInstructions maps to FunctionResult, so should use instance method
         Assert.Contains("instance.GetLegacyInstructions()", generatedCode!);
     }
 
@@ -379,8 +379,8 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Literal Plugin"",
-    functionResultContext: ""Literal activation message"",
-    systemPromptContext: ""Literal rules""
+    FunctionResult: ""Literal activation message"",
+   SystemPrompt: ""Literal rules""
 )]
 public class LiteralPlugin
 {
@@ -414,7 +414,7 @@ using System;
 
 [Collapse(
     description: ""Time-based Plugin"",
-    functionResultContext: GetTimeBasedMessage()
+    FunctionResult: GetTimeBasedMessage()
 )]
 public class TimeBasedPlugin
 {
@@ -450,7 +450,7 @@ using HPD.Agent;
 
 [Collapse(
     description: ""Metadata Plugin"",
-    systemPromptContext: GetDynamicRules()
+   SystemPrompt: GetDynamicRules()
 )]
 public class MetadataPlugin
 {
@@ -467,7 +467,7 @@ public class MetadataPlugin
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
-        // Should store SystemPromptContext in AdditionalProperties with instance. prefix
-        Assert.Contains("[\"SystemPromptContext\"] = instance.GetDynamicRules()", generatedCode!);
+        // Should storeSystemPrompt in AdditionalProperties with instance. prefix
+        Assert.Contains("[\"SystemPrompt\"] = instance.GetDynamicRules()", generatedCode!);
     }
 }
