@@ -201,7 +201,79 @@ public class AgentMiddlewareContext
             CancellationToken);
     }
 
-    //     
+    //
+    // STREAM MANAGEMENT
+    //
+
+    /// <summary>
+    /// Access to the stream registry for creating and managing interruptible streams.
+    /// Returns null if EventCoordinator is not configured.
+    /// </summary>
+    public IStreamRegistry? Streams => (EventCoordinator as BidirectionalEventCoordinator)?.Streams;
+
+    /// <summary>
+    /// Creates a new interruptible stream and returns the handle.
+    /// </summary>
+    /// <param name="streamId">Optional custom stream ID (auto-generated if null)</param>
+    /// <returns>The stream handle for lifecycle management</returns>
+    /// <exception cref="InvalidOperationException">If EventCoordinator is not configured</exception>
+    public IStreamHandle CreateStream(string? streamId = null)
+    {
+        var streams = Streams;
+        if (streams == null)
+            throw new InvalidOperationException("Stream registry not available. Event coordination not configured.");
+
+        return streams.Create(streamId);
+    }
+
+    //
+    // UPSTREAM EVENTS
+    //
+
+    /// <summary>
+    /// Emits an event upstream (towards input/source).
+    /// Used for interruption and cancellation propagation.
+    /// </summary>
+    /// <param name="evt">The event to emit upstream</param>
+    /// <exception cref="InvalidOperationException">If EventCoordinator is not configured</exception>
+    public void EmitUpstream(AgentEvent evt)
+    {
+        if (evt == null)
+            throw new ArgumentNullException(nameof(evt));
+
+        if (EventCoordinator is not BidirectionalEventCoordinator coordinator)
+            throw new InvalidOperationException("Upstream events require BidirectionalEventCoordinator");
+
+        coordinator.EmitUpstream(evt);
+    }
+
+    /// <summary>
+    /// Emits an interruption request and optionally interrupts streams.
+    /// </summary>
+    /// <param name="streamId">Stream ID to interrupt (null for all streams)</param>
+    /// <param name="reason">Reason for interruption</param>
+    /// <param name="source">Source of the interruption</param>
+    public void RequestInterruption(string? streamId, string reason, InterruptionSource source)
+    {
+        var evt = new InterruptionRequestEvent(streamId, reason, source)
+        {
+            Priority = EventPriority.Immediate
+        };
+
+        EmitUpstream(evt);
+
+        // Also interrupt the stream(s) immediately
+        if (streamId != null)
+        {
+            Streams?.Get(streamId)?.Interrupt();
+        }
+        else
+        {
+            Streams?.InterruptAll();
+        }
+    }
+
+    //
     // MESSAGE TURN LEVEL
     // Available in: BeforeMessageTurn, AfterMessageTurn
     //     
@@ -304,7 +376,7 @@ public class AgentMiddlewareContext
 
     /// <summary>
     /// Information about functions being executed in parallel.
-    /// Populated ONLY in BeforeParallelFunctionsAsync when multiple functions execute in parallel.
+    /// Populated ONLY in BeforeParallelBatchAsync when multiple functions execute in parallel.
     /// Null for sequential/single function execution.
     /// </summary>
     public IReadOnlyList<ParallelFunctionInfo>? ParallelFunctions { get; set; }
@@ -475,7 +547,7 @@ public class AgentMiddlewareContext
 
 /// <summary>
 /// Information about a function that will execute in parallel.
-/// Used in BeforeParallelFunctionsAsync to provide batch context.
+/// Used in BeforeParallelBatchAsync to provide batch context.
 /// </summary>
 /// <param name="Function">The AI function definition</param>
 /// <param name="CallId">Unique identifier for this function call</param>

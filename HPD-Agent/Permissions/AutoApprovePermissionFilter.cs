@@ -34,7 +34,7 @@ public class AutoApprovePermissionMiddleware : IAgentMiddleware
     /// <summary>
     /// Called before each function executes. Always allows execution (no permission check).
     /// </summary>
-    public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
     {
         // Auto-approve all functions by doing nothing
         // (default behavior is to allow execution)

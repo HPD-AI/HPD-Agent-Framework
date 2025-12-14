@@ -11,7 +11,7 @@ namespace HPD.Agent.Permissions;
 /// <remarks>
 /// <para><b>How It Works:</b></para>
 /// <para>
-/// This middleware uses the <see cref="IAgentMiddleware.BeforeSequentialFunctionAsync"/> hook to check
+/// This middleware uses the <see cref="IAgentMiddleware.BeforeFunctionAsync"/> hook to check
 /// permissions before each function executes. If a function requires permission and the user
 /// hasn't granted it, the middleware blocks execution and sets the result to the denial reason.
 /// </para>
@@ -85,9 +85,9 @@ public class PermissionMiddleware : IAgentMiddleware
     /// Handles batch permission checking for parallel function execution.
     /// Mimics the old PermissionManager.CheckPermissionsAsync behavior:
     /// loops through each function and checks permission sequentially.
-    /// Results are stored in BatchPermissionState for BeforeSequentialFunctionAsync to check.
+    /// Results are stored in BatchPermissionState for BeforeFunctionAsync to check.
     /// </summary>
-    public async Task BeforeParallelFunctionsAsync(
+    public async Task BeforeParallelBatchAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
@@ -119,7 +119,7 @@ public class PermissionMiddleware : IAgentMiddleware
                 continue;
             }
 
-            // Check individual permission using the same logic as BeforeSequentialFunctionAsync
+            // Check individual permission using the same logic as BeforeFunctionAsync
             var permissionResult = await CheckSinglePermissionAsync(
                 context,
                 function,
@@ -150,7 +150,7 @@ public class PermissionMiddleware : IAgentMiddleware
     /// Blocks execution if permission is required but not granted.
     /// For parallel execution, checks batch state first to avoid duplicate permission requests.
     /// </summary>
-    public async Task BeforeSequentialFunctionAsync(
+    public async Task BeforeFunctionAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
@@ -352,7 +352,7 @@ public class PermissionMiddleware : IAgentMiddleware
     /// <summary>
     /// Helper method that checks permission for a single function.
     /// Returns approval status and denial reason (if denied).
-    /// Used by BeforeParallelFunctionsAsync to batch check permissions.
+    /// Used by BeforeParallelBatchAsync to batch check permissions.
     /// </summary>
     private async Task<(bool IsApproved, string DenialReason)> CheckSinglePermissionAsync(
         AgentMiddlewareContext context,

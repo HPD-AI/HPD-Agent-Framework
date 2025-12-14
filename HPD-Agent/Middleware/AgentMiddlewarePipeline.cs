@@ -247,32 +247,42 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    //     
+    //
     // FUNCTION LEVEL
-    //     
+    //
 
     /// <summary>
-    /// Executes BeforeParallelFunctionsAsync on all middlewares in registration order.
+    /// Executes BeforeParallelBatchAsync on all middlewares in registration order.
     /// Called ONCE before multiple functions execute in parallel.
     /// Allows middlewares to handle batch operations (e.g., batch permission checking).
     /// </summary>
-    public async Task ExecuteBeforeParallelFunctionsAsync(
+    public async Task ExecuteBeforeParallelBatchAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeParallelFunctionsAsync(context, cancellationToken).ConfigureAwait(false);
+            await middleware.BeforeParallelBatchAsync(context, cancellationToken).ConfigureAwait(false);
         }
     }
 
     /// <summary>
-    /// Executes BeforeSequentialFunctionAsync on all middlewares in registration order.
+    /// [DEPRECATED] Use ExecuteBeforeParallelBatchAsync instead.
+    /// </summary>
+    [Obsolete("Use ExecuteBeforeParallelBatchAsync instead.")]
+    public Task ExecuteBeforeParallelFunctionsAsync(
+        AgentMiddlewareContext context,
+        CancellationToken cancellationToken)
+        => ExecuteBeforeParallelBatchAsync(context, cancellationToken);
+
+    /// <summary>
+    /// Executes BeforeFunctionAsync on all middlewares in registration order.
+    /// Runs for ALL functions - both sequential and parallel execution.
     /// Filters middlewares by Collapse - only executes those that apply to the current function context.
     /// </summary>
     /// <returns>True if function should execute, false if blocked by middleware</returns>
-    public async Task<bool> ExecuteBeforeSequentialFunctionAsync(
+    public async Task<bool> ExecuteBeforeFunctionAsync(
         AgentMiddlewareContext context,
         CancellationToken cancellationToken)
     {
@@ -283,7 +293,7 @@ public class AgentMiddlewarePipeline
                 continue;
 
             cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeSequentialFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+            await middleware.BeforeFunctionAsync(context, cancellationToken).ConfigureAwait(false);
 
             // If any middleware blocks execution, stop the chain immediately
             // This is different from iteration-level hooks where we continue
@@ -297,6 +307,15 @@ public class AgentMiddlewarePipeline
 
         return true;
     }
+
+    /// <summary>
+    /// [DEPRECATED] Use ExecuteBeforeFunctionAsync instead.
+    /// </summary>
+    [Obsolete("Use ExecuteBeforeFunctionAsync instead. This method runs for ALL functions, not just sequential.")]
+    public Task<bool> ExecuteBeforeSequentialFunctionAsync(
+        AgentMiddlewareContext context,
+        CancellationToken cancellationToken)
+        => ExecuteBeforeFunctionAsync(context, cancellationToken);
 
     /// <summary>
     /// Executes the function call through the middleware pipeline with full control.
@@ -391,9 +410,48 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    //     
+    //
+    // UPSTREAM EVENT HANDLING
+    //
+
+    /// <summary>
+    /// Executes OnUpstreamEventAsync on all middlewares in REVERSE order.
+    /// Upstream events flow back through the pipeline (last registered = first to receive).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Error Handling:</b></para>
+    /// <para>
+    /// Exceptions in upstream handlers are logged but don't stop the chain.
+    /// All middlewares get a chance to handle the upstream event.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">The middleware context</param>
+    /// <param name="upstreamEvent">The upstream event to propagate</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task ExecuteOnUpstreamEventAsync(
+        AgentMiddlewareContext context,
+        AgentEvent upstreamEvent,
+        CancellationToken cancellationToken)
+    {
+        foreach (var middleware in _reversedMiddlewares)
+        {
+            try
+            {
+                await middleware.OnUpstreamEventAsync(context, upstreamEvent, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Log but continue - upstream handlers shouldn't crash the pipeline
+                System.Diagnostics.Debug.WriteLine(
+                    $"Upstream handler failed in {middleware.GetType().Name}: {ex.Message}");
+            }
+        }
+    }
+
+    //
     // CONVENIENCE METHODS
-    //     
+    //
 
     /// <summary>
     /// Wraps a function execution with Before/After hooks.
@@ -409,7 +467,7 @@ public class AgentMiddlewarePipeline
         CancellationToken cancellationToken)
     {
         // Run Before* hooks
-        var shouldExecute = await ExecuteBeforeSequentialFunctionAsync(context, cancellationToken)
+        var shouldExecute = await ExecuteBeforeFunctionAsync(context, cancellationToken)
             .ConfigureAwait(false);
 
         if (shouldExecute)

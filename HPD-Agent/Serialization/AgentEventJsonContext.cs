@@ -109,6 +109,15 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(IterationMessagesEvent))]
 [JsonSerializable(typeof(SchemaChangedEvent))]
 [JsonSerializable(typeof(CollapsingStateEvent))]
+[JsonSerializable(typeof(EventDroppedEvent))]
+
+// Priority Streaming Enums
+[JsonSerializable(typeof(EventPriority))]
+[JsonSerializable(typeof(EventDirection))]
+[JsonSerializable(typeof(InterruptionSource))]
+
+// Priority Streaming Events
+[JsonSerializable(typeof(InterruptionRequestEvent))]
 
 // Common types for IDictionary<string, object?> serialization (e.g., PermissionRequestEvent.Arguments)
 [JsonSerializable(typeof(JsonElement))]

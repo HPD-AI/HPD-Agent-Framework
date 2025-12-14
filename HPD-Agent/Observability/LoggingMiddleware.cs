@@ -268,12 +268,12 @@ public class LoggingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    //     
+    //
     // FUNCTION LEVEL
-    //     
+    //
 
     /// <inheritdoc/>
-    public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogFunction) return Task.CompletedTask;
 

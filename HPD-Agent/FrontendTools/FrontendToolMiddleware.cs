@@ -14,7 +14,7 @@ namespace HPD.Agent.FrontendTools;
 /// <list type="bullet">
 /// <item><c>BeforeMessageTurnAsync</c> - Process initial tool registration from AgentRunInput</item>
 /// <item><c>BeforeIterationAsync</c> - Apply tool visibility based on current state</item>
-/// <item><c>BeforeSequentialFunctionAsync</c> - Intercept frontend tool calls, emit request, wait for response</item>
+/// <item><c>BeforeFunctionAsync</c> - Intercept frontend tool calls, emit request, wait for response</item>
 /// </list>
 ///
 /// <para><b>State Management:</b></para>
@@ -375,7 +375,7 @@ public class FrontendToolMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Converts a FrontendToolDefinition to an AIFunction.
-    /// The resulting function is intercepted by BeforeSequentialFunctionAsync.
+    /// The resulting function is intercepted by BeforeFunctionAsync.
     /// </summary>
     private static AIFunction ConvertToolToAIFunction(FrontendToolDefinition tool, string pluginName)
     {
@@ -512,7 +512,7 @@ public class FrontendToolMiddleware : IAgentMiddleware
     /// Intercept frontend tool calls - emit request and wait for response.
     /// Detects frontend tools by checking IsFrontendTool in AdditionalProperties.
     /// </summary>
-    public async Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+    public async Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
     {
         // Check if this is a frontend tool
         if (context.Function?.AdditionalProperties?.TryGetValue("IsFrontendTool", out var isFrontendTool) != true

@@ -13,8 +13,8 @@ namespace HPD.Agent.Middleware;
 ///   └─► [LOOP] BeforeIterationAsync
 ///               └─► LLM Call
 ///               └─► BeforeToolExecutionAsync
-///                     └─► BeforeParallelFunctionsAsync (if parallel execution)
-///                     └─► [LOOP] BeforeSequentialFunctionAsync
+///                     └─► BeforeParallelBatchAsync (if parallel execution, ONCE per batch)
+///                     └─► [LOOP] BeforeFunctionAsync (EVERY function, sequential or parallel)
 ///                                  └─► Function Execution
 ///                                  └─► AfterFunctionAsync
 ///               └─► AfterIterationAsync
@@ -51,8 +51,9 @@ namespace HPD.Agent.Middleware;
 /// <code>
 /// public class MyMiddleware : IAgentMiddleware
 /// {
-///     public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+///     public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
 ///     {
+///         // Runs for EVERY function (sequential or parallel)
 ///         Console.WriteLine($"About to call: {context.Function?.Name}");
 ///         return Task.CompletedTask;
 ///     }
@@ -311,9 +312,9 @@ public interface IAgentMiddleware
     Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
         => Task.CompletedTask;
 
-    //     
+    //
     // FUNCTION LEVEL (run once per function call)
-    //     
+    //
 
     /// <summary>
     /// Called BEFORE a batch of functions executes in parallel.
@@ -331,9 +332,9 @@ public interface IAgentMiddleware
     /// <para><b>Execution Flow:</b></para>
     /// <list type="number">
     /// <item>System detects parallel function execution</item>
-    /// <item>BeforeParallelFunctionsAsync called ONCE with all functions</item>
+    /// <item>BeforeParallelBatchAsync called ONCE with all functions</item>
     /// <item>Middleware can populate shared state (e.g., batch permission approvals)</item>
-    /// <item>BeforeSequentialFunctionAsync called for each function (can check shared state)</item>
+    /// <item>BeforeFunctionAsync called for each function (can check shared state)</item>
     /// <item>Functions execute in parallel</item>
     /// <item>AfterFunctionAsync called for each function</item>
     /// </list>
@@ -342,7 +343,7 @@ public interface IAgentMiddleware
     /// <list type="bullet">
     /// <item>ParallelFunctions contains all functions about to execute in parallel</item>
     /// <item>Can inspect function names, descriptions, arguments</item>
-    /// <item>Can populate middleware state to be checked in BeforeSequentialFunctionAsync</item>
+    /// <item>Can populate middleware state to be checked in BeforeFunctionAsync</item>
     /// <item>Can emit batch events (e.g., batch permission request)</item>
     /// </list>
     ///
@@ -356,7 +357,7 @@ public interface IAgentMiddleware
     ///
     /// <para><b>State Management Pattern:</b></para>
     /// <code>
-    /// public async Task BeforeParallelFunctionsAsync(context, ct)
+    /// public async Task BeforeParallelBatchAsync(context, ct)
     /// {
     ///     // Request approval for ALL functions at once
     ///     var approvals = await RequestBatchApproval(context.ParallelFunctions);
@@ -366,7 +367,7 @@ public interface IAgentMiddleware
     ///     context.UpdateState(s => s.WithBatchState(batchState));
     /// }
     ///
-    /// public async Task BeforeSequentialFunctionAsync(context, ct)
+    /// public async Task BeforeFunctionAsync(context, ct)
     /// {
     ///     // Check state populated by batch hook
     ///     var batchState = context.State.MiddlewareState.BatchState;
@@ -381,21 +382,25 @@ public interface IAgentMiddleware
     /// <para><b>Important Notes:</b></para>
     /// <list type="bullet">
     /// <item>Only called for parallel execution - NOT for single/sequential functions</item>
-    /// <item>BeforeSequentialFunctionAsync is STILL called for each function after this</item>
-    /// <item>Use context.UpdateState() to share information with BeforeSequentialFunctionAsync</item>
-    /// <item>If you block execution, do it in BeforeSequentialFunctionAsync, not here</item>
+    /// <item>BeforeFunctionAsync is STILL called for each function after this</item>
+    /// <item>Use context.UpdateState() to share information with BeforeFunctionAsync</item>
+    /// <item>If you block execution, do it in BeforeFunctionAsync, not here</item>
     /// </list>
     /// </remarks>
     /// <param name="context">The middleware context with ParallelFunctions populated</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    Task BeforeParallelFunctionsAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
-        => Task.CompletedTask;
+    Task BeforeParallelBatchAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        => BeforeParallelFunctionsAsync(context, cancellationToken);
 
     /// <summary>
-    /// Called BEFORE a specific function executes.
+    /// Called BEFORE each individual function executes.
+    /// Runs for BOTH sequential (single tool) and parallel (multiple tools) execution.
     /// Use for: Permission checking, argument validation, per-function guards.
     /// </summary>
     /// <remarks>
+    /// <para><b>Key Point:</b> This hook runs for ALL functions regardless of execution mode.</para>
+    /// <para>For parallel execution, this runs N times (once per tool in the batch).</para>
+    ///
     /// <para>At this point:</para>
     /// <list type="bullet">
     /// <item>Function contains the AIFunction being called</item>
@@ -408,6 +413,41 @@ public interface IAgentMiddleware
     /// </remarks>
     /// <param name="context">The middleware context</param>
     /// <param name="cancellationToken">Cancellation token</param>
+    Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        => BeforeSequentialFunctionAsync(context, cancellationToken);
+
+    //
+    // DEPRECATED FUNCTION HOOKS (backward compatibility)
+    //
+
+    /// <summary>
+    /// [DEPRECATED] Use <see cref="BeforeParallelBatchAsync"/> instead.
+    /// Called BEFORE a batch of functions executes in parallel.
+    /// </summary>
+    /// <remarks>
+    /// This method is deprecated because "ParallelFunctions" is less clear than "ParallelBatch".
+    /// The new name better conveys that this runs ONCE per batch, not per function.
+    /// </remarks>
+    /// <param name="context">The middleware context with ParallelFunctions populated</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    [Obsolete("Use BeforeParallelBatchAsync instead. This method will be removed in a future version.")]
+    Task BeforeParallelFunctionsAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
+    /// <summary>
+    /// [DEPRECATED] Use <see cref="BeforeFunctionAsync"/> instead.
+    /// Called BEFORE a specific function executes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method is deprecated because the name "Sequential" is misleading.
+    /// This hook runs for ALL functions - both sequential AND parallel execution.
+    /// The new name <see cref="BeforeFunctionAsync"/> accurately reflects this behavior.
+    /// </para>
+    /// </remarks>
+    /// <param name="context">The middleware context</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    [Obsolete("Use BeforeFunctionAsync instead. This hook runs for ALL functions, not just sequential execution. This method will be removed in a future version.")]
     Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
         => Task.CompletedTask;
 
@@ -427,7 +467,7 @@ public interface IAgentMiddleware
     ///
     /// <para><b>Execution Flow:</b></para>
     /// <list type="number">
-    /// <item>BeforeSequentialFunctionAsync runs (all middleware)</item>
+    /// <item>BeforeFunctionAsync runs (all middleware)</item>
     /// <item>ExecuteFunctionAsync chains execute (registration order, like onion)</item>
     /// <item>Innermost call invokes actual function</item>
     /// <item>Result bubbles back through the chain</item>
@@ -513,7 +553,7 @@ public interface IAgentMiddleware
     /// <list type="bullet">
     /// <item>You MUST call <c>next()</c> unless you're completely skipping execution (e.g., cache hit)</item>
     /// <item>Middleware chains execute in REGISTRATION order (first registered = outermost)</item>
-    /// <item>For simple guards, use BeforeSequentialFunctionAsync instead</item>
+    /// <item>For simple guards, use BeforeFunctionAsync instead</item>
     /// <item>For simple result transformation, use AfterFunctionAsync instead</item>
     /// </list>
     /// </remarks>
@@ -544,5 +584,55 @@ public interface IAgentMiddleware
     /// <param name="context">The middleware context</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
+    //
+    // UPSTREAM EVENT HANDLING
+    //
+
+    /// <summary>
+    /// Handle upstream events (interruptions, cancellations flowing back through pipeline).
+    /// Called when downstream processing should be cancelled or cleaned up.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Execution Order:</b></para>
+    /// <para>
+    /// Upstream events flow through middleware in REVERSE registration order
+    /// (last registered = first to receive upstream event).
+    /// </para>
+    ///
+    /// <para><b>Use Cases:</b></para>
+    /// <list type="bullet">
+    /// <item>Cancel pending async operations when user aborts</item>
+    /// <item>Clean up resources when stream is interrupted</item>
+    /// <item>Propagate cancellation to nested operations</item>
+    /// <item>Log interruption for observability</item>
+    /// </list>
+    ///
+    /// <para><b>Example:</b></para>
+    /// <code>
+    /// public async Task OnUpstreamEventAsync(
+    ///     AgentMiddlewareContext context,
+    ///     AgentEvent upstreamEvent,
+    ///     CancellationToken ct)
+    /// {
+    ///     if (upstreamEvent is InterruptionRequestEvent interruption)
+    ///     {
+    ///         // Cancel any pending operations
+    ///         _pendingCts?.Cancel();
+    ///
+    ///         // Log for observability
+    ///         _logger.LogInformation("Interrupted: {Reason}", interruption.Reason);
+    ///     }
+    /// }
+    /// </code>
+    /// </remarks>
+    /// <param name="context">The middleware context</param>
+    /// <param name="upstreamEvent">The upstream event (typically InterruptionRequestEvent)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    Task OnUpstreamEventAsync(
+        AgentMiddlewareContext context,
+        AgentEvent upstreamEvent,
+        CancellationToken cancellationToken)
         => Task.CompletedTask;
 }

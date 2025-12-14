@@ -136,15 +136,15 @@ public class BidirectionalEventCoordinatorTests
         leaf.Emit(testEvent);
 
         // Assert - Event should appear in all three channels (CRITICAL: including middle!)
-        Assert.True(leaf.EventReader.TryRead(out var leafEvt));
+        Assert.True(leaf.TryRead(out var leafEvt));
         Assert.IsType<TestAgentEvent>(leafEvt);
         Assert.Equal("Test event", ((TestAgentEvent)leafEvt).Message);
 
-        Assert.True(middle.EventReader.TryRead(out var middleEvt));
+        Assert.True(middle.TryRead(out var middleEvt));
         Assert.IsType<TestAgentEvent>(middleEvt);
         Assert.Equal("Test event", ((TestAgentEvent)middleEvt).Message);  // ✅ THIS IS THE KEY TEST - middle sees it!
 
-        Assert.True(root.EventReader.TryRead(out var rootEvt));
+        Assert.True(root.TryRead(out var rootEvt));
         Assert.IsType<TestAgentEvent>(rootEvt);
         Assert.Equal("Test event", ((TestAgentEvent)rootEvt).Message);
     }
@@ -168,13 +168,13 @@ public class BidirectionalEventCoordinatorTests
         worker.Emit(testEvent);
 
         // Assert - Verify event reached all three levels
-        if (worker.EventReader.TryRead(out var workerEvt))
+        if (worker.TryRead(out var workerEvt))
             receivedEvents.Add(("Worker", workerEvt));
 
-        if (middle.EventReader.TryRead(out var middleEvt))
+        if (middle.TryRead(out var middleEvt))
             receivedEvents.Add(("Middle", middleEvt));
 
-        if (orchestrator.EventReader.TryRead(out var orchEvt))
+        if (orchestrator.TryRead(out var orchEvt))
             receivedEvents.Add(("Orchestrator", orchEvt));
 
         // All three should have received the event
@@ -197,11 +197,11 @@ public class BidirectionalEventCoordinatorTests
         coordinator1.Emit(testEvent);
 
         // Assert - Only coordinator1 should receive the event
-        Assert.True(coordinator1.EventReader.TryRead(out var evt1));
+        Assert.True(coordinator1.TryRead(out var evt1));
         Assert.IsType<TestAgentEvent>(evt1);
 
         // coordinator2 should NOT receive the event (no parent relationship)
-        Assert.False(coordinator2.EventReader.TryRead(out _));
+        Assert.False(coordinator2.TryRead(out _));
     }
 
     // ===== P0: ExecutionContext Auto-Attachment =====
@@ -227,7 +227,7 @@ public class BidirectionalEventCoordinatorTests
         agent.EventCoordinator.Emit(evt);
 
         // Read emitted event from channel
-        agent.EventCoordinator.EventReader.TryRead(out var emittedEvent);
+        agent.EventCoordinator.TryRead(out var emittedEvent);
 
         // Assert - ExecutionContext should be auto-attached
         Assert.NotNull(emittedEvent);
@@ -261,7 +261,7 @@ public class BidirectionalEventCoordinatorTests
         agent.EventCoordinator.Emit(evt);
 
         // Read emitted event
-        agent.EventCoordinator.EventReader.TryRead(out var emittedEvent);
+        agent.EventCoordinator.TryRead(out var emittedEvent);
 
         // Assert - Original ExecutionContext should be preserved
         Assert.NotNull(emittedEvent!.ExecutionContext);
@@ -311,12 +311,12 @@ public class BidirectionalEventCoordinatorTests
 
         // Assert - Event should appear in both child and parent channels with context
         // Child channel
-        Assert.True(childAgent.EventCoordinator.EventReader.TryRead(out var childEvent));
+        Assert.True(childAgent.EventCoordinator.TryRead(out var childEvent));
         Assert.NotNull(childEvent!.ExecutionContext);
         Assert.Equal("ChildAgent", childEvent.ExecutionContext!.AgentName);
 
         // Parent channel (bubbled event)
-        Assert.True(parentAgent.EventCoordinator.EventReader.TryRead(out var parentEvent));
+        Assert.True(parentAgent.EventCoordinator.TryRead(out var parentEvent));
         Assert.NotNull(parentEvent!.ExecutionContext);
         Assert.Equal("ChildAgent", parentEvent.ExecutionContext!.AgentName); // Context preserved during bubbling
         Assert.Equal(1, parentEvent.ExecutionContext.Depth);
@@ -375,7 +375,7 @@ public class BidirectionalEventCoordinatorTests
 
         // Assert - Parent should receive both events with correct contexts
         var parentEvents = new List<AgentEvent>();
-        while (parent.EventCoordinator.EventReader.TryRead(out var evt))
+        while (parent.EventCoordinator.TryRead(out var evt))
         {
             parentEvents.Add(evt);
         }

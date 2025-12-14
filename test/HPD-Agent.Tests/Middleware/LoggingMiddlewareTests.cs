@@ -232,7 +232,7 @@ public class LoggingMiddlewareTests
         context.FunctionArguments = new Dictionary<string, object?> { ["param1"] = "value1" };
 
         // Act
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.NotEmpty(logOutput);
@@ -257,7 +257,7 @@ public class LoggingMiddlewareTests
         context.FunctionArguments = new Dictionary<string, object?> { ["secret"] = "password123" };
 
         // Act
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.NotEmpty(logOutput);
@@ -283,7 +283,7 @@ public class LoggingMiddlewareTests
         context.FunctionResult = "Success result";
 
         // Simulate BeforeFunction to start timer
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
         logOutput.Clear();
 
         // Act
@@ -413,7 +413,7 @@ public class LoggingMiddlewareTests
         context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Act
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.Contains(logOutput, s => s.Contains("[MyCustomApp]"));
@@ -442,7 +442,7 @@ public class LoggingMiddlewareTests
 
         // Act
         var startTime = DateTime.UtcNow;
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
         await Task.Delay(delayMs); // Simulate work
         context.FunctionResult = "Done";
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
@@ -475,7 +475,7 @@ public class LoggingMiddlewareTests
         context.FunctionCallId = "call-123";
 
         // Act - Before
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
 
         // Simulate work
         await Task.Delay(20);
@@ -507,7 +507,7 @@ public class LoggingMiddlewareTests
         context.FunctionResult = "Done";
 
         // Act
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
 
         // Assert - No timing should be logged
@@ -528,7 +528,7 @@ public class LoggingMiddlewareTests
         context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Act & Assert - should not throw
-        await middleware.BeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
     }
 

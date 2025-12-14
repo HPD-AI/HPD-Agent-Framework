@@ -46,6 +46,94 @@ public record AgentExecutionContext
 
 #endregion
 
+#region Priority and Direction Enums
+
+/// <summary>
+/// Priority levels for event processing.
+/// Higher priority events are processed before lower priority events.
+/// Events at the same priority level are processed in sequence order (FIFO).
+/// </summary>
+public enum EventPriority
+{
+    /// <summary>
+    /// Highest priority. User-initiated control: stop, cancel, abort.
+    /// These events are NEVER queued behind lower priority events.
+    /// Use for: User cancellation, emergency stops, critical errors.
+    /// </summary>
+    Immediate = 0,
+
+    /// <summary>
+    /// System control signals: state changes, configuration updates, interruption acks.
+    /// Processed before normal events but after immediate events.
+    /// Use for: Interruption acknowledgments, state transitions, control flow.
+    /// </summary>
+    Control = 1,
+
+    /// <summary>
+    /// Standard data flow. Default priority for most events.
+    /// Use for: Text deltas, tool results, normal agent responses.
+    /// </summary>
+    Normal = 2,
+
+    /// <summary>
+    /// Lowest priority. Background operations: metrics, telemetry, observability.
+    /// Processed only when no higher priority events are pending.
+    /// Use for: Logging events, metrics emission, non-critical notifications.
+    /// </summary>
+    Background = 3
+}
+
+/// <summary>
+/// Direction of event flow through the agent pipeline.
+/// </summary>
+public enum EventDirection
+{
+    /// <summary>
+    /// Normal flow: user input → agent processing → response output.
+    /// Events flow through middleware in registration order.
+    /// </summary>
+    Downstream,
+
+    /// <summary>
+    /// Control flow: cancellation/interruption signals flowing back to source.
+    /// Events flow through middleware in reverse order.
+    /// Used for: Cancellation propagation, abort signals, upstream notifications.
+    /// </summary>
+    Upstream
+}
+
+#endregion
+
+#region Interruption Types
+
+/// <summary>
+/// Source of an interruption request.
+/// </summary>
+public enum InterruptionSource
+{
+    /// <summary>User-initiated (clicked stop, pressed Ctrl+C, etc.)</summary>
+    User,
+
+    /// <summary>System-initiated (timeout, circuit breaker, error threshold)</summary>
+    System,
+
+    /// <summary>Parent agent aborting child agent</summary>
+    Parent,
+
+    /// <summary>Middleware-initiated (permission denied, validation failed)</summary>
+    Middleware
+}
+
+/// <summary>
+/// Requests interruption of active streams or operations.
+/// </summary>
+public record InterruptionRequestEvent(
+    string? StreamId,
+    string Reason,
+    InterruptionSource Source) : AgentEvent;
+
+#endregion
+
 /// <summary>
 /// Protocol-agnostic internal events emitted by the agent core.
 /// These events represent what actually happened during agent execution,
@@ -66,6 +154,36 @@ public abstract record AgentEvent
     /// Automatically attached by BidirectionalEventCoordinator.Emit() if not already set.
     /// </summary>
     public AgentExecutionContext? ExecutionContext { get; init; }
+
+    /// <summary>
+    /// Processing priority for this event.
+    /// Defaults to Normal for standard data flow events.
+    /// </summary>
+    public EventPriority Priority { get; init; } = EventPriority.Normal;
+
+    /// <summary>
+    /// Monotonically increasing sequence number assigned by the coordinator.
+    /// Used for ordering events within the same priority level.
+    /// </summary>
+    public long SequenceNumber { get; internal set; }
+
+    /// <summary>
+    /// Direction of event flow through the middleware pipeline.
+    /// </summary>
+    public EventDirection Direction { get; init; } = EventDirection.Downstream;
+
+    /// <summary>
+    /// Stream ID for grouping related interruptible events.
+    /// Null if this event is not part of a managed stream.
+    /// </summary>
+    public string? StreamId { get; init; }
+
+    /// <summary>
+    /// Whether this event can be dropped on stream interruption.
+    /// True for: Data chunks, progress updates, intermediate results.
+    /// False for: Completion markers, error reports, cleanup events.
+    /// </summary>
+    public bool CanInterrupt { get; init; } = true;
 }
 
 #region Message Turn Events (Entire User Interaction)

@@ -32,7 +32,7 @@ var agent = await new AgentBuilder(config)
     .WithErrorTracking(maxConsecutiveErrors: 3)
     .WithTotalErrorThreshold(maxTotalErrors: 10)
     .WithMCP("./MCP.json")
-    .WithLogging(options: LoggingMiddlewareOptions.Verbose)
+    .WithLogging()
     .Build();
 
 eventHandler.SetAgent(agent);

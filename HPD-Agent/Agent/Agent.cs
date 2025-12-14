@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using HPD.Agent.Middleware;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
@@ -135,16 +136,10 @@ public sealed class Agent
     public BidirectionalEventCoordinator EventCoordinator => _eventCoordinator;
 
     /// <summary>
-    /// Internal access to Middleware event channel writer for context setup.
-    /// Delegates to the event coordinator.
+    /// Internal access to event coordinator for middleware event emission.
+    /// Use Emit() method for priority-aware routing.
     /// </summary>
-    internal ChannelWriter<AgentEvent> MiddlewareEventWriter => _eventCoordinator.EventWriter;
-
-    /// <summary>
-    /// Internal access to Middleware event channel reader for RunAgenticLoopInternal.
-    /// Delegates to the event coordinator.
-    /// </summary>
-    internal ChannelReader<AgentEvent> MiddlewareEventReader => _eventCoordinator.EventReader;
+    internal BidirectionalEventCoordinator MiddlewareEventCoordinator => _eventCoordinator;
 
     /// <summary>
     /// Sends a response to a Middleware waiting for a specific request.
@@ -719,7 +714,7 @@ public sealed class Agent
             }
             
             // Drain middleware events
-            while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+            while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
 
 
@@ -748,7 +743,7 @@ public sealed class Agent
                     Timestamp: DateTimeOffset.UtcNow);
 
                 // Drain middleware events before decision
-                while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                     yield return MiddlewareEvt;
 
                 //      
@@ -786,7 +781,7 @@ public sealed class Agent
 
                 // Drain middleware events after decision-making, before execution
                 // CRITICAL: Ensures events emitted during decision logic are yielded before LLM streaming starts
-                while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                     yield return MiddlewareEvt;
 
                 //     
@@ -859,7 +854,7 @@ public sealed class Agent
                         var delayTask = Task.Delay(10, effectiveCancellationToken);
                         await Task.WhenAny(beforeIterationTask, delayTask).ConfigureAwait(false);
 
-                        while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                        while (_eventCoordinator.TryRead(out var middlewareEvt))
                         {
                             yield return middlewareEvt;
                         }
@@ -869,7 +864,7 @@ public sealed class Agent
                     await beforeIterationTask.ConfigureAwait(false);
 
                     // Final drain of events from middleware
-                    while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                    while (_eventCoordinator.TryRead(out var middlewareEvt))
                     {
                         yield return middlewareEvt;
                     }
@@ -1043,7 +1038,7 @@ public sealed class Agent
                         }
 
                         // Periodically yield Middleware events during LLM streaming
-                        while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                        while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                         {
                             yield return MiddlewareEvt;
                         }
@@ -1143,7 +1138,7 @@ public sealed class Agent
                         var effectiveOptionsForTools = middlewareContext.Options ?? effectiveOptions;
 
                         // Yield Middleware events before tool execution
-                        while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                        while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                         {
                             yield return MiddlewareEvt;
                         }
@@ -1158,7 +1153,7 @@ public sealed class Agent
                             effectiveCancellationToken).ConfigureAwait(false);
 
                         // Drain events from middleware
-                        while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+                        while (_eventCoordinator.TryRead(out var middlewareEvt))
                         {
                             yield return middlewareEvt;
                         }
@@ -1193,7 +1188,7 @@ public sealed class Agent
                             var delayTask = Task.Delay(10, effectiveCancellationToken);
                             await Task.WhenAny(executeTask, delayTask).ConfigureAwait(false);
 
-                            while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                            while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                             {
                                 yield return MiddlewareEvt;
                             }
@@ -1206,7 +1201,7 @@ public sealed class Agent
                         var successfulFunctions = executionResult.SuccessfulFunctions;
 
                         // Final drain
-                        while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+                        while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                         {
                             yield return MiddlewareEvt;
                         }
@@ -1418,7 +1413,7 @@ public sealed class Agent
             }
 
             // Final drain of middleware events after loop
-            while (_eventCoordinator.EventReader.TryRead(out var MiddlewareEvt))
+            while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                 yield return MiddlewareEvt;
 
             // Emit MESSAGE TURN finished event
@@ -1494,7 +1489,7 @@ public sealed class Agent
             // Use the modified list for persistence
             
             // Drain middleware events
-            while (_eventCoordinator.EventReader.TryRead(out var middlewareEvt))
+            while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
 
             // PERSISTENCE: Save complete turn history to thread
@@ -2711,123 +2706,7 @@ internal sealed record AgentConfiguration
 
 #endregion
 
-#region Function Map Builder Utilities
-
-/// <summary>
-/// Builds O(1) lookup maps for AIFunctions from tool lists.
-/// Handles merging, priority, and efficient lookups.
-/// Eliminates duplication of function map building logic across FunctionCallProcessor,
-/// PermissionManager, and ToolScheduler.
-/// </summary>
-internal static class FunctionMapBuilder
-{
-    /// <summary>
-    /// Builds map with server tools (low priority) and request tools (high priority).
-    /// Request tools can override server-configured tools.
-    /// </summary>
-    /// <param name="serverTools">Tools configured server-side (lower priority)</param>
-    /// <param name="requestTools">Tools provided in the request (higher priority, can override)</param>
-    /// <returns>Dictionary mapping function names to AIFunction instances, or null if no functions</returns>
-    public static Dictionary<string, AIFunction>? BuildMergedMap(
-        IList<AITool>? serverTools,
-        IList<AITool>? requestTools)
-    {
-        if (serverTools is not { Count: > 0 } &&
-            requestTools is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        var map = new Dictionary<string, AIFunction>(StringComparer.Ordinal);
-
-        // Add server-configured tools first (lower priority)
-        if (serverTools is { Count: > 0 })
-        {
-            for (int i = 0; i < serverTools.Count; i++)
-            {
-                if (serverTools[i] is AIFunction af)
-                {
-                    map[af.Name] = af;
-                }
-            }
-        }
-
-        // Add request tools second (higher priority, can override server-configured)
-        if (requestTools is { Count: > 0 })
-        {
-            for (int i = 0; i < requestTools.Count; i++)
-            {
-                if (requestTools[i] is AIFunction af)
-                {
-                    map[af.Name] = af; // Overwrites if exists
-                }
-            }
-        }
-
-        return map.Count > 0 ? map : null;
-    }
-
-    /// <summary>
-    /// Builds map from single tool source.
-    /// </summary>
-    /// <param name="tools">The tool list to build the map from</param>
-    /// <returns>Dictionary mapping function names to AIFunction instances, or null if no functions</returns>
-    public static Dictionary<string, AIFunction>? BuildMap(IList<AITool>? tools)
-    {
-        if (tools is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        var map = new Dictionary<string, AIFunction>(tools.Count, StringComparer.Ordinal);
-
-        for (int i = 0; i < tools.Count; i++)
-        {
-            if (tools[i] is AIFunction af)
-            {
-                map[af.Name] = af;
-            }
-        }
-
-        return map.Count > 0 ? map : null;
-    }
-
-    /// <summary>
-    /// O(1) lookup in pre-built map.
-    /// </summary>
-    /// <param name="name">The function name to find</param>
-    /// <param name="map">Pre-built map of function names to AIFunction instances</param>
-    /// <returns>The AIFunction if found, null otherwise</returns>
-    public static AIFunction? FindFunction(
-        string name,
-        Dictionary<string, AIFunction>? map)
-    {
-        return map?.TryGetValue(name, out var func) == true ? func : null;
-    }
-
-    /// <summary>
-    /// O(n) search when no map available (fallback).
-    /// Use this when building a map is too expensive for single lookups.
-    /// </summary>
-    /// <param name="name">The function name to find</param>
-    /// <param name="tools">The tool list to search</param>
-    /// <returns>The AIFunction if found, null otherwise</returns>
-    public static AIFunction? FindFunctionInList(
-        string name,
-        IList<AITool>? tools)
-    {
-        if (tools is not { Count: > 0 }) return null;
-
-        for (int i = 0; i < tools.Count; i++)
-        {
-            if (tools[i] is AIFunction af && af.Name == name)
-                return af;
-        }
-        return null;
-    }
-}
-
-#endregion
+// Function map helpers moved into `FunctionCallProcessor` to reduce indirection.
 
 #region Content Extraction Utilities
 
@@ -3055,6 +2934,53 @@ internal class FunctionCallProcessor
         _agenticLoopConfig = agenticLoopConfig;
     }
 
+    // Helpers moved here from FunctionMapBuilder to keep lookup logic next to caller
+    private static Dictionary<string, AIFunction>? BuildMergedMap(
+        IList<AITool>? serverTools,
+        IList<AITool>? requestTools)
+    {
+        if (serverTools is not { Count: > 0 } &&
+            requestTools is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, AIFunction>(StringComparer.Ordinal);
+
+        // Add server-configured tools first (lower priority)
+        if (serverTools is { Count: > 0 })
+        {
+            for (int i = 0; i < serverTools.Count; i++)
+            {
+                if (serverTools[i] is AIFunction af)
+                {
+                    map[af.Name] = af;
+                }
+            }
+        }
+
+        // Add request tools second (higher priority, can override server-configured)
+        if (requestTools is { Count: > 0 })
+        {
+            for (int i = 0; i < requestTools.Count; i++)
+            {
+                if (requestTools[i] is AIFunction af)
+                {
+                    map[af.Name] = af; // Overwrites if exists
+                }
+            }
+        }
+
+        return map.Count > 0 ? map : null;
+    }
+
+    private static AIFunction? FindFunction(
+        string name,
+        Dictionary<string, AIFunction>? map)
+    {
+        return map?.TryGetValue(name, out var func) == true ? func : null;
+    }
+
 
     /// <summary>
     /// Executes function calls with automatic routing between sequential/parallel execution.
@@ -3133,9 +3059,9 @@ internal class FunctionCallProcessor
         AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
-        // PHASE 1: Batch permission check via BeforeParallelFunctionsAsync hook
+        // PHASE 1: Batch permission check via BeforeParallelBatchAsync hook
         // Build function map and collect parallel function information
-        var functionMap = FunctionMapBuilder.BuildMergedMap(_serverConfiguredTools, options?.Tools);
+        var functionMap = BuildMergedMap(_serverConfiguredTools, options?.Tools);
         var parallelFunctions = new List<ParallelFunctionInfo>();
 
         foreach (var toolRequest in toolRequests)
@@ -3143,7 +3069,7 @@ internal class FunctionCallProcessor
             if (string.IsNullOrEmpty(toolRequest.Name))
                 continue;
 
-            var function = FunctionMapBuilder.FindFunction(toolRequest.Name, functionMap);
+            var function = FindFunction(toolRequest.Name, functionMap);
             if (function == null)
                 continue;
 
@@ -3188,8 +3114,8 @@ internal class FunctionCallProcessor
         };
         batchContext.SetOriginalState(agentLoopState);
 
-        // Execute BeforeParallelFunctionsAsync middleware hooks
-        await _middlewarePipeline.ExecuteBeforeParallelFunctionsAsync(
+        // Execute BeforeParallelBatchAsync middleware hooks
+        await _middlewarePipeline.ExecuteBeforeParallelBatchAsync(
             batchContext, cancellationToken).ConfigureAwait(false);
 
         // Apply any state updates from middleware
@@ -3199,7 +3125,7 @@ internal class FunctionCallProcessor
         }
 
         // All tools will be processed - individual permission checks happen in ProcessFunctionCallsAsync
-        // (those checks will use the BatchPermissionState populated by BeforeParallelFunctionsAsync)
+        // (those checks will use the BatchPermissionState populated by BeforeParallelBatchAsync)
         var approvedTools = toolRequests;
         var deniedTools = new List<(FunctionCallContent Tool, string Reason)>();
 
@@ -3348,7 +3274,7 @@ internal class FunctionCallProcessor
         // Build function map per execution (Microsoft pattern for thread-safety)
         // This avoids shared mutable state and stale cache issues
         // Merge server-configured tools with request tools (request tools take precedence)
-        var functionMap = FunctionMapBuilder.BuildMergedMap(_serverConfiguredTools, options?.Tools);
+        var functionMap = BuildMergedMap(_serverConfiguredTools, options?.Tools);
 
         // Process each function call through the unified middleware pipeline
         foreach (var functionCall in functionCallContents)
@@ -3358,7 +3284,7 @@ internal class FunctionCallProcessor
                 continue;
 
             // Resolve the function from the merged function map
-            var function = FunctionMapBuilder.FindFunction(functionCall.Name, functionMap);
+            var function = FindFunction(functionCall.Name, functionMap);
 
             // Extract Collapse information for middleware Collapsing
             string? pluginTypeName = null;
@@ -3424,8 +3350,8 @@ internal class FunctionCallProcessor
                 break;
             }
 
-            // Execute BeforeSequentialFunctionAsync middleware hooks (permission check happens here)
-            var shouldExecute = await _middlewarePipeline.ExecuteBeforeSequentialFunctionAsync(
+            // Execute BeforeFunctionAsync middleware hooks (permission check happens here)
+            var shouldExecute = await _middlewarePipeline.ExecuteBeforeFunctionAsync(
                 middlewareContext, cancellationToken).ConfigureAwait(false);
 
             // If middleware blocked execution (permission denied), record the denial and skip execution
@@ -3982,14 +3908,42 @@ internal static class ErrorFormatter
 /// Used by Middlewares (permissions, clarifications) and supports nested agent communication.
 /// Thread-safe for concurrent event emission and response coordination.
 /// </summary>
+/// <summary>
+/// Manages bidirectional event coordination with priority-based routing.
+/// Immediate/Control events are never blocked behind Normal/Background events.
+/// </summary>
 public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 {
+    //
+    // CHANNELS
+    //
+
     /// <summary>
-    /// Shared event channel for all events.
-    /// Unbounded to prevent blocking during event emission.
-    /// Thread-safe: Multiple producers (Middlewares), single consumer (background drainer).
+    /// Priority channel for Immediate and Control events.
+    /// Bounded to prevent memory issues, but should rarely fill.
     /// </summary>
-    private readonly Channel<AgentEvent> _eventChannel;
+    private readonly Channel<AgentEvent> _priorityChannel;
+
+    /// <summary>
+    /// Standard channel for Normal and Background events.
+    /// Unbounded to prevent blocking during high-throughput streaming.
+    /// </summary>
+    private readonly Channel<AgentEvent> _standardChannel;
+
+    /// <summary>
+    /// Upstream channel for events flowing back through the pipeline.
+    /// Used for interruption propagation.
+    /// </summary>
+    private readonly Channel<AgentEvent> _upstreamChannel;
+
+    //
+    // STATE
+    //
+
+    /// <summary>
+    /// Monotonically increasing sequence counter for event ordering.
+    /// </summary>
+    private long _sequenceCounter;
 
     /// <summary>
     /// Response coordination for bidirectional patterns.
@@ -4015,19 +3969,55 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     private AgentExecutionContext? _executionContext;
 
     /// <summary>
-    /// Creates a new bidirectional event coordinator.
+    /// Stream registry for managing interruptible streams.
+    /// </summary>
+    private readonly StreamRegistry _streamRegistry = new();
+
+    //
+    // CONSTRUCTION
+    //
+
+    /// <summary>
+    /// Creates a new bidirectional event coordinator with priority-based routing.
     /// </summary>
     /// <param name="executionContext">The execution context for event attribution (optional)</param>
     public BidirectionalEventCoordinator(AgentExecutionContext? executionContext = null)
     {
         _executionContext = executionContext;
-        _eventChannel = Channel.CreateUnbounded<AgentEvent>(new UnboundedChannelOptions
+
+        // Priority channel: bounded, for Immediate/Control events
+        _priorityChannel = Channel.CreateBounded<AgentEvent>(new BoundedChannelOptions(64)
         {
-            SingleWriter = false,  // Multiple Middlewares can emit concurrently
-            SingleReader = true,   // Only background drainer reads
-            AllowSynchronousContinuations = false  // Performance & safety
+            SingleWriter = false,
+            SingleReader = true,
+            FullMode = BoundedChannelFullMode.Wait
+        });
+
+        // Standard channel: unbounded, for Normal/Background events
+        _standardChannel = Channel.CreateUnbounded<AgentEvent>(new UnboundedChannelOptions
+        {
+            SingleWriter = false,
+            SingleReader = true,
+            AllowSynchronousContinuations = false
+        });
+
+        // Upstream channel: bounded, for interruptions flowing back
+        _upstreamChannel = Channel.CreateBounded<AgentEvent>(new BoundedChannelOptions(64)
+        {
+            SingleWriter = false,
+            SingleReader = true,
+            FullMode = BoundedChannelFullMode.Wait
         });
     }
+
+    //
+    // PUBLIC API
+    //
+
+    /// <summary>
+    /// Gets the stream registry for managing interruptible streams.
+    /// </summary>
+    public IStreamRegistry Streams => _streamRegistry;
 
     /// <summary>
     /// Sets the execution context for event attribution.
@@ -4041,20 +4031,37 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     }
 
     /// <summary>
-    /// Gets the channel writer for event emission.
-    /// Used by Middlewares and contexts to emit events directly to the channel.
+    /// Attempts to read an event synchronously using priority ordering.
+    /// Checks priority channel first, then upstream, then standard channel.
     /// </summary>
-    /// <remarks>
-    /// Note: For most use cases, prefer Emit() method over direct channel access
-    /// as it handles event bubbling to parent coordinators.
-    /// </remarks>
-    public ChannelWriter<AgentEvent> EventWriter => _eventChannel.Writer;
+    /// <param name="event">The event if one was available</param>
+    /// <returns>True if an event was read, false otherwise</returns>
+    public bool TryRead([NotNullWhen(true)] out AgentEvent? @event)
+    {
+        // 1. Check priority channel first (Immediate/Control)
+        if (_priorityChannel.Reader.TryRead(out var priorityEvent))
+        {
+            @event = priorityEvent;
+            return true;
+        }
 
-    /// <summary>
-    /// Gets the channel reader for event consumption.
-    /// Used by the agent's background drainer to read events.
-    /// </summary>
-    public ChannelReader<AgentEvent> EventReader => _eventChannel.Reader;
+        // 2. Check upstream channel (interruptions flowing back)
+        if (_upstreamChannel.Reader.TryRead(out var upstreamEvent))
+        {
+            @event = upstreamEvent;
+            return true;
+        }
+
+        // 3. Check standard channel (Normal/Background)
+        if (_standardChannel.Reader.TryRead(out var standardEvent))
+        {
+            @event = standardEvent;
+            return true;
+        }
+
+        @event = null;
+        return false;
+    }
 
     /// <summary>
     /// Sets the parent coordinator for event bubbling in nested agent scenarios.
@@ -4074,7 +4081,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
                 "Cannot set coordinator as its own parent. This would create an infinite loop during event emission.");
 
         // Check for cycles in the parent chain
-        // Walk up the parent chain and ensure we don't encounter 'this' coordinator
         var current = parent;
         var visited = new HashSet<BidirectionalEventCoordinator> { this };
 
@@ -4082,7 +4088,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         {
             if (!visited.Add(current))
             {
-                // We've seen this coordinator before in the chain - cycle detected
                 throw new InvalidOperationException(
                     "Cycle detected in parent coordinator chain. Setting this parent would create an infinite loop during event emission. " +
                     "Ensure parent chains form a tree structure (child -> parent -> grandparent) without loops.");
@@ -4095,7 +4100,8 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     }
 
     /// <summary>
-    /// Emits an event to this coordinator and bubbles to parent (if set).
+    /// Emits an event downstream with automatic priority routing.
+    /// Immediate/Control events go to priority channel, Normal/Background to standard channel.
     /// Thread-safe: Can be called from any thread.
     /// </summary>
     /// <param name="evt">The event to emit</param>
@@ -4105,24 +4111,102 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         if (evt == null)
             throw new ArgumentNullException(nameof(evt));
 
-        // Auto-attach execution context if not already set
-        // This enables event attribution in multi-agent systems
-        var eventToEmit = evt;
-        if (evt.ExecutionContext == null && _executionContext != null)
+        var sequenced = PrepareEvent(evt, EventDirection.Downstream);
+
+        // Check if event should be dropped (stream interrupted)
+        if (sequenced.StreamId != null && sequenced.CanInterrupt)
         {
-            eventToEmit = evt with { ExecutionContext = _executionContext };
+            var handle = _streamRegistry.Get(sequenced.StreamId);
+            if (handle?.IsInterrupted == true)
+            {
+                ((StreamHandle)handle).IncrementDropped();
+
+                // Emit observability event for dropped event (to standard channel, won't recurse)
+                EmitInternal(new EventDroppedEvent(
+                    sequenced.StreamId,
+                    evt.GetType().Name,
+                    sequenced.SequenceNumber)
+                {
+                    Priority = EventPriority.Background
+                });
+
+                return; // Drop the event
+            }
+
+            ((StreamHandle?)handle)?.IncrementEmitted();
         }
 
-        // Emit to local channel
-        if (!_eventChannel.Writer.TryWrite(eventToEmit))
+        EmitInternal(sequenced);
+        _parentCoordinator?.Emit(sequenced);
+    }
+
+    /// <summary>
+    /// Emits an event upstream for interruption propagation.
+    /// Used for cancellation signals flowing back through the pipeline.
+    /// </summary>
+    /// <param name="evt">The event to emit upstream</param>
+    /// <exception cref="ArgumentNullException">If event is null</exception>
+    public void EmitUpstream(AgentEvent evt)
+    {
+        if (evt == null)
+            throw new ArgumentNullException(nameof(evt));
+
+        var sequenced = PrepareEvent(evt, EventDirection.Upstream);
+
+        if (!_upstreamChannel.Writer.TryWrite(sequenced))
         {
-            // Channel is closed or full - log but don't throw to avoid crashing the agent
-            System.Diagnostics.Debug.WriteLine($"Failed to write event to channel: {eventToEmit.GetType().Name}");
+            throw new InvalidOperationException(
+                "Upstream event channel full. This indicates a processing bottleneck.");
         }
 
-        // Bubble to parent coordinator (if nested agent)
-        // This creates a chain: NestedAgent -> Orchestrator -> RootOrchestrator
-        _parentCoordinator?.Emit(eventToEmit);
+        _parentCoordinator?.EmitUpstream(sequenced);
+    }
+
+    /// <summary>
+    /// Reads events with priority ordering.
+    /// Immediate/Control events are always processed before Normal/Background events.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Async enumerable of events in priority order</returns>
+    public async IAsyncEnumerable<AgentEvent> ReadAllAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // 1. ALWAYS drain priority channel first (Immediate/Control)
+            while (_priorityChannel.Reader.TryRead(out var priorityEvent))
+            {
+                yield return priorityEvent;
+            }
+
+            // 2. Check upstream channel (interruptions flowing back)
+            while (_upstreamChannel.Reader.TryRead(out var upstreamEvent))
+            {
+                yield return upstreamEvent;
+            }
+
+            // 3. Then read from standard channel (Normal/Background)
+            if (_standardChannel.Reader.TryRead(out var standardEvent))
+            {
+                yield return standardEvent;
+            }
+            else
+            {
+                // Wait for any channel to have data
+                try
+                {
+                    var priorityTask = _priorityChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
+                    var upstreamTask = _upstreamChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
+                    var standardTask = _standardChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
+
+                    await Task.WhenAny(priorityTask, upstreamTask, standardTask);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    yield break;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -4170,19 +4254,16 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         _responseWaiters[requestId] = (tcs, cts);
 
         // Register cancellation/timeout cleanup
-        // IMPORTANT: Distinguishes between timeout and external cancellation
         cts.Token.Register(() =>
         {
             if (_responseWaiters.TryRemove(requestId, out var entry))
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    // External cancellation (user stopped agent)
                     entry.Item1.TrySetCanceled(cancellationToken);
                 }
                 else
                 {
-                    // Timeout (no response received in time)
                     entry.Item1.TrySetException(
                         new TimeoutException($"No response received for request '{requestId}' within {timeout}"));
                 }
@@ -4194,7 +4275,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         {
             var response = await tcs.Task;
 
-            // Type safety check with clear error message
             if (response is not T typedResponse)
             {
                 throw new InvalidOperationException(
@@ -4205,7 +4285,6 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         }
         finally
         {
-            // Cleanup on success (timeout/cancellation cleanup handled by registration above)
             if (_responseWaiters.TryRemove(requestId, out var entry))
             {
                 entry.Item2.Dispose();
@@ -4213,16 +4292,49 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         }
     }
 
+    //
+    // PRIVATE HELPERS
+    //
+
+    private AgentEvent PrepareEvent(AgentEvent evt, EventDirection direction)
+    {
+        return evt with
+        {
+            SequenceNumber = Interlocked.Increment(ref _sequenceCounter),
+            Direction = direction,
+            ExecutionContext = evt.ExecutionContext ?? _executionContext
+        };
+    }
+
+    private void EmitInternal(AgentEvent evt)
+    {
+        var channel = evt.Priority <= EventPriority.Control
+            ? _priorityChannel
+            : _standardChannel;
+
+        if (!channel.Writer.TryWrite(evt))
+        {
+            if (evt.Priority <= EventPriority.Control)
+            {
+                throw new InvalidOperationException(
+                    $"Priority event channel full. Event type: {evt.GetType().Name}");
+            }
+
+            System.Diagnostics.Debug.WriteLine(
+                $"Failed to write event to standard channel: {evt.GetType().Name}");
+        }
+    }
+
     /// <summary>
-    /// Disposes the coordinator, completing the event channel and cancelling all pending waiters.
+    /// Disposes the coordinator, completing all channels and cancelling all pending waiters.
     /// Should be called when the agent is being disposed.
     /// </summary>
     public void Dispose()
     {
-        // Complete the channel first
-        _eventChannel.Writer.Complete();
+        _priorityChannel.Writer.Complete();
+        _standardChannel.Writer.Complete();
+        _upstreamChannel.Writer.Complete();
 
-        // Cancel all pending waiters
         foreach (var waiter in _responseWaiters.Values)
         {
             waiter.Item1.TrySetCanceled();
@@ -4231,6 +4343,223 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         _responseWaiters.Clear();
     }
 }
+
+#region Stream Management
+
+/// <summary>
+/// Handle for managing an interruptible stream of events.
+/// Provides lifecycle management and interruption control.
+/// </summary>
+public interface IStreamHandle
+{
+    /// <summary>
+    /// Unique identifier for this stream.
+    /// Used to group related events.
+    /// </summary>
+    string StreamId { get; }
+
+    /// <summary>
+    /// Whether this stream has been interrupted.
+    /// Check this before emitting new events.
+    /// </summary>
+    bool IsInterrupted { get; }
+
+    /// <summary>
+    /// Whether this stream has completed (either normally or via interruption).
+    /// </summary>
+    bool IsCompleted { get; }
+
+    /// <summary>
+    /// Number of events emitted on this stream.
+    /// </summary>
+    int EmittedCount { get; }
+
+    /// <summary>
+    /// Number of events dropped due to interruption.
+    /// </summary>
+    int DroppedCount { get; }
+
+    /// <summary>
+    /// Interrupt this stream. Subsequent CanInterrupt events will be dropped.
+    /// </summary>
+    void Interrupt();
+
+    /// <summary>
+    /// Mark this stream as completed (normal completion).
+    /// </summary>
+    void Complete();
+
+    /// <summary>
+    /// Wait for stream completion (either normal or via interruption).
+    /// </summary>
+    Task WaitAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Raised when the stream is interrupted.
+    /// </summary>
+    event Action<IStreamHandle>? OnInterrupted;
+
+    /// <summary>
+    /// Raised when the stream completes (normal or interrupted).
+    /// </summary>
+    event Action<IStreamHandle>? OnCompleted;
+}
+
+/// <summary>
+/// Manages active interruptible streams for coordinated cancellation.
+/// </summary>
+public interface IStreamRegistry
+{
+    /// <summary>
+    /// Creates a new stream handle.
+    /// </summary>
+    IStreamHandle Create(string? streamId = null);
+
+    /// <summary>
+    /// Gets an existing stream handle by ID.
+    /// </summary>
+    IStreamHandle? Get(string streamId);
+
+    /// <summary>
+    /// Interrupts all active streams.
+    /// </summary>
+    void InterruptAll();
+
+    /// <summary>
+    /// Interrupts streams matching a predicate.
+    /// </summary>
+    void InterruptWhere(Func<IStreamHandle, bool> predicate);
+
+    /// <summary>
+    /// Gets all active (non-completed) streams.
+    /// </summary>
+    IReadOnlyList<IStreamHandle> ActiveStreams { get; }
+
+    /// <summary>
+    /// Gets the count of active streams.
+    /// </summary>
+    int ActiveCount { get; }
+}
+
+/// <summary>
+/// Internal implementation of IStreamHandle.
+/// </summary>
+internal sealed class StreamHandle : IStreamHandle
+{
+    private readonly TaskCompletionSource _completionTcs = new();
+    private volatile bool _isInterrupted;
+    private volatile bool _isCompleted;
+    private int _emittedCount;
+    private int _droppedCount;
+
+    public string StreamId { get; }
+    public bool IsInterrupted => _isInterrupted;
+    public bool IsCompleted => _isCompleted;
+    public int EmittedCount => _emittedCount;
+    public int DroppedCount => _droppedCount;
+
+    public event Action<IStreamHandle>? OnInterrupted;
+    public event Action<IStreamHandle>? OnCompleted;
+
+    public StreamHandle(string? streamId = null)
+    {
+        StreamId = streamId ?? Guid.NewGuid().ToString("N");
+    }
+
+    public void Interrupt()
+    {
+        if (_isCompleted) return;
+
+        _isInterrupted = true;
+        OnInterrupted?.Invoke(this);
+        Complete();
+    }
+
+    public void Complete()
+    {
+        if (_isCompleted) return;
+
+        _isCompleted = true;
+        _completionTcs.TrySetResult();
+        OnCompleted?.Invoke(this);
+    }
+
+    public Task WaitAsync(CancellationToken cancellationToken = default)
+    {
+        return _completionTcs.Task.WaitAsync(cancellationToken);
+    }
+
+    internal void IncrementEmitted() => Interlocked.Increment(ref _emittedCount);
+    internal void IncrementDropped() => Interlocked.Increment(ref _droppedCount);
+}
+
+/// <summary>
+/// Internal implementation of IStreamRegistry.
+/// </summary>
+internal sealed class StreamRegistry : IStreamRegistry
+{
+    private readonly ConcurrentDictionary<string, StreamHandle> _streams = new();
+
+    public IStreamHandle Create(string? streamId = null)
+    {
+        var handle = new StreamHandle(streamId);
+
+        // Only remove non-interrupted streams from registry when completed.
+        // Interrupted streams stay in registry so Emit() can check IsInterrupted.
+        handle.OnCompleted += h =>
+        {
+            if (!h.IsInterrupted)
+            {
+                _streams.TryRemove(h.StreamId, out _);
+            }
+        };
+
+        if (!_streams.TryAdd(handle.StreamId, handle))
+        {
+            throw new InvalidOperationException($"Stream with ID '{handle.StreamId}' already exists.");
+        }
+
+        return handle;
+    }
+
+    public IStreamHandle? Get(string streamId)
+    {
+        _streams.TryGetValue(streamId, out var handle);
+        return handle;
+    }
+
+    public void InterruptAll()
+    {
+        foreach (var handle in _streams.Values.ToArray())
+        {
+            handle.Interrupt();
+        }
+    }
+
+    public void InterruptWhere(Func<IStreamHandle, bool> predicate)
+    {
+        foreach (var handle in _streams.Values.Where(predicate).ToArray())
+        {
+            handle.Interrupt();
+        }
+    }
+
+    public IReadOnlyList<IStreamHandle> ActiveStreams =>
+        _streams.Values.Where(h => !h.IsCompleted).ToList<IStreamHandle>();
+
+    public int ActiveCount => _streams.Count(kvp => !kvp.Value.IsCompleted);
+}
+
+/// <summary>
+/// Emitted when an event is dropped due to stream interruption.
+/// For observability and debugging.
+/// </summary>
+public record EventDroppedEvent(
+    string DroppedStreamId,
+    string DroppedEventType,
+    long DroppedSequenceNumber) : AgentEvent, IObservabilityEvent;
+
+#endregion
 #endregion
 
 

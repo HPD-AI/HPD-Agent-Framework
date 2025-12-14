@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using HPD.Agent;
 
@@ -40,14 +41,22 @@ public sealed class TestBidirectionalCoordinator
     }
 
     /// <summary>
-    /// Event reader for agent to consume events.
+    /// Attempts to read an event synchronously.
     /// </summary>
-    public ChannelReader<AgentEvent> EventReader => _eventChannel.Reader;
+    /// <param name="event">The event if one was available</param>
+    /// <returns>True if an event was read, false otherwise</returns>
+    public bool TryRead([NotNullWhen(true)] out AgentEvent? @event)
+    {
+        return _eventChannel.Reader.TryRead(out @event);
+    }
 
     /// <summary>
-    /// Event writer for Middlewares to emit events.
+    /// Emits an event to the channel.
     /// </summary>
-    public ChannelWriter<AgentEvent> EventWriter => _eventChannel.Writer;
+    public void Emit(AgentEvent evt)
+    {
+        _eventChannel.Writer.TryWrite(evt);
+    }
 
     /// <summary>
     /// Captures an event for test verification.
