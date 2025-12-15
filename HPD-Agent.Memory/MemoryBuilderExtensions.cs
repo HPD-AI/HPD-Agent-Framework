@@ -53,7 +53,7 @@ public static class MemoryBuilderExtensions
     private static void RegisterDynamicMemoryPlugin(AgentBuilder builder, DynamicMemoryPlugin plugin)
     {
         var pluginName = typeof(DynamicMemoryPlugin).Name;
-        builder._instanceRegistrations.Add(new PluginInstanceRegistration(plugin, pluginName));
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(plugin, pluginName));
         builder.PluginContexts[pluginName] = null; // No special context needed for memory plugin
     }
 
@@ -205,7 +205,7 @@ public static class MemoryBuilderExtensions
 
         // Register plugin directly (instance-based for DI plugins)
         var pluginName = typeof(AgentPlanPlugin).Name;
-        builder._instanceRegistrations.Add(new PluginInstanceRegistration(plugin, pluginName));
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(plugin, pluginName));
         builder.PluginContexts[pluginName] = null;
 
         // Register middleware directly

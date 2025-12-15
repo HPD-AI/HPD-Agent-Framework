@@ -44,7 +44,7 @@ public class SubAgentIntegrationTests
     public void CrossAssemblyPluginLoading_LoadsRegistryFromPluginAssembly()
     {
         // This test verifies that the cross-assembly plugin loading mechanism works.
-        // When WithPlugin<T>() is called, it should load the PluginRegistry from T's assembly
+        // When WithTools<T>() is called, it should load the ToolRegistry from T's assembly
         // if not already loaded.
 
         // Arrange - Create a builder
@@ -52,7 +52,7 @@ public class SubAgentIntegrationTests
 
         // Act - Attempt to load a plugin registry from the test assembly
         // Even though there's no plugin, it should not throw - just find nothing
-        builder.LoadPluginRegistryFromAssembly(typeof(TestIntegrationSubAgents).Assembly);
+        builder.LoadToolRegistryFromAssembly(typeof(TestIntegrationSubAgents).Assembly);
 
         // Assert - The assembly was tracked as loaded (even if no plugins found)
         // This verifies the cross-assembly loading mechanism is working

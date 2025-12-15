@@ -11,7 +11,7 @@ internal static class SkillCodeGenerator
     /// Generates the GetReferencedPlugins() method for auto-registration
     /// PHASE 5: Now uses SkillCapabilities (fully populated with resolved references)
     /// </summary>
-    public static string GenerateGetReferencedPluginsMethod(PluginInfo plugin)
+    public static string GenerateGetReferencedPluginsMethod(ToolInfo plugin)
     {
         if (!plugin.SkillCapabilities.Any())
             return string.Empty;
@@ -51,13 +51,13 @@ internal static class SkillCodeGenerator
     /// Generates the GetReferencedFunctions() method for selective function registration
     /// PHASE 5: Now uses SkillCapabilities (fully populated with resolved references)
     /// </summary>
-    public static string GenerateGetReferencedFunctionsMethod(PluginInfo plugin)
+    public static string GenerateGetReferencedFunctionsMethod(ToolInfo plugin)
     {
         if (!plugin.SkillCapabilities.Any())
             return string.Empty;
 
         // Build dictionary: PluginName -> HashSet<FunctionName>
-        var pluginFunctions = new Dictionary<string, HashSet<string>>();
+        var toolFunctions = new Dictionary<string, HashSet<string>>();
 
         foreach (var skill in plugin.SkillCapabilities)
         {
@@ -67,18 +67,18 @@ internal static class SkillCodeGenerator
                 var parts = funcRef.Split('.');
                 if (parts.Length == 2)
                 {
-                    var pluginName = parts[0];
+                    var toolName = parts[0];
                     var functionName = parts[1];
 
-                    if (!pluginFunctions.ContainsKey(pluginName))
-                        pluginFunctions[pluginName] = new HashSet<string>();
+                    if (!toolFunctions.ContainsKey(toolName))
+                        toolFunctions[toolName] = new HashSet<string>();
 
-                    pluginFunctions[pluginName].Add(functionName);
+                    toolFunctions[toolName].Add(functionName);
                 }
             }
         }
 
-        if (!pluginFunctions.Any())
+        if (!toolFunctions.Any())
             return string.Empty;
 
         var sb = new StringBuilder();
@@ -91,7 +91,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine("            return new Dictionary<string, string[]>");
         sb.AppendLine("            {");
 
-        var entries = pluginFunctions.OrderBy(kvp => kvp.Key).ToList();
+        var entries = toolFunctions.OrderBy(kvp => kvp.Key).ToList();
         for (int i = 0; i < entries.Count; i++)
         {
             var comma = i < entries.Count - 1 ? "," : "";
@@ -109,7 +109,7 @@ internal static class SkillCodeGenerator
     /// Generates skill registration code to be added to CreatePlugin() method
     /// Handles both class-level Collapsing (if [Collapse] on class) and individual skill containers
     /// </summary>
-    public static string GenerateSkillRegistrations(PluginInfo plugin)
+    public static string GenerateSkillRegistrations(ToolInfo plugin)
     {
         // Early exit ONLY if no skills AND no collapse attribute
         // If plugin has [Collapse] attribute, we need to register the container even without skills
@@ -161,7 +161,7 @@ internal static class SkillCodeGenerator
     /// Skills ARE containers - there's only one function per skill.
     /// PHASE 5: Now accepts SkillCapability instead of SkillInfo
     /// </summary>
-    public static string GenerateSkillContainerFunction(HPD.Agent.SourceGenerator.Capabilities.SkillCapability skill, PluginInfo plugin)
+    public static string GenerateSkillContainerFunction(HPD.Agent.SourceGenerator.Capabilities.SkillCapability skill, ToolInfo plugin)
     {
         var sb = new StringBuilder();
 
@@ -194,7 +194,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine($"        /// </summary>");
         sb.AppendLine($"        /// <param name=\"instance\">Plugin instance</param>");
         sb.AppendLine($"        /// <param name=\"context\">Execution context for dynamic descriptions</param>");
-        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill({plugin.Name} instance, IPluginMetadata? context)");
+        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill({plugin.Name} instance, IToolMetadata? context)");
         sb.AppendLine("        {");
 
         // Generate runtime function body that checks configuration
@@ -370,7 +370,7 @@ internal static class SkillCodeGenerator
     /// Generates the Collapse container function for a skill class marked with [Collapse].
     /// This groups all skills in the class under a single collapsible container.
     /// </summary>
-    public static string GenerateSkillClassCollapseContainer(PluginInfo plugin)
+    public static string GenerateSkillClassCollapseContainer(ToolInfo plugin)
     {
         if (!plugin.HasCollapseAttribute)
             return string.Empty;
@@ -503,7 +503,7 @@ internal static class SkillCodeGenerator
     /// <summary>
     /// Generates all skill-related code for a plugin
     /// </summary>
-    public static string GenerateAllSkillCode(PluginInfo plugin)
+    public static string GenerateAllSkillCode(ToolInfo plugin)
     {
         // Early exit ONLY if no skills AND no collapse attribute
         // If plugin has [Collapse] attribute, we need to generate the container even without skills
@@ -562,21 +562,21 @@ internal static class SkillCodeGenerator
     /// <summary>
     /// Updates the plugin metadata to include skills
     /// </summary>
-    public static string UpdatePluginMetadataWithSkills(PluginInfo plugin, string originalMetadataCode)
+    public static string UpdateToolMetadataWithSkills(ToolInfo plugin, string originalMetadataCode)
     {
         if (!plugin.SkillCapabilities.Any())
             return originalMetadataCode;
 
         // Add skill information to metadata
         var sb = new StringBuilder();
-        sb.AppendLine("        private static PluginMetadata? _cachedMetadata;");
+        sb.AppendLine("        private static ToolMetadata? _cachedMetadata;");
         sb.AppendLine();
         sb.AppendLine("        /// <summary>");
         sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for Collapsing).");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine("        public static PluginMetadata GetPluginMetadata()");
+        sb.AppendLine("        public static ToolMetadata GetToolMetadata()");
         sb.AppendLine("        {");
-        sb.AppendLine("            return _cachedMetadata ??= new PluginMetadata");
+        sb.AppendLine("            return _cachedMetadata ??= new ToolMetadata");
         sb.AppendLine("            {");
         sb.AppendLine($"                Name = \"{plugin.Name}\",");
 

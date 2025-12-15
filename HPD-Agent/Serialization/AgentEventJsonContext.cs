@@ -69,15 +69,15 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(MiddlewareProgressEvent))]
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
 
-// Frontend Tool Events
-[JsonSerializable(typeof(FrontendTools.FrontendToolInvokeRequestEvent))]
-[JsonSerializable(typeof(FrontendTools.FrontendToolInvokeResponseEvent))]
-[JsonSerializable(typeof(FrontendTools.FrontendPluginsRegisteredEvent))]
-[JsonSerializable(typeof(FrontendTools.IToolResultContent))]
-[JsonSerializable(typeof(FrontendTools.TextContent))]
-[JsonSerializable(typeof(FrontendTools.BinaryContent))]
-[JsonSerializable(typeof(FrontendTools.JsonContent))]
-[JsonSerializable(typeof(FrontendTools.FrontendToolAugmentation))]
+// Client Tool Events
+[JsonSerializable(typeof(ClientTools.ClientToolInvokeRequestEvent))]
+[JsonSerializable(typeof(ClientTools.ClientToolInvokeResponseEvent))]
+[JsonSerializable(typeof(ClientTools.ClientToolGroupsRegisteredEvent))]
+[JsonSerializable(typeof(ClientTools.IToolResultContent))]
+[JsonSerializable(typeof(ClientTools.TextContent))]
+[JsonSerializable(typeof(ClientTools.BinaryContent))]
+[JsonSerializable(typeof(ClientTools.JsonContent))]
+[JsonSerializable(typeof(ClientTools.ClientToolAugmentation))]
 
 // Branch events removed - branching is now an application-level concern
 // Applications should define their own branch event types if needed

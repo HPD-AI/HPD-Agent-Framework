@@ -67,7 +67,7 @@ When asked about weather:
 
     /// <summary>
     /// Code review specialist sub-agent - analyzes code quality
-    /// Demonstrates sub-agent with plugins registered (FileSystemPlugin for reading code files)
+    /// Demonstrates sub-agent with plugins registered (FileSystemTools for reading code files)
     /// </summary>
     [SubAgent]
     public SubAgent CodeReviewer()
@@ -87,7 +87,7 @@ When reviewing code:
 4. Suggest improvements with examples
 5. Be constructive and specific
 
-You have access to FileSystemPlugin tools to read code files when needed.",
+You have access to FileSystemTools tools to read code files when needed.",
                 MaxAgenticIterations = 20,
                 Provider = new ProviderConfig
                 {
@@ -95,6 +95,6 @@ You have access to FileSystemPlugin tools to read code files when needed.",
                     ModelName = "google/gemini-2.0-flash-exp:free"
                 }
             },
-            Plugins: typeof(HPD.Agent.Plugins.FileSystem.FileSystemPlugin));
+            Plugins: typeof(HPD.Agent.Tools.FileSystem.FileSystemTools));
     }
 }

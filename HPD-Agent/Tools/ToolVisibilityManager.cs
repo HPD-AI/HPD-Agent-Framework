@@ -8,7 +8,7 @@ public class ToolVisibilityManager
 {
     private readonly ILogger<ToolVisibilityManager>? _logger;
     private readonly Dictionary<string, AIFunction> _allFunctionsByReference;
-    private readonly ImmutableHashSet<string> _explicitlyRegisteredPlugins;
+    private readonly ImmutableHashSet<string> _explicitlyRegisteredTools;
 
     public ToolVisibilityManager(
         IEnumerable<AIFunction> allFunctions,
@@ -23,7 +23,7 @@ public class ToolVisibilityManager
         ILogger<ToolVisibilityManager>? logger = null)
     {
         _logger = logger;
-        _explicitlyRegisteredPlugins = explicitlyRegisteredPlugins ?? ImmutableHashSet<string>.Empty;
+        _explicitlyRegisteredTools = explicitlyRegisteredPlugins ?? ImmutableHashSet<string>.Empty;
         _allFunctionsByReference = BuildFunctionLookup(allFunctions);
     }
 
@@ -221,7 +221,7 @@ public class ToolVisibilityManager
         return Array.Empty<string>();
     }
 
-    private string[] GetReferencedPlugins(AIFunction skillContainer)
+    private string[] GetReferencedTools(AIFunction skillContainer)
     {
         if (skillContainer.AdditionalProperties?.TryGetValue("ReferencedPlugins", out var v) == true && v is string[] plugins)
             return plugins;
@@ -355,7 +355,7 @@ public class ToolVisibilityManager
         // Hide Collapse containers for plugins that were ONLY implicitly registered via skills
         // (i.e., referenced by skills but NOT explicitly registered by the user)
         if (context.PluginsWithCollapsedSkills.Contains(CollapseName) &&
-            !_explicitlyRegisteredPlugins.Contains(CollapseName))
+            !_explicitlyRegisteredTools.Contains(CollapseName))
         {
             _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (implicitly registered via skills)");
             return false;
@@ -490,7 +490,7 @@ public class ToolVisibilityManager
 
         // PRIORITY 2: If plugin is explicitly registered (and NOT Collapsed), show all its functions
         // (Explicit registration takes precedence over skill references)
-        if (parentPlugin != null && _explicitlyRegisteredPlugins.Contains(parentPlugin))
+        if (parentPlugin != null && _explicitlyRegisteredTools.Contains(parentPlugin))
         {
             // Explicitly registered plugin - always show functions
             _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (explicitly registered plugin)");
@@ -596,15 +596,15 @@ public class ToolVisibilityManager
                     break;
 
                 case ContainerType.CollapsedPluginContainer:
-                    var pluginName = GetPluginName(tool);
-                    context.PluginsWithContainers.Add(pluginName);
+                    var toolName = GetPluginName(tool);
+                    context.PluginsWithContainers.Add(toolName);
                     break;
 
                 case ContainerType.SkillMethodContainer:
                     // Track which functions this skill references
                     var skillName = GetSkillName(tool);
                     var referencedFunctions = GetReferencedFunctions(tool);
-                    var referencedPlugins = GetReferencedPlugins(tool);
+                    var referencedPlugins = GetReferencedTools(tool);
                     var parentSkillContainer = GetParentSkillContainer(tool);
 
                     // Mark plugins as having Collapsed skills ONLY if they are from a DIFFERENT plugin

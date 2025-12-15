@@ -9,7 +9,7 @@ Conversation branching lets users go back, edit a previous message, and get a di
 - [When to Use Branching](#when-to-use-branching)
 - [Quick Setup](#quick-setup)
 - [Basic Usage](#basic-usage)
-- [Frontend Integration](#frontend-integration)
+- [Client Integration](#client-integration)
 - [Client Library Utilities](#client-library-utilities)
 - [API Reference](#api-reference)
 - [Configuration Options](#configuration-options)
@@ -200,7 +200,7 @@ Console.WriteLine($"Deleted '{evt.BranchName}', pruned {evt.CheckpointsPruned} c
 
 ---
 
-## Frontend Integration
+## Client Integration
 
 ### TypeScript Client
 

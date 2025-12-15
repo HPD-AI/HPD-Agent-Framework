@@ -45,10 +45,10 @@ export const EventTypes = {
   MIDDLEWARE_PROGRESS: 'MIDDLEWARE_PROGRESS',
   MIDDLEWARE_ERROR: 'MIDDLEWARE_ERROR',
 
-  // Frontend Tools (bidirectional)
-  FRONTEND_TOOL_INVOKE_REQUEST: 'FRONTEND_TOOL_INVOKE_REQUEST',
-  FRONTEND_TOOL_INVOKE_RESPONSE: 'FRONTEND_TOOL_INVOKE_RESPONSE',
-  FRONTEND_PLUGINS_REGISTERED: 'FRONTEND_PLUGINS_REGISTERED',
+  // Client Tools (bidirectional)
+  CLIENT_TOOL_INVOKE_REQUEST: 'CLIENT_TOOL_INVOKE_REQUEST',
+  CLIENT_TOOL_INVOKE_RESPONSE: 'CLIENT_TOOL_INVOKE_RESPONSE',
+  CLIENT_TOOL_GROUPS_REGISTERED: 'CLIENT_TOOL_GROUPS_REGISTERED',
 
   // Observability (optional, for debugging)
   COLLAPSED_TOOLS_VISIBLE: 'COLLAPSED_TOOLS_VISIBLE',
@@ -324,11 +324,11 @@ export interface MiddlewareErrorEvent extends BaseEvent {
 }
 
 // ============================================
-// Frontend Tool Events (Bidirectional)
+// Client Tool Events (Bidirectional)
 // ============================================
 
-export interface FrontendToolInvokeRequestEvent extends BaseEvent {
-  type: typeof EventTypes.FRONTEND_TOOL_INVOKE_REQUEST;
+export interface ClientToolInvokeRequestEvent extends BaseEvent {
+  type: typeof EventTypes.CLIENT_TOOL_INVOKE_REQUEST;
   requestId: string;
   toolName: string;
   callId: string;
@@ -336,8 +336,8 @@ export interface FrontendToolInvokeRequestEvent extends BaseEvent {
   description?: string;
 }
 
-export interface FrontendToolInvokeResponseEvent extends BaseEvent {
-  type: typeof EventTypes.FRONTEND_TOOL_INVOKE_RESPONSE;
+export interface ClientToolInvokeResponseEvent extends BaseEvent {
+  type: typeof EventTypes.CLIENT_TOOL_INVOKE_RESPONSE;
   requestId: string;
   content: Array<{ type: string; [key: string]: unknown }>;
   success: boolean;
@@ -345,9 +345,9 @@ export interface FrontendToolInvokeResponseEvent extends BaseEvent {
   augmentation?: Record<string, unknown>;
 }
 
-export interface FrontendPluginsRegisteredEvent extends BaseEvent {
-  type: typeof EventTypes.FRONTEND_PLUGINS_REGISTERED;
-  registeredPlugins: string[];
+export interface ClientToolGroupsRegisteredEvent extends BaseEvent {
+  type: typeof EventTypes.CLIENT_TOOL_GROUPS_REGISTERED;
+  registeredToolGroups: string[];
   totalTools: number;
   timestamp: string;
 }
@@ -433,10 +433,10 @@ export type AgentEvent =
   // Middleware Events
   | MiddlewareProgressEvent
   | MiddlewareErrorEvent
-  // Frontend Tool Events
-  | FrontendToolInvokeRequestEvent
-  | FrontendToolInvokeResponseEvent
-  | FrontendPluginsRegisteredEvent
+  // Client Tool Events
+  | ClientToolInvokeRequestEvent
+  | ClientToolInvokeResponseEvent
+  | ClientToolGroupsRegisteredEvent
   // Branch Events
   | BranchCreatedEvent
   | BranchSwitchedEvent
@@ -479,16 +479,16 @@ export function isContinuationRequestEvent(event: BaseEvent): event is Continuat
   return event.type === EventTypes.CONTINUATION_REQUEST;
 }
 
-export function isFrontendToolInvokeRequestEvent(
+export function isClientToolInvokeRequestEvent(
   event: BaseEvent
-): event is FrontendToolInvokeRequestEvent {
-  return event.type === EventTypes.FRONTEND_TOOL_INVOKE_REQUEST;
+): event is ClientToolInvokeRequestEvent {
+  return event.type === EventTypes.CLIENT_TOOL_INVOKE_REQUEST;
 }
 
-export function isFrontendPluginsRegisteredEvent(
+export function isClientToolGroupsRegisteredEvent(
   event: BaseEvent
-): event is FrontendPluginsRegisteredEvent {
-  return event.type === EventTypes.FRONTEND_PLUGINS_REGISTERED;
+): event is ClientToolGroupsRegisteredEvent {
+  return event.type === EventTypes.CLIENT_TOOL_GROUPS_REGISTERED;
 }
 
 export function isBranchCreatedEvent(event: BaseEvent): event is BranchCreatedEvent {

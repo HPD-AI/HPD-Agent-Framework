@@ -1,22 +1,22 @@
-using Microsoft.Extensions.AI;
+namespace HPD.Agent;
 
 /// <summary>
-/// Lightweight registration record for DI-required plugins.
-/// Only used for plugins that cannot be instantiated via the AOT-compatible PluginRegistry
-/// (e.g., plugins requiring dependency injection like AgentPlanPlugin or DynamicMemoryPlugin).
+/// Lightweight registration record for DI-required tools.
+/// Only used for tools that cannot be instantiated via the AOT-compatible ToolRegistry
+/// (e.g., tools requiring dependency injection like AgentPlanTools or DynamicMemoryTools).
 ///
-/// For all other plugins, use the generated PluginRegistry.All catalog via WithPlugin&lt;T&gt;().
+/// For all other tools, use the generated ToolRegistry.All catalog via WithTools&lt;T&gt;().
 /// </summary>
-public record PluginInstanceRegistration(
+public record ToolInstanceRegistration(
     /// <summary>
-    /// The plugin instance (pre-created, typically via DI)
+    /// The tool instance (pre-created, typically via DI)
     /// </summary>
     object Instance,
 
     /// <summary>
-    /// The plugin type name (for lookup in generated Registration classes)
+    /// The tool type name (for lookup in generated Registration classes)
     /// </summary>
-    string PluginTypeName,
+    string ToolTypeName,
 
     /// <summary>
     /// Optional function filter - if set, only these functions will be included.

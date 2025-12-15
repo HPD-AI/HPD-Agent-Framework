@@ -19,7 +19,7 @@ class MiddlewareTest
             var agent = new AgentBuilder()
                 .WithProvider("openai", "gpt-4o-mini", Environment.GetEnvironmentVariable("OPENAI_API_KEY"))
                 .WithLogging(loggerFactory) // Uses unified LoggingMiddleware
-                .WithPlugin<TestPlugin>()
+                .WithTools<TestPlugin>()
                 .Build();
 
             Console.WriteLine("✅ Agent created successfully!");

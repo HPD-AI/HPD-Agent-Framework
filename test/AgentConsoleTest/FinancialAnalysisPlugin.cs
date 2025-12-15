@@ -1,3 +1,4 @@
+using HPD.Agent;
 using System;
 using System.ComponentModel;
 using System.Collections.Generic;
@@ -9,11 +10,11 @@ using Microsoft.Extensions.AI;
 /// Designed to solve textbook problems and real-world financial statement analysis.
 /// </summary>
 
-public class FinancialAnalysisPluginMetadataContext : IPluginMetadata
+public class FinancialAnalysisToolMetadataContext : IToolMetadata
 {
     private readonly Dictionary<string, object> _properties = new();
 
-    public FinancialAnalysisPluginMetadataContext(
+    public FinancialAnalysisToolMetadataContext(
         string currency = "USD",
         int decimalPlaces = 2,
         bool allowNegativeEquity = true,
@@ -93,7 +94,7 @@ public class FinancialAnalysisPlugin
 {
     // ==================== COMMON-SIZE ANALYSIS ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates common-size percentage: (line item / base amount) * 100. Essential for Question 11 type analysis.")]
     public string CalculateCommonSizePercentage(
         [AIDescription("The line item amount (e.g., Current Assets = 12313)")] decimal lineItemAmount,
@@ -107,7 +108,7 @@ public class FinancialAnalysisPlugin
         return $"{Math.Round(percentage, decimalPlaces)}%";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates the percentage point change between two periods (Period2% - Period1%). Perfect for analyzing trends.")]
     public string CalculatePercentagePointChange(
         [AIDescription("Percentage in first period (e.g., 73.39 for 73.39%)")] decimal period1Percentage,
@@ -119,7 +120,7 @@ public class FinancialAnalysisPlugin
         return $"{sign}{Math.Round(change, decimalPlaces)} percentage points";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Performs complete common-size balance sheet analysis for assets. Returns formatted table data.")]
     public string CommonSizeBalanceSheetAssets(
         [AIDescription("Current assets amount")] decimal currentAssets,
@@ -138,7 +139,7 @@ public class FinancialAnalysisPlugin
                $"Total: 100.00%";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Performs complete common-size balance sheet analysis for liabilities. Returns formatted table data.")]
     public string CommonSizeBalanceSheetLiabilities(
         [AIDescription("Current liabilities amount")] decimal currentLiabilities,
@@ -157,7 +158,7 @@ public class FinancialAnalysisPlugin
                $"Total: 100.00%";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates stockholders' equity as percentage of total assets (capital structure analysis).")]
     public string EquityToTotalAssetsPercentage(
         [AIDescription("Stockholders' equity amount")] decimal stockholdersEquity,
@@ -173,7 +174,7 @@ public class FinancialAnalysisPlugin
 
     // ==================== LIQUIDITY RATIOS ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates current ratio: Current Assets / Current Liabilities. Measures short-term liquidity.")]
     public string CalculateCurrentRatio(
         [AIDescription("Current assets amount")] decimal currentAssets,
@@ -187,7 +188,7 @@ public class FinancialAnalysisPlugin
         return $"{Math.Round(ratio, decimalPlaces):F2}";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates quick ratio (acid-test): (Current Assets - Inventory) / Current Liabilities.")]
     public string CalculateQuickRatio(
         [AIDescription("Current assets amount")] decimal currentAssets,
@@ -203,7 +204,7 @@ public class FinancialAnalysisPlugin
         return $"{Math.Round(ratio, decimalPlaces):F2}";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates working capital: Current Assets - Current Liabilities. Returns amount in millions.")]
     public string CalculateWorkingCapital(
         [AIDescription("Current assets amount (in millions)")] decimal currentAssets,
@@ -217,7 +218,7 @@ public class FinancialAnalysisPlugin
 
     // ==================== LEVERAGE RATIOS ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates debt-to-equity ratio: Total Liabilities / Stockholders' Equity. Measures financial leverage.")]
     public string CalculateDebtToEquityRatio(
         [AIDescription("Total liabilities amount")] decimal totalLiabilities,
@@ -231,7 +232,7 @@ public class FinancialAnalysisPlugin
         return $"{Math.Round(ratio, decimalPlaces):F2}";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates debt-to-assets ratio: Total Liabilities / Total Assets. Shows proportion of assets financed by debt.")]
     public string CalculateDebtToAssetsRatio(
         [AIDescription("Total liabilities amount")] decimal totalLiabilities,
@@ -245,7 +246,7 @@ public class FinancialAnalysisPlugin
         return $"{Math.Round(ratio, decimalPlaces):F2} or {Math.Round(ratio * 100, decimalPlaces)}%";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates equity multiplier: Total Assets / Stockholders' Equity. Part of DuPont analysis.")]
     public string CalculateEquityMultiplier(
         [AIDescription("Total assets amount")] decimal totalAssets,
@@ -261,7 +262,7 @@ public class FinancialAnalysisPlugin
 
     // ==================== CHANGE ANALYSIS ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates absolute dollar change between two periods: Period2 - Period1.")]
     public string CalculateAbsoluteChange(
         [AIDescription("Amount in first period")] decimal period1Amount,
@@ -273,7 +274,7 @@ public class FinancialAnalysisPlugin
         return $"{sign}{Math.Abs(Math.Round(change, decimalPlaces))} million";
     }
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Calculates percentage change between two periods: ((Period2 - Period1) / Period1) * 100.")]
     public string CalculatePercentageChange(
         [AIDescription("Amount in first period")] decimal period1Amount,
@@ -290,7 +291,7 @@ public class FinancialAnalysisPlugin
 
     // ==================== BALANCE SHEET EQUATION VALIDATION ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Validates the fundamental accounting equation: Assets = Liabilities + Equity. Returns true/false with details.")]
     public string ValidateBalanceSheetEquation(
         [AIDescription("Total assets amount")] decimal totalAssets,
@@ -309,7 +310,7 @@ public class FinancialAnalysisPlugin
 
     // ==================== COMPREHENSIVE ANALYSIS ====================
 
-    [AIFunction<FinancialAnalysisPluginMetadataContext>]
+    [AIFunction<FinancialAnalysisToolMetadataContext>]
     [AIDescription("Performs comprehensive balance sheet analysis for Question 11 & 12 style problems. Returns all key metrics.")]
     public string ComprehensiveBalanceSheetAnalysis(
         [AIDescription("Year 1 Current Assets")] decimal y1CurrentAssets,

@@ -60,7 +60,7 @@ internal class SkillCapability : BaseCapability
     /// This method exists for API completeness but is never called due to the hybrid registration pattern.
     /// See V2_ARCHITECTURAL_DECISIONS.md Decision 1 for rationale.
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this skill (PluginInfo).</param>
+    /// <param name="parent">The parent plugin that contains this skill (ToolInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     /// <exception cref="NotImplementedException">
     /// Skills use helper method registration. This method should never be called.

@@ -40,7 +40,7 @@ internal class MiddlewareScopeMetadata
     public bool AppliesTo(AgentMiddlewareContext context)
     {
         var functionName = context.Function?.Name;
-        var pluginName = context.PluginName;
+        var toolName = context.PluginName;
         var skillName = context.SkillName;
         var isSkillContainer = context.IsSkillContainer;
 
@@ -48,8 +48,8 @@ internal class MiddlewareScopeMetadata
         {
             MiddlewareScope.Global => true,
 
-            MiddlewareScope.Plugin => !string.IsNullOrEmpty(pluginName) &&
-                                       string.Equals(Target, pluginName, StringComparison.Ordinal),
+            MiddlewareScope.Plugin => !string.IsNullOrEmpty(toolName) &&
+                                       string.Equals(Target, toolName, StringComparison.Ordinal),
 
             MiddlewareScope.Skill =>
                 // Apply if this function IS the skill container itself
@@ -88,13 +88,13 @@ public static class MiddlewareScopeExtensions
     /// Marks this middleware as plugin-scoped (applies only to functions from the specified plugin).
     /// </summary>
     /// <param name="middleware">The middleware instance</param>
-    /// <param name="pluginTypeName">The plugin type name (e.g., "FileSystemPlugin")</param>
-    public static IAgentMiddleware ForPlugin(this IAgentMiddleware middleware, string pluginTypeName)
+    /// <param name="toolTypeName">The plugin type name (e.g., "FileSystemPlugin")</param>
+    public static IAgentMiddleware ForPlugin(this IAgentMiddleware middleware, string toolTypeName)
     {
-        if (string.IsNullOrWhiteSpace(pluginTypeName))
-            throw new ArgumentException("Plugin type name cannot be null or empty", nameof(pluginTypeName));
+        if (string.IsNullOrWhiteSpace(toolTypeName))
+            throw new ArgumentException("Plugin type name cannot be null or empty", nameof(toolTypeName));
 
-        _scopeMetadata.AddOrUpdate(middleware, new MiddlewareScopeMetadata(MiddlewareScope.Plugin, pluginTypeName));
+        _scopeMetadata.AddOrUpdate(middleware, new MiddlewareScopeMetadata(MiddlewareScope.Plugin, toolTypeName));
         return middleware;
     }
 

@@ -6,9 +6,9 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
 
 | Source | Description | Defined By |
 |--------|-------------|------------|
-| **C# Plugins** | Native plugins with full feature support | Developer (code) |
+| **C# Tools** | Native plugins with full feature support | Developer (code) |
 | **MCP Servers** | External tools via Model Context Protocol | MCP server configs |
-| **Frontend Tools** | Tools provided by the client/UI | Frontend application |
+| **Client Tools** | Tools provided by the client/UI | Client application |
 | **OpenAPI** | Auto-generated from API specs | OpenAPI/Swagger files |
 
 ```
@@ -16,7 +16,7 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
                         │
         ┌───────────────┼───────────────┐───────────────┐
         ▼               ▼               ▼               ▼
-   C# Plugins      MCP Servers    Frontend Tools    OpenAPI
+   C# Tools      MCP Servers    Client Tools      OpenAPI
    [AIFunction]    filesystem      OpenFile         GET /users
    [Skill]         github          ShowDialog       POST /orders
    [SubAgent]      database        GetSelection     ...
@@ -24,18 +24,18 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
 
 ---
 
-## C# Plugins
+## C# Tools
 
 The most powerful option. Define tools directly in C# with full access to:
 - **AIFunctions** - Single operations
 - **Skills** - Multi-function workflows with instructions
 - **SubAgents** - Delegated child agents
-- **Plugin Metadata** - Dynamic descriptions and conditional visibility
+- **Tool Metadata** - Dynamic descriptions and conditional visibility
 - **Collapsing** - Hierarchical organization with `[Collapse]`
 
 ```csharp
 [Collapse("File operations")]
-public class FilePlugin
+public class FileTools
 {
     [AIFunction]
     [AIDescription("Read a file")]
@@ -47,7 +47,7 @@ public class FilePlugin
 }
 ```
 
-→ See [02.1 C# Plugins Overview.md](02.1%20C%23%20Plugins%20Overview.md) for the full guide.
+→ See [02.1 C# Tools Overview.md](02.1%20C%23%20Tools%20Overview.md) for the full guide.
 
 ---
 
@@ -71,11 +71,11 @@ MCP tools support:
 
 ---
 
-## Frontend Tools
+## Client Tools
 
 Tools provided by the client application (IDE extension, web UI, etc.). These are injected at runtime and allow the agent to interact with the user's environment.
 
-Common frontend tools:
+Common client tools:
 - `OpenFile` - Open a file in the editor
 - `ShowDialog` - Display a dialog to the user
 - `GetSelection` - Get the user's current selection
@@ -85,13 +85,13 @@ var config = new AgentConfig
 {
     Collapsing = new CollapsingConfig
     {
-        CollapseFrontendTools = true,
-        FrontendToolsInstructions = "These tools interact with the user's IDE."
+        CollapseClientTools = true,
+        ClientToolsInstructions = "These tools interact with the user's IDE."
     }
 };
 ```
 
-→ See [02.3 Frontend Tools.md](02.3%20Frontend%20Tools.md) for integration details.
+→ See [02.3 Client Tools.md](02.3%20Client%20Tools.md) for integration details.
 
 ---
 
@@ -121,8 +121,8 @@ var config = new AgentConfig
 {
     Collapsing = new CollapsingConfig
     {
-        Enabled = true,                    // C# plugins
-        CollapseFrontendTools = true,      // Frontend tools
+        Enabled = true,                    // C# tools
+        CollapseClientTools = true,        // Client tools
         // MCP servers are collapsed by server name automatically
     }
 };
@@ -144,13 +144,13 @@ var config = new AgentConfig
             ["github"] = "Prefer GraphQL API for bulk operations."
         },
 
-        // Frontend tools instructions
-        FrontendToolsInstructions = "These tools interact with the user's IDE."
+        // Client tools instructions
+        ClientToolsInstructions = "These tools interact with the user's IDE."
     }
 };
 ```
 
-For C# plugins, instructions are defined via `[Collapse]` attributes and skill instructions.
+For C# tools, instructions are defined via `[Collapse]` attributes and skill instructions.
 
 ---
 
@@ -158,20 +158,20 @@ For C# plugins, instructions are defined via `[Collapse]` attributes and skill i
 
 | Need | Best Choice |
 |------|-------------|
-| Full control, type safety, compile-time validation | C# Plugins |
+| Full control, type safety, compile-time validation | C# Tools |
 | Use existing MCP-compatible servers | MCP Servers |
-| Interact with user's environment (IDE, UI) | Frontend Tools |
+| Interact with user's environment (IDE, UI) | Client Tools |
 | Integrate with REST APIs quickly | OpenAPI |
 
 Most applications use a combination:
-- **C# Plugins** for core business logic
+- **C# Tools** for core business logic
 - **MCP Servers** for standard capabilities (filesystem, git, etc.)
-- **Frontend Tools** for UI interaction
+- **Client Tools** for UI interaction
 
 ---
 
 ## Next Steps
 
-- [02.1 C# Plugins Overview.md](02.1%20C%23%20Plugins%20Overview.md) - Native plugin development
+- [02.1 C# Tools Overview.md](02.1%20C%23%20Tools%20Overview.md) - Native tool development
 - [02.2 MCP Servers.md](02.2%20MCP%20Servers.md) - Model Context Protocol integration
-- [02.3 Frontend Tools.md](02.3%20Frontend%20Tools.md) - Client-provided tools
+- [02.3 Client Tools.md](02.3%20Client%20Tools.md) - Client-provided tools

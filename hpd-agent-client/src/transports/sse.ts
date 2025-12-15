@@ -41,9 +41,9 @@ export class SseTransport implements AgentTransport {
       messages: options.messages,
     };
 
-    // Include frontend tools configuration
-    if (options.frontendPlugins && options.frontendPlugins.length > 0) {
-      requestBody.frontendPlugins = options.frontendPlugins;
+    // Include client tools configuration
+    if (options.clientToolGroups && options.clientToolGroups.length > 0) {
+      requestBody.clientToolGroups = options.clientToolGroups;
     }
     if (options.context && options.context.length > 0) {
       requestBody.context = options.context;
@@ -57,8 +57,8 @@ export class SseTransport implements AgentTransport {
     if (options.hiddenTools && options.hiddenTools.length > 0) {
       requestBody.hiddenTools = options.hiddenTools;
     }
-    if (options.resetFrontendState) {
-      requestBody.resetFrontendState = options.resetFrontendState;
+    if (options.resetClientState) {
+      requestBody.resetClientState = options.resetClientState;
     }
 
     const response = await fetch(url, {
@@ -146,8 +146,8 @@ export class SseTransport implements AgentTransport {
         return `/agent/conversations/${this.conversationId}/clarifications/respond`;
       case 'continuation_response':
         return `/agent/conversations/${this.conversationId}/continuations/respond`;
-      case 'frontend_tool_response':
-        return `/agent/conversations/${this.conversationId}/frontend-tools/respond`;
+      case 'client_tool_response':
+        return `/agent/conversations/${this.conversationId}/client-tools/respond`;
       default:
         throw new Error(`Unknown message type: ${(message as { type: string }).type}`);
     }

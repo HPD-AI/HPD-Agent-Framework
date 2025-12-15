@@ -73,7 +73,7 @@ public class ContainerMiddleware : IAgentMiddleware
     /// Creates a new ContainerMiddleware instance.
     /// </summary>
     /// <param name="initialTools">All available tools for the agent</param>
-    /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithPlugin (always visible)</param>
+    /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithTools (always visible)</param>
     /// <param name="config">Container configuration (optional, defaults to enabled)</param>
     public ContainerMiddleware(
         IList<AITool> initialTools,

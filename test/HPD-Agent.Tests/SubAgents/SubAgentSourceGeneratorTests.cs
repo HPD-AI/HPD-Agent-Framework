@@ -31,7 +31,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentAttribute_OnMethod_CompilesSuccessfully()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act - Call sub-agent method
         var subAgent = plugin.CategorizedSubAgent();
@@ -48,7 +48,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_Create_GeneratesStatelessSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.StatelessSubAgent();
@@ -64,7 +64,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_CreateStateful_GeneratesStatefulSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.StatefulSubAgent();
@@ -80,7 +80,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_CreatePerSession_GeneratesPerSessionSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.PerSessionSubAgent();
@@ -97,7 +97,7 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithProvider()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.SubAgentWithProvider();
@@ -114,7 +114,7 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithSystemInstructions()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.SubAgentWithInstructions();
@@ -130,7 +130,7 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithIterationLimit()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.SubAgentWithIterationLimit();
@@ -147,7 +147,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_HasRequiredMetadata_NameAndDescription()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.ValidSubAgent();
@@ -162,7 +162,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_Description_IsExtractedFromFactory()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.ValidSubAgent();
@@ -177,7 +177,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_DefaultThreadMode_IsStateless()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.StatelessSubAgent();
@@ -190,7 +190,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_SharedSession_IsNotNullForStateful()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.StatefulSubAgent();
@@ -205,7 +205,7 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_WithFullConfiguration_CompilesSuccessfully()
     {
         // Arrange
-        var plugin = new TestSubAgentPlugin();
+        var plugin = new TestSubAgentTools();
 
         // Act
         var subAgent = plugin.ComplexSubAgent();
@@ -220,5 +220,5 @@ public class SubAgentSourceGeneratorTests
     }
 }
 
-// Note: The TestSubAgentPlugin class is defined in TestSubAgentPlugin.cs
+// Note: The TestSubAgentTools class is defined in TestSubAgentTools.cs
 // to be processed by the source generator for these tests

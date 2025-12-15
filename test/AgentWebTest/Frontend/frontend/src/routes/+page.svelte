@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type FrontendToolInvokeRequestEvent } from '@hpd/hpd-agent-client';
+    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type ClientToolInvokeRequestEvent } from '@hpd/hpd-agent-client';
     import Artifact from '$lib/artifacts/Artifact.svelte';
     import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
     import { artifactPlugin, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
@@ -38,7 +38,7 @@
     // Create the client with artifact plugin
     const client = new AgentClient({
         baseUrl: API_BASE,
-        frontendPlugins: [artifactPlugin]
+        ClientPlugins: [artifactPlugin]
     });
 
     onMount(async () => {
@@ -137,9 +137,9 @@
                         });
                     },
 
-                    // Frontend tool handler - handles artifact tools
-                    onFrontendToolInvoke: async (request: FrontendToolInvokeRequestEvent) => {
-                        console.log('Frontend tool invoke:', request.toolName, request.arguments);
+                    // Client tool handler - handles artifact tools
+                    onClientToolInvoke: async (request: ClientToolInvokeRequestEvent) => {
+                        console.log('Client tool invoke:', request.toolName, request.arguments);
                         currentThinking = `Executing ${request.toolName}...`;
                         updateLastMessage();
 
@@ -150,13 +150,13 @@
                             request.requestId
                         );
 
-                        console.log('Frontend tool response:', response);
+                        console.log('Client tool response:', response);
                         return response;
                     },
 
-                    // Frontend plugins registered
-                    onFrontendPluginsRegistered: (event) => {
-                        console.log('Frontend plugins registered:', event.registeredPlugins, 'Total tools:', event.totalTools);
+                    // Client plugins registered
+                    onClientPluginsRegistered: (event) => {
+                        console.log('Client plugins registered:', event.registeredPlugins, 'Total tools:', event.totalTools);
                     },
 
                     // Lifecycle handlers

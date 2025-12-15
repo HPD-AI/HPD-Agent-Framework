@@ -399,7 +399,7 @@ public class TestPlugin
             },
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new global::HPDPluginSourceGenerator();
+        var generator = new global::HPDToolSourceGenerator();
         CSharpGeneratorDriver.Create(generator)
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 

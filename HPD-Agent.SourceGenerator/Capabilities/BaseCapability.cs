@@ -189,7 +189,7 @@ internal abstract class BaseCapability : ICapability
             // Convert {metadata.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
             var interpolatedDescription = Description.Replace("{metadata.", "{typedMetadata.");
 
-            sb.AppendLine($"    private static string Resolve{Name}Description(IPluginMetadata? context)");
+            sb.AppendLine($"    private static string Resolve{Name}Description(IToolMetadata? context)");
             sb.AppendLine("    {");
             sb.AppendLine("        if (context == null) return string.Empty;");
             sb.AppendLine($"        if (context is not {ContextTypeName} typedMetadata) return string.Empty;");
@@ -217,9 +217,9 @@ internal abstract class BaseCapability : ICapability
                 );
             }
 
-            // Generate method signature that accepts IPluginMetadata? and casts to typed context
+            // Generate method signature that accepts IToolMetadata? and casts to typed context
             // This matches the old DSLCodeGenerator pattern for compatibility
-            sb.AppendLine($"    private static bool Evaluate{Name}Condition(IPluginMetadata? context)");
+            sb.AppendLine($"    private static bool Evaluate{Name}Condition(IToolMetadata? context)");
             sb.AppendLine("    {");
             sb.AppendLine("        if (context == null) return true;");
             sb.AppendLine($"        if (context is not {ContextTypeName} typedMetadata) return false;");
@@ -234,7 +234,7 @@ internal abstract class BaseCapability : ICapability
     // ========== Helper Methods ==========
 
     /// <summary>
-    /// Gets the full qualified name of this capability (namespace.pluginName.capabilityName).
+    /// Gets the full qualified name of this capability (namespace.toolName.capabilityName).
     /// </summary>
     public string FullName => string.IsNullOrEmpty(ParentNamespace)
         ? $"{ParentPluginName}.{Name}"

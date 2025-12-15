@@ -372,18 +372,18 @@ public class ToolVisibilityManagerTests
         return tools;
     }
 
-    private AIFunction CreatePluginContainer(string pluginName)
+    private AIFunction CreatePluginContainer(string toolName)
     {
         return AIFunctionFactory.Create(
-            (object? args, CancellationToken ct) => Task.FromResult<object?>($"{pluginName} expanded"),
+            (object? args, CancellationToken ct) => Task.FromResult<object?>($"{toolName} expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = pluginName,
-                Description = $"{pluginName} Collapse container",
+                Name = toolName,
+                Description = $"{toolName} Collapse container",
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsContainer"] = true,
-                    ["PluginName"] = pluginName,
+                    ["PluginName"] = toolName,
                     ["FunctionNames"] = new[] { "CalculateCurrentRatio", "CalculateQuickRatio", "CalculateWorkingCapital", "CalculateDebtToEquityRatio", "CalculateDebtToAssetsRatio", "ComprehensiveBalanceSheetAnalysis" },
                     ["FunctionCount"] = 6
                 }
@@ -738,25 +738,25 @@ public class ToolVisibilityManagerTests
     [Fact]
     public void CollapsedPlugin_HidesAfterExpansion()
     {
-        // Arrange: Create MathPlugin with [Collapse], containing functions and skills
-        var tools = CreateMathPluginTools();
+        // Arrange: Create MathTools with [Collapse], containing functions and skills
+        var tools = CreateMathToolsTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Initially, MathPlugin container should be visible
+        // Act: Initially, MathTools container should be visible
         var initialTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
             ImmutableHashSet<string>.Empty,
             ImmutableHashSet<string>.Empty);
 
         // Assert: Only container visible initially
-        initialTools.Should().Contain(t => t.Name == "MathPlugin");
+        initialTools.Should().Contain(t => t.Name == "MathTools");
         initialTools.Should().NotContain(t => t.Name == "Add");
         initialTools.Should().NotContain(t => t.Name == "SolveQuadratic");
 
-        // Act: After expansion, MathPlugin should hide and contents should show
+        // Act: After expansion, MathTools should hide and contents should show
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var expandedTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
@@ -764,7 +764,7 @@ public class ToolVisibilityManagerTests
             ImmutableHashSet<string>.Empty);
 
         // Assert: Container hidden, contents visible
-        expandedTools.Should().NotContain(t => t.Name == "MathPlugin");
+        expandedTools.Should().NotContain(t => t.Name == "MathTools");
         expandedTools.Should().Contain(t => t.Name == "Add");
         expandedTools.Should().Contain(t => t.Name == "Multiply");
         expandedTools.Should().Contain(t => t.Name == "SolveQuadratic");
@@ -774,20 +774,20 @@ public class ToolVisibilityManagerTests
     public void CollapsedPlugin_ShowsFunctionsAfterExpansion()
     {
         // Arrange
-        var tools = CreateMathPluginTools();
+        var tools = CreateMathToolsTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Expand MathPlugin
+        // Act: Expand MathTools
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
             ExpandedSkillContainers,
             ImmutableHashSet<string>.Empty);
 
-        // Assert: All AI functions from MathPlugin should be visible
+        // Assert: All AI functions from MathTools should be visible
         visibleTools.Should().Contain(t => t.Name == "Add");
         visibleTools.Should().Contain(t => t.Name == "Multiply");
         visibleTools.Should().Contain(t => t.Name == "Abs");
@@ -800,13 +800,13 @@ public class ToolVisibilityManagerTests
     public void CollapsedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillContainers()
     {
         // Arrange
-        var tools = CreateMathPluginTools();
+        var tools = CreateMathToolsTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Expand MathPlugin (goes into ExpandedSkillContainers)
+        // Act: Expand MathTools (goes into ExpandedSkillContainers)
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
@@ -821,13 +821,13 @@ public class ToolVisibilityManagerTests
     public void CollapsedPlugin_ShowsSkillsAfterExpansion_ExpandedSkillsParameter()
     {
         // Arrange
-        var tools = CreateMathPluginTools();
+        var tools = CreateMathToolsTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Expand MathPlugin via expandedSkills parameter (second parameter)
+        // Act: Expand MathTools via expandedSkills parameter (second parameter)
         var expandedSkills = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
@@ -843,23 +843,23 @@ public class ToolVisibilityManagerTests
     {
         // Arrange: Two separate Collapse containers
         var tools = new List<AIFunction>();
-        tools.AddRange(CreateMathPluginTools());
+        tools.AddRange(CreateMathToolsTools());
         tools.Add(CreateCollapseContainer("OtherPlugin", "Other plugin for testing"));
 
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
-        // Act: Expand only MathPlugin
+        // Act: Expand only MathTools
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
             ExpandedSkillContainers,
             ImmutableHashSet<string>.Empty);
 
-        // Assert: MathPlugin hidden, but OtherPlugin still visible
-        visibleTools.Should().NotContain(t => t.Name == "MathPlugin");
+        // Assert: MathTools hidden, but OtherPlugin still visible
+        visibleTools.Should().NotContain(t => t.Name == "MathTools");
         visibleTools.Should().Contain(t => t.Name == "OtherPlugin");
     }
 
@@ -867,13 +867,13 @@ public class ToolVisibilityManagerTests
     public void SkillContainer_VisibleWhenParentCollapseExpandedInPlugins()
     {
         // Arrange: Skill with parent Collapse
-        var tools = CreateMathPluginTools();
+        var tools = CreateMathToolsTools();
         var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
 
         // Act: Expand parent Collapse in ExpandedSkillContainers
         var ExpandedSkillContainers = ImmutableHashSet.Create(
             StringComparer.OrdinalIgnoreCase,
-            "MathPlugin");
+            "MathTools");
 
         var visibleTools = manager.GetToolsForAgentTurn(
             tools.ToList(),
@@ -883,37 +883,37 @@ public class ToolVisibilityManagerTests
         // Assert: Skill should be visible
         var solveQuadratic = visibleTools.FirstOrDefault(t => t.Name == "SolveQuadratic");
         solveQuadratic.Should().NotBeNull();
-        solveQuadratic!.AdditionalProperties?["ParentSkillContainer"].Should().Be("MathPlugin");
+        solveQuadratic!.AdditionalProperties?["ParentSkillContainer"].Should().Be("MathTools");
     }
 
     #endregion
 
     #region Helper Methods for New Tests
 
-    private List<AIFunction> CreateMathPluginTools()
+    private List<AIFunction> CreateMathToolsTools()
     {
         var tools = new List<AIFunction>();
 
-        // 1. Collapse container for MathPlugin
+        // 1. Collapse container for MathTools
         tools.Add(CreateCollapseContainer(
-            "MathPlugin",
+            "MathTools",
             "Math Operations. Contains 7 functions: Add, Multiply, Abs, Square, Subtract, Min, SolveQuadratic"));
 
-        // 2. AI Functions in MathPlugin
-        tools.Add(CreatePluginFunction("Add", "MathPlugin", "Adds two numbers"));
-        tools.Add(CreatePluginFunction("Multiply", "MathPlugin", "Multiplies two numbers"));
-        tools.Add(CreatePluginFunction("Abs", "MathPlugin", "Returns absolute value"));
-        tools.Add(CreatePluginFunction("Square", "MathPlugin", "Squares a number"));
-        tools.Add(CreatePluginFunction("Subtract", "MathPlugin", "Subtracts b from a"));
-        tools.Add(CreatePluginFunction("Min", "MathPlugin", "Returns minimum of two numbers"));
+        // 2. AI Functions in MathTools
+        tools.Add(CreatePluginFunction("Add", "MathTools", "Adds two numbers"));
+        tools.Add(CreatePluginFunction("Multiply", "MathTools", "Multiplies two numbers"));
+        tools.Add(CreatePluginFunction("Abs", "MathTools", "Returns absolute value"));
+        tools.Add(CreatePluginFunction("Square", "MathTools", "Squares a number"));
+        tools.Add(CreatePluginFunction("Subtract", "MathTools", "Subtracts b from a"));
+        tools.Add(CreatePluginFunction("Min", "MathTools", "Returns minimum of two numbers"));
 
-        // 3. Skill container in MathPlugin
+        // 3. Skill container in MathTools
         tools.Add(CreateSkillContainer(
             "SolveQuadratic",
             "Solves quadratic equations",
-            "MathPlugin",
-            new[] { "MathPlugin.Multiply", "MathPlugin.Add", "MathPlugin.Subtract" },
-            new[] { "MathPlugin" }));
+            "MathTools",
+            new[] { "MathTools.Multiply", "MathTools.Add", "MathTools.Subtract" },
+            new[] { "MathTools" }));
 
         return tools;
     }

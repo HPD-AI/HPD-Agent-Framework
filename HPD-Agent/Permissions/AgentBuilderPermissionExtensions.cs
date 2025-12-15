@@ -49,7 +49,7 @@ public static class AgentBuilderPermissionExtensions
     /// <returns>The agent builder for chaining</returns>
     /// <example>
     /// var agent = new AgentBuilder()
-    ///     .WithPlugin&lt;ThirdPartyDatabasePlugin&gt;()
+    ///     .WithTools&lt;ThirdPartyDatabasePlugin&gt;()
     ///     .RequirePermissionFor("DeleteAllData")  // Force permission even if attribute says no
     ///     .Build();
     /// </example>
@@ -68,7 +68,7 @@ public static class AgentBuilderPermissionExtensions
     /// <returns>The agent builder for chaining</returns>
     /// <example>
     /// var agent = new AgentBuilder()
-    ///     .WithPlugin&lt;FileSystemPlugin&gt;()
+    ///     .WithTools&lt;FileSystemPlugin&gt;()
     ///     .DisablePermissionFor("ReadFile")  // Remove permission requirement
     ///     .Build();
     /// </example>

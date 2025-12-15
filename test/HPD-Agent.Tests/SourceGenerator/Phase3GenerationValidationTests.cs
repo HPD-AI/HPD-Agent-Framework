@@ -32,7 +32,7 @@ public class Phase3GenerationValidationTests
         // and all existing functionality works correctly.
 
         // Evidence:
-        // 1. USE_NEW_GENERATION = true in HPDPluginSourceGenerator.cs:22
+        // 1. USE_NEW_GENERATION = true in HPDToolSourceGenerator.cs:22
         // 2. Build succeeds with 0 errors
         // 3. All 650 tests pass
 
@@ -182,8 +182,8 @@ public class Phase3GenerationValidationTests
     public void NewGeneration_ComplexPlugins_GenerateCorrectly()
     {
         // Complex plugins with all three types:
-        // - MathPlugin (functions + skills)
-        // - TestSubAgentPlugin (functions + subagents)
+        // - MathTools (functions + skills)
+        // - TestSubAgentTools (functions + subagents)
         // - FinancialAnalysisSkills (functions + multiple skills)
 
         // All generate correctly and pass their tests.

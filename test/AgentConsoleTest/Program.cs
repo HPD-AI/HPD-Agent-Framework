@@ -23,9 +23,9 @@ var config = new AgentConfig
 var eventHandler = new ConsoleEventHandler();
 var agent = await new AgentBuilder(config)
     .WithEventHandler(eventHandler)
-    .WithPlugin<FinancialAnalysisPlugin>()
-    .WithPlugin<FinancialAnalysisSkills>()
-    .WithPlugin<MathPlugin>()
+    .WithTools<FinancialAnalysisPlugin>()
+    .WithTools<FinancialAnalysisSkills>()
+    .WithTools<MathTools>()
     .WithPlanMode()
     .WithPermissions()
     .WithCircuitBreaker(maxConsecutiveCalls: 3)

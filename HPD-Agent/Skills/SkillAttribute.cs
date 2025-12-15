@@ -1,10 +1,12 @@
+using HPD.Agent;
+
 /// <summary>
 /// Marks a method as a skill with typed context for source generator detection.
 /// Use this when you need context-aware dynamic descriptions or conditional evaluation.
 /// </summary>
-/// <typeparam name="TMetadata">The context type that implements IPluginMetadata</typeparam>
+/// <typeparam name="TMetadata">The context type that implements IToolMetadata</typeparam>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class SkillAttribute<TMetadata> : Attribute where TMetadata : IPluginMetadata
+public sealed class SkillAttribute<TMetadata> : Attribute where TMetadata : IToolMetadata
 {
     /// <summary>
     /// The context type used by this skill for compile-time validation.

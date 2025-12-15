@@ -54,15 +54,15 @@ internal class SubAgentCapability : BaseCapability
     ///
     /// Phase 3: Full implementation migrated from SubAgentCodeGenerator.GenerateSubAgentFunction().
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this sub-agent (PluginInfo).</param>
+    /// <param name="parent">The parent plugin that contains this sub-agent (ToolInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     public override string GenerateRegistrationCode(object parent)
     {
-        var plugin = (PluginInfo)parent;
+        var plugin = (ToolInfo)parent;
         var sb = new StringBuilder();
 
         // PHASE 2A FIX: Return just the factory call (NO local function wrapper, NO functions.Add)
-        // The caller (HPDPluginSourceGenerator) will add the functions.Add() wrapper
+        // The caller (HPDToolSourceGenerator) will add the functions.Add() wrapper
         sb.AppendLine("HPDAIFunctionFactory.Create(");
         sb.AppendLine("    async (arguments, cancellationToken) =>");
         sb.AppendLine("    {");
@@ -92,9 +92,9 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        // Register plugins if any are specified (uses AOT-compatible catalog)");
         sb.AppendLine("        if (subAgentDef.PluginTypes != null && subAgentDef.PluginTypes.Length > 0)");
         sb.AppendLine("        {");
-        sb.AppendLine("            foreach (var pluginType in subAgentDef.PluginTypes)");
+        sb.AppendLine("            foreach (var toolType in subAgentDef.PluginTypes)");
         sb.AppendLine("            {");
-        sb.AppendLine("                agentBuilder.WithPlugin(pluginType);");
+        sb.AppendLine("                agentBuilder.WithTools(toolType);");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();

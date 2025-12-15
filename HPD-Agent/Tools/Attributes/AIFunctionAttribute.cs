@@ -1,4 +1,5 @@
 using System;
+using HPD.Agent;
 
 /// <summary>
 /// Marks a method as an AI function with a specific context type.
@@ -6,7 +7,7 @@ using System;
 /// </summary>
 /// <typeparam name="TMetadata">The context type providing properties for conditions and templates</typeparam>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
-public sealed class AIFunctionAttribute<TMetadata> : Attribute where TMetadata : IPluginMetadata
+public sealed class AIFunctionAttribute<TMetadata> : Attribute where TMetadata : IToolMetadata
 {
     /// <summary>
     /// The context type used by this function for compile-time validation.

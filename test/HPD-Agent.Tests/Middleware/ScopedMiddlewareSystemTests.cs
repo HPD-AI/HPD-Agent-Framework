@@ -70,8 +70,8 @@ public class CollapsedMiddlewareSystemTests
 
         // Act & Assert - should apply to any context
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", pluginName: "AnyPlugin")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", pluginName: "AnyPlugin", skillName: "AnySkill")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin", skillName: "AnySkill")));
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", isSkillContainer: true)));
     }
 
@@ -79,12 +79,12 @@ public class CollapsedMiddlewareSystemTests
     public void PluginMiddleware_AppliesToPluginFunctions()
     {
         // Arrange
-        var middleware = new TestMiddleware("plugin").ForPlugin("FileSystemPlugin");
+        var middleware = new TestMiddleware("plugin").ForPlugin("FileSystemTools");
 
         // Act & Assert
-        Assert.True(middleware.ShouldExecute(CreateContext("ReadFile", pluginName: "FileSystemPlugin")));
-        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", pluginName: "DatabasePlugin")));
-        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", pluginName: null)));
+        Assert.True(middleware.ShouldExecute(CreateContext("ReadFile", toolName: "FileSystemTools")));
+        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", toolName: "DatabasePlugin")));
+        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", toolName: null)));
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class CollapsedMiddlewareSystemTests
         // Act - skill container itself
         var context = CreateContext(
             functionName: "analyze_codebase",
-            pluginName: null,
+            toolName: null,
             skillName: null,
             isSkillContainer: true
         );
@@ -114,7 +114,7 @@ public class CollapsedMiddlewareSystemTests
         // Act - function called by skill
         var context = CreateContext(
             functionName: "ReadFile",
-            pluginName: "FileSystemPlugin",
+            toolName: "FileSystemTools",
             skillName: "analyze_codebase",
             isSkillContainer: false
         );
@@ -132,7 +132,7 @@ public class CollapsedMiddlewareSystemTests
         // Act - different skill container
         var context = CreateContext(
             functionName: "refactor_code",
-            pluginName: null,
+            toolName: null,
             skillName: null,
             isSkillContainer: true
         );
@@ -150,7 +150,7 @@ public class CollapsedMiddlewareSystemTests
         // Act - function called by different skill
         var context = CreateContext(
             functionName: "WriteFile",
-            pluginName: "FileSystemPlugin",
+            toolName: "FileSystemTools",
             skillName: "refactor_code",
             isSkillContainer: false
         );
@@ -184,7 +184,7 @@ public class CollapsedMiddlewareSystemTests
         var functionMiddleware = new TestMiddleware("Function");
 
         globalMiddleware.AsGlobal();
-        pluginMiddleware.ForPlugin("FileSystemPlugin");
+        pluginMiddleware.ForPlugin("FileSystemTools");
         skillMiddleware.ForSkill("analyze_codebase");
         functionMiddleware.ForFunction("ReadFile");
 
@@ -198,7 +198,7 @@ public class CollapsedMiddlewareSystemTests
 
         var context = CreateContext(
             "ReadFile",
-            pluginName: "FileSystemPlugin",
+            toolName: "FileSystemTools",
             skillName: "analyze_codebase",
             isSkillContainer: false
         );
@@ -237,7 +237,7 @@ public class CollapsedMiddlewareSystemTests
 
         var context = CreateContext(
             "ReadFile",
-            pluginName: "FileSystemPlugin",
+            toolName: "FileSystemTools",
             skillName: "analyze_codebase",
             isSkillContainer: false
         );
@@ -265,7 +265,7 @@ public class CollapsedMiddlewareSystemTests
         // Act & Assert - skill container
         var containerContext = CreateContext(
             "analyze_codebase",
-            pluginName: null,
+            toolName: null,
             skillName: null,
             isSkillContainer: true
         );
@@ -274,7 +274,7 @@ public class CollapsedMiddlewareSystemTests
         // Act & Assert - function called by skill
         var funcContext = CreateContext(
             "ReadFile",
-            pluginName: "FileSystemPlugin",
+            toolName: "FileSystemTools",
             skillName: "analyze_codebase"
         );
         Assert.True(middleware.ShouldExecute(funcContext));
@@ -326,7 +326,7 @@ public class CollapsedMiddlewareSystemTests
 
         // Act & Assert - should behave as global
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", pluginName: "AnyPlugin")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin")));
     }
 
     [Fact]
@@ -373,7 +373,7 @@ public class CollapsedMiddlewareSystemTests
 
     private static AgentMiddlewareContext CreateContext(
         string functionName,
-        string? pluginName = null,
+        string? toolName = null,
         string? skillName = null,
         bool isSkillContainer = false)
     {
@@ -389,7 +389,7 @@ public class CollapsedMiddlewareSystemTests
             AgentName = "TestAgent",
             ConversationId = "test-conv",
             Function = function,
-            PluginName = pluginName,
+            PluginName = toolName,
             SkillName = skillName,
             IsSkillContainer = isSkillContainer,
             CancellationToken = CancellationToken.None

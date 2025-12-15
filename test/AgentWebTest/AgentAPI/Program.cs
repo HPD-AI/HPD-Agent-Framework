@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 using HPD.Agent;
 
 using HPD.Agent.Session;
-using HPD.Agent.FrontendTools;
+using HPD.Agent.ClientTools;
 using HPD.Agent.Memory;
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -18,7 +18,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // CORS Configuration
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFrontend", policy =>
+    options.AddPolicy("AllowClient", policy =>
     {
         if (builder.Environment.IsDevelopment())
         {
@@ -49,7 +49,7 @@ var app = builder.Build();
 // Validate checkpointing configuration on startup
 ValidateCheckpointingConfiguration(app.Services);
 
-app.UseCors("AllowFrontend");
+app.UseCors("AllowClient");
 app.UseWebSockets();
 
 // Conversation API
@@ -169,19 +169,19 @@ agentApi.MapPost("/conversations/{conversationId}/permissions/respond",
     return Results.Ok(new SuccessResponse(true));
 });
 
-// Frontend tool response endpoint
-agentApi.MapPost("/conversations/{conversationId}/frontend-tools/respond",
-    (string conversationId, FrontendToolResponseRequest request, ConversationManager cm) =>
+// Client tool response endpoint
+agentApi.MapPost("/conversations/{conversationId}/Client-tools/respond",
+    (string conversationId, ClientToolResponseRequest request, ConversationManager cm) =>
 {
     var agent = cm.GetRunningAgent(conversationId);
     if (agent == null)
         return Results.NotFound(new ErrorResponse("No active agent for this conversation"));
 
     // Convert content to IToolResultContent list
-    var content = request.Content?.Select<FrontendToolContentDto, HPD.Agent.FrontendTools.IToolResultContent>(c => c.Type switch
+    var content = request.Content?.Select<ClientToolContentDto, HPD.Agent.ClientTools.IToolResultContent>(c => c.Type switch
     {
-        "text" => new HPD.Agent.FrontendTools.TextContent(c.Text ?? ""),
-        "json" => new HPD.Agent.FrontendTools.JsonContent(
+        "text" => new HPD.Agent.ClientTools.TextContent(c.Text ?? ""),
+        "json" => new HPD.Agent.ClientTools.JsonContent(
             JsonSerializer.SerializeToElement(c.Value ?? new object())),
         "binary" => new BinaryContent(
             c.MimeType ?? "application/octet-stream",
@@ -189,13 +189,13 @@ agentApi.MapPost("/conversations/{conversationId}/frontend-tools/respond",
             c.Url,
             c.Id,
             c.Filename),
-        _ => new HPD.Agent.FrontendTools.TextContent(c.Text ?? "")
+        _ => new HPD.Agent.ClientTools.TextContent(c.Text ?? "")
     }).ToList() ?? new List<IToolResultContent>();
 
-    // Send response to waiting FrontendToolMiddleware
+    // Send response to waiting ClientToolMiddleware
     agent.SendMiddlewareResponse(
         request.RequestId,
-        new FrontendToolInvokeResponseEvent(
+        new ClientToolInvokeResponseEvent(
             RequestId: request.RequestId,
             Content: content,
             Success: request.Success,
@@ -217,7 +217,7 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
     }
 
     // Ensure events use conversationId (not internal threadId)
-    // Frontend expects consistent conversationId across all requests
+    // Client expects consistent conversationId across all requests
     thread.ConversationId = conversationId;
 
     // SSE headers
@@ -234,14 +234,14 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
         var agent = await cm.GetAgentAsync(conversationId);
         var chatMessages = request.Messages.Select(m => new ChatMessage(ChatRole.User, m.Content)).ToList();
 
-        // Convert StreamRequest to AgentRunInput for frontend tools
+        // Convert StreamRequest to AgentRunInput for Client tools
         var runInput = BuildRunInput(request);
 
         Console.WriteLine($"[ENDPOINT] Starting agent.RunAsync for conversation {conversationId}");
-        if (runInput?.FrontendPlugins?.Count > 0)
+        if (runInput?.ClientToolGroups?.Count > 0)
         {
-            Console.WriteLine($"[ENDPOINT] Registered {runInput.FrontendPlugins.Count} frontend plugin(s)");
-            foreach (var plugin in runInput.FrontendPlugins)
+            Console.WriteLine($"[ENDPOINT] Registered {runInput.ClientToolGroups.Count} Client plugin(s)");
+            foreach (var plugin in runInput.ClientToolGroups)
             {
                 Console.WriteLine($"[ENDPOINT]   - {plugin.Name}: {plugin.Tools.Count} tools");
             }
@@ -254,7 +254,7 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
             eventCount++;
             Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
 
-            // Send event to frontend via SSE
+            // Send event to Client via SSE
             await sseHandler.OnEventAsync(evt, context.RequestAborted);
         }
 
@@ -361,7 +361,7 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
 // Build AgentRunInput directly from StreamRequest
 static AgentRunInput? BuildRunInput(StreamRequest request)
 {
-    if (request.FrontendPlugins == null && request.Context == null &&
+    if (request.ClientToolGroups == null && request.Context == null &&
         request.State == null && request.ExpandedContainers == null && request.HiddenTools == null)
     {
         return null;
@@ -369,12 +369,12 @@ static AgentRunInput? BuildRunInput(StreamRequest request)
 
     return new AgentRunInput
     {
-        FrontendPlugins = request.FrontendPlugins?.ToList(),
+        ClientToolGroups = request.ClientToolGroups?.ToList(),
         Context = request.Context?.ToList(),
         State = request.State,
         ExpandedContainers = request.ExpandedContainers?.ToHashSet(),
         HiddenTools = request.HiddenTools?.ToHashSet(),
-        ResetFrontendState = request.ResetFrontendState
+        ResetClientState = request.ResetClientState
     };
 }
 
@@ -455,7 +455,7 @@ internal class ConversationManager
             .WithDynamicMemory(opts => opts
                 .WithStorageDirectory("./agent-memory-storage")
                 .WithMaxTokens(6000))
-            .WithPlugin<MathPlugin>()
+            .WithTools<MathTools>()
             .WithPermissions(_permissionStorage); // ← Enable permission system!
 
         if (eventHandler != null)
@@ -520,12 +520,12 @@ public record ConversationDto(
     List<string>? BranchNames = null);
 public record StreamRequest(
     StreamMessage[] Messages,
-    FrontendPluginDefinition[]? FrontendPlugins = null,
+    ClientToolGroupDefinition[]? ClientToolGroups = null,
     ContextItem[]? Context = null,
     JsonElement? State = null,
     string[]? ExpandedContainers = null,
     string[]? HiddenTools = null,
-    bool ResetFrontendState = false);
+    bool ResetClientState = false);
 public record StreamMessage(string Content);
 public record PermissionResponseRequest(
     string PermissionId,
@@ -537,14 +537,14 @@ public record PermissionResponseRequest(
 public record SuccessResponse(bool Success);
 public record ErrorResponse(string Message);
 
-// Frontend tool response DTOs
-public record FrontendToolResponseRequest(
+// Client tool response DTOs
+public record ClientToolResponseRequest(
     string RequestId,
-    FrontendToolContentDto[]? Content,
+    ClientToolContentDto[]? Content,
     bool Success = true,
     string? ErrorMessage = null);
 
-public record FrontendToolContentDto(
+public record ClientToolContentDto(
     string Type,
     string? Text = null,
     object? Value = null,

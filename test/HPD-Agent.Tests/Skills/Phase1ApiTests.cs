@@ -10,7 +10,7 @@ namespace HPD.Agent.Tests.Skills;
 public class Phase1ApiTests
 {
     // Mock plugins for testing
-    private static class MockFileSystemPlugin
+    private static class MockFileSystemTools
     {
         public static string ReadFile(string path) => $"Reading {path}";
         public static void WriteFile(string path, string content) { }
@@ -30,7 +30,7 @@ public class Phase1ApiTests
             description: "Test description",
             functionResult: "Skill activated",
             systemPrompt: "Test instructions",
-            "MockFileSystemPlugin.ReadFile"
+            "MockFileSystemTools.ReadFile"
         );
 
         // Assert
@@ -56,7 +56,7 @@ public class Phase1ApiTests
             functionResult: "Skill activated",
             systemPrompt: "Test instructions",
             options: options,
-            "MockFileSystemPlugin.ReadFile",
+            "MockFileSystemTools.ReadFile",
             "MockDebugPlugin.GetStackTrace"
         );
 

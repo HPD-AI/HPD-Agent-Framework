@@ -49,15 +49,15 @@ public static class SubAgentFactory
     /// <param name="name">Sub-agent name (REQUIRED - becomes AIFunction name shown to parent agent)</param>
     /// <param name="description">Description shown in tool list (REQUIRED - becomes AIFunction description)</param>
     /// <param name="agentConfig">Agent configuration defining the sub-agent's behavior</param>
-    /// <param name="pluginTypes">Optional plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin))</param>
+    /// <param name="toolTypes">Optional plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin))</param>
     /// <returns>SubAgent object configured with shared session</returns>
     public static SubAgent CreateStateful(
         string name,
         string description,
         AgentConfig agentConfig,
-        params Type[] pluginTypes)
+        params Type[] toolTypes)
     {
-        var subAgent = Create(name, description, agentConfig, pluginTypes);
+        var subAgent = Create(name, description, agentConfig, toolTypes);
         subAgent.ThreadMode = SubAgentThreadMode.SharedThread;
         subAgent.SharedSession = new AgentSession();
         return subAgent;
@@ -70,15 +70,15 @@ public static class SubAgentFactory
     /// <param name="name">Sub-agent name (REQUIRED - becomes AIFunction name shown to parent agent)</param>
     /// <param name="description">Description shown in tool list (REQUIRED - becomes AIFunction description)</param>
     /// <param name="agentConfig">Agent configuration defining the sub-agent's behavior</param>
-    /// <param name="pluginTypes">Optional plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin))</param>
+    /// <param name="toolTypes">Optional plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin))</param>
     /// <returns>SubAgent object configured for per-session thread management</returns>
     public static SubAgent CreatePerSession(
         string name,
         string description,
         AgentConfig agentConfig,
-        params Type[] pluginTypes)
+        params Type[] toolTypes)
     {
-        var subAgent = Create(name, description, agentConfig, pluginTypes);
+        var subAgent = Create(name, description, agentConfig, toolTypes);
         subAgent.ThreadMode = SubAgentThreadMode.PerSession;
         return subAgent;
     }

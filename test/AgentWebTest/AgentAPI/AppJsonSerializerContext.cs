@@ -14,9 +14,9 @@ using System.Text.Json.Serialization;
 [JsonSerializable(typeof(PermissionResponseRequest))]
 [JsonSerializable(typeof(SuccessResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
-[JsonSerializable(typeof(FrontendToolResponseRequest))]
-[JsonSerializable(typeof(FrontendToolContentDto))]
-[JsonSerializable(typeof(FrontendToolContentDto[]))]
+[JsonSerializable(typeof(ClientToolResponseRequest))]
+[JsonSerializable(typeof(ClientToolContentDto))]
+[JsonSerializable(typeof(ClientToolContentDto[]))]
 [JsonSerializable(typeof(MessageDto))]
 [JsonSerializable(typeof(List<MessageDto>))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext

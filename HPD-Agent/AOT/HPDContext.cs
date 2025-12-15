@@ -90,20 +90,20 @@ using HPD.Agent;
 // --- Document store types ---
 [JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]
 
-// --- Frontend Tools types ---
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendPluginDefinition))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendPluginDefinition[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendToolDefinition))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendToolDefinition[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDefinition))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDefinition[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillReference))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillReference[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDocument))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.FrontendSkillDocument[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.ContextItem))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.ContextItem[]))]
-[JsonSerializable(typeof(HPD.Agent.FrontendTools.AgentRunInput))]
+// --- Client Tools types ---
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolDefinition))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDefinition))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillReference))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillReference[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDocument))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDocument[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.AgentRunInput))]
 
 // --- Internal storage state types (nested classes) ---
 // Note: Nested classes need full type paths for AOT

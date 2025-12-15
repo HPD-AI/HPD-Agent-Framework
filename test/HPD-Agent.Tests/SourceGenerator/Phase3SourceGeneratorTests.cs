@@ -42,7 +42,7 @@ public class Phase3SourceGeneratorTests
             },
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new global::HPDPluginSourceGenerator();
+        var generator = new global::HPDToolSourceGenerator();
         CSharpGeneratorDriver.Create(generator)
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 
@@ -598,7 +598,7 @@ namespace TestPlugins
         Assert.Contains("Enhanced debugging skill with advanced features", generatedCode);
 
         // Assert: Skill container accepts context parameter
-        Assert.Contains("private static AIFunction CreateFileDebuggingSkill(TestPlugin instance, IPluginMetadata? context)", generatedCode);
+        Assert.Contains("private static AIFunction CreateFileDebuggingSkill(TestPlugin instance, IToolMetadata? context)", generatedCode);
     }
 
     /// <summary>
@@ -638,7 +638,7 @@ namespace TestPlugins
         Assert.Contains("Description = \"A basic skill without dynamic description.", generatedCode);
 
         // Assert: Still accepts context for consistency
-        Assert.Contains("private static AIFunction CreateBasicSkillSkill(TestPlugin instance, IPluginMetadata? context)", generatedCode);
+        Assert.Contains("private static AIFunction CreateBasicSkillSkill(TestPlugin instance, IToolMetadata? context)", generatedCode);
 
         // Assert: No resolver method generated
         Assert.DoesNotContain("ResolveBasicSkillDescription", generatedCode);
@@ -670,7 +670,7 @@ using System;
 
 namespace TestPlugins
 {
-    public class TestMetadata : IPluginMetadata
+    public class TestMetadata : IToolMetadata
     {
         public string Environment { get; set; } = ""production"";
         public string UserRole { get; set; } = ""admin"";
@@ -760,7 +760,7 @@ using System;
 
 namespace TestPlugins
 {
-    public class TestMetadata : IPluginMetadata
+    public class TestMetadata : IToolMetadata
     {
         public bool HasFileSystemAccess { get; set; } = true;
     }

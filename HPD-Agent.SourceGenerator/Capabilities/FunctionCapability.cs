@@ -68,13 +68,13 @@ internal class FunctionCapability : BaseCapability
     /// Generates the registration code for this function.
     /// Creates HPDAIFunctionFactory.Create(...) call with all necessary metadata.
     ///
-    /// Phase 3: Full implementation migrated from HPDPluginSourceGenerator.GenerateFunctionRegistration().
+    /// Phase 3: Full implementation migrated from HPDToolSourceGenerator.GenerateFunctionRegistration().
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this function (PluginInfo).</param>
+    /// <param name="parent">The parent plugin that contains this function (ToolInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     public override string GenerateRegistrationCode(object parent)
     {
-        var plugin = (PluginInfo)parent;
+        var plugin = (ToolInfo)parent;
 
         var nameCode = $"\"{FunctionName}\"";
         var descriptionCode = HasDynamicDescription
@@ -274,7 +274,7 @@ $@"HPDAIFunctionFactory.Create(
                 // Convert {metadata.PropertyName} templates to {typedMetadata.PropertyName} for string interpolation
                 var interpolatedDescription = param.Description.Replace("{metadata.", "{typedMetadata.");
 
-                sb.AppendLine($"    private static string Resolve{Name}Parameter{param.Name}Description(IPluginMetadata? context)");
+                sb.AppendLine($"    private static string Resolve{Name}Parameter{param.Name}Description(IToolMetadata? context)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        if (context == null) return string.Empty;");
                 sb.AppendLine($"        if (context is not {ContextTypeName} typedMetadata) return string.Empty;");
@@ -297,7 +297,7 @@ $@"HPDAIFunctionFactory.Create(
                     );
                 }
 
-                sb.AppendLine($"    private static bool Evaluate{Name}Parameter{param.Name}Condition(IPluginMetadata? context)");
+                sb.AppendLine($"    private static bool Evaluate{Name}Parameter{param.Name}Condition(IToolMetadata? context)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        if (context == null) return true;");
                 sb.AppendLine($"        if (context is not {ContextTypeName} typedMetadata) return false;");
@@ -330,7 +330,7 @@ $@"HPDAIFunctionFactory.Create(
 
 /// <summary>
 /// Information about a function parameter discovered during source generation.
-/// This is the same structure as in PluginInfo.cs but duplicated here for Phase 1.
+/// This is the same structure as in ToolInfo.cs but duplicated here for Phase 1.
 /// In Phase 2, we'll consolidate to use a single shared ParameterInfo class.
 /// </summary>
 internal class ParameterInfo

@@ -4,8 +4,8 @@ import type {
   PermissionRequestEvent,
   ClarificationRequestEvent,
   ContinuationRequestEvent,
-  FrontendToolInvokeRequestEvent,
-  FrontendPluginsRegisteredEvent,
+  ClientToolInvokeRequestEvent,
+  ClientToolGroupsRegisteredEvent,
   PermissionChoice,
   BranchCreatedEvent,
   BranchSwitchedEvent,
@@ -15,10 +15,10 @@ import type {
 import { EventTypes } from './types/events.js';
 import type { AgentTransport } from './types/transport.js';
 import type {
-  FrontendPluginDefinition,
+  ClientToolGroupDefinition,
   ContextItem,
-  FrontendToolInvokeResponse,
-} from './types/frontend-tools.js';
+  ClientToolInvokeResponse,
+} from './types/client-tools.js';
 import { SseTransport } from './transports/sse.js';
 import { WebSocketTransport } from './transports/websocket.js';
 
@@ -40,18 +40,18 @@ export interface PermissionResponse {
  */
 export interface StreamOptions {
   signal?: AbortSignal;
-  /** Frontend plugins to register */
-  frontendPlugins?: FrontendPluginDefinition[];
+  /** Client tool groups to register */
+  clientToolGroups?: ClientToolGroupDefinition[];
   /** Context items to pass to the agent */
   context?: ContextItem[];
   /** Application state (opaque to agent) */
   state?: unknown;
-  /** Plugins to start expanded */
+  /** Tool groups to start expanded */
   expandedContainers?: string[];
   /** Tools to start hidden */
   hiddenTools?: string[];
-  /** Reset frontend state (clear all registered plugins) */
-  resetFrontendState?: boolean;
+  /** Reset client state (clear all registered tool groups) */
+  resetClientState?: boolean;
 }
 
 /**
@@ -118,21 +118,21 @@ export interface EventHandlers {
   onContinuationRequest?: (request: ContinuationRequestEvent) => Promise<boolean>;
 
   // ============================================
-  // Frontend Tool Handlers
+  // Client Tool Handlers
   // ============================================
 
   /**
-   * Called when a frontend tool needs to be invoked.
+   * Called when a client tool needs to be invoked.
    * Implement this to execute tools in the browser/client context.
    * Return the tool result to send back to the agent.
    */
-  onFrontendToolInvoke?: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>;
+  onClientToolInvoke?: (request: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>;
 
   /**
-   * Called when frontend plugins are successfully registered.
+   * Called when client tool groups are successfully registered.
    * Useful for debugging and UI updates.
    */
-  onFrontendPluginsRegistered?: (event: FrontendPluginsRegisteredEvent) => void;
+  onClientToolGroupsRegistered?: (event: ClientToolGroupsRegisteredEvent) => void;
 
   // ============================================
   // Lifecycle Handlers
@@ -193,14 +193,14 @@ export interface AgentClientConfig {
   /** Custom headers for requests (SSE only) */
   headers?: Record<string, string>;
 
-  /** Frontend plugins to register automatically on every stream */
-  frontendPlugins?: FrontendPluginDefinition[];
+  /** Client tool groups to register automatically on every stream */
+  clientToolGroups?: ClientToolGroupDefinition[];
 
   /** Default context items to include on every stream */
   defaulTMetadata?: ContextItem[];
 
-  /** Handler for frontend tool invocations */
-  onFrontendToolInvoke?: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>;
+  /** Handler for client tool invocations */
+  onClientToolInvoke?: (request: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>;
 }
 
 // ============================================
@@ -287,9 +287,9 @@ export class AgentClient {
       });
 
       // Merge config defaults with stream options
-      const mergedPlugins = [
-        ...(this.config.frontendPlugins ?? []),
-        ...(options?.frontendPlugins ?? []),
+      const mergedToolGroups = [
+        ...(this.config.clientToolGroups ?? []),
+        ...(options?.clientToolGroups ?? []),
       ];
       const mergedContext = [
         ...(this.config.defaulTMetadata ?? []),
@@ -302,12 +302,12 @@ export class AgentClient {
           conversationId,
           messages,
           signal: options?.signal,
-          frontendPlugins: mergedPlugins.length > 0 ? mergedPlugins : undefined,
+          clientToolGroups: mergedToolGroups.length > 0 ? mergedToolGroups : undefined,
           context: mergedContext.length > 0 ? mergedContext : undefined,
           state: options?.state,
           expandedContainers: options?.expandedContainers,
           hiddenTools: options?.hiddenTools,
-          resetFrontendState: options?.resetFrontendState,
+          resetClientState: options?.resetClientState,
         })
         .catch(fail);
     });
@@ -396,14 +396,14 @@ export class AgentClient {
           }
           break;
 
-        // Bidirectional - Frontend Tool Invocation
-        case EventTypes.FRONTEND_TOOL_INVOKE_REQUEST:
+        // Bidirectional - Client Tool Invocation
+        case EventTypes.CLIENT_TOOL_INVOKE_REQUEST:
           // Use handler from stream() or fall back to config handler
-          const toolHandler = handlers.onFrontendToolInvoke ?? this.config.onFrontendToolInvoke;
+          const toolHandler = handlers.onClientToolInvoke ?? this.config.onClientToolInvoke;
           if (toolHandler) {
             const toolResponse = await toolHandler(event);
             await this.transport.send({
-              type: 'frontend_tool_response',
+              type: 'client_tool_response',
               requestId: toolResponse.requestId,
               content: toolResponse.content,
               success: toolResponse.success,
@@ -413,9 +413,9 @@ export class AgentClient {
           }
           break;
 
-        // Frontend Plugins Registered (informational)
-        case EventTypes.FRONTEND_PLUGINS_REGISTERED:
-          handlers.onFrontendPluginsRegistered?.(event);
+        // Client Tool Groups Registered (informational)
+        case EventTypes.CLIENT_TOOL_GROUPS_REGISTERED:
+          handlers.onClientToolGroupsRegistered?.(event);
           break;
 
         // Lifecycle
@@ -480,48 +480,48 @@ export class AgentClient {
   }
 
   // ============================================
-  // Frontend Plugin Management
+  // Client Tool Group Management
   // ============================================
 
   /**
-   * Register a frontend plugin. It will be automatically included in all future streams.
+   * Register a client tool group. It will be automatically included in all future streams.
    */
-  registerPlugin(plugin: FrontendPluginDefinition): void {
-    if (!this.config.frontendPlugins) {
-      this.config.frontendPlugins = [];
+  registerToolGroup(toolGroup: ClientToolGroupDefinition): void {
+    if (!this.config.clientToolGroups) {
+      this.config.clientToolGroups = [];
     }
-    // Remove existing plugin with same name (update)
-    this.config.frontendPlugins = this.config.frontendPlugins.filter(p => p.name !== plugin.name);
-    this.config.frontendPlugins.push(plugin);
+    // Remove existing tool group with same name (update)
+    this.config.clientToolGroups = this.config.clientToolGroups.filter(g => g.name !== toolGroup.name);
+    this.config.clientToolGroups.push(toolGroup);
   }
 
   /**
-   * Register multiple frontend plugins.
+   * Register multiple client tool groups.
    */
-  registerPlugins(plugins: FrontendPluginDefinition[]): void {
-    plugins.forEach(p => this.registerPlugin(p));
+  registerToolGroups(toolGroups: ClientToolGroupDefinition[]): void {
+    toolGroups.forEach(g => this.registerToolGroup(g));
   }
 
   /**
-   * Unregister a frontend plugin by name.
+   * Unregister a client tool group by name.
    */
-  unregisterPlugin(pluginName: string): void {
-    if (this.config.frontendPlugins) {
-      this.config.frontendPlugins = this.config.frontendPlugins.filter(p => p.name !== pluginName);
+  unregisterToolGroup(toolGroupName: string): void {
+    if (this.config.clientToolGroups) {
+      this.config.clientToolGroups = this.config.clientToolGroups.filter(g => g.name !== toolGroupName);
     }
   }
 
   /**
-   * Get all registered plugins.
+   * Get all registered tool groups.
    */
-  get plugins(): FrontendPluginDefinition[] {
-    return this.config.frontendPlugins ?? [];
+  get toolGroups(): ClientToolGroupDefinition[] {
+    return this.config.clientToolGroups ?? [];
   }
 
   /**
-   * Set the handler for frontend tool invocations.
+   * Set the handler for client tool invocations.
    */
-  setToolHandler(handler: (request: FrontendToolInvokeRequestEvent) => Promise<FrontendToolInvokeResponse>): void {
-    this.config.onFrontendToolInvoke = handler;
+  setToolHandler(handler: (request: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>): void {
+    this.config.onClientToolInvoke = handler;
   }
 }

@@ -93,7 +93,7 @@ public class AgentConfig
     /// This is set by the builder and used to distinguish explicit vs implicit plugin registration.
     /// </summary>
     [JsonIgnore]
-    public ImmutableHashSet<string> ExplicitlyRegisteredPlugins { get; set; } = ImmutableHashSet<string>.Empty;
+    public ImmutableHashSet<string> ExplicitlyRegisteredTools { get; set; } = ImmutableHashSet<string>.Empty;
 
     /// <summary>
     /// Configuration for distributed caching of LLM responses.
@@ -851,11 +851,11 @@ public class CollapsingConfig
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Enable Collapsing for Frontend (AGUI) tools. When true, all frontend tools are grouped in a FrontendTools container.
-    /// Frontend tools are human-in-the-loop tools executed by the UI.
-    /// Default: false (frontend tools always visible).
+    /// Enable Collapsing for Client (AGUI) tools. When true, all Client tools are grouped in a ClientTools container.
+    /// Client tools are human-in-the-loop tools executed by the UI.
+    /// Default: false (Client tools always visible).
     /// </summary>
-    public bool CollapseFrontendTools { get; set; } = false;
+    public bool CollapseClientTools { get; set; } = false;
 
     /// <summary>
     /// Maximum number of function names to include in auto-generated container descriptions.
@@ -891,11 +891,11 @@ public class CollapsingConfig
     public Dictionary<string, string>? MCPServerInstructions { get; set; }
 
     /// <summary>
-    /// Optional post-expansion instructions for Frontend tools container.
-    /// Shown to the agent after expanding the FrontendTools container.
+    /// Optional post-expansion instructions for Client tools container.
+    /// Shown to the agent after expanding the ClientTools container.
     /// Example: "These tools interact with the user. Use ConfirmAction for destructive operations."
     /// </summary>
-    public string? FrontendToolsInstructions { get; set; }
+    public string? ClientToolsInstructions { get; set; }
 
 }
 /// <summary>

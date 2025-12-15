@@ -677,7 +677,7 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("Plugin expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = "MathPlugin",
+                Name = "MathTools",
                 Description = "Math plugin",
                 AdditionalProperties = new Dictionary<string, object?>
                 {
@@ -792,7 +792,7 @@ public class ContainerMiddlewareTests
     }
 
     private static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
-        string pluginName,
+        string toolName,
         string description,
         params string[] memberNames)
     {
@@ -801,10 +801,10 @@ public class ContainerMiddlewareTests
                 name,
                 $"{name} function",
                 (args, ct) => Task.FromResult<object?>($"{name} result"),
-                pluginName)
+                toolName)
         ).ToArray();
 
-        var container = CollapsedPluginTestHelper.CreateContainerFunction(pluginName, description, members);
+        var container = CollapsedPluginTestHelper.CreateContainerFunction(toolName, description, members);
 
         return (container, members);
     }

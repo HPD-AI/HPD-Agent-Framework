@@ -122,16 +122,16 @@ public static partial class EventTypes
 
     #endregion
 
-    #region Frontend Tool Events
+    #region Client Tool Events
 
     /// <summary>
-    /// Frontend tool bidirectional events.
+    /// Client tool bidirectional events.
     /// </summary>
-    public static class FrontendTool
+    public static class ClientTool
     {
-        public const string FRONTEND_TOOL_INVOKE_REQUEST = "FRONTEND_TOOL_INVOKE_REQUEST";
-        public const string FRONTEND_TOOL_INVOKE_RESPONSE = "FRONTEND_TOOL_INVOKE_RESPONSE";
-        public const string FRONTEND_PLUGINS_REGISTERED = "FRONTEND_PLUGINS_REGISTERED";
+        public const string CLIENT_TOOL_INVOKE_REQUEST = "CLIENT_TOOL_INVOKE_REQUEST";
+        public const string CLIENT_TOOL_INVOKE_RESPONSE = "CLIENT_TOOL_INVOKE_RESPONSE";
+        public const string CLIENT_TOOL_GROUPS_REGISTERED = "CLIENT_TOOL_GROUPS_REGISTERED";
     }
 
     #endregion

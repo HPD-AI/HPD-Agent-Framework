@@ -17,13 +17,13 @@ namespace HPD.Agent.Tests.SourceGenerator;
 public class Phase3CombinatorialValidationTests
 {
     /// <summary>
-    /// Test: Plugin with Functions only (CombinedCapabilitiesPlugin has all 3 AIFunctions)
+    /// Test: Plugin with Functions only (CombinedCapabilitiesTools has all 3 AIFunctions)
     /// </summary>
     [Fact]
     public void Combination_FunctionsOnly()
     {
-        // CombinedCapabilitiesPlugin has functions
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        // CombinedCapabilitiesTools has functions
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
 
         Assert.NotNull(plugin);
         Assert.NotEmpty(plugin);
@@ -50,17 +50,17 @@ public class Phase3CombinatorialValidationTests
             object? parentPlugin = null;
             var hasParentPlugin = func.AdditionalProperties?.TryGetValue("ParentPlugin", out parentPlugin) == true;
             Assert.True(hasParentPlugin);
-            Assert.Equal("CombinedCapabilitiesPlugin", parentPlugin as string);
+            Assert.Equal("CombinedCapabilitiesTools", parentPlugin as string);
         }
     }
 
     /// <summary>
-    /// Test: Plugin with Skills (CombinedCapabilitiesPlugin has 2 Skills)
+    /// Test: Plugin with Skills (CombinedCapabilitiesTools has 2 Skills)
     /// </summary>
     [Fact]
     public void Combination_Skills()
     {
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
 
         Assert.NotNull(plugin);
         Assert.NotEmpty(plugin);
@@ -102,12 +102,12 @@ public class Phase3CombinatorialValidationTests
     }
 
     /// <summary>
-    /// Test: Plugin with SubAgents (CombinedCapabilitiesPlugin has 2 SubAgents)
+    /// Test: Plugin with SubAgents (CombinedCapabilitiesTools has 2 SubAgents)
     /// </summary>
     [Fact]
     public void Combination_SubAgents()
     {
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
 
         Assert.NotNull(plugin);
         Assert.NotEmpty(plugin);
@@ -134,10 +134,10 @@ public class Phase3CombinatorialValidationTests
             Assert.True(threadMode is string);
 
             // Should have PluginName
-            object? pluginName = null;
-            var hasPluginName = subAgent.AdditionalProperties?.TryGetValue("PluginName", out pluginName) == true;
+            object? toolName = null;
+            var hasPluginName = subAgent.AdditionalProperties?.TryGetValue("PluginName", out toolName) == true;
             Assert.True(hasPluginName, $"SubAgent {subAgent.Name} should have PluginName");
-            Assert.Equal("CombinedCapabilitiesPlugin", pluginName as string);
+            Assert.Equal("CombinedCapabilitiesTools", toolName as string);
         }
     }
 
@@ -147,7 +147,7 @@ public class Phase3CombinatorialValidationTests
     [Fact]
     public void Combination_All_Three_Types()
     {
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
 
         Assert.NotNull(plugin);
         Assert.NotEmpty(plugin);
@@ -168,7 +168,7 @@ public class Phase3CombinatorialValidationTests
             f.AdditionalProperties?.TryGetValue("IsSubAgent", out var val) == true
             && val is bool b && b).ToList();
 
-        // CombinedCapabilitiesPlugin has all three types
+        // CombinedCapabilitiesTools has all three types
         Assert.NotEmpty(functions);
         Assert.NotEmpty(skills);
         Assert.NotEmpty(subAgents);
@@ -237,7 +237,7 @@ public class Phase3CombinatorialValidationTests
     [Fact]
     public void EmptyArrays_HaveExplicitTypes()
     {
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
 
         // All skills should have ReferencedFunctions and ReferencedPlugins arrays
         var skills = plugin.Where(f =>
@@ -278,7 +278,7 @@ public class Phase3CombinatorialValidationTests
     [Fact]
     public async Task Skill_ActivatesCorrectly()
     {
-        var plugin = CombinedCapabilitiesPluginRegistration.CreatePlugin(new CombinedCapabilitiesPlugin(), null);
+        var plugin = CombinedCapabilitiesToolsRegistration.CreatePlugin(new CombinedCapabilitiesTools(), null);
         var skill = plugin.FirstOrDefault(f =>
             f.AdditionalProperties?.TryGetValue("IsSkill", out var val) == true
             && val is bool b && b);

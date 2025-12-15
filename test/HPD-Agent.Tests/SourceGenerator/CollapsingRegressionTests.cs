@@ -38,7 +38,7 @@ public class CollapsingRegressionTests
             },
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new global::HPDPluginSourceGenerator();
+        var generator = new global::HPDToolSourceGenerator();
         CSharpGeneratorDriver.Create(generator)
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 
@@ -120,10 +120,10 @@ namespace TestPlugins
     /// Bug 2 Regression Test: Source generator must call skill code generation
     /// when plugin has [Collapse] attribute, even if it has no skills.
     ///
-    /// Previously: HPDPluginSourceGenerator.cs:622 only called GenerateAllSkillCode()
+    /// Previously: HPDToolSourceGenerator.cs:622 only called GenerateAllSkillCode()
     /// if plugin.SkillCapabilities.Any() was true.
     ///
-    /// Fix location: HPDPluginSourceGenerator.cs:621-626
+    /// Fix location: HPDToolSourceGenerator.cs:621-626
     /// Changed: Call skill code generation if plugin has skills OR collapse attribute
     /// </summary>
     [Fact]
@@ -166,7 +166,7 @@ namespace TestPlugins
     ///
     /// Previously: GenerateSkillRegistrations() existed but was never called.
     ///
-    /// Fix location: HPDPluginSourceGenerator.cs:479-484
+    /// Fix location: HPDToolSourceGenerator.cs:479-484
     /// Added: Call to SkillCodeGenerator.GenerateSkillRegistrations(plugin)
     /// </summary>
     [Fact]

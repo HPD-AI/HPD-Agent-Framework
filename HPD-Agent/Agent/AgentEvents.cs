@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 
 
 namespace HPD.Agent;
-#region Internal Events
 /// <summary>
 /// Provides hierarchical context about which agent emitted an event.
 /// Enables event attribution and filtering in multi-agent systems.
@@ -44,7 +43,6 @@ public record AgentExecutionContext
 
 
 
-#endregion
 
 #region Priority and Direction Enums
 

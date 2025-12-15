@@ -259,7 +259,7 @@ internal static class CapabilityAnalyzer
             ConditionalExpression = conditionalExpression,
 
             // Note: ResolvedFunctionReferences and ResolvedPluginTypes will be populated
-            // during the resolution phase in HPDPluginSourceGenerator
+            // during the resolution phase in HPDToolSourceGenerator
         };
     }
 
@@ -394,7 +394,7 @@ internal static class CapabilityAnalyzer
     /// <summary>
     /// Analyzes a method with [AIFunction] attribute and creates a FunctionCapability.
     /// For Phase 1, performs basic analysis similar to existing inline analysis.
-    /// Full migration from HPDPluginSourceGenerator will happen in Phase 2-3.
+    /// Full migration from HPDToolSourceGenerator will happen in Phase 2-3.
     /// </summary>
     private static FunctionCapability? AnalyzeFunctionCapability(
         MethodDeclarationSyntax method,
@@ -664,10 +664,10 @@ internal static class CapabilityAnalyzer
             return null;
         }
 
-        var pluginName = parts[0];
+        var toolName = parts[0];
         var methodName = parts[1];
 
-        if (string.IsNullOrWhiteSpace(pluginName) || string.IsNullOrWhiteSpace(methodName))
+        if (string.IsNullOrWhiteSpace(toolName) || string.IsNullOrWhiteSpace(methodName))
         {
             return null;
         }
@@ -675,7 +675,7 @@ internal static class CapabilityAnalyzer
         return new ReferenceInfo
         {
             ReferenceType = ReferenceType.Function,
-            PluginType = pluginName,
+            PluginType = toolName,
             MethodName = methodName,
             FullName = reference,
             Location = expression.GetLocation()

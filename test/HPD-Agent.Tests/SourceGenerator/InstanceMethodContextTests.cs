@@ -29,7 +29,7 @@ public class InstanceMethodContextTests
             },
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new global::HPDPluginSourceGenerator();
+        var generator = new global::HPDToolSourceGenerator();
         var driver = CSharpGeneratorDriver.Create(generator)
             .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 

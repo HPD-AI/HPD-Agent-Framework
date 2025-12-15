@@ -30,7 +30,7 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Turn 1: LLM calls the container
         fakeLLM.EnqueueToolCall(
-            functionName: "MathPlugin",
+            functionName: "MathTools",
             callId: "call_container",
             args: new Dictionary<string, object?>());
 
@@ -45,7 +45,7 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Create Collapsed plugin with container and members
         var (container, members) = CollapsedPluginTestHelper.CreateCollapsedPlugin(
-            "MathPlugin",
+            "MathTools",
             "Mathematical operations",
             CollapsedPluginTestHelper.MemberFunc("Add", "Adds numbers", () => "Sum: 42"),
             CollapsedPluginTestHelper.MemberFunc("Multiply", "Multiplies numbers", () => "Product: 100"));
@@ -89,7 +89,7 @@ public class ContainerExpansionTests : AgentTestBase
         toolCalls.Should().HaveCountGreaterOrEqualTo(2, "should call container and at least one member function");
 
         // Container should be called
-        toolCalls.Should().Contain(e => e.Name == "MathPlugin", "container should be invoked");
+        toolCalls.Should().Contain(e => e.Name == "MathTools", "container should be invoked");
 
         // Member function should be called
         toolCalls.Should().Contain(e => e.Name == "Add", "member function should be invoked after expansion");

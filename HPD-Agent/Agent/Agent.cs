@@ -691,7 +691,7 @@ public sealed class Agent
             };
             turnContext.SetOriginalState(state);
 
-            // Apply initial properties from caller (e.g., AgentRunInput for frontend tools)
+            // Apply initial properties from caller (e.g., AgentRunInput for Client tools)
             if (initialContextProperties != null)
             {
                 foreach (var kvp in initialContextProperties)
@@ -1963,18 +1963,18 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Runs the agent with frontend tool support via AgentRunInput.
-    /// This overload allows frontend applications to register plugins and tools dynamically.
+    /// Runs the agent with Client tool support via AgentRunInput.
+    /// This overload allows Client applications to register plugins and tools dynamically.
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
     /// <param name="session">Session containing conversation history</param>
-    /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
+    /// <param name="runInput">Client tool configuration including plugins, context, and state</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
         AgentSession session,
-        FrontendTools.AgentRunInput? runInput,
+        ClientTools.AgentRunInput? runInput,
         CancellationToken cancellationToken = default)
     {
         return RunAsync(
@@ -1986,20 +1986,20 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Runs the agent with frontend tool support via AgentRunInput.
-    /// This overload allows frontend applications to register plugins and tools dynamically.
+    /// Runs the agent with Client tool support via AgentRunInput.
+    /// This overload allows Client applications to register plugins and tools dynamically.
     /// </summary>
     /// <param name="messages">Messages to process</param>
     /// <param name="options">Chat options</param>
     /// <param name="session">Session containing conversation history</param>
-    /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
+    /// <param name="runInput">Client tool configuration including plugins, context, and state</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public async IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
         AgentSession session,
-        FrontendTools.AgentRunInput? runInput,
+        ClientTools.AgentRunInput? runInput,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // Validate resume semantics (same as base overload)
@@ -3314,14 +3314,14 @@ internal class FunctionCallProcessor
                 continue;
 
             // Extract plugin/skill metadata (same logic as ProcessFunctionCallsAsync)
-            string? pluginTypeName = null;
+            string? toolTypeName = null;
             if (function.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginCtx) == true)
             {
-                pluginTypeName = parentPluginCtx as string;
+                toolTypeName = parentPluginCtx as string;
             }
-            else if (function.AdditionalProperties?.TryGetValue("PluginName", out var pluginNameProp) == true)
+            else if (function.AdditionalProperties?.TryGetValue("PluginName", out var toolNameProp) == true)
             {
-                pluginTypeName = pluginNameProp as string;
+                toolTypeName = toolNameProp as string;
             }
 
             string? skillName = null;
@@ -3336,7 +3336,7 @@ internal class FunctionCallProcessor
                 function,
                 toolRequest.CallId,
                 toolRequest.Arguments ?? new Dictionary<string, object?>(),
-                pluginTypeName,
+                toolTypeName,
                 skillName));
         }
 
@@ -3527,19 +3527,19 @@ internal class FunctionCallProcessor
             var function = FindFunction(functionCall.Name, functionMap);
 
             // Extract Collapse information for middleware Collapsing
-            string? pluginTypeName = null;
+            string? toolTypeName = null;
             if (function?.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginCtx) == true)
             {
-                pluginTypeName = parentPluginCtx as string;
+                toolTypeName = parentPluginCtx as string;
             }
-            else if (function?.AdditionalProperties?.TryGetValue("PluginName", out var pluginNameProp) == true)
+            else if (function?.AdditionalProperties?.TryGetValue("PluginName", out var toolNameProp) == true)
             {
                 // For container functions, PluginName IS the plugin type
-                pluginTypeName = pluginNameProp as string;
+                toolTypeName = toolNameProp as string;
             }
 
             // Fallback: Try function-to-plugin mapping
-            if (string.IsNullOrEmpty(pluginTypeName) && functionCall.Name != null)
+            if (string.IsNullOrEmpty(toolTypeName) && functionCall.Name != null)
             {
                 // Plugin metadata comes from AIFunction.AdditionalProperties (set by source generator)
             }
@@ -3568,7 +3568,7 @@ internal class FunctionCallProcessor
                 Function = function,
                 FunctionCallId = functionCall.CallId,
                 FunctionArguments = functionCall.Arguments ?? new Dictionary<string, object?>(),
-                PluginName = pluginTypeName,
+                PluginName = toolTypeName,
                 SkillName = skillName,
                 IsSkillContainer = isSkillContainer,
                 EventCoordinator = _eventCoordinator,

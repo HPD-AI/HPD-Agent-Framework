@@ -13,7 +13,7 @@ public static class CollapsedPluginTestHelper
     /// This simulates what the source generator creates for [Collapse] attributes.
     /// </summary>
     public static AIFunction CreateContainerFunction(
-        string pluginName,
+        string toolName,
         string description,
         IReadOnlyList<AIFunction> containedFunctions,
         string? postExpansionInstructions = null)
@@ -23,12 +23,12 @@ public static class CollapsedPluginTestHelper
 
         var options = new HPDAIFunctionFactoryOptions
         {
-            Name = pluginName,
+            Name = toolName,
             Description = description,
             AdditionalProperties = new Dictionary<string, object?>
             {
                 ["IsContainer"] = true,
-                ["PluginName"] = pluginName,
+                ["PluginName"] = toolName,
                 ["FunctionNames"] = functionNames,
                 ["FunctionCount"] = functionCount,
                 ["SourceType"] = "CSharp"
@@ -40,7 +40,7 @@ public static class CollapsedPluginTestHelper
             {
                 var funcs = string.Join(", ", functionNames);
                 var instructions = postExpansionInstructions ?? "";
-                return $"Plugin '{pluginName}' expanded. Available functions: {funcs}. {instructions}";
+                return $"Plugin '{toolName}' expanded. Available functions: {funcs}. {instructions}";
             },
             options);
     }
@@ -53,7 +53,7 @@ public static class CollapsedPluginTestHelper
         string name,
         string description,
         Func<AIFunctionArguments, CancellationToken, Task<object?>> invocation,
-        string pluginName)
+        string toolName)
     {
         var options = new HPDAIFunctionFactoryOptions
         {
@@ -61,8 +61,8 @@ public static class CollapsedPluginTestHelper
             Description = description,
             AdditionalProperties = new Dictionary<string, object?>
             {
-                ["ParentPlugin"] = pluginName,
-                ["PluginName"] = pluginName
+                ["ParentPlugin"] = toolName,
+                ["PluginName"] = toolName
             }
         };
 
@@ -74,17 +74,17 @@ public static class CollapsedPluginTestHelper
     /// Returns (containerFunction, memberFunctions[]).
     /// </summary>
     public static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
-        string pluginName,
+        string toolName,
         string description,
         params (string name, string desc, Func<AIFunctionArguments, CancellationToken, Task<object?>> func)[] functions)
     {
         // Create member functions
         var memberFunctions = functions.Select(f =>
-            CreatePluginMemberFunction(f.name, f.desc, f.func, pluginName)
+            CreatePluginMemberFunction(f.name, f.desc, f.func, toolName)
         ).ToArray();
 
         // Create container
-        var container = CreateContainerFunction(pluginName, description, memberFunctions);
+        var container = CreateContainerFunction(toolName, description, memberFunctions);
 
         return (container, memberFunctions);
     }
@@ -208,8 +208,8 @@ public static class CollapsedPluginExtensions
     /// <summary>
     /// Filters functions by plugin name.
     /// </summary>
-    public static IEnumerable<AIFunction> FromPlugin(this IEnumerable<AIFunction> functions, string pluginName)
+    public static IEnumerable<AIFunction> FromPlugin(this IEnumerable<AIFunction> functions, string toolName)
     {
-        return functions.Where(f => CollapsedPluginTestHelper.GetPluginName(f) == pluginName);
+        return functions.Where(f => CollapsedPluginTestHelper.GetPluginName(f) == toolName);
     }
 }
