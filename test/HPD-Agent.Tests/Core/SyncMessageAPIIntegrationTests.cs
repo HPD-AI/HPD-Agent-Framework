@@ -20,7 +20,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act - use sync API to build conversation
         thread.AddMessage(new ChatMessage(ChatRole.User, "Hello"));
@@ -51,7 +51,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act - load conversation history using sync batch API
         var history = new[]
@@ -81,7 +81,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
     public void Sync_API_Does_Not_Interfere_With_Thread_Properties()
     {
         // Arrange
-        var thread = new ConversationThread
+        var thread = new AgentSession
         {
             DisplayName = "Test Conversation"
         };
@@ -105,7 +105,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act - add message and run agent
         thread.AddMessage(new ChatMessage(ChatRole.User, "Question 1"));
@@ -137,7 +137,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act
         var initialCount = thread.MessageCount;
@@ -166,7 +166,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act - mix sync and async
         thread.AddMessage(new ChatMessage(ChatRole.User, "Message 1"));  // Sync

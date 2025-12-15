@@ -140,7 +140,7 @@ namespace HPD.Agent.FFI;
 [JsonSerializable(typeof(TotalErrorThresholdStateData))]
 
 // --- Checkpointing / Resume Types ---
-[JsonSerializable(typeof(ExecutionCheckpoint))]
+[JsonSerializable(typeof(SessionCheckpoint))]
 
 // --- Permission Types ---
 [JsonSerializable(typeof(PermissionChoice))]

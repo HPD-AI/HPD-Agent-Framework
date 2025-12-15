@@ -1,6 +1,6 @@
 using System;
 
-namespace HPD.Agent.Checkpointing;
+namespace HPD.Agent.Session;
 
 /// <summary>
 /// Thrown when a checkpoint version is newer than the maximum supported version.
@@ -62,9 +62,9 @@ public class CheckpointStaleException : Exception
 public class CheckpointConcurrencyException : Exception
 {
     /// <summary>
-    /// Gets the identifier of the thread or logical actor that attempted the update.
+    /// Gets the identifier of the session that attempted the update.
     /// </summary>
-    public string ThreadId { get; }
+    public string SessionId { get; }
 
     /// <summary>
     /// Gets the expected ETag value that the updater thought was current.
@@ -80,17 +80,17 @@ public class CheckpointConcurrencyException : Exception
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CheckpointConcurrencyException"/> class
-    /// for an optimistic concurrency conflict. Includes the thread id and the expected/actual ETag values.
+    /// for an optimistic concurrency conflict. Includes the session id and the expected/actual ETag values.
     /// </summary>
-    /// <param name="threadId">Identifier of the thread or actor that attempted the update.</param>
+    /// <param name="sessionId">Identifier of the session that attempted the update.</param>
     /// <param name="expectedETag">The ETag value the updater expected to find.</param>
     /// <param name="actualETag">The ETag value that was actually present.</param>
-    public CheckpointConcurrencyException(string threadId, string? expectedETag, string? actualETag)
-        : base($"Checkpoint concurrency conflict for thread '{threadId}'. " +
+    public CheckpointConcurrencyException(string sessionId, string? expectedETag, string? actualETag)
+        : base($"Checkpoint concurrency conflict for session '{sessionId}'. " +
                $"Expected ETag '{expectedETag}' but found '{actualETag}'. " +
                $"Another process modified this checkpoint.")
     {
-        ThreadId = threadId;
+        SessionId = sessionId;
         ExpectedETag = expectedETag;
         ActualETag = actualETag;
     }
@@ -99,16 +99,16 @@ public class CheckpointConcurrencyException : Exception
     /// Initializes a new instance of the <see cref="CheckpointConcurrencyException"/> class
     /// for an optimistic concurrency conflict and includes an inner exception.
     /// </summary>
-    /// <param name="threadId">Identifier of the thread or actor that attempted the update.</param>
+    /// <param name="sessionId">Identifier of the session that attempted the update.</param>
     /// <param name="expectedETag">The ETag value the updater expected to find.</param>
     /// <param name="actualETag">The ETag value that was actually present.</param>
     /// <param name="innerException">The exception that is the cause of the current exception.</param>
-    public CheckpointConcurrencyException(string threadId, string? expectedETag, string? actualETag, Exception innerException)
-        : base($"Checkpoint concurrency conflict for thread '{threadId}'. " +
+    public CheckpointConcurrencyException(string sessionId, string? expectedETag, string? actualETag, Exception innerException)
+        : base($"Checkpoint concurrency conflict for session '{sessionId}'. " +
                $"Expected ETag '{expectedETag}' but found '{actualETag}'. " +
                $"Another process modified this checkpoint.", innerException)
     {
-        ThreadId = threadId;
+        SessionId = sessionId;
         ExpectedETag = expectedETag;
         ActualETag = actualETag;
     }

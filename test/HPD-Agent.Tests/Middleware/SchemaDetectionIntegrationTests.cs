@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using HPD.Agent;
-using HPD.Agent.Checkpointing;
+using HPD.Agent.Session;
 using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,14 +25,14 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Create checkpoint without schema metadata (simulate old version)
         var preVersioningState = CreatePreVersioningCheckpoint();
-        var thread = CreateThreadWithCheckpoint(preVersioningState);
+        var session = CreateSessionWithCheckpoint(preVersioningState);
         var agent = CreateTestAgentWithLogging();
 
         // Act: Resume from pre-versioning checkpoint
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
             options: null,
-            thread: thread,
+            session: session,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -61,7 +61,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint with middleware that no longer exists
         var checkpointWithOldMiddleware = CreateCheckpointWithRemovedMiddleware();
-        var thread = CreateThreadWithCheckpoint(checkpointWithOldMiddleware);
+        var session = CreateSessionWithCheckpoint(checkpointWithOldMiddleware);
 
         var agent = CreateTestAgentWithLogging();
 
@@ -69,7 +69,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
             options: null,
-            thread: thread,
+            session: session,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -95,7 +95,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint without new middleware
         var checkpointBeforeNewMiddleware = CreateCheckpointWithFewerMiddleware();
-        var thread = CreateThreadWithCheckpoint(checkpointBeforeNewMiddleware);
+        var session = CreateSessionWithCheckpoint(checkpointBeforeNewMiddleware);
 
         var agent = CreateTestAgentWithLogging();
 
@@ -103,7 +103,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
             options: null,
-            thread: thread,
+            session: session,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -129,7 +129,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint with current schema
         var currentCheckpoint = CreateCheckpointWithCurrentSchema();
-        var thread = CreateThreadWithCheckpoint(currentCheckpoint);
+        var session = CreateSessionWithCheckpoint(currentCheckpoint);
 
         var agent = CreateTestAgentWithLogging();
 
@@ -137,7 +137,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
             options: null,
-            thread: thread,
+            session: session,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -182,14 +182,14 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         return agent;
     }
 
-    private ConversationThread CreateThreadWithCheckpoint(AgentLoopState checkpoint)
+    private AgentSession CreateSessionWithCheckpoint(AgentLoopState checkpoint)
     {
-        var thread = new ConversationThread()
+        var session = new AgentSession()
         {
             ExecutionState = checkpoint
         };
 
-        return thread;
+        return session;
     }
 
     private AgentLoopState CreatePreVersioningCheckpoint()

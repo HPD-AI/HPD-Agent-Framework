@@ -13,6 +13,7 @@ using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
+using HPD.Agent.Session;
 
 namespace HPD.Agent;
 
@@ -516,7 +517,7 @@ public class AgentBuilder
     /// <example>
     /// <code>
     /// // Enable durable execution with file-based storage
-    /// var store = new JsonConversationThreadStore("./checkpoints", CheckpointRetentionMode.LatestOnly);
+    /// var store = new JsonAgentSessionStore("./checkpoints", CheckpointRetentionMode.LatestOnly);
     /// var agent = new AgentBuilder()
     ///     .WithProvider("openai", "gpt-4")
     ///     .WithDurableExecution(store)
@@ -532,33 +533,33 @@ public class AgentBuilder
     /// </code>
     /// </example>
     public AgentBuilder WithDurableExecution(
-        Checkpointing.ICheckpointStore store,
-        Checkpointing.CheckpointFrequency frequency = Checkpointing.CheckpointFrequency.PerTurn)
+        Session.ISessionStore store,
+        Session.CheckpointFrequency frequency = Session.CheckpointFrequency.PerTurn)
     {
         ArgumentNullException.ThrowIfNull(store);
-        _config.ThreadStore = store;
-        _config.DurableExecutionConfig = new Checkpointing.Services.DurableExecutionConfig
+        _config.SessionStore = store;
+        _config.DurableExecutionConfig = new Session.DurableExecutionConfig
         {
             Enabled = true,
             Frequency = frequency,
-            Retention = Checkpointing.Services.RetentionPolicy.LatestOnly
+            Retention = Session.RetentionPolicy.LatestOnly
         };
         return this;
     }
 
     /// <summary>
     /// Enables durable execution with a simple file-based store.
-    /// Convenience overload that creates a JsonConversationThreadStore internally.
+    /// Convenience overload that creates a JsonAgentSessionStore internally.
     /// </summary>
     /// <param name="storagePath">Directory to store checkpoint files</param>
     /// <param name="frequency">How often to checkpoint (default: PerTurn)</param>
     /// <returns>The builder for chaining</returns>
     public AgentBuilder WithDurableExecution(
         string storagePath,
-        Checkpointing.CheckpointFrequency frequency = Checkpointing.CheckpointFrequency.PerTurn)
+        Session.CheckpointFrequency frequency = Session.CheckpointFrequency.PerTurn)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
-        var store = new Checkpointing.JsonConversationThreadStore(storagePath);
+        var store = new Session.JsonSessionStore(storagePath);
         return WithDurableExecution(store, frequency);
     }
 

@@ -2,7 +2,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using HPD.Agent.Checkpointing;
+
+using HPD.Agent.Session;
 using HPD.Agent.FrontendTools;
 using HPD.Agent.Memory;
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -37,10 +38,10 @@ builder.Services.AddCors(options =>
 });
 
 // Register checkpointing services
-var threadStore = new JsonConversationThreadStore(
+var threadStore = new JsonSessionStore(
     Path.Combine(Environment.CurrentDirectory, "threads"));
 
-builder.Services.AddSingleton<IThreadStore>(threadStore);
+builder.Services.AddSingleton<ISessionStore>(threadStore);
 builder.Services.AddSingleton<ConversationManager>();
 
 var app = builder.Build();
@@ -248,7 +249,7 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
 
         // Run agent - manually send each event through SSE handler
         int eventCount = 0;
-        await foreach (var evt in agent.RunAsync(chatMessages, options: null, thread: thread, runInput: runInput, cancellationToken: context.RequestAborted))
+        await foreach (var evt in agent.RunAsync(chatMessages, options: null, session: thread, runInput: runInput, cancellationToken: context.RequestAborted))
         {
             eventCount++;
             Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
@@ -317,7 +318,7 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
 
         var chatMessage = new ChatMessage(ChatRole.User, userMessage);
 
-        await foreach (var evt in agent.RunAsync(new[] { chatMessage }, options: null, thread: thread, cancellationToken: CancellationToken.None))
+        await foreach (var evt in agent.RunAsync(new[] { chatMessage }, options: null, session: thread, cancellationToken: CancellationToken.None))
         {
             if (evt is TextDeltaEvent textDelta)
             {
@@ -387,7 +388,7 @@ static void ValidateCheckpointingConfiguration(IServiceProvider services)
 {
     try
     {
-        var threadStore = services.GetRequiredService<IThreadStore>();
+        var threadStore = services.GetRequiredService<ISessionStore>();
         Console.WriteLine("\n✓ Thread store configured:");
         Console.WriteLine($"  - Thread store: {threadStore.GetType().Name}");
         Console.WriteLine();
@@ -401,31 +402,31 @@ static void ValidateCheckpointingConfiguration(IServiceProvider services)
 // Conversation Manager
 internal class ConversationManager
 {
-    private readonly IThreadStore _threadStore;
-    private readonly Dictionary<string, ConversationThread> _threadCache = new(); // In-memory cache
+    private readonly ISessionStore _threadStore;
+    private readonly Dictionary<string, AgentSession> _threadCache = new(); // In-memory cache
     private readonly Dictionary<string, Agent> _runningAgents = new(); // Track active agents
     private readonly InMemoryPermissionStorage _permissionStorage = new();
 
-    public ConversationManager(IThreadStore threadStore)
+    public ConversationManager(ISessionStore threadStore)
     {
         _threadStore = threadStore;
     }
 
-    public async Task<ConversationThread> CreateConversationAsync()
+    public async Task<AgentSession> CreateConversationAsync()
     {
-        var thread = new ConversationThread();
-        await _threadStore.SaveThreadAsync(thread);
+        var thread = new AgentSession();
+        await _threadStore.SaveSessionAsync(thread);
         _threadCache[thread.Id] = thread;
         return thread;
     }
 
-    public async Task<ConversationThread?> GetConversationAsync(string conversationId)
+    public async Task<AgentSession?> GetConversationAsync(string conversationId)
     {
         // Check cache first
         if (_threadCache.TryGetValue(conversationId, out var cached))
             return cached;
 
-        var thread = await _threadStore.LoadThreadAsync(conversationId);
+        var thread = await _threadStore.LoadSessionAsync(conversationId);
         if (thread != null)
             _threadCache[conversationId] = thread;
 
@@ -436,13 +437,13 @@ internal class ConversationManager
     {
         _threadCache.Remove(conversationId);
         _runningAgents.Remove(conversationId);
-        await _threadStore.DeleteThreadAsync(conversationId);
+        await _threadStore.DeleteSessionAsync(conversationId);
         return true;
     }
 
     public async Task<List<string>> ListConversationIdsAsync()
     {
-        return await _threadStore.ListThreadIdsAsync();
+        return await _threadStore.ListSessionIdsAsync();
     }
 
     public async Task<Agent> GetAgentAsync(string conversationId, IAgentEventHandler? eventHandler = null)

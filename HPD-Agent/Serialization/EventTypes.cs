@@ -151,22 +151,6 @@ public static partial class EventTypes
 
     #endregion
 
-    #region Thread Events
-
-    /// <summary>
-    /// Thread-level events (cross-thread operations).
-    /// </summary>
-    public static class Thread
-    {
-        /// <summary>
-        /// Raised when a thread is copied from another thread's checkpoint.
-        /// Unlike branch events (same thread), this creates a new independent thread.
-        /// </summary>
-        public const string THREAD_COPIED = "THREAD_COPIED";
-    }
-
-    #endregion
-
     #region Observability Events
 
     /// <summary>

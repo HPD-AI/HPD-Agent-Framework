@@ -77,16 +77,15 @@ using HPD.Agent;
 [JsonSerializable(typeof(IEnumerable<Microsoft.Extensions.AI.ChatMessage>))]
 
 // --- Conversation storage and serialization types ---
-[JsonSerializable(typeof(ExecutionCheckpoint))]
+[JsonSerializable(typeof(SessionCheckpoint))]
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]
 
 // --- Checkpointing types ---
-[JsonSerializable(typeof(HPD.Agent.Checkpointing.PendingWrite))]
-[JsonSerializable(typeof(List<HPD.Agent.Checkpointing.PendingWrite>))]
-[JsonSerializable(typeof(HPD.Agent.Checkpointing.CheckpointManifest))]
-[JsonSerializable(typeof(HPD.Agent.Checkpointing.CheckpointManifestEntry))]
-[JsonSerializable(typeof(List<HPD.Agent.Checkpointing.CheckpointManifestEntry>))]
+[JsonSerializable(typeof(HPD.Agent.Session.PendingWrite))]
+[JsonSerializable(typeof(List<HPD.Agent.Session.PendingWrite>))]
+[JsonSerializable(typeof(HPD.Agent.Session.CheckpointManifestEntry))]
+[JsonSerializable(typeof(List<HPD.Agent.Session.CheckpointManifestEntry>))]
 
 // --- Document store types ---
 [JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]

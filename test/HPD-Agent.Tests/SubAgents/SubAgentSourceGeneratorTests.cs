@@ -9,7 +9,7 @@ namespace HPD.Agent.Tests.SubAgents;
 /// 1. Detects [SubAgent] attribute
 /// 2. Generates AIFunction wrappers for sub-agents
 /// 3. Parses AgentConfig from method body
-/// 4. Handles different thread modes (Stateless, SharedThread, PerSession)
+/// 4. Handles different thread modes (Stateless, SharedSession, PerSession)
 /// 5. Validates method signatures
 /// </summary>
 public class SubAgentSourceGeneratorTests
@@ -57,7 +57,7 @@ public class SubAgentSourceGeneratorTests
         Assert.NotNull(subAgent);
         Assert.Equal("StatelessSubAgent", subAgent.Name);
         Assert.Equal(SubAgentThreadMode.Stateless, subAgent.ThreadMode);
-        Assert.Null(subAgent.SharedThread); // No shared thread for stateless
+        Assert.Null(subAgent.SharedSession); // No shared thread for stateless
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class SubAgentSourceGeneratorTests
         Assert.NotNull(subAgent);
         Assert.Equal("StatefulSubAgent", subAgent.Name);
         Assert.Equal(SubAgentThreadMode.SharedThread, subAgent.ThreadMode);
-        Assert.NotNull(subAgent.SharedThread); // Should have shared thread
+        Assert.NotNull(subAgent.SharedSession); // Should have shared thread
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public class SubAgentSourceGeneratorTests
     }
 
     [Fact]
-    public void SubAgent_SharedThread_IsNotNullForStateful()
+    public void SubAgent_SharedSession_IsNotNullForStateful()
     {
         // Arrange
         var plugin = new TestSubAgentPlugin();
@@ -196,7 +196,7 @@ public class SubAgentSourceGeneratorTests
         var subAgent = plugin.StatefulSubAgent();
 
         // Assert
-        Assert.NotNull(subAgent.SharedThread);
+        Assert.NotNull(subAgent.SharedSession);
     }
 
     // ===== P0: Complex Scenarios =====

@@ -367,21 +367,21 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                         if (e.Duration.HasValue)
                         {
                             _checkpointDuration.Record(e.Duration.Value.TotalMilliseconds,
-                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("thread.id", e.SessionId),
                                 new KeyValuePair<string, object?>("success", e.Success ?? false));
                         }
 
                         if (e.SizeBytes.HasValue)
                         {
                             _checkpointSizeHistogram.Record(e.SizeBytes.Value,
-                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("thread.id", e.SessionId),
                                 new KeyValuePair<string, object?>("success", e.Success ?? false));
                         }
 
                         if (e.Success == false)
                         {
                             _checkpointErrors.Add(1,
-                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("thread.id", e.SessionId),
                                 new KeyValuePair<string, object?>("iteration", e.Iteration ?? 0),
                                 new KeyValuePair<string, object?>("error", e.ErrorMessage ?? "unknown"));
                         }
@@ -391,7 +391,7 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                         if (e.Duration.HasValue)
                         {
                             _checkpointRestoreDuration.Record(e.Duration.Value.TotalMilliseconds,
-                                new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                                new KeyValuePair<string, object?>("thread.id", e.SessionId),
                                 new KeyValuePair<string, object?>("from.iteration", e.Iteration ?? 0),
                                 new KeyValuePair<string, object?>("message.count", e.MessageCount ?? 0));
                         }
@@ -399,19 +399,19 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
 
                     case CheckpointOperation.PendingWritesSaved:
                         _pendingWritesSaves.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                            new KeyValuePair<string, object?>("thread.id", e.SessionId),
                             new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
                         break;
 
                     case CheckpointOperation.PendingWritesLoaded:
                         _pendingWritesLoads.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.ThreadId),
+                            new KeyValuePair<string, object?>("thread.id", e.SessionId),
                             new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
                         break;
 
                     case CheckpointOperation.PendingWritesDeleted:
                         _pendingWritesDeletes.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.ThreadId));
+                            new KeyValuePair<string, object?>("thread.id", e.SessionId));
                         break;
                 }
                 break;

@@ -3,8 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
-using HPD.Agent.Checkpointing;
-using HPD.Agent.Checkpointing.Services;
+using HPD.Agent.Session;
+
 using System.Collections.Immutable;
 
 namespace HPD.Agent;
@@ -109,26 +109,6 @@ public class AgentConfig
     public ObservabilityConfig? Observability { get; set; }
 
     /// <summary>
-    /// Optional conversation thread store for durable execution and crash recovery.
-    /// Use InMemoryConversationThreadStore for development/testing or JsonConversationThreadStore for production.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Example - Resume After Crash:</b>
-    /// <code>
-    /// var thread = await threadStore.LoadThreadAsync(threadId);
-    /// if (thread?.ExecutionState != null)
-    /// {
-    ///     // Resume from checkpoint (pass empty messages)
-    ///     await agent.RunAsync(Array.Empty&lt;ChatMessage&gt;(), thread);
-    /// }
-    /// </code>
-    /// </para>
-    /// </remarks>
-    [JsonIgnore]
-    internal ICheckpointStore? ThreadStore { get; set; }
-
-    /// <summary>
     /// Whether to preserve reasoning tokens (from models like o1, DeepSeek-R1) in conversation history.
     /// Default: false (reasoning is shown during streaming but excluded from history to save tokens).
     /// When true, reasoning content is included in history and available in future context.
@@ -158,7 +138,35 @@ public class AgentConfig
     /// When set via WithDurableExecution(frequency, retention), enables the service layer.
     /// </summary>
     [JsonIgnore]
+    [Obsolete("Use SessionStore and SessionStoreOptions instead. This will be removed in a future version.")]
     public DurableExecutionConfig? DurableExecutionConfig { get; set; }
+
+    /// <summary>
+    /// Optional session store for durable execution and crash recovery.
+    /// Use InMemorySessionStore for development/testing or JsonSessionStore for production.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Example - Auto-save mode:</b>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithSessionStore(new JsonSessionStore("./sessions"), autoSave: true)
+    ///     .Build();
+    ///
+    /// // One line - load, run, save all handled
+    /// await agent.RunAsync("Hello", "session-123");
+    /// </code>
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public Session.ISessionStore? SessionStore { get; set; }
+
+    /// <summary>
+    /// Options for session persistence behavior.
+    /// Controls auto-save, checkpoint frequency, and retention policy.
+    /// </summary>
+    [JsonIgnore]
+    public Session.SessionStoreOptions? SessionStoreOptions { get; set; }
 
     // Branching config removed - branching is now an application-level concern
 

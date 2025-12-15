@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using ConversationThread = HPD.Agent.ConversationThread;
+using AgentSession = HPD.Agent.AgentSession;
 
 namespace HPD.Agent.FFI;
 
@@ -299,18 +299,18 @@ public static partial class NativeExports
     /// <summary>
     /// Creates a new conversation thread for managing conversation state.
     /// </summary>
-    /// <returns>Handle to the created ConversationThread, or IntPtr.Zero on failure</returns>
+    /// <returns>Handle to the created AgentSession, or IntPtr.Zero on failure</returns>
     [UnmanagedCallersOnly(EntryPoint = "create_conversation_thread")]
-    public static IntPtr CreateConversationThread()
+    public static IntPtr CreateAgentSession()
     {
         try
         {
-            var thread = new ConversationThread();
+            var thread = new AgentSession();
             return ObjectManager.Add(thread);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to create conversation thread: {ex.Message}");
+            Console.WriteLine($"Failed to create conversation session: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -320,7 +320,7 @@ public static partial class NativeExports
     /// </summary>
     /// <param name="threadHandle">Handle to the thread to destroy</param>
     [UnmanagedCallersOnly(EntryPoint = "destroy_conversation_thread")]
-    public static void DestroyConversationThread(IntPtr threadHandle)
+    public static void DestroyAgentSession(IntPtr threadHandle)
     {
         ObjectManager.Remove(threadHandle);
     }
@@ -335,7 +335,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return IntPtr.Zero;
 
             return MarshalString(thread.Id);
@@ -357,7 +357,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return -1;
 
             return thread.MessageCount;
@@ -379,7 +379,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return IntPtr.Zero;
 
             var json = JsonSerializer.Serialize(thread.Messages, HPDFFIJsonContext.Default.IEnumerableChatMessage);
@@ -403,7 +403,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return 0;
 
             string? messageJson = Marshal.PtrToStringUTF8(messageJsonPtr);
@@ -417,7 +417,7 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to add message to thread: {ex.Message}");
+            Console.WriteLine($"Failed to add message to session: {ex.Message}");
             return 0;
         }
     }
@@ -432,7 +432,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return 0;
 
             thread.Clear();
@@ -440,7 +440,7 @@ public static partial class NativeExports
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to clear thread: {ex.Message}");
+            Console.WriteLine($"Failed to clear session: {ex.Message}");
             return 0;
         }
     }
@@ -473,10 +473,10 @@ public static partial class NativeExports
             var messages = new[] { userMessage };
 
             // Get thread if provided
-            ConversationThread? thread = null;
+            AgentSession? thread = null;
             if (threadHandle != IntPtr.Zero)
             {
-                thread = ObjectManager.Get<ConversationThread>(threadHandle);
+                thread = ObjectManager.Get<AgentSession>(threadHandle);
             }
 
             // Run agent and collect all events
@@ -485,7 +485,7 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, options: null, thread: thread);
+                eventStream = agent.RunAsync(messages, options: null, session: thread);
             }
             else
             {
@@ -549,10 +549,10 @@ public static partial class NativeExports
             var messages = new[] { userMessage };
 
             // Get thread if provided
-            ConversationThread? thread = null;
+            AgentSession? thread = null;
             if (threadHandle != IntPtr.Zero)
             {
-                thread = ObjectManager.Get<ConversationThread>(threadHandle);
+                thread = ObjectManager.Get<AgentSession>(threadHandle);
             }
 
             // Run agent and stream events
@@ -560,7 +560,7 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, options: null, thread: thread);
+                eventStream = agent.RunAsync(messages, options: null, session: thread);
             }
             else
             {
@@ -619,19 +619,19 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<ConversationThread>(threadHandle);
+            var thread = ObjectManager.Get<AgentSession>(threadHandle);
             if (thread == null) return IntPtr.Zero;
 
             // Serialize thread to snapshot
             var snapshot = thread.Serialize();
 
             // Convert snapshot to JSON
-            var json = JsonSerializer.Serialize(snapshot, HPDFFIJsonContext.Default.ConversationThreadSnapshot);
+            var json = JsonSerializer.Serialize(snapshot, HPDFFIJsonContext.Default.AgentSessionSnapshot);
             return MarshalString(json);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to serialize thread: {ex.Message}");
+            Console.WriteLine($"Failed to serialize session: {ex.Message}");
             return IntPtr.Zero;
         }
     }
@@ -641,7 +641,7 @@ public static partial class NativeExports
     /// Enables crash recovery and cross-session continuation.
     /// </summary>
     /// <param name="snapshotJsonPtr">Pointer to UTF-8 encoded JSON snapshot</param>
-    /// <returns>Handle to the restored ConversationThread, or IntPtr.Zero on failure</returns>
+    /// <returns>Handle to the restored AgentSession, or IntPtr.Zero on failure</returns>
     [UnmanagedCallersOnly(EntryPoint = "deserialize_thread")]
     public static IntPtr DeserializeThread(IntPtr snapshotJsonPtr)
     {
@@ -651,16 +651,16 @@ public static partial class NativeExports
             if (string.IsNullOrEmpty(snapshotJson)) return IntPtr.Zero;
 
             // Deserialize snapshot from JSON
-            var snapshot = JsonSerializer.Deserialize(snapshotJson, HPDFFIJsonContext.Default.ConversationThreadSnapshot);
+            var snapshot = JsonSerializer.Deserialize(snapshotJson, HPDFFIJsonContext.Default.AgentSessionSnapshot);
             if (snapshot == null) return IntPtr.Zero;
 
             // Restore thread from snapshot
-            var thread = ConversationThread.Deserialize(snapshot);
+            var thread = AgentSession.Deserialize(snapshot);
             return ObjectManager.Add(thread);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to deserialize thread: {ex.Message}");
+            Console.WriteLine($"Failed to deserialize session: {ex.Message}");
             Console.WriteLine($"Stack trace: {ex.StackTrace}");
             return IntPtr.Zero;
         }

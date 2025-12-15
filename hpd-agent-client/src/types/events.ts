@@ -80,9 +80,6 @@ export const EventTypes = {
   BRANCH_SWITCHED: 'BRANCH_SWITCHED',
   BRANCH_DELETED: 'BRANCH_DELETED',
   BRANCH_RENAMED: 'BRANCH_RENAMED',
-
-  // Thread Copy Event (cross-thread copy)
-  THREAD_COPIED: 'THREAD_COPIED',
 } as const;
 
 export type EventType = (typeof EventTypes)[keyof typeof EventTypes];
@@ -395,31 +392,6 @@ export interface BranchRenamedEvent extends BaseEvent {
 }
 
 // ============================================
-// Thread Copy Events
-// ============================================
-
-/**
- * Event raised when a thread is copied from another thread's checkpoint.
- * Unlike fork (which creates a branch within the same thread), copy creates
- * a new independent thread with lineage tracking back to the source.
- */
-export interface ThreadCopiedEvent extends BaseEvent {
-  type: typeof EventTypes.THREAD_COPIED;
-  /** Source thread that was copied from */
-  sourceThreadId: string;
-  /** Newly created thread ID */
-  newThreadId: string;
-  /** Checkpoint in source thread that was copied */
-  sourceCheckpointId: string;
-  /** Root checkpoint ID in the new thread */
-  newCheckpointId: string;
-  /** Message index at the copy point */
-  messageIndex: number;
-  /** When the copy occurred */
-  copiedAt: string;
-}
-
-// ============================================
 // Union Type (Core Events)
 // ============================================
 
@@ -469,9 +441,7 @@ export type AgentEvent =
   | BranchCreatedEvent
   | BranchSwitchedEvent
   | BranchDeletedEvent
-  | BranchRenamedEvent
-  // Thread Copy Event
-  | ThreadCopiedEvent;
+  | BranchRenamedEvent;
 
 // ============================================
 // Type Guards
@@ -535,8 +505,4 @@ export function isBranchDeletedEvent(event: BaseEvent): event is BranchDeletedEv
 
 export function isBranchRenamedEvent(event: BaseEvent): event is BranchRenamedEvent {
   return event.type === EventTypes.BRANCH_RENAMED;
-}
-
-export function isThreadCopiedEvent(event: BaseEvent): event is ThreadCopiedEvent {
-  return event.type === EventTypes.THREAD_COPIED;
 }

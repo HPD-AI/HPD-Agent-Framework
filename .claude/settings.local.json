@@ -27,7 +27,8 @@
       "Bash(dotnet pack:*)",
       "Bash(dotnet run:*)",
       "Bash(git log:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(xargs:*)"
     ],
     "deny": [],
     "ask": []

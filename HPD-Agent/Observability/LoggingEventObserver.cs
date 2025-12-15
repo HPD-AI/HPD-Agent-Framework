@@ -158,29 +158,29 @@ public class LoggingEventObserver : IAgentEventObserver
                         if (e.Success == true)
                         {
                             _logger.LogInformation(
-                                "Checkpoint saved for thread '{ThreadId}' at iteration {Iteration} in {Duration}ms",
-                                e.ThreadId, e.Iteration, e.Duration?.TotalMilliseconds ?? 0);
+                                "Checkpoint saved for thread '{SessionId}' at iteration {Iteration} in {Duration}ms",
+                                e.SessionId, e.Iteration, e.Duration?.TotalMilliseconds ?? 0);
                         }
                         else
                         {
                             _logger.LogWarning(
-                                "Checkpoint save failed for thread '{ThreadId}' at iteration {Iteration}: {Error}",
-                                e.ThreadId, e.Iteration, e.ErrorMessage);
+                                "Checkpoint save failed for thread '{SessionId}' at iteration {Iteration}: {Error}",
+                                e.SessionId, e.Iteration, e.ErrorMessage);
                         }
                         break;
 
                     case CheckpointOperation.Restored:
                         _logger.LogInformation(
-                            "Checkpoint restored for thread '{ThreadId}' from iteration {Iteration} ({MessageCount} messages) in {Duration}ms",
-                            e.ThreadId, e.Iteration, e.MessageCount, e.Duration?.TotalMilliseconds ?? 0);
+                            "Checkpoint restored for thread '{SessionId}' from iteration {Iteration} ({MessageCount} messages) in {Duration}ms",
+                            e.SessionId, e.Iteration, e.MessageCount, e.Duration?.TotalMilliseconds ?? 0);
                         break;
 
                     case CheckpointOperation.PendingWritesSaved:
                         if (_logger.IsEnabled(LogLevel.Debug))
                         {
                             _logger.LogDebug(
-                                "Pending writes saved for thread '{ThreadId}': {Count} writes",
-                                e.ThreadId, e.WriteCount);
+                                "Pending writes saved for thread '{SessionId}': {Count} writes",
+                                e.SessionId, e.WriteCount);
                         }
                         break;
 
@@ -188,8 +188,8 @@ public class LoggingEventObserver : IAgentEventObserver
                         if (_logger.IsEnabled(LogLevel.Debug))
                         {
                             _logger.LogDebug(
-                                "Pending writes loaded for thread '{ThreadId}': {Count} writes",
-                                e.ThreadId, e.WriteCount);
+                                "Pending writes loaded for thread '{SessionId}': {Count} writes",
+                                e.SessionId, e.WriteCount);
                         }
                         break;
 
@@ -197,8 +197,8 @@ public class LoggingEventObserver : IAgentEventObserver
                         if (_logger.IsEnabled(LogLevel.Debug))
                         {
                             _logger.LogDebug(
-                                "Pending writes deleted for thread '{ThreadId}'",
-                                e.ThreadId);
+                                "Pending writes deleted for thread '{SessionId}'",
+                                e.SessionId);
                         }
                         break;
                 }

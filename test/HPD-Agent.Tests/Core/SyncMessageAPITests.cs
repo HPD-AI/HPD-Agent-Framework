@@ -4,7 +4,7 @@ using Xunit;
 namespace HPD.Agent.Tests.Core;
 
 /// <summary>
-/// Unit tests for synchronous message API on ConversationThread.
+/// Unit tests for synchronous message API on AgentSession.
 /// Tests the new public sync methods: Messages, MessageCount, AddMessage(), AddMessages().
 /// </summary>
 public class SyncMessageAPITests
@@ -13,7 +13,7 @@ public class SyncMessageAPITests
     public void Messages_Property_Returns_InMemory_Messages_Directly()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var msg = new ChatMessage(ChatRole.User, "Test");
         thread.AddMessage(msg);
 
@@ -29,7 +29,7 @@ public class SyncMessageAPITests
     public void Messages_Property_Returns_LiveView()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         thread.AddMessage(new ChatMessage(ChatRole.User, "Message 1"));
 
         // Act - capture reference
@@ -48,7 +48,7 @@ public class SyncMessageAPITests
     public void MessageCount_Returns_Correct_Count()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act & Assert
         Assert.Equal(0, thread.MessageCount);
@@ -64,7 +64,7 @@ public class SyncMessageAPITests
     public void AddMessage_Adds_To_InMemory_Store()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var msg = new ChatMessage(ChatRole.User, "Test");
 
         // Act
@@ -79,7 +79,7 @@ public class SyncMessageAPITests
     public void AddMessages_Adds_Multiple_To_Store()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var messages = new[]
         {
             new ChatMessage(ChatRole.User, "Test 1"),
@@ -100,7 +100,7 @@ public class SyncMessageAPITests
     public async Task Sync_And_Async_APIs_Return_Same_Results()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var msg1 = new ChatMessage(ChatRole.User, "Test 1");
         var msg2 = new ChatMessage(ChatRole.User, "Test 2");
 
@@ -124,7 +124,7 @@ public class SyncMessageAPITests
     public void AddMessage_Updates_LastActivity()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var initialActivity = thread.LastActivity;
 
         // Small delay to ensure timestamp difference
@@ -141,7 +141,7 @@ public class SyncMessageAPITests
     public void AddMessages_Updates_LastActivity()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         var initialActivity = thread.LastActivity;
 
         // Small delay to ensure timestamp difference
@@ -162,7 +162,7 @@ public class SyncMessageAPITests
     public void Messages_Property_Is_ReadOnly()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
         thread.AddMessage(new ChatMessage(ChatRole.User, "Test"));
 
         // Act
@@ -176,7 +176,7 @@ public class SyncMessageAPITests
     public void AddMessages_With_Empty_Collection_Does_Not_Throw()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act & Assert - should not throw
         thread.AddMessages(Array.Empty<ChatMessage>());
@@ -188,7 +188,7 @@ public class SyncMessageAPITests
     public void Multiple_Calls_To_Messages_Property_Return_Same_LiveView()
     {
         // Arrange
-        var thread = new ConversationThread();
+        var thread = new AgentSession();
 
         // Act
         var view1 = thread.Messages;

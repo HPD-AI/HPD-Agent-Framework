@@ -1,6 +1,6 @@
 using Xunit;
 using HPD.Agent;
-using HPD.Agent.Checkpointing;
+
 using AgentAPI.Services;
 
 namespace AgentAPI.Tests;

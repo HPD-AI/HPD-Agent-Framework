@@ -144,22 +144,22 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        };");
         sb.AppendLine();
 
-        // Handle thread mode
-        sb.AppendLine("        // Handle thread based on mode");
-        sb.AppendLine("        ConversationThread thread;");
+        // Handle session mode
+        sb.AppendLine("        // Handle session based on mode");
+        sb.AppendLine("        AgentSession session;");
         sb.AppendLine("        switch (subAgentDef.ThreadMode)");
         sb.AppendLine("        {");
         sb.AppendLine("            case SubAgentThreadMode.SharedThread:");
-        sb.AppendLine("                thread = subAgentDef.SharedThread ?? new ConversationThread();");
+        sb.AppendLine("                session = subAgentDef.SharedSession ?? new AgentSession();");
         sb.AppendLine("                break;");
         sb.AppendLine("            case SubAgentThreadMode.PerSession:");
-        sb.AppendLine("                // For PerSession, use SharedThread if provided, else create new");
-        sb.AppendLine("                thread = subAgentDef.SharedThread ?? new ConversationThread();");
+        sb.AppendLine("                // For PerSession, use SharedSession if provided, else create new");
+        sb.AppendLine("                session = subAgentDef.SharedSession ?? new AgentSession();");
         sb.AppendLine("                break;");
         sb.AppendLine("            case SubAgentThreadMode.Stateless:");
         sb.AppendLine("            default:");
-        sb.AppendLine("                // Create new thread for each invocation");
-        sb.AppendLine("                thread = new ConversationThread();");
+        sb.AppendLine("                // Create new session for each invocation");
+        sb.AppendLine("                session = new AgentSession();");
         sb.AppendLine("                break;");
         sb.AppendLine("        }");
         sb.AppendLine();
@@ -177,7 +177,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
         sb.AppendLine("            new[] { message },");
         sb.AppendLine("            options: null,");
-        sb.AppendLine("            thread: thread,");
+        sb.AppendLine("            session: session,");
         sb.AppendLine("            cancellationToken: cancellationToken))");
         sb.AppendLine("        {");
         sb.AppendLine("            // We don't need to process events here, just let it run");
@@ -185,8 +185,8 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine();
 
         // Return response
-        sb.AppendLine("        // Return last assistant message from thread");
-        sb.AppendLine("        var messages = await thread.GetMessagesAsync(cancellationToken);");
+        sb.AppendLine("        // Return last assistant message from session");
+        sb.AppendLine("        var messages = await session.GetMessagesAsync(cancellationToken);");
         sb.AppendLine("        return messages");
         sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");
         sb.AppendLine("            ?.Text ?? string.Empty;");

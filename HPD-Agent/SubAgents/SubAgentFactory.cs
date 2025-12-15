@@ -42,15 +42,15 @@ public static class SubAgentFactory
     }
 
     /// <summary>
-    /// Creates a sub-agent with a shared thread for stateful multi-turn conversations.
-    /// A new shared thread will be created automatically for maintaining context.
-    /// WARNING: Shared threads are not thread-safe - avoid concurrent usage!
+    /// Creates a sub-agent with a shared session for stateful multi-turn conversations.
+    /// A new shared session will be created automatically for maintaining context.
+    /// WARNING: Shared sessions are not thread-safe - avoid concurrent usage!
     /// </summary>
     /// <param name="name">Sub-agent name (REQUIRED - becomes AIFunction name shown to parent agent)</param>
     /// <param name="description">Description shown in tool list (REQUIRED - becomes AIFunction description)</param>
     /// <param name="agentConfig">Agent configuration defining the sub-agent's behavior</param>
     /// <param name="pluginTypes">Optional plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin))</param>
-    /// <returns>SubAgent object configured with shared thread</returns>
+    /// <returns>SubAgent object configured with shared session</returns>
     public static SubAgent CreateStateful(
         string name,
         string description,
@@ -59,7 +59,7 @@ public static class SubAgentFactory
     {
         var subAgent = Create(name, description, agentConfig, pluginTypes);
         subAgent.ThreadMode = SubAgentThreadMode.SharedThread;
-        subAgent.SharedThread = new ConversationThread();
+        subAgent.SharedSession = new AgentSession();
         return subAgent;
     }
 

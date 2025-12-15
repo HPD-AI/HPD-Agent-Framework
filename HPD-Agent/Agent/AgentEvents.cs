@@ -609,7 +609,7 @@ public enum CheckpointOperation
 /// </summary>
 public record CheckpointEvent(
     CheckpointOperation Operation,
-    string ThreadId,
+    string SessionId,
     DateTimeOffset Timestamp,
     TimeSpan? Duration = null,
     int? Iteration = null,

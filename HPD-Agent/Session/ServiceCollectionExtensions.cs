@@ -1,6 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace HPD.Agent.Checkpointing.Services;
+namespace HPD.Agent.Session;
 
 /// <summary>
 /// Extension methods for registering checkpointing services with DI container.
@@ -9,7 +9,7 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds checkpointing services to the DI container.
-    /// Both services share the same ICheckpointStore instance.
+    /// Both services share the same ISessionStore instance.
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <param name="configure">Configuration callback</param>
@@ -18,7 +18,7 @@ public static class ServiceCollectionExtensions
     /// <code>
     /// services.AddCheckpointing(opts =>
     /// {
-    ///     opts.Store = new JsonCheckpointStore("/path/to/checkpoints");
+    ///     opts.Store = new JsonSessionStore("/path/to/checkpoints");
     ///
     ///     opts.DurableExecution.Enabled = true;
     ///     opts.DurableExecution.Frequency = CheckpointFrequency.PerTurn;
@@ -37,7 +37,7 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException("CheckpointingOptions.Store must be set");
 
         // Register the store (singleton - shared by both services)
-        services.AddSingleton<ICheckpointStore>(options.Store);
+        services.AddSingleton<ISessionStore>(options.Store);
 
         // Register DurableExecutionService if enabled
         if (options.DurableExecution.Enabled)
@@ -51,7 +51,7 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Adds checkpointing services with file-based storage.
-    /// Convenience overload that creates a JsonConversationThreadStore.
+    /// Convenience overload that creates a JsonSessionStore.
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <param name="storagePath">Directory to store checkpoint files</param>
@@ -67,7 +67,7 @@ public static class ServiceCollectionExtensions
         return services.AddCheckpointing(opts =>
         {
             // Set default options
-            opts.Store = new JsonConversationThreadStore(storagePath);
+            opts.Store = new JsonSessionStore(storagePath);
             opts.DurableExecution.Enabled = true;
 
             // Allow caller to override
@@ -89,7 +89,7 @@ public static class ServiceCollectionExtensions
         return services.AddCheckpointing(opts =>
         {
             // Set default options
-            opts.Store = new InMemoryConversationThreadStore();
+            opts.Store = new InMemorySessionStore();
             opts.DurableExecution.Enabled = true;
 
             // Allow caller to override
@@ -104,10 +104,10 @@ public static class ServiceCollectionExtensions
 public class CheckpointingOptions
 {
     /// <summary>
-    /// The checkpoint store (required).
+    /// The session store (required).
     /// This is the storage backend shared by both services.
     /// </summary>
-    public ICheckpointStore? Store { get; set; }
+    public ISessionStore? Store { get; set; }
 
     /// <summary>
     /// Configuration for DurableExecutionService.

@@ -12,8 +12,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
-using HPD.Agent.Checkpointing;
-using HPD.Agent.Checkpointing.Services;
+using HPD.Agent.Session;
 
 namespace HPD.Agent;
 
@@ -33,9 +32,9 @@ public sealed class Agent
     private static readonly AsyncLocal<AgentMiddlewareContext?> _currentFunctionContext = new();
     // AsyncLocal storage for root agent tracking in nested agent calls
     private static readonly AsyncLocal<Agent?> _rootAgent = new();
-    // AsyncLocal storage for current conversation thread (flows across async calls)
-    // Provides access to thread context (project, documents, etc.) throughout the agent execution
-    private static readonly AsyncLocal<ConversationThread?> _currentThread = new();
+    // AsyncLocal storage for current conversation session (flows across async calls)
+    // Provides access to session context (project, documents, etc.) throughout the agent execution
+    private static readonly AsyncLocal<AgentSession?> _currentThread = new();
 
     // Specialized component fields for delegation
     private readonly MessageProcessor _messageProcessor;
@@ -87,10 +86,10 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Gets or sets the current conversation thread in the execution context.
-    /// This flows across async calls and provides access to thread context throughout agent execution.
+    /// Gets or sets the current conversation session in the execution context.
+    /// This flows across async calls and provides access to session context throughout agent execution.
     /// </summary>
-    public static ConversationThread? CurrentThread
+    public static AgentSession? CurrentThread
     {
         get => _currentThread.Value;
         internal set => _currentThread.Value = value;
@@ -262,10 +261,10 @@ public sealed class Agent
 
         // Initialize DurableExecutionService if configured
         // This provides retention policy enforcement and cleaner checkpointing API
-        if (config.DurableExecutionConfig != null && config.ThreadStore != null)
+        if (config.DurableExecutionConfig != null && config.SessionStore != null)
         {
             _durableExecutionService = new DurableExecution(
-                config.ThreadStore,
+                config.SessionStore,
                 config.DurableExecutionConfig);
         }
     }
@@ -478,7 +477,7 @@ public sealed class Agent
         PreparedTurn turn,
         List<ChatMessage> turnHistory,
         TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
-        ConversationThread? thread = null,
+        AgentSession? session = null,
         Dictionary<string, object>? initialContextProperties = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
@@ -527,25 +526,25 @@ public sealed class Agent
         // Generate IDs for this message turn
         var messageTurnId = Guid.NewGuid().ToString();
 
-        // Extract conversation ID from turn.Options, thread, or generate new one
+        // Extract conversation ID from turn.Options, session, or generate new one
         string conversationId;
         if (turn.Options?.AdditionalProperties?.TryGetValue("ConversationId", out var convIdObj) == true && convIdObj is string convId)
         {
             conversationId = convId;
         }
-        else if (!string.IsNullOrWhiteSpace(thread?.ConversationId))
+        else if (!string.IsNullOrWhiteSpace(session?.ConversationId))
         {
-            conversationId = thread.ConversationId;
+            conversationId = session.ConversationId;
         }
         else
         {
             conversationId = Guid.NewGuid().ToString();
         }
 
-        // Store on thread for future runs (stateless agent pattern)
-        if (thread != null)
+        // Store on session for future runs (stateless agent pattern)
+        if (session != null)
         {
-            thread.ConversationId = conversationId;
+            session.ConversationId = conversationId;
         }
 
         try
@@ -564,7 +563,7 @@ public sealed class Agent
             IEnumerable<ChatMessage> effectiveMessages;
             ChatOptions? effectiveOptions;
 
-            if (thread?.ExecutionState is { } executionState)
+            if (session?.ExecutionState is { } executionState)
             {
                 var checkpointRestoreStart = DateTimeOffset.UtcNow;
                 var restoreStopwatch = Stopwatch.StartNew();
@@ -589,7 +588,7 @@ public sealed class Agent
                 // Emit checkpoint restored event
                 yield return new CheckpointEvent(
                     Operation: CheckpointOperation.Restored,
-                    ThreadId: thread.Id,
+                    SessionId: session.Id,
                     Timestamp: DateTimeOffset.UtcNow,
                     Duration: restoreStopwatch.Elapsed,
                     Iteration: state.Iteration,
@@ -606,7 +605,7 @@ public sealed class Agent
                     try
                     {
                         var pendingWrites = await _durableExecutionService.LoadPendingWritesAsync(
-                            thread.Id,
+                            session.Id,
                             state.ETag,
                             effectiveCancellationToken).ConfigureAwait(false);
 
@@ -627,7 +626,7 @@ public sealed class Agent
                     {
                         yield return new CheckpointEvent(
                             Operation: CheckpointOperation.PendingWritesLoaded,
-                            ThreadId: thread.Id,
+                            SessionId: session.Id,
                             Timestamp: DateTimeOffset.UtcNow,
                             WriteCount: pendingWritesCount);
                     }
@@ -642,8 +641,8 @@ public sealed class Agent
                 // FRESH RUN PATH: Use PreparedTurn directly (all preparation already done)
                 //
 
-                // Load persistent middleware state from thread (cross-run caching)
-                var persistentState = MiddlewareState.LoadFromThread(thread);
+                // Load persistent middleware state from session (cross-run caching)
+                var persistentState = MiddlewareState.LoadFromThread(session);
 
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
@@ -663,7 +662,7 @@ public sealed class Agent
             var decisionEngine = new AgentDecisionEngine();
             
             // INITIALIZE TURN HISTORY: Add only NEW input messages (Option 2 pattern)
-            // All NEW messages from this turn will be saved to thread at the end
+            // All NEW messages from this turn will be saved to session at the end
             // PreparedTurn separates MessagesForLLM (full history) from NewInputMessages (to persist)
             
             foreach (var msg in newInputMessages)
@@ -833,7 +832,7 @@ public sealed class Agent
                     var middlewareContext = new Middleware.AgentMiddlewareContext
                     {
                         AgentName = _name,
-                        ConversationId = thread?.ConversationId,
+                        ConversationId = session?.ConversationId,
                         CancellationToken = effectiveCancellationToken,
                         Iteration = state.Iteration,
                         Messages = messagesToSend.ToList(),
@@ -1063,12 +1062,12 @@ public sealed class Agent
                         }
                     }
 
-                        // Capture ConversationId from the agent turn response and update thread
+                        // Capture ConversationId from the agent turn response and update session
                         if (_agentTurn.LastResponseConversationId != null)
                         {
-                            if (thread != null)
+                            if (session != null)
                             {
-                                thread.ConversationId = _agentTurn.LastResponseConversationId;
+                                session.ConversationId = _agentTurn.LastResponseConversationId;
                             }
                         }
                         else if (state.InnerClientTracksHistory)
@@ -1234,11 +1233,11 @@ public sealed class Agent
                         // PENDING WRITES (save successful function results immediately via DurableExecutionService)
                         //
                         if (_durableExecutionService != null &&
-                            thread != null &&
+                            session != null &&
                             state.ETag != null)
                         {
                             _durableExecutionService.SavePendingWriteFireAndForget(
-                                thread.Id,
+                                session.Id,
                                 state.ETag,
                                 toolResultMessage,
                                 state.Iteration);
@@ -1290,7 +1289,7 @@ public sealed class Agent
                         lastResponse = finalResponse;
 
                         // Add final assistant message to turnHistory before clearing responseUpdates
-                        // This ensures the assistant's response is persisted to the thread
+                        // This ensures the assistant's response is persisted to the session
                         if (finalResponse.Messages.Count > 0)
                         {
                             var finalAssistantMessage = finalResponse.Messages[0];
@@ -1301,7 +1300,7 @@ public sealed class Agent
                                 currentMessages.Add(finalAssistantMessage);
                                 state = state.WithMessages(currentMessages);
 
-                                // Add to turnHistory for thread persistence
+                                // Add to turnHistory for session persistence
                                 turnHistory.Add(finalAssistantMessage);
                             }
                         }
@@ -1352,7 +1351,7 @@ public sealed class Agent
                 // CHECKPOINT AFTER EACH ITERATION (via DurableExecutionService)
                 //
 
-                if (thread != null && _durableExecutionService != null &&
+                if (session != null && _durableExecutionService != null &&
                     _durableExecutionService.ShouldCheckpoint(state.Iteration, turnComplete: false))
                 {
                     // Fire-and-forget async checkpoint via DurableExecutionService
@@ -1364,12 +1363,12 @@ public sealed class Agent
                         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                         try
                         {
-                            await service.SaveCheckpointAsync(thread, checkpointState, CancellationToken.None);
+                            await service.SaveCheckpointAsync(session, checkpointState, CancellationToken.None);
                             stopwatch.Stop();
 
                             NotifyObservers(new CheckpointEvent(
                                 Operation: CheckpointOperation.Saved,
-                                ThreadId: thread.Id,
+                                SessionId: session.Id,
                                 Timestamp: DateTimeOffset.UtcNow,
                                 Duration: stopwatch.Elapsed,
                                 Iteration: checkpointState.Iteration,
@@ -1381,7 +1380,7 @@ public sealed class Agent
 
                             NotifyObservers(new CheckpointEvent(
                                 Operation: CheckpointOperation.Saved,
-                                ThreadId: thread.Id,
+                                SessionId: session.Id,
                                 Timestamp: DateTimeOffset.UtcNow,
                                 Duration: stopwatch.Elapsed,
                                 Iteration: checkpointState.Iteration,
@@ -1406,7 +1405,7 @@ public sealed class Agent
                         currentMessages.Add(finalAssistantMessage);
                         state = state.WithMessages(currentMessages);
 
-                        // Also add to turnHistory for thread persistence
+                        // Also add to turnHistory for session persistence
                         turnHistory.Add(finalAssistantMessage);
                     }
                 }
@@ -1440,7 +1439,7 @@ public sealed class Agent
                 DateTimeOffset.UtcNow);
     
             // FINAL CHECKPOINT (PerTurn - via DurableExecutionService)
-            if (thread != null && _durableExecutionService != null)
+            if (session != null && _durableExecutionService != null)
             {
                 var finalState = state;
                 var service = _durableExecutionService;
@@ -1453,7 +1452,7 @@ public sealed class Agent
 
                     try
                     {
-                        await service.SaveCheckpointAsync(thread, finalState, CancellationToken.None);
+                        await service.SaveCheckpointAsync(session, finalState, CancellationToken.None);
                         success = true;
                     }
                     catch (Exception ex)
@@ -1466,7 +1465,7 @@ public sealed class Agent
 
                         NotifyObservers(new CheckpointEvent(
                             Operation: CheckpointOperation.Saved,
-                            ThreadId: thread.Id,
+                            SessionId: session.Id,
                             Timestamp: DateTimeOffset.UtcNow,
                             Duration: stopwatch.Elapsed,
                             Iteration: finalState.Iteration,
@@ -1492,15 +1491,15 @@ public sealed class Agent
             while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
 
-            // PERSISTENCE: Save complete turn history to thread
-            if (thread != null && turnHistory.Count > 0)
+            // PERSISTENCE: Save complete turn history to session
+            if (session != null && turnHistory.Count > 0)
             {
                 try
                 {
                     // Save ALL messages from this turn (user + assistant + tool)
                     // Input messages were added to turnHistory at the start of execution
                     // Middleware may have filtered this list (e.g., removed ephemeral container results)
-                    await thread.AddMessagesAsync(turnHistory, effectiveCancellationToken).ConfigureAwait(false);
+                    await session.AddMessagesAsync(turnHistory, effectiveCancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception)
                 {
@@ -1508,17 +1507,22 @@ public sealed class Agent
                 }
             }
 
-            // PERSISTENCE: Save persistent middleware state to thread (cross-run caching)
-            if (thread != null)
+            // PERSISTENCE: Save persistent middleware state to session (cross-run caching)
+            if (session != null)
             {
                 try
                 {
-                    state.MiddlewareState.SaveToThread(thread);
+                    state.MiddlewareState.SaveToThread(session);
                 }
                 catch (Exception)
                 {
                     // Ignore errors - middleware state persistence is not critical to execution
                 }
+
+                // Clear ExecutionState on successful completion
+                // ExecutionState is only for crash recovery - once we complete successfully,
+                // it should be null so subsequent runs start fresh (not as a "resume")
+                session.ExecutionState = null;
             }
 
             historyCompletionSource.TrySetResult(turnHistory);
@@ -1748,7 +1752,7 @@ public sealed class Agent
 
     /// <summary>
     /// Runs the agentic loop and streams  agent events.
-    /// The agent is stateless; all conversation state is managed externally or in thread parameters.
+    /// The agent is stateless; all conversation state is managed externally or in session parameters.
     /// </summary>
     /// <param name="messages">The conversation messages</param>
     /// <param name="options">Chat options including tools</param>
@@ -1759,10 +1763,10 @@ public sealed class Agent
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Prepare turn (stateless - no thread)
+        // Prepare turn (stateless - no session)
         var inputMessages = messages.ToList();
         var turn = await _messageProcessor.PrepareTurnAsync(
-            thread: null,
+            session: null,
             inputMessages,
             options,
             Name,
@@ -1775,7 +1779,7 @@ public sealed class Agent
             turn,
             turnHistory,
             historyCompletionSource,
-            thread: null,
+            session: null,
             initialContextProperties: null,
             cancellationToken: cancellationToken))
         {
@@ -1795,12 +1799,12 @@ public sealed class Agent
 
 
     /// <summary>
-    /// Creates a new conversation thread.
+    /// Creates a new conversation session.
     /// </summary>
-    /// <returns>A new ConversationThread instance</returns>
-    public ConversationThread CreateThread()
+    /// <returns>A new AgentSession instance</returns>
+    public AgentSession CreateThread()
     {
-        return new ConversationThread();
+        return new AgentSession();
     }
 
 
@@ -1817,10 +1821,10 @@ public sealed class Agent
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Prepare turn (stateless - no thread)
+        // Prepare turn (stateless - no session)
         var inputMessages = messages.ToList();
         var turn = await _messageProcessor.PrepareTurnAsync(
-            thread: null,
+            session: null,
             inputMessages,
             options,
             Name,
@@ -1833,7 +1837,7 @@ public sealed class Agent
             turn,
             turnHistory,
             historyCompletionSource,
-            thread: null,
+            session: null,
             initialContextProperties: null,
             cancellationToken: cancellationToken);
 
@@ -1855,50 +1859,50 @@ public sealed class Agent
     /// Convenience overload that wraps the message as a user ChatMessage.
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
-    /// <param name="thread">Thread containing conversation history</param>
+    /// <param name="session">Session containing conversation history</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
-        ConversationThread thread,
+        AgentSession session,
         CancellationToken cancellationToken = default)
     {
         return RunAsync(
             [new ChatMessage(ChatRole.User, userMessage)],
             options: null,
-            thread: thread,
+            session: session,
             cancellationToken: cancellationToken);
     }
 
     /// <summary>
-    /// Runs the agent with checkpoint/resume support via ConversationThread.
+    /// Runs the agent with checkpoint/resume support via AgentSession.
     /// Use this overload for durable execution with crash recovery.
     /// </summary>
     /// <param name="messages">Messages to process (empty array when resuming)</param>
     /// <param name="options">Chat options</param>
-    /// <param name="thread">Thread containing conversation history and optional execution state checkpoint</param>
+    /// <param name="session">Session containing conversation history and optional execution state checkpoint</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public async IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
-        ConversationThread thread,
+        AgentSession session,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // Validate resume semantics (4 scenarios)
         var hasMessages = messages?.Any() ?? false;
-        var hasCheckpoint = thread.ExecutionState != null;
-        var currentMessageCount = (await thread.GetMessagesAsync(cancellationToken)).Count;
+        var hasCheckpoint = session.ExecutionState != null;
+        var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
         var hasHistory = currentMessageCount > 0;
 
         // Scenario 1: No checkpoint, no messages, no history → Error
         if (!hasCheckpoint && !hasMessages && !hasHistory)
         {
             throw new InvalidOperationException(
-                "Cannot run agent with empty thread and no messages. " +
+                "Cannot run agent with empty session and no messages. " +
                 "Provide either:\n" +
                 "  1. New messages to process, OR\n" +
-                "  2. A thread with existing history, OR\n" +
+                "  2. A session with existing history, OR\n" +
                 "  3. A checkpoint to resume from");
         }
 
@@ -1907,22 +1911,22 @@ public sealed class Agent
         {
             throw new InvalidOperationException(
                 $"Cannot add new messages when resuming mid-execution. " +
-                $"Thread '{thread.Id}' is at iteration {thread.ExecutionState?.Iteration ?? 0}.\n\n" +
-                "To resume execution:\n  await agent.RunAsync(Array.Empty<ChatMessage>(), thread);");
+                $"Session '{session.Id}' is at iteration {session.ExecutionState?.Iteration ?? 0}.\n\n" +
+                "To resume execution:\n  await agent.RunAsync(Array.Empty<ChatMessage>(), session);");
         }
 
         // Scenario 3: Has checkpoint, no messages → Resume (validate consistency)
         if (hasCheckpoint && !hasMessages)
         {
-            thread.ExecutionState?.ValidateConsistency(currentMessageCount);
+            session.ExecutionState?.ValidateConsistency(currentMessageCount);
         }
 
-        //     
+        //
         // PREPARE TURN: Load history, apply reduction, merge options (Option 2 pattern)
-        //     
+        //
         var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
         var turn = await _messageProcessor.PrepareTurnAsync(
-            thread,
+            session,
             inputMessages,
             options,
             Name,
@@ -1934,14 +1938,14 @@ public sealed class Agent
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        //     
+        //
         // EXECUTE AGENTIC LOOP with PreparedTurn
         //
         var internalStream = RunAgenticLoopInternal(
             turn,
             turnHistory,
             historyCompletionSource,
-            thread: thread,  // ← CRITICAL: Pass thread for persistence and checkpointing
+            session: session,  // ← CRITICAL: Pass session for persistence and checkpointing
             initialContextProperties: null,
             cancellationToken: cancellationToken);
 
@@ -1963,20 +1967,20 @@ public sealed class Agent
     /// This overload allows frontend applications to register plugins and tools dynamically.
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
-    /// <param name="thread">Thread containing conversation history</param>
+    /// <param name="session">Session containing conversation history</param>
     /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
-        ConversationThread thread,
+        AgentSession session,
         FrontendTools.AgentRunInput? runInput,
         CancellationToken cancellationToken = default)
     {
         return RunAsync(
             [new ChatMessage(ChatRole.User, userMessage)],
             options: null,
-            thread: thread,
+            session: session,
             runInput: runInput,
             cancellationToken: cancellationToken);
     }
@@ -1987,27 +1991,27 @@ public sealed class Agent
     /// </summary>
     /// <param name="messages">Messages to process</param>
     /// <param name="options">Chat options</param>
-    /// <param name="thread">Thread containing conversation history</param>
+    /// <param name="session">Session containing conversation history</param>
     /// <param name="runInput">Frontend tool configuration including plugins, context, and state</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     public async IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
-        ConversationThread thread,
+        AgentSession session,
         FrontendTools.AgentRunInput? runInput,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // Validate resume semantics (same as base overload)
         var hasMessages = messages?.Any() ?? false;
-        var hasCheckpoint = thread.ExecutionState != null;
-        var currentMessageCount = (await thread.GetMessagesAsync(cancellationToken)).Count;
+        var hasCheckpoint = session.ExecutionState != null;
+        var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
         var hasHistory = currentMessageCount > 0;
 
         if (!hasCheckpoint && !hasMessages && !hasHistory)
         {
             throw new InvalidOperationException(
-                "Cannot run agent with empty thread and no messages.");
+                "Cannot run agent with empty session and no messages.");
         }
 
         if (hasCheckpoint && hasMessages)
@@ -2018,13 +2022,13 @@ public sealed class Agent
 
         if (hasCheckpoint && !hasMessages)
         {
-            thread.ExecutionState?.ValidateConsistency(currentMessageCount);
+            session.ExecutionState?.ValidateConsistency(currentMessageCount);
         }
 
         // Prepare turn
         var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
         var turn = await _messageProcessor.PrepareTurnAsync(
-            thread,
+            session,
             inputMessages,
             options,
             Name,
@@ -2048,7 +2052,7 @@ public sealed class Agent
             turn,
             turnHistory,
             historyCompletionSource,
-            thread: thread,
+            session: session,
             initialContextProperties: initialProperties,
             cancellationToken: cancellationToken);
 
@@ -2058,6 +2062,242 @@ public sealed class Agent
             yield return evt;
             NotifyObservers(evt);
         }
+    }
+
+    //──────────────────────────────────────────────────────────────────
+    // SESSION-BASED API (New simplified API)
+    //──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs the agent with automatic session management.
+    /// Loads the session from store, runs the agent, and saves if autoSave is enabled.
+    /// </summary>
+    /// <param name="userMessage">The user's message text</param>
+    /// <param name="sessionId">Session identifier to load/create</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of internal agent events</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the recommended API for most use cases. It handles:
+    /// <list type="bullet">
+    /// <item>Loading or creating the session</item>
+    /// <item>Running the agent with the session</item>
+    /// <item>Saving the session (if autoSave is enabled)</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithSessionStore(store, autoSave: true)
+    ///     .Build();
+    ///
+    /// // Seamless session management
+    /// await agent.RunAsync("Hello", "session-123");
+    /// await agent.RunAsync("Follow up", "session-123");  // Continues conversation
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public async IAsyncEnumerable<AgentEvent> RunAsync(
+        string userMessage,
+        string sessionId,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var session = await LoadSessionAsync(sessionId, cancellationToken);
+
+        await foreach (var evt in RunAsync(userMessage, session, cancellationToken))
+        {
+            yield return evt;
+        }
+
+        // Auto-save if configured
+        if (Config.SessionStoreOptions?.AutoSave == true)
+        {
+            await SaveSessionAsync(session, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Loads a session by ID from the configured store.
+    /// Returns a new empty session if no saved session exists.
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The loaded session, or a new empty session if not found</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
+    /// <remarks>
+    /// <para>
+    /// This method loads <see cref="SessionSnapshot"/> data (messages, metadata).
+    /// It does NOT automatically check for execution checkpoints.
+    /// </para>
+    /// <para>
+    /// <strong>For crash recovery:</strong> Use <see cref="GetCheckpointManifestAsync"/> to list
+    /// available checkpoints, then <see cref="LoadSessionAtCheckpointAsync"/> to load a specific one.
+    /// Automatic checkpoint loading is intentionally not supported because checkpoints are tied
+    /// to specific message states and may be stale if turns ran without DurableExecution enabled.
+    /// </para>
+    /// </remarks>
+    public async Task<AgentSession> LoadSessionAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        var session = await store.LoadSessionAsync(sessionId, cancellationToken);
+        return session ?? new AgentSession(sessionId);
+    }
+
+    /// <summary>
+    /// Gets the checkpoint manifest for a session.
+    /// Returns list of checkpoint metadata ordered by creation time (newest first).
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="limit">Maximum number of entries to return (optional)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of checkpoint manifest entries</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or store doesn't support history</exception>
+    public async Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(
+        string sessionId,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        if (!store.SupportsHistory)
+        {
+            throw new InvalidOperationException(
+                "Session store does not support checkpoint history. " +
+                "Use a store with SupportsHistory=true (e.g., JsonSessionStore with history enabled).");
+        }
+
+        return await store.GetCheckpointManifestAsync(sessionId, limit, cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads a session from a specific execution checkpoint.
+    /// Use this for time-travel debugging or resuming from a specific point.
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="executionCheckpointId">The specific checkpoint ID to load</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Session restored from the checkpoint, or null if checkpoint doesn't exist</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or store doesn't support history</exception>
+    public async Task<AgentSession?> LoadSessionAtCheckpointAsync(
+        string sessionId,
+        string executionCheckpointId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(executionCheckpointId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        if (!store.SupportsHistory)
+        {
+            throw new InvalidOperationException(
+                "Session store does not support checkpoint history. " +
+                "Use a store with SupportsHistory=true (e.g., JsonSessionStore with history enabled).");
+        }
+
+        var checkpoint = await store.LoadCheckpointAtAsync(sessionId, executionCheckpointId, cancellationToken);
+        if (checkpoint == null)
+        {
+            return null;
+        }
+
+        return AgentSession.FromExecutionCheckpoint(checkpoint);
+    }
+
+    /// <summary>
+    /// Saves the current session to the configured store.
+    /// Use this in manual mode after running the agent.
+    /// </summary>
+    /// <param name="session">Session to save</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
+    public async Task SaveSessionAsync(
+        AgentSession session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        await store.SaveSessionAsync(session, cancellationToken);
+
+        // Apply retention policy if configured
+        var options = Config.SessionStoreOptions;
+        if (options?.Retention != null)
+        {
+            await options.Retention.ApplyAsync(store, session.Id, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Manually saves an execution checkpoint for the current session.
+    /// Use this when DurableExecution is configured with <see cref="CheckpointFrequency.Manual"/>.
+    /// </summary>
+    /// <param name="session">Session to checkpoint (must have ExecutionState set)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The checkpoint ID that was created</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or session has no ExecutionState</exception>
+    /// <remarks>
+    /// <para>
+    /// This method is for manual checkpoint control. The session must have an active
+    /// <see cref="AgentLoopState"/> (i.e., be mid-execution) to create a checkpoint.
+    /// </para>
+    /// <para>
+    /// For normal session persistence after a turn completes, use <see cref="SaveSessionAsync"/> instead.
+    /// </para>
+    /// </remarks>
+    public async Task<string> SaveCheckpointAsync(
+        AgentSession session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        if (session.ExecutionState == null)
+        {
+            throw new InvalidOperationException(
+                "Cannot create checkpoint without ExecutionState. " +
+                "Use SaveSessionAsync() for saving session state after completion.");
+        }
+
+        var checkpoint = session.ToExecutionCheckpoint();
+        var metadata = new CheckpointMetadata
+        {
+            Source = CheckpointSource.Manual,
+            Step = session.ExecutionState.Iteration,
+            MessageIndex = session.ExecutionState.CurrentMessages.Count
+        };
+
+        await store.SaveCheckpointAsync(checkpoint, metadata, cancellationToken);
+
+        // Apply retention policy if configured
+        var durableConfig = Config.DurableExecutionConfig;
+        if (durableConfig?.Retention != null)
+        {
+            await durableConfig.Retention.ApplyAsync(store, session.Id, cancellationToken);
+        }
+
+        return checkpoint.ExecutionCheckpointId;
     }
 
     //
@@ -3271,7 +3511,7 @@ internal class FunctionCallProcessor
     {
         var resultMessages = new List<ChatMessage>();
 
-        // Build function map per execution (Microsoft pattern for thread-safety)
+        // Build function map per execution (Microsoft pattern for session-safety)
         // This avoids shared mutable state and stale cache issues
         // Merge server-configured tools with request tools (request tools take precedence)
         var functionMap = BuildMergedMap(_serverConfiguredTools, options?.Tools);
@@ -3490,14 +3730,14 @@ internal class FunctionCallProcessor
 internal record PreparedTurn
 {
     /// <summary>
-    /// Messages to send to the LLM (includes thread history + new input, optionally reduced).
+    /// Messages to send to the LLM (includes session history + new input, optionally reduced).
     /// This is the "effective" message list after all preparation steps.
     /// </summary>
     public required IReadOnlyList<ChatMessage> MessagesForLLM { get; init; }
 
     /// <summary>
     /// NEW input messages only (what the caller provided).
-    /// Used for persistence - these are the messages to add to thread history.
+    /// Used for persistence - these are the messages to add to session history.
     /// </summary>
     public required IReadOnlyList<ChatMessage> NewInputMessages { get; init; }
 
@@ -3539,16 +3779,16 @@ internal class MessageProcessor
 
     /// <summary>
     /// Prepares a complete turn for execution.
-    /// Loads thread history, merges options, adds system instructions, applies reduction (with caching), and Middlewares messages.
+    /// Loads session history, merges options, adds system instructions, applies reduction (with caching), and Middlewares messages.
     /// </summary>
-    /// <param name="thread">Conversation thread (null for stateless execution).</param>
+    /// <param name="session">Agent session (null for stateless execution).</param>
     /// <param name="inputMessages">NEW messages from the caller (to be added to history).</param>
     /// <param name="options">Chat options to merge with defaults.</param>
     /// <param name="agentName">Agent name for logging/Middlewareing.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>PreparedTurn with all state needed for execution.</returns>
     public async Task<PreparedTurn> PrepareTurnAsync(
-        ConversationThread? thread,
+        AgentSession? session,
         IEnumerable<ChatMessage> inputMessages,
         ChatOptions? options,
         string agentName,
@@ -3557,11 +3797,11 @@ internal class MessageProcessor
         var inputMessagesList = inputMessages.ToList();
         var messagesForLLM = new List<ChatMessage>();
 
-        // STEP 1: Load thread history
-        if (thread != null)
+        // STEP 1: Load session history
+        if (session != null)
         {
-            var threadMessages = await thread.GetMessagesAsync(cancellationToken);
-            messagesForLLM.AddRange(threadMessages);
+            var sessionMessages = await session.GetMessagesAsync(cancellationToken);
+            messagesForLLM.AddRange(sessionMessages);
         }
 
         // STEP 2: Add new input messages
@@ -4022,7 +4262,7 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <summary>
     /// Sets the execution context for event attribution.
     /// Called when the execution context is lazily initialized (e.g., on first RunAsync).
-    /// Thread-safe: Can be called from any thread.
+    /// Thread-safe: Can be called from any session.
     /// </summary>
     /// <param name="executionContext">The execution context to attach to events</param>
     public void SetExecutionContext(AgentExecutionContext executionContext)
@@ -4102,7 +4342,7 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <summary>
     /// Emits an event downstream with automatic priority routing.
     /// Immediate/Control events go to priority channel, Normal/Background to standard channel.
-    /// Thread-safe: Can be called from any thread.
+    /// Thread-safe: Can be called from any session.
     /// </summary>
     /// <param name="evt">The event to emit</param>
     /// <exception cref="ArgumentNullException">If event is null</exception>
@@ -4212,7 +4452,7 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// <summary>
     /// Sends a response to a Middleware waiting for a specific request.
     /// Called by external handlers when user provides input.
-    /// Thread-safe: Can be called from any thread.
+    /// Thread-safe: Can be called from any session.
     /// </summary>
     /// <param name="requestId">The unique identifier for the request</param>
     /// <param name="response">The response event to deliver</param>

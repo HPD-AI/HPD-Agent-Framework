@@ -216,7 +216,7 @@ public sealed partial class MiddlewareState
     /// </summary>
     /// <param name="thread">Thread to load state from (null returns empty state)</param>
     /// <returns>MiddlewareState with restored persistent state</returns>
-    public static MiddlewareState LoadFromThread(ConversationThread? thread)
+    public static MiddlewareState LoadFromThread(AgentSession? thread)
     {
         if (thread == null)
             return new MiddlewareState();
@@ -236,7 +236,7 @@ public sealed partial class MiddlewareState
         }
 
         // Future middlewares can add their own persistence here
-        // No changes to ConversationThread or Agent required!
+        // No changes to AgentSession or Agent required!
 
         return state;
     }
@@ -246,7 +246,7 @@ public sealed partial class MiddlewareState
     /// Persists state that needs to survive across agent runs.
     /// </summary>
     /// <param name="thread">Thread to save state to</param>
-    public void SaveToThread(ConversationThread thread)
+    public void SaveToThread(AgentSession thread)
     {
         ArgumentNullException.ThrowIfNull(thread);
 

@@ -34,11 +34,11 @@ public class SubAgent
     public SubAgentThreadMode ThreadMode { get; internal set; } = SubAgentThreadMode.Stateless;
 
     /// <summary>
-    /// Optional: Shared conversation thread for stateful multi-turn conversations.
+    /// Optional: Shared session for stateful multi-turn conversations.
     /// Only used when ThreadMode = SharedThread.
-    /// WARNING: Do not use shared threads concurrently - can cause race conditions.
+    /// WARNING: Do not use shared sessions concurrently - can cause race conditions.
     /// </summary>
-    public ConversationThread? SharedThread { get; set; }
+    public AgentSession? SharedSession { get; set; }
 
     /// <summary>
     /// Plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin), typeof(WebSearchPlugin)).

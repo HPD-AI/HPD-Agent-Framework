@@ -1,4 +1,4 @@
-namespace HPD.Agent.Checkpointing;
+namespace HPD.Agent.Session;
 
 /// <summary>
 /// Represents a function call result saved before iteration checkpoint.
@@ -65,8 +65,8 @@ public sealed record PendingWrite
     public required int Iteration { get; init; }
 
     /// <summary>
-    /// Thread ID this write belongs to.
-    /// Used for Collapsing pending writes to specific conversation threads.
+    /// Session ID this write belongs to.
+    /// Used for grouping pending writes to specific agent sessions.
     /// </summary>
-    public required string ThreadId { get; init; }
+    public required string SessionId { get; init; }
 }

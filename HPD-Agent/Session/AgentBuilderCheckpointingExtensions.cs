@@ -1,4 +1,4 @@
-namespace HPD.Agent.Checkpointing.Services;
+namespace HPD.Agent.Session;
 
 /// <summary>
 /// Extension methods for AgentBuilder to configure checkpointing services.
@@ -33,12 +33,12 @@ public static class AgentBuilderCheckpointingExtensions
     /// <returns>The builder for chaining</returns>
     public static AgentBuilder WithCheckpointStore(
         this AgentBuilder builder,
-        ICheckpointStore store)
+        ISessionStore store)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(store);
 
-        builder.Config.ThreadStore = store;
+        builder.Config.SessionStore = store;
         return builder;
     }
 
@@ -92,7 +92,7 @@ public static class AgentBuilderCheckpointingExtensions
     /// <returns>The builder for chaining</returns>
     public static AgentBuilder WithCheckpointing(
         this AgentBuilder builder,
-        ICheckpointStore store,
+        ISessionStore store,
         CheckpointFrequency frequency = CheckpointFrequency.PerTurn,
         RetentionPolicy? retention = null,
         bool enablePendingWrites = false)
@@ -126,7 +126,7 @@ public static class AgentBuilderCheckpointingExtensions
 
         retention ??= RetentionPolicy.LatestOnly;
 
-        var store = new JsonConversationThreadStore(storagePath);
+        var store = new JsonSessionStore(storagePath);
 
         return builder.WithCheckpointing(store, frequency, retention);
     }
