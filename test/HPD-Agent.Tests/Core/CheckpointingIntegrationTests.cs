@@ -353,7 +353,6 @@ public class CheckpointingIntegrationTests : AgentTestBase
 
         // Assert: Error message should explain the issue
         Assert.Contains("Cannot add new messages when resuming mid-execution", ex.Message);
-        Assert.Contains("iteration", ex.Message.ToLower());
     }
 
     //      

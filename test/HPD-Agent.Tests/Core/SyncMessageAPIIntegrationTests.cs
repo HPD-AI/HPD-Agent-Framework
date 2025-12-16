@@ -31,7 +31,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         // Run agent (async for LLM)
         var events = new List<AgentEvent>();
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
             events.Add(evt);
         }
@@ -68,7 +68,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         Assert.Equal(4, thread.MessageCount);
 
         // Run agent
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
             // Just consume events
         }
@@ -109,7 +109,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         // Act - add message and run agent
         thread.AddMessage(new ChatMessage(ChatRole.User, "Question 1"));
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
         }
 
@@ -117,7 +117,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         // Add another message and run again
         thread.AddMessage(new ChatMessage(ChatRole.User, "Question 2"));
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
         }
 
@@ -147,7 +147,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         var countAfterUserMessage = thread.MessageCount;
         Assert.Equal(1, countAfterUserMessage);
 
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
         }
 
@@ -182,7 +182,7 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
         Assert.Equal(4, thread.Messages.Count);
 
         // Run agent with mixed history
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), null, thread, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
         {
         }
 

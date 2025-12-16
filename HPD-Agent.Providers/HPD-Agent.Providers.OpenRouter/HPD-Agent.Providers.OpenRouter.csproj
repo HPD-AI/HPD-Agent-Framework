@@ -13,8 +13,8 @@
   
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent/HPD-Agent.csproj" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.1.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
   </ItemGroup>
 
 </Project>

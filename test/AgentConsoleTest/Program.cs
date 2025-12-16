@@ -14,7 +14,7 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "openrouter",
-        ModelName = "google/gemini-2.5-pro"
+        ModelName = "google/google/gemini-3-pro-preview"
     },
     Mcp = new McpConfig { ManifestPath = "./MCP.json" }
 };

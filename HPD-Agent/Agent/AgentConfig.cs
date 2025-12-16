@@ -109,6 +109,12 @@ public class AgentConfig
     public ObservabilityConfig? Observability { get; set; }
 
     /// <summary>
+    /// Configuration for background responses behavior.
+    /// Enables long-running LLM operations to return immediately with polling tokens.
+    /// </summary>
+    public BackgroundResponsesConfig? BackgroundResponses { get; set; }
+
+    /// <summary>
     /// Whether to preserve reasoning tokens (from models like o1, DeepSeek-R1) in conversation history.
     /// Default: false (reasoning is shown during streaming but excluded from history to save tokens).
     /// When true, reasoning content is included in history and available in future context.
@@ -1012,6 +1018,65 @@ public class CachingConfig
     /// Default: 30 minutes
     /// </summary>
     public TimeSpan? CacheExpiration { get; set; } = TimeSpan.FromMinutes(30);
+}
+
+/// <summary>
+/// Configuration for background responses behavior.
+/// Enables long-running LLM operations to avoid HTTP gateway timeouts by returning
+/// immediately with a continuation token that can be polled for completion.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>When to use:</b>
+/// - Behind API gateways with timeout limits (AWS API Gateway: 30s, ALB: 60s)
+/// - In serverless functions with execution time limits
+/// - For mobile/unreliable connections that may drop during long operations
+/// - For long-running generations (essays, comprehensive analysis, etc.)
+/// </para>
+/// <para>
+/// <b>How it works:</b>
+/// When AllowBackgroundResponses is true and the provider supports it:
+/// 1. Provider starts operation and returns immediately with a token
+/// 2. Operation continues on provider's infrastructure
+/// 3. Client polls with the token to check status/get result
+/// </para>
+/// </remarks>
+public class BackgroundResponsesConfig
+{
+    /// <summary>
+    /// Default value for AllowBackgroundResponses when not specified per-invocation.
+    /// Default: false (traditional blocking behavior)
+    /// </summary>
+    public bool DefaultAllow { get; set; } = false;
+
+    /// <summary>
+    /// Default polling interval when client needs to poll for results.
+    /// Providers may have minimum intervals; this is a hint.
+    /// Default: 2 seconds
+    /// </summary>
+    public TimeSpan DefaultPollingInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Maximum time to wait for a background operation to complete.
+    /// Null = no timeout (wait indefinitely).
+    /// Default: null
+    /// </summary>
+    public TimeSpan? DefaultTimeout { get; set; } = null;
+
+    /// <summary>
+    /// Whether to automatically poll until completion (convenience mode).
+    /// When true, RunAsync blocks but internally uses background + polling.
+    /// Provides timeout resilience without changing caller code.
+    /// Default: false
+    /// </summary>
+    public bool AutoPollToCompletion { get; set; } = false;
+
+    /// <summary>
+    /// Maximum number of poll attempts before giving up.
+    /// Only applies when AutoPollToCompletion is true.
+    /// Default: 1000 (with 2s interval = ~33 minutes)
+    /// </summary>
+    public int MaxPollAttempts { get; set; } = 1000;
 }
 
 #endregion

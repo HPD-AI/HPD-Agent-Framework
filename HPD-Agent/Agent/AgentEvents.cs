@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent;
 /// <summary>
@@ -129,6 +129,60 @@ public record InterruptionRequestEvent(
     string? StreamId,
     string Reason,
     InterruptionSource Source) : AgentEvent;
+
+#endregion
+
+#region Background Operation Types
+
+/// <summary>
+/// Status of a long-running background operation.
+/// Used with AllowBackgroundResponses feature for tracking LLM operations
+/// that run asynchronously on provider infrastructure.
+/// </summary>
+public readonly struct OperationStatus : IEquatable<OperationStatus>
+{
+    /// <summary>Operation has been accepted but not yet started.</summary>
+    public static OperationStatus Queued { get; } = new("Queued");
+
+    /// <summary>Operation is actively running.</summary>
+    public static OperationStatus InProgress { get; } = new("InProgress");
+
+    /// <summary>Operation completed successfully.</summary>
+    public static OperationStatus Completed { get; } = new("Completed");
+
+    /// <summary>Operation failed with an error.</summary>
+    public static OperationStatus Failed { get; } = new("Failed");
+
+    /// <summary>Operation was cancelled.</summary>
+    public static OperationStatus Cancelled { get; } = new("Cancelled");
+
+    /// <summary>The status value as a string.</summary>
+    public string Value { get; }
+
+    /// <summary>Creates a new OperationStatus with the specified value.</summary>
+    public OperationStatus(string value) => Value = value ?? throw new ArgumentNullException(nameof(value));
+
+    /// <summary>Whether this status represents a terminal state (no further updates expected).</summary>
+    public bool IsTerminal => this == Completed || this == Failed || this == Cancelled;
+
+    /// <inheritdoc />
+    public bool Equals(OperationStatus other) => Value == other.Value;
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is OperationStatus other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => Value?.GetHashCode() ?? 0;
+
+    /// <inheritdoc />
+    public override string ToString() => Value;
+
+    /// <summary>Equality operator.</summary>
+    public static bool operator ==(OperationStatus left, OperationStatus right) => left.Equals(right);
+
+    /// <summary>Inequality operator.</summary>
+    public static bool operator !=(OperationStatus left, OperationStatus right) => !left.Equals(right);
+}
 
 #endregion
 
@@ -617,6 +671,34 @@ public record CheckpointEvent(
     bool? Success = null,
     string? ErrorMessage = null
 ) : AgentEvent, IObservabilityEvent;
+
+#region Background Operation Events
+
+/// <summary>
+/// Emitted when an LLM operation has been backgrounded by the provider.
+/// Contains the continuation token needed for polling for completion.
+/// </summary>
+/// <remarks>
+/// This event is emitted when AllowBackgroundResponses is true and the provider
+/// supports background mode. The client should use the ContinuationToken to poll
+/// for the operation's completion.
+/// </remarks>
+public record BackgroundOperationStartedEvent(
+    ResponseContinuationToken ContinuationToken,
+    OperationStatus Status,
+    string? OperationId = null
+) : AgentEvent;
+
+/// <summary>
+/// Emitted during polling with status updates for a background operation.
+/// </summary>
+public record BackgroundOperationStatusEvent(
+    ResponseContinuationToken ContinuationToken,
+    OperationStatus Status,
+    string? StatusMessage = null
+) : AgentEvent;
+
+#endregion
 
 /// <summary>
 /// Emitted when parallel tool execution starts.

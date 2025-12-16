@@ -38,6 +38,7 @@ var agent = new AgentBuilder()
 var session = new AgentSession();
 
 // Run multiple turns in the same session
+// Signature: RunAsync(message, session?, options?, cancellationToken)
 await foreach (var evt in agent.RunAsync("Hello!", session)) { }
 await foreach (var evt in agent.RunAsync("What did I just say?", session)) { }
 
@@ -106,12 +107,13 @@ var session = await agent.LoadSessionAsync("session-123");
 await foreach (var evt in agent.RunAsync("Hello", session)) { }
 await agent.SaveSessionAsync(session);  // Your responsibility
 
-// Option B: Auto-save after each turn
+// Option B: Auto-save after each turn (using sessionId overload)
 var agent = new AgentBuilder()
     .WithSessionStore(store, persistAfterTurn: true)
     .Build();
 
-await foreach (var evt in agent.RunAsync("Hello", "session-123")) { }
+// This overload auto-loads the session, runs, and auto-saves
+await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
 // Automatically saved after turn completes
 ```
 
@@ -167,7 +169,7 @@ var session = await agent.LoadSessionAsync("session-123");
 await foreach (var evt in agent.RunAsync("Complex task", session))
 {
     // Save checkpoint at strategic points (e.g., after expensive operations)
-    if (evt is ToolResultEvent toolResult && toolResult.IsExpensive)
+    if (evt is FunctionResultEvent funcResult && funcResult.FunctionName == "expensive_operation")
     {
         var checkpointId = await agent.SaveCheckpointAsync(session);
         Console.WriteLine($"Checkpoint saved: {checkpointId}");
@@ -239,8 +241,8 @@ if (checkpoints.Count > 0 && UserWantsToRecover())
     // Step 3: Load the specific checkpoint
     var session = await agent.LoadSessionAtCheckpointAsync("session-123", selectedId);
 
-    // session.ExecutionState is populated - ready to resume
-    await foreach (var evt in agent.RunAsync(session)) { }
+    // session.ExecutionState is populated - resume with empty messages
+    await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session)) { }
 }
 ```
 
@@ -328,6 +330,50 @@ Other `ISessionStore` implementations (e.g., SQL, Redis, in-memory) will have di
 ---
 
 ## API Reference
+
+### RunAsync Signatures
+
+The agent has a consolidated API with optional parameters:
+
+```csharp
+// Core signature (all parameters after messages are optional)
+IAsyncEnumerable<AgentEvent> RunAsync(
+    IEnumerable<ChatMessage> messages,
+    AgentSession? session = null,
+    AgentRunOptions? options = null,
+    CancellationToken cancellationToken = default)
+
+// String convenience (wraps message as ChatMessage)
+IAsyncEnumerable<AgentEvent> RunAsync(
+    string userMessage,
+    AgentSession? session = null,
+    AgentRunOptions? options = null,
+    CancellationToken cancellationToken = default)
+
+// SessionId convenience (auto-loads/saves session)
+IAsyncEnumerable<AgentEvent> RunAsync(
+    string userMessage,
+    string sessionId,
+    AgentRunOptions? options = null,
+    CancellationToken cancellationToken = default)
+```
+
+**Common usage patterns:**
+
+```csharp
+// Stateless (no session)
+await foreach (var evt in agent.RunAsync("Hello")) { }
+
+// With session
+await foreach (var evt in agent.RunAsync("Hello", session)) { }
+
+// With options
+var options = new AgentRunOptions { Chat = new ChatRunOptions { Temperature = 0.7f } };
+await foreach (var evt in agent.RunAsync("Hello", session, options)) { }
+
+// Auto-load session by ID
+await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
+```
 
 ### Agent Methods
 

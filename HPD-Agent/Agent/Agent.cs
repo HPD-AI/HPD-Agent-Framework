@@ -53,6 +53,12 @@ public sealed class Agent
     // Durable execution service for checkpointing (optional, created when DurableExecutionConfig is set)
     private readonly DurableExecution? _durableExecutionService;
 
+    // Provider registry for runtime provider switching via AgentRunOptions.ProviderKey/ModelId
+    private readonly Providers.IProviderRegistry? _providerRegistry;
+
+    // Service provider for creating new clients
+    private readonly IServiceProvider? _serviceProvider;
+
     /// <summary>
     /// Agent configuration object containing all settings
     /// </summary>
@@ -185,8 +191,11 @@ public sealed class Agent
         IReadOnlyList<IAgentMiddleware>? middlewares = null,
         IServiceProvider? serviceProvider = null,
         IEnumerable<IAgentEventObserver>? observers = null,
-        IEnumerable<IAgentEventHandler>? eventHandlers = null)
+        IEnumerable<IAgentEventHandler>? eventHandlers = null,
+        Providers.IProviderRegistry? providerRegistry = null)
     {
+        _providerRegistry = providerRegistry;
+        _serviceProvider = serviceProvider;
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = config.Name ?? "Agent"; // Default to "Agent" to prevent null dictionary key exceptions
@@ -479,6 +488,7 @@ public sealed class Agent
         TaskCompletionSource<IReadOnlyList<ChatMessage>> historyCompletionSource,
         AgentSession? session = null,
         Dictionary<string, object>? initialContextProperties = null,
+        AgentRunOptions? runOptions = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var orchestrationStartTime = DateTime.UtcNow;
@@ -675,8 +685,31 @@ public sealed class Agent
             // Collect all response updates to build final history
             var responseUpdates = new List<ChatResponseUpdate>();
 
+            // Resolve override client from AgentRunOptions (if any)
+            // This enables runtime provider switching without rebuilding the agent
+            var overrideClient = ResolveClientForOptions(runOptions);
+
+            // Resolve background responses settings from AgentRunOptions → Config → false
+            var allowBackgroundResponses = runOptions?.AllowBackgroundResponses
+                ?? Config?.BackgroundResponses?.DefaultAllow
+                ?? false;
+
+            // BACKGROUND RESPONSES VALIDATION: Log warnings for common mistakes
+            // Philosophy: "Let it flow" - warn via logging but don't block, allow graceful degradation
+            ValidateBackgroundResponsesUsage(runOptions, allowBackgroundResponses, newInputMessages.Count);
+
+            // Apply background responses settings to effectiveOptions
+            // Note: This requires pragma suppression for experimental M.E.AI feature
+            if (allowBackgroundResponses || runOptions?.ContinuationToken != null)
+            {
+                effectiveOptions = ApplyBackgroundResponsesOptions(
+                    effectiveOptions,
+                    allowBackgroundResponses,
+                    runOptions?.ContinuationToken);
+            }
+
             // OBSERVABILITY: Start telemetry and logging
-            
+
             var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
    
@@ -888,6 +921,8 @@ public sealed class Agent
                     bool messageStarted = false;
                     bool reasoningStarted = false;
                     bool reasoningMessageStarted = false;
+                    bool backgroundOperationEventEmitted = false;
+                    ResponseContinuationToken? lastContinuationToken = null;
 
                     // Execute LLM call (unless skipped by Middleware)
 
@@ -944,13 +979,42 @@ public sealed class Agent
                             DateTimeOffset.UtcNow);
 
                         // Stream LLM response through middleware pipeline with IMMEDIATE event yielding
+                        // Pass override client from AgentRunOptions for runtime provider switching
                         await foreach (var update in _middlewarePipeline.ExecuteLLMCallAsync(
                             middlewareContext,
-                            () => _agentTurn.RunAsync(messagesToSend, CollapsedOptions, effectiveCancellationToken),
+                            () => _agentTurn.RunAsync(messagesToSend, CollapsedOptions, overrideClient, effectiveCancellationToken),
                             effectiveCancellationToken))
                     {
                         // Store update for building final history
                         responseUpdates.Add(update);
+
+                        // Check for background operation continuation token (M.E.AI 10.1.1+ strongly-typed)
+#pragma warning disable MEAI001 // Experimental API - Background Responses
+                        var continuationToken = update.ContinuationToken;
+                        if (continuationToken != null)
+                        {
+                            lastContinuationToken = continuationToken;
+
+                            // Emit background operation started event on first token
+                            if (!backgroundOperationEventEmitted && allowBackgroundResponses)
+                            {
+                                backgroundOperationEventEmitted = true;
+                                yield return new BackgroundOperationStartedEvent(
+                                    ContinuationToken: continuationToken,
+                                    Status: OperationStatus.InProgress,
+                                    OperationId: assistantMessageId);
+
+                                // Track in agent loop state for crash recovery
+                                state = state.WithBackgroundOperation(new BackgroundOperationInfo
+                                {
+                                    TokenData = Convert.ToBase64String(continuationToken.ToBytes().Span),
+                                    Iteration = state.Iteration,
+                                    StartedAt = DateTimeOffset.UtcNow,
+                                    LastKnownStatus = OperationStatus.InProgress
+                                });
+                            }
+                        }
+#pragma warning restore MEAI001
 
                         // Process contents and emit internal events
                         if (update.Contents != null)
@@ -1076,6 +1140,19 @@ public sealed class Agent
                             state = state.DisableHistoryTracking();
                         }
                     } // End of else block (LLM call not skipped)
+
+                    // Clear background operation state when completed (token becomes null)
+                    if (backgroundOperationEventEmitted && lastContinuationToken == null)
+                    {
+                        // Operation completed - clear the tracked background operation
+                        state = state.WithBackgroundOperation(null);
+
+                        // Emit completion status event
+                        yield return new BackgroundOperationStatusEvent(
+                            ContinuationToken: null!,  // null indicates completion
+                            Status: OperationStatus.Completed,
+                            StatusMessage: "Background operation completed successfully");
+                    }
 
                     // Close the message if we started one (applies to both middleware and normal flow)
                     if (messageStarted)
@@ -1808,260 +1885,570 @@ public sealed class Agent
     }
 
 
-    /// <summary>
-    /// Runs the agent with messages (streaming). Returns the internal event stream.
-    /// This is the primary public API method for agent execution.
-    ///
-    /// <param name="messages">Messages to process</param>
-    /// <param name="options">Optional chat options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
-    public async IAsyncEnumerable<AgentEvent> RunAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        // Prepare turn (stateless - no session)
-        var inputMessages = messages.ToList();
-        var turn = await _messageProcessor.PrepareTurnAsync(
-            session: null,
-            inputMessages,
-            options,
-            Name,
-            cancellationToken);
-
-        var turnHistory = new List<ChatMessage>();
-        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        var internalStream = RunAgenticLoopInternal(
-            turn,
-            turnHistory,
-            historyCompletionSource,
-            session: null,
-            initialContextProperties: null,
-            cancellationToken: cancellationToken);
-
-        await foreach (var evt in internalStream.WithCancellation(cancellationToken))
-        {
-            // 1. Event handlers FIRST (awaited, ordered) - for UI
-            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
-
-            // 2. Yield event (for direct stream consumers)
-            yield return evt;
-
-            // 3. Observers LAST (fire-and-forget) - for telemetry
-            NotifyObservers(evt);
-        }
-    }
+    //──────────────────────────────────────────────────────────────────
+    // PRIMARY RUN API (Consolidated)
+    //──────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Runs the agent with a simple string message.
+    /// Runs the agent with a string message.
     /// Convenience overload that wraps the message as a user ChatMessage.
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
-    /// <param name="session">Session containing conversation history</param>
+    /// <param name="session">Optional session containing conversation history</param>
+    /// <param name="options">Optional per-invocation run options for customization</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
+    /// <returns>Stream of agent events</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Provider Switching Priority:</b>
+    /// 1. options.OverrideChatClient (highest - direct client override)
+    /// 2. options.ProviderKey + options.ModelId (via registry)
+    /// 3. Agent's default client (lowest)
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// // Simple stateless call
+    /// await agent.RunAsync("Hello");
+    ///
+    /// // With session
+    /// var session = agent.CreateSession();
+    /// await agent.RunAsync("Hello", session);
+    ///
+    /// // With options
+    /// var options = new AgentRunOptions
+    /// {
+    ///     ProviderKey = "anthropic",
+    ///     ModelId = "claude-opus",
+    ///     Chat = new ChatRunOptions { Temperature = 0.7 }
+    /// };
+    /// await agent.RunAsync("Hello", session, options);
+    /// </code>
+    /// </para>
+    /// </remarks>
     public IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
-        AgentSession session,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         return RunAsync(
             [new ChatMessage(ChatRole.User, userMessage)],
-            options: null,
-            session: session,
-            cancellationToken: cancellationToken);
-    }
-
-    /// <summary>
-    /// Runs the agent with checkpoint/resume support via AgentSession.
-    /// Use this overload for durable execution with crash recovery.
-    /// </summary>
-    /// <param name="messages">Messages to process (empty array when resuming)</param>
-    /// <param name="options">Chat options</param>
-    /// <param name="session">Session containing conversation history and optional execution state checkpoint</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
-    public async IAsyncEnumerable<AgentEvent> RunAsync(
-        IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        AgentSession session,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        // Validate resume semantics (4 scenarios)
-        var hasMessages = messages?.Any() ?? false;
-        var hasCheckpoint = session.ExecutionState != null;
-        var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
-        var hasHistory = currentMessageCount > 0;
-
-        // Scenario 1: No checkpoint, no messages, no history → Error
-        if (!hasCheckpoint && !hasMessages && !hasHistory)
-        {
-            throw new InvalidOperationException(
-                "Cannot run agent with empty session and no messages. " +
-                "Provide either:\n" +
-                "  1. New messages to process, OR\n" +
-                "  2. A session with existing history, OR\n" +
-                "  3. A checkpoint to resume from");
-        }
-
-        // Scenario 4: Has checkpoint, has messages → Error
-        if (hasCheckpoint && hasMessages)
-        {
-            throw new InvalidOperationException(
-                $"Cannot add new messages when resuming mid-execution. " +
-                $"Session '{session.Id}' is at iteration {session.ExecutionState?.Iteration ?? 0}.\n\n" +
-                "To resume execution:\n  await agent.RunAsync(Array.Empty<ChatMessage>(), session);");
-        }
-
-        // Scenario 3: Has checkpoint, no messages → Resume (validate consistency)
-        if (hasCheckpoint && !hasMessages)
-        {
-            session.ExecutionState?.ValidateConsistency(currentMessageCount);
-        }
-
-        //
-        // PREPARE TURN: Load history, apply reduction, merge options (Option 2 pattern)
-        //
-        var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
-        var turn = await _messageProcessor.PrepareTurnAsync(
             session,
-            inputMessages,
             options,
-            Name,
             cancellationToken);
-
-        // Note: History reduction caching is now handled by HistoryReductionMiddleware
-        // The middleware updates its state directly via context.UpdateState<HistoryReductionStateData>()
-
-        var turnHistory = new List<ChatMessage>();
-        var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        //
-        // EXECUTE AGENTIC LOOP with PreparedTurn
-        //
-        var internalStream = RunAgenticLoopInternal(
-            turn,
-            turnHistory,
-            historyCompletionSource,
-            session: session,  // ← CRITICAL: Pass session for persistence and checkpointing
-            initialContextProperties: null,
-            cancellationToken: cancellationToken);
-
-        await foreach (var evt in internalStream.WithCancellation(cancellationToken))
-        {
-            // 1. Event handlers FIRST (awaited, ordered) - for UI
-            await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
-
-            // 2. Yield event (for direct stream consumers)
-            yield return evt;
-
-            // 3. Observers LAST (fire-and-forget) - for telemetry
-            NotifyObservers(evt);
-        }
     }
 
     /// <summary>
-    /// Runs the agent with Client tool support via AgentRunInput.
-    /// This overload allows Client applications to register plugins and tools dynamically.
-    /// </summary>
-    /// <param name="userMessage">The user's message text</param>
-    /// <param name="session">Session containing conversation history</param>
-    /// <param name="runInput">Client tool configuration including plugins, context, and state</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
-    public IAsyncEnumerable<AgentEvent> RunAsync(
-        string userMessage,
-        AgentSession session,
-        ClientTools.AgentRunInput? runInput,
-        CancellationToken cancellationToken = default)
-    {
-        return RunAsync(
-            [new ChatMessage(ChatRole.User, userMessage)],
-            options: null,
-            session: session,
-            runInput: runInput,
-            cancellationToken: cancellationToken);
-    }
-
-    /// <summary>
-    /// Runs the agent with Client tool support via AgentRunInput.
-    /// This overload allows Client applications to register plugins and tools dynamically.
+    /// Runs the agent with messages. This is the core RunAsync implementation.
+    /// All other RunAsync overloads delegate to this method.
     /// </summary>
     /// <param name="messages">Messages to process</param>
-    /// <param name="options">Chat options</param>
-    /// <param name="session">Session containing conversation history</param>
-    /// <param name="runInput">Client tool configuration including plugins, context, and state</param>
+    /// <param name="session">Optional session containing conversation history. If null, runs stateless.</param>
+    /// <param name="options">Optional per-invocation run options for customization</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
+    /// <returns>Stream of agent events</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Session Behavior:</b>
+    /// - If session is null: Runs stateless (no history persistence)
+    /// - If session is provided: History is maintained across calls
+    /// </para>
+    /// <para>
+    /// <b>Options:</b>
+    /// Use <see cref="AgentRunOptions"/> for per-invocation customization:
+    /// - Provider switching via ProviderKey/ModelId or OverrideChatClient
+    /// - System instruction overrides
+    /// - Chat parameters (temperature, tokens, etc.) via Chat property
+    /// - Client tool configuration via ClientToolInput
+    /// - Context overrides and runtime middleware
+    /// </para>
+    /// </remarks>
     public async IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
-        ChatOptions? options,
-        AgentSession session,
-        ClientTools.AgentRunInput? runInput,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Validate resume semantics (same as base overload)
-        var hasMessages = messages?.Any() ?? false;
-        var hasCheckpoint = session.ExecutionState != null;
-        var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
-        var hasHistory = currentMessageCount > 0;
-
-        if (!hasCheckpoint && !hasMessages && !hasHistory)
+        // Session-specific validation
+        if (session != null)
         {
-            throw new InvalidOperationException(
-                "Cannot run agent with empty session and no messages.");
+            var hasMessages = messages?.Any() ?? false;
+            var hasCheckpoint = session.ExecutionState != null;
+            var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
+            var hasHistory = currentMessageCount > 0;
+
+            if (!hasCheckpoint && !hasMessages && !hasHistory)
+            {
+                throw new InvalidOperationException(
+                    "Cannot run agent with empty session and no messages.");
+            }
+
+            if (hasCheckpoint && hasMessages)
+            {
+                throw new InvalidOperationException(
+                    "Cannot add new messages when resuming mid-execution.");
+            }
+
+            if (hasCheckpoint && !hasMessages)
+            {
+                session.ExecutionState?.ValidateConsistency(currentMessageCount);
+            }
         }
 
-        if (hasCheckpoint && hasMessages)
-        {
-            throw new InvalidOperationException(
-                $"Cannot add new messages when resuming mid-execution.");
-        }
-
-        if (hasCheckpoint && !hasMessages)
-        {
-            session.ExecutionState?.ValidateConsistency(currentMessageCount);
-        }
+        // Resolve chat options from AgentRunOptions and apply system instruction overrides
+        var chatOptions = options?.Chat?.MergeWith(Config?.Provider?.DefaultChatOptions);
+        chatOptions = ApplySystemInstructionOverrides(chatOptions, options);
 
         // Prepare turn
         var inputMessages = messages?.ToList() ?? new List<ChatMessage>();
         var turn = await _messageProcessor.PrepareTurnAsync(
             session,
             inputMessages,
-            options,
+            chatOptions,
             Name,
             cancellationToken);
 
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Build initial context properties with AgentRunInput
-        Dictionary<string, object>? initialProperties = null;
-        if (runInput != null)
-        {
-            initialProperties = new Dictionary<string, object>
-            {
-                ["AgentRunInput"] = runInput
-            };
-        }
+        // Build initial context properties from AgentRunOptions
+        var initialProperties = BuildInitialContextProperties(options);
 
-        // Execute with initial properties
+        // Execute agentic loop
         var internalStream = RunAgenticLoopInternal(
             turn,
             turnHistory,
             historyCompletionSource,
             session: session,
             initialContextProperties: initialProperties,
+            runOptions: options,
             cancellationToken: cancellationToken);
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
         {
+            // Custom streaming callback if provided
+            if (options?.CustomStreamCallback != null)
+            {
+                await options.CustomStreamCallback(evt).ConfigureAwait(false);
+            }
+
+            // Standard event processing
             await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
             yield return evt;
             NotifyObservers(evt);
         }
+    }
+
+    /// <summary>
+    /// Builds initial context properties dictionary from AgentRunOptions.
+    /// Merges ClientToolInput and ContextOverrides into a single dictionary.
+    /// </summary>
+    private static Dictionary<string, object>? BuildInitialContextProperties(AgentRunOptions? options)
+    {
+        if (options == null)
+            return null;
+
+        Dictionary<string, object>? properties = null;
+
+        // Add ClientToolInput if present
+        if (options.ClientToolInput != null)
+        {
+            properties ??= new Dictionary<string, object>();
+            properties["AgentRunInput"] = options.ClientToolInput;
+        }
+
+        // Add AgentRunOptions itself for middleware access
+        properties ??= new Dictionary<string, object>();
+        properties["AgentRunOptions"] = options;
+
+        // Merge context overrides
+        if (options.ContextOverrides != null)
+        {
+            properties ??= new Dictionary<string, object>();
+            foreach (var kvp in options.ContextOverrides)
+            {
+                properties[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return properties;
+    }
+
+    /// <summary>
+    /// Resolves the effective chat client for this run based on AgentRunOptions.
+    /// Priority: OverrideChatClient > ProviderKey/ModelId > null (use default)
+    /// </summary>
+    /// <param name="options">Per-invocation options</param>
+    /// <returns>Override client if specified, null to use default</returns>
+    private IChatClient? ResolveClientForOptions(AgentRunOptions? options)
+    {
+        // Direct override: highest priority (for C# power users)
+        if (options?.OverrideChatClient != null)
+            return options.OverrideChatClient;
+
+        // ProviderKey/ModelId: use registry to create client
+        if (!string.IsNullOrEmpty(options?.ProviderKey))
+        {
+            if (_providerRegistry == null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot switch to provider '{options.ProviderKey}' - no provider registry available. " +
+                    "Ensure the agent was built with a provider registry.");
+            }
+
+            var provider = _providerRegistry.GetProvider(options.ProviderKey);
+            if (provider == null)
+            {
+                throw new InvalidOperationException(
+                    $"Provider '{options.ProviderKey}' is not registered. " +
+                    $"Available providers: {string.Join(", ", _providerRegistry.GetRegisteredProviders())}");
+            }
+
+            // Build provider config for the new client
+            var providerConfig = new ProviderConfig
+            {
+                ProviderKey = options.ProviderKey,
+                // Use specified ModelId, or fall back to agent's configured model, or provider default
+                ModelName = options.ModelId
+                    ?? Config?.Provider?.ModelName
+                    ?? "default",
+                // Inherit API key and endpoint from agent's config if switching within same provider
+                ApiKey = Config?.Provider?.ProviderKey == options.ProviderKey
+                    ? Config?.Provider?.ApiKey
+                    : null,
+                Endpoint = Config?.Provider?.ProviderKey == options.ProviderKey
+                    ? Config?.Provider?.Endpoint
+                    : null,
+                // Inherit default chat options from agent config
+                DefaultChatOptions = Config?.Provider?.DefaultChatOptions
+            };
+
+            return provider.CreateChatClient(providerConfig, _serviceProvider);
+        }
+
+        // No override specified
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves system instructions considering AgentRunOptions overrides.
+    /// Priority: AgentRunOptions.SystemInstructions > Config.SystemInstructions
+    /// If AdditionalSystemInstructions is set, it's appended.
+    /// </summary>
+    /// <param name="options">Per-invocation options</param>
+    /// <returns>Resolved system instructions</returns>
+    private string? ResolveSystemInstructions(AgentRunOptions? options)
+    {
+        // Use override if provided, otherwise fall back to config
+        var instructions = options?.SystemInstructions
+            ?? Config?.SystemInstructions
+            ?? _messageProcessor.SystemInstructions;
+
+        // Append additional instructions if provided
+        if (!string.IsNullOrEmpty(options?.AdditionalSystemInstructions))
+        {
+            instructions = string.IsNullOrEmpty(instructions)
+                ? options.AdditionalSystemInstructions
+                : $"{instructions}\n\n{options.AdditionalSystemInstructions}";
+        }
+
+        return instructions;
+    }
+
+    /// <summary>
+    /// Applies system instruction overrides from AgentRunOptions to ChatOptions.
+    /// Creates a new ChatOptions instance with the resolved instructions.
+    /// </summary>
+    /// <param name="chatOptions">Base chat options (can be null)</param>
+    /// <param name="runOptions">Per-invocation options</param>
+    /// <returns>ChatOptions with resolved system instructions</returns>
+    private ChatOptions? ApplySystemInstructionOverrides(ChatOptions? chatOptions, AgentRunOptions? runOptions)
+    {
+        // If no overrides, return as-is
+        if (runOptions == null ||
+            (string.IsNullOrEmpty(runOptions.SystemInstructions) &&
+             string.IsNullOrEmpty(runOptions.AdditionalSystemInstructions)))
+        {
+            return chatOptions;
+        }
+
+        var resolvedInstructions = ResolveSystemInstructions(runOptions);
+        if (string.IsNullOrEmpty(resolvedInstructions))
+            return chatOptions;
+
+        // Create new options with resolved instructions
+        chatOptions ??= new ChatOptions();
+
+        // Clone options to avoid mutating shared instances
+        var newOptions = new ChatOptions
+        {
+            Temperature = chatOptions.Temperature,
+            TopP = chatOptions.TopP,
+            TopK = chatOptions.TopK,
+            MaxOutputTokens = chatOptions.MaxOutputTokens,
+            FrequencyPenalty = chatOptions.FrequencyPenalty,
+            PresencePenalty = chatOptions.PresencePenalty,
+            ModelId = chatOptions.ModelId,
+            StopSequences = chatOptions.StopSequences,
+            Seed = chatOptions.Seed,
+            ResponseFormat = chatOptions.ResponseFormat,
+            Tools = chatOptions.Tools,
+            ToolMode = chatOptions.ToolMode,
+            // Override instructions with resolved value
+            Instructions = resolvedInstructions
+        };
+
+        // Copy additional properties
+        if (chatOptions.AdditionalProperties?.Count > 0)
+        {
+            newOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            foreach (var kvp in chatOptions.AdditionalProperties)
+            {
+                newOptions.AdditionalProperties[kvp.Key] = kvp.Value;
+            }
+        }
+
+        return newOptions;
+    }
+
+    /// <summary>
+    /// Validates background responses usage and logs warnings for common mistakes.
+    /// Philosophy: "Let it flow" - warn but don't block, allow graceful degradation.
+    /// </summary>
+    /// <param name="runOptions">Per-run options</param>
+    /// <param name="allowBackgroundResponses">Resolved background responses setting</param>
+    /// <param name="messageCount">Number of input messages</param>
+    private void ValidateBackgroundResponsesUsage(
+        AgentRunOptions? runOptions,
+        bool allowBackgroundResponses,
+        int messageCount)
+    {
+        // Skip validation if no background-related settings are used
+        if (!allowBackgroundResponses && runOptions?.ContinuationToken == null)
+            return;
+
+        // Warning 1: Messages provided with ContinuationToken (messages will be ignored)
+        if (runOptions?.ContinuationToken != null && messageCount > 0)
+        {
+            _observerErrorLogger?.LogWarning(
+                "Background responses: Messages provided with ContinuationToken will be ignored during polling. " +
+                "When polling with a token, only the token is used - messages are not sent to the provider.");
+        }
+
+        // Warning 2: ContinuationToken provided without AllowBackgroundResponses explicitly set
+        // This might indicate the user doesn't realize they're in polling mode
+        if (runOptions?.ContinuationToken != null && runOptions.AllowBackgroundResponses != true)
+        {
+            _observerErrorLogger?.LogInformation(
+                "Background responses: ContinuationToken provided without AllowBackgroundResponses=true. " +
+                "Token will be used for polling, but consider explicitly enabling background responses.");
+        }
+
+        // Warning 3: AutoPollToCompletion enabled with manual ContinuationToken
+        // Auto-poll handles polling automatically - manual token might cause confusion
+        if (Config?.BackgroundResponses?.AutoPollToCompletion == true && runOptions?.ContinuationToken != null)
+        {
+            _observerErrorLogger?.LogWarning(
+                "Background responses: Manual ContinuationToken provided with AutoPollToCompletion enabled. " +
+                "Auto-poll mode handles polling automatically. Manual token usage may cause unexpected behavior.");
+        }
+    }
+
+    /// <summary>
+    /// Applies background responses settings to ChatOptions.
+    /// Sets AllowBackgroundResponses and ContinuationToken for M.E.AI providers.
+    /// </summary>
+    /// <param name="chatOptions">Base chat options (can be null)</param>
+    /// <param name="allowBackground">Whether to allow background responses</param>
+    /// <param name="continuationToken">Continuation token for polling/resumption</param>
+    /// <returns>ChatOptions with background responses settings applied</returns>
+#pragma warning disable MEAI001 // Experimental API - Background Responses
+    private static ChatOptions ApplyBackgroundResponsesOptions(
+        ChatOptions? chatOptions,
+        bool allowBackground,
+        ResponseContinuationToken? continuationToken)
+    {
+        // Create new options or clone existing to avoid mutation
+        var newOptions = chatOptions != null
+            ? new ChatOptions
+            {
+                Temperature = chatOptions.Temperature,
+                TopP = chatOptions.TopP,
+                TopK = chatOptions.TopK,
+                MaxOutputTokens = chatOptions.MaxOutputTokens,
+                FrequencyPenalty = chatOptions.FrequencyPenalty,
+                PresencePenalty = chatOptions.PresencePenalty,
+                ModelId = chatOptions.ModelId,
+                StopSequences = chatOptions.StopSequences,
+                Seed = chatOptions.Seed,
+                ResponseFormat = chatOptions.ResponseFormat,
+                Tools = chatOptions.Tools,
+                ToolMode = chatOptions.ToolMode,
+                Instructions = chatOptions.Instructions
+            }
+            : new ChatOptions();
+
+        // Copy additional properties from base options
+        if (chatOptions?.AdditionalProperties?.Count > 0)
+        {
+            newOptions.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+            foreach (var kvp in chatOptions.AdditionalProperties)
+            {
+                newOptions.AdditionalProperties[kvp.Key] = kvp.Value;
+            }
+        }
+
+        // Apply background responses settings
+        newOptions.AllowBackgroundResponses = allowBackground;
+        newOptions.ContinuationToken = continuationToken;
+
+        return newOptions;
+    }
+#pragma warning restore MEAI001
+
+    //──────────────────────────────────────────────────────────────────
+    // AUTO-POLL BACKGROUND RESPONSES SUPPORT
+    //──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs the agent with automatic polling for background operations.
+    /// When enabled, this method internally uses background mode + polling to complete long-running operations,
+    /// providing HTTP timeout resilience without changing caller code.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method is useful for scenarios where:
+    /// - HTTP gateways have timeout limits (30-60s)
+    /// - Serverless functions have execution limits
+    /// - You want transparent timeout resilience
+    /// </para>
+    /// <para>
+    /// Configuration is controlled by:
+    /// - <see cref="BackgroundResponsesConfig.AutoPollToCompletion"/> - Enables auto-polling
+    /// - <see cref="BackgroundResponsesConfig.DefaultPollingInterval"/> - Interval between polls
+    /// - <see cref="BackgroundResponsesConfig.DefaultTimeout"/> - Maximum wait time
+    /// - <see cref="BackgroundResponsesConfig.MaxPollAttempts"/> - Maximum poll attempts
+    /// </para>
+    /// </remarks>
+    /// <param name="messages">Messages to process</param>
+    /// <param name="session">Session containing conversation history</param>
+    /// <param name="options">Optional per-invocation run options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of internal agent events</returns>
+    public async IAsyncEnumerable<AgentEvent> RunWithAutoPollAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentSession session,
+        AgentRunOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var config = Config?.BackgroundResponses;
+        var autoPoll = config?.AutoPollToCompletion ?? false;
+
+        if (!autoPoll)
+        {
+            // Auto-poll not enabled, just run normally
+            await foreach (var evt in RunAsync(messages, session, options, cancellationToken))
+            {
+                yield return evt;
+            }
+            yield break;
+        }
+
+        // Auto-poll mode: Enable background responses and poll until completion
+        options ??= new AgentRunOptions();
+        options.AllowBackgroundResponses = true;
+
+        var pollInterval = options.BackgroundPollingInterval ?? config!.DefaultPollingInterval;
+        var timeout = options.BackgroundTimeout ?? config!.DefaultTimeout;
+        var maxAttempts = config!.MaxPollAttempts;
+
+        ResponseContinuationToken? lastToken = null;
+        var startTime = DateTimeOffset.UtcNow;
+        var attempts = 0;
+        var isFirstRun = true;
+
+        while (true)
+        {
+            // Check timeout
+            if (timeout.HasValue && DateTimeOffset.UtcNow - startTime > timeout.Value)
+            {
+                yield return new BackgroundOperationStatusEvent(
+                    ContinuationToken: lastToken!,
+                    Status: OperationStatus.Failed,
+                    StatusMessage: $"Background operation timed out after {timeout.Value}");
+                yield break;
+            }
+
+            // Check max attempts (only after first run)
+            if (!isFirstRun && attempts >= maxAttempts)
+            {
+                yield return new BackgroundOperationStatusEvent(
+                    ContinuationToken: lastToken!,
+                    Status: OperationStatus.Failed,
+                    StatusMessage: $"Background operation exceeded max poll attempts ({maxAttempts})");
+                yield break;
+            }
+
+            // Set continuation token for polling (not on first run)
+            if (!isFirstRun && lastToken != null)
+            {
+                options.ContinuationToken = lastToken;
+                attempts++;
+
+                // Emit polling status event
+                yield return new BackgroundOperationStatusEvent(
+                    ContinuationToken: lastToken,
+                    Status: OperationStatus.InProgress,
+                    StatusMessage: $"Polling attempt {attempts}/{maxAttempts}");
+            }
+
+            // Run the agent
+            var messagesForRun = isFirstRun ? messages : Enumerable.Empty<ChatMessage>();
+            lastToken = null;
+
+            await foreach (var evt in RunAsync(messagesForRun, session, options, cancellationToken))
+            {
+                yield return evt;
+
+                // Capture continuation token from events
+                if (evt is BackgroundOperationStartedEvent started)
+                {
+                    lastToken = started.ContinuationToken;
+                }
+                else if (evt is BackgroundOperationStatusEvent status && status.ContinuationToken != null)
+                {
+                    lastToken = status.ContinuationToken;
+                }
+            }
+
+            isFirstRun = false;
+
+            // If no token, operation completed
+            if (lastToken == null)
+            {
+                yield break;
+            }
+
+            // Wait before next poll
+            await Task.Delay(pollInterval, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Runs the agent with automatic polling for background operations (string message overload).
+    /// </summary>
+    public IAsyncEnumerable<AgentEvent> RunWithAutoPollAsync(
+        string userMessage,
+        AgentSession session,
+        AgentRunOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return RunWithAutoPollAsync(
+            [new ChatMessage(ChatRole.User, userMessage)],
+            session,
+            options,
+            cancellationToken);
     }
 
     //──────────────────────────────────────────────────────────────────
@@ -2074,6 +2461,7 @@ public sealed class Agent
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
     /// <param name="sessionId">Session identifier to load/create</param>
+    /// <param name="options">Optional per-invocation run options for customization</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of internal agent events</returns>
     /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
@@ -2102,11 +2490,12 @@ public sealed class Agent
     public async IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
         string sessionId,
+        AgentRunOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var session = await LoadSessionAsync(sessionId, cancellationToken);
 
-        await foreach (var evt in RunAsync(userMessage, session, cancellationToken))
+        await foreach (var evt in RunAsync(userMessage, session, options, cancellationToken))
         {
             yield return evt;
         }
@@ -2489,6 +2878,34 @@ internal sealed record AgentToolCallRequest(
 }
 
 /// <summary>
+/// Information about an active background operation being tracked by the agent loop.
+/// Used for crash recovery - allows resuming polling for in-flight background operations.
+/// </summary>
+public record BackgroundOperationInfo
+{
+    /// <summary>
+    /// Serialized continuation token (Base64 encoded).
+    /// Can be deserialized using ResponseContinuationToken.FromBytes().
+    /// </summary>
+    public required string TokenData { get; init; }
+
+    /// <summary>
+    /// Which iteration started this background operation.
+    /// </summary>
+    public required int Iteration { get; init; }
+
+    /// <summary>
+    /// When the background operation was started.
+    /// </summary>
+    public required DateTimeOffset StartedAt { get; init; }
+
+    /// <summary>
+    /// Last known status from the provider.
+    /// </summary>
+    public OperationStatus? LastKnownStatus { get; init; }
+}
+
+/// <summary>
 /// Immutable snapshot of agent execution loop state.
 /// Consolidates all 11 state variables that were scattered in RunAgenticLoopInternal.
 /// Thread-safe and testable - enables pure decision-making logic.
@@ -2588,9 +3005,9 @@ public sealed record AgentLoopState
     /// </summary>
     public required IReadOnlyList<ChatResponseUpdate> ResponseUpdates { get; init; }
 
-    //      
+    //
     // MIDDLEWARE STATE (extensible, owned by middlewares)
-    //      
+    //
 
     /// <summary>
     /// Source-generated middleware state container.
@@ -2599,9 +3016,20 @@ public sealed record AgentLoopState
     public MiddlewareState MiddlewareState { get; init; }
         = new MiddlewareState();
 
-    //      
+    //
+    // BACKGROUND OPERATION TRACKING
+    //
+
+    /// <summary>
+    /// Active background operation being tracked (if any).
+    /// Used for crash recovery - allows resuming polling for in-flight background operations.
+    /// Null when no background operation is active.
+    /// </summary>
+    public BackgroundOperationInfo? ActiveBackgroundOperation { get; init; }
+
+    //
     // FACTORY METHOD
-    //      
+    //
 
     /// <summary>
     /// Creates initial state for a new agent execution.
@@ -2753,7 +3181,15 @@ public sealed record AgentLoopState
     /// Clears accumulated response updates (after building final response).
     /// </summary>
     public AgentLoopState ClearResponseUpdates() =>
-        this with { ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty };  
+        this with { ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty };
+
+    /// <summary>
+    /// Sets or clears the active background operation.
+    /// Called when an LLM call returns a continuation token (backgrounded operation).
+    /// </summary>
+    /// <param name="operation">The background operation info, or null to clear.</param>
+    public AgentLoopState WithBackgroundOperation(BackgroundOperationInfo? operation) =>
+        this with { ActiveBackgroundOperation = operation };
 
     /// <summary>
     /// Pending writes from function calls that completed successfully
@@ -3980,7 +4416,36 @@ internal class AgentTurn
         // Reset ConversationId at start of new turn
         LastResponseConversationId = null;
 
-        await foreach (var update in RunAsyncCore(messages, options, cancellationToken))
+        await foreach (var update in RunAsyncCore(messages, options, overrideClient: null, cancellationToken))
+        {
+            // Capture ConversationId from first update that has one
+            if (LastResponseConversationId == null && update.ConversationId != null)
+            {
+                LastResponseConversationId = update.ConversationId;
+            }
+
+            yield return update;
+        }
+    }
+
+    /// <summary>
+    /// Runs a single turn with an optional override client for runtime provider switching.
+    /// </summary>
+    /// <param name="messages">The conversation history to send to the LLM</param>
+    /// <param name="options">Optional chat options</param>
+    /// <param name="overrideClient">Optional override client (for AgentRunOptions provider switching)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of ChatResponseUpdates representing the LLM's response</returns>
+    public async IAsyncEnumerable<ChatResponseUpdate> RunAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options,
+        IChatClient? overrideClient,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Reset ConversationId at start of new turn
+        LastResponseConversationId = null;
+
+        await foreach (var update in RunAsyncCore(messages, options, overrideClient, cancellationToken))
         {
             // Capture ConversationId from first update that has one
             if (LastResponseConversationId == null && update.ConversationId != null)
@@ -3995,6 +4460,7 @@ internal class AgentTurn
     private async IAsyncEnumerable<ChatResponseUpdate> RunAsyncCore(
         IEnumerable<ChatMessage> messages,
         ChatOptions? options,
+        IChatClient? overrideClient,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         // Apply runtime options configuration callback if configured
@@ -4005,7 +4471,8 @@ internal class AgentTurn
 
         // Apply middleware dynamically (if any)
         // This allows runtime provider switching - new providers automatically get wrapped
-        var effectiveClient = _baseClient;
+        // Use override client if provided (from AgentRunOptions), otherwise use base client
+        var effectiveClient = overrideClient ?? _baseClient;
         if (_middleware != null && _middleware.Count > 0)
         {
             foreach (var mw in _middleware)

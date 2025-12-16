@@ -485,11 +485,11 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, options: null, session: thread);
+                eventStream = agent.RunAsync(messages, session: thread, options: null);
             }
             else
             {
-                eventStream = agent.RunAsync(messages, options: null);
+                eventStream = agent.RunAsync(messages, session: null, options: null);
             }
 
             // Block and collect response
@@ -560,11 +560,11 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, options: null, session: thread);
+                eventStream = agent.RunAsync(messages, session: thread, options: null);
             }
             else
             {
-                eventStream = agent.RunAsync(messages, options: null);
+                eventStream = agent.RunAsync(messages, session: null, options: null);
             }
 
             // Stream events to callback

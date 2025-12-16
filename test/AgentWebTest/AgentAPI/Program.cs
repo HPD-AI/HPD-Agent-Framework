@@ -249,7 +249,8 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
 
         // Run agent - manually send each event through SSE handler
         int eventCount = 0;
-        await foreach (var evt in agent.RunAsync(chatMessages, options: null, session: thread, runInput: runInput, cancellationToken: context.RequestAborted))
+        var runOptions = runInput != null ? new AgentRunOptions { ClientToolInput = runInput } : null;
+        await foreach (var evt in agent.RunAsync(chatMessages, session: thread, options: runOptions, cancellationToken: context.RequestAborted))
         {
             eventCount++;
             Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
@@ -318,7 +319,7 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
 
         var chatMessage = new ChatMessage(ChatRole.User, userMessage);
 
-        await foreach (var evt in agent.RunAsync(new[] { chatMessage }, options: null, session: thread, cancellationToken: CancellationToken.None))
+        await foreach (var evt in agent.RunAsync(new[] { chatMessage }, session: thread, options: null, cancellationToken: CancellationToken.None))
         {
             if (evt is TextDeltaEvent textDelta)
             {

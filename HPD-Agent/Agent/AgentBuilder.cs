@@ -1047,6 +1047,54 @@ public class AgentBuilder
         return this;
     }
 
+    /// <summary>
+    /// Enable background responses by default for all runs.
+    /// When enabled, providers that support background mode can return immediately
+    /// with a continuation token instead of blocking until completion.
+    /// </summary>
+    /// <param name="enabled">Whether to enable background responses by default.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Background responses help avoid HTTP gateway timeouts (e.g., AWS API Gateway 30s limit)
+    /// by allowing the provider to start the operation and return a token for polling.
+    /// </para>
+    /// <para>
+    /// This setting can be overridden per-request via <see cref="AgentRunOptions.AllowBackgroundResponses"/>.
+    /// </para>
+    /// </remarks>
+    public AgentBuilder WithBackgroundResponses(bool enabled = true)
+    {
+        _config.BackgroundResponses ??= new BackgroundResponsesConfig();
+        _config.BackgroundResponses.DefaultAllow = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Configure background responses behavior with detailed options.
+    /// </summary>
+    /// <param name="configure">Action to configure background responses settings.</param>
+    /// <returns>The builder for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var agent = new AgentBuilder()
+    ///     .WithBackgroundResponses(config =>
+    ///     {
+    ///         config.DefaultAllow = true;
+    ///         config.AutoPollToCompletion = true;
+    ///         config.DefaultPollingInterval = TimeSpan.FromSeconds(3);
+    ///         config.DefaultTimeout = TimeSpan.FromMinutes(10);
+    ///     })
+    ///     .Build();
+    /// </code>
+    /// </example>
+    public AgentBuilder WithBackgroundResponses(Action<BackgroundResponsesConfig> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _config.BackgroundResponses ??= new BackgroundResponsesConfig();
+        configure(_config.BackgroundResponses);
+        return this;
+    }
 
     /// <summary>
     /// Configures a callback to transform ChatOptions before each LLM call.
@@ -1279,7 +1327,8 @@ public class AgentBuilder
             _middlewares,
             _serviceProvider,
             _observers,
-            _eventHandlers);
+            _eventHandlers,
+            _providerRegistry);
     }
 
     /// <summary>

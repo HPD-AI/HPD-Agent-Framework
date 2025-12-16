@@ -51,6 +51,11 @@ using HPD.Agent;
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(McpConfig))]
 
+// --- Per-invocation run options (AgentRunOptions) ---
+[JsonSerializable(typeof(AgentRunOptions))]
+[JsonSerializable(typeof(ChatRunOptions))]
+[JsonSerializable(typeof(Dictionary<string, bool>))]  // For PermissionOverrides
+
 // --- Conversation and messaging types ---
 [JsonSerializable(typeof(ChatMessage))]
 [JsonSerializable(typeof(ChatRole))]
@@ -104,6 +109,13 @@ using HPD.Agent;
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem[]))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.AgentRunInput))]
+
+// --- Background Responses types ---
+[JsonSerializable(typeof(BackgroundResponsesConfig))]
+[JsonSerializable(typeof(OperationStatus))]
+[JsonSerializable(typeof(BackgroundOperationStartedEvent))]
+[JsonSerializable(typeof(BackgroundOperationStatusEvent))]
+[JsonSerializable(typeof(BackgroundOperationInfo))]
 
 // --- Internal storage state types (nested classes) ---
 // Note: Nested classes need full type paths for AOT
