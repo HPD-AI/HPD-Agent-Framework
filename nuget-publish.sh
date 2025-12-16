@@ -38,6 +38,8 @@ PROJECTS=(
     "HPD-Agent.Providers/HPD-Agent.Providers.OnnxRuntime/HPD-Agent.Providers.OnnxRuntime.csproj"
     "HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj"
     "HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj"
+    "HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj"
+    "HPD-Agent.Audio/HPD-Agent.AudioProviders.OpenAI/HPD-Agent.AudioProviders.OpenAI.csproj"
 )
 
 # Expected package IDs (with hyphens - matching NuGet namespace ownership)
@@ -60,6 +62,8 @@ PACKAGE_IDS=(
     "HPD-Agent.Providers.OnnxRuntime"
     "HPD-Agent.Providers.OpenAI"
     "HPD-Agent.Providers.OpenRouter"
+    "HPD-Agent.Audio"
+    "HPD-Agent.AudioProviders.OpenAI"
 )
 
 function show_usage() {
