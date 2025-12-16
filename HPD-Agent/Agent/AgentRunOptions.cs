@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 using HPD.Agent.Middleware;
+using HPD.Agent.StructuredOutput;
 
 namespace HPD.Agent;
 
@@ -220,6 +221,48 @@ public class AgentRunOptions
     public TimeSpan? BackgroundTimeout { get; set; }
 
     #endregion
+
+    #region Structured Output
+
+    /// <summary>
+    /// Configuration for structured output mode.
+    /// When set, enables RunStructuredAsync&lt;T&gt;() to return typed responses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Structured output allows agents to return strongly-typed responses instead of
+    /// free-form text. Two modes are supported:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><b>native</b> (default): Uses provider's ResponseFormat with JSON schema. Supports streaming partials.</item>
+    /// <item><b>tool</b>: Auto-generated output tool. Use when mixing structured output with regular tools.</item>
+    /// </list>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// var options = new AgentRunOptions
+    /// {
+    ///     StructuredOutput = new StructuredOutputOptions { Mode = "native" }
+    /// };
+    /// await foreach (var evt in agent.RunStructuredAsync&lt;Report&gt;(messages, options: options))
+    /// {
+    ///     if (evt is StructuredResultEvent&lt;Report&gt; result)
+    ///         Console.WriteLine(result.Value);
+    /// }
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public StructuredOutputOptions? StructuredOutput { get; set; }
+
+    /// <summary>
+    /// Runtime tools to add for this run only.
+    /// Used internally by structured output tool mode.
+    /// These are merged with the agent's configured tools during RunAsync.
+    /// </summary>
+    [JsonIgnore]
+    internal List<AITool>? RuntimeTools { get; set; }
+
+    #endregion
 }
 
 /// <summary>
@@ -317,6 +360,17 @@ public class ChatRunOptions
     public Dictionary<string, object>? AdditionalProperties { get; set; }
 
     /// <summary>
+    /// Response format configuration for structured output.
+    /// When set, instructs the provider to return JSON matching a schema.
+    /// </summary>
+    /// <remarks>
+    /// For structured output, prefer using <see cref="AgentRunOptions.StructuredOutput"/>
+    /// which handles this automatically via RunStructuredAsync&lt;T&gt;().
+    /// </remarks>
+    [JsonIgnore] // Not FFI-serializable (ChatResponseFormat contains complex types)
+    public ChatResponseFormat? ResponseFormat { get; set; }
+
+    /// <summary>
     /// Converts to Microsoft.Extensions.AI.ChatOptions for internal use.
     /// Returns null if no overrides are specified.
     /// </summary>
@@ -325,6 +379,7 @@ public class ChatRunOptions
         if (Temperature == null && TopP == null && MaxOutputTokens == null &&
             FrequencyPenalty == null && PresencePenalty == null &&
             string.IsNullOrEmpty(ModelId) && StopSequences == null &&
+            ResponseFormat == null &&
             (AdditionalProperties == null || AdditionalProperties.Count == 0))
         {
             return null;  // No overrides
@@ -349,6 +404,9 @@ public class ChatRunOptions
         {
             options.StopSequences = StopSequences.ToList();
         }
+
+        if (ResponseFormat != null)
+            options.ResponseFormat = ResponseFormat;
 
         if (AdditionalProperties?.Count > 0)
         {
@@ -393,7 +451,7 @@ public class ChatRunOptions
             StopSequences = thisOptions.StopSequences ?? baseOptions.StopSequences,
             Tools = baseOptions.Tools,  // Always from base (tools are agent-level)
             ToolMode = baseOptions.ToolMode,
-            ResponseFormat = baseOptions.ResponseFormat,
+            ResponseFormat = thisOptions.ResponseFormat ?? baseOptions.ResponseFormat,
             Seed = baseOptions.Seed
         };
 

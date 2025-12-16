@@ -48,6 +48,12 @@ internal class FunctionCapability : BaseCapability
     public List<string> RequiredPermissions { get; set; } = new();
 
     /// <summary>
+    /// The kind of tool this function represents (Function or Output).
+    /// Output tools are used for structured output and don't execute - their args ARE the output.
+    /// </summary>
+    public string Kind { get; set; } = "Function";
+
+    /// <summary>
     /// Whether this function has any conditional parameters.
     /// </summary>
     public bool HasConditionalParameters => Parameters.Any(p => p.IsConditional);
@@ -196,6 +202,13 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
         options.AppendLine("                {");
         options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
+
+        // Add Kind if it's an output tool (structured output)
+        if (Kind == "Output")
+        {
+            options.AppendLine($"                    [\"Kind\"] = \"Output\",");
+        }
+
         options.AppendLine("                    [\"IsContainer\"] = false");
         options.Append("                }");
 

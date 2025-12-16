@@ -897,6 +897,88 @@ public record CollapsingStateEvent(
 
 #endregion
 
+#region Structured Output Events
+
+/// <summary>
+/// A structured output result containing a parsed (partial or complete) value.
+/// Emitted during RunStructuredAsync&lt;T&gt;() streaming.
+/// </summary>
+/// <typeparam name="T">The output type</typeparam>
+/// <param name="Value">The parsed value (partial or complete)</param>
+/// <param name="IsPartial">True if this is an intermediate result, false if final</param>
+/// <param name="RawJson">The raw JSON string that was parsed</param>
+public sealed record StructuredResultEvent<T>(
+    T Value,
+    bool IsPartial,
+    string RawJson
+) : AgentEvent where T : class;
+
+/// <summary>
+/// Emitted when structured output parsing fails on final validation.
+/// Partial parse failures are silently skipped; this is only for final failures.
+/// </summary>
+/// <param name="RawJson">The JSON that failed to parse</param>
+/// <param name="ErrorMessage">Description of the error</param>
+/// <param name="ExpectedTypeName">The type we attempted to deserialize to</param>
+/// <param name="Exception">The underlying exception (if any)</param>
+public sealed record StructuredOutputErrorEvent(
+    string RawJson,
+    string ErrorMessage,
+    string ExpectedTypeName,
+    Exception? Exception = null
+) : AgentEvent;
+
+#region Structured Output Observability Events
+
+/// <summary>
+/// Emitted when structured output processing starts.
+/// Provides observability into structured output operations.
+/// </summary>
+/// <param name="MessageId">Unique identifier for this structured output operation</param>
+/// <param name="OutputTypeName">The name of the output type (e.g., "WeatherReport")</param>
+/// <param name="OutputMode">The output mode: "native" or "tool"</param>
+public sealed record StructuredOutputStartEvent(
+    string MessageId,
+    string OutputTypeName,
+    string OutputMode
+) : AgentEvent, IObservabilityEvent;
+
+/// <summary>
+/// Emitted when a partial structured output is successfully parsed.
+/// Used for monitoring streaming partial parse performance.
+/// </summary>
+/// <param name="MessageId">Unique identifier for this structured output operation</param>
+/// <param name="OutputTypeName">The name of the output type</param>
+/// <param name="ParseAttempt">The number of parse attempts so far</param>
+/// <param name="AccumulatedJsonLength">Current length of accumulated JSON</param>
+public sealed record StructuredOutputPartialEvent(
+    string MessageId,
+    string OutputTypeName,
+    int ParseAttempt,
+    int AccumulatedJsonLength
+) : AgentEvent, IObservabilityEvent;
+
+/// <summary>
+/// Emitted when structured output processing completes successfully.
+/// Provides performance metrics for monitoring.
+/// </summary>
+/// <param name="MessageId">Unique identifier for this structured output operation</param>
+/// <param name="OutputTypeName">The name of the output type</param>
+/// <param name="TotalParseAttempts">Total number of partial parse attempts</param>
+/// <param name="FinalJsonLength">Length of the final JSON</param>
+/// <param name="Duration">Total duration of structured output processing</param>
+public sealed record StructuredOutputCompleteEvent(
+    string MessageId,
+    string OutputTypeName,
+    int TotalParseAttempts,
+    int FinalJsonLength,
+    TimeSpan Duration
+) : AgentEvent, IObservabilityEvent;
+
+#endregion
+
+#endregion
+
 /// <summary>
 /// Abstraction for bidirectional event coordination.
 /// Enables middlewares to emit events and wait for responses

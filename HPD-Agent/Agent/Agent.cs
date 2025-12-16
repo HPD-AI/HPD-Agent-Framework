@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.Session;
+using HPD.Agent.StructuredOutput;
 
 namespace HPD.Agent;
 
@@ -857,6 +858,25 @@ public sealed class Agent
                         // on every iteration for very long conversations
                         messagesToSend = state.CurrentMessages;
                         messageCountToSend = state.CurrentMessages.Count;
+                    }
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // RUNTIME TOOLS MERGE (for structured output tool mode)
+                    // Must happen BEFORE BeforeIterationAsync so middleware sees the output tool
+                    // Only merge once - subsequent iterations reuse the merged options
+                    // ═══════════════════════════════════════════════════════════════
+                    if (runOptions?.RuntimeTools?.Count > 0 && state.Iteration == 0)
+                    {
+                        // Clone options to avoid mutating shared instances
+                        effectiveOptions = effectiveOptions?.Clone() ?? new ChatOptions();
+
+                        // Merge runtime tools with existing tools
+                        var allTools = new List<AITool>();
+                        if (effectiveOptions.Tools != null)
+                            allTools.AddRange(effectiveOptions.Tools);
+                        allTools.AddRange(runOptions.RuntimeTools);
+
+                        effectiveOptions.Tools = allTools;
                     }
 
                     // CREATE MIDDLEWARE CONTEXT
@@ -2039,6 +2059,512 @@ public sealed class Agent
             NotifyObservers(evt);
         }
     }
+
+    #region Structured Output
+
+    /// <summary>
+    /// Runs the agent with structured output, yielding typed results.
+    /// This is the primary implementation - all other overloads delegate to this.
+    /// Preserves all bidirectional events (permissions, continuations, custom events).
+    /// </summary>
+    /// <typeparam name="T">The output type. Must be a reference type for JSON deserialization.</typeparam>
+    /// <param name="messages">Messages to process</param>
+    /// <param name="session">Optional session for conversation history</param>
+    /// <param name="options">Per-invocation run options (includes StructuredOutput config)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of agent events including StructuredResultEvent&lt;T&gt;</returns>
+    /// <remarks>
+    /// <para><b>Generic Constraint:</b> The <c>where T : class</c> constraint is required because:</para>
+    /// <list type="bullet">
+    /// <item>JSON deserialization returns null for invalid input - structs can't be null</item>
+    /// <item>Partial results may have uninitialized fields - reference types handle this gracefully</item>
+    /// <item>Consistent with M.E.AI's structured output patterns</item>
+    /// </list>
+    /// <para>If you need to return a primitive or struct, wrap it in a class:</para>
+    /// <code>public record CountResult(int Count);</code>
+    /// </remarks>
+    public async IAsyncEnumerable<AgentEvent> RunStructuredAsync<T>(
+        IEnumerable<ChatMessage> messages,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default) where T : class
+    {
+        // Ensure StructuredOutput options exist
+        options ??= new AgentRunOptions();
+        options.StructuredOutput ??= new StructuredOutputOptions();
+
+        var structuredOpts = options.StructuredOutput;
+        var schemaName = structuredOpts.SchemaName ?? typeof(T).Name;
+
+        // Resolve serializer options (AOT-safe pattern)
+        var serializerOptions = ResolveSerializerOptions(structuredOpts);
+
+        // Configure ChatOptions based on mode
+        ConfigureStructuredOutputOptions<T>(options, serializerOptions);
+
+        // State for streaming
+        var textAccumulator = new StringBuilder();
+        var debounceStopwatch = Stopwatch.StartNew();
+        string? lastPartialJson = null;  // Compare JSON strings, not object references
+        string? outputToolCallId = null;  // Track output tool call ID for tool mode
+        Type? matchedUnionType = null;   // Track which union type was matched (union mode only)
+
+        // Determine if we're in tool mode or union mode
+        var isToolMode = structuredOpts.Mode.Equals("tool", StringComparison.OrdinalIgnoreCase);
+        var isUnionMode = structuredOpts.Mode.Equals("union", StringComparison.OrdinalIgnoreCase);
+        var outputToolName = structuredOpts.ToolName ?? $"return_{schemaName}";
+
+        // Build set of output tool names for union mode
+        HashSet<string>? unionToolNames = null;
+        Dictionary<string, Type>? unionToolTypeMap = null;
+        if (isUnionMode && structuredOpts.UnionTypes != null)
+        {
+            unionToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            unionToolTypeMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+            foreach (var unionType in structuredOpts.UnionTypes)
+            {
+                var toolName = $"return_{unionType.Name}";
+                unionToolNames.Add(toolName);
+                unionToolTypeMap[toolName] = unionType;
+            }
+        }
+
+        // Observability: Track metrics
+        var messageId = Guid.NewGuid().ToString("N")[..12];
+        var startTime = Stopwatch.GetTimestamp();
+        var parseAttemptCount = 0;
+
+        // Emit start event for observability
+        yield return new StructuredOutputStartEvent(
+            MessageId: messageId,
+            OutputTypeName: schemaName,
+            OutputMode: isUnionMode ? "union" : (isToolMode ? "tool" : "native"));
+
+        await foreach (var evt in RunAsync(messages, session, options, cancellationToken))
+        {
+            // ═══════════════════════════════════════════════════════════════
+            // PASS-THROUGH: All bidirectional events (built-in + custom)
+            // Uses interface check - supports PermissionRequestEvent,
+            // ContinuationRequestEvent, ClarificationRequestEvent, and any
+            // custom events implementing IBidirectionalEvent
+            // ═══════════════════════════════════════════════════════════════
+            if (evt is IBidirectionalEvent)
+            {
+                yield return evt;
+                continue;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // TOOL MODE / UNION MODE: Capture output tool arguments
+            // ═══════════════════════════════════════════════════════════════
+            if (isToolMode || isUnionMode)
+            {
+                if (evt is ToolCallStartEvent toolStart)
+                {
+                    // Check if this is our output tool (tool mode) or a union output tool (union mode)
+                    if (isToolMode && toolStart.Name == outputToolName)
+                    {
+                        outputToolCallId = toolStart.CallId;
+                        continue;
+                    }
+                    else if (isUnionMode && unionToolNames!.Contains(toolStart.Name))
+                    {
+                        outputToolCallId = toolStart.CallId;
+                        matchedUnionType = unionToolTypeMap![toolStart.Name];
+                        continue;
+                    }
+                }
+
+                if (evt is ToolCallArgsEvent argsEvt && argsEvt.CallId == outputToolCallId)
+                {
+                    // Tool mode: Args arrive COMPLETE (M.E.AI accumulates internally)
+                    // No streaming partials possible - just store for final parsing
+                    textAccumulator.Clear();
+                    textAccumulator.Append(argsEvt.ArgsJson);
+                    continue;
+                }
+
+                if (evt is ToolCallEndEvent toolEnd && toolEnd.CallId == outputToolCallId)
+                {
+                    // Final parse for tool/union mode
+                    // Note: Event draining is handled by RunAsync() - no need to drain here
+                    var finalJson = textAccumulator.ToString();
+                    var elapsed = Stopwatch.GetElapsedTime(startTime);
+                    var resultTypeName = isUnionMode && matchedUnionType != null
+                        ? matchedUnionType.Name
+                        : schemaName;
+
+                    // Emit observability complete event
+                    yield return new StructuredOutputCompleteEvent(
+                        MessageId: messageId,
+                        OutputTypeName: resultTypeName,
+                        TotalParseAttempts: parseAttemptCount,
+                        FinalJsonLength: finalJson.Length,
+                        Duration: elapsed);
+
+                    if (isUnionMode && matchedUnionType != null)
+                    {
+                        // Union mode: deserialize to the specific union type, then cast to T
+                        yield return EmitUnionResult<T>(finalJson, matchedUnionType, serializerOptions);
+                    }
+                    else
+                    {
+                        yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+                    }
+                    yield break;
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // NATIVE MODE: Accumulate text deltas
+            // ═══════════════════════════════════════════════════════════════
+            if (evt is TextDeltaEvent delta)
+            {
+                textAccumulator.Append(delta.Text);
+
+                // Debounced partial parsing
+                if (structuredOpts.StreamPartials &&
+                    debounceStopwatch.ElapsedMilliseconds >= structuredOpts.PartialDebounceMs)
+                {
+                    if (TryParsePartial<T>(textAccumulator.ToString(), serializerOptions, out var partial, out var closedJson) &&
+                        closedJson != lastPartialJson)
+                    {
+                        lastPartialJson = closedJson;
+                        debounceStopwatch.Restart();
+                        parseAttemptCount++;
+
+                        // Emit observability event for partial parse
+                        yield return new StructuredOutputPartialEvent(
+                            MessageId: messageId,
+                            OutputTypeName: schemaName,
+                            ParseAttempt: parseAttemptCount,
+                            AccumulatedJsonLength: textAccumulator.Length);
+
+                        yield return new StructuredResultEvent<T>(partial, IsPartial: true, closedJson);
+                    }
+                }
+                continue;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // NATIVE MODE STREAM END: Final validation
+            // In tool/union mode, ignore TextMessageEndEvent - we wait for output tool
+            // ═══════════════════════════════════════════════════════════════
+            if (evt is TextMessageEndEvent && !isToolMode && !isUnionMode)
+            {
+                // Note: Event draining is handled by RunAsync() - no need to drain here
+                var finalJson = textAccumulator.ToString();
+                var elapsed = Stopwatch.GetElapsedTime(startTime);
+
+                // Emit observability complete event
+                yield return new StructuredOutputCompleteEvent(
+                    MessageId: messageId,
+                    OutputTypeName: schemaName,
+                    TotalParseAttempts: parseAttemptCount,
+                    FinalJsonLength: finalJson.Length,
+                    Duration: elapsed);
+
+                yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+                yield break;
+            }
+
+            // Pass through other events (observability, etc.)
+            yield return evt;
+        }
+
+        // Stream ended without explicit end event - try to parse what we have
+        // Only for native mode - tool/union mode must receive an output tool call
+        if (textAccumulator.Length > 0 && !isToolMode && !isUnionMode)
+        {
+            var finalJson = textAccumulator.ToString();
+            var elapsed = Stopwatch.GetElapsedTime(startTime);
+
+            // Emit observability complete event
+            yield return new StructuredOutputCompleteEvent(
+                MessageId: messageId,
+                OutputTypeName: schemaName,
+                TotalParseAttempts: parseAttemptCount,
+                FinalJsonLength: finalJson.Length,
+                Duration: elapsed);
+
+            yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+        }
+    }
+
+    /// <summary>
+    /// Convenience overload: Runs structured output from a string message.
+    /// </summary>
+    public IAsyncEnumerable<AgentEvent> RunStructuredAsync<T>(
+        string userMessage,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
+        CancellationToken cancellationToken = default) where T : class
+        => RunStructuredAsync<T>(
+            new[] { new ChatMessage(ChatRole.User, userMessage) },
+            session, options, cancellationToken);
+
+    // ═══════════════════════════════════════════════════════════════
+    // STRUCTURED OUTPUT PRIVATE HELPERS
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Resolves serializer options, ensuring they're ready for GetTypeInfo().
+    /// Falls back to AIJsonUtilities.DefaultOptions if not specified.
+    /// </summary>
+    private static JsonSerializerOptions ResolveSerializerOptions(StructuredOutputOptions opts)
+    {
+        var options = opts.SerializerOptions ?? AIJsonUtilities.DefaultOptions;
+        options.MakeReadOnly(); // Required before GetTypeInfo()
+        return options;
+    }
+
+    private void ConfigureStructuredOutputOptions<T>(
+        AgentRunOptions options,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        options.Chat ??= new ChatRunOptions();
+        var chatOptions = options.Chat;
+        var structuredOpts = options.StructuredOutput!;
+        var schemaName = structuredOpts.SchemaName ?? typeof(T).Name;
+        var schemaDesc = structuredOpts.SchemaDescription ?? $"Response of type {schemaName}";
+
+        if (structuredOpts.Mode.Equals("union", StringComparison.OrdinalIgnoreCase))
+        {
+            // Union mode: Create output tool for each union type
+            if (structuredOpts.UnionTypes == null || structuredOpts.UnionTypes.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "Union mode requires UnionTypes to be specified with at least one type.");
+            }
+
+            options.RuntimeTools ??= new List<AITool>();
+            foreach (var unionType in structuredOpts.UnionTypes)
+            {
+                var tool = CreateOutputToolForType(unionType, serializerOptions);
+                options.RuntimeTools.Add(tool);
+            }
+        }
+        else if (structuredOpts.Mode.Equals("tool", StringComparison.OrdinalIgnoreCase))
+        {
+            // Tool mode: Create output tool and add to RuntimeTools
+            // RuntimeTools are merged with agent's configured tools in RunAsync
+            var outputTool = CreateOutputTool<T>(structuredOpts, serializerOptions);
+            options.RuntimeTools ??= new List<AITool>();
+            options.RuntimeTools.Add(outputTool);
+        }
+        else
+        {
+            // Native mode: Set response format with JSON schema
+            // Use provided serializerOptions for consistent schema generation
+            chatOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema<T>(
+                serializerOptions,
+                schemaName: schemaName,
+                schemaDescription: schemaDesc);
+        }
+    }
+
+    /// <summary>
+    /// Creates an output tool using HPDAIFunctionFactory.
+    /// Output tools are never executed - calling one terminates the agent run
+    /// and the arguments ARE the structured output.
+    /// </summary>
+    private AIFunction CreateOutputTool<T>(
+        StructuredOutputOptions options,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        var schemaName = options.SchemaName ?? typeof(T).Name;
+        var toolName = options.ToolName ?? $"return_{schemaName}";
+        var description = options.SchemaDescription ?? $"Submit the final {schemaName} result";
+
+        // Use HPDAIFunctionFactory - our existing factory that supports AdditionalProperties
+        return HPDAIFunctionFactory.Create(
+            invocation: (_, _) => Task.FromResult<object?>(null), // Output tools never execute
+            options: new HPDAIFunctionFactoryOptions
+            {
+                Name = toolName,
+                Description = description,
+                SchemaProvider = () => AIJsonUtilities.CreateJsonSchema(
+                    typeof(T),
+                    description: description,
+                    serializerOptions: serializerOptions), // Use provided options for AOT compatibility
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["Kind"] = "Output",
+                    ["OutputType"] = typeof(T).FullName
+                }
+            });
+    }
+
+    /// <summary>
+    /// Creates an output tool for a specific type (used in union mode).
+    /// Non-generic version that accepts a Type parameter.
+    /// </summary>
+    private AIFunction CreateOutputToolForType(
+        Type outputType,
+        JsonSerializerOptions serializerOptions)
+    {
+        var typeName = outputType.Name;
+        var toolName = $"return_{typeName}";
+        var description = $"Submit a {typeName} result";
+
+        return HPDAIFunctionFactory.Create(
+            invocation: (_, _) => Task.FromResult<object?>(null), // Output tools never execute
+            options: new HPDAIFunctionFactoryOptions
+            {
+                Name = toolName,
+                Description = description,
+                SchemaProvider = () => AIJsonUtilities.CreateJsonSchema(
+                    outputType,
+                    description: description,
+                    serializerOptions: serializerOptions),
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["Kind"] = "Output",
+                    ["OutputType"] = outputType.FullName
+                }
+            });
+    }
+
+    /// <summary>
+    /// Attempts to parse partial JSON into a typed result.
+    /// Uses AOT-safe GetTypeInfo() pattern for deserialization.
+    /// Returns the closed JSON string for deduplication (comparing JSON, not object references).
+    /// </summary>
+    private static bool TryParsePartial<T>(
+        string json,
+        JsonSerializerOptions serializerOptions,
+        [NotNullWhen(true)] out T? result,
+        [NotNullWhen(true)] out string? closedJson) where T : class
+    {
+        result = default;
+        closedJson = null;
+
+        var closed = PartialJsonCloser.TryClose(json);
+        if (closed == null)
+            return false;
+
+        try
+        {
+            // AOT-safe: Use GetTypeInfo() instead of generic Deserialize<T>()
+            var typeInfo = (JsonTypeInfo<T>)serializerOptions.GetTypeInfo(typeof(T));
+            result = JsonSerializer.Deserialize(closed, typeInfo);
+            if (result != null)
+            {
+                closedJson = closed;
+                return true;
+            }
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static AgentEvent EmitFinalResult<T>(
+        string rawJson,
+        string typeName,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        // Strip markdown fences if present
+        var json = StripMarkdownFences(rawJson);
+
+        try
+        {
+            // AOT-safe: Use GetTypeInfo() instead of generic Deserialize<T>()
+            var typeInfo = (JsonTypeInfo<T>)serializerOptions.GetTypeInfo(typeof(T));
+            var result = JsonSerializer.Deserialize(json, typeInfo);
+
+            if (result == null)
+            {
+                return new StructuredOutputErrorEvent(
+                    json,
+                    "Deserialization returned null",
+                    typeName);
+            }
+            else
+            {
+                return new StructuredResultEvent<T>(result, IsPartial: false, json);
+            }
+        }
+        catch (JsonException ex)
+        {
+            return new StructuredOutputErrorEvent(
+                json,
+                ex.Message,
+                typeName,
+                ex);
+        }
+    }
+
+    /// <summary>
+    /// Emits a structured result for union mode.
+    /// Deserializes to the specific union type, then casts to the base type T.
+    /// </summary>
+    private static AgentEvent EmitUnionResult<T>(
+        string rawJson,
+        Type unionType,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        // Strip markdown fences if present
+        var json = StripMarkdownFences(rawJson);
+        var typeName = unionType.Name;
+
+        try
+        {
+            // Non-generic deserialization for the specific union type
+            var typeInfo = serializerOptions.GetTypeInfo(unionType);
+            var result = JsonSerializer.Deserialize(json, typeInfo);
+
+            if (result == null)
+            {
+                return new StructuredOutputErrorEvent(
+                    json,
+                    "Deserialization returned null",
+                    typeName);
+            }
+
+            // Cast to T (the base type)
+            if (result is T typedResult)
+            {
+                return new StructuredResultEvent<T>(typedResult, IsPartial: false, json);
+            }
+            else
+            {
+                return new StructuredOutputErrorEvent(
+                    json,
+                    $"Result of type {result.GetType().Name} is not assignable to {typeof(T).Name}",
+                    typeName);
+            }
+        }
+        catch (JsonException ex)
+        {
+            return new StructuredOutputErrorEvent(
+                json,
+                ex.Message,
+                typeName,
+                ex);
+        }
+    }
+
+    private static string StripMarkdownFences(string json)
+    {
+        var span = json.AsSpan().Trim();
+
+        if (span.StartsWith("```"))
+        {
+            var newlineIdx = span.IndexOf('\n');
+            if (newlineIdx > 0)
+                span = span[(newlineIdx + 1)..];
+
+            if (span.EndsWith("```"))
+                span = span[..^3].Trim();
+        }
+
+        return span.ToString();
+    }
+
+    #endregion
 
     /// <summary>
     /// Builds initial context properties dictionary from AgentRunOptions.
@@ -3657,6 +4183,15 @@ internal class FunctionCallProcessor
         return map?.TryGetValue(name, out var func) == true ? func : null;
     }
 
+    /// <summary>
+    /// Checks if a function is an output tool (structured output tool mode).
+    /// Output tools are never executed - their arguments ARE the structured output.
+    /// </summary>
+    private static bool IsOutputTool(AIFunction? function)
+    {
+        return function?.AdditionalProperties?.TryGetValue("Kind", out var kind) == true
+               && kind?.ToString() == "Output";
+    }
 
     /// <summary>
     /// Executes function calls with automatic routing between sequential/parallel execution.
@@ -3961,6 +4496,18 @@ internal class FunctionCallProcessor
 
             // Resolve the function from the merged function map
             var function = FindFunction(functionCall.Name, functionMap);
+
+            // ═══════════════════════════════════════════════════════════════
+            // OUTPUT TOOL CHECK (structured output tool mode)
+            // Output tools don't execute - their args ARE the structured output
+            // RunStructuredAsync handles parsing via ToolCallArgsEvent
+            // ═══════════════════════════════════════════════════════════════
+            if (IsOutputTool(function))
+            {
+                // Skip execution - args are captured by RunStructuredAsync
+                // Still emits ToolCallEndEvent so RunStructuredAsync knows args are complete
+                continue;
+            }
 
             // Extract Collapse information for middleware Collapsing
             string? toolTypeName = null;

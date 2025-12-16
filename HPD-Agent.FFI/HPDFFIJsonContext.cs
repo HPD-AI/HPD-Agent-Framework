@@ -5,6 +5,7 @@ using HPD.Agent;
 using HPD.Agent.FFI;
 using HPD.Agent.MCP;
 using HPD.Agent.Memory;
+using HPD.Agent.StructuredOutput;
 
 namespace HPD.Agent.FFI;
 
@@ -127,6 +128,14 @@ namespace HPD.Agent.FFI;
 [JsonSerializable(typeof(ClarificationResponseEvent))]
 [JsonSerializable(typeof(MiddlewareProgressEvent))]
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
+
+// --- Structured Output Types ---
+[JsonSerializable(typeof(StructuredOutputOptions))]
+[JsonSerializable(typeof(StructuredOutputErrorEvent))]
+[JsonSerializable(typeof(StructuredResultEventDto))]
+[JsonSerializable(typeof(StructuredOutputStartEvent))]
+[JsonSerializable(typeof(StructuredOutputPartialEvent))]
+[JsonSerializable(typeof(StructuredOutputCompleteEvent))]
 
 // --- Agent State Types ---
 [JsonSerializable(typeof(AgentLoopState))]

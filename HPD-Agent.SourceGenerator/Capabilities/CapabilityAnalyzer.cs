@@ -436,6 +436,9 @@ internal static class CapabilityAnalyzer
         var requiresPermission = HasAttribute(attrs, "RequiresPermission");
         var requiredPermissions = GetRequiredPermissions(attrs);
 
+        // Extract Kind from [AIFunction(Kind = ...)]
+        var kind = GetToolKind(attrs);
+
         var functionCapability = new FunctionCapability
         {
             Name = methodName,
@@ -454,6 +457,7 @@ internal static class CapabilityAnalyzer
             IsAsync = isAsync,
             RequiresPermission = requiresPermission,
             RequiredPermissions = requiredPermissions.ToList(),
+            Kind = kind,
 
             // TODO Phase 2: Add validation data
         };
@@ -507,6 +511,31 @@ internal static class CapabilityAnalyzer
         // For now, return null (use method name)
         // TODO Phase 2: Extract from AIFunction attribute arguments
         return null;
+    }
+
+    /// <summary>
+    /// Extracts tool kind from [AIFunction(Kind = ToolKind.Output)] attribute.
+    /// Returns "Function" (default) or "Output".
+    /// </summary>
+    private static string GetToolKind(List<AttributeSyntax> attrs)
+    {
+        var aiFunctionAttr = attrs.FirstOrDefault(a =>
+            a.Name.ToString().Contains("AIFunction"));
+
+        if (aiFunctionAttr?.ArgumentList != null)
+        {
+            // Look for Kind = ToolKind.Output argument
+            var kindArg = aiFunctionAttr.ArgumentList.Arguments
+                .FirstOrDefault(a => a.NameEquals?.Name.Identifier.ValueText == "Kind");
+
+            if (kindArg?.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                // ToolKind.Output -> "Output"
+                return memberAccess.Name.Identifier.ValueText;
+            }
+        }
+
+        return "Function"; // Default
     }
 
     /// <summary>
