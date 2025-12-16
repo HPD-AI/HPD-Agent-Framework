@@ -222,6 +222,39 @@ public class AgentRunOptions
 
     #endregion
 
+    #region Audio
+
+    /// <summary>
+    /// Audio configuration for this run.
+    /// When set, enables voice input/output capabilities.
+    /// Overrides AudioPipelineMiddleware defaults when set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Audio options control how voice is processed for this specific run:
+    /// - Processing mode: Pipeline (STT → LLM → TTS) or Native (single model)
+    /// - I/O mode: What input/output modalities to use
+    /// - Voice/model: Override TTS voice and model
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// var options = new AgentRunOptions
+    /// {
+    ///     Audio = new AudioRunOptions
+    ///     {
+    ///         IOMode = AudioIOMode.AudioToAudioAndText,
+    ///         Voice = "nova"
+    ///     }
+    /// };
+    /// await agent.RunAsync(messages, options);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public object? Audio { get; set; }
+
+    #endregion
+
     #region Structured Output
 
     /// <summary>

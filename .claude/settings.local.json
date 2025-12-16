@@ -30,7 +30,8 @@
       "Bash(wc:*)",
       "Bash(xargs:*)",
       "Bash(\"02.3 Client Tools.md\")",
-      "Bash(\"02 Tools Overview.md\" \"02.1 C# Tools Overview.md\" \"02.1.1 AIFunctions.md\" \"02.1.2 Skills.md\" \"02.1.3 SubAgents.md\" \"02.1.4 Tool Metadata.md\" \"02.1.5 Context Engineering.md\" \"02.1.6 Writing Instructions.md\" \"02.1.7 Conditional Expression DSL.md\")"
+      "Bash(\"02 Tools Overview.md\" \"02.1 C# Tools Overview.md\" \"02.1.1 AIFunctions.md\" \"02.1.2 Skills.md\" \"02.1.3 SubAgents.md\" \"02.1.4 Tool Metadata.md\" \"02.1.5 Context Engineering.md\" \"02.1.6 Writing Instructions.md\" \"02.1.7 Conditional Expression DSL.md\")",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

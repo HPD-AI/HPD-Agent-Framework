@@ -1302,6 +1302,25 @@ public sealed class Agent
                             yield return MiddlewareEvt;
                         }
 
+                        // ═══════════════════════════════════════════════════════════════
+                        // OUTPUT TOOL TERMINATION (structured output tool mode)
+                        // When an output tool is called, terminate immediately.
+                        // RunStructuredAsync captures the args and handles parsing.
+                        // ═══════════════════════════════════════════════════════════════
+                        if (executionResult.OutputToolCalled)
+                        {
+                            // Emit ToolCallEndEvent for output tools so RunStructuredAsync knows args are complete
+                            foreach (var toolRequest in toolRequests)
+                            {
+                                if (_functionCallProcessor.IsOutputToolByName(toolRequest.Name, effectiveOptionsForTools?.Tools))
+                                {
+                                    yield return new ToolCallEndEvent(toolRequest.CallId);
+                                }
+                            }
+                            state = state.Terminate("Output tool called - structured output complete");
+                            break;
+                        }
+
                         // EXECUTE AFTER ITERATION MIDDLEWARES (post-tool execution)
                         middlewareContext.ToolResults = toolResultMessage.Contents
                             .OfType<FunctionResultContent>()
@@ -4184,6 +4203,18 @@ internal class FunctionCallProcessor
     }
 
     /// <summary>
+    /// Checks if a function by name is an output tool (structured output tool mode).
+    /// </summary>
+    public bool IsOutputToolByName(string? functionName, IList<AITool>? tools)
+    {
+        if (string.IsNullOrEmpty(functionName))
+            return false;
+        var functionMap = BuildMergedMap(_serverConfiguredTools, tools);
+        var function = FindFunction(functionName, functionMap);
+        return IsOutputTool(function);
+    }
+
+    /// <summary>
     /// Checks if a function is an output tool (structured output tool mode).
     /// Output tools are never executed - their arguments ARE the structured output.
     /// </summary>
@@ -4211,19 +4242,26 @@ internal class FunctionCallProcessor
         AgentLoopState agentLoopState,
         CancellationToken cancellationToken)
     {
+        // Check if any tool request is an output tool (structured output termination)
+        var functionMap = BuildMergedMap(_serverConfiguredTools, options?.Tools);
+        bool outputToolCalled = toolRequests.Any(tr =>
+            !string.IsNullOrEmpty(tr.Name) && IsOutputTool(FindFunction(tr.Name, functionMap)));
+
         // Route to appropriate execution strategy
         // For single tool calls, inline execution (no parallel overhead)
         if (toolRequests.Count <= 1)
         {
-            return await ExecuteSequentiallyAsync(
+            var result = await ExecuteSequentiallyAsync(
                 currentHistory, toolRequests, options, agentLoopState,
                 cancellationToken).ConfigureAwait(false);
+            return result with { OutputToolCalled = outputToolCalled };
         }
 
         // For multiple tools, use parallel execution with throttling
-        return await ExecuteInParallelAsync(
+        var parallelResult = await ExecuteInParallelAsync(
             currentHistory, toolRequests, options, agentLoopState,
             cancellationToken).ConfigureAwait(false);
+        return parallelResult with { OutputToolCalled = outputToolCalled };
     }
 
     /// <summary>
@@ -5824,6 +5862,7 @@ public record EventDroppedEvent(
 /// </summary>
 internal record ToolExecutionResult(
     ChatMessage Message,
-    HashSet<string> SuccessfulFunctions);
+    HashSet<string> SuccessfulFunctions,
+    bool OutputToolCalled = false);
 
 #endregion

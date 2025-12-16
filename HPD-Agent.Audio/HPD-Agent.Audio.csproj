@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>HPD.Agent.Audio</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <NoWarn>HPDAUDIO001;MEAI001;IL2026;IL3050</NoWarn>
+    <!-- Native AOT Configuration -->
+    <PublishAot>true</PublishAot>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <!-- NuGet Package Metadata -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>HPD-Agent.Audio</PackageId>
+    <Description>Audio pipeline abstractions and middleware for HPD-Agent. Includes TTS/STT abstractions, VAD, turn detection, and audio events.</Description>
+    <PackageTags>ai;agent;audio;tts;stt;voice;speech;middleware</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Core HPD-Agent dependency -->
+    <ProjectReference Include="..\HPD-Agent\HPD-Agent.csproj" />
+        <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
+  </ItemGroup>
+
+  <!-- Expose internals to test project -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent.Tests" />
+  </ItemGroup>
+
+</Project>
