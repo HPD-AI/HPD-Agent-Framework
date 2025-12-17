@@ -58,7 +58,7 @@ public enum TurnDetectionStrategy
     /// <summary>Always run this detection method.</summary>
     Always,
 
-    /// <summary>User controls turn boundaries via CommitUserTurn(). (from LiveKit)</summary>
+    /// <summary>User controls turn boundaries via CommitUserTurn(). ( )</summary>
     Manual
 }
 

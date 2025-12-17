@@ -1,6 +1,6 @@
-# Agent Session
+# Multi-Turn Conversations
 
-This guide covers `AgentSession` - the core type that holds conversation state - and the persistence options available.
+To enable Multi-Turn Conversations with Agents we are going to cover the `AgentSession` - the core type that holds conversation state - and the persistence options available.
 
 ## What is AgentSession?
 
@@ -24,32 +24,35 @@ public class AgentSession
 }
 ```
 
-## Stateless Usage (No Persistence)
+## In-Memory Sessions (No Persistence)
 
 The simplest way to use HPD-Agent is without any persistence. The session lives only in memory:
 
 ```csharp
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o", apiKey)
-    .WithPlugin<MyTools>()
+     .WithTool<MyTools>()
     .Build();
 
 // Create a new in-memory session
 var session = new AgentSession();
 
+var userMessages = new[] 
+{
+    "Add 10 and 20",      // First tool call
+    "Now multiply the result by 5"  // References previous result
+};
 // Run multiple turns in the same session
-// Signature: RunAsync(message, session?, options?, cancellationToken)
-await foreach (var evt in agent.RunAsync("Hello!", session)) { }
-await foreach (var evt in agent.RunAsync("What did I just say?", session)) { }
-
-// Session is lost when the process ends
+foreach (var message in userMessages)
+{
+    await foreach (var evt in agent.RunAsync(message, session))
+    {
+        if (evt is TextDeltaEvent textDelta)
+            Console.Write(textDelta.Text);
+    }
+    Console.WriteLine();
+}
 ```
-
-**When to use stateless:**
-- Simple scripts or one-off tasks
-- Testing and prototyping
-- Serverless functions where each request is independent
-- When you manage state yourself (e.g., storing messages in your own database)
 
 **Limitations:**
 - Session is lost if the process crashes or restarts

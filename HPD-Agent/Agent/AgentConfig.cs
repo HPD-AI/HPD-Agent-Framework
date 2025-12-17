@@ -459,6 +459,99 @@ public class ProviderConfig
                 $"Unexpected error parsing provider configuration for {typeof(T).Name}: {ex.Message}", ex);
         }
     }
+
+    /// <summary>
+    /// Builds an Agent from this configuration asynchronously.
+    /// 
+    /// Convenience method that creates an AgentBuilder from this config and calls Build().
+    /// Equivalent to: <c>new AgentBuilder(this).Build()</c>
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for the build operation</param>
+    /// <returns>A fully constructed Agent ready to use</returns>
+    /// <remarks>
+    /// This method delegates to AgentBuilder, so all standard build behaviors apply:
+    /// - Provider validation (if EnableAsyncValidation is true)
+    /// - Tool registration
+    /// - Middleware setup
+    /// - Event handler registration
+    /// </remarks>
+    public async Task<Agent> BuildAsync(CancellationToken cancellationToken = default)
+    {
+        var builder = new AgentBuilder(this);
+        return await builder.Build(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds an Agent from this configuration.
+    /// 
+    /// Convenience method that creates an AgentBuilder from this config and calls Build().
+    /// Equivalent to: <c>new AgentBuilder(this).Build()</c>
+    /// </summary>
+    /// <returns>A fully constructed Agent ready to use</returns>
+    /// <remarks>
+    /// Note: This is a async-to-sync bridge. The underlying Build() is asynchronous.
+    /// For better performance, prefer BuildAsync() to avoid blocking threads.
+    /// </remarks>
+    public Agent Build()
+    {
+        return BuildAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Loads a JSON configuration file, deserializes it, and immediately builds an Agent asynchronously.
+    /// Convenience method combining file loading, deserialization, and agent building in one call.
+    /// </summary>
+    /// <param name="filePath">Path to the JSON configuration file</param>
+    /// <param name="cancellationToken">Cancellation token for file I/O and agent building</param>
+    /// <returns>A fully constructed Agent ready to use</returns>
+    /// <exception cref="FileNotFoundException">Thrown when the file does not exist</exception>
+    /// <exception cref="JsonException">Thrown when JSON parsing fails</exception>
+    /// <example>
+    /// <code>
+    /// // Load config.json, deserialize to AgentConfig, and build Agent in one call
+    /// var agent = await AgentConfig.BuildFromFileAsync("agent-config.json");
+    /// </code>
+    /// </example>
+    public static async Task<Agent> BuildFromFileAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException($"Configuration file not found: {filePath}");
+        }
+
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        var config = await JsonSerializer.DeserializeAsync<AgentConfig>(stream, HPDJsonContext.Default.AgentConfig, cancellationToken)
+            .ConfigureAwait(false);
+        
+        if (config == null)
+        {
+            throw new InvalidOperationException($"Failed to deserialize AgentConfig from {filePath}");
+        }
+        
+        return await config.BuildAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Loads a JSON configuration file, deserializes it, and immediately builds an Agent.
+    /// Convenience method combining file loading, deserialization, and agent building in one call.
+    /// </summary>
+    /// <param name="filePath">Path to the JSON configuration file</param>
+    /// <returns>A fully constructed Agent ready to use</returns>
+    /// <exception cref="FileNotFoundException">Thrown when the file does not exist</exception>
+    /// <exception cref="JsonException">Thrown when JSON parsing fails</exception>
+    /// <remarks>
+    /// Note: This is a sync-to-async bridge. For better performance, prefer BuildFromFileAsync() to avoid blocking threads.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Load config.json, deserialize to AgentConfig, and build Agent in one call
+    /// var agent = AgentConfig.BuildFromFile("agent-config.json");
+    /// </code>
+    /// </example>
+    public static Agent BuildFromFile(string filePath)
+    {
+        return BuildFromFileAsync(filePath).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
 }
 
 /// <summary>

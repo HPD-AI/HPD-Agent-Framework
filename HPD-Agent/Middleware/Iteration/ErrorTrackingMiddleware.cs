@@ -249,4 +249,11 @@ public record MaxConsecutiveErrorsExceededEvent(
     int ConsecutiveErrors,
     int MaxConsecutiveErrors,
     int Iteration,
-    DateTimeOffset Timestamp) : AgentEvent, IObservabilityEvent;
+    DateTimeOffset Timestamp) : AgentEvent, IObservabilityEvent, IErrorEvent
+{
+    /// <inheritdoc />
+    public string ErrorMessage => $"Maximum consecutive errors ({ConsecutiveErrors}/{MaxConsecutiveErrors}) exceeded";
+
+    /// <inheritdoc />
+    public Exception? Exception => null;
+}

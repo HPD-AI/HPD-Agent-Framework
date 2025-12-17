@@ -2,11 +2,15 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-
+using HPD.Agent.ServiceDefaults;
 using HPD.Agent.Session;
 using HPD.Agent.ClientTools;
 using HPD.Agent.Memory;
+
 var builder = WebApplication.CreateSlimBuilder(args);
+
+// Add OpenTelemetry observability
+builder.Host.AddOpenTelemetryObservability();
 
 // Configure JSON serialization - chain app context with library context
 builder.Services.ConfigureHttpJsonOptions(options =>

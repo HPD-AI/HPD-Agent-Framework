@@ -253,4 +253,11 @@ public record TotalErrorThresholdExceededEvent(
     int TotalErrorCount,
     int MaxTotalErrors,
     int Iteration,
-    DateTimeOffset Timestamp) : AgentEvent, IObservabilityEvent;
+    DateTimeOffset Timestamp) : AgentEvent, IObservabilityEvent, IErrorEvent
+{
+    /// <inheritdoc />
+    public string ErrorMessage => $"Total error threshold ({TotalErrorCount}/{MaxTotalErrors}) exceeded";
+
+    /// <inheritdoc />
+    public Exception? Exception => null;
+}

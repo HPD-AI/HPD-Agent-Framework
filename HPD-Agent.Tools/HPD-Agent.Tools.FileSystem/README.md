@@ -43,7 +43,7 @@ using HPD.Agent.Plugins.FileSystem;
 
 // Just add the plugin - uses current directory with safe defaults
 var agent = new AgentBuilder()
-    .WithPlugin<FileSystemPlugin>()  // ← That's it!
+     .WithTool<FileSystemPlugin>()  // ← That's it!
     .Build();
 
 // Default context:
@@ -73,7 +73,7 @@ var fileSystemPlugin = new FileSystemPlugin(context);
 
 // 3. Register with AgentBuilder
 var agent = new AgentBuilder()
-    .WithPlugin(fileSystemPlugin, context)  // ← Pass instance + context
+     .WithTool(fileSystemPlugin, context)  // ← Pass instance + context
     .Build();
 ```
 

@@ -39,7 +39,7 @@ See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
 - `[PluginMetadata]` → `[ToolMetadata]`
 
 **AgentBuilder Methods:**
-- `.WithPlugins<T>()` → `.WithTools<T>()`
+- ` .WithTools<T>()` → `.WithTools<T>()`
 - `.WithFrontendTools()` → `.WithClientTools()`
 
 **Configuration:**

@@ -53,8 +53,8 @@ public class FileSystemTools
 **Before:**
 ```csharp
 var agent = new AgentBuilder()
-    .WithPlugins<WeatherPlugin>()
-    .WithPlugins<FileSystemPlugin>()
+     .WithTools<WeatherPlugin>()
+     .WithTools<FileSystemPlugin>()
     .WithFrontendTools()
     .Build();
 ```
@@ -338,7 +338,7 @@ Plugin\b → Tools
 IPluginMetadata → IToolMetadata
 
 # Builder methods
-\.WithPlugins → .WithTools
+\ .WithTools → .WithTools
 \.WithFrontendTools → .WithClientTools
 
 # Config

@@ -62,8 +62,8 @@ var agent = await new AgentBuilder()
     .WithName("ResearchAssistant")
     .WithInstructions("You are a research assistant with access to tools and knowledge.")
     // Plugins & Tools
-    .WithPlugin<WebSearchPlugin>()
-    .WithPlugin<FileSystemPlugin>()
+     .WithTool<WebSearchPlugin>()
+     .WithTool<FileSystemPlugin>()
     .WithToolCollapsing()                              // Reduces tool context for better performance
     // Middleware
     .WithPermissions()                              // Require approval for sensitive operations

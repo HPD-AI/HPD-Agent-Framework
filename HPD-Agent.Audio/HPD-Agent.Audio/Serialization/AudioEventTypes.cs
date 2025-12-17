@@ -38,7 +38,7 @@ public static class AudioEventTypes
     }
 
     /// <summary>
-    /// Preemptive generation events (from LiveKit).
+    /// Preemptive generation events ( ).
     /// </summary>
     public static class PreemptiveGeneration
     {

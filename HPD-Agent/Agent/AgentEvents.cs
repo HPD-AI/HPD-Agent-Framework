@@ -264,7 +264,11 @@ public record MessageTurnFinishedEvent(
 /// <summary>
 /// Emitted when an error occurs during message turn execution
 /// </summary>
-public record MessageTurnErrorEvent(string Message, Exception? Exception = null) : AgentEvent;
+public record MessageTurnErrorEvent(string Message, Exception? Exception = null) : AgentEvent, IErrorEvent
+{
+    /// <inheritdoc />
+    string IErrorEvent.ErrorMessage => Message;
+}
 
 #endregion
 
@@ -533,7 +537,7 @@ public record MiddlewareProgressEvent(
 public record MiddlewareErrorEvent(
     string SourceName,
     string ErrorMessage,
-    Exception? Exception = null) : AgentEvent, IBidirectionalEvent;
+    Exception? Exception = null) : AgentEvent, IBidirectionalEvent, IErrorEvent;
 
 #endregion
 
@@ -545,6 +549,32 @@ public record MiddlewareErrorEvent(
 /// They are processed by IAgentEventObserver implementations.
 /// </summary>
 public interface IObservabilityEvent { }
+
+/// <summary>
+/// Interface for events that represent errors or error conditions.
+/// Provides a unified way to identify and handle error events across the system.
+/// </summary>
+/// <remarks>
+/// Consumers can subscribe to all error events by filtering on this interface:
+/// <code>
+/// if (evt is IErrorEvent error)
+/// {
+///     logger.LogError(error.Exception, "{Message}", error.ErrorMessage);
+/// }
+/// </code>
+/// </remarks>
+public interface IErrorEvent
+{
+    /// <summary>
+    /// Human-readable error message describing what went wrong.
+    /// </summary>
+    string ErrorMessage { get; }
+
+    /// <summary>
+    /// The underlying exception, if available.
+    /// </summary>
+    Exception? Exception { get; }
+}
 
 /// <summary>
 /// Emitted when Collapsed tools visibility is determined for an iteration.
@@ -760,7 +790,11 @@ public record FunctionRetryEvent(
     Exception Exception,
     string ExceptionType,
     string ErrorMessage
-) : AgentEvent, IObservabilityEvent;
+) : AgentEvent, IObservabilityEvent, IErrorEvent
+{
+    /// <inheritdoc />
+    Exception? IErrorEvent.Exception => Exception;
+}
 
 /// <summary>
 /// Emitted when delta sending is activated.
@@ -926,7 +960,7 @@ public sealed record StructuredOutputErrorEvent(
     string ErrorMessage,
     string ExpectedTypeName,
     Exception? Exception = null
-) : AgentEvent;
+) : AgentEvent, IErrorEvent;
 
 #region Structured Output Observability Events
 

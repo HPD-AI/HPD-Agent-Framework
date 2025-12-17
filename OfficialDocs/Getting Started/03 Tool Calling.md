@@ -1,4 +1,4 @@
-# Tools Overview
+# Tool Calling
 
 Tools are functions that the agent can call to interact with the world. HPD-Agent supports multiple sources of tools, all unified under a common system with shared features like collapsing and instructions.
 
@@ -6,7 +6,7 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
 
 | Source | Description | Defined By |
 |--------|-------------|------------|
-| **C# Tools** | Native plugins with full feature support | Developer (code) |
+| **C# Tools** | Native tools with full feature support | Developer (code) |
 | **MCP Servers** | External tools via Model Context Protocol | MCP server configs |
 | **Client Tools** | Tools provided by the client/UI | Client application |
 | **OpenAPI** | Auto-generated from API specs | OpenAPI/Swagger files |

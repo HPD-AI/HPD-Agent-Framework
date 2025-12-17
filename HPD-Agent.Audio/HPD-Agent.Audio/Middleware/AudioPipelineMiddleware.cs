@@ -158,30 +158,30 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// <summary>Remove markdown formatting (**bold**, *italic*, etc). Default: true.</summary>
     public bool FilterMarkdownFormatting { get; set; } = true;
 
-    /// <summary>Remove emoji characters from TTS. Default: true. (from LiveKit)</summary>
+    /// <summary>Remove emoji characters from TTS. Default: true. ( )</summary>
     public bool FilterEmoji { get; set; } = true;
 
     //
     // FALSE INTERRUPTION RECOVERY ( handles noise without speech)
     //
 
-    /// <summary>Enable false interruption recovery. Default: true. (from LiveKit)</summary>
+    /// <summary>Enable false interruption recovery. Default: true. ( )</summary>
     public bool EnableFalseInterruptionRecovery { get; set; } = true;
 
-    /// <summary>Time to wait for transcript after interruption before resuming. Default: 2.0s. (from LiveKit)</summary>
+    /// <summary>Time to wait for transcript after interruption before resuming. Default: 2.0s. ( )</summary>
     public float FalseInterruptionTimeout { get; set; } = 2.0f;
 
-    /// <summary>Resume paused speech if no transcript received. Default: true. (from LiveKit)</summary>
+    /// <summary>Resume paused speech if no transcript received. Default: true. ( )</summary>
     public bool ResumeFalseInterruption { get; set; } = true;
 
     //
     // PREEMPTIVE GENERATION ( speculative LLM inference for lower latency)
     //
 
-    /// <summary>Start LLM inference before turn is confirmed. Reduces latency but uses more compute. Default: false. (from LiveKit)</summary>
+    /// <summary>Start LLM inference before turn is confirmed. Reduces latency but uses more compute. Default: false. ( )</summary>
     public bool EnablePreemptiveGeneration { get; set; } = false;
 
-    /// <summary>Minimum turn completion probability to trigger preemptive generation. Default: 0.7. (from LiveKit)</summary>
+    /// <summary>Minimum turn completion probability to trigger preemptive generation. Default: 0.7. ( )</summary>
     public float PreemptiveGenerationThreshold { get; set; } = 0.7f;
 
     //
