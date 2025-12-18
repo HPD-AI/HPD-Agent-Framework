@@ -150,8 +150,22 @@ public sealed partial class MiddlewareState
     /// T3: Access via property - Smart accessor detects JsonElement, deserializes to TState, caches result
     /// T4: Update state - _states[key] = TState instance (concrete type again)
     /// </para>
+    ///
+    /// <para><b>External Package Usage:</b></para>
+    /// <para>
+    /// External packages (like HPD.Sandbox.Local) can use this method directly
+    /// with the fully-qualified type name as the key. The source generator will
+    /// also create typed properties for consumer projects that reference the package.
+    /// </para>
     /// </remarks>
-    private TState? GetState<TState>(string key) where TState : class
+    /// <example>
+    /// <code>
+    /// // External package can use:
+    /// var state = context.State.MiddlewareState.GetState&lt;SandboxStateData&gt;(
+    ///     "HPD.Sandbox.Local.State.SandboxStateData");
+    /// </code>
+    /// </example>
+    public TState? GetState<TState>(string key) where TState : class
     {
         // Fast path: Check deserialization cache first (post-checkpoint scenario)
         if (_deserializedCache.IsValueCreated &&
@@ -191,7 +205,18 @@ public sealed partial class MiddlewareState
     /// <param name="key">Fully-qualified type name</param>
     /// <param name="state">New state value</param>
     /// <returns>New container with updated state</returns>
-    protected MiddlewareState SetState<TState>(
+    /// <example>
+    /// <code>
+    /// // External package can use:
+    /// context.UpdateState(s => s with
+    /// {
+    ///     MiddlewareState = s.MiddlewareState.SetState(
+    ///         "HPD.Sandbox.Local.State.SandboxStateData",
+    ///         newSandboxState)
+    /// });
+    /// </code>
+    /// </example>
+    public MiddlewareState SetState<TState>(
         string key,
         TState state) where TState : class
     {

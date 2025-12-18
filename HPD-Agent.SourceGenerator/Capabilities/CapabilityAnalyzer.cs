@@ -436,6 +436,9 @@ internal static class CapabilityAnalyzer
         var requiresPermission = HasAttribute(attrs, "RequiresPermission");
         var requiredPermissions = GetRequiredPermissions(attrs);
 
+        // Check for [Sandboxable] attribute
+        var isSandboxable = HasAttribute(attrs, "Sandboxable");
+
         // Extract Kind from [AIFunction(Kind = ...)]
         var kind = GetToolKind(attrs);
 
@@ -458,6 +461,7 @@ internal static class CapabilityAnalyzer
             RequiresPermission = requiresPermission,
             RequiredPermissions = requiredPermissions.ToList(),
             Kind = kind,
+            IsSandboxable = isSandboxable,
 
             // TODO Phase 2: Add validation data
         };

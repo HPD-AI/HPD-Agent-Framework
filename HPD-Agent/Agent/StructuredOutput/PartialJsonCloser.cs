@@ -24,7 +24,6 @@ namespace HPD.Agent.StructuredOutput;
 /// <item>Trailing commas are not cleaned (e.g., {"items": [1, 2,)</item>
 /// </list>
 /// <para>
-/// Based on LangChain's proven approach for partial JSON parsing.
 /// </para>
 /// </remarks>
 public static class PartialJsonCloser

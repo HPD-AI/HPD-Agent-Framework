@@ -13,13 +13,14 @@ namespace HPD.Agent.SourceGenerator;
 /// <summary>
 /// Incremental source generator for middleware state container.
 /// Generates properties and WithX() methods for types marked with [MiddlewareState].
+/// Supports both source types and types from referenced assemblies.
 /// </summary>
 [Generator]
 public class MiddlewareStateGenerator : IIncrementalGenerator
 {
-    //      
+    //
     // DIAGNOSTIC DESCRIPTORS
-    //      
+    //
 
     private static readonly DiagnosticDescriptor HPD001_MustBeRecord = new(
         id: "HPD001",
@@ -66,24 +67,182 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         "_deserializedCache"
     };
 
-    //      
+    //
     // INITIALIZATION
-    //      
+    //
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Find all types with [MiddlewareState] attribute
-        var stateTypes = context.SyntaxProvider
+        // Find all types with [MiddlewareState] attribute in SOURCE CODE
+        var sourceStateTypes = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: "HPD.Agent.MiddlewareStateAttribute",
                 predicate: (node, _) => node is TypeDeclarationSyntax,
                 transform: GetStateInfo)
             .Where(static info => info is not null);
 
-        // Collect all state types and generate container
+        // Find all types with [MiddlewareState] attribute in REFERENCED ASSEMBLIES
+        var referencedStateTypes = context.CompilationProvider
+            .Select((compilation, ct) => GetReferencedMiddlewareStates(compilation, ct));
+
+        // Combine source and referenced types
+        var allStateTypes = sourceStateTypes.Collect()
+            .Combine(referencedStateTypes)
+            .Select((pair, _) =>
+            {
+                var sourceTypes = pair.Left;
+                var referencedTypes = pair.Right;
+
+                // Combine both lists, referenced types don't have diagnostics
+                var combined = new List<StateInfo>();
+                foreach (var t in sourceTypes)
+                {
+                    if (t != null) combined.Add(t);
+                }
+                combined.AddRange(referencedTypes);
+                return combined.ToImmutableArray();
+            });
+
+        // Generate container with all state types
         context.RegisterSourceOutput(
-            stateTypes.Collect(),
+            allStateTypes,
             (spc, types) => GenerateContainerProperties(spc, types!));
+    }
+
+    /// <summary>
+    /// Scans referenced assemblies for types marked with [MiddlewareState].
+    /// </summary>
+    private static ImmutableArray<StateInfo> GetReferencedMiddlewareStates(
+        Compilation compilation,
+        CancellationToken ct)
+    {
+        var results = new List<StateInfo>();
+        var attributeSymbol = compilation.GetTypeByMetadataName("HPD.Agent.MiddlewareStateAttribute");
+
+        if (attributeSymbol == null)
+            return ImmutableArray<StateInfo>.Empty;
+
+        // Scan all referenced assemblies
+        foreach (var reference in compilation.References)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly)
+                continue;
+
+            // Skip the current assembly (those are handled by ForAttributeWithMetadataName)
+            if (SymbolEqualityComparer.Default.Equals(assembly, compilation.Assembly))
+                continue;
+
+            // Find types with [MiddlewareState] in this assembly
+            var stateTypes = FindTypesWithAttribute(assembly.GlobalNamespace, attributeSymbol, ct);
+
+            foreach (var typeSymbol in stateTypes)
+            {
+                var stateInfo = GetStateInfoFromSymbol(typeSymbol, attributeSymbol);
+                if (stateInfo != null)
+                {
+                    results.Add(stateInfo);
+                }
+            }
+        }
+
+        return results.ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Recursively finds all types with the specified attribute in a namespace.
+    /// </summary>
+    private static IEnumerable<INamedTypeSymbol> FindTypesWithAttribute(
+        INamespaceSymbol ns,
+        INamedTypeSymbol attributeSymbol,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        foreach (var member in ns.GetMembers())
+        {
+            if (member is INamespaceSymbol childNs)
+            {
+                foreach (var type in FindTypesWithAttribute(childNs, attributeSymbol, ct))
+                {
+                    yield return type;
+                }
+            }
+            else if (member is INamedTypeSymbol typeSymbol)
+            {
+                // Check if type has the attribute
+                foreach (var attr in typeSymbol.GetAttributes())
+                {
+                    if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, attributeSymbol))
+                    {
+                        yield return typeSymbol;
+                        break;
+                    }
+                }
+
+                // Also check nested types
+                foreach (var nested in typeSymbol.GetTypeMembers())
+                {
+                    foreach (var attr in nested.GetAttributes())
+                    {
+                        if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, attributeSymbol))
+                        {
+                            yield return nested;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates StateInfo from a type symbol (for referenced assembly types).
+    /// </summary>
+    private static StateInfo? GetStateInfoFromSymbol(
+        INamedTypeSymbol typeSymbol,
+        INamedTypeSymbol attributeSymbol)
+    {
+        // Must be a record
+        if (typeSymbol.TypeKind != TypeKind.Class || !typeSymbol.IsRecord)
+            return null;
+
+        var typeName = typeSymbol.Name;
+        var fullyQualifiedName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+            .Replace("global::", "");
+        var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
+        var propertyName = GetPropertyName(typeName);
+
+        // Check for reserved names
+        if (ReservedPropertyNames.Contains(propertyName))
+            return null;
+
+        // Extract version from attribute
+        int version = 1;
+        var attribute = typeSymbol.GetAttributes()
+            .FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attributeSymbol));
+
+        if (attribute != null)
+        {
+            foreach (var namedArg in attribute.NamedArguments)
+            {
+                if (namedArg.Key == "Version" && namedArg.Value.Value is int v)
+                {
+                    version = v;
+                    break;
+                }
+            }
+        }
+
+        return new StateInfo(
+            TypeName: typeName,
+            FullyQualifiedName: fullyQualifiedName,
+            PropertyName: propertyName,
+            Namespace: namespaceName,
+            Version: version,
+            Diagnostics: new List<Diagnostic>(), // No diagnostics for referenced types
+            IsFromReference: true);
     }
 
     //      
@@ -340,9 +499,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         context.AddSource("MiddlewareState.g.cs", sb.ToString());
     }
 
-    //      
+    //
     // STATE INFO RECORD
-    //      
+    //
 
     private record StateInfo(
         string TypeName,
@@ -350,5 +509,6 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         string PropertyName,
         string Namespace,
         int Version,
-        List<Diagnostic> Diagnostics);
+        List<Diagnostic> Diagnostics,
+        bool IsFromReference = false);
 }

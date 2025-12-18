@@ -59,6 +59,12 @@ internal class FunctionCapability : BaseCapability
     public bool HasConditionalParameters => Parameters.Any(p => p.IsConditional);
 
     /// <summary>
+    /// Whether the function is marked with [Sandboxable] attribute.
+    /// Functions with this attribute should be executed in a sandbox.
+    /// </summary>
+    public bool IsSandboxable { get; set; }
+
+    /// <summary>
     /// Effective function name (custom name if provided, otherwise method name).
     /// </summary>
     public string FunctionName => CustomName ?? Name;
@@ -257,6 +263,7 @@ $@"HPDAIFunctionFactory.Create(
         var props = base.GetAdditionalProperties();
         props["IsContainer"] = false;
         props["RequiresPermission"] = RequiresPermission;
+        props["IsSandboxable"] = IsSandboxable;
 
         if (RequiredPermissions.Any())
             props["RequiredPermissions"] = RequiredPermissions.ToArray();
