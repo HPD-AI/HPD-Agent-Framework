@@ -1,7 +1,6 @@
 using System;
 
-namespace HPD.Agent.Session;
-
+namespace HPD.Agent;
 /// <summary>
 /// Thrown when a checkpoint version is newer than the maximum supported version.
 /// Indicates the user needs to upgrade HPD-Agent.

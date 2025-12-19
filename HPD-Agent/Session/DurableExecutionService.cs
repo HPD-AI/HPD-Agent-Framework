@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Service for durable execution (auto-checkpointing + retention + pending writes).

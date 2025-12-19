@@ -37,10 +37,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OnnxRun
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OpenRouter", "HPD-Agent.Providers\HPD-Agent.Providers.OpenRouter\HPD-Agent.Providers.OpenRouter.csproj", "{C0A57D6F-3CD6-4C07-8D91-A08F01991591}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.ServiceDefaults", "HPD-Agent.ServiceDefaults\HPD-Agent.ServiceDefaults.csproj", "{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.AppHost", "HPD-Agent.AppHost\HPD-Agent.AppHost.csproj", "{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0C88DD14-F956-CE84-757C-A364CCF449FC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentConsoleTest", "test\AgentConsoleTest\AgentConsoleTest.csproj", "{A3FA071B-DF96-4C64-8672-BE9695D897CC}"
@@ -349,30 +345,6 @@ Global
 		{B2C3D4E5-6F7A-8B9C-0D1E-2F3A4B5C6D7E}.Release|x64.Build.0 = Release|Any CPU
 		{B2C3D4E5-6F7A-8B9C-0D1E-2F3A4B5C6D7E}.Release|x86.ActiveCfg = Release|Any CPU
 		{B2C3D4E5-6F7A-8B9C-0D1E-2F3A4B5C6D7E}.Release|x86.Build.0 = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|x64.Build.0 = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Debug|x86.Build.0 = Debug|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|x64.ActiveCfg = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|x64.Build.0 = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|x86.ActiveCfg = Release|Any CPU
-		{9A8B7C6D-5E4F-3A2B-1C0D-9E8F7A6B5C4D}.Release|x86.Build.0 = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|x64.Build.0 = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Debug|x86.Build.0 = Debug|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|Any CPU.Build.0 = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|x64.ActiveCfg = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|x64.Build.0 = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|x86.ActiveCfg = Release|Any CPU
-		{8B7A6C5D-4E3F-2A1B-0C9D-8E7F6A5B4C3D}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

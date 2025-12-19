@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.AI;
 
 
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// JSON serialization context for Session types (AOT-compatible).
@@ -16,9 +16,6 @@ namespace HPD.Agent.Session;
 // Session types
 [JsonSerializable(typeof(SessionSnapshot))]
 [JsonSerializable(typeof(ExecutionCheckpoint))]
-[JsonSerializable(typeof(SessionManifest))]
-[JsonSerializable(typeof(SnapshotManifestEntry))]
-[JsonSerializable(typeof(List<SnapshotManifestEntry>))]
 [JsonSerializable(typeof(CheckpointManifestEntry))]
 [JsonSerializable(typeof(List<CheckpointManifestEntry>))]
 [JsonSerializable(typeof(PendingWrite))]
@@ -37,6 +34,10 @@ namespace HPD.Agent.Session;
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(AgentLoopState))]
+[JsonSerializable(typeof(JsonElement))]
+
+// Tool validation types
+[JsonSerializable(typeof(ValidationErrorResponse))]
 
 public partial class SessionJsonContext : JsonSerializerContext
 {

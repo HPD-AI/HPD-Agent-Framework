@@ -1,6 +1,4 @@
-
-
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Options for configuring session persistence behavior.

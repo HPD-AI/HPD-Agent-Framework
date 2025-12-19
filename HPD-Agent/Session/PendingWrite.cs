@@ -1,4 +1,4 @@
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Represents a function call result saved before iteration checkpoint.

@@ -11,6 +11,23 @@ Agents can:
 - **Iterate** - Keep trying different approaches until the task is complete
 - **Remember context** - Maintain conversation history across turns
 
+## The Agent Loop
+
+The core agent loop involves calling the LLM, letting it choose tools to execute, and finishing when no more tools are needed:
+
+```
+User Message
+    ↓
+Call LLM
+    ↓
+Execute Tools (if LLM requested any)
+    ↓
+Call LLM again 
+    ↓
+Execute Tools (if needed)
+    ↓
+Final Response (no more tools needed)
+```
 ## Your First Agent
 
 ### Step 1: Install NuGet Package
@@ -58,6 +75,41 @@ var agent = new AgentBuilder()
 ```
 
 Now the agent can call `Add` and `Multiply` when needed. For more info on tools: [03 Tool Calling.md](03%20Tool%20Calling.md)
+
+### Step 2c: Create an Agent with Middleware
+
+Middleware lets you intercept and customize agent behavior. Add middleware to log activity, enforce permissions, retry on failure, etc.:
+
+```csharp
+using HPD.Agent;
+using HPD.Agent.Middleware;
+
+// Create middleware to log what the agent does
+public class LoggingMiddleware : IAgentMiddleware
+{
+    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+    {
+        Console.WriteLine($"Calling: {context.Function?.Name}");
+        return Task.CompletedTask;
+    }
+
+    public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+    {
+        Console.WriteLine($"Result: {context.FunctionResult}");
+        return Task.CompletedTask;
+    }
+}
+
+// Create an agent with middleware
+var agent = new AgentBuilder()
+    .WithProvider("openai", "gpt-4o")
+    .WithSystemInstructions("You are a helpful assistant.")
+    .WithTools<CalculatorTool>()
+    .WithMiddleware(new LoggingMiddleware())  // Add the middleware
+    .Build();
+```
+
+Now every time the agent calls a function, your middleware will log it. For more info on middleware: [05 Middleware.md](05%20Middleware.md)
 
 ### Step 3a: Run the Agent (Stateless)
 
@@ -118,6 +170,16 @@ Agents can be customized extensively - error handling, history reduction, valida
 
 → Learn more: [01 Customizing an Agent.md](01%20Customizing%20an%20Agent.md)
 
+### Middleware
+Middleware intercepts and processes events throughout the agent execution pipeline. Use middleware for cross-cutting concerns like history reduction, error handling, logging, and more.
+
+→ Learn more: [04 Middleware.md](05%20Middleware.md)
+
+### Memory
+Agents can leverage memory systems to persist and recall information across conversations. Use memory for context awareness, learning from past interactions, and maintaining long-term state.
+
+→ Learn more: [06 Memory.md](06%20Memory.md)
+
 ## Event-Driven Architecture
 
 The agent doesn't just return a final answer - it streams **events** as it works:
@@ -138,7 +200,9 @@ This means you can:
 - Respond to what the agent is doing
 - Build interactive experiences
 
-→ Complete event reference: [04 Event Handling.md](04%20Event%20Handling.md)
+→ Complete event reference: [05 Event Handling.md](04%20Event%20Handling.md)
+
+→ Complete event reference: [05 Event Handling.md](04%20Event%20Handling.md)
 
 ## Stateless vs. Persistent
 
@@ -169,14 +233,20 @@ Use this for: Web apps, long-running services, conversation resumption.
 
 ## Next Steps
 
-1. **Add tools** - Give your agent capabilities
-   - See: [03 Tool Calling.md](03%20Tool%20Calling.md)
+1. **Customize behavior** - Configure error handling, history reduction, etc.
+    - See: [01 Customizing an Agent.md](01%20Customizing%20an%20Agent.md)
 
 2. **Persist conversations** - Save and resume sessions
-   - See: [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md)
+    - See: [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md)
 
-3. **Customize behavior** - Configure error handling, history reduction, etc.
-   - See: [01 Customizing an Agent.md](01%20Customizing%20an%20Agent.md)
+3. **Add tools** - Give your agent capabilities
+    - See: [03 Tool Calling.md](03%20Tool%20Calling.md)
 
-4. **Handle events** - Respond to agent activity and streaming output
-   - See: [04 Event Handling.md](04%20Event%20Handling.md)
+4. **Extend with middleware** - Add cross-cutting concerns like history reduction, logging, and error handling
+    - See: [04 Middleware.md](04%20Middleware.md)
+
+5. **Handle events** - Respond to agent activity and streaming output
+    - See: [05 Event Handling.md](05%20Event%20Handling.md)
+
+6. **Add memory** - Enable your agent to learn from past interactions and maintain long-term context
+    - See: [06 Memory.md](06%20Memory.md)

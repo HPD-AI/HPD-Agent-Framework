@@ -1,4 +1,4 @@
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Configuration for the DurableExecutionService.

@@ -12,7 +12,6 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
-using HPD.Agent.Session;
 using HPD.Agent.StructuredOutput;
 
 namespace HPD.Agent;
@@ -1918,7 +1917,7 @@ public sealed class Agent
     /// Creates a new conversation session.
     /// </summary>
     /// <returns>A new AgentSession instance</returns>
-    public AgentSession CreateThread()
+    public AgentSession CreateSession()
     {
         return new AgentSession();
     }

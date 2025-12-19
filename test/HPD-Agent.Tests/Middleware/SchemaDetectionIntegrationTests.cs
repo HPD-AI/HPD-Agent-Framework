@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using HPD.Agent;
-using HPD.Agent.Session;
+using HPD.Agent;
 using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;

@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.AI;
-using HPD.Agent.Session;
+using HPD.Agent;
 
 using System.Collections.Immutable;
 
@@ -165,14 +165,14 @@ public class AgentConfig
     /// </para>
     /// </remarks>
     [JsonIgnore]
-    public Session.ISessionStore? SessionStore { get; set; }
+    public ISessionStore? SessionStore { get; set; }
 
     /// <summary>
     /// Options for session persistence behavior.
     /// Controls auto-save, checkpoint frequency, and retention policy.
     /// </summary>
     [JsonIgnore]
-    public Session.SessionStoreOptions? SessionStoreOptions { get; set; }
+    public SessionStoreOptions? SessionStoreOptions { get; set; }
 
     // Branching config removed - branching is now an application-level concern
 

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 
 
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// In-memory session store for development and testing.

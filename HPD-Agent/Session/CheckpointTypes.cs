@@ -1,8 +1,7 @@
 // Core checkpoint types used across the codebase.
 // These types are shared by Session stores, Agent, and middleware.
 
-namespace HPD.Agent.Session;
-
+namespace HPD.Agent;
 /// <summary>
 /// Checkpoint frequency configuration.
 /// </summary>

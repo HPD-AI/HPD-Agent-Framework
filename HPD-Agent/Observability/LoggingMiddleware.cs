@@ -22,7 +22,7 @@ public class LoggingMiddlewareOptions
     /// Log at iteration level (before/after each LLM call).
     /// Includes: iteration number, tool call count, response preview.
     /// </summary>
-    public bool LogIteration { get; set; } = false;
+    public bool LogIteration { get; set; } = true;
 
     /// <summary>
     /// Log at function level (before/after each function execution).

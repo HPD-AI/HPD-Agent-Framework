@@ -8,13 +8,12 @@ using System.Linq;
 internal static class CollapseContainerHelper
 {
     /// <summary>
-    /// Generates a Mermaid flowchart showing the invocation flow for a Collapsed container.
-    /// Format: A[Invoke PluginName] --> B{Access Granted} B --> C[Function1] & D[Function2] & ...
+    /// Generates a plain text description of the container's available functions.
     /// </summary>
     public static string GenerateMermaidFlow(string toolName, List<string> capabilities)
     {
-        var functionNodes = string.Join(" & ", capabilities.Select((name, index) => $"{(char)('C' + index)}[{name}]"));
-        return $"A[Invoke {toolName}] --> B{{{{Access Granted}}}} B -->|direct callable functions* after an initial invocation| {functionNodes}";
+        var functionList = string.Join(", ", capabilities);
+        return $"Container {toolName} provides access to: {functionList}";
     }
 
     /// <summary>
@@ -24,7 +23,7 @@ internal static class CollapseContainerHelper
     {
         var description = userDescription ?? string.Empty;
         var mermaidFlow = GenerateMermaidFlow(toolName, capabilities);
-        return $"{description}. {mermaidFlow}";
+        return $"{mermaidFlow}. {description}";
     }
 
     /// <summary>

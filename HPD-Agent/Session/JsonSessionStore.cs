@@ -1,7 +1,7 @@
 using System.Text.Json;
 
 
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// File-based session store using JSON files.
@@ -13,12 +13,10 @@ namespace HPD.Agent.Session;
 /// <code>
 /// {basePath}/
 /// ├── sessions/
+/// │   └── {sessionId}.json            # SessionSnapshot (~20KB)
+/// ├── checkpoints/
 /// │   └── {sessionId}/
-/// │       ├── manifest.json           # Index of snapshots and checkpoints
-/// │       ├── snapshots/
-/// │       │   └── {snapshotId}.json   # SessionSnapshot (~20KB)
-/// │       └── checkpoints/
-/// │           └── {checkpointId}.json # ExecutionCheckpoint (~100KB)
+/// │       └── {checkpointId}.json     # ExecutionCheckpoint (~100KB)
 /// └── pending/
 ///     └── {sessionId}_{checkpointId}.json
 /// </code>
@@ -33,11 +31,12 @@ public class JsonSessionStore : ISessionStore
 {
     private readonly string _basePath;
     private readonly string _sessionsPath;
+    private readonly string _checkpointsPath;
     private readonly string _pendingPath;
     private readonly object _lock = new();
 
     /// <inheritdoc />
-    public bool SupportsHistory => true;
+    public bool SupportsHistory => false;
 
     /// <inheritdoc />
     public bool SupportsPendingWrites => true;
@@ -51,9 +50,11 @@ public class JsonSessionStore : ISessionStore
         _basePath = basePath ?? throw new ArgumentNullException(nameof(basePath));
 
         _sessionsPath = Path.Combine(_basePath, "sessions");
+        _checkpointsPath = Path.Combine(_basePath, "checkpoints");
         _pendingPath = Path.Combine(_basePath, "pending");
 
         Directory.CreateDirectory(_sessionsPath);
+        Directory.CreateDirectory(_checkpointsPath);
         Directory.CreateDirectory(_pendingPath);
     }
 
@@ -67,30 +68,14 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
+        var sessionPath = GetSessionFilePath(sessionId);
 
-        if (!File.Exists(manifestPath))
+        if (!File.Exists(sessionPath))
             return Task.FromResult<AgentSession?>(null);
 
         lock (_lock)
         {
-            var manifest = LoadManifest(manifestPath);
-            if (manifest == null)
-                return Task.FromResult<AgentSession?>(null);
-
-            // Find the latest snapshot
-            var latestSnapshot = manifest.Snapshots.FirstOrDefault();
-            if (latestSnapshot == null)
-                return Task.FromResult<AgentSession?>(null);
-
-            var snapshotsDir = Path.Combine(sessionDir, "snapshots");
-            var filePath = Path.Combine(snapshotsDir, $"{latestSnapshot.SnapshotId}.json");
-
-            if (!File.Exists(filePath))
-                return Task.FromResult<AgentSession?>(null);
-
-            var json = File.ReadAllText(filePath);
+            var json = File.ReadAllText(sessionPath);
             var snapshot = JsonSerializer.Deserialize(json, SessionJsonContext.Default.SessionSnapshot);
             if (snapshot == null)
                 return Task.FromResult<AgentSession?>(null);
@@ -105,35 +90,13 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        var sessionDir = GetSessionDirectoryPath(session.Id);
-        var snapshotsDir = Path.Combine(sessionDir, "snapshots");
-        Directory.CreateDirectory(snapshotsDir);
-
-        var snapshotId = Guid.NewGuid().ToString();
-        var snapshotPath = Path.Combine(snapshotsDir, $"{snapshotId}.json");
-
+        var sessionPath = GetSessionFilePath(session.Id);
         var snapshot = session.ToSnapshot();
         var json = JsonSerializer.Serialize(snapshot, SessionJsonContext.Default.SessionSnapshot);
 
         lock (_lock)
         {
-            var manifestPath = Path.Combine(sessionDir, "manifest.json");
-            var manifest = LoadOrCreateManifest(manifestPath, session.Id);
-
-            // Write snapshot file
-            WriteAtomically(snapshotPath, json);
-
-            // Add to manifest (newest first)
-            manifest.Snapshots.Insert(0, new SnapshotManifestEntry
-            {
-                SnapshotId = snapshotId,
-                CreatedAt = DateTime.UtcNow,
-                MessageIndex = session.MessageCount
-            });
-            manifest.LastUpdated = DateTime.UtcNow;
-
-            var manifestJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-            WriteAtomically(manifestPath, manifestJson);
+            WriteAtomically(sessionPath, json);
         }
 
         return Task.CompletedTask;
@@ -145,8 +108,8 @@ public class JsonSessionStore : ISessionStore
 
         if (Directory.Exists(_sessionsPath))
         {
-            var directories = Directory.GetDirectories(_sessionsPath);
-            sessionIds.AddRange(directories.Select(d => Path.GetFileName(d)));
+            var files = Directory.GetFiles(_sessionsPath, "*.json");
+            sessionIds.AddRange(files.Select(f => Path.GetFileNameWithoutExtension(f)));
         }
 
         return Task.FromResult(sessionIds);
@@ -158,9 +121,9 @@ public class JsonSessionStore : ISessionStore
 
         lock (_lock)
         {
-            var sessionDir = GetSessionDirectoryPath(sessionId);
-            if (Directory.Exists(sessionDir))
-                Directory.Delete(sessionDir, recursive: true);
+            var sessionPath = GetSessionFilePath(sessionId);
+            if (File.Exists(sessionPath))
+                File.Delete(sessionPath);
 
             CleanupPendingWritesForSession(sessionId);
         }
@@ -178,30 +141,24 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
+        var checkpointDir = GetCheckpointDirectoryPath(sessionId);
 
-        if (!File.Exists(manifestPath))
+        if (!Directory.Exists(checkpointDir))
             return Task.FromResult<ExecutionCheckpoint?>(null);
 
         lock (_lock)
         {
-            var manifest = LoadManifest(manifestPath);
-            if (manifest == null)
+            // Find the most recently modified checkpoint file
+            var files = Directory.GetFiles(checkpointDir, "*.json");
+            if (files.Length == 0)
                 return Task.FromResult<ExecutionCheckpoint?>(null);
 
-            // Find the latest checkpoint
-            var latestCheckpoint = manifest.Checkpoints.FirstOrDefault();
-            if (latestCheckpoint == null)
-                return Task.FromResult<ExecutionCheckpoint?>(null);
+            var latestFile = files
+                .Select(f => new FileInfo(f))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .First();
 
-            var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-            var filePath = Path.Combine(checkpointsDir, $"{latestCheckpoint.ExecutionCheckpointId}.json");
-
-            if (!File.Exists(filePath))
-                return Task.FromResult<ExecutionCheckpoint?>(null);
-
-            var json = File.ReadAllText(filePath);
+            var json = File.ReadAllText(latestFile.FullName);
             var checkpoint = JsonSerializer.Deserialize(json, SessionJsonContext.Default.ExecutionCheckpoint);
             return Task.FromResult(checkpoint);
         }
@@ -217,36 +174,12 @@ public class JsonSessionStore : ISessionStore
 
         var sessionId = checkpoint.SessionId;
         var checkpointId = checkpoint.ExecutionCheckpointId;
-
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-        Directory.CreateDirectory(checkpointsDir);
-
-        var checkpointPath = Path.Combine(checkpointsDir, $"{checkpointId}.json");
+        var checkpointPath = GetCheckpointFilePath(sessionId, checkpointId);
         var json = JsonSerializer.Serialize(checkpoint, SessionJsonContext.Default.ExecutionCheckpoint);
 
         lock (_lock)
         {
             WriteAtomically(checkpointPath, json);
-
-            var manifestPath = Path.Combine(sessionDir, "manifest.json");
-            var manifest = LoadOrCreateManifest(manifestPath, sessionId);
-
-            // Add to manifest (newest first)
-            manifest.Checkpoints.Insert(0, new CheckpointManifestEntry
-            {
-                ExecutionCheckpointId = checkpointId,
-                CreatedAt = DateTime.UtcNow,
-                Step = metadata.Step,
-                Source = metadata.Source,
-                ParentExecutionCheckpointId = metadata.ParentCheckpointId,
-                MessageIndex = metadata.MessageIndex,
-                IsSnapshot = false
-            });
-            manifest.LastUpdated = DateTime.UtcNow;
-
-            var manifestJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-            WriteAtomically(manifestPath, manifestJson);
         }
 
         return Task.CompletedTask;
@@ -258,30 +191,14 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
+        var checkpointDir = GetCheckpointDirectoryPath(sessionId);
 
         lock (_lock)
         {
             // Delete all checkpoint files
-            if (Directory.Exists(checkpointsDir))
+            if (Directory.Exists(checkpointDir))
             {
-                Directory.Delete(checkpointsDir, recursive: true);
-            }
-
-            // Update manifest to clear checkpoints
-            if (File.Exists(manifestPath))
-            {
-                var manifest = LoadManifest(manifestPath);
-                if (manifest != null)
-                {
-                    manifest.Checkpoints.Clear();
-                    manifest.LastUpdated = DateTime.UtcNow;
-
-                    var manifestJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-                    WriteAtomically(manifestPath, manifestJson);
-                }
+                Directory.Delete(checkpointDir, recursive: true);
             }
 
             // Clean up pending writes
@@ -303,9 +220,7 @@ public class JsonSessionStore : ISessionStore
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(executionCheckpointId);
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-        var filePath = Path.Combine(checkpointsDir, $"{executionCheckpointId}.json");
+        var filePath = GetCheckpointFilePath(sessionId, executionCheckpointId);
 
         if (!File.Exists(filePath))
             return Task.FromResult<ExecutionCheckpoint?>(null);
@@ -323,27 +238,9 @@ public class JsonSessionStore : ISessionStore
         int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
-
-        if (!File.Exists(manifestPath))
-            return Task.FromResult(new List<CheckpointManifestEntry>());
-
-        lock (_lock)
-        {
-            var manifest = LoadManifest(manifestPath);
-            if (manifest == null)
-                return Task.FromResult(new List<CheckpointManifestEntry>());
-
-            var query = manifest.Checkpoints.AsEnumerable();
-
-            if (limit.HasValue)
-                query = query.Take(limit.Value);
-
-            return Task.FromResult(query.ToList());
-        }
+        // No longer tracking checkpoint history without manifests
+        // Return empty list for backwards compatibility
+        return Task.FromResult(new List<CheckpointManifestEntry>());
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -432,38 +329,32 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
+        var checkpointDir = GetCheckpointDirectoryPath(sessionId);
 
-        if (!File.Exists(manifestPath))
+        if (!Directory.Exists(checkpointDir))
             return Task.CompletedTask;
 
         lock (_lock)
         {
-            var manifest = LoadManifest(manifestPath);
-            if (manifest == null || manifest.Checkpoints.Count <= keepLatest)
+            var files = Directory.GetFiles(checkpointDir, "*.json")
+                .Select(f => new FileInfo(f))
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .ToList();
+
+            if (files.Count <= keepLatest)
                 return Task.CompletedTask;
 
-            var toDelete = manifest.Checkpoints.Skip(keepLatest).ToList();
-
-            foreach (var entry in toDelete)
+            // Delete older checkpoints
+            foreach (var file in files.Skip(keepLatest))
             {
-                var checkpointPath = Path.Combine(checkpointsDir, $"{entry.ExecutionCheckpointId}.json");
-                if (File.Exists(checkpointPath))
-                    File.Delete(checkpointPath);
+                file.Delete();
 
                 // Also clean up pending writes for this checkpoint
-                var pendingPath = GetPendingWritesFilePath(sessionId, entry.ExecutionCheckpointId);
+                var checkpointId = Path.GetFileNameWithoutExtension(file.Name);
+                var pendingPath = GetPendingWritesFilePath(sessionId, checkpointId);
                 if (File.Exists(pendingPath))
                     File.Delete(pendingPath);
             }
-
-            manifest.Checkpoints = manifest.Checkpoints.Take(keepLatest).ToList();
-            manifest.LastUpdated = DateTime.UtcNow;
-
-            var updatedManifestJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-            WriteAtomically(manifestPath, updatedManifestJson);
         }
 
         return Task.CompletedTask;
@@ -476,50 +367,43 @@ public class JsonSessionStore : ISessionStore
             if (!Directory.Exists(_sessionsPath))
                 return Task.CompletedTask;
 
-            foreach (var sessionDir in Directory.GetDirectories(_sessionsPath))
+            // Delete old session files
+            var sessionFiles = Directory.GetFiles(_sessionsPath, "*.json");
+            foreach (var sessionFile in sessionFiles)
             {
-                var sessionId = Path.GetFileName(sessionDir);
-                var manifestPath = Path.Combine(sessionDir, "manifest.json");
-                if (!File.Exists(manifestPath))
-                    continue;
-
-                var manifest = LoadManifest(manifestPath);
-                if (manifest == null)
-                    continue;
-
-                // Delete old checkpoints
-                var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-                var checkpointsToDelete = manifest.Checkpoints.Where(c => c.CreatedAt < cutoff).ToList();
-                foreach (var entry in checkpointsToDelete)
+                var fileInfo = new FileInfo(sessionFile);
+                if (fileInfo.LastWriteTimeUtc < cutoff)
                 {
-                    var checkpointPath = Path.Combine(checkpointsDir, $"{entry.ExecutionCheckpointId}.json");
-                    if (File.Exists(checkpointPath))
-                        File.Delete(checkpointPath);
-                }
-                manifest.Checkpoints = manifest.Checkpoints.Where(c => c.CreatedAt >= cutoff).ToList();
-
-                // Delete old snapshots
-                var snapshotsDir = Path.Combine(sessionDir, "snapshots");
-                var snapshotsToDelete = manifest.Snapshots.Where(s => s.CreatedAt < cutoff).ToList();
-                foreach (var entry in snapshotsToDelete)
-                {
-                    var snapshotPath = Path.Combine(snapshotsDir, $"{entry.SnapshotId}.json");
-                    if (File.Exists(snapshotPath))
-                        File.Delete(snapshotPath);
-                }
-                manifest.Snapshots = manifest.Snapshots.Where(s => s.CreatedAt >= cutoff).ToList();
-
-                // If both are empty, delete the session directory
-                if (manifest.Checkpoints.Count == 0 && manifest.Snapshots.Count == 0)
-                {
-                    Directory.Delete(sessionDir, recursive: true);
+                    fileInfo.Delete();
+                    var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
                     CleanupPendingWritesForSession(sessionId);
                 }
-                else
+            }
+
+            // Delete old checkpoints
+            if (Directory.Exists(_checkpointsPath))
+            {
+                foreach (var sessionDir in Directory.GetDirectories(_checkpointsPath))
                 {
-                    manifest.LastUpdated = DateTime.UtcNow;
-                    var updatedManifestJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-                    WriteAtomically(manifestPath, updatedManifestJson);
+                    var sessionId = Path.GetFileName(sessionDir);
+                    var checkpointFiles = Directory.GetFiles(sessionDir, "*.json");
+                    
+                    foreach (var checkpointFile in checkpointFiles)
+                    {
+                        var fileInfo = new FileInfo(checkpointFile);
+                        if (fileInfo.LastWriteTimeUtc < cutoff)
+                        {
+                            fileInfo.Delete();
+                            var checkpointId = Path.GetFileNameWithoutExtension(checkpointFile);
+                            var pendingPath = GetPendingWritesFilePath(sessionId, checkpointId);
+                            if (File.Exists(pendingPath))
+                                File.Delete(pendingPath);
+                        }
+                    }
+
+                    // Delete empty checkpoint directories
+                    if (!Directory.EnumerateFileSystemEntries(sessionDir).Any())
+                        Directory.Delete(sessionDir);
                 }
             }
         }
@@ -540,37 +424,28 @@ public class JsonSessionStore : ISessionStore
             if (!Directory.Exists(_sessionsPath))
                 return Task.FromResult(0);
 
-            foreach (var sessionDir in Directory.GetDirectories(_sessionsPath))
+            var sessionFiles = Directory.GetFiles(_sessionsPath, "*.json");
+            foreach (var sessionFile in sessionFiles)
             {
-                var manifestPath = Path.Combine(sessionDir, "manifest.json");
-                if (!File.Exists(manifestPath))
-                    continue;
-
-                var manifest = LoadManifest(manifestPath);
-                if (manifest == null)
+                var fileInfo = new FileInfo(sessionFile);
+                if (fileInfo.LastWriteTimeUtc < cutoff)
                 {
-                    toDelete.Add(sessionDir);
-                    continue;
-                }
-
-                // Check latest activity from both snapshots and checkpoints
-                var latestSnapshotTime = manifest.Snapshots.FirstOrDefault()?.CreatedAt ?? DateTime.MinValue;
-                var latestCheckpointTime = manifest.Checkpoints.FirstOrDefault()?.CreatedAt ?? DateTime.MinValue;
-                var latestActivity = latestSnapshotTime > latestCheckpointTime ? latestSnapshotTime : latestCheckpointTime;
-
-                if (latestActivity < cutoff)
-                {
-                    toDelete.Add(sessionDir);
+                    toDelete.Add(sessionFile);
                 }
             }
 
             if (!dryRun)
             {
-                foreach (var sessionDir in toDelete)
+                foreach (var sessionFile in toDelete)
                 {
-                    var sessionId = Path.GetFileName(sessionDir);
-                    Directory.Delete(sessionDir, recursive: true);
+                    var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
+                    File.Delete(sessionFile);
                     CleanupPendingWritesForSession(sessionId);
+                    
+                    // Also delete checkpoint directory if it exists
+                    var checkpointDir = GetCheckpointDirectoryPath(sessionId);
+                    if (Directory.Exists(checkpointDir))
+                        Directory.Delete(checkpointDir, recursive: true);
                 }
             }
         }
@@ -589,22 +464,11 @@ public class JsonSessionStore : ISessionStore
         if (idsToDelete.Count == 0)
             return Task.CompletedTask;
 
-        var sessionDir = GetSessionDirectoryPath(sessionId);
-        var checkpointsDir = Path.Combine(sessionDir, "checkpoints");
-        var manifestPath = Path.Combine(sessionDir, "manifest.json");
-
-        if (!File.Exists(manifestPath))
-            return Task.CompletedTask;
-
         lock (_lock)
         {
-            var manifest = LoadManifest(manifestPath);
-            if (manifest == null)
-                return Task.CompletedTask;
-
             foreach (var id in idsToDelete)
             {
-                var checkpointPath = Path.Combine(checkpointsDir, $"{id}.json");
+                var checkpointPath = GetCheckpointFilePath(sessionId, id);
                 if (File.Exists(checkpointPath))
                     File.Delete(checkpointPath);
 
@@ -613,12 +477,6 @@ public class JsonSessionStore : ISessionStore
                 if (File.Exists(pendingPath))
                     File.Delete(pendingPath);
             }
-
-            manifest.Checkpoints.RemoveAll(c => idsToDelete.Contains(c.ExecutionCheckpointId));
-            manifest.LastUpdated = DateTime.UtcNow;
-
-            var updatedJson = JsonSerializer.Serialize(manifest, SessionJsonContext.Default.SessionManifest);
-            WriteAtomically(manifestPath, updatedJson);
         }
 
         return Task.CompletedTask;
@@ -670,8 +528,14 @@ public class JsonSessionStore : ISessionStore
     // PRIVATE HELPER METHODS
     // ═══════════════════════════════════════════════════════════════════
 
-    private string GetSessionDirectoryPath(string sessionId)
-        => Path.Combine(_sessionsPath, sessionId);
+    private string GetSessionFilePath(string sessionId)
+        => Path.Combine(_sessionsPath, $"{sessionId}.json");
+
+    private string GetCheckpointDirectoryPath(string sessionId)
+        => Path.Combine(_checkpointsPath, sessionId);
+
+    private string GetCheckpointFilePath(string sessionId, string checkpointId)
+        => Path.Combine(GetCheckpointDirectoryPath(sessionId), $"{checkpointId}.json");
 
     private string GetPendingWritesFilePath(string sessionId, string checkpointId)
         => Path.Combine(_pendingPath, $"{sessionId}_{checkpointId}.json");
@@ -687,21 +551,6 @@ public class JsonSessionStore : ISessionStore
         File.Move(tempPath, filePath, overwrite: true);
     }
 
-    private SessionManifest? LoadManifest(string manifestPath)
-    {
-        var json = File.ReadAllText(manifestPath);
-        return JsonSerializer.Deserialize(json, SessionJsonContext.Default.SessionManifest);
-    }
-
-    private SessionManifest LoadOrCreateManifest(string manifestPath, string sessionId)
-    {
-        if (File.Exists(manifestPath))
-        {
-            return LoadManifest(manifestPath) ?? new SessionManifest { SessionId = sessionId };
-        }
-        return new SessionManifest { SessionId = sessionId };
-    }
-
     private void CleanupPendingWritesForSession(string sessionId)
     {
         if (!Directory.Exists(_pendingPath))
@@ -713,34 +562,4 @@ public class JsonSessionStore : ISessionStore
             File.Delete(file);
         }
     }
-}
-
-/// <summary>
-/// Manifest file tracking all snapshots and checkpoints for a session.
-/// </summary>
-public class SessionManifest
-{
-    public string SessionId { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
-
-    /// <summary>
-    /// Session snapshots (conversation history) - newest first.
-    /// </summary>
-    public List<SnapshotManifestEntry> Snapshots { get; set; } = new();
-
-    /// <summary>
-    /// Execution checkpoints (crash recovery) - newest first.
-    /// </summary>
-    public List<CheckpointManifestEntry> Checkpoints { get; set; } = new();
-}
-
-/// <summary>
-/// Entry in the snapshot manifest.
-/// </summary>
-public class SnapshotManifestEntry
-{
-    public required string SnapshotId { get; set; }
-    public required DateTime CreatedAt { get; set; }
-    public int MessageIndex { get; set; }
 }

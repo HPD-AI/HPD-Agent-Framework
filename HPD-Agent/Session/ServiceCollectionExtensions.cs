@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
-
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Extension methods for registering checkpointing services with DI container.

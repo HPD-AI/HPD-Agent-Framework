@@ -1,6 +1,4 @@
-
-
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Extension methods for AgentBuilder to configure session persistence.

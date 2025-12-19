@@ -87,10 +87,10 @@ using HPD.Agent;
 [JsonSerializable(typeof(CachedReduction))]
 
 // --- Checkpointing types ---
-[JsonSerializable(typeof(HPD.Agent.Session.PendingWrite))]
-[JsonSerializable(typeof(List<HPD.Agent.Session.PendingWrite>))]
-[JsonSerializable(typeof(HPD.Agent.Session.CheckpointManifestEntry))]
-[JsonSerializable(typeof(List<HPD.Agent.Session.CheckpointManifestEntry>))]
+[JsonSerializable(typeof(HPD.Agent.PendingWrite))]
+[JsonSerializable(typeof(List<HPD.Agent.PendingWrite>))]
+[JsonSerializable(typeof(HPD.Agent.CheckpointManifestEntry))]
+[JsonSerializable(typeof(List<HPD.Agent.CheckpointManifestEntry>))]
 
 // --- Document store types ---
 [JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]

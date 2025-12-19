@@ -13,7 +13,7 @@ using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
-using HPD.Agent.Session;
+using HPD.Agent;
 
 namespace HPD.Agent;
 
@@ -533,16 +533,16 @@ public class AgentBuilder
     /// </code>
     /// </example>
     public AgentBuilder WithDurableExecution(
-        Session.ISessionStore store,
-        Session.CheckpointFrequency frequency = Session.CheckpointFrequency.PerTurn)
+        ISessionStore store,
+        CheckpointFrequency frequency = CheckpointFrequency.PerTurn)
     {
         ArgumentNullException.ThrowIfNull(store);
         _config.SessionStore = store;
-        _config.DurableExecutionConfig = new Session.DurableExecutionConfig
+        _config.DurableExecutionConfig = new DurableExecutionConfig
         {
             Enabled = true,
             Frequency = frequency,
-            Retention = Session.RetentionPolicy.LatestOnly
+            Retention = RetentionPolicy.LatestOnly
         };
         return this;
     }
@@ -556,10 +556,10 @@ public class AgentBuilder
     /// <returns>The builder for chaining</returns>
     public AgentBuilder WithDurableExecution(
         string storagePath,
-        Session.CheckpointFrequency frequency = Session.CheckpointFrequency.PerTurn)
+        CheckpointFrequency frequency = CheckpointFrequency.PerTurn)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
-        var store = new Session.JsonSessionStore(storagePath);
+        var store = new JsonSessionStore(storagePath);
         return WithDurableExecution(store, frequency);
     }
 

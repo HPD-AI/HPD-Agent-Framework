@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 using HPD.Agent.ServiceDefaults;
-using HPD.Agent.Session;
+using HPD.Agent;
 using HPD.Agent.ClientTools;
 using HPD.Agent.Memory;
 

@@ -1,6 +1,6 @@
 using Xunit;
 using HPD.Agent;
-using HPD.Agent.Session;
+using HPD.Agent;
 
 using HPD.Agent.Tests.Infrastructure;
 

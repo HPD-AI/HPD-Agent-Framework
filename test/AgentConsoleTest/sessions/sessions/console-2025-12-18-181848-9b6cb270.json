@@ -1,0 +1,96 @@
+{
+  "sessionId": "console-2025-12-18-181848-9b6cb270",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "read the proeject. \uD83D\uDCC2 ~/Documents/HPD-Agent/test/AgentConsoleTest"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_6d526faedfa1becf",
+          "name": "ListDirectory",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_6d526faedfa1becf",
+          "result": "Function \u0027ListDirectory\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_8472b7dac53c6715",
+          "name": "ExecuteCommand",
+          "arguments": {
+            "command": "ls -la ~/Documents/HPD-Agent/test/AgentConsoleTest"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_8472b7dac53c6715",
+          "result": "Function \u0027ExecuteCommand\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_f91326bb1b94f8f9",
+          "name": "ExecuteCommand",
+          "arguments": {
+            "command": "ls -la ~/Documents/HPD-Agent/test/AgentConsoleTest"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_f91326bb1b94f8f9",
+          "result": "Function \u0027ExecuteCommand\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "It seems there\u0027s an issue accessing the \u0060ListDirectory\u0060 and \u0060ExecuteCommand\u0060 tools. I cannot directly interact with your file system to list or read the contents of \u0060~/Documents/HPD-Agent/test/AgentConsoleTest\u0060. \n\nCould you clarify if you\u0027d like me to use a different approach or provide instructions for manual exploration? Alternatively, if the tools should be available, there may be an environment or configuration issue. Let me know how you\u0027d like to proceed!"
+        }
+      ],
+      "messageId": "gen-1766103554-VsG11K0BdPnpehqG5W0F"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2025-12-19T00:18:53.297922Z",
+  "lastActivity": "2025-12-19T00:19:18.348958Z",
+  "conversationId": "9918562b-851c-4878-bce8-07a1a66f2ee4",
+  "version": 1
+}

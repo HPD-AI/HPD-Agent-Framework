@@ -1,0 +1,96 @@
+{
+  "sessionId": "console-2025-12-18-181709-346122b1",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "read the project. \uD83D\uDCC2 ~/Documents/HPD-Agent/test/AgentConsoleTest"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_3034774ef47b80ee",
+          "name": "ListDirectory",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_3034774ef47b80ee",
+          "result": "Function \u0027ListDirectory\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_cb2d474bd6eb4830",
+          "name": "ExecuteCommand",
+          "arguments": {
+            "command": "ls -la ~/Documents/HPD-Agent/test/AgentConsoleTest"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_cb2d474bd6eb4830",
+          "result": "Function \u0027ExecuteCommand\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_95f3967ba3f4fe45",
+          "name": "GlobSearch",
+          "arguments": {
+            "glob": "**"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_95f3967ba3f4fe45",
+          "result": "Function \u0027GlobSearch\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "\u003Cerror\u003E\nI cannot access or read the project directory at ~/Documents/HPD-Agent/test/AgentConsoleTest. None of the available file operations (ListDirectory, ReadFile, etc.) are functional in this environment. Please check if the paths or tool implementations are correct.\n\u003C/error\u003E"
+        }
+      ],
+      "messageId": "gen-1766103503-J96HWThRBP8B5xgYymxI"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2025-12-19T00:17:48.400596Z",
+  "lastActivity": "2025-12-19T00:18:35.286556Z",
+  "conversationId": "0218c5bc-d46d-405c-9e1e-801fee07ead4",
+  "version": 1
+}

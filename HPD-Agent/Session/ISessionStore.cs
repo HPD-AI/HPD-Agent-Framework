@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 
-namespace HPD.Agent.Session;
+namespace HPD.Agent;
 
 /// <summary>
 /// Interface for persisting and loading AgentSession state.

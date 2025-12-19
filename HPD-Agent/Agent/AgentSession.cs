@@ -39,6 +39,7 @@ public class AgentSession
     private readonly Dictionary<string, object> _metadata = new();
     private readonly Dictionary<string, string> _middlewarePersistentState = new();
     private string? _serviceThreadId;
+    private string? _lastSnapshotId;
 
     /// <summary>
     /// Unique identifier for this session
@@ -112,6 +113,16 @@ public class AgentSession
     /// Null when session is idle (no agent run in progress).
     /// </summary>
     public AgentLoopState? ExecutionState { get; set; }
+
+    /// <summary>
+    /// Last snapshot ID used when persisting this session.
+    /// Used to update the existing snapshot instead of creating a new one on subsequent saves.
+    /// </summary>
+    internal string? LastSnapshotId
+    {
+        get => _lastSnapshotId;
+        set => _lastSnapshotId = value;
+    }
 
     /// <summary>
     /// Persistent state for middlewares that need to cache data across runs.
@@ -317,6 +328,7 @@ public class AgentSession
         return new SessionSnapshot
         {
             SessionId = Id,
+            SessionSnapshotId = LastSnapshotId,
             Messages = _messages.ToList(),
             Metadata = _metadata.ToDictionary(kv => kv.Key, kv => kv.Value),
             MiddlewarePersistentState = _middlewarePersistentState.Count > 0
@@ -412,6 +424,7 @@ public class AgentSession
 
         session._serviceThreadId = snapshot.ServiceThreadId;
         session.ConversationId = snapshot.ConversationId;
+        session._lastSnapshotId = snapshot.SessionSnapshotId;
 
         if (snapshot.MiddlewarePersistentState != null)
         {

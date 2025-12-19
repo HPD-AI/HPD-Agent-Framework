@@ -121,6 +121,31 @@ public class AgentMiddlewareContext
     }
 
     /// <summary>
+    /// Updates middleware state by transforming only the middleware state container.
+    /// Simplifies state updates by hiding the nested AgentLoopState/MiddlewareState hierarchy.
+    /// 
+    /// Use this when you only need to modify middleware state, not the entire agent state.
+    /// </summary>
+    /// <param name="transform">Function that transforms the middleware state container</param>
+    /// <example>
+    /// <code>
+    /// // Simple: Only focus on your middleware state level
+    /// context.UpdateMiddlewareState(ms => ms.WithRateLimiter(
+    ///     limiter with { CallsThisWindow = limiter.CallsThisWindow + 1 }
+    /// ));
+    /// </code>
+    /// </example>
+    public void UpdateMiddlewareState(Func<MiddlewareState, MiddlewareState> transform)
+    {
+        if (transform == null) throw new ArgumentNullException(nameof(transform));
+        
+        UpdateState(agentState => agentState with
+        {
+            MiddlewareState = transform(agentState.MiddlewareState)
+        });
+    }
+
+    /// <summary>
     /// Gets pending state updates (called by Agent after middleware chain).
     /// Returns null if no updates were scheduled.
     /// </summary>

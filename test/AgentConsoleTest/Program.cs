@@ -1,67 +1,183 @@
 ﻿using HPD.Agent;
-using HPD.Agent.MCP;
-using HPD.Agent.Memory;
-using HPD.Agent.Middleware;
+using Spectre.Console;
 
-Console.WriteLine("🚀 HPD-Agent Console Test\n");
+// Print banner
+var logo = @"            ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+            ██║  ██║██╔══██╗██╔══██╗     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+            ███████║██████╔╝██║  ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
+            ██╔══██║██╔═══╝ ██║  ██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
+            ██║  ██║██║     ██████╔╝      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
+            ╚═╝  ╚═╝╚═╝     ╚═════╝       ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝";
 
-// Configure agent
+AnsiConsole.MarkupLine($"[cyan]{Markup.Escape(logo)}[/]");
+AnsiConsole.MarkupLine("[dim]Powered by HPD Agent Framework[/]");
+AnsiConsole.WriteLine();
+
+var currentDirectory = Directory.GetCurrentDirectory();
+AnsiConsole.MarkupLine($"[dim]Working Directory: {currentDirectory}[/]");
+
+// Set up session persistence
+var sessionsPath = Path.Combine(
+    Directory.GetCurrentDirectory(),
+    "sessions");
+Directory.CreateDirectory(sessionsPath);
+
+var sessionStore = new JsonSessionStore(sessionsPath);
+
+// Create agent configuration - generic base, specialized personas come from plugins
 var config = new AgentConfig
 {
-    Name = "AI Assistant",
-    SystemInstructions = "You are a helpful AI assistant.",
+    Name = "HPD Agent",
     MaxAgenticIterations = 50,
-    Provider = new ProviderConfig
-    {
-        ProviderKey = "openrouter",
-        ModelName = "google/google/gemini-3-pro-preview"
-    },
-    Mcp = new McpConfig { ManifestPath = "./MCP.json" }
+    // Generic base prompt - specialized personas are injected via [Collapse] postExpansionInstructions
+    SystemInstructions = @"You are a helpful assistant with access to specialized capabilities.
+Use the appropriate tools based on the user's request.
+Be concise and direct.",
+    Collapsing = new CollapsingConfig { Enabled = true }
 };
 
-// Build agent with event handler (synchronous, ordered for UI)
-var eventHandler = new ConsoleEventHandler();
 var agent = await new AgentBuilder(config)
-    .WithEventHandler(eventHandler)
-    .WithTools<FinancialAnalysisPlugin>()
-    .WithTools<FinancialAnalysisSkills>()
-    .WithTools<MathTools>()
-    .WithPlanMode()
-    .WithPermissions()
-    .WithCircuitBreaker(maxConsecutiveCalls: 3)
-    .WithErrorTracking(maxConsecutiveErrors: 3)
-    .WithTotalErrorThreshold(maxTotalErrors: 10)
-    .WithMCP("./MCP.json")
+    .WithProvider("openrouter", "nvidia/nemotron-3-nano-30b-a3b")
+    .WithTools<CodingPlugin>()
+    .WithMiddleware(new EnvironmentContextMiddleware())
+    .WithMiddleware(new HPD.Agent.Middleware.ContainerErrorRecoveryMiddleware(null))
+    .WithSessionStore(sessionStore, persistAfterTurn: true)
     .WithLogging()
     .Build();
 
-eventHandler.SetAgent(agent);
+// Generate a unique session ID for this run
+var sessionId = $"console-{DateTime.Now:yyyy-MM-dd-HHmmss}-{Guid.NewGuid().ToString()[..8]}";
+var thread = await agent.LoadSessionAsync(sessionId);
 
-// Create new conversation thread
-var thread = agent.CreateThread();
-Console.WriteLine($"\n✅ Created new conversation: {thread.Id}");
+// Initialize UI with slash command support
+var ui = new AgentUIRenderer();
 
-Console.WriteLine($"✅ {config.Name} ready ({config.Provider.ModelName})\n");
+// Prepare context data for commands (sessions browsing, etc.)
+var commandContextData = new Dictionary<string, object>
+{
+    { "SessionsPath", sessionsPath },
+    { "Agent", agent },
+    { "OnSessionSwitch", new Func<string, Task>(async (newSessionId) =>
+    {
+        sessionId = newSessionId;
+        thread = await agent.LoadSessionAsync(sessionId);
+        AnsiConsole.MarkupLine($"[green]✓ Switched to session:[/] [cyan]{sessionId}[/]");
+        AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
+    }) }
+};
 
-// Chat loop
+var commandProcessor = new CommandProcessor(ui.CommandRegistry, ui, commandContextData);
+var commandInput = new CommandAwareInput(commandProcessor);
+
+AnsiConsole.MarkupLine("[green]✓[/] Agent initialized successfully!");
+AnsiConsole.MarkupLine($"[dim]Session ID: {sessionId}[/]");
+AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
+AnsiConsole.MarkupLine("[dim]Sessions are automatically saved to: " + sessionsPath + "[/]");
+AnsiConsole.MarkupLine("[dim]Type /help for commands, or just chat naturally[/]");
+AnsiConsole.WriteLine();
+
 while (true)
 {
-    Console.Write("You: ");
-    var input = Console.ReadLine();
-
-    if (string.IsNullOrWhiteSpace(input)) continue;
-    if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)) break;
-
-    try
+    // Show current directory context
+    var cwd = Directory.GetCurrentDirectory();
+    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    if (cwd.StartsWith(home))
     {
-        await foreach (var _ in agent.RunAsync(input, thread)) { }
-        // Agent auto-checkpoints via DurableExecutionService
-        Console.WriteLine();
+        cwd = "~" + cwd.Substring(home.Length);
     }
-    catch (Exception ex)
+
+    AnsiConsole.MarkupLine($"[dim]📂 {Markup.Escape(cwd)}[/]");
+    
+    // Read input - check for slash commands
+    var userInput = AnsiConsole.Ask<string>("[bold cyan]You:[/]");
+
+    if (string.IsNullOrWhiteSpace(userInput))
+        continue;
+
+    // If user typed just "/", show command selection menu
+    if (userInput.Trim() == "/")
     {
-        Console.WriteLine($"\n❌ {ex.Message}\n");
+        var commands = ui.CommandRegistry.GetVisibleCommands()
+            .OrderBy(c => c.Name)
+            .ToList();
+        
+        if (commands.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No commands available[/]");
+            continue;
+        }
+        
+        var selected = AnsiConsole.Prompt(
+            new SelectionPrompt<SlashCommand>()
+                .Title("[yellow]Select a command:[/]")
+                .PageSize(10)
+                .MoreChoicesText("[dim](Move up and down to see more commands)[/]")
+                .AddChoices(commands)
+                .UseConverter(cmd => 
+                {
+                    var aliases = cmd.AltNames.Count > 0 
+                        ? $" [dim]({string.Join(", ", cmd.AltNames)})[/]" 
+                        : "";
+                    return $"/{cmd.Name}{aliases} - [dim]{cmd.Description}[/]";
+                })
+        );
+        
+        // Execute the selected command
+        userInput = "/" + selected.Name;
+        var result = await commandProcessor.ExecuteAsync(userInput);
+        
+        if (result.ShouldExit)
+        {
+            AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+            break;
+        }
+        
+        if (result.ShouldClearHistory)
+        {
+            thread = await agent.LoadSessionAsync(sessionId);
+        }
+        
+        AnsiConsole.WriteLine();
+        continue;
     }
+
+    // Check if it's a slash command
+    if (commandProcessor.IsCommand(userInput))
+    {
+        var result = await commandProcessor.ExecuteAsync(userInput);
+        
+        if (result.ShouldExit)
+        {
+            AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+            break;
+        }
+        
+        if (result.ShouldClearHistory)
+        {
+            // History cleared, reload thread
+            thread = await agent.LoadSessionAsync(sessionId);
+        }
+        
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    // Regular message - legacy exit commands still work
+    if (userInput.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
+        userInput.Equals("quit", StringComparison.OrdinalIgnoreCase))
+    {
+        AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+        break;
+    }
+
+    // Stream agent response with real-time rendering using sessionId for auto-save
+    await foreach (var evt in agent.RunAsync(userInput, sessionId))
+    {
+        ui.RenderEvent(evt);
+    }
+
+    // Reload thread to show updated message count
+    thread = await agent.LoadSessionAsync(sessionId);
+    AnsiConsole.MarkupLine($"[dim]💾 Session saved ({thread.Messages.Count} messages)[/]");
+    AnsiConsole.WriteLine();
 }
-
-Console.WriteLine("👋 Goodbye!");

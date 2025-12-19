@@ -1,0 +1,75 @@
+{
+  "sessionId": "console-2025-12-18-180948-ebc0883d",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "read the ~/Documents/HPD-Agent/test/AgentConsoleTest"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_8feb279640caa278",
+          "name": "ListDirectory",
+          "arguments": {
+            "path": "/Users/einsteinessibu/Documents/HPD-Agent/test/AgentConsoleTest"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_8feb279640caa278",
+          "result": "Function \u0027ListDirectory\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "call_ee32d99004ca254f",
+          "name": "ReadFile",
+          "arguments": {
+            "path": "/Users/einsteinessibu/Documents/HPD-Agent/test/AgentConsoleTest"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_ee32d99004ca254f",
+          "result": "Function \u0027ReadFile\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "I cannot access or read the file at \u0060/Users/einsteinessibu/Documents/HPD-Agent/test/AgentConsoleTest\u0060 because the necessary tools for file operations are not available in this environment. Please verify if the tools are properly initialized or provide additional context for accessing the file."
+        }
+      ],
+      "messageId": "gen-1766103040-pjHMfyR0PZWSHwdgsCDd"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2025-12-19T00:10:36.708993Z",
+  "lastActivity": "2025-12-19T00:10:43.13954Z",
+  "conversationId": "21c8786d-c3c0-4b95-922e-03b7977d05e6",
+  "version": 1
+}

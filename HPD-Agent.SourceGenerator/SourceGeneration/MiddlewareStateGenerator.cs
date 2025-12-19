@@ -81,29 +81,20 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 transform: GetStateInfo)
             .Where(static info => info is not null);
 
-        // Find all types with [MiddlewareState] attribute in REFERENCED ASSEMBLIES
-        var referencedStateTypes = context.CompilationProvider
-            .Select((compilation, ct) => GetReferencedMiddlewareStates(compilation, ct));
-
-        // Combine source and referenced types
+        // Combine source types
         var allStateTypes = sourceStateTypes.Collect()
-            .Combine(referencedStateTypes)
-            .Select((pair, _) =>
+            .Select((sourceTypes, _) =>
             {
-                var sourceTypes = pair.Left;
-                var referencedTypes = pair.Right;
-
-                // Combine both lists, referenced types don't have diagnostics
+                // Only use source types - don't pull in referenced types for consumer projects
                 var combined = new List<StateInfo>();
                 foreach (var t in sourceTypes)
                 {
                     if (t != null) combined.Add(t);
                 }
-                combined.AddRange(referencedTypes);
                 return combined.ToImmutableArray();
             });
 
-        // Generate container with all state types
+        // Generate container with source state types only
         context.RegisterSourceOutput(
             allStateTypes,
             (spc, types) => GenerateContainerProperties(spc, types!));
@@ -475,7 +466,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             sb.AppendLine($"    /// </summary>");
             sb.AppendLine($"    public {stateInfo.FullyQualifiedName}? {stateInfo.PropertyName}");
             sb.AppendLine($"    {{");
-            sb.AppendLine($"        get => GetState<{stateInfo.FullyQualifiedName}>(\"{stateInfo.FullyQualifiedName}\");");
+            sb.AppendLine($"        get => this.GetState<{stateInfo.FullyQualifiedName}>(\"{stateInfo.FullyQualifiedName}\");");
             sb.AppendLine($"    }}");
             sb.AppendLine();
 
@@ -489,7 +480,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             sb.AppendLine($"    {{");
             sb.AppendLine($"        return value == null");
             sb.AppendLine($"            ? this");
-            sb.AppendLine($"            : SetState(\"{stateInfo.FullyQualifiedName}\", value);");
+            sb.AppendLine($"            : this.SetState<{stateInfo.FullyQualifiedName}>(\"{stateInfo.FullyQualifiedName}\", value);");
             sb.AppendLine($"    }}");
             sb.AppendLine();
         }
