@@ -27,9 +27,7 @@ public sealed class Agent
     private readonly ChatClientMetadata _metadata;
     // OpenTelemetry Activity Source for telemetry
     private static readonly ActivitySource ActivitySource = new("HPD.Agent");
-    // AsyncLocal storage for function invocation context (flows across async calls)
-    // Stores the full AgentMiddlewareContext with all orchestration capabilities
-    private static readonly AsyncLocal<AgentMiddlewareContext?> _currentFunctionContext = new();
+    // V2: AgentContext is now passed through middleware hooks, no need for AsyncLocal storage
     // AsyncLocal storage for root agent tracking in nested agent calls
     private static readonly AsyncLocal<Agent?> _rootAgent = new();
     // AsyncLocal storage for current conversation session (flows across async calls)
@@ -70,12 +68,24 @@ public sealed class Agent
     /// </summary>
     public IChatClient BaseClient => _baseClient;
 
+    // V2: CurrentFunctionContext restored as AsyncLocal<HookContext?> for AIFunction context access
+    // Functions like ClarificationFunction need access to Emit(), WaitForResponseAsync(), etc.
+    // HookContext provides these capabilities in a clean, type-safe way
+    private static readonly AsyncLocal<HookContext?> _currentFunctionContext = new();
+
     /// <summary>
-    /// Gets the current function invocation context (if a function is currently being invoked).
-    /// This flows across async calls via AsyncLocal storage.
-    /// Returns null if no function is currently executing.
+    /// Gets the current function execution context (available during AIFunction execution).
+    /// Used by special AIFunctions like ClarificationFunction that need to emit events or wait for responses.
+    /// Returns null if not currently executing a function.
     /// </summary>
-    public static AgentMiddlewareContext? CurrentFunctionContext
+    /// <remarks>
+    /// This is set to the BeforeFunctionContext during function execution, providing access to:
+    /// - Emit() - emit events to the agent's event stream
+    /// - WaitForResponseAsync() - wait for bidirectional event responses
+    /// - AgentName - the name of the executing agent
+    /// - State - current agent state
+    /// </remarks>
+    public static HookContext? CurrentFunctionContext
     {
         get => _currentFunctionContext.Value;
         internal set => _currentFunctionContext.Value = value;
@@ -712,39 +722,27 @@ public sealed class Agent
 
             var turnStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
-   
-            // INITIALIZE TURN CONTEXT (turn-Collapsed, for BeforeMessageTurn/AfterMessageTurn hooks)
-            
-            var turnContext = new AgentMiddlewareContext
-            {
-                AgentName = _name,
-                ConversationId = conversationId,
-                EventCoordinator = _eventCoordinator,
-                CancellationToken = effectiveCancellationToken
-            };
-            turnContext.SetOriginalState(state);
 
-            // Apply initial properties from caller (e.g., AgentRunInput for Client tools)
-            if (initialContextProperties != null)
-            {
-                foreach (var kvp in initialContextProperties)
-                {
-                    turnContext.Properties[kvp.Key] = kvp.Value;
-                }
-            }
+            // INITIALIZE AGENT CONTEXT (V2 - Single unified context for entire turn)
+            // This replaces the dual-context system (turnContext + middlewareContext)
+            var agentContext = new Middleware.AgentContext(
+                agentName: _name,
+                conversationId: conversationId,
+                initialState: state,
+                eventCoordinator: _eventCoordinator,
+                cancellationToken: effectiveCancellationToken);
 
-            turnContext.UserMessage = newInputMessages.FirstOrDefault();
-            turnContext.ConversationHistory = effectiveMessages.ToList();
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
-            await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(turnContext, effectiveCancellationToken);
-            
-            // Apply any pending state updates from middleware
-            if (turnContext.HasPendingStateUpdates)
-            {
-                state = turnContext.GetPendingState()!;
-                turnContext.SetOriginalState(state);
-            }
-            
+            var beforeTurnContext = agentContext.AsBeforeMessageTurn(
+                userMessage: newInputMessages.FirstOrDefault(),
+                conversationHistory: effectiveMessages.ToList(),
+                runOptions: runOptions ?? new AgentRunOptions());
+
+            await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(beforeTurnContext, effectiveCancellationToken);
+
+            // V2: State updates are immediate - no GetPendingState() needed!
+            state = agentContext.State;
+
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
@@ -878,25 +876,22 @@ public sealed class Agent
                         effectiveOptions.Tools = allTools;
                     }
 
-                    // CREATE MIDDLEWARE CONTEXT
+                    // UPDATE AGENT CONTEXT STATE (sync state changes from previous iteration)
+                    agentContext.SyncState(state);
+
+                    // CREATE TYPED ITERATION CONTEXT (V2)
                     // Note: Tool Collapsing is handled by ToolCollapsingMiddleware in BeforeIterationAsync
                     // The middleware will filter tools and emit CollapsedToolsVisibleEvent
-                    var middlewareContext = new Middleware.AgentMiddlewareContext
-                    {
-                        AgentName = _name,
-                        ConversationId = session?.ConversationId,
-                        CancellationToken = effectiveCancellationToken,
-                        Iteration = state.Iteration,
-                        Messages = messagesToSend.ToList(),
-                        Options = effectiveOptions,
-                        EventCoordinator = _eventCoordinator
-                    };
-                    middlewareContext.SetOriginalState(state);
+                    var beforeIterationContext = agentContext.AsBeforeIteration(
+                        iteration: state.Iteration,
+                        messages: messagesToSend.ToList(),
+                        options: effectiveOptions ?? new ChatOptions(),
+                        runOptions: runOptions ?? new AgentRunOptions());
 
                     // EXECUTE BEFORE ITERATION MIDDLEWARES
                     // Run with event polling to support bidirectional events (e.g., ContinuationPermissionMiddleware)
                     var beforeIterationTask = _middlewarePipeline.ExecuteBeforeIterationAsync(
-                        middlewareContext,
+                        beforeIterationContext,
                         effectiveCancellationToken);
 
                     // Poll for events while middleware is executing (CRITICAL for permission requests)
@@ -920,19 +915,12 @@ public sealed class Agent
                         yield return middlewareEvt;
                     }
 
-                    // Apply any state updates from middleware
-                    if (middlewareContext.HasPendingStateUpdates)
-                    {
-                        var pendingState = middlewareContext.GetPendingState();
-                        if (pendingState != null)
-                        {
-                            state = pendingState;
-                        }
-                    }
+                    // V2: State updates are immediate - no GetPendingState() needed!
+                    state = agentContext.State;
 
                     // Use potentially modified values from Middlewares
-                    messagesToSend = middlewareContext.Messages;
-                    var CollapsedOptions = middlewareContext.Options;
+                    messagesToSend = beforeIterationContext.Messages;
+                    var CollapsedOptions = beforeIterationContext.Options;
 
                     // Streaming state
                     var assistantContents = new List<AIContent>();
@@ -945,15 +933,15 @@ public sealed class Agent
 
                     // Execute LLM call (unless skipped by Middleware)
 
-                    if (middlewareContext.SkipLLMCall)
+                    if (beforeIterationContext.SkipLLMCall)
                     {
                         // Use cached/provided response from Middleware
-                        if (middlewareContext.Response != null)
+                        if (beforeIterationContext.OverrideResponse != null)
                         {
-                            assistantContents.AddRange(middlewareContext.Response.Contents);
+                            assistantContents.AddRange(beforeIterationContext.OverrideResponse.Contents);
 
                             // Emit events for middleware-provided response (matching normal LLM flow)
-                            foreach (var content in middlewareContext.Response.Contents)
+                            foreach (var content in beforeIterationContext.OverrideResponse.Contents)
                             {
                                 if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                                 {
@@ -986,7 +974,12 @@ public sealed class Agent
                                 }
                             }
                         }
-                        toolRequests.AddRange(middlewareContext.ToolCalls);
+                        // Tool calls come from the override response
+                        if (beforeIterationContext.OverrideResponse != null)
+                        {
+                            toolRequests.AddRange(beforeIterationContext.OverrideResponse.Contents
+                                .OfType<FunctionCallContent>());
+                        }
                     }
                     else
                     {
@@ -997,11 +990,21 @@ public sealed class Agent
                             messagesToSend.Count(),
                             DateTimeOffset.UtcNow);
 
+                        // CREATE MODEL REQUEST (V2 - immutable request pattern)
+                        var modelRequest = new Middleware.ModelRequest
+                        {
+                            Model = overrideClient ?? _baseClient,
+                            Messages = messagesToSend.ToList(),
+                            Options = CollapsedOptions,
+                            State = agentContext.State,
+                            Iteration = state.Iteration
+                        };
+
                         // Stream LLM response through middleware pipeline with IMMEDIATE event yielding
-                        // Pass override client from AgentRunOptions for runtime provider switching
-                        await foreach (var update in _middlewarePipeline.ExecuteLLMCallAsync(
-                            middlewareContext,
-                            () => _agentTurn.RunAsync(messagesToSend, CollapsedOptions, overrideClient, effectiveCancellationToken),
+                        // V2: Uses ExecuteModelCallStreamingAsync with ModelRequest
+                        await foreach (var update in _middlewarePipeline.ExecuteModelCallStreamingAsync(
+                            modelRequest,
+                            (req) => _agentTurn.RunAsync(req.Messages, req.Options, req.Model as IChatClient, effectiveCancellationToken),
                             effectiveCancellationToken))
                     {
                         // Store update for building final history
@@ -1178,21 +1181,13 @@ public sealed class Agent
                     {
                         yield return new TextMessageEndEvent(assistantMessageId);
                     }
-   
-                    // Populate context with results
-                    middlewareContext.Response = new ChatMessage(
-                        ChatRole.Assistant, assistantContents);
-                    middlewareContext.ToolCalls = toolRequests.AsReadOnly();
-                    middlewareContext.IterationException = null;
 
-                    // Check for termination from BeforeIteration middleware (e.g., ContinuationPermissionMiddleware)
-                    if (middlewareContext.Properties.TryGetValue("IsTerminated", out var isTerminatedEarly) &&
-                        isTerminatedEarly is true)
+                    // V2: Sync state after LLM call (middleware may have updated it)
+                    state = agentContext.State;
+
+                    // Check for early termination from BeforeIteration middleware (e.g., ContinuationPermissionMiddleware)
+                    if (state.IsTerminated)
                     {
-                        var reason = middlewareContext.Properties.TryGetValue("TerminationReason", out var r)
-                            ? r?.ToString() ?? "Middleware requested termination"
-                            : "Middleware requested termination";
-                        state = state.Terminate(reason);
                         break;
                     }
 
@@ -1230,7 +1225,7 @@ public sealed class Agent
                             turnHistory.Add(historyMessage);
                         }
 
-                        var effectiveOptionsForTools = middlewareContext.Options ?? effectiveOptions;
+                        var effectiveOptionsForTools = beforeIterationContext.Options;
 
                         // Yield Middleware events before tool execution
                         while (_eventCoordinator.TryRead(out var MiddlewareEvt))
@@ -1238,13 +1233,20 @@ public sealed class Agent
                             yield return MiddlewareEvt;
                         }
 
-                        // EXECUTE BEFORE TOOL EXECUTION MIDDLEWARES
+                        // UPDATE AGENT CONTEXT STATE before tool execution hook
+                        agentContext.SyncState(state);
+
+                        // EXECUTE BEFORE TOOL EXECUTION MIDDLEWARES (V2)
                         // Allows middlewares (e.g., circuit breaker) to inspect pending
                         // tool calls and prevent execution if needed.
-                        middlewareContext.ToolCalls = toolRequests.AsReadOnly();
+                        var assistantResponse = new ChatMessage(ChatRole.Assistant, assistantContents);
+                        var beforeToolContext = agentContext.AsBeforeToolExecution(
+                            response: assistantResponse,
+                            toolCalls: toolRequests.AsReadOnly(),
+                            runOptions: runOptions ?? new AgentRunOptions());
 
                         await _middlewarePipeline.ExecuteBeforeToolExecutionAsync(
-                            middlewareContext,
+                            beforeToolContext,
                             effectiveCancellationToken).ConfigureAwait(false);
 
                         // Drain events from middleware
@@ -1253,15 +1255,20 @@ public sealed class Agent
                             yield return middlewareEvt;
                         }
 
-                        // Check if middleware signaled to skip tool execution (e.g., circuit breaker)
-                        if (middlewareContext.SkipToolExecution)
-                        {
-                            // Process termination signals from middleware
-                            ProcessIterationMiddleWareSignals(middlewareContext, ref state);
+                        // V2: Sync state after middleware
+                        state = agentContext.State;
 
-                            if (middlewareContext.Properties.TryGetValue("IsTerminated", out var isTerminatedByMiddleware) &&
-                                isTerminatedByMiddleware is true)
+                        // Check if middleware signaled to skip tool execution (e.g., circuit breaker)
+                        if (beforeToolContext.SkipToolExecution)
+                        {
+                            // Check for termination
+                            if (state.IsTerminated)
                             {
+                                // Drain any final events from middleware (e.g., TextDeltaEvent from circuit breaker)
+                                while (_eventCoordinator.TryRead(out var terminationEvt))
+                                {
+                                    yield return terminationEvt;
+                                }
                                 break; // Exit the main loop WITHOUT executing tools
                             }
 
@@ -1275,6 +1282,8 @@ public sealed class Agent
                             toolRequests,
                             effectiveOptionsForTools,
                             state,
+                            runOptions ?? new AgentRunOptions(),
+                            agentContext,
                             effectiveCancellationToken);
 
                         // Poll for Middleware events while tool execution is in progress
@@ -1320,27 +1329,34 @@ public sealed class Agent
                             break;
                         }
 
-                        // EXECUTE AFTER ITERATION MIDDLEWARES (post-tool execution)
-                        middlewareContext.ToolResults = toolResultMessage.Contents
-                            .OfType<FunctionResultContent>()
-                            .ToList()
-                            .AsReadOnly();
+                        // SYNC STATE: Get any updates from middleware (e.g., error tracking)
+                        // During tool execution, OnErrorAsync may have updated error counts
+                        state = agentContext.State;
+
+                        // EXECUTE AFTER ITERATION MIDDLEWARES (V2 - post-tool execution)
+                        var afterIterationContext = agentContext.AsAfterIteration(
+                            iteration: state.Iteration,
+                            toolResults: toolResultMessage.Contents
+                                .OfType<FunctionResultContent>()
+                                .ToList()
+                                .AsReadOnly(),
+                            runOptions: runOptions ?? new AgentRunOptions());
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
-                            middlewareContext,
+                            afterIterationContext,
                             effectiveCancellationToken).ConfigureAwait(false);
 
-                        // Process middleware signals (e.g., termination, state updates)
-                        ProcessIterationMiddleWareSignals(middlewareContext, ref state);
+                        // V2: Sync state after middleware (middleware may have updated state)
+                        state = agentContext.State;
 
                         // Check if middleware signaled termination
-                        if (middlewareContext.Properties.TryGetValue("IsTerminated", out var terminated) &&
-                            terminated is true)
+                        if (state.IsTerminated)
                         {
-                            var reason = middlewareContext.Properties.TryGetValue("TerminationReason", out var r)
-                                ? r?.ToString() ?? "Middleware requested termination"
-                                : "Middleware requested termination";
-                            state = state.Terminate(reason);
+                            // Drain any events emitted during termination (e.g., StateSnapshotEvent from ErrorTrackingMiddleware)
+                            while (_eventCoordinator.TryRead(out var terminationEvt))
+                            {
+                                yield return terminationEvt;
+                            }
                             break;
                         }
 
@@ -1391,14 +1407,21 @@ public sealed class Agent
                     else
                     {
                         // No tools called - we're done
-                        // Call AfterIterationAsync with empty ToolResults for final iteration
-                        middlewareContext.ToolResults = Array.Empty<FunctionResultContent>();
+                        // SYNC STATE: Get any updates from middleware
+                        state = agentContext.State;
+
+                        // Call AfterIterationAsync with empty ToolResults for final iteration (V2)
+                        var afterIterationContext = agentContext.AsAfterIteration(
+                            iteration: state.Iteration,
+                            toolResults: Array.Empty<FunctionResultContent>(),
+                            runOptions: runOptions ?? new AgentRunOptions());
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
-                            middlewareContext,
+                            afterIterationContext,
                             effectiveCancellationToken).ConfigureAwait(false);
 
-                        ProcessIterationMiddleWareSignals(middlewareContext, ref state);
+                        // V2: Sync state after middleware
+                        state = agentContext.State;
 
                         var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
                         lastResponse = finalResponse;
@@ -1592,16 +1615,29 @@ public sealed class Agent
                 await checkpointTask;
             }
 
-            // MIDDLEWARE: AfterMessageTurnAsync (turn-level hook)
-            turnContext.FinalResponse = lastResponse;
-            turnContext.TurnHistory = turnHistory;
-            
-            // Execute AfterMessageTurnAsync in REVERSE order (stack unwinding)
-            await _middlewarePipeline.ExecuteAfterMessageTurnAsync(turnContext, effectiveCancellationToken);
-            
-            // Middleware may have modified turnHistory (e.g., filtered ephemeral messages)
-            // Use the modified list for persistence
-            
+            // MIDDLEWARE: AfterMessageTurnAsync (V2 - turn-level hook)
+            // Update AgentContext with final state
+            agentContext.SyncState(state);
+
+            // Only call AfterMessageTurn if we have a response (may be null if terminated early)
+            if (lastResponse != null)
+            {
+                // Create typed context for AfterMessageTurn
+                var afterTurnContext = agentContext.AsAfterMessageTurn(
+                    finalResponse: lastResponse,
+                    turnHistory: turnHistory,
+                    runOptions: runOptions ?? new AgentRunOptions());
+
+                // Execute AfterMessageTurnAsync in REVERSE order (stack unwinding)
+                await _middlewarePipeline.ExecuteAfterMessageTurnAsync(afterTurnContext, effectiveCancellationToken);
+            }
+
+            // V2: Sync state after middleware
+            state = agentContext.State;
+
+            // Note: If AfterMessageTurn was called, middleware may have modified turnHistory
+            // The turnHistory variable is passed by reference and may have been updated
+
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return middlewareEvt;
@@ -3237,32 +3273,7 @@ public sealed class Agent
     // ITERATION Middleware SUPPORT
     //
 
-    /// <summary>
-    /// Processes signals from iteration Middlewares (cleanup requests, etc.).
-    /// Called after iteration Middlewares complete.
-    /// </summary>
-    /// <param name="context">The iteration Middleware context with potential signals</param>
-    /// <param name="state">The current agent loop state (may be updated based on signals)</param>
-    private void ProcessIterationMiddleWareSignals(
-        Middleware.AgentMiddlewareContext context,
-        ref AgentLoopState state)
-    {
-        if (context.GetPendingState() is { } pendingState)
-        {
-            state = pendingState;
-        }
-
-        // Handle termination signals from middleware
-        if (context.Properties.TryGetValue("IsTerminated", out var isTerminated) &&
-            isTerminated is true)
-        {
-            var terminationReason = context.Properties.TryGetValue("TerminationReason", out var reason)
-                ? (reason?.ToString() ?? "Terminated by middleware")
-                : "Terminated by middleware";
-
-            state = state.Terminate(terminationReason);
-        }
-    }
+    // V2: ProcessIterationMiddleWareSignals removed - state updates are immediate in V2
 
 }
 
@@ -4239,6 +4250,8 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
+        AgentRunOptions runOptions,
+        Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
         // Check if any tool request is an output tool (structured output termination)
@@ -4251,14 +4264,14 @@ internal class FunctionCallProcessor
         if (toolRequests.Count <= 1)
         {
             var result = await ExecuteSequentiallyAsync(
-                currentHistory, toolRequests, options, agentLoopState,
+                currentHistory, toolRequests, options, agentLoopState, runOptions, agentContext,
                 cancellationToken).ConfigureAwait(false);
             return result with { OutputToolCalled = outputToolCalled };
         }
 
         // For multiple tools, use parallel execution with throttling
         var parallelResult = await ExecuteInParallelAsync(
-            currentHistory, toolRequests, options, agentLoopState,
+            currentHistory, toolRequests, options, agentLoopState, runOptions, agentContext,
             cancellationToken).ConfigureAwait(false);
         return parallelResult with { OutputToolCalled = outputToolCalled };
     }
@@ -4272,12 +4285,14 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
+        AgentRunOptions runOptions,
+        Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
         var allContents = new List<AIContent>();
         // Process ALL tools (containers + regular) through the existing processor
         var resultMessages = await ProcessFunctionCallsAsync(
-            currentHistory, options, toolRequests, agentLoopState, cancellationToken).ConfigureAwait(false);
+            currentHistory, options, toolRequests, agentLoopState, runOptions, agentContext, cancellationToken).ConfigureAwait(false);
 
         // Combine results
         foreach (var message in resultMessages)
@@ -4305,6 +4320,8 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
+        AgentRunOptions runOptions,
+        Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
         // PHASE 1: Batch permission check via BeforeParallelBatchAsync hook
@@ -4343,34 +4360,27 @@ internal class FunctionCallProcessor
             parallelFunctions.Add(new ParallelFunctionInfo(
                 function,
                 toolRequest.CallId,
-                toolRequest.Arguments ?? new Dictionary<string, object?>(),
-                toolTypeName,
-                skillName));
+                (IReadOnlyDictionary<string, object?>)(toolRequest.Arguments ?? new Dictionary<string, object?>())));
         }
 
-        // Create middleware context for batch permission check
-        var batchContext = new AgentMiddlewareContext
-        {
-            AgentName = agentLoopState.AgentName,
-            ConversationId = agentLoopState.ConversationId,
-            Iteration = agentLoopState.Iteration,
-            Messages = currentHistory,
-            Options = options,
-            ParallelFunctions = parallelFunctions,
-            EventCoordinator = _eventCoordinator,
-            CancellationToken = cancellationToken
-        };
-        batchContext.SetOriginalState(agentLoopState);
+        // Create V2 AgentContext for parallel batch hook
+        var batchAgentContext = new Middleware.AgentContext(
+            agentName: agentLoopState.AgentName,
+            conversationId: agentLoopState.ConversationId,
+            initialState: agentLoopState,
+            eventCoordinator: _eventCoordinator,
+            cancellationToken: cancellationToken);
+
+        var batchContext = batchAgentContext.AsBeforeParallelBatch(
+            parallelFunctions,
+            runOptions);
 
         // Execute BeforeParallelBatchAsync middleware hooks
         await _middlewarePipeline.ExecuteBeforeParallelBatchAsync(
             batchContext, cancellationToken).ConfigureAwait(false);
 
-        // Apply any state updates from middleware
-        if (batchContext.HasPendingStateUpdates)
-        {
-            agentLoopState = batchContext.GetPendingState() ?? agentLoopState;
-        }
+        // V2: State updates are immediate - no GetPendingState() needed!
+        agentLoopState = batchAgentContext.State;
 
         // All tools will be processed - individual permission checks happen in ProcessFunctionCallsAsync
         // (those checks will use the BatchPermissionState populated by BeforeParallelBatchAsync)
@@ -4390,7 +4400,7 @@ internal class FunctionCallProcessor
                 // NO permission check here - already done in batch above
                 var singleToolList = new List<FunctionCallContent> { toolRequest };
                 var resultMessages = await ProcessFunctionCallsAsync(
-                    currentHistory, options, singleToolList, agentLoopState, cancellationToken).ConfigureAwait(false);
+                    currentHistory, options, singleToolList, agentLoopState, runOptions, agentContext, cancellationToken).ConfigureAwait(false);
 
                 return (Success: true, Messages: resultMessages, Error: (Exception?)null, ToolRequest: toolRequest);
             }
@@ -4515,6 +4525,8 @@ internal class FunctionCallProcessor
         ChatOptions? options,
         List<FunctionCallContent> functionCallContents,
         AgentLoopState agentLoopState,
+        AgentRunOptions runOptions,
+        Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
         var resultMessages = new List<ChatMessage>();
@@ -4577,47 +4589,38 @@ internal class FunctionCallProcessor
                 // The container IS the skill, it doesn't have a "parent skill"
             }
 
-            // Create unified AgentMiddlewareContext for this function call
-            var middlewareContext = new AgentMiddlewareContext
-            {
-                AgentName = agentLoopState.AgentName,
-                ConversationId = agentLoopState.ConversationId,
-                Iteration = agentLoopState.Iteration,
-                Messages = messages,
-                Options = options,
-                Function = function,
-                FunctionCallId = functionCall.CallId,
-                FunctionArguments = functionCall.Arguments ?? new Dictionary<string, object?>(),
-                PluginName = toolTypeName,
-                SkillName = skillName,
-                IsSkillContainer = isSkillContainer,
-                EventCoordinator = _eventCoordinator,
-                CancellationToken = cancellationToken
-            };
-            middlewareContext.SetOriginalState(agentLoopState);
-
-            // Store CallId in properties for extensibility
-            middlewareContext.Properties["CallId"] = functionCall.CallId;
+            // Reuse the turn's AgentContext for consistent state tracking
+            // This ensures error tracking and other middleware state persists across function calls
+            var functionAgentContext = agentContext;
 
             // Check if function is unknown and TerminateOnUnknownCalls is enabled
             if (function == null && _agenticLoopConfig?.TerminateOnUnknownCalls == true)
             {
                 // Terminate the loop - don't process this or any remaining functions
                 // The function call will be returned to the caller for handling (e.g., multi-agent handoff)
-                middlewareContext.Properties["IsTerminated"] = true;
+                functionAgentContext.UpdateState(s => s with { IsTerminated = true });
 
                 // Don't add any result message - let the caller handle the unknown function
                 break;
             }
 
+            // Create typed BeforeFunction context
+            var beforeFunctionContext = functionAgentContext.AsBeforeFunction(
+                function: function!,  // Will be null for unknown functions
+                callId: functionCall.CallId,
+                arguments: (IReadOnlyDictionary<string, object?>?)(functionCall.Arguments ?? new Dictionary<string, object?>()),
+                runOptions: runOptions,
+                pluginName: toolTypeName,
+                skillName: skillName);
+
             // Execute BeforeFunctionAsync middleware hooks (permission check happens here)
-            var shouldExecute = await _middlewarePipeline.ExecuteBeforeFunctionAsync(
-                middlewareContext, cancellationToken).ConfigureAwait(false);
+            await _middlewarePipeline.ExecuteBeforeFunctionAsync(
+                beforeFunctionContext, cancellationToken).ConfigureAwait(false);
 
             // If middleware blocked execution (permission denied), record the denial and skip execution
-            if (!shouldExecute || middlewareContext.BlockFunctionExecution)
+            if (beforeFunctionContext.BlockExecution)
             {
-                var denialResult = middlewareContext.FunctionResult ?? "Permission denied";
+                var denialResult = beforeFunctionContext.OverrideResult ?? "Permission denied";
 
                 // Note: Function completion tracking is handled by caller using state updates
 
@@ -4628,44 +4631,47 @@ internal class FunctionCallProcessor
             }
 
             // Permission approved - proceed with function execution
+            object? executionResult = null;
             Exception? executionException = null;
+
             try
             {
                 // Handle function not found case
-                if (middlewareContext.Function is null)
+                if (function is null)
                 {
                     // Generate basic error message
                     // Note: ToolCollapsingMiddleware may have already set a more detailed message in BeforeToolExecutionAsync
-                    if (middlewareContext.FunctionResult == null)
-                    {
-                        middlewareContext.FunctionResult = $"Function '{functionCall.Name ?? "Unknown"}' not found.";
-                    }
+                    executionResult = beforeFunctionContext.OverrideResult
+                        ?? $"Function '{functionCall.Name ?? "Unknown"}' not found.";
                 }
                 else
                 {
-                    // Execute the function through middleware pipeline
-                    // This includes retry, timeout, and any custom middleware
-                    middlewareContext.FunctionResult = await _middlewarePipeline.ExecuteFunctionAsync(
-                        middlewareContext,
-                        innerCall: async () =>
-                        {
-                            // Set AsyncLocal function invocation context for ambient access
-                            Agent.CurrentFunctionContext = middlewareContext;
+                    // Create FunctionRequest for V2 pipeline
+                    var functionRequest = new Middleware.FunctionRequest
+                    {
+                        Function = function,
+                        CallId = functionCall.CallId,
+                        Arguments = (IReadOnlyDictionary<string, object?>?)(functionCall.Arguments ?? new Dictionary<string, object?>()) ?? new Dictionary<string, object?>(),
+                        State = functionAgentContext.State
+                    };
 
+                    // Execute the function through V2 middleware pipeline (retry, timeout, etc.)
+                    executionResult = await _middlewarePipeline.ExecuteFunctionCallAsync(
+                        functionRequest,
+                        coreHandler: async (req) =>
+                        {
+                            // V2: Set CurrentFunctionContext so AIFunctions can access context
+                            // (e.g., ClarificationFunction needs Emit/WaitForResponseAsync)
+                            Agent.CurrentFunctionContext = beforeFunctionContext;
                             try
                             {
                                 // THIS IS THE ACTUAL FUNCTION EXECUTION (innermost call)
-                                var args = new AIFunctionArguments(middlewareContext.FunctionArguments ?? new Dictionary<string, object?>());
-                                return await middlewareContext.Function.InvokeAsync(args, cancellationToken).ConfigureAwait(false);
-                            }
-                            catch (Exception ex)
-                            {
-                                // Format error for LLM
-                                return FormatErrorForLLM(ex, middlewareContext.Function.Name);
+                                var args = new AIFunctionArguments(new Dictionary<string, object?>(req.Arguments));
+                                return await req.Function.InvokeAsync(args, cancellationToken).ConfigureAwait(false);
                             }
                             finally
                             {
-                                // Always clear the context after function completes
+                                // V2: Clear context after function execution
                                 Agent.CurrentFunctionContext = null;
                             }
                         },
@@ -4674,30 +4680,53 @@ internal class FunctionCallProcessor
             }
             catch (Exception ex)
             {
-                // Emit error event before handling
-                middlewareContext.Emit(new MiddlewareErrorEvent(
+                // Emit error event
+                functionAgentContext.Emit(new MiddlewareErrorEvent(
                     "FunctionExecution",
                     $"Error executing function '{functionCall.Name}': {ex.Message}",
                     ex));
 
-                // Mark context as terminated and set error result
-                middlewareContext.Properties["IsTerminated"] = true;
-                middlewareContext.FunctionResult = $"Error executing function '{functionCall.Name}': {ex.Message}";
+                // Notify error tracking middleware (V2 error hooks)
+                var errorContext = functionAgentContext.AsError(
+                    error: ex,
+                    source: ErrorSource.ToolCall,
+                    iteration: functionAgentContext.State.Iteration);
+
+                try
+                {
+                    await _middlewarePipeline.ExecuteOnErrorAsync(errorContext, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Swallow errors in error handlers to preserve original error
+                }
+
+                // Don't automatically terminate on error - let error tracking middleware decide
+                // The middleware (e.g., ErrorTrackingMiddleware) will set IsTerminated if threshold exceeded
+                executionResult = $"Error executing function '{functionCall.Name}': {ex.Message}";
                 executionException = ex;
             }
 
-            // Update exception in context for AfterFunctionAsync
-            middlewareContext.FunctionException = executionException;
+            // Create AfterFunction context
+            var afterFunctionContext = functionAgentContext.AsAfterFunction(
+                function: function!,
+                callId: functionCall.CallId,
+                result: executionResult,
+                exception: executionException,
+                runOptions: runOptions,
+                pluginName: toolTypeName,
+                skillName: skillName);
 
             try
             {
                 await _middlewarePipeline.ExecuteAfterFunctionAsync(
-                    middlewareContext, cancellationToken).ConfigureAwait(false);
+                    afterFunctionContext, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception afterEx)
             {
                 // Log AfterFunction errors but don't fail the function execution
-                middlewareContext.Emit(new MiddlewareErrorEvent(
+                functionAgentContext.Emit(new MiddlewareErrorEvent(
                     "AfterFunctionMiddleware",
                     $"Error in AfterFunction middleware: {afterEx.Message}",
                     afterEx));
@@ -4705,7 +4734,10 @@ internal class FunctionCallProcessor
 
             // Note: Function completion tracking is handled by caller using state updates
 
-            var functionResult = new FunctionResultContent(functionCall.CallId, middlewareContext.FunctionResult);
+            var functionResult = new FunctionResultContent(functionCall.CallId, executionResult)
+            {
+                Exception = executionException
+            };
             var functionMessage = new ChatMessage(ChatRole.Tool, new AIContent[] { functionResult });
             resultMessages.Add(functionMessage);
         }

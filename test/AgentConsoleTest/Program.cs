@@ -1,4 +1,5 @@
 ﻿using HPD.Agent;
+using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
 // Print banner
@@ -36,13 +37,20 @@ Be concise and direct.",
     Collapsing = new CollapsingConfig { Enabled = true }
 };
 
+// Configure logging to show Information level logs
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.SetMinimumLevel(LogLevel.Information);
+    builder.AddConsole();
+});
+
 var agent = await new AgentBuilder(config)
-    .WithProvider("openrouter", "nvidia/nemotron-3-nano-30b-a3b")
+    .WithProvider("openrouter", "google/gemini-2.5-flash-lite")
     .WithTools<CodingPlugin>()
+    .WithTools<MathTools>()
     .WithMiddleware(new EnvironmentContextMiddleware())
-    .WithMiddleware(new HPD.Agent.Middleware.ContainerErrorRecoveryMiddleware(null))
     .WithSessionStore(sessionStore, persistAfterTurn: true)
-    .WithLogging()
+    .WithLogging(loggerFactory)
     .Build();
 
 // Generate a unique session ID for this run

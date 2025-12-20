@@ -32,7 +32,8 @@ namespace HPD.Agent;
 ///
 /// <para><b>Lifecycle:</b></para>
 /// <para>
-/// - ExpandedContainers persist within a message turn
+/// - ExpandedContainers persist across message turns (session-level state)
+/// - ContainersExpandedThisTurn tracked during current turn, cleared at turn end
 /// - ActiveContainerInstructions cleared at end of message turn
 /// </para>
 /// </remarks>
@@ -40,10 +41,19 @@ namespace HPD.Agent;
 public sealed record CollapsingStateData
 {
     /// <summary>
-    /// All expanded containers (plugins AND skills).
+    /// All expanded containers (plugins AND skills) across the entire session.
     /// Containers in this set have their member functions visible.
+    /// Persists across message turns.
     /// </summary>
     public ImmutableHashSet<string> ExpandedContainers { get; init; }
+        = ImmutableHashSet<string>.Empty;
+
+    /// <summary>
+    /// Containers expanded during the CURRENT message turn only.
+    /// Used for cleanup in AfterMessageTurnAsync to remove container calls from TurnHistory.
+    /// Cleared at end of each message turn.
+    /// </summary>
+    public ImmutableHashSet<string> ContainersExpandedThisTurn { get; init; }
         = ImmutableHashSet<string>.Empty;
 
     /// <summary>
@@ -56,14 +66,16 @@ public sealed record CollapsingStateData
 
     /// <summary>
     /// Records a container expansion (plugin or skill).
+    /// Adds to both session-level ExpandedContainers and turn-level ContainersExpandedThisTurn.
     /// </summary>
     /// <param name="containerName">Name of the container being expanded</param>
-    /// <returns>New state with container added to expanded set</returns>
+    /// <returns>New state with container added to both sets</returns>
     public CollapsingStateData WithExpandedContainer(string containerName)
     {
         return this with
         {
-            ExpandedContainers = ExpandedContainers.Add(containerName)
+            ExpandedContainers = ExpandedContainers.Add(containerName),
+            ContainersExpandedThisTurn = ContainersExpandedThisTurn.Add(containerName)
         };
     }
 
@@ -90,6 +102,19 @@ public sealed record CollapsingStateData
         return this with
         {
             ActiveContainerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
+        };
+    }
+
+    /// <summary>
+    /// Clears the turn-level container tracking.
+    /// Called at end of message turn after cleanup is complete.
+    /// </summary>
+    /// <returns>New state with cleared turn containers</returns>
+    public CollapsingStateData ClearTurnContainers()
+    {
+        return this with
+        {
+            ContainersExpandedThisTurn = ImmutableHashSet<string>.Empty
         };
     }
 }

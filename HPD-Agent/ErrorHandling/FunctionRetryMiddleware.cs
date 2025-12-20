@@ -31,7 +31,7 @@ public class FunctionRetryMiddleware : IAgentMiddleware
     private readonly IProviderErrorHandler _providerHandler;
 
     /// <summary>
-    /// Creates a new function retry middleware with the specified configuration and error handler.
+    /// Creates a new function RetryMiddleware  with the specified configuration and error handler.
     /// </summary>
     /// <param name="config">Error handling configuration</param>
     /// <param name="providerErrorHandler">Provider-specific error handler for intelligent retry logic</param>
@@ -42,11 +42,11 @@ public class FunctionRetryMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Executes the function with provider-aware retry logic.
+    /// Wraps function execution with provider-aware retry logic.
     /// </summary>
-    public async ValueTask<object?> ExecuteFunctionAsync(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> next,
+    public async Task<object?> WrapFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler,
         CancellationToken cancellationToken)
     {
         var maxRetries = _config.MaxRetries;
@@ -56,8 +56,8 @@ public class FunctionRetryMiddleware : IAgentMiddleware
         {
             try
             {
-                // Call next middleware (or actual function)
-                return await next();
+                // Call next handler in chain
+                return await handler(request);
             }
             catch (Exception ex)
             {
@@ -72,18 +72,19 @@ public class FunctionRetryMiddleware : IAgentMiddleware
                     throw;
                 }
 
-                // Emit retry event for observability (if coordinator available)
-                if (context.EventCoordinator != null)
-                {
-                    context.Emit(new FunctionRetryEvent(
-                        FunctionName: context.Function?.Name ?? "Unknown",
-                        Attempt: attempt + 1,
-                        MaxRetries: maxRetries,
-                        Delay: delay.Value,
-                        Exception: ex,
-                        ExceptionType: ex.GetType().Name,
-                        ErrorMessage: ex.Message));
-                }
+                // Emit retry event for observability
+                // V2 TODO: Need to get EventCoordinator from somewhere (request.State doesn't expose it)
+                // For now, skip event emission - will need refactoring
+                /*
+                context.Emit(new FunctionRetryEvent(
+                    FunctionName: request.Function?.Name ?? "Unknown",
+                    Attempt: attempt + 1,
+                    MaxRetries: maxRetries,
+                    Delay: delay.Value,
+                    Exception: ex,
+                    ExceptionType: ex.GetType().Name,
+                    ErrorMessage: ex.Message));
+                */
 
                 // Wait before retry
                 await Task.Delay(delay.Value, cancellationToken);

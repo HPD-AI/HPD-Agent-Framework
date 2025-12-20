@@ -193,7 +193,7 @@ Equity % = $400,000 ÷ $1,000,000 × 100 = 40%
 - Creditors finance 40% of asset base
 
 **Financial Risk Assessment:**
-- ✅ Not in distress (not overleveraged)
+-  Not in distress (not overleveraged)
 - 🟡 Above-average leverage for industry
 - **Implication:** More sensitive to economic downturns; less cushion than peers
 
@@ -261,10 +261,10 @@ Capital structure varies significantly by industry:
 ## Leverage Implications
 
 ### Positive Aspects of Debt Financing:
-- ✅ **Tax benefit:** Interest is tax-deductible (equity dividends are not)
-- ✅ **Leverage:** Amplify ROE (if generating returns > cost of debt)
-- ✅ **Discipline:** Debt covenants can improve management quality
-- ✅ **Cost:** Debt often cheaper than equity
+-  **Tax benefit:** Interest is tax-deductible (equity dividends are not)
+-  **Leverage:** Amplify ROE (if generating returns > cost of debt)
+-  **Discipline:** Debt covenants can improve management quality
+-  **Cost:** Debt often cheaper than equity
 
 ### Negative Aspects of Debt Financing:
 - ⚠️ **Fixed obligations:** Debt must be paid regardless of profitability

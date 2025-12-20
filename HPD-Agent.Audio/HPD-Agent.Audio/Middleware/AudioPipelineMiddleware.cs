@@ -208,7 +208,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// Processes audio input before LLM call (STT conversion).
     /// Converts audio DataContent in messages to text transcriptions.
     /// </summary>
-    public async Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public async Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
         var audioOptions = ResolveAudioOptions(context);
 
@@ -342,8 +342,13 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// <summary>
     /// Intercepts LLM streaming to enable Quick Answer (TTS on first sentence).
     /// </summary>
+    /// <remarks>
+    /// V2 TODO: This hook (ExecuteLLMCallAsync) doesn't exist in V2 middleware yet.
+    /// Streaming interception needs to be reimplemented when V2 adds streaming hooks.
+    /// For now, this method signature is updated but won't be called.
+    /// </remarks>
     public async IAsyncEnumerable<ChatResponseUpdate> ExecuteLLMCallAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         Func<IAsyncEnumerable<ChatResponseUpdate>> next,
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -458,7 +463,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// <summary>
     /// Emits metrics for the completed audio turn.
     /// </summary>
-    private void EmitTurnMetrics(AgentMiddlewareContext context)
+    private void EmitTurnMetrics(HookContext context)
     {
         if (_turnMetrics == null)
             return;
@@ -524,7 +529,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     // VAD INTERRUPT HANDLING (uses core IStreamRegistry)
     //
 
-    internal void OnVadStartOfSpeech(AgentMiddlewareContext context, string? transcribedText)
+    internal void OnVadStartOfSpeech(HookContext context, string? transcribedText)
     {
         // Check backchannel strategy before interrupting
         if (BackchannelStrategy == BackchannelStrategy.IgnoreShortUtterances)
@@ -677,7 +682,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     }
 
     private async IAsyncEnumerable<AudioChunkEvent> SynthesizeAndEmitAsync(
-        AgentMiddlewareContext context,
+        HookContext context,
         string text,
         IStreamHandle? stream,
         string synthesisId,
@@ -722,14 +727,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         }
     }
 
-    private AudioRunOptions? ResolveAudioOptions(AgentMiddlewareContext context)
+    private AudioRunOptions? ResolveAudioOptions(HookContext context)
     {
-        // Try to get AudioRunOptions from context properties
-        // This is set by the agent when AgentRunOptions.Audio is provided
-        if (context.Properties.TryGetValue("AudioRunOptions", out var value) && value is AudioRunOptions options)
-        {
-            return options;
-        }
+        // V2: AudioRunOptions should be accessed from BeforeMessageTurnContext.RunOptions.Audio
+        // For now, AudioPipelineMiddleware doesn't have a way to access RunOptions from iteration context
+        // This is a known limitation - audio options should be configured on the middleware instance itself
+        // or passed through middleware state if dynamic per-turn configuration is needed.
+
+        // TODO: Add AudioRunOptions to middleware state if dynamic per-turn configuration is needed
         return null;
     }
 

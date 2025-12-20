@@ -24,6 +24,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Exclude V1 archived test files from compilation -->
+    <Compile Remove="**/*.V1.OLD.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
     <ProjectReference Include="..\..\HPD-Agent.FFI\HPD-Agent.FFI.csproj" />
     <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />

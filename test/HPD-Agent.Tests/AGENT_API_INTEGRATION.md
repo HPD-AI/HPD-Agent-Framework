@@ -70,7 +70,7 @@ public async IAsyncEnumerable<AgentEvent> RunAgenticLoopAsync(
 | Expose `RunAgenticLoopInternal` as public | Zero overhead | Exposes internal complexity, 7 parameters | ❌ Rejected |
 | Add `[InternalsVisibleTo]` attribute | No public API changes | Tests can access anything internal | ❌ Too broad |
 | Create adapter in test project | No Agent.cs changes | Duplicates internal logic, brittle | ❌ Fragile |
-| **Add public wrapper** | Clean API, focused purpose | One additional method | ✅ **Chosen** |
+| **Add public wrapper** | Clean API, focused purpose | One additional method |  **Chosen** |
 
 ---
 
@@ -83,13 +83,13 @@ public async IAsyncEnumerable<AgentEvent> RunAgenticLoopAsync(
 public static FunctionInvocationContext? CurrentFunctionContext
 {
     get => _currentFunctionContext.Value;
-    internal set => _currentFunctionContext.Value = value;  // ✅ Internal setter
+    internal set => _currentFunctionContext.Value = value;  //  Internal setter
 }
 
 public static Agent? RootAgent
 {
     get => _rootAgent.Value;
-    internal set => _rootAgent.Value = value;  // ✅ Internal setter
+    internal set => _rootAgent.Value = value;  //  Internal setter
 }
 ```
 
@@ -132,10 +132,10 @@ public Agent(
 | Method | Returns | Purpose | Public? |
 |--------|---------|---------|---------|
 | `RunAgenticLoopInternal` | `IAsyncEnumerable<AgentEvent>` | Core loop, internal events | ❌ Private |
-| **`RunAgenticLoopAsync`** | `IAsyncEnumerable<AgentEvent>` | Wrapper for testing | ✅ **NEW - Public** |
-| `ExecuteStreamingTurnAsync` | `Task<StreamingTurnResult>` | AGUI protocol | ✅ Public |
-| `RunAsync` (AIAgent override) | `Task<AgentRunResponse>` | Microsoft.Agents.AI | ✅ Public |
-| `RunAsync` (AgentTurn) | `IAsyncEnumerable<ChatResponseUpdate>` | IChatClient interface | ✅ Public |
+| **`RunAgenticLoopAsync`** | `IAsyncEnumerable<AgentEvent>` | Wrapper for testing |  **NEW - Public** |
+| `ExecuteStreamingTurnAsync` | `Task<StreamingTurnResult>` | AGUI protocol |  Public |
+| `RunAsync` (AIAgent override) | `Task<AgentRunResponse>` | Microsoft.Agents.AI |  Public |
+| `RunAsync` (AgentTurn) | `IAsyncEnumerable<ChatResponseUpdate>` | IChatClient interface |  Public |
 
 **For Tests**: Use the new `RunAgenticLoopAsync` method
 
@@ -283,8 +283,8 @@ FinishReason = ChatFinishReason.Stop  // Use enum instead of string
 ```csharp
 protected virtual void ClearAsyncLocalState()
 {
-    Agent.CurrentFunctionContext = null;  // ✅ Will work with InternalsVisibleTo
-    Agent.RootAgent = null;  // ✅ Will work with InternalsVisibleTo
+    Agent.CurrentFunctionContext = null;  //  Will work with InternalsVisibleTo
+    Agent.RootAgent = null;  //  Will work with InternalsVisibleTo
 }
 ```
 
@@ -292,7 +292,7 @@ protected virtual void ClearAsyncLocalState()
 
 ## Build Status
 
-**Agent.cs**: ✅ Build succeeded
+**Agent.cs**:  Build succeeded
 **Test Project**: ⚠️ Compilation errors remaining (fixable)
 
 ---

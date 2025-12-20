@@ -25,7 +25,7 @@ try
         .WithLogging(loggerFactory) // Uses unified LoggingMiddleware
         .Build();
 
-    Console.WriteLine("✅ Agent created successfully!");
+    Console.WriteLine(" Agent created successfully!");
 
     // Check if middlewares are registered
     var middlewares = agent.AgentMiddlewares;
@@ -48,8 +48,8 @@ try
 
     if (hasLoggingMiddleware)
     {
-        Console.WriteLine("\n✅ SUCCESS! LoggingMiddleware is registered!");
-        Console.WriteLine("✅ The unified middleware fix is working correctly!");
+        Console.WriteLine("\n SUCCESS! LoggingMiddleware is registered!");
+        Console.WriteLine(" The unified middleware fix is working correctly!");
         return 0;
     }
     else

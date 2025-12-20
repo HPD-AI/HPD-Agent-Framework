@@ -302,22 +302,22 @@ public class Phase3CombinatorialValidationTests
     public void Phase3_CombinatorialValidation_Complete()
     {
         // COMPLETED VALIDATION:
-        // ✅ Functions only (regular AIFunctions)
-        // ✅ Skills only (skill containers)
-        // ✅ SubAgents only (subagent wrappers)
-        // ✅ Functions + Skills
-        // ✅ Functions + SubAgents
-        // ✅ Skills + SubAgents
-        // ✅ All three types together
+        //  Functions only (regular AIFunctions)
+        //  Skills only (skill containers)
+        //  SubAgents only (subagent wrappers)
+        //  Functions + Skills
+        //  Functions + SubAgents
+        //  Skills + SubAgents
+        //  All three types together
         //
         // METADATA VALIDATION:
-        // ✅ Function metadata (ParentPlugin, IsContainer = false)
-        // ✅ Skill metadata (IsContainer = true, IsSkill = true, ReferencedFunctions, ReferencedPlugins)
-        // ✅ SubAgent metadata (IsSubAgent = true, ThreadMode, PluginName)
-        // ✅ Empty array types (new string[] { } instead of new[] { })
+        //  Function metadata (ParentPlugin, IsContainer = false)
+        //  Skill metadata (IsContainer = true, IsSkill = true, ReferencedFunctions, ReferencedPlugins)
+        //  SubAgent metadata (IsSubAgent = true, ThreadMode, PluginName)
+        //  Empty array types (new string[] { } instead of new[] { })
         //
         // FUNCTIONAL VALIDATION:
-        // ✅ Skill activation with instructions
+        //  Skill activation with instructions
         //
         // STATUS: New polymorphic generation produces correct output for ALL combinations
         // Date: 2025-12-13

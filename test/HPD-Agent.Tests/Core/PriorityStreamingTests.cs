@@ -540,54 +540,32 @@ public class PriorityStreamingTests
 
     #endregion
 
-    #region Middleware Upstream Tests
+    #region Middleware Upstream Tests (OBSOLETE - V1 ONLY)
 
-    [Fact]
-    public async Task OnUpstreamEventAsync_CalledInReverseOrder()
-    {
-        // Arrange
-        var callOrder = new List<string>();
+    // OBSOLETE: ExecuteOnUpstreamEventAsync and OnUpstreamEventAsync removed in V2
+    //
+    // V2 Replacement Patterns:
+    // 1. Priority Event Routing: BidirectionalEventCoordinator.Emit() with EventPriority.Immediate
+    // 2. Stream Interruption: IStreamRegistry.InterruptAll() + IStreamHandle.WasInterrupted
+    // 3. Cancellation Cleanup: OnErrorAsync(ErrorContext) handles OperationCanceledException
+    //
+    // See:
+    // - InternalDocs/Proposals/V2/Audio/PRIORITY_STREAMING_ARCHITECTURE_PROPOSAL.md
+    // - InternalDocs/MIDDLEWARE_V2_PROPOSAL_REVISED.md (Section 1.6: Centralized Error Handling)
 
-        var middleware1 = new TestUpstreamMiddleware("A", callOrder);
-        var middleware2 = new TestUpstreamMiddleware("B", callOrder);
-        var middleware3 = new TestUpstreamMiddleware("C", callOrder);
+    //[Fact]
+    //public async Task OnUpstreamEventAsync_CalledInReverseOrder()
+    //{
+    //    // V1 Pattern - middleware pipeline manually routes upstream events backward
+    //    // V2 Replacement: BidirectionalEventCoordinator handles priority natively
+    //}
 
-        var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[] { middleware1, middleware2, middleware3 });
-        var context = CreateTestContext();
-        var upstreamEvent = new InterruptionRequestEvent(null, "test", InterruptionSource.User);
-
-        // Act
-        await pipeline.ExecuteOnUpstreamEventAsync(context, upstreamEvent, CancellationToken.None);
-
-        // Assert - Should be called in reverse order: C, B, A
-        Assert.Equal(3, callOrder.Count);
-        Assert.Equal("C", callOrder[0]);
-        Assert.Equal("B", callOrder[1]);
-        Assert.Equal("A", callOrder[2]);
-    }
-
-    [Fact]
-    public async Task OnUpstreamEventAsync_ContinuesOnException()
-    {
-        // Arrange
-        var callOrder = new List<string>();
-
-        var middleware1 = new TestUpstreamMiddleware("A", callOrder);
-        var middleware2 = new ThrowingUpstreamMiddleware(); // Will throw
-        var middleware3 = new TestUpstreamMiddleware("C", callOrder);
-
-        var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[] { middleware1, middleware2, middleware3 });
-        var context = CreateTestContext();
-        var upstreamEvent = new InterruptionRequestEvent(null, "test", InterruptionSource.User);
-
-        // Act - Should not throw despite middleware2 throwing
-        await pipeline.ExecuteOnUpstreamEventAsync(context, upstreamEvent, CancellationToken.None);
-
-        // Assert - A and C should still have been called
-        Assert.Equal(2, callOrder.Count);
-        Assert.Contains("A", callOrder);
-        Assert.Contains("C", callOrder);
-    }
+    //[Fact]
+    //public async Task OnUpstreamEventAsync_ContinuesOnException()
+    //{
+    //    // V1 Pattern - middleware handles upstream events for cleanup
+    //    // V2 Replacement: OnErrorAsync for cleanup, stream registry for interruption
+    //}
 
     #endregion
 
@@ -762,46 +740,12 @@ public class PriorityStreamingTests
 
     #region Helper Classes
 
-    private static AgentMiddlewareContext CreateTestContext()
-    {
-        return new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            CancellationToken = CancellationToken.None
-        };
-    }
-
-    private class TestUpstreamMiddleware : IAgentMiddleware
-    {
-        private readonly string _name;
-        private readonly List<string> _callOrder;
-
-        public TestUpstreamMiddleware(string name, List<string> callOrder)
-        {
-            _name = name;
-            _callOrder = callOrder;
-        }
-
-        public Task OnUpstreamEventAsync(
-            AgentMiddlewareContext context,
-            AgentEvent upstreamEvent,
-            CancellationToken cancellationToken)
-        {
-            _callOrder.Add(_name);
-            return Task.CompletedTask;
-        }
-    }
-
-    private class ThrowingUpstreamMiddleware : IAgentMiddleware
-    {
-        public Task OnUpstreamEventAsync(
-            AgentMiddlewareContext context,
-            AgentEvent upstreamEvent,
-            CancellationToken cancellationToken)
-        {
-            throw new InvalidOperationException("Test exception");
-        }
-    }
+    // OBSOLETE V1 helper methods removed
+    // CreateTestContext() - used AgentMiddlewareContext (removed in V2)
+    // TestUpstreamMiddleware - used OnUpstreamEventAsync (removed in V2)
+    // ThrowingUpstreamMiddleware - used OnUpstreamEventAsync (removed in V2)
+    //
+    // V2 uses typed contexts from HPD.Agent.Tests.Middleware.V2.MiddlewareTestHelpers
 
     #endregion
 }

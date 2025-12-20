@@ -51,17 +51,22 @@ public class StaticMemoryAgentMiddleware : IAgentMiddleware
     /// Injects static knowledge into the message context before the message turn begins.
     /// </summary>
     public async Task BeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Messages == null)
-            return;
-
         var knowledgeTag = await GetKnowledgeContextAsync();
 
         if (!string.IsNullOrEmpty(knowledgeTag))
         {
-            context.Messages = InjectKnowledge(context.Messages, knowledgeTag).ToList();
+            var injectedMessages = InjectKnowledge(context.ConversationHistory, knowledgeTag);
+
+            // V2: ConversationHistory is mutable - replace content
+            context.ConversationHistory.Clear();
+            foreach (var msg in injectedMessages)
+            {
+                context.ConversationHistory.Add(msg);
+            }
+
             _logger?.LogDebug(
                 "Injected static knowledge ({Length} chars) for agent {AgentName}",
                 knowledgeTag.Length,

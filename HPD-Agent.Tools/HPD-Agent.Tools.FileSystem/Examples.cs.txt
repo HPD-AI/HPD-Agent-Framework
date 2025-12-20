@@ -182,7 +182,7 @@ public static class FileSystemPluginExamples
 
         var plugin = new FileSystemPlugin(context);
 
-        // ✅ Allowed: Inside workspace
+        //  Allowed: Inside workspace
         var result1 = await plugin.ReadFile("/safe/workspace/file.txt");
         Console.WriteLine(result1);
 

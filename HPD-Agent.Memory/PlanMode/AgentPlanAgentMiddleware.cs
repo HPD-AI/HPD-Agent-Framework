@@ -61,36 +61,21 @@ public class AgentPlanAgentMiddleware : IAgentMiddleware
     /// </para>
     /// </remarks>
     public async Task BeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        // PHASE 1: Inject plan mode instructions (if enabled)
-        if (_config?.Enabled == true && context.Options != null)
+        // V2: This middleware hooks into BeforeMessageTurn but needs access to Options which isn't available
+        // NOTE: Plan mode instructions would normally be set at agent configuration time, not dynamically
+        // For now, log a warning if plan mode is enabled but we can't inject instructions
+        if (_config?.Enabled == true)
         {
-            var planInstructions = _config.CustomInstructions ?? GetDefaultPlanModeInstructions();
-
-            if (!string.IsNullOrEmpty(planInstructions))
-            {
-                var baseInstructions = context.Options.Instructions ?? string.Empty;
-
-                if (string.IsNullOrEmpty(baseInstructions))
-                {
-                    context.Options.Instructions = planInstructions;
-                }
-                else
-                {
-                    context.Options.Instructions = $"{baseInstructions}\n\n{planInstructions}";
-                }
-
-                _logger?.LogDebug(
-                    "Injected plan mode instructions for agent {AgentName}",
-                    context.AgentName);
-            }
+            _logger?.LogWarning(
+                "Plan mode instructions cannot be injected in V2 BeforeMessageTurn hook. " +
+                "Set instructions via AgentConfig.ChatOptions.Instructions instead.");
         }
 
         // PHASE 2: Inject active plan (if exists)
-        var conversationId = context.ConversationId
-            ?? context.Options?.AdditionalProperties?["ConversationId"] as string;
+        var conversationId = context.ConversationId;
 
         if (string.IsNullOrEmpty(conversationId))
         {
@@ -110,18 +95,19 @@ public class AgentPlanAgentMiddleware : IAgentMiddleware
             return;
         }
 
-        if (context.Messages == null)
-        {
-            context.Messages = new List<ChatMessage>();
-        }
-
         // Inject plan as a system message at the beginning
         var messagesWithPlan = new List<ChatMessage>
         {
             new ChatMessage(ChatRole.System, planPrompt)
         };
-        messagesWithPlan.AddRange(context.Messages);
-        context.Messages = messagesWithPlan;
+        messagesWithPlan.AddRange(context.ConversationHistory);
+
+        // V2: ConversationHistory is mutable - replace content
+        context.ConversationHistory.Clear();
+        foreach (var msg in messagesWithPlan)
+        {
+            context.ConversationHistory.Add(msg);
+        }
 
         _logger?.LogDebug(
             "Injected active plan into prompt for agent {AgentName}, conversation {ConversationId}",

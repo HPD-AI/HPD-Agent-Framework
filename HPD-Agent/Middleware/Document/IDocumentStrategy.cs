@@ -18,7 +18,7 @@ public interface IDocumentStrategy
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Task representing the async operation</returns>
     Task ProcessDocumentsAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         IEnumerable<AIContent> documentContents,
         DocumentHandlingOptions options,
         CancellationToken cancellationToken);

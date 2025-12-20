@@ -22,19 +22,19 @@ class MiddlewareTest
                 .WithTools<TestPlugin>()
                 .Build();
 
-            Console.WriteLine("✅ Agent created successfully!");
+            Console.WriteLine(" Agent created successfully!");
             Console.WriteLine($"Config: {agent.Config.ToString()}");
 
             // Check if unified middlewares are registered
             var agentMiddlewares = agent.AgentMiddlewares;
-            Console.WriteLine($"✅ Agent middlewares registered: {agentMiddlewares.Count}");
+            Console.WriteLine($" Agent middlewares registered: {agentMiddlewares.Count}");
 
             foreach (var middleware in agentMiddlewares)
             {
                 Console.WriteLine($"   - {middleware.GetType().Name}");
             }
 
-            Console.WriteLine("\n✅ Middleware registration test PASSED!");
+            Console.WriteLine("\n Middleware registration test PASSED!");
         }
         catch (Exception ex)
         {

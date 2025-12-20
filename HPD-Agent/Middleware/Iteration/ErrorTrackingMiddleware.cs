@@ -4,29 +4,24 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent;
 
 /// <summary>
-/// Tracks consecutive errors across iterations and terminates execution when threshold is exceeded.
-/// Analyzes tool results in AfterIterationAsync to detect errors and manage failure state.
+/// Tracks consecutive errors and terminates execution when threshold is exceeded.
+/// Uses centralized OnErrorAsync hook for cleaner error handling.
 /// </summary>
 /// <remarks>
-/// <para><b>STATELESS MIDDLEWARE:</b></para>
-/// <para>
-/// This middleware is stateless - all state flows through the context via
-/// <see cref="ErrorTrackingState"/>. This preserves Agent's thread-safety
-/// guarantee for concurrent RunAsync() calls.
-/// </para>
-///
-/// <para><b>Error detection happens in AfterIterationAsync:</b></para>
-/// <list type="number">
-/// <item>Analyzes ToolResults for errors (exceptions or error patterns in results)</item>
-/// <item>Updates ErrorTrackingState via context.UpdateState()</item>
-/// <item>Checks threshold and triggers termination if exceeded</item>
+/// <para><b>V2 IMPROVEMENTS:</b></para>
+/// <list type="bullet">
+/// <item>Uses OnErrorAsync hook instead of analyzing tool results in AfterIterationAsync</item>
+/// <item>Immediate state updates - no GetPendingState() needed!</item>
+/// <item>Single AgentContext instance - no manual synchronization</item>
+/// <item>Typed contexts provide compile-time safety</item>
 /// </list>
 ///
-/// <para><b>When triggered:</b></para>
-/// <list type="number">
-/// <item>Emits a <see cref="MaxConsecutiveErrorsExceededEvent"/> for observability</item>
-/// <item>Signals termination via Properties["IsTerminated"] = true</item>
-/// <item>Provides a termination message explaining the error threshold trigger</item>
+/// <para><b>Migration from V1:</b></para>
+/// <list type="bullet">
+/// <item>Removed BeforeIterationAsync threshold check (OnErrorAsync handles termination)</item>
+/// <item>AfterIterationAsync only resets counter on success (no error detection)</item>
+/// <item>OnErrorAsync increments counter and triggers termination</item>
+/// <item>No more GetPendingState() - context.State is always current!</item>
 /// </list>
 /// </remarks>
 /// <example>
@@ -50,12 +45,6 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
     public int MaxConsecutiveErrors { get; set; } = 3;
 
     /// <summary>
-    /// Custom error detection function. If not provided, uses default error detection.
-    /// Return true if the FunctionResultContent represents an error.
-    /// </summary>
-    public Func<FunctionResultContent, bool>? CustomErrorDetector { get; set; }
-
-    /// <summary>
     /// Custom termination message template.
     /// Placeholders: {count}, {max}
     /// </summary>
@@ -63,29 +52,30 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         "Maximum consecutive errors ({count}/{max}) exceeded. " +
         "Stopping execution to prevent infinite error loop.";
 
-    //     
+    //
     // HOOKS
-    //     
+    //
 
     /// <summary>
-    /// Called BEFORE the LLM call begins.
-    /// Checks if consecutive failures already at/above threshold to prevent wasted LLM calls.
+    /// Called when ANY error occurs (model call, tool call, iteration).
+    /// Increments failure counter and triggers termination if threshold exceeded.
     /// </summary>
-    public Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
-        CancellationToken cancellationToken)
+    public Task OnErrorAsync(ErrorContext context, CancellationToken cancellationToken)
     {
-        // Skip check on first iteration (no previous errors to check)
-        if (context.Iteration == 0)
-            return Task.CompletedTask;
-
-        // Read state from context (type-safe!)
+        // Get current error state
         var errState = context.State.MiddlewareState.ErrorTracking ?? new();
+        var newState = errState.IncrementFailures();
 
-        if (errState.ConsecutiveFailures >= MaxConsecutiveErrors)
+        // ✅ Immediate state update - visible to all subsequent hooks!
+        context.UpdateState(s => s with
         {
-            // Already at threshold - terminate before wasting LLM call
-            TriggerTermination(context, errState.ConsecutiveFailures);
+            MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
+        });
+
+        // Check if threshold exceeded
+        if (newState.ConsecutiveFailures >= MaxConsecutiveErrors)
+        {
+            TriggerTermination(context, newState.ConsecutiveFailures);
         }
 
         return Task.CompletedTask;
@@ -93,46 +83,20 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Called AFTER all tools complete for this iteration.
-    /// Analyzes tool results for errors and updates state.
+    /// Resets failure counter on successful iteration.
     /// </summary>
     public Task AfterIterationAsync(
-        AgentMiddlewareContext context,
+        AfterIterationContext context,
         CancellationToken cancellationToken)
     {
-        // If no tool results, nothing to analyze
-        if (context.ToolResults.Count == 0)
-            return Task.CompletedTask;
-
-        // Detect errors in tool results
-        var hasErrors = context.ToolResults.Any(IsError);
-
-        // Update state and check threshold
-        if (hasErrors)
+        // Only reset if ALL tools succeeded
+        if (context.AllToolsSucceeded)
         {
-            // Increment failure counter via context.UpdateState
-            var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
-            var newState = currentState.IncrementFailures();
-            context.UpdateState(s => s with
-            {
-                MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
-            });
-
-            // Get the updated failure count from pending state
-            var pendingState = context.GetPendingState();
-            var newFailureCount = pendingState?.MiddlewareState.ErrorTracking?.ConsecutiveFailures
-                ?? context.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures + 1 ?? 1;
-
-            // Check if this exceeds threshold
-            if (newFailureCount >= MaxConsecutiveErrors)
-            {
-                TriggerTermination(context, newFailureCount);
-            }
-        }
-        else
-        {
-            // Reset failure counter on success
+            // Reset failure counter
             var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
             var newState = currentState.ResetFailures();
+
+            // ✅ Immediate state update - no GetPendingState() needed!
             context.UpdateState(s => s with
             {
                 MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
@@ -142,81 +106,60 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         return Task.CompletedTask;
     }
 
-    //     
+    //
     // HELPERS
-    //     
-
-    /// <summary>
-    /// Determines if a function result represents an error.
-    /// Uses custom detector if provided, otherwise uses default detection.
-    /// </summary>
-    private bool IsError(FunctionResultContent result)
-    {
-        // Use custom detector if provided
-        if (CustomErrorDetector != null)
-            return CustomErrorDetector(result);
-
-        // Default error detection
-        return IsDefaultError(result);
-    }
-
-    /// <summary>
-    /// Default error detection logic matching the original Agent implementation.
-    /// </summary>
-    private static bool IsDefaultError(FunctionResultContent result)
-    {
-        // Primary signal: Exception present
-        if (result.Exception != null)
-            return true;
-
-        // Secondary signal: Result contains error indicators
-        var resultStr = result.Result?.ToString();
-        if (string.IsNullOrEmpty(resultStr))
-            return false;
-
-        // Check for definitive error patterns (case-insensitive)
-        return resultStr.StartsWith("Error:", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.StartsWith("Failed:", StringComparison.OrdinalIgnoreCase) ||
-               // Exception indicators
-               resultStr.Contains("exception occurred", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.Contains("unhandled exception", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.Contains("exception was thrown", StringComparison.OrdinalIgnoreCase) ||
-               // Rate limit indicators
-               resultStr.Contains("rate limit exceeded", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.Contains("rate limited", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.Contains("quota exceeded", StringComparison.OrdinalIgnoreCase) ||
-               resultStr.Contains("quota reached", StringComparison.OrdinalIgnoreCase);
-    }
+    //
 
     /// <summary>
     /// Triggers termination, preventing further LLM calls and signaling the agent loop.
     /// </summary>
-    private void TriggerTermination(AgentMiddlewareContext context, int errorCount)
+    private void TriggerTermination(ErrorContext context, int errorCount)
     {
-        // Skip the next LLM call
-        context.SkipLLMCall = true;
-
-        // Format termination message
-        var message = $"⚠️ {TerminationMessageTemplate}"
+        // Format termination message using template
+        var formattedMessage = TerminationMessageTemplate
             .Replace("{count}", errorCount.ToString())
             .Replace("{max}", MaxConsecutiveErrors.ToString());
 
-        // Provide final response
-        context.Response = new ChatMessage(
-            ChatRole.Assistant,
-            message);
+        // Message for user visibility (with emoji)
+        var userMessage = $"⚠️ {formattedMessage}";
 
-        // Clear tool calls
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+        // Update state to signal termination
+        context.UpdateState(s => s with
+        {
+            IsTerminated = true,
+            TerminationReason = formattedMessage
+        });
 
-        // Signal termination via properties
-        context.Properties["IsTerminated"] = true;
-        context.Properties["TerminationReason"] = $"Maximum consecutive errors ({errorCount}) exceeded";
+        // Emit StateSnapshotEvent so tests can verify error count
+        // This captures the state AFTER error tracking has updated the count
+        try
+        {
+            // MaxIterations comes from continuation permission (if extended) or default config
+            // Since we don't have access to config here, use a reasonable default
+            var maxIterations = context.State.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? 50;
+
+            var snapshot = new StateSnapshotEvent(
+                CurrentIteration: context.Iteration,
+                MaxIterations: maxIterations,
+                IsTerminated: true,
+                TerminationReason: formattedMessage,
+                ConsecutiveErrorCount: errorCount,
+                CompletedFunctions: context.State.CompletedFunctions.ToList(),
+                AgentName: context.AgentName,
+                Timestamp: DateTimeOffset.UtcNow);
+
+            context.Emit(snapshot);
+        }
+        catch (Exception ex)
+        {
+            // Emit failed - event coordinator may not be configured
+            // This is non-fatal for termination logic
+        }
 
         // Emit TextDeltaEvent for user visibility
         try
         {
-            context.Emit(new TextDeltaEvent(message, Guid.NewGuid().ToString()));
+            context.Emit(new TextDeltaEvent(userMessage, Guid.NewGuid().ToString()));
         }
         catch (InvalidOperationException)
         {

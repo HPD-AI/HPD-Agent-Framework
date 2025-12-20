@@ -76,7 +76,7 @@ public class JsonSessionStore : ISessionStore
         lock (_lock)
         {
             var json = File.ReadAllText(sessionPath);
-            var snapshot = JsonSerializer.Deserialize(json, SessionJsonContext.Default.SessionSnapshot);
+            var snapshot = JsonSerializer.Deserialize<SessionSnapshot>(json, SessionJsonContext.CombinedOptions);
             if (snapshot == null)
                 return Task.FromResult<AgentSession?>(null);
 
@@ -92,7 +92,7 @@ public class JsonSessionStore : ISessionStore
 
         var sessionPath = GetSessionFilePath(session.Id);
         var snapshot = session.ToSnapshot();
-        var json = JsonSerializer.Serialize(snapshot, SessionJsonContext.Default.SessionSnapshot);
+        var json = JsonSerializer.Serialize(snapshot, SessionJsonContext.CombinedOptions);
 
         lock (_lock)
         {

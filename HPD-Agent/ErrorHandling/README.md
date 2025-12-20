@@ -8,13 +8,13 @@ HPD-Agent includes a sophisticated, provider-aware error handling system that in
 
 **"Opinionated by default, flexible when needed"**
 
-- ✅ Works automatically without any configuration
-- ✅ Auto-detects provider and selects appropriate handler
-- ✅ Respects provider retry guidance (Retry-After headers)
-- ✅ Intelligent error classification (terminal vs retryable)
-- ✅ Fully customizable when you need control
-- ✅ Native AOT compatible (no reflection)
-- ✅ Zero breaking changes to existing code
+-  Works automatically without any configuration
+-  Auto-detects provider and selects appropriate handler
+-  Respects provider retry guidance (Retry-After headers)
+-  Intelligent error classification (terminal vs retryable)
+-  Fully customizable when you need control
+-  Native AOT compatible (no reflection)
+-  Zero breaking changes to existing code
 
 ## Architecture Layers
 
@@ -171,7 +171,7 @@ Enforces timeout on function execution:
 - Wraps function call in `Task.WaitAsync(timeout)`
 - Respects cancellation tokens
 - Throws descriptive `TimeoutException` with function name and duration
-- Positioned inside retry middleware (retries happen before timeout)
+- Positioned inside RetryMiddleware  (retries happen before timeout)
 
 ```csharp
 public class FunctionTimeoutMiddleware : IAgentMiddleware
@@ -232,13 +232,13 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
 Handles both OpenAI and Azure OpenAI errors:
 
 **Capabilities:**
-- ✅ Parses `HttpRequestException` (OpenAI SDK)
-- ✅ Parses `Azure.RequestFailedException` (Azure SDK)
-- ✅ Extracts Retry-After from headers
-- ✅ Parses retry delays from messages: `"Please try again in 1.898s"`
-- ✅ Detects context window errors: `"context_length_exceeded"`
-- ✅ Detects terminal quota: `"insufficient_quota"`
-- ✅ Extracts request IDs for debugging
+-  Parses `HttpRequestException` (OpenAI SDK)
+-  Parses `Azure.RequestFailedException` (Azure SDK)
+-  Extracts Retry-After from headers
+-  Parses retry delays from messages: `"Please try again in 1.898s"`
+-  Detects context window errors: `"context_length_exceeded"`
+-  Detects terminal quota: `"insufficient_quota"`
+-  Extracts request IDs for debugging
 
 **Native AOT Compatibility:**
 - Uses regex to parse Azure exception messages (no reflection)
@@ -250,100 +250,100 @@ Handles both OpenAI and Azure OpenAI errors:
 Handles Anthropic Claude API errors:
 
 **Capabilities:**
-- ✅ Parses rate limit errors
-- ✅ Extracts retry delay from error messages
-- ✅ Classifies terminal quota errors
-- ✅ Handles authentication errors
+-  Parses rate limit errors
+-  Extracts retry delay from error messages
+-  Classifies terminal quota errors
+-  Handles authentication errors
 
 ### GoogleAIErrorHandler (`HPD-Agent.Providers.GoogleAI/GoogleAIErrorHandler.cs`)
 
 Handles Google AI (Gemini) API errors:
 
 **Capabilities:**
-- ✅ Parses quota exceeded errors
-- ✅ Detects resource exhausted errors
-- ✅ Extracts backend error information
-- ✅ Handles safety/policy blocked errors
+-  Parses quota exceeded errors
+-  Detects resource exhausted errors
+-  Extracts backend error information
+-  Handles safety/policy blocked errors
 
 ### OllamaErrorHandler (`HPD-Agent.Providers.Ollama/OllamaErrorHandler.cs`)
 
 Handles local Ollama model errors:
 
 **Capabilities:**
-- ✅ Detects model loading in progress
-- ✅ Parses connection refused errors
-- ✅ Handles out-of-memory errors
-- ✅ Recognizes model not found errors
+-  Detects model loading in progress
+-  Parses connection refused errors
+-  Handles out-of-memory errors
+-  Recognizes model not found errors
 
 ### OpenRouterErrorHandler (`HPD-Agent.Providers.OpenRouter/OpenRouterErrorHandler.cs`)
 
 Handles OpenRouter API errors:
 
 **Capabilities:**
-- ✅ Parses rate limit and quota errors
-- ✅ Extracts queue/busy states
-- ✅ Handles insufficient credits
-- ✅ Detects model unavailability
+-  Parses rate limit and quota errors
+-  Extracts queue/busy states
+-  Handles insufficient credits
+-  Detects model unavailability
 
 ### BedrockErrorHandler (`HPD-Agent.Providers.Bedrock/BedrockErrorHandler.cs`)
 
 Handles AWS Bedrock errors:
 
 **Capabilities:**
-- ✅ Parses access denied errors
-- ✅ Detects throttling and rate limits
-- ✅ Handles model not ready errors
-- ✅ Extracts service quota information
+-  Parses access denied errors
+-  Detects throttling and rate limits
+-  Handles model not ready errors
+-  Extracts service quota information
 
 ### AzureAIInferenceErrorHandler (`HPD-Agent.Providers.AzureAIInference/AzureAIInferenceErrorHandler.cs`)
 
 Handles Azure AI Inference errors:
 
 **Capabilities:**
-- ✅ Parses throttling errors
-- ✅ Detects resource busy states
-- ✅ Handles quota exceeded errors
-- ✅ Extracts authentication failures
+-  Parses throttling errors
+-  Detects resource busy states
+-  Handles quota exceeded errors
+-  Extracts authentication failures
 
 ### MistralErrorHandler (`HPD-Agent.Providers.Mistral/MistralErrorHandler.cs`)
 
 Handles Mistral AI API errors:
 
 **Capabilities:**
-- ✅ Parses rate limit errors
-- ✅ Detects service overload
-- ✅ Handles quota exceeded errors
-- ✅ Extracts authentication failures
+-  Parses rate limit errors
+-  Detects service overload
+-  Handles quota exceeded errors
+-  Extracts authentication failures
 
 ### HuggingFaceErrorHandler (`HPD-Agent.Providers.HuggingFace/HuggingFaceErrorHandler.cs`)
 
 Handles HuggingFace API errors:
 
 **Capabilities:**
-- ✅ Detects model loading in progress
-- ✅ Parses estimated time to ready
-- ✅ Handles rate limit errors
-- ✅ Detects service unavailability
+-  Detects model loading in progress
+-  Parses estimated time to ready
+-  Handles rate limit errors
+-  Detects service unavailability
 
 ### OnnxRuntimeErrorHandler (`HPD-Agent.Providers.OnnxRuntime/OnnxRuntimeErrorHandler.cs`)
 
 Handles ONNX Runtime model errors:
 
 **Capabilities:**
-- ✅ Detects model initialization failures
-- ✅ Handles out-of-memory errors
-- ✅ Parses invalid input errors
-- ✅ Detects execution provider issues
+-  Detects model initialization failures
+-  Handles out-of-memory errors
+-  Parses invalid input errors
+-  Detects execution provider issues
 
 ### GenericErrorHandler (`ErrorHandling/GenericErrorHandler.cs`)
 
 Fallback handler for unknown providers:
 
 **Capabilities:**
-- ✅ Extracts HTTP status from `HttpRequestException`
-- ✅ Parses status codes from exception messages (AOT-safe)
-- ✅ Basic classification (400→ClientError, 429→RateLimitRetryable, 5xx→ServerError)
-- ✅ Exponential backoff with jitter
+-  Extracts HTTP status from `HttpRequestException`
+-  Parses status codes from exception messages (AOT-safe)
+-  Basic classification (400→ClientError, 429→RateLimitRetryable, 5xx→ServerError)
+-  Exponential backoff with jitter
 
 **Message Parsing Patterns:**
 ```regex
@@ -434,29 +434,29 @@ When an exception occurs during function execution:
 ```
 
 Features:
-- ✅ Respects provider Retry-After headers (e.g., OpenAI 429 responses)
-- ✅ Per-error-category retry limits (e.g., more retries for rate limits)
-- ✅ Intelligent error classification (transient, rate limit, etc.)
-- ✅ Exponential backoff with jitter to avoid thundering herd
-- ✅ Emits `FunctionRetryEvent` for observability
+-  Respects provider Retry-After headers (e.g., OpenAI 429 responses)
+-  Per-error-category retry limits (e.g., more retries for rate limits)
+-  Intelligent error classification (transient, rate limit, etc.)
+-  Exponential backoff with jitter to avoid thundering herd
+-  Emits `FunctionRetryEvent` for observability
 
 ### FunctionTimeoutMiddleware - Timeout Enforcement
 
 Enforces a timeout on each function execution attempt:
 
-- ✅ Uses `Task.WaitAsync()` for clean timeout handling
-- ✅ Wrapped by retry middleware (retries happen before timeout)
-- ✅ Throws descriptive `TimeoutException` with function name and delay
-- ✅ Respects cancellation tokens
+-  Uses `Task.WaitAsync()` for clean timeout handling
+-  Wrapped by RetryMiddleware  (retries happen before timeout)
+-  Throws descriptive `TimeoutException` with function name and delay
+-  Respects cancellation tokens
 
 ### ErrorFormattingMiddleware - Security-Aware Error Formatting
 
 Formats exceptions for safe LLM consumption:
 
-- ✅ **Default (secure)**: Returns generic message like `"Error: Function 'X' failed."`
-- ✅ **Optional (detailed)**: Returns full exception message (configurable)
-- ✅ **Always observability**: Stores full exception in `context.FunctionException` for logging
-- ✅ Prevents exposing: stack traces, connection strings, file paths, API keys
+-  **Default (secure)**: Returns generic message like `"Error: Function 'X' failed."`
+-  **Optional (detailed)**: Returns full exception message (configurable)
+-  **Always observability**: Stores full exception in `context.FunctionException` for logging
+-  Prevents exposing: stack traces, connection strings, file paths, API keys
 
 Controlled by `ErrorHandlingConfig.IncludeDetailedErrorsInChat`:
 ```csharp
@@ -649,7 +649,7 @@ var status = (int?)statusProp.GetValue(exception);
 
 ### Azure Exception Parsing (After)
 ```csharp
-// ✅ AOT-compatible
+//  AOT-compatible
 var message = exception.Message;
 // Azure format: "Service request failed.\nStatus: 429 (Too Many Requests)"
 var statusMatch = Regex.Match(message, @"Status:\s*(\d{3})");
@@ -658,7 +658,7 @@ var status = int.Parse(statusMatch.Groups[1].Value);
 
 ### Type Checking (Safe)
 ```csharp
-// ✅ GetType().FullName is AOT-safe
+//  GetType().FullName is AOT-safe
 if (exception.GetType().FullName == "Azure.RequestFailedException")
 {
     // Parse the message
@@ -667,7 +667,7 @@ if (exception.GetType().FullName == "Azure.RequestFailedException")
 
 ### Pattern Matching (Safe)
 ```csharp
-// ✅ Pattern matching is AOT-safe
+//  Pattern matching is AOT-safe
 if (exception is HttpRequestException httpEx)
 {
     var status = httpEx.StatusCode;
@@ -817,21 +817,21 @@ config.ErrorHandling.UseProviderRetryDelays = true;  // Default
 
 ### Regex Performance
 
-- ✅ Uses `[GeneratedRegex]` for .NET 7+ (compiled regex)
-- ✅ Regex is only used on error paths (not hot path)
-- ✅ Patterns are simple and optimized
+-  Uses `[GeneratedRegex]` for .NET 7+ (compiled regex)
+-  Regex is only used on error paths (not hot path)
+-  Patterns are simple and optimized
 
 ### Memory Allocation
 
-- ✅ Error handlers are cached (one per agent instance)
-- ✅ No allocations on success path
-- ✅ Minimal allocations on error path (exception already thrown)
+-  Error handlers are cached (one per agent instance)
+-  No allocations on success path
+-  Minimal allocations on error path (exception already thrown)
 
 ### Retry Delays
 
-- ✅ Default max delay: 30 seconds (configurable)
-- ✅ Exponential backoff prevents thundering herd
-- ✅ Jitter (±10%) distributes load
+-  Default max delay: 30 seconds (configurable)
+-  Exponential backoff prevents thundering herd
+-  Jitter (±10%) distributes load
 
 ## Future Enhancements
 
@@ -846,7 +846,7 @@ config.ErrorHandling.UseProviderRetryDelays = true;  // Default
 
 ### Provider Coverage
 
-✅ **11 Provider Handlers Implemented:**
+ **11 Provider Handlers Implemented:**
 - OpenAI (including Azure OpenAI)
 - Anthropic (Claude)
 - Google AI (Gemini)
@@ -879,10 +879,10 @@ var agent = await new AgentBuilder()
     .BuildAsync();
 
 // Same code, but now:
-// ✅ Respects Retry-After headers
-// ✅ Classifies errors intelligently
-// ✅ Doesn't retry terminal errors
-// ✅ Extracts debugging info
+//  Respects Retry-After headers
+//  Classifies errors intelligently
+//  Doesn't retry terminal errors
+//  Extracts debugging info
 ```
 
 **No code changes required!** 🎉
@@ -891,16 +891,16 @@ var agent = await new AgentBuilder()
 
 HPD-Agent's error handling system is implemented as composable middleware providing:
 
-✅ **Intelligent Classification**: Categorizes errors (transient, rate limit, client error, etc.)
-✅ **Provider-Aware**: Understands OpenAI, Azure, and others with fallback
-✅ **Respectful**: Honors Retry-After headers and provider guidance
-✅ **Composable**: Three separate middleware (retry, timeout, formatting)
-✅ **Automatic**: Works out of the box with zero configuration
-✅ **Flexible**: Fully customizable for advanced scenarios
-✅ **Secure**: Sanitizes errors by default, logs full exceptions separately
-✅ **Observable**: Emits events for logging and monitoring
-✅ **AOT-compatible**: No reflection, works with Native AOT
-✅ **Battle-tested**: Patterns from Gemini CLI and Codex CLI
-✅ **Zero breaking changes**: Existing code works unchanged
+ **Intelligent Classification**: Categorizes errors (transient, rate limit, client error, etc.)
+ **Provider-Aware**: Understands OpenAI, Azure, and others with fallback
+ **Respectful**: Honors Retry-After headers and provider guidance
+ **Composable**: Three separate middleware (retry, timeout, formatting)
+ **Automatic**: Works out of the box with zero configuration
+ **Flexible**: Fully customizable for advanced scenarios
+ **Secure**: Sanitizes errors by default, logs full exceptions separately
+ **Observable**: Emits events for logging and monitoring
+ **AOT-compatible**: No reflection, works with Native AOT
+ **Battle-tested**: Patterns from Gemini CLI and Codex CLI
+ **Zero breaking changes**: Existing code works unchanged
 
 The system follows the philosophy: **"Be opinionated by default, but flexible when needed"** - it just works for most users, but power users have full control when they need it.

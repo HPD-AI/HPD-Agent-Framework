@@ -12,12 +12,12 @@
 
 ### Key Capabilities
 
-- ✅ Access to full agent state (including tool results from previous iterations)
-- ✅ Dynamic instruction modification per iteration
-- ✅ Explicit pre AND post LLM call hooks via lifecycle methods
-- ✅ Iteration-aware guidance and context enhancement
-- ✅ Signal-based communication with the agent loop
-- ✅ Response caching support via `SkipLLMCall` flag
+-  Access to full agent state (including tool results from previous iterations)
+-  Dynamic instruction modification per iteration
+-  Explicit pre AND post LLM call hooks via lifecycle methods
+-  Iteration-aware guidance and context enhancement
+-  Signal-based communication with the agent loop
+-  Response caching support via `SkipLLMCall` flag
 
 ### Architecture Note
 
@@ -163,9 +163,9 @@ Turn 1: "Activate trading skill and buy AAPL"
 **Example Output**:
 ```
 🔄 Iteration 0 starting - Agent: MyAgent
-✅ Iteration 0 completed in 1234ms - Tool calls: 2
+ Iteration 0 completed in 1234ms - Tool calls: 2
 🔄 Iteration 1 starting - Agent: MyAgent
-✅ Iteration 1 completed in 567ms - Tool calls: 0
+ Iteration 1 completed in 567ms - Tool calls: 0
 🏁 Final iteration detected - Agent will respond to user
 ```
 
@@ -297,7 +297,7 @@ internal class IterationCachingMiddleware : IIterationMiddleWare
             context.Response = cached.Message;
             context.ToolCalls = cached.ToolCalls;
 
-            Console.WriteLine($"✅ Cache hit for iteration {context.Iteration}");
+            Console.WriteLine($" Cache hit for iteration {context.Iteration}");
         }
 
         return Task.CompletedTask;
@@ -593,12 +593,12 @@ await foreach (var evt in agent.RunAsync("Do something complex"))
 | **Execution Frequency** | Once per message turn | Every LLM call (multiple per turn) |
 | **Runs In** | `PrepareTurnAsync` | `RunAgenticLoopInternal` |
 | **Timing** | Before agentic loop starts | Before each LLM call in loop |
-| **Access to Tool Results** | ❌ No | ✅ Yes (from previous iterations) |
-| **Iteration Number** | ❌ N/A | ✅ `context.Iteration` |
-| **Agent State Access** | ❌ Limited | ✅ Full `AgentLoopState` |
-| **Modify Instructions** | ✅ Initial setup only | ✅ Dynamic per iteration |
-| **See LLM Response** | ❌ No (via separate PostInvoke) | ✅ Yes (in `AfterIterationAsync`) |
-| **Detect Final Iteration** | ❌ N/A | ✅ `context.IsFinalIteration` |
+| **Access to Tool Results** | ❌ No |  Yes (from previous iterations) |
+| **Iteration Number** | ❌ N/A |  `context.Iteration` |
+| **Agent State Access** | ❌ Limited |  Full `AgentLoopState` |
+| **Modify Instructions** |  Initial setup only |  Dynamic per iteration |
+| **See LLM Response** | ❌ No (via separate PostInvoke) |  Yes (in `AfterIterationAsync`) |
+| **Detect Final Iteration** | ❌ N/A |  `context.IsFinalIteration` |
 | **Use Case** | Initial context injection | Iterative guidance + response processing |
 | **Example** | RAG, memory retrieval | Skill instructions, iteration guidance |
 | **Performance Impact** | Once (acceptable for heavy ops) | Multiple (must be lightweight) |
@@ -626,7 +626,7 @@ await foreach (var evt in agent.RunAsync("Do something complex"))
 // ❌ WRONG: Direct modification doesn't work
 context.State.ActiveSkillInstructions = newValue;
 
-// ✅ CORRECT: Signal via Properties
+//  CORRECT: Signal via Properties
 context.Properties["ShouldClearActiveSkills"] = true;
 ```
 
@@ -703,12 +703,12 @@ await Middleware.InvokeAsync(context, async ctx => {
 The lifecycle pattern provides **explicit before/after hooks** that are called outside the streaming iterator:
 
 ```csharp
-// ✅ WORKS - No yield return in lambdas
+//  WORKS - No yield return in lambdas
 await Middleware.BeforeIterationAsync(context, ct);  // Modify context
 
 await foreach (var update in _agentTurn.RunAsync(...))  // Stream events
 {
-    yield return new TextDeltaEvent(...);  // ✅ OK in iterator method
+    yield return new TextDeltaEvent(...);  //  OK in iterator method
 }
 
 await Middleware.AfterIterationAsync(context, ct);  // Inspect response
@@ -716,11 +716,11 @@ await Middleware.AfterIterationAsync(context, ct);  // Inspect response
 
 ### Benefits
 
-- ✅ **Honest semantics** - Methods do exactly what their names say
-- ✅ **Clear execution** - Each method runs exactly once per iteration
-- ✅ **Simple mental model** - No middleware confusion
-- ✅ **Streaming preserved** - Real-time event emission unchanged
-- ✅ **Same capabilities** - All the functionality of middleware pattern
+-  **Honest semantics** - Methods do exactly what their names say
+-  **Clear execution** - Each method runs exactly once per iteration
+-  **Simple mental model** - No middleware confusion
+-  **Streaming preserved** - Real-time event emission unchanged
+-  **Same capabilities** - All the functionality of middleware pattern
 
 For full technical details, see [`ITERATION_Middleware_LIFECYCLE_PATTERN.md`](/Proposals/ITERATION_Middleware_LIFECYCLE_PATTERN.md).
 

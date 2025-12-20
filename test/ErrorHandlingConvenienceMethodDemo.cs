@@ -11,7 +11,7 @@ public class ErrorHandlingConvenienceMethodDemo
 {
     public static void DemoSimpleUsage()
     {
-        // ✅ Simple usage with defaults
+        //  Simple usage with defaults
         var agent = new AgentBuilder()
             .WithErrorHandling()  // One call, all middleware registered in correct order
             .Build();
@@ -22,7 +22,7 @@ public class ErrorHandlingConvenienceMethodDemo
 
     public static void DemoCustomThresholds()
     {
-        // ✅ Custom thresholds
+        //  Custom thresholds
         var agent = new AgentBuilder()
             .WithErrorHandling(
                 maxConsecutiveCalls: 3,      // Circuit breaker triggers after 3 identical calls
@@ -35,7 +35,7 @@ public class ErrorHandlingConvenienceMethodDemo
 
     public static void DemoAdvancedConfiguration()
     {
-        // ✅ Advanced configuration with per-middleware control
+        //  Advanced configuration with per-middleware control
         var agent = new AgentBuilder()
             .WithErrorHandling(
                 configureCircuitBreaker: cb =>
@@ -61,7 +61,7 @@ public class ErrorHandlingConvenienceMethodDemo
 
     public static void DemoStandaloneMiddleware()
     {
-        // ✅ Using individual middleware methods
+        //  Using individual middleware methods
         var config = new AgentConfig
         {
             ErrorHandling = new ErrorHandlingConfig
@@ -113,7 +113,7 @@ public class ErrorHandlingConvenienceMethodDemo
 
         DemoMiddlewareOrder();
 
-        Console.WriteLine("\n✅ All demos completed successfully!");
+        Console.WriteLine("\n All demos completed successfully!");
     }
 
     private static int GetMiddlewareCount(HPD.Agent.Agent agent)

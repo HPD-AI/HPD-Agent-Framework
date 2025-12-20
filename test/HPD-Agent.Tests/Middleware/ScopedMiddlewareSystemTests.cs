@@ -18,31 +18,31 @@ public class CollapsedMiddlewareSystemTests
 
         public TestMiddleware(string name) => Name = name;
 
-        public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
         {
             WasCalled = true;
             return Task.CompletedTask;
         }
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
         {
             WasCalled = true;
             return Task.CompletedTask;
         }
 
-        public Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterIterationAsync(AfterIterationContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
@@ -204,7 +204,7 @@ public class CollapsedMiddlewareSystemTests
         );
 
         // Act
-        await pipeline.ExecuteBeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await pipeline.ExecuteBeforeFunctionAsync(context, CancellationToken.None);
 
         // Assert - all 4 middlewares should have executed
         Assert.True(globalMiddleware.WasCalled);
@@ -243,7 +243,7 @@ public class CollapsedMiddlewareSystemTests
         );
 
         // Act
-        await pipeline.ExecuteBeforeSequentialFunctionAsync(context, CancellationToken.None);
+        await pipeline.ExecuteBeforeFunctionAsync(context, CancellationToken.None);
 
         // Assert - only global middleware should execute
         Assert.True(globalMiddleware.WasCalled);
@@ -371,30 +371,84 @@ public class CollapsedMiddlewareSystemTests
     // HELPER METHODS
     //     
 
-    private static AgentMiddlewareContext CreateContext(
+    private static BeforeFunctionContext CreateContext(
         string functionName,
         string? toolName = null,
         string? skillName = null,
         bool isSkillContainer = false)
     {
-        var function = AIFunctionFactory.Create(() => "test", functionName);
+        var additionalProps = new Dictionary<string, object?>();
+        if (isSkillContainer)
+            additionalProps["IsSkillContainer"] = true;
+
+        var options = new HPDAIFunctionFactoryOptions
+        {
+            Name = functionName,
+            Description = "Test function",
+            AdditionalProperties = additionalProps
+        };
+
+        var function = HPDAIFunctionFactory.Create(
+            (args, ct) => Task.FromResult<object?>("test"),
+            options);
+
         var state = AgentLoopState.Initial(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conv",
             agentName: "TestAgent");
 
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv",
-            Function = function,
-            PluginName = toolName,
-            SkillName = skillName,
-            IsSkillContainer = isSkillContainer,
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(state);
-        return context;
+        var agentContext = new AgentContext(
+            "TestAgent",
+            "test-conv",
+            state,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        return agentContext.AsBeforeFunction(
+            function: function,
+            callId: "test-call",
+            arguments: new Dictionary<string, object?>(),
+            runOptions: new AgentRunOptions(),
+            pluginName: toolName,
+            skillName: skillName);
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

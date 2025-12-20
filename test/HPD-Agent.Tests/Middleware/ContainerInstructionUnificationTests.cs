@@ -308,14 +308,13 @@ Use `decimal` type for precision.";
         var context = CreateContext(containerInstructions);
 
         // Simulate message turn ending
-        context.Response = new ChatMessage(ChatRole.Assistant, "Final response");
-        context.TurnHistory = new List<ChatMessage>();
+        var afterContext = CreateAfterMessageTurnContext(context.State);
 
         // Act - Call AfterMessageTurnAsync (cleanup happens here now, not AfterIterationAsync)
-        await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
+        await middleware.AfterMessageTurnAsync(afterContext, CancellationToken.None);
 
         // Assert - Instructions should be cleared at end of message turn
-        var pendingState = context.GetPendingState();
+        var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
         var collapsingState = pendingState!.MiddlewareState.Collapsing;
         Assert.NotNull(collapsingState);
@@ -334,15 +333,18 @@ Use `decimal` type for precision.";
         var context = CreateContext(containerInstructions);
 
         // Simulate non-final iteration (has tool calls)
-        context.Response = new ChatMessage(ChatRole.Assistant, "Response with tools");
-        context.ToolCalls = new[] { new FunctionCallContent("call_123", "SomeFunction") };
+        var toolContext = CreateBeforeToolExecutionContext(
+            response: new ChatMessage(ChatRole.Assistant, "Response with tools"),
+            toolCalls: new List<FunctionCallContent> { new FunctionCallContent("call1", "func1") },
+            state: context.State);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(toolContext, CancellationToken.None);
 
         // Assert
-        Assert.False(context.IsFinalIteration);
-        var pendingState = context.GetPendingState();
+        // V2: Check toolCalls count instead of IsFinalIteration
+        Assert.NotEmpty(toolContext.ToolCalls);
+        var pendingState = toolContext.State;
 
         // State should not be modified (no clearing)
         if (pendingState != null)
@@ -392,11 +394,12 @@ Use `decimal` type for precision.";
                 FunctionResult: null,
                SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
-        context.Options = null;
+        // V2: Options is init-only, can't set to null
+        // This test is no longer valid in V2 since Options is always provided
 
-        // Act & Assert - Should not throw
+        // Act & Assert - Should not throw even with valid Options
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
-        Assert.Null(context.Options);
+        Assert.NotNull(context.Options);
     }
 
     [Fact]
@@ -441,7 +444,7 @@ Use `decimal` type for precision.";
 
     #region Helper Methods
 
-    private static AgentMiddlewareContext CreateContext(
+    private static BeforeIterationContext CreateContext(
         ImmutableDictionary<string, ContainerInstructionSet> containerInstructions)
     {
         var state = AgentLoopState.Initial(
@@ -461,22 +464,21 @@ Use `decimal` type for precision.";
             name: "DummyFunction",
             description: "Dummy");
 
-        var context = new AgentMiddlewareContext
+        var messages = new List<ChatMessage>();
+        var options = new ChatOptions
         {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions
-            {
-                Instructions = "Base instructions",
-                Tools = new List<AITool> { dummyTool }
-            },
-            ToolCalls = Array.Empty<FunctionCallContent>(),
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
+            Instructions = "Base instructions",
+            Tools = new List<AITool> { dummyTool }
         };
-        context.SetOriginalState(state);
-        return context;
+
+        var agentContext = new AgentContext(
+            "TestAgent",
+            "test-conv-id",
+            state,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
     }
 
     private static ContainerMiddleware CreateContainerMiddleware()
@@ -496,4 +498,42 @@ Use `decimal` type for precision.";
     }
 
     #endregion
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

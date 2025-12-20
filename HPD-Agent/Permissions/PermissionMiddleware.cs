@@ -69,7 +69,7 @@ public class PermissionMiddleware : IAgentMiddleware
     /// Resets batch permission state at the start of each iteration.
     /// </summary>
     public Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Reset batch state for new iteration
@@ -88,7 +88,7 @@ public class PermissionMiddleware : IAgentMiddleware
     /// Results are stored in BatchPermissionState for BeforeFunctionAsync to check.
     /// </summary>
     public async Task BeforeParallelBatchAsync(
-        AgentMiddlewareContext context,
+        BeforeParallelBatchContext context,
         CancellationToken cancellationToken)
     {
         var parallelFunctions = context.ParallelFunctions;
@@ -102,7 +102,7 @@ public class PermissionMiddleware : IAgentMiddleware
         foreach (var funcInfo in parallelFunctions)
         {
             var function = funcInfo.Function;
-            var functionName = funcInfo.Name;
+            var functionName = funcInfo.FunctionName;
 
             // Check if permission is required (attribute + overrides)
             var attributeRequiresPermission = function is HPDAIFunctionFactory.HPDAIFunction hpdFunction
@@ -151,13 +151,10 @@ public class PermissionMiddleware : IAgentMiddleware
     /// For parallel execution, checks batch state first to avoid duplicate permission requests.
     /// </summary>
     public async Task BeforeFunctionAsync(
-        AgentMiddlewareContext context,
+        BeforeFunctionContext context,
         CancellationToken cancellationToken)
     {
         var function = context.Function;
-        if (function == null)
-            return;
-
         var functionName = function.Name;
 
         // Check if permission is required (attribute + overrides)
@@ -173,7 +170,7 @@ public class PermissionMiddleware : IAgentMiddleware
             return;
 
         var conversationId = context.ConversationId;
-        var callId = context.FunctionCallId ?? string.Empty;
+        var callId = context.FunctionCallId;
 
         //     
         // CHECK BATCH PERMISSION STATE (for parallel execution optimization)
@@ -190,8 +187,8 @@ public class PermissionMiddleware : IAgentMiddleware
         // If already denied in batch, block execution immediately
         if (batchState.DeniedFunctions.Contains(functionName))
         {
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = batchState.DenialReasons.GetValueOrDefault(
+            context.BlockExecution = true;
+            context.OverrideResult = batchState.DenialReasons.GetValueOrDefault(
                 functionName,
                 "Permission denied in batch approval");
             return;
@@ -242,8 +239,8 @@ public class PermissionMiddleware : IAgentMiddleware
                 });
 
                 // Denied via stored preference - block execution
-                context.BlockFunctionExecution = true;
-                context.FunctionResult = denialReason;
+                context.BlockExecution = true;
+                context.OverrideResult = denialReason;
                 return;
             }
         }
@@ -261,15 +258,13 @@ public class PermissionMiddleware : IAgentMiddleware
             functionName,
             function.Description ?? "No description available",
             callId,
-            context.FunctionArguments ?? new Dictionary<string, object?>()));
+            context.Arguments != null ? new Dictionary<string, object?>(context.Arguments) : null));
 
         // Wait for response from external handler
         PermissionResponseEvent response;
         try
         {
-            response = await context.WaitForResponseAsync<PermissionResponseEvent>(
-                permissionId,
-                TimeSpan.FromMinutes(5))
+            response = await context.Base.WaitForResponseAsync<PermissionResponseEvent>(permissionId)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException)
@@ -279,8 +274,8 @@ public class PermissionMiddleware : IAgentMiddleware
                 _middlewareName,
                 "Permission request timed out after 5 minutes"));
 
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = "Permission request timed out. Please respond to permission requests promptly.";
+            context.BlockExecution = true;
+            context.OverrideResult = "Permission request timed out. Please respond to permission requests promptly.";
             return;
         }
         catch (OperationCanceledException)
@@ -290,8 +285,8 @@ public class PermissionMiddleware : IAgentMiddleware
                 _middlewareName,
                 "Permission request was cancelled"));
 
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = "Permission request was cancelled.";
+            context.BlockExecution = true;
+            context.OverrideResult = "Permission request was cancelled.";
             return;
         }
 
@@ -344,8 +339,8 @@ public class PermissionMiddleware : IAgentMiddleware
             });
 
             // Block execution with denial reason
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = denialReason;
+            context.BlockExecution = true;
+            context.OverrideResult = denialReason;
         }
     }
 
@@ -355,11 +350,11 @@ public class PermissionMiddleware : IAgentMiddleware
     /// Used by BeforeParallelBatchAsync to batch check permissions.
     /// </summary>
     private async Task<(bool IsApproved, string DenialReason)> CheckSinglePermissionAsync(
-        AgentMiddlewareContext context,
+        BeforeParallelBatchContext context,
         AIFunction function,
         string functionName,
         string callId,
-        IDictionary<string, object?> arguments,
+        IReadOnlyDictionary<string, object?> arguments,
         CancellationToken cancellationToken)
     {
         var conversationId = context.ConversationId;
@@ -398,15 +393,13 @@ public class PermissionMiddleware : IAgentMiddleware
             functionName,
             function.Description ?? "No description available",
             callId,
-            arguments));
+            arguments != null ? new Dictionary<string, object?>(arguments) : null));
 
         // Wait for response from external handler
         PermissionResponseEvent response;
         try
         {
-            response = await context.WaitForResponseAsync<PermissionResponseEvent>(
-                permissionId,
-                TimeSpan.FromMinutes(5))
+            response = await context.Base.WaitForResponseAsync<PermissionResponseEvent>(permissionId)
                 .ConfigureAwait(false);
         }
         catch (TimeoutException)

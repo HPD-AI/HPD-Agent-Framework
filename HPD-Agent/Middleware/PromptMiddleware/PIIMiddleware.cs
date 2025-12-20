@@ -96,27 +96,32 @@ public class PIIMiddleware : IAgentMiddleware
     /// Scans incoming messages for PII before the agent processes them.
     /// </summary>
     public async Task BeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        if (!ApplyToInput || context.Messages == null)
+        if (!ApplyToInput)
             return;
 
         // Process user messages
         var processedMessages = await ProcessMessagesAsync(
-            context.Messages,
+            context.ConversationHistory,
             ChatRole.User,
             context,
             cancellationToken);
 
-        context.Messages = processedMessages.ToList();
+        // V2: ConversationHistory is mutable - replace content
+        context.ConversationHistory.Clear();
+        foreach (var msg in processedMessages)
+        {
+            context.ConversationHistory.Add(msg);
+        }
     }
 
     /// <summary>
     /// Optionally scans output messages for PII after the agent responds.
     /// </summary>
     public async Task AfterMessageTurnAsync(
-        AgentMiddlewareContext context,
+        AfterMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         // Output filtering would apply to FinalResponse if enabled
@@ -127,7 +132,7 @@ public class PIIMiddleware : IAgentMiddleware
     /// Optionally scans tool results for PII after iteration.
     /// </summary>
     public async Task AfterIterationAsync(
-        AgentMiddlewareContext context,
+        AfterIterationContext context,
         CancellationToken cancellationToken)
     {
         if (!ApplyToToolResults || context.ToolResults.Count == 0)
@@ -156,7 +161,7 @@ public class PIIMiddleware : IAgentMiddleware
     private async Task<IEnumerable<ChatMessage>> ProcessMessagesAsync(
         IEnumerable<ChatMessage> messages,
         ChatRole targetRole,
-        AgentMiddlewareContext context,
+        HookContext context,
         CancellationToken cancellationToken)
     {
         var result = new List<ChatMessage>();
@@ -179,7 +184,7 @@ public class PIIMiddleware : IAgentMiddleware
 
     private async Task<ChatMessage> ProcessMessageAsync(
         ChatMessage message,
-        AgentMiddlewareContext context,
+        HookContext context,
         CancellationToken cancellationToken)
     {
         var text = message.Text;
@@ -354,7 +359,7 @@ public class PIIMiddleware : IAgentMiddleware
         return sum % 10 == 0;
     }
 
-    private void EmitPIIDetectedEvent(AgentMiddlewareContext context, string piiType, PIIStrategy strategy, int count)
+    private void EmitPIIDetectedEvent(HookContext context, string piiType, PIIStrategy strategy, int count)
     {
         try
         {

@@ -18,7 +18,7 @@ namespace HPD.Agent;
 /// <para><b>Lifecycle:</b></para>
 /// <para>
 /// This middleware uses the <see cref="IAgentMiddleware.BeforeIterationAsync"/> hook
-/// which runs BEFORE each LLM call. It modifies <see cref="AgentMiddlewareContext.Messages"/>
+/// which runs BEFORE each LLM call. It modifies <see cref="BeforeIterationContext.Messages"/>
 /// to inject the summary and remove old messages.
 /// </para>
 ///
@@ -85,7 +85,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// Applies history reduction to context.Messages if needed.
     /// </summary>
     public async Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Skip if no messages or reduction disabled
@@ -93,7 +93,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
             return;
 
         // Skip if first iteration (no history to reduce yet)
-        if (context.IsFirstIteration && context.Messages.Count <= Config.TargetMessageCount + (Config.SummarizationThreshold ?? 5))
+        if (context.Iteration == 0 && context.Messages.Count <= Config.TargetMessageCount + (Config.SummarizationThreshold ?? 5))
             return;
 
         // Read state from context
@@ -108,14 +108,19 @@ public class HistoryReductionMiddleware : IAgentMiddleware
 
         if (hrState?.LastReduction != null && hrState.LastReduction.IsValidFor(conversationMessages.Count))
         {
-            // ✅ CACHE HIT: Reuse existing reduction
+            //  CACHE HIT: Reuse existing reduction
             activeReduction = hrState.LastReduction;
 
             // Apply cached reduction to messages
             var reducedMessages = activeReduction.ApplyToMessages(conversationMessages, systemMessage: null).ToList();
 
             // Update context with reduced messages (system messages + reduced conversation)
-            context.Messages = systemMessages.Concat(reducedMessages).ToList();
+            // V2: Messages is mutable - clear and repopulate instead of reassigning
+            context.Messages.Clear();
+            foreach (var msg in systemMessages.Concat(reducedMessages))
+            {
+                context.Messages.Add(msg);
+            }
 
             // Emit event for observability
             EmitCacheHitEvent(context, activeReduction);
@@ -152,7 +157,12 @@ public class HistoryReductionMiddleware : IAgentMiddleware
                         Config.SummarizationThreshold ?? 5);
 
                     // Update context with reduced messages (system messages + reduced conversation)
-                    context.Messages = systemMessages.Concat(reducedList).ToList();
+                    // V2: Messages is mutable - clear and repopulate instead of reassigning
+                    context.Messages.Clear();
+                    foreach (var msg in systemMessages.Concat(reducedList))
+                    {
+                        context.Messages.Add(msg);
+                    }
 
                     // Store reduction in state for next iteration
                     var newHrState = (hrState ?? new HistoryReductionStateData()).WithReduction(activeReduction);
@@ -190,7 +200,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// <summary>
     /// Emits a cache hit event for observability.
     /// </summary>
-    private void EmitCacheHitEvent(AgentMiddlewareContext context, CachedReduction reduction)
+    private void EmitCacheHitEvent(BeforeIterationContext context, CachedReduction reduction)
     {
         try
         {
@@ -210,7 +220,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// <summary>
     /// Emits a reduction performed event for observability.
     /// </summary>
-    private void EmitReductionPerformedEvent(AgentMiddlewareContext context, CachedReduction reduction, int removedCount)
+    private void EmitReductionPerformedEvent(BeforeIterationContext context, CachedReduction reduction, int removedCount)
     {
         try
         {

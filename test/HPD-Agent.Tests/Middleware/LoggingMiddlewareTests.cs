@@ -24,7 +24,7 @@ public class LoggingMiddlewareTests
 
         // Assert
         Assert.True(options.LogMessageTurn);
-        Assert.False(options.LogIteration);
+        Assert.True(options.LogIteration);  // Default is true
         Assert.True(options.LogFunction);
         Assert.True(options.IncludeTiming);
         Assert.True(options.IncludeArguments);
@@ -82,8 +82,7 @@ public class LoggingMiddlewareTests
             LogFunction = false
         });
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Instructions = "Test instructions" };
+        var context = CreateBeforeMessageTurnContext();
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -105,7 +104,7 @@ public class LoggingMiddlewareTests
             LogMessageTurn = false
         });
 
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -125,8 +124,7 @@ public class LoggingMiddlewareTests
             LogMessageTurn = true
         });
 
-        var context = CreateContext();
-        context.Response = new ChatMessage(ChatRole.Assistant, "Test response");
+        var context = CreateAfterMessageTurnContext();
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
@@ -153,8 +151,7 @@ public class LoggingMiddlewareTests
             LogFunction = false
         });
 
-        var context = CreateContext();
-        context.Iteration = 2;
+        var context = CreateBeforeIterationContext(iteration: 2);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -175,7 +172,7 @@ public class LoggingMiddlewareTests
             LogIteration = false
         });
 
-        var context = CreateContext();
+        var context = CreateBeforeIterationContext();
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -195,12 +192,12 @@ public class LoggingMiddlewareTests
             LogIteration = true
         });
 
-        var context = CreateContext();
-        context.ToolResults = new[]
+        var toolResults = new List<FunctionResultContent>
         {
             new FunctionResultContent("call1", "Success"),
             new FunctionResultContent("call2", "Also success")
         };
+        var context = CreateAfterIterationContext(toolResults: toolResults);
 
         // Act
         await middleware.AfterIterationAsync(context, CancellationToken.None);
@@ -226,10 +223,9 @@ public class LoggingMiddlewareTests
             IncludeArguments = true
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc", "Test function");
-        context.FunctionCallId = "call-123";
-        context.FunctionArguments = new Dictionary<string, object?> { ["param1"] = "value1" };
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc", "Test function");
+        var args = new Dictionary<string, object?> { ["param1"] = "value1" };
+        var context = CreateBeforeFunctionContext(function: func, arguments: args);
 
         // Act
         await middleware.BeforeFunctionAsync(context, CancellationToken.None);
@@ -252,9 +248,9 @@ public class LoggingMiddlewareTests
             IncludeArguments = false
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionArguments = new Dictionary<string, object?> { ["secret"] = "password123" };
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var args = new Dictionary<string, object?> { ["secret"] = "password123" };
+        var context = CreateBeforeFunctionContext(function: func, arguments: args);
 
         // Act
         await middleware.BeforeFunctionAsync(context, CancellationToken.None);
@@ -277,17 +273,16 @@ public class LoggingMiddlewareTests
             IncludeResults = true
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionCallId = "call-123";
-        context.FunctionResult = "Success result";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Simulate BeforeFunction to start timer
-        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
+        var beforeContext = CreateBeforeFunctionContext(function: func);
+        await middleware.BeforeFunctionAsync(beforeContext, CancellationToken.None);
         logOutput.Clear();
 
         // Act
-        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+        var afterContext = CreateAfterFunctionContext(function: func, result: "Success result");
+        await middleware.AfterFunctionAsync(afterContext, CancellationToken.None);
 
         // Assert
         Assert.NotEmpty(logOutput);
@@ -307,10 +302,10 @@ public class LoggingMiddlewareTests
             LogFunction = true
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionCallId = "call-123";
-        context.FunctionException = new InvalidOperationException("Something went wrong");
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var context = CreateAfterFunctionContext(
+            function: func,
+            exception: new InvalidOperationException("Something went wrong"));
 
         // Act
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
@@ -333,9 +328,10 @@ public class LoggingMiddlewareTests
             IncludeResults = false
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionResult = "Secret result that should not be logged";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var context = CreateAfterFunctionContext(
+            function: func,
+            result: "Secret result that should not be logged");
 
         // Act
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
@@ -362,9 +358,10 @@ public class LoggingMiddlewareTests
             MaxStringLength = 20
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionResult = "This is a very long result that should be truncated";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var context = CreateAfterFunctionContext(
+            function: func,
+            result: "This is a very long result that should be truncated");
 
         // Act
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
@@ -382,9 +379,10 @@ public class LoggingMiddlewareTests
         var loggerFactory = CreateTestLoggerFactory(logOutput);
         var middleware = new LoggingMiddleware(loggerFactory, LoggingMiddlewareOptions.Verbose);
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionResult = "This is a very long result that should NOT be truncated because MaxStringLength is 0";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var context = CreateAfterFunctionContext(
+            function: func,
+            result: "This is a very long result that should NOT be truncated because MaxStringLength is 0");
 
         // Act
         await middleware.AfterFunctionAsync(context, CancellationToken.None);
@@ -393,9 +391,9 @@ public class LoggingMiddlewareTests
         Assert.Contains(logOutput, s => s.Contains("should NOT be truncated"));
     }
 
-    //     
+    //
     // CUSTOM PREFIX TESTS
-    //     
+    //
 
     [Fact]
     public async Task LogsWithCustomPrefix_UsesPrefix()
@@ -409,8 +407,8 @@ public class LoggingMiddlewareTests
             LogPrefix = "[MyCustomApp]"
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var context = CreateBeforeFunctionContext(function: func);
 
         // Act
         await middleware.BeforeFunctionAsync(context, CancellationToken.None);
@@ -435,17 +433,16 @@ public class LoggingMiddlewareTests
             IncludeTiming = true
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionCallId = "call-123";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
         var delayMs = 50;
 
         // Act
         var startTime = DateTime.UtcNow;
-        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
+        var beforeContext = CreateBeforeFunctionContext(function: func);
+        await middleware.BeforeFunctionAsync(beforeContext, CancellationToken.None);
         await Task.Delay(delayMs); // Simulate work
-        context.FunctionResult = "Done";
-        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+        var afterContext = CreateAfterFunctionContext(function: func, result: "Done");
+        await middleware.AfterFunctionAsync(afterContext, CancellationToken.None);
         var endTime = DateTime.UtcNow;
 
         // Assert
@@ -470,21 +467,18 @@ public class LoggingMiddlewareTests
             IncludeTiming = true
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionCallId = "call-123";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Act - Before
-        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
+        var beforeContext = CreateBeforeFunctionContext(function: func);
+        await middleware.BeforeFunctionAsync(beforeContext, CancellationToken.None);
 
         // Simulate work
         await Task.Delay(20);
 
-        // Simulate function completion
-        context.FunctionResult = "Done";
-
         // Act - After
-        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+        var afterContext = CreateAfterFunctionContext(function: func, result: "Done");
+        await middleware.AfterFunctionAsync(afterContext, CancellationToken.None);
 
         // Assert - Stopwatch should have measured time (check for timing in log)
         Assert.Contains(logOutput, s => s.Contains("ms"));
@@ -502,21 +496,21 @@ public class LoggingMiddlewareTests
             IncludeTiming = false  // Timing disabled
         });
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        context.FunctionResult = "Done";
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Act
-        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
-        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+        var beforeContext = CreateBeforeFunctionContext(function: func);
+        await middleware.BeforeFunctionAsync(beforeContext, CancellationToken.None);
+        var afterContext = CreateAfterFunctionContext(function: func, result: "Done");
+        await middleware.AfterFunctionAsync(afterContext, CancellationToken.None);
 
         // Assert - No timing should be logged
         Assert.DoesNotContain(logOutput, s => s.Contains("ms"));
     }
 
-    //     
+    //
     // NO LOGGER TESTS
-    //     
+    //
 
     [Fact]
     public async Task WithoutLogger_DoesNotThrow()
@@ -524,34 +518,103 @@ public class LoggingMiddlewareTests
         // Arrange - no logger factory
         var middleware = new LoggingMiddleware(null);
 
-        var context = CreateContext();
-        context.Function = AIFunctionFactory.Create(() => "test", "TestFunc");
+        var func = AIFunctionFactory.Create(() => "test", "TestFunc");
 
         // Act & Assert - should not throw
-        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
-        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+        var beforeContext = CreateBeforeFunctionContext(function: func);
+        await middleware.BeforeFunctionAsync(beforeContext, CancellationToken.None);
+        var afterContext = CreateAfterFunctionContext(function: func);
+        await middleware.AfterFunctionAsync(afterContext, CancellationToken.None);
     }
 
-    //     
+    //
     // HELPER METHODS
-    //     
+    //
 
-    private static AgentMiddlewareContext CreateContext()
+    private static AgentContext CreateAgentContext()
     {
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions(),
-            ConversationId = "test-conversation",
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(AgentLoopState.Initial(
+        var state = AgentLoopState.Initial(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
-            agentName: "TestAgent"));
-        return context;
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            state,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeMessageTurnContext CreateBeforeMessageTurnContext()
+    {
+        var agentContext = CreateAgentContext();
+        return agentContext.AsBeforeMessageTurn(
+            userMessage: new ChatMessage(ChatRole.User, "Test message"),
+            conversationHistory: new List<ChatMessage>(),
+            runOptions: new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext()
+    {
+        var agentContext = CreateAgentContext();
+        return agentContext.AsAfterMessageTurn(
+            finalResponse: new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response")),
+            turnHistory: new List<ChatMessage>(),
+            runOptions: new AgentRunOptions());
+    }
+
+    private static BeforeIterationContext CreateBeforeIterationContext(int iteration = 0)
+    {
+        var agentContext = CreateAgentContext();
+        return agentContext.AsBeforeIteration(
+            iteration: iteration,
+            messages: new List<ChatMessage>(),
+            options: new ChatOptions(),
+            runOptions: new AgentRunOptions());
+    }
+
+    private static AfterIterationContext CreateAfterIterationContext(int iteration = 0, List<FunctionResultContent>? toolResults = null)
+    {
+        var agentContext = CreateAgentContext();
+        return agentContext.AsAfterIteration(
+            iteration: iteration,
+            toolResults: toolResults ?? new List<FunctionResultContent>(),
+            runOptions: new AgentRunOptions());
+    }
+
+    private static BeforeFunctionContext CreateBeforeFunctionContext(
+        AIFunction? function = null,
+        string callId = "call-123",
+        IReadOnlyDictionary<string, object?>? arguments = null)
+    {
+        var agentContext = CreateAgentContext();
+        function ??= AIFunctionFactory.Create(() => "test", "TestFunc");
+        arguments ??= new Dictionary<string, object?>();
+
+        return agentContext.AsBeforeFunction(
+            function: function,
+            callId: callId,
+            arguments: arguments,
+            runOptions: new AgentRunOptions());
+    }
+
+    private static AfterFunctionContext CreateAfterFunctionContext(
+        AIFunction? function = null,
+        string callId = "call-123",
+        object? result = null,
+        Exception? exception = null)
+    {
+        var agentContext = CreateAgentContext();
+        function ??= AIFunctionFactory.Create(() => "test", "TestFunc");
+
+        return agentContext.AsAfterFunction(
+            function: function,
+            callId: callId,
+            result: result,
+            exception: exception,
+            runOptions: new AgentRunOptions());
     }
 
     private static ILoggerFactory CreateTestLoggerFactory(List<string> output)

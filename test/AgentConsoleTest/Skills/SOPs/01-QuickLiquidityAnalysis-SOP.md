@@ -61,7 +61,7 @@ Current Ratio = $250,000 ÷ $140,000 = 1.79
 | < 0.5 | ⚠️ Critical - Cannot cover liabilities |
 | 0.5 - 1.0 | ⚠️ At risk - Likely liquidity problems |
 | 1.0 - 1.5 | ⚠️ Tight - Limited cushion |
-| 1.5 - 3.0 | ✅ Healthy - Normal range |
+| 1.5 - 3.0 |  Healthy - Normal range |
 | > 3.0 | ℹ️ Conservative - Excess cash (possible opportunity) |
 
 **Acme Example:** 1.79 = **Healthy** liquidity position ✅
@@ -90,8 +90,8 @@ Quick Ratio = $160,000 ÷ $140,000 = 1.14
 |-------|---------|
 | < 0.5 | ⚠️ Very tight - Heavy inventory dependence |
 | 0.5 - 1.0 | ⚠️ Tight - Moderate inventory dependence |
-| 1.0 - 1.5 | ✅ Healthy - Can pay without selling inventory |
-| > 1.5 | ✅ Strong - Excess liquid resources |
+| 1.0 - 1.5 |  Healthy - Can pay without selling inventory |
+| > 1.5 |  Strong - Excess liquid resources |
 
 **Acme Example:** 1.14 = **Healthy** immediate liquidity ✅
 
@@ -116,7 +116,7 @@ Working Capital = $250,000 - $140,000 = $110,000
 |--------|---------|
 | Negative | ⚠️ Deficit - Company owes more than it owns in current assets |
 | $0 - $50k | ⚠️ Tight - Little buffer |
-| $50k - $200k | ✅ Healthy - Normal operating cushion |
+| $50k - $200k |  Healthy - Normal operating cushion |
 | > $200k | ℹ️ High - May indicate inefficient asset use |
 
 **Acme Example:** $110,000 = **Healthy** cushion ✅
@@ -127,10 +127,10 @@ Working Capital = $250,000 - $140,000 = $110,000
 
 | Metric | Acme Corp | Assessment |
 |--------|-----------|------------|
-| **Current Ratio** | 1.79 | ✅ Can cover obligations 1.8x over |
-| **Quick Ratio** | 1.14 | ✅ Even without inventory, has cushion |
-| **Working Capital** | $110,000 | ✅ Good operating buffer |
-| **Overall** | | ✅ **Strong short-term liquidity** |
+| **Current Ratio** | 1.79 |  Can cover obligations 1.8x over |
+| **Quick Ratio** | 1.14 |  Even without inventory, has cushion |
+| **Working Capital** | $110,000 |  Good operating buffer |
+| **Overall** | |  **Strong short-term liquidity** |
 
 ### What the Numbers Tell Us:
 - Acme can comfortably meet short-term obligations
@@ -148,7 +148,7 @@ If any metric fails, investigate:
    - Investigate: Is it seasonal? Intentional cash deployment?
    - Risk: Company approaching cash crisis
 
-2. **Current Ratio ✅ but Quick Ratio ⚠️**
+2. **Current Ratio  but Quick Ratio ⚠️**
    - Investigate: What percentage is inventory?
    - Risk: Liquidity depends on sales; vulnerable to inventory slowdown
 
@@ -199,8 +199,8 @@ If any metric fails, investigate:
 | Utilities | 0.8 - 1.2 | 0.6 - 1.0 | 5-10% |
 
 **Acme Comparison (if Manufacturing):**
-- Current: 1.79 vs Industry: 1.5-2.0 ✅ **In range**
-- Quick: 1.14 vs Industry: 1.0-1.5 ✅ **In range**
+- Current: 1.79 vs Industry: 1.5-2.0  **In range**
+- Quick: 1.14 vs Industry: 1.0-1.5  **In range**
 
 ---
 

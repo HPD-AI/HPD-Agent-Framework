@@ -33,7 +33,15 @@ The single philosophy driving this library: ***"Make Simple Things Simple, Make 
 - **Planning** - Built-in plan mode for complex tasks
 - **SubAgents** - Built-in support for nested agent orchestration
 - **MCP Support** - Supports MCP with Collapsing/Collapsing Mechanism
-- **Custom Event Handling Presets** - Custom Event UI handling for normal Chat conversations, telemetry etc
+- **Audio Support** - Built-in support for native and tts -> llm -> tts providers 
+- **Local Sandbox Execution** - Execute code tools in a secure local sandbox environment
+
+> [!WARNING]
+> **HPD.Agent.Framework is currently in an early development phase.**
+>
+> This software is not ready for production environments. 
+> Until the release of version **1.0**, the API, inner mechanisms and naming are subject to significant changes without notice.
+
 
 ## Quick Start
 

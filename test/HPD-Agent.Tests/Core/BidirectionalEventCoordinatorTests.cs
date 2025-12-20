@@ -142,7 +142,7 @@ public class BidirectionalEventCoordinatorTests
 
         Assert.True(middle.TryRead(out var middleEvt));
         Assert.IsType<TestAgentEvent>(middleEvt);
-        Assert.Equal("Test event", ((TestAgentEvent)middleEvt).Message);  // ✅ THIS IS THE KEY TEST - middle sees it!
+        Assert.Equal("Test event", ((TestAgentEvent)middleEvt).Message);  //  THIS IS THE KEY TEST - middle sees it!
 
         Assert.True(root.TryRead(out var rootEvt));
         Assert.IsType<TestAgentEvent>(rootEvt);

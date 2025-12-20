@@ -42,7 +42,7 @@ public class EnvironmentContextMiddleware : IAgentMiddleware
     /// On first iteration: inject full context after system messages
     /// On subsequent iterations: inject only if cwd changed
     /// </summary>
-    public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
         if (context.Messages == null)
             return Task.CompletedTask;

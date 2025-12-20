@@ -18,7 +18,7 @@ public class MathToolMetadataContext : IToolMetadata
         AllowNegative = allowNegative;
     }
 
-    // ✅ V2: Strongly-typed properties for compile-time validation
+    //  V2: Strongly-typed properties for compile-time validation
     public long MaxValue { get; }
     public bool AllowNegative { get; }
 

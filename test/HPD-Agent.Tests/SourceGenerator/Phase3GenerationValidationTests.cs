@@ -198,13 +198,13 @@ public class Phase3GenerationValidationTests
     public void Phase3_Migration_Completed()
     {
         // COMPLETED TASKS:
-        // ✅ Task 3.1: Migrate FunctionCapability.GenerateRegistrationCode() (~130 lines)
-        // ✅ Task 3.2: Migrate SkillCapability.GenerateRegistrationCode() (~200 lines)
-        // ✅ Task 3.3: Migrate SubAgentCapability.GenerateRegistrationCode() (~180 lines)
-        // ✅ Task 3.4: Add feature flag (USE_NEW_GENERATION)
-        // ✅ Task 3.5: Enable new generation (USE_NEW_GENERATION = true)
-        // ✅ Task 3.6: Fix build errors (empty array types)
-        // ✅ Task 3.7: Verify all tests pass (650/650 ✅)
+        //  Task 3.1: Migrate FunctionCapability.GenerateRegistrationCode() (~130 lines)
+        //  Task 3.2: Migrate SkillCapability.GenerateRegistrationCode() (~200 lines)
+        //  Task 3.3: Migrate SubAgentCapability.GenerateRegistrationCode() (~180 lines)
+        //  Task 3.4: Add feature flag (USE_NEW_GENERATION)
+        //  Task 3.5: Enable new generation (USE_NEW_GENERATION = true)
+        //  Task 3.6: Fix build errors (empty array types)
+        //  Task 3.7: Verify all tests pass (650/650 ✅)
 
         // REMAINING VALIDATION (manual):
         // - Character-by-character comparison with old generation

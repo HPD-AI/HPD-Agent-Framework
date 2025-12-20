@@ -1,4 +1,6 @@
 using HPD.Agent;
+using HPD.Agent.Tests.Middleware.V2;
+using static HPD.Agent.Tests.Middleware.V2.MiddlewareTestHelpers;
 using HPD.Agent.ErrorHandling;
 using HPD.Agent.Middleware;
 using HPD.Agent.Middleware.Function;
@@ -16,7 +18,7 @@ public class FunctionRetryMiddlewareTests
     #region Basic Retry Behavior
 
     [Fact]
-    public async Task ExecuteFunctionAsync_SuccessOnFirstAttempt_NoRetry()
+    public async Task WrapFunctionCallAsync_SuccessOnFirstAttempt_NoRetry()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -24,17 +26,17 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 3
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             attempts++;
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        var result = await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
 
         // Assert
         Assert.Equal("Success", result);
@@ -42,7 +44,7 @@ public class FunctionRetryMiddlewareTests
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_FailsThreeTimes_RetriesThreeTimes()
+    public async Task WrapFunctionCallAsync_FailsThreeTimes_RetriesThreeTimes()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -51,10 +53,10 @@ public class FunctionRetryMiddlewareTests
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             throw new InvalidOperationException("Transient error");
@@ -62,13 +64,13 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None));
+            await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None));
 
         Assert.Equal(4, attempts); // Initial + 3 retries
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_SucceedsOnSecondAttempt_OnlyRetriesOnce()
+    public async Task WrapFunctionCallAsync_SucceedsOnSecondAttempt_OnlyRetriesOnce()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -77,19 +79,19 @@ public class FunctionRetryMiddlewareTests
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             attempts++;
             if (attempts == 1)
                 throw new InvalidOperationException("Transient error");
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        var result = await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
 
         // Assert
         Assert.Equal("Success", result);
@@ -101,7 +103,7 @@ public class FunctionRetryMiddlewareTests
     #region Custom Retry Strategy (Priority 1)
 
     [Fact]
-    public async Task ExecuteFunctionAsync_CustomStrategyReturnsDelay_UsesCustomDelay()
+    public async Task WrapFunctionCallAsync_CustomStrategyReturnsDelay_UsesCustomDelay()
     {
         // Arrange
         var customDelayCalled = false;
@@ -115,20 +117,20 @@ public class FunctionRetryMiddlewareTests
             }
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
         var startTime = DateTime.UtcNow;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             attempts++;
             if (attempts == 1)
                 throw new InvalidOperationException("Error");
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        var result = await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
         var elapsed = DateTime.UtcNow - startTime;
 
         // Assert
@@ -138,7 +140,7 @@ public class FunctionRetryMiddlewareTests
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_CustomStrategyReturnsNull_DoesNotRetry()
+    public async Task WrapFunctionCallAsync_CustomStrategyReturnsNull_DoesNotRetry()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -150,10 +152,10 @@ public class FunctionRetryMiddlewareTests
             }
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             throw new InvalidOperationException("Non-retryable error");
@@ -161,7 +163,7 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None));
+            await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None));
 
         Assert.Equal(1, attempts); // No retry
     }
@@ -171,7 +173,7 @@ public class FunctionRetryMiddlewareTests
     #region Provider-Aware Error Handling (Priority 2)
 
     [Fact]
-    public async Task ExecuteFunctionAsync_RateLimitError_RespectsRetryAfter()
+    public async Task WrapFunctionCallAsync_RateLimitError_RespectsRetryAfter()
     {
         // Arrange
         var providerHandler = new TestProviderErrorHandler
@@ -189,20 +191,20 @@ public class FunctionRetryMiddlewareTests
             UseProviderRetryDelays = true
         };
         var middleware = new FunctionRetryMiddleware(config, providerHandler);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
         var startTime = DateTime.UtcNow;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             attempts++;
             if (attempts == 1)
                 throw new InvalidOperationException("Rate limit");
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        var result = await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
         var elapsed = DateTime.UtcNow - startTime;
 
         // Assert
@@ -212,7 +214,7 @@ public class FunctionRetryMiddlewareTests
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_ClientError_DoesNotRetry()
+    public async Task WrapFunctionCallAsync_ClientError_DoesNotRetry()
     {
         // Arrange
         var providerHandler = new TestProviderErrorHandler
@@ -229,10 +231,10 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 3
         };
         var middleware = new FunctionRetryMiddleware(config, providerHandler);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             throw new InvalidOperationException("Client error");
@@ -240,13 +242,13 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None));
+            await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None));
 
         Assert.Equal(1, attempts); // No retry for client errors
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_PerCategoryRetryLimit_RespectsLimit()
+    public async Task WrapFunctionCallAsync_PerCategoryRetryLimit_RespectsLimit()
     {
         // Arrange
         var providerHandler = new TestProviderErrorHandler
@@ -267,10 +269,10 @@ public class FunctionRetryMiddlewareTests
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
         var middleware = new FunctionRetryMiddleware(config, providerHandler);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             throw new InvalidOperationException("Rate limit");
@@ -278,7 +280,7 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None));
+            await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None));
 
         Assert.Equal(3, attempts); // Initial + 2 retries (category limit, not global 5)
     }
@@ -288,7 +290,7 @@ public class FunctionRetryMiddlewareTests
     #region Exponential Backoff (Priority 3)
 
     [Fact]
-    public async Task ExecuteFunctionAsync_NoProvider_UsesExponentialBackoff()
+    public async Task WrapFunctionCallAsync_NoProvider_UsesExponentialBackoff()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -298,21 +300,21 @@ public class FunctionRetryMiddlewareTests
             BackoffMultiplier = 2.0
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
         var delayTimes = new List<DateTime>();
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             delayTimes.Add(DateTime.UtcNow);
             attempts++;
             if (attempts <= 2)
                 throw new InvalidOperationException("Transient");
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        var result = await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
 
         // Assert
         Assert.Equal("Success", result);
@@ -327,12 +329,10 @@ public class FunctionRetryMiddlewareTests
         // Allow some tolerance for timing precision and system scheduling
         Assert.True(delay1.TotalMilliseconds >= 50, $"First delay ({delay1.TotalMilliseconds}ms) should be at least 50ms");
         Assert.True(delay2.TotalMilliseconds >= 100, $"Second delay ({delay2.TotalMilliseconds}ms) should be at least 100ms (exponential backoff)");
-        // With exponential backoff (2x multiplier), second delay should generally be longer
-        // but we use minimum thresholds instead of direct comparison to avoid flakiness
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_MaxRetryDelay_CapsDelay()
+    public async Task WrapFunctionCallAsync_MaxRetryDelay_CapsDelay()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -343,21 +343,21 @@ public class FunctionRetryMiddlewareTests
             MaxRetryDelay = TimeSpan.FromMilliseconds(200) // Cap at 200ms
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
         var delayTimes = new List<DateTime>();
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = async (req) =>
         {
             delayTimes.Add(DateTime.UtcNow);
             attempts++;
             if (attempts <= 2)
                 throw new InvalidOperationException("Transient");
-            return ValueTask.FromResult<object?>("Success");
+            return await Task.FromResult<object?>("Success");
         };
 
         // Act
-        await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
+        await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None);
 
         // Assert - delays should be capped at MaxRetryDelay
         for (int i = 1; i < delayTimes.Count; i++)
@@ -369,45 +369,10 @@ public class FunctionRetryMiddlewareTests
 
     #endregion
 
-    #region Event Emission
-
-    [Fact]
-    public async Task ExecuteFunctionAsync_Retry_EventsAreEmitted()
-    {
-        // Arrange
-        var config = new ErrorHandlingConfig
-        {
-            MaxRetries = 2,
-            RetryDelay = TimeSpan.FromMilliseconds(10)
-        };
-        var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
-
-        int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
-        {
-            attempts++;
-            if (attempts == 1)
-                throw new InvalidOperationException("Transient error");
-            return ValueTask.FromResult<object?>("Success");
-        };
-
-        // Act
-        var result = await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None);
-
-        // Assert
-        Assert.Equal("Success", result);
-        Assert.Equal(2, attempts); // Initial + 1 retry
-        // Note: Events are emitted but we can't capture them without internal EventCoordinator access
-        // The fact that retry worked proves events were processed internally
-    }
-
-    #endregion
-
     #region Edge Cases
 
     [Fact]
-    public async Task ExecuteFunctionAsync_MaxRetriesZero_NoRetry()
+    public async Task WrapFunctionCallAsync_MaxRetriesZero_NoRetry()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -415,10 +380,10 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 0 // No retries allowed
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             throw new InvalidOperationException("Error");
@@ -426,13 +391,13 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, CancellationToken.None));
+            await middleware.WrapFunctionCallAsync(request, handler, CancellationToken.None));
 
         Assert.Equal(1, attempts);
     }
 
     [Fact]
-    public async Task ExecuteFunctionAsync_CancellationToken_StopsRetry()
+    public async Task WrapFunctionCallAsync_CancellationToken_StopsRetry()
     {
         // Arrange
         var config = new ErrorHandlingConfig
@@ -441,11 +406,11 @@ public class FunctionRetryMiddlewareTests
             RetryDelay = TimeSpan.FromMilliseconds(100)
         };
         var middleware = new FunctionRetryMiddleware(config);
-        var context = CreateContext();
+        var request = CreateFunctionRequest();
 
         var cts = new CancellationTokenSource();
         int attempts = 0;
-        Func<ValueTask<object?>> next = () =>
+        Func<FunctionRequest, Task<object?>> handler = (req) =>
         {
             attempts++;
             if (attempts == 2)
@@ -455,31 +420,9 @@ public class FunctionRetryMiddlewareTests
 
         // Act & Assert
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await middleware.ExecuteFunctionAsync(context, next, cts.Token));
+            await middleware.WrapFunctionCallAsync(request, handler, cts.Token));
 
         Assert.True(attempts <= 3); // Should stop quickly after cancellation
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    private AgentMiddlewareContext CreateContext()
-    {
-        return new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            CancellationToken = CancellationToken.None,
-            Function = CreateMockFunction("TestFunction"),
-            FunctionArguments = new Dictionary<string, object?>()
-        };
-    }
-
-    private AIFunction CreateMockFunction(string name)
-    {
-        return AIFunctionFactory.Create(
-            (string input) => "Result",
-            name: name);
     }
 
     #endregion
@@ -523,4 +466,42 @@ public class FunctionRetryMiddlewareTests
     }
 
     #endregion
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

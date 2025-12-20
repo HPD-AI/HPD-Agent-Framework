@@ -29,7 +29,7 @@ public class FullTextExtractionStrategy : IDocumentStrategy
     /// Process document contents by extracting text and replacing with TextContent.
     /// </summary>
     public async Task ProcessDocumentsAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         IEnumerable<AIContent> documentContents,
         DocumentHandlingOptions options,
         CancellationToken cancellationToken)
@@ -46,7 +46,7 @@ public class FullTextExtractionStrategy : IDocumentStrategy
     /// Replace DataContent and UriContent with TextContent containing extracted text.
     /// </summary>
     private async Task ReplaceDocumentContentsWithTextAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         AIContent[] documentContents,
         DocumentHandlingOptions options,
         CancellationToken cancellationToken)
@@ -108,7 +108,12 @@ public class FullTextExtractionStrategy : IDocumentStrategy
             }
         }
 
-        context.Messages = messagesList;
+        // V2: Messages is mutable - clear and repopulate instead of reassigning
+        context.Messages.Clear();
+        foreach (var msg in messagesList)
+        {
+            context.Messages.Add(msg);
+        }
     }
 
     /// <summary>

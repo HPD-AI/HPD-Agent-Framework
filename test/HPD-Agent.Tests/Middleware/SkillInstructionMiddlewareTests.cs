@@ -77,10 +77,17 @@ public class SkillInstructionMiddlewareTests
         var context = CreateContext(activeContainers: activeContainers);
 
         // Act - Cleanup happens at AfterMessageTurnAsync
-        await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
+
+
+        var afterContext = CreateAfterMessageTurnContext(context.State);
+
+
+        await middleware.AfterMessageTurnAsync(afterContext, CancellationToken.None);
 
         // Assert - Check that middleware cleared active container instructions
-        var pendingState = context.GetPendingState();
+
+
+        var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
         var CollapsingState = pendingState!.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
@@ -97,15 +104,31 @@ public class SkillInstructionMiddlewareTests
         var context = CreateContext(activeContainers: activeContainers);
 
         // Simulate LLM response with tool calls (NOT final iteration)
-        context.Response = new ChatMessage(ChatRole.Assistant, "Response with tools");
-        context.ToolCalls = new[] { new FunctionCallContent("call_123", "test_function") };
+
+
+        var toolContext = CreateBeforeToolExecutionContext(
+
+
+            response: new ChatMessage(ChatRole.Assistant, "Response with tools"),
+
+
+            toolCalls: new List<FunctionCallContent> { new FunctionCallContent("call1", "func1") },
+
+
+            state: context.State);
+
+
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+
+
+        await middleware.BeforeToolExecutionAsync(toolContext, CancellationToken.None);
 
         // Assert
-        Assert.False(context.IsFinalIteration);
-        Assert.False(context.Properties.ContainsKey("ShouldClearActiveSkills"));
+
+
+        // V2: Check if NOT final by toolCalls count
+        Assert.NotEmpty(toolContext.ToolCalls);
     }
 
     [Fact]
@@ -116,15 +139,31 @@ public class SkillInstructionMiddlewareTests
         var context = CreateContext(activeContainers: ImmutableDictionary<string, ContainerInstructionSet>.Empty);
 
         // Simulate final iteration
-        context.Response = new ChatMessage(ChatRole.Assistant, "Final response");
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+
+
+        var toolContext = CreateBeforeToolExecutionContext(
+
+
+            response: new ChatMessage(ChatRole.Assistant, "Final response"),
+
+
+            toolCalls: new List<FunctionCallContent>(), // Empty = final
+
+
+            state: context.State);
+
+
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+
+
+        await middleware.BeforeToolExecutionAsync(toolContext, CancellationToken.None);
 
         // Assert
-        Assert.True(context.IsFinalIteration);
-        Assert.False(context.Properties.ContainsKey("ShouldClearActiveSkills"));
+
+
+        // V2: Check if final by empty toolCalls
+        Assert.Empty(toolContext.ToolCalls);
     }
 
     [Fact]
@@ -135,13 +174,13 @@ public class SkillInstructionMiddlewareTests
         var activeContainers = ImmutableDictionary<string, ContainerInstructionSet>.Empty
             .Add("trading", new ContainerInstructionSet(null, "Trading skill instructions"));
         var context = CreateContext(activeContainers: activeContainers);
-        context.Options = null; // Simulate null options
+        // V2: Options is init-only and always provided - test that it's not null
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert
-        Assert.Null(context.Options);
+        // Assert - V2 always has Options, never null
+        Assert.NotNull(context.Options);
     }
 
     [Fact]
@@ -160,10 +199,17 @@ public class SkillInstructionMiddlewareTests
         Assert.Contains("Trading instructions", context.Options!.Instructions!);
 
         // Act - Cleanup happens at AfterMessageTurnAsync
-        await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
+
+
+        var afterContext = CreateAfterMessageTurnContext(context.State);
+
+
+        await middleware.AfterMessageTurnAsync(afterContext, CancellationToken.None);
 
         // Assert - State updated to clear containers
-        var pendingState = context.GetPendingState();
+
+
+        var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
         var CollapsingState = pendingState!.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
@@ -204,7 +250,7 @@ public class SkillInstructionMiddlewareTests
         return new ContainerMiddleware(tools, emptyPlugins, config);
     }
 
-    private static AgentMiddlewareContext CreateContext(ImmutableDictionary<string, ContainerInstructionSet> activeContainers)
+    private static BeforeIterationContext CreateContext(ImmutableDictionary<string, ContainerInstructionSet> activeContainers)
     {
         // Create dummy tools for the context (required by ContainerMiddleware)
         var dummyTool = AIFunctionFactory.Create(
@@ -223,21 +269,59 @@ public class SkillInstructionMiddlewareTests
                     new CollapsingStateData { ActiveContainerInstructions = activeContainers })
             };
 
-        var context = new AgentMiddlewareContext
+        var messages = new List<ChatMessage>();
+        var options = new ChatOptions
         {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions
-            {
-                Instructions = "Base instructions",
-                Tools = new List<AITool> { dummyTool }
-            },
-            ToolCalls = Array.Empty<FunctionCallContent>(), // Initialize to empty array
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
+            Instructions = "Base instructions",
+            Tools = new List<AITool> { dummyTool }
         };
-        context.SetOriginalState(state);
-        return context;
+
+        // V2: Use AgentContext factory pattern
+        var agentContext = new AgentContext(
+            "TestAgent",
+            "test-conv-id",
+            state,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

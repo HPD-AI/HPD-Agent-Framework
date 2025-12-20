@@ -70,11 +70,11 @@ dotnet test --collect:"XPlat Code Coverage"
 **Purpose**: Lock in current behavior before refactoring
 
 ### Test Coverage:
-1. ✅ Simple text response (no tools)
-2. ✅ Single tool call
-3. ✅ Multiple parallel tool calls
-4. ✅ Circuit breaker trigger
-5. ✅ Max iterations reached
+1.  Simple text response (no tools)
+2.  Single tool call
+3.  Multiple parallel tool calls
+4.  Circuit breaker trigger
+5.  Max iterations reached
 6. ⏳ Permission denial flow (TODO)
 7. ⏳ Container expansion (TODO)
 

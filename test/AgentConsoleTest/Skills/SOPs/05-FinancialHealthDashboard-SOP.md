@@ -82,7 +82,7 @@ Liabilities:         $  550,000
 Equity:              $  450,000
 Sum (L + E):         $1,000,000
 
-Check: $1,000,000 = $1,000,000 ✅ VALID
+Check: $1,000,000 = $1,000,000  VALID
 
 Proceed to foundation skills
 ```
@@ -109,9 +109,9 @@ Proceed to foundation skills
 
 | Metric | Value | Assessment |
 |--------|-------|-----------|
-| Current Ratio | 1.79 | ✅ Healthy |
-| Quick Ratio | 1.14 | ✅ Healthy |
-| Working Capital | $110,000 | ✅ Good cushion |
+| Current Ratio | 1.79 |  Healthy |
+| Quick Ratio | 1.14 |  Healthy |
+| Working Capital | $110,000 |  Good cushion |
 | **Liquidity Rating** | | **STRONG ✅** |
 
 **Interpretation in Dashboard Context:**
@@ -207,11 +207,11 @@ Proceed to foundation skills
 
 | Item | % of Total | Benchmark | Assessment |
 |-----|-----------|-----------|-----------|
-| Current Assets | 30% | 25-35% | ✅ In range |
-| Fixed Assets | 50% | 50-65% | ✅ In range |
-| Current Liab | 20% | 15-25% | ✅ In range |
-| LT Debt | 30% | 20-35% | ✅ In range |
-| Equity | 45% | 45-65% | ✅ In range |
+| Current Assets | 30% | 25-35% |  In range |
+| Fixed Assets | 50% | 50-65% |  In range |
+| Current Liab | 20% | 15-25% |  In range |
+| LT Debt | 30% | 20-35% |  In range |
+| Equity | 45% | 45-65% |  In range |
 | **Structure Rating** | | | **TYPICAL ✅** |
 
 **Interpretation in Dashboard Context:**
@@ -246,9 +246,9 @@ Industry Comparison: Manufacturing Peers
 
 SECTION 1: DATA QUALITY
 ───────────────────────
-Balance Sheet Equation Check:  ✅ VALID
+Balance Sheet Equation Check:   VALID
 Assets = Liabilities + Equity: $1,000,000 = $1,000,000
-Data Quality Rating:           ✅ CLEAN
+Data Quality Rating:            CLEAN
 
 
 SECTION 2: LIQUIDITY ASSESSMENT
@@ -257,7 +257,7 @@ Current Ratio:                 1.79  (Healthy; peer avg: 1.5)
 Quick Ratio:                   1.14  (Healthy; peer avg: 1.0)
 Working Capital:               $110k (Good cushion)
 
-Liquidity Rating:              ✅ STRONG
+Liquidity Rating:               STRONG
 Meaning:                       Can meet short-term obligations comfortably
 Risk Level:                    LOW
 Trend:                         Stable/Improving
@@ -282,7 +282,7 @@ Revenue Growth:                +15% YoY
 Gross Margin:                  40%  (Stable from prior year)
 Net Margin:                    12%  (Stable from prior year)
 
-Growth Rating:                 ✅ STRONG
+Growth Rating:                  STRONG
 Meaning:                       Healthy organic growth with stable margins
 Sustainability:                Favorable trajectory
 Direction:                     Improving
@@ -301,7 +301,7 @@ Liability Composition (% of Total):
   LT Debt:                     30%   (vs. peer avg: 25% - elevated)
   Other Liab:                  5%    (vs. peer avg: 7% - similar)
 
-Structure Rating:              ✅ TYPICAL
+Structure Rating:               TYPICAL
 Meaning:                       Aligned with peer structure
 Red Flags:                     NONE
 Composition Changes from Prior: Minimal (stable structure)
@@ -311,12 +311,12 @@ Composition Changes from Prior: Minimal (stable structure)
 
 OVERALL FINANCIAL HEALTH SCORE
 ───────────────────────────────
-Liquidity:                     ✅ STRONG    (85/100)
+Liquidity:                      STRONG    (85/100)
 Solvency:                      🟡 BALANCED  (70/100)
-Growth:                        ✅ STRONG    (80/100)
-Structure:                     ✅ HEALTHY   (85/100)
+Growth:                         STRONG    (80/100)
+Structure:                      HEALTHY   (85/100)
 
-COMPOSITE SCORE:               78/100  ✅ GOOD FINANCIAL HEALTH
+COMPOSITE SCORE:               78/100   GOOD FINANCIAL HEALTH
 
      
 
@@ -343,11 +343,11 @@ Stress Test - Rising Rates Scenario:
 
 KEY STRENGTHS
 ─────────────
-1. ✅ Strong liquidity position - can weather short-term challenges
-2. ✅ Stable and improving profitability
-3. ✅ Balanced growth with margin stability
-4. ✅ Typical industry structure - aligned with peers
-5. ✅ Valid balance sheet - clean data
+1.  Strong liquidity position - can weather short-term challenges
+2.  Stable and improving profitability
+3.  Balanced growth with margin stability
+4.  Typical industry structure - aligned with peers
+5.  Valid balance sheet - clean data
 
 
 AREAS OF CONCERN
@@ -384,23 +384,23 @@ STAKEHOLDER RECOMMENDATIONS
 ────────────────────────────
 
 For Lenders:
-  ✅ Approve credit within normal parameters
-  ✅ Monitor leverage ratio as covenant
+   Approve credit within normal parameters
+   Monitor leverage ratio as covenant
   ⚠️  Note above-average leverage vs. peers
   Recommendation: APPROVE with elevated leverage covenant
 
 
 For Equity Investors:
-  ✅ Solid financial position
-  ✅ Strong growth trajectory
-  ✅ Reasonable risk/reward
+   Solid financial position
+   Strong growth trajectory
+   Reasonable risk/reward
   ⚠️  Limited debt capacity (constrains growth capex)
   Recommendation: BUY with moderate conviction
 
 
 For Company Management:
-  ✅ Strong operational performance
-  ✅ Continue revenue growth strategy
+   Strong operational performance
+   Continue revenue growth strategy
   ⚠️  Prioritize debt reduction when opportunities arise
   Recommendation: Maintain course, target debt reduction
 
@@ -494,21 +494,21 @@ Conclusion: Company resilient to single shocks, stressed by combined
 ### Scenario A: Healthy Company ✅
 
 ```
-Liquidity:        ✅ STRONG (CR > 1.5)
-Leverage:         ✅ STRONG (D/E < 0.7)
-Growth:           ✅ STRONG (Revenue + and stable margins)
-Structure:        ✅ TYPICAL (aligned with peers)
+Liquidity:         STRONG (CR > 1.5)
+Leverage:          STRONG (D/E < 0.7)
+Growth:            STRONG (Revenue + and stable margins)
+Structure:         TYPICAL (aligned with peers)
 
-Result:           ✅ LOW RISK - Good lending/investment candidate
+Result:            LOW RISK - Good lending/investment candidate
 Action:           GREEN LIGHT for credit/investment
 ```
 
 ### Scenario B: Growing Company Stretching 🟡
 
 ```
-Liquidity:        ✅ STRONG (but declining trend)
+Liquidity:         STRONG (but declining trend)
 Leverage:         🟡 RISING (D/E increasing)
-Growth:           ✅ STRONG (but capex heavy)
+Growth:            STRONG (but capex heavy)
 Structure:        🟡 CHANGING (shifting to growth mode)
 
 Result:           🟡 MODERATE RISK - Monitor closely
@@ -536,12 +536,12 @@ Action:           RED LIGHT - Decline credit/divest
 | Metric | FY22 | FY23 | FY24 | Trend | Status |
 |--------|------|------|------|-------|--------|
 | **Liquidity** | | | | | |
-| Current Ratio | 1.8 | 1.8 | 1.79 | → Stable | ✅ |
+| Current Ratio | 1.8 | 1.8 | 1.79 | → Stable |  |
 | **Solvency** | | | | | |
 | D/E Ratio | 0.85 | 0.92 | 1.00 | ↗ Rising | 🟡 |
 | **Growth** | | | | | |
-| Revenue Growth | — | +25% | +15% | ↘ Slowing | ✅ |
-| **Health Score** | 75/100 | 76/100 | 78/100 | ↗ Improving | ✅ |
+| Revenue Growth | — | +25% | +15% | ↘ Slowing |  |
+| **Health Score** | 75/100 | 76/100 | 78/100 | ↗ Improving |  |
 
 **Multi-Year Interpretation:**
 - Liquidity stable (consistent financial strength)
@@ -562,7 +562,7 @@ Company:     Acme Manufacturing
 Period:      FY 2024 Ending 12/31/2024
 Audience:    Board of Directors
 
-HEADLINE:    ✅ STRONG FINANCIAL POSITION
+HEADLINE:     STRONG FINANCIAL POSITION
              Healthy liquidity, manageable leverage, solid growth
 
 KEY METRICS

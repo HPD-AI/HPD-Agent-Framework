@@ -1287,11 +1287,25 @@ public class AgentBuilder
         // - Ephemeral result filtering
         if (_config.Collapsing?.Enabled == true && buildData.MergedOptions?.Tools != null)
         {
+            var containerLogger = _logger?.CreateLogger<ContainerMiddleware>();
             var containerMiddleware = new ContainerMiddleware(
                 buildData.MergedOptions.Tools,
                 _explicitlyRegisteredTools.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
-                _config.Collapsing);
+                _config.Collapsing,
+                containerLogger);
             _middlewares.Add(containerMiddleware);
+
+            // Register ContainerErrorRecoveryMiddleware if enabled (CHANGE 2 - Container Transparency V2)
+            // This middleware automatically expands containers when agents call hidden functions
+            if (_config.Collapsing.EnableErrorRecovery)
+            {
+                var recoveryLogger = _logger?.CreateLogger<ContainerErrorRecoveryMiddleware>();
+                var errorRecoveryMiddleware = new ContainerErrorRecoveryMiddleware(
+                    buildData.MergedOptions.Tools,
+                    _explicitlyRegisteredTools.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
+                    recoveryLogger);
+                _middlewares.Add(errorRecoveryMiddleware);
+            }
         }
 
         // Register ClientToolMiddleware automatically
@@ -1852,7 +1866,7 @@ public class AgentBuilder
             {
                 string content;
 
-                // ✅ Step 1: Check if this is a URL or a file path
+                //  Step 1: Check if this is a URL or a file path
                 if (IsUrl(filePath))
                 {
                     // Fetch content from URL
@@ -1877,10 +1891,10 @@ public class AgentBuilder
                 }
                 else
                 {
-                    // ✅ Step 1b: Resolve the file path with proper error handling
+                    //  Step 1b: Resolve the file path with proper error handling
                     var resolvedPath = ResolveDocumentPath(filePath, skillName);
 
-                    // ✅ Step 2: Read file content (this is AgentBuilder's responsibility)
+                    //  Step 2: Read file content (this is AgentBuilder's responsibility)
                     try
                     {
                         content = await File.ReadAllTextAsync(resolvedPath, cancellationToken)
@@ -1902,7 +1916,7 @@ public class AgentBuilder
                     }
                 }
 
-                // ✅ Step 3: Pass content (not path) to store
+                //  Step 3: Pass content (not path) to store
                 var metadata = new HPD.Agent.Skills.DocumentStore.DocumentMetadata
                 {
                     Name = documentId,
@@ -2510,7 +2524,7 @@ public static class AgentBuilderMiddlewareExtensions
     //      
 
     /// <summary>
-    /// Adds function retry middleware with provider-aware retry logic.
+    /// Adds function RetryMiddleware  with provider-aware retry logic.
     /// Uses settings from AgentConfig.ErrorHandling for retry behavior.
     /// </summary>
     /// <param name="builder">The agent builder</param>
@@ -2571,7 +2585,7 @@ public static class AgentBuilderMiddlewareExtensions
     }
 
     /// <summary>
-    /// Adds function retry middleware with custom error handling configuration.
+    /// Adds function RetryMiddleware  with custom error handling configuration.
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="configure">Action to configure error handling settings</param>
@@ -2624,7 +2638,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// .WithPermissions()      // Innermost - check permissions before execution
     /// </code>
     /// <para>
-    /// When combined with retry middleware, the timeout applies to EACH retry attempt
+    /// When combined with RetryMiddleware , the timeout applies to EACH retry attempt
     /// independently, not to the total time across all attempts.
     /// </para>
     /// </remarks>
@@ -2842,7 +2856,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <param name="configureCircuitBreaker">Action to configure circuit breaker middleware</param>
     /// <param name="configureErrorTracking">Optional action to configure error tracking middleware</param>
     /// <param name="configureTotalThreshold">Optional action to configure total error threshold middleware</param>
-    /// <param name="configureFunctionRetry">Optional action to configure function retry middleware</param>
+    /// <param name="configureFunctionRetry">Optional action to configure function RetryMiddleware </param>
     /// <param name="configureFunctionTimeout">Optional timeout for function execution</param>
     /// <param name="includeDetailedErrorsInChat">Optional flag to include detailed error messages in LLM chat (default: false for security)</param>
     /// <returns>The builder for chaining</returns>

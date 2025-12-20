@@ -73,11 +73,11 @@ Absolute Change = Current Value - Prior Value
 
 | Line Item | FY 2023 | FY 2024 | $ Change | Interpretation |
 |-----------|---------|---------|----------|-----------------|
-| Revenue | $500,000 | $575,000 | +$75,000 | ✅ Revenue grew |
+| Revenue | $500,000 | $575,000 | +$75,000 |  Revenue grew |
 | COGS | $300,000 | $345,000 | +$45,000 | ⚠️ COGS grew (check margin) |
-| Gross Profit | $200,000 | $230,000 | +$30,000 | ✅ Margin increased |
+| Gross Profit | $200,000 | $230,000 | +$30,000 |  Margin increased |
 | SG&A | $100,000 | $115,000 | +$15,000 | ⚠️ Expenses grew (check efficiency) |
-| Net Income | $60,000 | $69,000 | +$9,000 | ✅ Profitability grew |
+| Net Income | $60,000 | $69,000 | +$9,000 |  Profitability grew |
 
 **Interpretation Guidelines:**
 
@@ -109,11 +109,11 @@ Absolute Change = Current Value - Prior Value
 
 | Line Item | FY 2023 | FY 2024 | % Change | Interpretation |
 |-----------|---------|---------|----------|-----------------|
-| Revenue | $500,000 | $575,000 | +15.0% | ✅ Strong growth |
+| Revenue | $500,000 | $575,000 | +15.0% |  Strong growth |
 | COGS | $300,000 | $345,000 | +15.0% | ℹ️ Growing in line with revenue |
-| Gross Profit | $200,000 | $230,000 | +15.0% | ✅ Margin stable (same %) |
+| Gross Profit | $200,000 | $230,000 | +15.0% |  Margin stable (same %) |
 | SG&A | $100,000 | $115,000 | +15.0% | ⚠️ Growing in line with revenue |
-| Net Income | $60,000 | $69,000 | +15.0% | ✅ Growing in line with revenue |
+| Net Income | $60,000 | $69,000 | +15.0% |  Growing in line with revenue |
 
 **Interpretation Guidelines:**
 
@@ -163,9 +163,9 @@ Absolute Change = Current Value - Prior Value
 |-----------|---------|-----------|
 | < -2.0 pp | Negative margin compression | ⚠️ Investigate |
 | -2.0 to -0.5 pp | Slight deterioration | ℹ️ Monitor |
-| -0.5 to +0.5 pp | Essentially flat | ✅ Stable |
-| +0.5 to +2.0 pp | Slight improvement | ✅ Good |
-| > +2.0 pp | Meaningful improvement | ✅ Excellent |
+| -0.5 to +0.5 pp | Essentially flat |  Stable |
+| +0.5 to +2.0 pp | Slight improvement |  Good |
+| > +2.0 pp | Meaningful improvement |  Excellent |
 
 **Acme Analysis:**
 - All margins: 0.0 pp change

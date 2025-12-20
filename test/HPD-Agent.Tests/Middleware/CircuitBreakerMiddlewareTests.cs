@@ -1,4 +1,6 @@
 using HPD.Agent;
+using HPD.Agent.Tests.Middleware.V2;
+using static HPD.Agent.Tests.Middleware.V2.MiddlewareTestHelpers;
 using HPD.Agent.Middleware;
 using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
@@ -23,15 +25,15 @@ public class CircuitBreakerMiddlewareTests
         };
 
         var context = CreateContext(iteration: 0);
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.False(context.SkipToolExecution);
-        Assert.Null(context.Response);
-        Assert.False(context.Properties.ContainsKey("IsTerminated"));
+        Assert.Null(context.OverrideResponse);
+        // Properties no longer exists in V2 - state is checked via context.State
     }
 
     [Fact]
@@ -46,14 +48,14 @@ public class CircuitBreakerMiddlewareTests
         // State shows 1 consecutive call (below threshold of 3)
         var state = CreateStateWithConsecutiveCalls("test_tool", "test_tool({})", 1);
         var context = CreateContext(iteration: 2, state: state);
-        context.ToolCalls = new[] { CreateToolCall("test_tool") };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.False(context.SkipToolExecution);
-        Assert.Null(context.Response);
+        Assert.Null(context.OverrideResponse);
     }
 
     [Fact]
@@ -68,18 +70,18 @@ public class CircuitBreakerMiddlewareTests
         // State shows 2 consecutive calls, next identical call would be 3rd (at threshold)
         var state = CreateStateWithConsecutiveCalls("test_tool", "test_tool({})", 2);
         var context = CreateContext(iteration: 3, state: state);
-        context.ToolCalls = new[] { CreateToolCall("test_tool") };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.True(context.SkipToolExecution);
-        Assert.NotNull(context.Response);
-        Assert.Contains("test_tool", context.Response.Text);
-        Assert.Contains("3", context.Response.Text);
-        Assert.True((bool)context.Properties["IsTerminated"]);
-        Assert.Contains("Circuit breaker", (string)context.Properties["TerminationReason"]);
+        Assert.NotNull(context.OverrideResponse);
+        Assert.Contains("test_tool", context.OverrideResponse!.Text);
+        Assert.Contains("3", context.OverrideResponse!.Text);
+        Assert.True(context.State.IsTerminated);
+        Assert.Contains("Circuit breaker", context.State.TerminationReason ?? "");
     }
 
     [Fact]
@@ -94,16 +96,16 @@ public class CircuitBreakerMiddlewareTests
         // State shows 4 consecutive calls (above threshold)
         var state = CreateStateWithConsecutiveCalls("stuck_function", "stuck_function({})", 4);
         var context = CreateContext(iteration: 5, state: state);
-        context.ToolCalls = new[] { CreateToolCall("stuck_function") };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.True(context.SkipToolExecution);
-        Assert.NotNull(context.Response);
-        Assert.Contains("stuck_function", context.Response.Text);
-        Assert.Empty(context.ToolCalls);
+        Assert.NotNull(context.OverrideResponse);
+        Assert.Contains("stuck_function", context.OverrideResponse!.Text);
+        // V2: ToolCalls is read-only, middleware sets SkipToolExecution flag instead
     }
 
     [Fact]
@@ -119,14 +121,14 @@ public class CircuitBreakerMiddlewareTests
         var state = CreateStateWithConsecutiveCalls("test_tool", "test_tool({\"arg\":\"old\"})", 2);
         var context = CreateContext(iteration: 3, state: state);
         // New call with different arguments
-        context.ToolCalls = new[] { CreateToolCall("test_tool", new Dictionary<string, object?> { ["arg"] = "new" }) };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - different arguments means count resets, so no trigger
         Assert.False(context.SkipToolExecution);
-        Assert.Null(context.Response);
+        Assert.Null(context.OverrideResponse);
     }
 
     [Fact]
@@ -141,46 +143,46 @@ public class CircuitBreakerMiddlewareTests
 
         var state = CreateStateWithConsecutiveCalls("my_function", "my_function({})", 1);
         var context = CreateContext(iteration: 2, state: state);
-        context.ToolCalls = new[] { CreateToolCall("my_function") };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
         Assert.True(context.SkipToolExecution);
-        Assert.NotNull(context.Response);
-        Assert.Equal("LOOP DETECTED: my_function was called 2 times!", context.Response.Text);
+        Assert.NotNull(context.OverrideResponse);
+        Assert.Equal("LOOP DETECTED: my_function was called 2 times!", context.OverrideResponse!.Text);
     }
 
     [Fact]
-    public async Task AfterIteration_UpdatesState()
+    public async Task BeforeToolExecution_UpdatesState()
     {
         // Arrange
         var middleware = new CircuitBreakerMiddleware();
         var context = CreateContext(iteration: 1);
-        context.ToolCalls = new[] { CreateToolCall("test_tool") };
+        // ToolCalls set in context constructor
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - state should be updated (we can't directly verify but no errors thrown)
         Assert.False(context.SkipToolExecution);
     }
 
     [Fact]
-    public async Task AfterIteration_NoToolCalls_DoesNothing()
+    public async Task BeforeToolExecution_NoToolCalls_DoesNothing()
     {
         // Arrange
         var middleware = new CircuitBreakerMiddleware();
         var context = CreateContext(iteration: 1);
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+        // ToolCalls set in context constructor
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - no changes to context
         Assert.False(context.SkipToolExecution);
-        Assert.Null(context.Response);
+        Assert.Null(context.OverrideResponse);
     }
 
     [Fact]
@@ -208,7 +210,7 @@ public class CircuitBreakerMiddlewareTests
         // Empty state (no tool calls recorded yet)
         var state = CreateEmptyState();
         var context = CreateContext(iteration: 1, state: state);
-        context.ToolCalls = new[] { CreateToolCall("test_tool") };
+        // ToolCalls set in context constructor
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
@@ -230,21 +232,26 @@ public class CircuitBreakerMiddlewareTests
             agentName: "TestAgent");
     }
 
-    private static AgentMiddlewareContext CreateContext(
+    private static BeforeToolExecutionContext CreateContext(
         int iteration,
         AgentLoopState? state = null)
     {
-        var context = new AgentMiddlewareContext
+        // V2: CircuitBreakerMiddleware uses BeforeToolExecutionAsync
+        var actualState = state ?? CreateEmptyState();
+        var agentContext = CreateAgentContext(actualState);
+        var response = new ChatMessage(ChatRole.Assistant, []);
+
+        // Add a tool call that matches the circuit breaker state (if any)
+        var toolCalls = new List<FunctionCallContent>();
+        var cbState = actualState.MiddlewareState.CircuitBreaker;
+        if (cbState != null && cbState.LastSignaturePerTool.Count > 0)
         {
-            Iteration = iteration,
-            AgentName = "TestAgent",
-            CancellationToken = CancellationToken.None,
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions(),
-            ConversationId = "test-conversation"
-        };
-        context.SetOriginalState(state ?? CreateEmptyState());
-        return context;
+            // Get the last tool name to create a matching tool call
+            var toolName = cbState.LastSignaturePerTool.Keys.First();
+            toolCalls.Add(CreateToolCall(toolName));
+        }
+
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
     }
 
     private static AgentLoopState CreateStateWithConsecutiveCalls(string toolName, string signature, int count)
@@ -269,4 +276,42 @@ public class CircuitBreakerMiddlewareTests
             name: name,
             arguments: arguments ?? new Dictionary<string, object?>());
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

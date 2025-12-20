@@ -57,17 +57,22 @@ public class DynamicMemoryAgentMiddleware : IAgentMiddleware
     /// Injects dynamic memories into the message context before the message turn begins.
     /// </summary>
     public async Task BeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Messages == null)
-            return;
-
         var memoryTag = await GetMemoryContextAsync(context.AgentName);
 
         if (!string.IsNullOrEmpty(memoryTag))
         {
-            context.Messages = InjectMemories(context.Messages, memoryTag).ToList();
+            var injectedMessages = InjectMemories(context.ConversationHistory, memoryTag);
+
+            // V2: ConversationHistory is mutable - replace content
+            context.ConversationHistory.Clear();
+            foreach (var msg in injectedMessages)
+            {
+                context.ConversationHistory.Add(msg);
+            }
+
             _logger?.LogDebug(
                 "Injected dynamic memories ({Length} chars) for agent {AgentName}",
                 memoryTag.Length,

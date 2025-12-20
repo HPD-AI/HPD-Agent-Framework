@@ -284,11 +284,11 @@ Total Liabilities 55% + Total Equity 45% = 100% ✅
 
 | Metric | Acme | Mfg Average | Assessment |
 |--------|------|-------------|-----------|
-| Current Assets | 30% | 25-35% | ✅ In range |
-| Fixed Assets | 50% | 50-65% | ✅ In range |
-| Current Liab | 20% | 15-25% | ✅ In range |
-| LT Debt | 30% | 20-35% | ✅ In range |
-| Equity | 45% | 45-65% | ✅ In range |
+| Current Assets | 30% | 25-35% |  In range |
+| Fixed Assets | 50% | 50-65% |  In range |
+| Current Liab | 20% | 15-25% |  In range |
+| LT Debt | 30% | 20-35% |  In range |
+| Equity | 45% | 45-65% |  In range |
 
 **Conclusion:** Acme is structured like a typical manufacturer - no red flags ✅
 

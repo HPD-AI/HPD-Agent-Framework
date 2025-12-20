@@ -165,7 +165,7 @@ public class LoggingMiddleware : IAgentMiddleware
     //     
 
     /// <inheritdoc/>
-    public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogMessageTurn) return Task.CompletedTask;
 
@@ -175,18 +175,9 @@ public class LoggingMiddleware : IAgentMiddleware
         sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN #{turnNumber} - START");
         sb.AppendLine($"  Agent: {context.AgentName}");
-        sb.AppendLine($"  Messages: {context.Messages?.Count ?? 0}");
+        sb.AppendLine($"  UserMessage: {context.UserMessage?.Text?.Length ?? 0} chars");
+        sb.AppendLine($"  ConversationHistory: {context.ConversationHistory?.Count ?? 0} messages");
         sb.AppendLine($"  ConversationId: {context.ConversationId}");
-
-        if (_options.IncludeInstructions && !string.IsNullOrEmpty(context.Options?.Instructions))
-        {
-            var instructions = TruncateString(context.Options.Instructions);
-            sb.AppendLine($"  Instructions: {instructions}");
-        }
-        else if (context.Options?.Instructions != null)
-        {
-            sb.AppendLine($"  Instructions: ({context.Options.Instructions.Length} chars)");
-        }
 
         sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
 
@@ -195,7 +186,7 @@ public class LoggingMiddleware : IAgentMiddleware
     }
 
     /// <inheritdoc/>
-    public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogMessageTurn) return Task.CompletedTask;
 
@@ -206,7 +197,7 @@ public class LoggingMiddleware : IAgentMiddleware
         sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
         sb.AppendLine($"{_options.LogPrefix} MESSAGE TURN - END");
         sb.AppendLine($"  Agent: {context.AgentName}");
-        sb.AppendLine($"  Final response: {(context.Response != null ? "Yes" : "No")}");
+        sb.AppendLine($"  Final response: {(context.FinalResponse != null ? "Yes" : "No")}");
         sb.AppendLine("═══════════════════════════════════════════════════════════════════════════════════════════════════");
 
         LogMessage(sb.ToString());
@@ -218,7 +209,7 @@ public class LoggingMiddleware : IAgentMiddleware
     //     
 
     /// <inheritdoc/>
-    public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogIteration) return Task.CompletedTask;
 
@@ -229,6 +220,28 @@ public class LoggingMiddleware : IAgentMiddleware
         sb.AppendLine("───────────────────────────────────────────────────────");
         sb.AppendLine($"{_options.LogPrefix} ITERATION #{iterationNumber} (Agent iteration: {context.Iteration})");
         sb.AppendLine($"  Agent: {context.AgentName}");
+
+        // Show available tools
+        if (context.Options?.Tools != null && context.Options.Tools.Count > 0)
+        {
+            sb.AppendLine($"  Available Tools ({context.Options.Tools.Count}):");
+            foreach (var tool in context.Options.Tools)
+            {
+                if (tool is Microsoft.Extensions.AI.AIFunction func)
+                {
+                    sb.Append($"    - {func.Name}");
+                    
+                    // Show if it's a container
+                    if (func.AdditionalProperties?.TryGetValue("IsContainer", out var isContainerVal) == true 
+                        && isContainerVal is bool isContainer && isContainer)
+                    {
+                        sb.Append(" [CONTAINER]");
+                    }
+                    
+                    sb.AppendLine();
+                }
+            }
+        }
 
         if (_options.IncludeInstructions && !string.IsNullOrEmpty(context.Options?.Instructions))
         {
@@ -243,7 +256,7 @@ public class LoggingMiddleware : IAgentMiddleware
     }
 
     /// <inheritdoc/>
-    public Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task AfterIterationAsync(AfterIterationContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogIteration) return Task.CompletedTask;
 
@@ -273,7 +286,7 @@ public class LoggingMiddleware : IAgentMiddleware
     //
 
     /// <inheritdoc/>
-    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogFunction) return Task.CompletedTask;
 
@@ -293,7 +306,7 @@ public class LoggingMiddleware : IAgentMiddleware
 
         if (_options.IncludeArguments)
         {
-            var args = FormatArgs(context.FunctionArguments);
+            var args = FormatArgs(context.Arguments);
             sb.Append($" | Args: {TruncateString(args)}");
         }
         sb.AppendLine();
@@ -303,13 +316,13 @@ public class LoggingMiddleware : IAgentMiddleware
     }
 
     /// <inheritdoc/>
-    public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
     {
         if (!_options.LogFunction) return Task.CompletedTask;
 
         var functionName = context.Function?.Name ?? "<unknown>";
         var callId = context.FunctionCallId ?? "";
-        var exception = context.FunctionException;
+        var exception = context.Exception;
 
         // Get elapsed time
         long elapsedMs = 0;
@@ -339,7 +352,7 @@ public class LoggingMiddleware : IAgentMiddleware
             }
             if (_options.IncludeResults)
             {
-                var result = FormatResult(context.FunctionResult);
+                var result = FormatResult(context.Result);
                 sb.Append($" | Result: {TruncateString(result)}");
             }
         }

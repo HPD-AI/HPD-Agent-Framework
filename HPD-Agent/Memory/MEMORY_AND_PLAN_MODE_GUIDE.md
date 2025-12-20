@@ -361,7 +361,7 @@ You control sharing behavior with **3 variables**:
 
 | Thread Instance | Store Instance | Result | Use Case |
 |----------------|---------------|--------|----------|
-| **Same** | **Same** | ✅ **Real-time sharing** | Multi-agent collaboration |
+| **Same** | **Same** |  **Real-time sharing** | Multi-agent collaboration |
 | **Same** | Different (in-memory) | ❌ No sharing | Bug/misconfiguration |
 | **Same** | Different (file, same dir) | ⚠️ **Eventual consistency** | Multi-process/distributed |
 | **Different** | Same | ❌ No sharing | Independent conversations |

@@ -14,7 +14,7 @@ namespace HPD.Agent.Middleware.Function;
 ///
 /// <para><b>Usage:</b></para>
 /// <para>
-/// This middleware should be registered INSIDE retry middleware (so retries happen before timeout),
+/// This middleware should be registered INSIDE RetryMiddleware  (so retries happen before timeout),
 /// but OUTSIDE permissions middleware (so timeout wraps actual execution).
 /// </para>
 ///
@@ -42,24 +42,24 @@ public class FunctionTimeoutMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Executes the function with timeout enforcement.
+    /// Wraps function execution with timeout enforcement.
     /// </summary>
-    public async ValueTask<object?> ExecuteFunctionAsync(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> next,
+    public async Task<object?> WrapFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler,
         CancellationToken cancellationToken)
     {
         try
         {
-            // Use Task.WaitAsync to enforce timeout without modifying context
-            var task = next().AsTask();
+            // Use Task.WaitAsync to enforce timeout
+            var task = handler(request);
             return await task.WaitAsync(_timeout, cancellationToken);
         }
         catch (TimeoutException)
         {
             // Re-throw with more descriptive message
             throw new TimeoutException(
-                $"Function '{context.Function?.Name ?? "Unknown"}' timed out after {_timeout.TotalSeconds:F1} seconds");
+                $"Function '{request.Function?.Name ?? "Unknown"}' timed out after {_timeout.TotalSeconds:F1} seconds");
         }
     }
 }

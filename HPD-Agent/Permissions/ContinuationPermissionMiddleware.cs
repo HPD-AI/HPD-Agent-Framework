@@ -62,7 +62,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
     /// Checks if iteration limit reached and requests continuation permission if needed.
     /// </summary>
     public async Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Get or initialize the current extended limit from state
@@ -94,16 +94,16 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
                 context.SkipLLMCall = true;
 
                 // Provide a final response explaining termination
-                context.Response = new ChatMessage(
+                context.OverrideResponse = new ChatMessage(
                     ChatRole.Assistant,
                     "Execution terminated: Maximum iteration limit reached and continuation was not approved.");
 
-                // Empty tool calls (no further work)
-                context.ToolCalls = Array.Empty<FunctionCallContent>();
-
-                // Signal termination via properties
-                context.Properties["IsTerminated"] = true;
-                context.Properties["TerminationReason"] = "Continuation permission denied at iteration limit";
+                // V2 NOTE: Termination signaled via state update instead of context.Properties
+                context.UpdateState(s => s with
+                {
+                    IsTerminated = true,
+                    TerminationReason = "Continuation permission denied at iteration limit"
+                });
             }
             // If approved, execution continues normally
         }
@@ -118,7 +118,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
     /// </summary>
     /// <returns>True if user approves continuation, false otherwise</returns>
     private async Task<bool> RequestContinuationPermissionAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         ContinuationPermissionStateData currentState,
         CancellationToken cancellationToken)
     {
@@ -133,17 +133,10 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
                 currentState.CurrentExtendedLimit);
 
             // Emit continuation request event
-            // If no EventCoordinator is configured (e.g., unit tests), terminate gracefully
-            if (!context.TryEmit(evt))
-            {
-                // No event handler available - terminate at the limit
-                return false;
-            }
+            context.Emit(evt);
 
             // Wait for response from external handler (BLOCKS during user interaction)
-            var response = await context.WaitForResponseAsync<ContinuationResponseEvent>(
-                continuationId,
-                TimeSpan.FromMinutes(2))
+            var response = await context.Base.WaitForResponseAsync<ContinuationResponseEvent>(continuationId)
                 .ConfigureAwait(false);
 
             if (response.Approved)

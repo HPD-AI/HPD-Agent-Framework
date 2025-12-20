@@ -25,14 +25,14 @@ public partial class FileSystemTools
         [AIDescription("Optional: Working directory (defaults to workspace root)")] string? workingDirectory = null,
         CancellationToken cancellationToken = default)
     {
-        // ✅ LAYER 1: Check if shell is enabled
+        //  LAYER 1: Check if shell is enabled
         if (!_context.EnableShell)
             return "Error: Shell command execution is disabled in this context.";
 
-        // ✅ LAYER 2: Set timeout from context (internal, not exposed to AI)
+        //  LAYER 2: Set timeout from context (internal, not exposed to AI)
         var timeout = _context.MaxShellTimeoutSeconds;
 
-        // ✅ LAYER 3: Validate command is allowed
+        //  LAYER 3: Validate command is allowed
         var rootCommand = GetRootCommand(command);
         if (!IsCommandAllowed(rootCommand))
         {
@@ -40,7 +40,7 @@ public partial class FileSystemTools
                    $"Blocked commands include: {string.Join(", ", _context.BlockedShellCommands)}";
         }
 
-        // ✅ LAYER 4: Validate working directory
+        //  LAYER 4: Validate working directory
         var workDir = workingDirectory ?? _context.WorkspaceRoot;
 
         if (!Path.IsPathRooted(workDir))
@@ -52,7 +52,7 @@ public partial class FileSystemTools
         if (!Directory.Exists(workDir))
             return $"Error: Working directory not found: {workDir}";
 
-        // ✅ LAYER 5: Execute with CliWrap (safe, controlled execution)
+        //  LAYER 5: Execute with CliWrap (safe, controlled execution)
         try
         {
             var (shell, shellArgs) = GetShellExecutable();

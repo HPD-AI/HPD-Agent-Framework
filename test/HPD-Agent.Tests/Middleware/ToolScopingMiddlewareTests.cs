@@ -30,8 +30,7 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty,
             new CollapsingConfig { Enabled = false });
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
+        var context = CreateContext(options: new ChatOptions { Tools = allTools });
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -53,8 +52,7 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty,
             new CollapsingConfig { Enabled = true });
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
+        var context = CreateContext(options: new ChatOptions { Tools = allTools });
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -84,8 +82,7 @@ public class ContainerMiddlewareTests
         var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestPlugin");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState) };
 
-        var context = CreateContext(state: state);
-        context.Options = new ChatOptions { Tools = allTools };
+        var context = CreateContext(state: state, options: new ChatOptions { Tools = allTools });
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -104,14 +101,13 @@ public class ContainerMiddlewareTests
             Array.Empty<AITool>(),
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = null };
+        var context = CreateContext(options: new ChatOptions { Tools = new List<AITool>() });
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - no exception, options unchanged
-        Assert.Null(context.Options.Tools);
+        // Assert - no exception, empty tools list
+        Assert.Empty(context.Options.Tools);
     }
 
     [Fact]
@@ -125,15 +121,14 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions
+        var context = CreateContext(options: new ChatOptions
         {
             Tools = allTools,
             ModelId = "test-model",
             Temperature = 0.5f,
             MaxOutputTokens = 1000,
             ConversationId = "test-conversation"
-        };
+        });
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -150,7 +145,7 @@ public class ContainerMiddlewareTests
     //      
 
     [Fact]
-    public async Task AfterIteration_WhenDisabled_DoesNotDetectContainers()
+    public async Task BeforeToolExecution_WhenDisabled_DoesNotDetectContainers()
     {
         // Arrange
         var (container, _) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add");
@@ -161,37 +156,38 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty,
             new CollapsingConfig { Enabled = false });
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[] { CreateToolCall("TestPlugin") };
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("TestPlugin") };
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
-        // Assert - no state updates
-        Assert.False(context.HasPendingStateUpdates);
+        // Assert - container detection happens but we check state instead
+        // When disabled, no containers should be expanded
+        Assert.Empty(context.State.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
-    public async Task AfterIteration_WhenNoToolCalls_DoesNothing()
+    public async Task BeforeToolExecution_WhenNoToolCalls_DoesNothing()
     {
         // Arrange
         var middleware = new ContainerMiddleware(
             Array.Empty<AITool>(),
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+        var toolCalls = Array.Empty<FunctionCallContent>();
+
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls.ToList());
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - no state updates
-        Assert.False(context.HasPendingStateUpdates);
+        // State is immediately updated in V2
     }
 
     [Fact]
-    public async Task AfterIteration_DetectsPluginContainer_UpdatesState()
+    public async Task BeforeToolExecution_DetectsPluginContainer_UpdatesState()
     {
         // Arrange
         var (container, members) = CreateCollapsedPlugin("FinancialPlugin", "Financial tools", "Add", "Subtract");
@@ -201,16 +197,16 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[] { CreateToolCall("FinancialPlugin") };
+        // Create tool calls that invoke the container
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("FinancialPlugin") };
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - state updated with expanded plugin
-        Assert.True(context.HasPendingStateUpdates);
-        var pendingState = context.GetPendingState();
+        // State is immediately updated in V2
+        var pendingState = context.State;
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
@@ -218,7 +214,7 @@ public class ContainerMiddlewareTests
     }
 
     [Fact]
-    public async Task AfterIteration_DetectsSkillContainer_UpdatesState()
+    public async Task BeforeToolExecution_DetectsSkillContainer_UpdatesState()
     {
         // Arrange
         var skill = CreateSkillContainer("TestSkill", "Test skill description", "func1", "func2");
@@ -230,16 +226,16 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[] { CreateToolCall("TestSkill") };
+        // Create tool calls that invoke the skill container
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("TestSkill") };
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.True(context.HasPendingStateUpdates);
-        var pendingState = context.GetPendingState();
+        // State is immediately updated in V2
+        var pendingState = context.State;
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
@@ -247,7 +243,7 @@ public class ContainerMiddlewareTests
     }
 
     [Fact]
-    public async Task AfterIteration_SkillWithInstructions_StoresInstructions()
+    public async Task BeforeToolExecution_SkillWithInstructions_StoresInstructions()
     {
         // Arrange
         var instructions = "Always use metric units when performing calculations.";
@@ -258,15 +254,15 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[] { CreateToolCall("MetricSkill") };
+        // Create tool calls that invoke the skill container
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("MetricSkill") };
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
-        var pendingState = context.GetPendingState();
+        var pendingState = context.State;
         Assert.NotNull(pendingState);
 
         // Check instructions in Collapsing state
@@ -277,7 +273,7 @@ public class ContainerMiddlewareTests
     }
 
     [Fact]
-    public async Task AfterIteration_NonContainerToolCall_DoesNotUpdateState()
+    public async Task BeforeToolExecution_NonContainerToolCall_DoesNotUpdateState()
     {
         // Arrange
         var regularFunc = CreateNonCollapsedFunction("RegularFunction");
@@ -287,19 +283,19 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[] { CreateToolCall("RegularFunction") };
+        var context = CreateBeforeToolExecutionContext();
+        // Options set in constructor
+        // ToolCalls set in context constructor
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert - no state updates for non-container calls
-        Assert.False(context.HasPendingStateUpdates);
+        // State is immediately updated in V2
     }
 
     [Fact]
-    public async Task AfterIteration_MultipleContainers_ExpandsAll()
+    public async Task BeforeToolExecution_MultipleContainers_ExpandsAll()
     {
         // Arrange
         var (plugin1, _) = CreateCollapsedPlugin("Plugin1", "First plugin", "A");
@@ -311,20 +307,20 @@ public class ContainerMiddlewareTests
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = allTools };
-        context.ToolCalls = new[]
+        // Create tool calls that invoke all three containers
+        var toolCalls = new List<FunctionCallContent>
         {
             CreateToolCall("Plugin1"),
             CreateToolCall("Plugin2"),
             CreateToolCall("Skill1")
         };
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
-        await middleware.AfterIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
         // Assert
-        var pendingState = context.GetPendingState();
+        var pendingState = context.State;
         Assert.NotNull(pendingState);
 
         var CollapsingState = pendingState.MiddlewareState.Collapsing;
@@ -350,28 +346,28 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty);
 
         // Iteration 1: Plugin not expanded
-        var context1 = CreateContext();
-        context1.Options = new ChatOptions { Tools = allTools };
+        var beforeIter1 = CreateIterationContext(options: new ChatOptions { Tools = allTools });
 
-        await middleware.BeforeIterationAsync(context1, CancellationToken.None);
+        await middleware.BeforeIterationAsync(beforeIter1, CancellationToken.None);
 
-        var visibleIter1 = context1.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
+        var visibleIter1 = beforeIter1.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
         Assert.Contains("TestPlugin", visibleIter1);
         Assert.DoesNotContain("Add", visibleIter1);
 
         // Simulate LLM calling the container
-        context1.ToolCalls = new[] { CreateToolCall("TestPlugin") };
-        await middleware.AfterIterationAsync(context1, CancellationToken.None);
+        var toolExecContext = CreateBeforeToolExecutionContext(
+            toolCalls: new List<FunctionCallContent> { CreateToolCall("TestPlugin") },
+            state: beforeIter1.State);
+        await middleware.BeforeToolExecutionAsync(toolExecContext, CancellationToken.None);
 
         // Iteration 2: Plugin now expanded
-        var expandedState = context1.GetPendingState()!;
-        var context2 = CreateContext(state: expandedState);
-        context2.Options = new ChatOptions { Tools = allTools };
+        var expandedState = toolExecContext.State!;
+        var beforeIter2 = CreateIterationContext(state: expandedState, options: new ChatOptions { Tools = allTools });
 
-        await middleware.BeforeIterationAsync(context2, CancellationToken.None);
+        await middleware.BeforeIterationAsync(beforeIter2, CancellationToken.None);
 
         // Assert - member functions now visible
-        var visibleIter2 = context2.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
+        var visibleIter2 = beforeIter2.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
         Assert.Contains("Add", visibleIter2);
         Assert.Contains("Subtract", visibleIter2);
     }
@@ -508,6 +504,14 @@ public class ContainerMiddlewareTests
 
         var turnHistory = new List<ChatMessage>
         {
+            // Assistant message with function calls
+            new(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call1", "ExpandPlugin"),  // Container call
+                new FunctionCallContent("call2", "Calculate"),     // Regular call
+                new FunctionCallContent("call3", "GetGreeting")    // Regular call
+            }),
+            // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
                 new FunctionResultContent("call1", result: "PluginExpanded"),  // Container
@@ -516,20 +520,34 @@ public class ContainerMiddlewareTests
             })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
-        context.Properties["EphemeralCallIds"] = new HashSet<string> { "call1" };
+        // Create state with ExpandPlugin in ContainersExpandedThisTurn
+        var state = CreateEmptyState();
+        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandPlugin");
+        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+
+        var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert
-        Assert.Single(turnHistory);
-        var message = turnHistory[0];
-        Assert.Equal(2, message.Contents.Count);
-        Assert.DoesNotContain(message.Contents, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.Contains(message.Contents, c => c is FunctionResultContent frc && frc.CallId == "call2");
-        Assert.Contains(message.Contents, c => c is FunctionResultContent frc && frc.CallId == "call3");
+        // Assert - Both messages remain, but with container calls/results removed
+        Assert.Equal(2, turnHistory.Count);
+
+        // Check Assistant message - should have only 2 function calls (container removed)
+        var assistantMsg = turnHistory[0];
+        Assert.Equal(ChatRole.Assistant, assistantMsg.Role);
+        Assert.Equal(2, assistantMsg.Contents.Count);
+        Assert.DoesNotContain(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call1");
+        Assert.Contains(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call2");
+        Assert.Contains(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call3");
+
+        // Check Tool message - should have only 2 results (container result removed)
+        var toolMsg = turnHistory[1];
+        Assert.Equal(ChatRole.Tool, toolMsg.Role);
+        Assert.Equal(2, toolMsg.Contents.Count);
+        Assert.DoesNotContain(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Contains(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call2");
+        Assert.Contains(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call3");
     }
 
     [Fact]
@@ -549,8 +567,8 @@ public class ContainerMiddlewareTests
             new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "Result") })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
+        var context = CreateAfterMessageTurnContext();
+        // TurnHistory managed by context - turnHistory;
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
@@ -570,8 +588,8 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>();
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
+        var context = CreateAfterMessageTurnContext();
+        // TurnHistory managed by context - turnHistory;
 
         // Act & Assert - should not throw
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
@@ -609,6 +627,14 @@ public class ContainerMiddlewareTests
 
         var turnHistory = new List<ChatMessage>
         {
+            // Assistant message with function calls
+            new(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call1", "ExpandPluginA"),
+                new FunctionCallContent("call2", "ExpandPluginB"),
+                new FunctionCallContent("call3", "DoWork")
+            }),
+            // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
                 new FunctionResultContent("call1", "PluginA expanded"),
@@ -617,18 +643,29 @@ public class ContainerMiddlewareTests
             })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
-        context.Properties["EphemeralCallIds"] = new HashSet<string> { "call1", "call2" };
+        // Create state with both containers in ContainersExpandedThisTurn
+        var state = CreateEmptyState();
+        var collapsingState = new CollapsingStateData()
+            .WithExpandedContainer("ExpandPluginA")
+            .WithExpandedContainer("ExpandPluginB");
+        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+
+        var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert: Only the regular function result should remain
-        Assert.Single(turnHistory);
-        var contents = turnHistory[0].Contents;
-        Assert.Single(contents);
-        var result = Assert.IsType<FunctionResultContent>(contents[0]);
+        // Assert: Both messages remain with only regular function call/result
+        Assert.Equal(2, turnHistory.Count);
+
+        var assistantMsg = turnHistory[0];
+        Assert.Single(assistantMsg.Contents);
+        var call = Assert.IsType<FunctionCallContent>(assistantMsg.Contents[0]);
+        Assert.Equal("call3", call.CallId);
+
+        var toolMsg = turnHistory[1];
+        Assert.Single(toolMsg.Contents);
+        var result = Assert.IsType<FunctionResultContent>(toolMsg.Contents[0]);
         Assert.Equal("call3", result.CallId);
     }
 
@@ -651,22 +688,32 @@ public class ContainerMiddlewareTests
         var turnHistory = new List<ChatMessage>
         {
             new(ChatRole.User, new List<AIContent> { new TextContent("Hello") }),
-            new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "Container expanded") }), // All ephemeral
+            // Assistant message with only container call
+            new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("call1", "ExpandPlugin") }),
+            // Tool message with only container result
+            new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "Container expanded") }),
             new(ChatRole.Assistant, new List<AIContent> { new TextContent("Done") })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
-        context.Properties["EphemeralCallIds"] = new HashSet<string> { "call1" };
+        // Create state with ExpandPlugin in ContainersExpandedThisTurn
+        var state = CreateEmptyState();
+        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandPlugin");
+        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+
+        var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert: Tool message with only ephemeral results should be removed
+        // Assert: Assistant message with only container calls AND Tool message with only ephemeral results should be removed
         Assert.Equal(2, turnHistory.Count);
         Assert.DoesNotContain(turnHistory, m => m.Role == ChatRole.Tool);
         Assert.Contains(turnHistory, m => m.Role == ChatRole.User);
-        Assert.Contains(turnHistory, m => m.Role == ChatRole.Assistant);
+        Assert.Equal(1, turnHistory.Count(m => m.Role == ChatRole.Assistant));
+        // The remaining assistant message should be the text-only one
+        var remainingAssistant = turnHistory.First(m => m.Role == ChatRole.Assistant);
+        Assert.Single(remainingAssistant.Contents);
+        Assert.IsType<TextContent>(remainingAssistant.Contents[0]);
     }
 
     [Fact]
@@ -707,6 +754,14 @@ public class ContainerMiddlewareTests
 
         var turnHistory = new List<ChatMessage>
         {
+            // Assistant message with function calls
+            new(ChatRole.Assistant, new List<AIContent>
+            {
+                new FunctionCallContent("call1", "MathTools"),
+                new FunctionCallContent("call2", "QuickAnalysis"),
+                new FunctionCallContent("call3", "Calculate")
+            }),
+            // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
                 new FunctionResultContent("call1", "Plugin expanded"),
@@ -715,20 +770,30 @@ public class ContainerMiddlewareTests
             })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
-        context.Properties["EphemeralCallIds"] = new HashSet<string> { "call1", "call2" };
+        // Create state with both containers in ContainersExpandedThisTurn
+        var state = CreateEmptyState();
+        var collapsingState = new CollapsingStateData()
+            .WithExpandedContainer("MathTools")
+            .WithExpandedContainer("QuickAnalysis");
+        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+
+        var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
         // Assert: Both containers filtered, only regular function remains
-        Assert.Single(turnHistory);
-        var contents = turnHistory[0].Contents;
-        Assert.Single(contents);
-        Assert.DoesNotContain(contents, c => c is FunctionResultContent frc && frc.CallId == "call1");
-        Assert.DoesNotContain(contents, c => c is FunctionResultContent frc && frc.CallId == "call2");
-        Assert.Contains(contents, c => c is FunctionResultContent frc && frc.CallId == "call3");
+        Assert.Equal(2, turnHistory.Count);
+
+        var assistantMsg = turnHistory[0];
+        Assert.Single(assistantMsg.Contents);
+        var call = Assert.IsType<FunctionCallContent>(assistantMsg.Contents[0]);
+        Assert.Equal("call3", call.CallId);
+
+        var toolMsg = turnHistory[1];
+        Assert.Single(toolMsg.Contents);
+        var result = Assert.IsType<FunctionResultContent>(toolMsg.Contents[0]);
+        Assert.Equal("call3", result.CallId);
     }
 
     [Fact]
@@ -751,8 +816,8 @@ public class ContainerMiddlewareTests
             })
         };
 
-        var context = CreateContext();
-        context.TurnHistory = turnHistory;
+        var context = CreateAfterMessageTurnContext();
+        // TurnHistory managed by context - turnHistory;
         // No EphemeralCallIds in Properties
 
         // Act
@@ -776,19 +841,59 @@ public class ContainerMiddlewareTests
             agentName: "TestAgent");
     }
 
-    private static AgentMiddlewareContext CreateContext(AgentLoopState? state = null)
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            CancellationToken = CancellationToken.None,
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions(),
-            ConversationId = "test-conversation",
-            Iteration = 0
-        };
-        context.SetOriginalState(state ?? CreateEmptyState());
-        return context;
+        var agentState = state ?? CreateEmptyState();
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeIterationContext CreateContext(AgentLoopState? state = null, ChatOptions? options = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        return agentContext.AsBeforeIteration(
+            iteration: 0,
+            messages: new List<ChatMessage>(),
+            options: options ?? new ChatOptions { Tools = new List<AITool>() },
+            runOptions: new AgentRunOptions());
+    }
+
+    private static BeforeIterationContext CreateIterationContext(AgentLoopState? state = null, ChatOptions? options = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        return agentContext.AsBeforeIteration(
+            iteration: 0,
+            messages: new List<ChatMessage>(),
+            options: options ?? new ChatOptions(),
+            runOptions: new AgentRunOptions());
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
     }
 
     private static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(

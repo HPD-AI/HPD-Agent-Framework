@@ -1,7 +1,9 @@
 using HPD.Agent;
 using HPD.Agent.Middleware;
+using HPD.Agent.Tests.Middleware.V2;
 using Microsoft.Extensions.AI;
 using Xunit;
+using static HPD.Agent.Tests.Middleware.V2.MiddlewareTestHelpers;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -28,10 +30,10 @@ public class AgentMiddlewarePipelineTests
 
         // Simulate LLM call
         executionLog.Add("LLM");
-        context.Response = new ChatMessage(ChatRole.Assistant, "Response");
 
-        // Act - After phase
-        await pipeline.ExecuteAfterIterationAsync(context, CancellationToken.None);
+        // Act - After phase - Create AfterIterationContext for this hook
+        var afterContext = MiddlewareTestHelpers.CreateAfterIterationContext();
+        await pipeline.ExecuteAfterIterationAsync(afterContext, CancellationToken.None);
 
         // Assert - Before executes in order, After executes in REVERSE order
         Assert.Equal(new[]
@@ -51,7 +53,7 @@ public class AgentMiddlewarePipelineTests
     {
         // Arrange
         var context = CreateContext();
-        context.Options = new ChatOptions { Instructions = "Base" };
+        // Options set in constructor
 
         var middleware1 = new InstructionAppendingMiddleware(" + M1");
         var middleware2 = new InstructionAppendingMiddleware(" + M2");
@@ -78,7 +80,7 @@ public class AgentMiddlewarePipelineTests
 
         // Assert
         Assert.True(context.SkipLLMCall);
-        Assert.NotNull(context.Response); // Middleware should provide cached response
+        Assert.NotNull(context.OverrideResponse); // V2: Middleware provides override response
     }
 
     [Fact]
@@ -96,11 +98,10 @@ public class AgentMiddlewarePipelineTests
 
         // Simulate LLM call
         modifications.Add("LLM-executed");
-        context.Response = new ChatMessage(ChatRole.Assistant, "Response");
-        context.ToolCalls = new[] { new FunctionCallContent("call_1", "func1") };
 
-        // Act - After phase
-        await pipeline.ExecuteAfterIterationAsync(context, CancellationToken.None);
+        // Act - After phase - Create AfterIterationContext
+        var afterContext = MiddlewareTestHelpers.CreateAfterIterationContext();
+        await pipeline.ExecuteAfterIterationAsync(afterContext, CancellationToken.None);
 
         // Assert
         Assert.Equal(new[]
@@ -122,14 +123,28 @@ public class AgentMiddlewarePipelineTests
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
 
         // Simulate LLM response with NO tool calls (final iteration)
-        context.Response = new ChatMessage(ChatRole.Assistant, "Final response");
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
+
+
+        var afterContext = MiddlewareTestHelpers.CreateAfterIterationContext(
+
+
+            iteration: 0,
+
+
+            toolResults: new List<FunctionResultContent>()); // Empty = final
+
+
 
         // Act
-        await pipeline.ExecuteAfterIterationAsync(context, CancellationToken.None);
+
+
+        await pipeline.ExecuteAfterIterationAsync(afterContext, CancellationToken.None);
 
         // Assert
-        Assert.True(context.IsFinalIteration);
+
+
+        // V2: Check if final iteration by toolResults count
+        Assert.Empty(afterContext.ToolResults);
         Assert.True(signalSet, "Middleware should have detected final iteration");
     }
 
@@ -144,14 +159,28 @@ public class AgentMiddlewarePipelineTests
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
 
         // Simulate LLM response WITH tool calls (not final)
-        context.Response = new ChatMessage(ChatRole.Assistant, "Response with tools");
-        context.ToolCalls = new[] { new FunctionCallContent("call_1", "func1") };
+
+
+        var afterContext = MiddlewareTestHelpers.CreateAfterIterationContext(
+
+
+            iteration: 0,
+
+
+            toolResults: new List<FunctionResultContent> { new FunctionResultContent("call1", "result") });
+
+
 
         // Act
-        await pipeline.ExecuteAfterIterationAsync(context, CancellationToken.None);
+
+
+        await pipeline.ExecuteAfterIterationAsync(afterContext, CancellationToken.None);
 
         // Assert
-        Assert.False(context.IsFinalIteration);
+
+
+        // V2: Check if NOT final iteration by toolResults count
+        Assert.NotEmpty(afterContext.ToolResults);
         Assert.False(signalSet, "Middleware should NOT signal on non-final iteration");
     }
 
@@ -159,16 +188,18 @@ public class AgentMiddlewarePipelineTests
     public async Task Middleware_HandlesNullOptions_Gracefully()
     {
         // Arrange
+        // V2: Options is always provided in BeforeIterationContext (never null)
+        // Test that middleware handles existing options correctly
+
         var context = CreateContext();
-        context.Options = null; // Test with null options
         var middleware = new InstructionAppendingMiddleware(" + Modified");
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
 
         // Act
         await pipeline.ExecuteBeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - No options, so no modification should occur (no exception)
-        Assert.Null(context.Options);
+        // Assert - V2 always has Options
+        Assert.NotNull(context.Options);
     }
 
     [Fact]
@@ -203,8 +234,9 @@ public class AgentMiddlewarePipelineTests
         var middleware2 = new TestMiddleware("M2", executionLog);
 
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware1, middleware2 });
-        var context = CreateContext();
-        context.ToolCalls = new[] { new FunctionCallContent("call_1", "func1") };
+        var toolCalls = new[] { new FunctionCallContent("call_1", "func1") };
+
+        var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls.ToList());
 
         // Act
         await pipeline.ExecuteBeforeToolExecutionAsync(context, CancellationToken.None);
@@ -213,32 +245,20 @@ public class AgentMiddlewarePipelineTests
         Assert.Equal(new[] { "M1-beforeTool", "M2-beforeTool" }, executionLog);
     }
 
-    private static AgentMiddlewareContext CreateContext()
+    private static BeforeIterationContext CreateContext()
     {
-        var state = AgentLoopState.Initial(
+        // V2: Use TestHelpers for consistent context creation
+        return CreateBeforeIterationContext(
+            iteration: 0,
             messages: new List<ChatMessage>(),
-            runId: "test-run-id",
-            conversationId: "test-conv-id",
-            agentName: "TestAgent");
-
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions(),
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(state);
-        return context;
+            options: new ChatOptions { Instructions = "Base" });
     }
 
     //     
     // TEST HELPER MIDDLEWARES
     //     
 
-    private class TestMiddleware : IAgentMiddleware
+    public class TestMiddleware : IAgentMiddleware
     {
         private readonly string _name;
         private readonly List<string> _log;
@@ -250,7 +270,7 @@ public class AgentMiddlewarePipelineTests
         }
 
         public Task BeforeIterationAsync(
-            AgentMiddlewareContext context,
+            BeforeIterationContext context,
             CancellationToken cancellationToken)
         {
             _log.Add($"{_name}-before");
@@ -258,7 +278,7 @@ public class AgentMiddlewarePipelineTests
         }
 
         public Task BeforeToolExecutionAsync(
-            AgentMiddlewareContext context,
+            BeforeToolExecutionContext context,
             CancellationToken cancellationToken)
         {
             _log.Add($"{_name}-beforeTool");
@@ -266,27 +286,28 @@ public class AgentMiddlewarePipelineTests
         }
 
         public Task AfterIterationAsync(
-            AgentMiddlewareContext context,
+            AfterIterationContext context,
             CancellationToken cancellationToken)
         {
             _log.Add($"{_name}-after");
             return Task.CompletedTask;
         }
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        // V2: BeforeSequentialFunctionAsync renamed to BeforeFunctionAsync
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private class InstructionAppendingMiddleware : IAgentMiddleware
+    public class InstructionAppendingMiddleware : IAgentMiddleware
     {
         private readonly string _textToAppend;
 
@@ -296,68 +317,65 @@ public class AgentMiddlewarePipelineTests
         }
 
         public Task BeforeIterationAsync(
-            AgentMiddlewareContext context,
+            BeforeIterationContext context,
             CancellationToken cancellationToken)
         {
-            if (context.Options != null)
-            {
-                context.Options.Instructions += _textToAppend;
-            }
+            // V2: No NULL check needed - Options always available on BeforeIterationContext
+            context.Options.Instructions += _textToAppend;
             return Task.CompletedTask;
         }
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterIterationAsync(AfterIterationContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private class SkipLLMCallMiddleware : IAgentMiddleware
+    public class SkipLLMCallMiddleware : IAgentMiddleware
     {
         public Task BeforeIterationAsync(
-            AgentMiddlewareContext context,
+            BeforeIterationContext context,
             CancellationToken cancellationToken)
         {
-            // Skip LLM call and provide cached response
+            // V2: Skip LLM call and provide cached response
             context.SkipLLMCall = true;
-            context.Response = new ChatMessage(ChatRole.Assistant, "Cached response");
-            context.ToolCalls = Array.Empty<FunctionCallContent>();
+            context.OverrideResponse = new ChatMessage(ChatRole.Assistant, "Cached response");
             return Task.CompletedTask;
         }
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterIterationAsync(AfterIterationContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private class ContextModificationTrackingMiddleware : IAgentMiddleware
+    public class ContextModificationTrackingMiddleware : IAgentMiddleware
     {
         private readonly List<string> _modifications;
 
@@ -367,7 +385,7 @@ public class AgentMiddlewarePipelineTests
         }
 
         public Task BeforeIterationAsync(
-            AgentMiddlewareContext context,
+            BeforeIterationContext context,
             CancellationToken cancellationToken)
         {
             // Pre-invoke: Modify context
@@ -376,35 +394,45 @@ public class AgentMiddlewarePipelineTests
             return Task.CompletedTask;
         }
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public Task AfterIterationAsync(
-            AgentMiddlewareContext context,
+
+
+            AfterIterationContext context,
+
+
             CancellationToken cancellationToken)
+
+
         {
-            // Post-invoke: Check response
-            if (context.Response != null)
+
+
+            // Post-invoke: V2 context has tool results, not response
+
+
+            if (context.ToolResults != null)
             {
                 _modifications.Add("post-invoke-response-checked");
             }
             return Task.CompletedTask;
         }
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private class FinalIterationDetectingMiddleware : IAgentMiddleware
+    public class FinalIterationDetectingMiddleware : IAgentMiddleware
     {
         private readonly Action _onFinalIteration;
 
@@ -413,59 +441,108 @@ public class AgentMiddlewarePipelineTests
             _onFinalIteration = onFinalIteration;
         }
 
-        public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
         public Task AfterIterationAsync(
-            AgentMiddlewareContext context,
+
+
+            AfterIterationContext context,
+
+
             CancellationToken cancellationToken)
+
+
         {
-            if (context.IsFinalIteration)
+
+
+            // V2: Check if this is final iteration (no more tool calls)
+
+
+            if (context.ToolResults?.Count == 0)
             {
                 _onFinalIteration();
             }
             return Task.CompletedTask;
         }
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
 
-    private class ThrowingMiddleware : IAgentMiddleware
+    public class ThrowingMiddleware : IAgentMiddleware
     {
-        public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Test exception");
         }
 
-        public Task BeforeToolExecutionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeToolExecutionAsync(BeforeToolExecutionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterIterationAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterIterationAsync(AfterIterationContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeSequentialFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task AfterMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+        public Task AfterMessageTurnAsync(AfterMessageTurnContext context, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

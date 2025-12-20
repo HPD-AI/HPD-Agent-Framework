@@ -4,14 +4,14 @@
 ## 🚀 Features
 
 ### Core Operations
-- ✅ **ReadFile** - Read file contents with optional line ranges
-- ✅ **WriteFile** - Create or update files with permission control
-- ✅ **ListDirectory** - Browse directory contents recursively
-- ✅ **EditFile** - Smart file editing with diff preview (inspired by Gemini CLI)
+-  **ReadFile** - Read file contents with optional line ranges
+-  **WriteFile** - Create or update files with permission control
+-  **ListDirectory** - Browse directory contents recursively
+-  **EditFile** - Smart file editing with diff preview (inspired by Gemini CLI)
 
 ### Advanced Search
-- ✅ **FindFiles** - Glob pattern matching (`**/*.cs`, `src/**/*.json`)
-- ✅ **SearchContent** - Regex search across files (grep-like)
+-  **FindFiles** - Glob pattern matching (`**/*.cs`, `src/**/*.json`)
+-  **SearchContent** - Regex search across files (grep-like)
 
 ### Safety Features
 - 🔒 **Workspace isolation** - All operations restricted to workspace root
@@ -325,7 +325,7 @@ public Task<string> FindFiles(...) { }
 All operations are validated against the workspace root:
 
 ```csharp
-// ✅ Allowed: /workspace/src/file.txt
+//  Allowed: /workspace/src/file.txt
 // ❌ Blocked: /etc/passwd
 // ❌ Blocked: ../../../etc/passwd
 ```

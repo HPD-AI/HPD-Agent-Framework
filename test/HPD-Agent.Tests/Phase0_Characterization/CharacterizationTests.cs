@@ -99,6 +99,9 @@ public class CharacterizationTests : AgentTestBase
                 args: new Dictionary<string, object?> { ["input"] = "same_value" });
         }
 
+        // V2: Add final response for after circuit breaker triggers
+        fakeLLM.EnqueueTextResponse("Circuit breaker triggered");
+
         // Create a tool that always fails
         var failingTool = AIFunctionFactory.Create(
             (string input) =>
@@ -280,6 +283,9 @@ public class CharacterizationTests : AgentTestBase
                 callId: $"call_{i}",
                 args: new Dictionary<string, object?> { ["attempt"] = i });
         }
+
+        // V2: Add final response for after error tracking triggers termination
+        fakeLLM.EnqueueTextResponse("Maximum consecutive errors exceeded");
 
         // Create a tool that always throws exceptions
         var errorTool = AIFunctionFactory.Create(

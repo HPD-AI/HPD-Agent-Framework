@@ -35,14 +35,18 @@ internal class MiddlewareScopeMetadata
     }
 
     /// <summary>
-    /// Determines if this middleware should apply to the given context.
+    /// Determines if this middleware should apply to the given BeforeFunction context.
     /// </summary>
-    public bool AppliesTo(AgentMiddlewareContext context)
+    public bool AppliesTo(BeforeFunctionContext context)
     {
+        // Handle unknown functions (Function can be null)
         var functionName = context.Function?.Name;
         var toolName = context.PluginName;
         var skillName = context.SkillName;
-        var isSkillContainer = context.IsSkillContainer;
+
+        // Check if this is a skill container by looking at AdditionalProperties
+        var isSkillContainer = context.Function?.AdditionalProperties?.ContainsKey("IsSkillContainer") == true &&
+                               context.Function.AdditionalProperties["IsSkillContainer"] is true;
 
         return Scope switch
         {
@@ -53,11 +57,44 @@ internal class MiddlewareScopeMetadata
 
             MiddlewareScope.Skill =>
                 // Apply if this function IS the skill container itself
-                (isSkillContainer && string.Equals(Target, functionName, StringComparison.Ordinal)) ||
+                (isSkillContainer && !string.IsNullOrEmpty(functionName) && string.Equals(Target, functionName, StringComparison.Ordinal)) ||
                 // OR if this function is called FROM this skill (via mapping)
                 (!string.IsNullOrEmpty(skillName) && string.Equals(Target, skillName, StringComparison.Ordinal)),
 
-            MiddlewareScope.Function => string.Equals(Target, functionName, StringComparison.Ordinal),
+            MiddlewareScope.Function => !string.IsNullOrEmpty(functionName) && string.Equals(Target, functionName, StringComparison.Ordinal),
+
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Determines if this middleware should apply to the given AfterFunction context.
+    /// </summary>
+    public bool AppliesTo(AfterFunctionContext context)
+    {
+        // Handle unknown functions (Function can be null)
+        var functionName = context.Function?.Name;
+        var toolName = context.PluginName;
+        var skillName = context.SkillName;
+
+        // Check if this is a skill container by looking at AdditionalProperties
+        var isSkillContainer = context.Function?.AdditionalProperties?.ContainsKey("IsSkillContainer") == true &&
+                               context.Function.AdditionalProperties["IsSkillContainer"] is true;
+
+        return Scope switch
+        {
+            MiddlewareScope.Global => true,
+
+            MiddlewareScope.Plugin => !string.IsNullOrEmpty(toolName) &&
+                                       string.Equals(Target, toolName, StringComparison.Ordinal),
+
+            MiddlewareScope.Skill =>
+                // Apply if this function IS the skill container itself
+                (isSkillContainer && !string.IsNullOrEmpty(functionName) && string.Equals(Target, functionName, StringComparison.Ordinal)) ||
+                // OR if this function is called FROM this skill (via mapping)
+                (!string.IsNullOrEmpty(skillName) && string.Equals(Target, skillName, StringComparison.Ordinal)),
+
+            MiddlewareScope.Function => !string.IsNullOrEmpty(functionName) && string.Equals(Target, functionName, StringComparison.Ordinal),
 
             _ => false
         };
@@ -140,9 +177,18 @@ public static class MiddlewareScopeExtensions
     }
 
     /// <summary>
-    /// Checks if the middleware should execute in the given context.
+    /// Checks if the middleware should execute in the given BeforeFunction context.
     /// </summary>
-    internal static bool ShouldExecute(this IAgentMiddleware middleware, AgentMiddlewareContext context)
+    internal static bool ShouldExecute(this IAgentMiddleware middleware, BeforeFunctionContext context)
+    {
+        var metadata = middleware.GetScopeMetadata();
+        return metadata.AppliesTo(context);
+    }
+
+    /// <summary>
+    /// Checks if the middleware should execute in the given AfterFunction context.
+    /// </summary>
+    internal static bool ShouldExecute(this IAgentMiddleware middleware, AfterFunctionContext context)
     {
         var metadata = middleware.GetScopeMetadata();
         return metadata.AppliesTo(context);

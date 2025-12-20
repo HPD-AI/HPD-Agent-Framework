@@ -26,10 +26,10 @@ All events flow through a **shared channel** and are **streamed in real-time** t
 ### Quick Decision Guide
 
 **Use the default permission Middleware if:**
-- ✅ You need simple approve/deny decisions
-- ✅ You're building a console app or simple UI
-- ✅ You don't need to modify function arguments
-- ✅ Binary permissions are enough
+-  You need simple approve/deny decisions
+-  You're building a console app or simple UI
+-  You don't need to modify function arguments
+-  Binary permissions are enough
 
 **Create a custom permission Middleware if:**
 - 🔧 You need richer decision states (approved with changes, deferred, requires preview)
@@ -561,10 +561,10 @@ case PermissionRequestEvent req:
 ```
 
 **Use default when you need:**
-- ✅ Simple approve/deny decisions
-- ✅ Basic permission storage (always allow, always deny, ask)
-- ✅ Console or simple UI prompts
-- ✅ Low complexity permission logic
+-  Simple approve/deny decisions
+-  Basic permission storage (always allow, always deny, ask)
+-  Console or simple UI prompts
+-  Low complexity permission logic
 
 ### Custom Permission Middlewares: For Advanced Scenarios
 
@@ -730,7 +730,7 @@ See the [Custom Permission Events](#custom-permission-events) section for a full
 
 ## Key Features
 
-### ✅ Real-Time Streaming
+###  Real-Time Streaming
 Events are visible to handlers **WHILE** Middlewares are executing (not after):
 
 ```
@@ -743,7 +743,7 @@ T4: Handler sends response
 T5: Middleware receives response and unblocks
 ```
 
-### ✅ Zero Dependencies
+###  Zero Dependencies
 Middlewares don't need dependency injection:
 
 ```csharp
@@ -757,7 +757,7 @@ public class MyMiddleware : IAIFunctionMiddleware
 }
 ```
 
-### ✅ Protocol Agnostic
+###  Protocol Agnostic
 One Middleware works with **all** protocols:
 
 ```csharp
@@ -769,7 +769,7 @@ One Middleware works with **all** protocols:
 // - Any future protocol!
 ```
 
-### ✅ Thread-Safe
+###  Thread-Safe
 Multiple Middlewares can emit events concurrently:
 
 ```csharp

@@ -96,7 +96,7 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
     /// Checks if we're already at threshold to prevent wasted LLM calls.
     /// </summary>
     public Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Skip check on first iteration (no previous errors to check)
@@ -120,7 +120,7 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
     /// Counts any errors and updates total error count.
     /// </summary>
     public Task AfterIterationAsync(
-        AgentMiddlewareContext context,
+        AfterIterationContext context,
         CancellationToken cancellationToken)
     {
         // If no tool results, nothing to analyze
@@ -204,17 +204,19 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
     /// Triggers termination by setting termination flag and reason in context.
     /// Emits event for observability.
     /// </summary>
-    private void TriggerTermination(AgentMiddlewareContext context, int totalErrorCount)
+    private void TriggerTermination(HookContext context, int totalErrorCount)
     {
-        // Signal termination
-        context.Properties["IsTerminated"] = true;
-
         // Format termination message with current counts
         var message = TerminationMessageTemplate
             .Replace("{totalErrors}", totalErrorCount.ToString())
             .Replace("{maxErrors}", MaxTotalErrors.ToString());
 
-        context.Properties["TerminationReason"] = message;
+        // Signal termination via state update
+        context.UpdateState(s => s with
+        {
+            IsTerminated = true,
+            TerminationReason = message
+        });
 
         // Emit event for observability
         // Emit TextDeltaEvent for user visibility (matching original behavior)
@@ -234,7 +236,7 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
                 AgentName: context.AgentName,
                 TotalErrorCount: totalErrorCount,
                 MaxTotalErrors: MaxTotalErrors,
-                Iteration: context.Iteration,
+                Iteration: 0, // V2 TODO: Not all contexts have Iteration
                 Timestamp: DateTimeOffset.UtcNow));
         }
         catch (InvalidOperationException)

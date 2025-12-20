@@ -51,8 +51,8 @@ public class DocumentHandlingMiddleware : IAgentMiddleware
     /// Called before processing a user message turn.
     /// Checks for DataContent, UriContent, or HostedFileContent in messages and processes them if present.
     /// </summary>
-    public async Task BeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+    public async Task BeforeIterationAsync(
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Extract document content from all messages
@@ -71,7 +71,7 @@ public class DocumentHandlingMiddleware : IAgentMiddleware
     /// <summary>
     /// Extract document content from messages (DataContent, UriContent, HostedFileContent).
     /// </summary>
-    private IEnumerable<AIContent> ExtractDocumentContents(AgentMiddlewareContext context)
+    private IEnumerable<AIContent> ExtractDocumentContents(BeforeIterationContext context)
     {
         if (context.Messages == null)
             return Enumerable.Empty<AIContent>();

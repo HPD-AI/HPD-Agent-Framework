@@ -47,7 +47,7 @@ public class ClientToolMiddlewareTests
                 CreateTestPlugin("Plugin2", tools: new[] { CreateTestTool("Tool2") })
             }
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -75,7 +75,7 @@ public class ClientToolMiddlewareTests
             },
             ExpandedContainers = new HashSet<string> { "Plugin1" }
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -105,7 +105,7 @@ public class ClientToolMiddlewareTests
             },
             HiddenTools = new HashSet<string> { "Tool1" }
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -132,7 +132,7 @@ public class ClientToolMiddlewareTests
                 new ContextItem("Current page", "/dashboard", "page")
             }
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -157,7 +157,7 @@ public class ClientToolMiddlewareTests
             ClientToolGroups = new[] { CreateTestPlugin("Plugin1") },
             State = appState
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -180,7 +180,7 @@ public class ClientToolMiddlewareTests
         {
             ClientToolGroups = new[] { CreateTestPlugin("OldPlugin") }
         };
-        context1.Properties["AgentRunInput"] = runInput1;
+        context1.RunOptions.ClientToolInput = runInput1;
         await middleware.BeforeMessageTurnAsync(context1, CancellationToken.None);
 
         // Second call with reset
@@ -190,7 +190,7 @@ public class ClientToolMiddlewareTests
             ClientToolGroups = new[] { CreateTestPlugin("NewPlugin") },
             ResetClientState = true
         };
-        context2.Properties["AgentRunInput"] = runInput2;
+        context2.RunOptions.ClientToolInput = runInput2;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context2, CancellationToken.None);
@@ -212,8 +212,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
-        var context = CreateContext();
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext();
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -242,8 +241,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -272,8 +270,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -293,7 +290,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware(new ClientToolConfig { ValidateSchemaOnRegistration = true });
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         // Create plugin with startCollapsed=true but no description
         var plugin = new ClientToolGroupDefinition(
@@ -304,7 +301,7 @@ public class ClientToolMiddlewareTests
         );
 
         var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
@@ -338,8 +335,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -365,7 +361,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         var skill = new ClientSkillDefinition(
             Name: "CheckoutWorkflow",
@@ -383,7 +379,7 @@ public class ClientToolMiddlewareTests
         );
 
         var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -426,8 +422,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -472,8 +467,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -492,7 +486,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         // Skill references a tool that doesn't exist in the plugin
         var skill = new ClientSkillDefinition(
@@ -511,7 +505,7 @@ public class ClientToolMiddlewareTests
         );
 
         var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act & Assert - should throw because skill references non-existent tool
         await Assert.ThrowsAsync<ArgumentException>(
@@ -523,7 +517,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         // Plugin A has a skill that references a tool in Plugin B
         var skillWithCrossRef = new ClientSkillDefinition(
@@ -556,7 +550,7 @@ public class ClientToolMiddlewareTests
         {
             ClientToolGroups = new[] { ecommercePlugin, paymentPlugin }
         };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act - should succeed because PaymentPlugin.ProcessPayment exists
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -572,7 +566,7 @@ public class ClientToolMiddlewareTests
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
-        var context = CreateContext();
+        var context = CreateBeforeMessageTurnContext();
 
         // Skill references a tool in a plugin that doesn't exist
         var skillWithBadRef = new ClientSkillDefinition(
@@ -594,7 +588,7 @@ public class ClientToolMiddlewareTests
         );
 
         var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
-        context.Properties["AgentRunInput"] = runInput;
+        context.RunOptions.ClientToolInput = runInput;
 
         // Act & Assert - should throw because referenced plugin doesn't exist
         await Assert.ThrowsAsync<ArgumentException>(
@@ -635,8 +629,7 @@ public class ClientToolMiddlewareTests
             MiddlewareState = new MiddlewareState().WithClientTool(state)
         };
 
-        var context = CreateContext(agentState);
-        context.Options = new ChatOptions { Tools = new List<AITool>() };
+        var context = CreateIterationContext(agentState);
 
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
@@ -743,21 +736,40 @@ public class ClientToolMiddlewareTests
     // Helper Methods
     // ============================================
 
-    private static AgentMiddlewareContext CreateContext(AgentLoopState? state = null)
+    private static BeforeMessageTurnContext CreateContext(AgentLoopState? state = null)
     {
         var agentState = state ?? CreateEmptyState();
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            ConversationId = "test-conv-id",
-            Messages = new List<ChatMessage>(),
-            Options = new ChatOptions(),
-            ToolCalls = Array.Empty<FunctionCallContent>(),
-            Iteration = 0,
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(agentState);
-        return context;
+
+        var agentContext = new AgentContext(
+            "TestAgent",
+            "test-conv-id",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        var userMessage = new ChatMessage(ChatRole.User, "test");
+        return agentContext.AsBeforeMessageTurn(
+            userMessage,
+            new List<ChatMessage>(),
+            new AgentRunOptions());
+    }
+
+    private static BeforeIterationContext CreateIterationContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? CreateEmptyState();
+
+        var agentContext = new AgentContext(
+            "TestAgent",
+            "test-conv-id",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        return agentContext.AsBeforeIteration(
+            iteration: 0,
+            messages: new List<ChatMessage>(),
+            options: new ChatOptions { Tools = new List<AITool>() },
+            runOptions: new AgentRunOptions());
     }
 
     private static AgentLoopState CreateEmptyState()
@@ -790,4 +802,52 @@ public class ClientToolMiddlewareTests
             ParametersSchema: JsonDocument.Parse("{}").RootElement
         );
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
+
+    private static BeforeMessageTurnContext CreateBeforeMessageTurnContext(AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var userMessage = new ChatMessage(ChatRole.User, "Test message");
+        var conversationHistory = new List<ChatMessage>();
+        var runOptions = new AgentRunOptions();
+        return agentContext.AsBeforeMessageTurn(userMessage, conversationHistory, runOptions);
+    }
+
 }

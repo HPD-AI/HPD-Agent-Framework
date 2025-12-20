@@ -106,26 +106,26 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Executes the function and formats any errors according to security settings.
+    /// Wraps function execution and formats any errors according to security settings.
     /// </summary>
-    public async ValueTask<object?> ExecuteFunctionAsync(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> next,
+    public async Task<object?> WrapFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler,
         CancellationToken cancellationToken)
     {
         try
         {
-            // Execute next middleware in chain (or actual function)
-            return await next();
+            // Execute next handler in chain
+            return await handler(request);
         }
         catch (Exception ex)
         {
-            // ALWAYS store the full exception for observability/logging
-            // This is available to application code but not sent to the LLM
-            context.FunctionException = ex;
+            // V2 TODO: Store exception somewhere for observability
+            // In V1 this was context.FunctionException, but FunctionRequest doesn't have that
+            // For now, we'll just re-throw the formatted error
 
             // Format error message based on security settings
-            var functionName = context.Function?.Name ?? "Unknown";
+            var functionName = request.Function?.Name ?? "Unknown";
 
             if (_includeDetailedErrors)
             {
@@ -136,7 +136,6 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
             else
             {
                 // Return sanitized error message (secure by default)
-                // Full exception is still available via context.FunctionException
                 return $"Error: Function '{functionName}' failed.";
             }
         }

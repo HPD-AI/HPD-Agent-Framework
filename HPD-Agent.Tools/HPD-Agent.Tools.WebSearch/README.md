@@ -58,13 +58,13 @@ Available AI Functions (all providers):
 
 | Feature | Tavily AI | Brave Search | Bing (SK) |
 |---------|-----------|--------------|-----------|
-| Web Search | ✅ | ✅ | ✅ |
-| News Search | ✅ | ✅ | ✅ |
-| Video Search | ❌ | ✅ | ✅ |
-| Shopping Search | ❌ | ❌ | ✅ |
-| AI Answers | ✅ | ❌ | ❌ |
-| Raw Content | ✅ | ❌ | ❌ |
-| Privacy Focus | ❌ | ✅ | ❌ |
+| Web Search |  |  |  |
+| News Search |  |  |  |
+| Video Search | ❌ |  |  |
+| Shopping Search | ❌ | ❌ |  |
+| AI Answers |  | ❌ | ❌ |
+| Raw Content |  | ❌ | ❌ |
+| Privacy Focus | ❌ |  | ❌ |
 
 ## 🔧 Configuration Examples
 
@@ -166,9 +166,9 @@ public async Task<string> WebSearchAsync(
 ```
 
 **V2 Benefits:**
-- ✅ Compile-time validation of context properties  
-- ✅ Full IntelliSense support for conditions
-- ✅ Type-safe property access
+-  Compile-time validation of context properties  
+-  Full IntelliSense support for conditions
+-  Type-safe property access
 
 ### Provider Detection Logic
 

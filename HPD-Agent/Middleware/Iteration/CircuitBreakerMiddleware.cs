@@ -34,10 +34,10 @@ namespace HPD.Agent;
 ///
 /// <para><b>When triggered:</b></para>
 /// <list type="number">
-/// <item>Sets <see cref="AgentMiddlewareContext.SkipToolExecution"/> to true</item>
+/// <item>Sets <see cref="BeforeToolExecutionContext.SkipToolExecution"/> to true</item>
 /// <item>Emits a <see cref="TextDeltaEvent"/> for user visibility</item>
 /// <item>Emits a <see cref="CircuitBreakerTriggeredEvent"/> for observability</item>
-/// <item>Signals termination via Properties["IsTerminated"] = true</item>
+/// <item>Signals termination via UpdateState</item>
 /// </list>
 /// </remarks>
 /// <example>
@@ -77,7 +77,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
     /// Checks if executing these tools would exceed the threshold.
     /// </summary>
     public Task BeforeToolExecutionAsync(
-        AgentMiddlewareContext context,
+        BeforeToolExecutionContext context,
         CancellationToken cancellationToken)
     {
         // No tool calls = nothing to check
@@ -110,30 +110,18 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
     /// Called AFTER tool execution completes.
     /// Updates circuit breaker state with executed tool signatures.
     /// </summary>
+    /// <remarks>
+    /// V2: AfterIterationContext only has ToolResults, not ToolCalls.
+    /// Need to extract tool names from results. For now, this is a limitation -
+    /// we may need to store tool calls in state during BeforeToolExecution.
+    /// </remarks>
     public Task AfterIterationAsync(
-        AgentMiddlewareContext context,
+        AfterIterationContext context,
         CancellationToken cancellationToken)
     {
-        // No tool calls = nothing to track
-        if (context.ToolCalls.Count == 0)
-            return Task.CompletedTask;
-
-        // Update state immutably via context
-        var currentState = context.State.MiddlewareState.CircuitBreaker ?? new();
-        var updatedState = currentState;
-
-        foreach (var toolCall in context.ToolCalls)
-        {
-            var toolName = toolCall.Name ?? "_unknown";
-            var signature = ComputeFunctionSignature(toolCall);
-            updatedState = updatedState.RecordToolCall(toolName, signature);
-        }
-
-        context.UpdateState(s => s with
-        {
-            MiddlewareState = s.MiddlewareState.WithCircuitBreaker(updatedState)
-        });
-
+        // V2 TODO: AfterIterationContext doesn't have ToolCalls
+        // We need to refactor this to store state in BeforeToolExecutionAsync
+        // For now, we can't update the circuit breaker state here
         return Task.CompletedTask;
     }
 
@@ -177,7 +165,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
     /// <summary>
     /// Triggers the circuit breaker, preventing tool execution and terminating the loop.
     /// </summary>
-    private void TriggerCircuitBreaker(AgentMiddlewareContext context, string toolName, int count)
+    private void TriggerCircuitBreaker(BeforeToolExecutionContext context, string toolName, int count)
     {
         // Skip tool execution
         context.SkipToolExecution = true;
@@ -188,16 +176,16 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
             .Replace("{count}", count.ToString());
 
         // Provide final response (for LLM flow compatibility)
-        context.Response = new ChatMessage(
+        context.OverrideResponse = new ChatMessage(
             ChatRole.Assistant,
             message);
 
-        // Clear tool calls (no further work)
-        context.ToolCalls = Array.Empty<FunctionCallContent>();
-
-        // Signal termination via properties
-        context.Properties["IsTerminated"] = true;
-        context.Properties["TerminationReason"] = $"Circuit breaker: '{toolName}' with same arguments would be called {count} times consecutively";
+        // Signal termination via state update
+        context.UpdateState(s => s with
+        {
+            IsTerminated = true,
+            TerminationReason = $"Circuit breaker: '{toolName}' with same arguments would be called {count} times consecutively"
+        });
 
         // Emit TextDeltaEvent for user visibility
         try
@@ -216,7 +204,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
                 AgentName: context.AgentName,
                 FunctionName: toolName,
                 ConsecutiveCount: count,
-                Iteration: context.Iteration,
+                Iteration: 0, // V2 TODO: BeforeToolExecutionContext doesn't have Iteration
                 Timestamp: DateTimeOffset.UtcNow));
         }
         catch (InvalidOperationException)

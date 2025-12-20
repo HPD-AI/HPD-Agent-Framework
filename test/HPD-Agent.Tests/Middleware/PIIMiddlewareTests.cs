@@ -36,7 +36,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single();
+        var processed = context.ConversationHistory.Single();
         Assert.Contains("[EMAIL_REDACTED]", processed.Text);
         Assert.DoesNotContain("john.doe@example.com", processed.Text);
     }
@@ -61,7 +61,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single();
+        var processed = context.ConversationHistory.Single();
         // Should show first char, mask middle, keep @domain
         Assert.Contains("j***@example.com", processed.Text);
     }
@@ -93,8 +93,8 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context2, CancellationToken.None);
 
         // Assert - same email should produce same hash
-        var hash1 = context1.Messages!.Single().Text;
-        var hash2 = context2.Messages!.Single().Text;
+        var hash1 = context1.ConversationHistory.Single().Text;
+        var hash2 = context2.ConversationHistory.Single().Text;
         Assert.Equal(hash1, hash2);
         Assert.Contains("<email_hash:", hash1);
     }
@@ -119,7 +119,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.DoesNotContain("@", processed);
         Assert.Equal(2, CountOccurrences(processed, "[EMAIL_REDACTED]"));
     }
@@ -172,7 +172,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("***", processed);
         Assert.Contains("1111", processed); // Should keep last 4 digits
     }
@@ -198,7 +198,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert - message should pass through unchanged
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("1234567890123456", processed);
     }
 
@@ -249,7 +249,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("[SSN_REDACTED]", processed);
         Assert.DoesNotContain("123-45-6789", processed);
     }
@@ -278,7 +278,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("***", processed);
         Assert.Contains("4567", processed); // Should keep last 4 digits
     }
@@ -307,7 +307,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.DoesNotContain("192.168.1.1", processed);
         Assert.Contains("<ipaddress_hash:", processed);
     }
@@ -336,7 +336,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("test@test.com", processed);
     }
 
@@ -365,7 +365,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("[EMPLOYEEID_REDACTED]", processed);
         Assert.DoesNotContain("EMP-123456", processed);
     }
@@ -411,7 +411,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert - message should pass through
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         Assert.Contains("test@test.com", processed);
     }
 
@@ -444,7 +444,7 @@ public class PIIMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var processed = context.Messages!.Single().Text!;
+        var processed = context.ConversationHistory.Single().Text!;
         if (expectedValid)
         {
             Assert.Contains("[CREDITCARD_REDACTED]", processed);
@@ -459,22 +459,27 @@ public class PIIMiddlewareTests
     // HELPER METHODS
     //      
 
-    private static AgentMiddlewareContext CreateContext(IList<ChatMessage> messages)
+    private static BeforeMessageTurnContext CreateContext(IList<ChatMessage> messages)
     {
-        var context = new AgentMiddlewareContext
-        {
-            AgentName = "TestAgent",
-            Messages = messages,
-            Options = new ChatOptions(),
-            ConversationId = "test-conversation",
-            CancellationToken = CancellationToken.None
-        };
-        context.SetOriginalState(AgentLoopState.Initial(
+        var state = AgentLoopState.Initial(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
-            agentName: "TestAgent"));
-        return context;
+            agentName: "TestAgent");
+
+        var agentContext = new AgentContext(
+            agentName: "TestAgent",
+            conversationId: "test-conversation",
+            state,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+
+        // PIIMiddleware uses BeforeMessageTurnAsync, so create the appropriate context
+        var userMessage = new ChatMessage(ChatRole.User, "test");
+        return agentContext.AsBeforeMessageTurn(
+            userMessage,
+            new List<ChatMessage>(messages),
+            new AgentRunOptions());
     }
 
     private static int CountOccurrences(string text, string pattern)
@@ -488,4 +493,42 @@ public class PIIMiddlewareTests
         }
         return count;
     }
+
+    private static AgentContext CreateAgentContext(AgentLoopState? state = null)
+    {
+        var agentState = state ?? AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            agentState,
+            new BidirectionalEventCoordinator(),
+            CancellationToken.None);
+    }
+
+    private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
+        ChatMessage? response = null,
+        List<FunctionCallContent>? toolCalls = null,
+        AgentLoopState? state = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        response ??= new ChatMessage(ChatRole.Assistant, []);
+        toolCalls ??= new List<FunctionCallContent>();
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+    }
+
+    private static AfterMessageTurnContext CreateAfterMessageTurnContext(
+        AgentLoopState? state = null,
+        List<ChatMessage>? turnHistory = null)
+    {
+        var agentContext = CreateAgentContext(state);
+        var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
+        turnHistory ??= new List<ChatMessage>();
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
 }

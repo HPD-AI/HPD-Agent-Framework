@@ -5,6 +5,7 @@ using System.Text;
 using HPD.Agent.Middleware;
 using HPD.Agent.Collapsing;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace HPD.Agent;
 
@@ -64,6 +65,8 @@ public class ContainerMiddleware : IAgentMiddleware
 
     private readonly ToolVisibilityManager _visibilityManager;
     private readonly CollapsingConfig _config;
+    private readonly Microsoft.Extensions.Logging.ILogger<ContainerMiddleware>? _logger;
+    private readonly IList<AITool> _initialTools; // V2: Store for container detection
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
     // CONSTRUCTOR
@@ -75,10 +78,12 @@ public class ContainerMiddleware : IAgentMiddleware
     /// <param name="initialTools">All available tools for the agent</param>
     /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithTools (always visible)</param>
     /// <param name="config">Container configuration (optional, defaults to enabled)</param>
+    /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerMiddleware(
         IList<AITool> initialTools,
         ImmutableHashSet<string> explicitlyRegisteredPlugins,
-        CollapsingConfig? config = null)
+        CollapsingConfig? config = null,
+        Microsoft.Extensions.Logging.ILogger<ContainerMiddleware>? logger = null)
     {
         if (initialTools == null)
             throw new ArgumentNullException(nameof(initialTools));
@@ -92,6 +97,8 @@ public class ContainerMiddleware : IAgentMiddleware
         _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredPlugins);
 
         _config = config ?? new CollapsingConfig { Enabled = true };
+        _logger = logger;
+        _initialTools = initialTools; // V2: Store for container detection
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -104,7 +111,7 @@ public class ContainerMiddleware : IAgentMiddleware
     /// 2. InjectsSystemPrompt for active containers into system prompt
     /// </summary>
     public Task BeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Skip if disabled or no tools
@@ -118,20 +125,25 @@ public class ContainerMiddleware : IAgentMiddleware
         var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
+        // STEP 0: Filter [Collapse] container calls from messages (IMMEDIATE TRANSPARENCY)
+        //─────────────────────────────────────────────────────────────────────────────────────────────
+
+        // Remove [Collapse] container calls/results from the messages that will be sent to the LLM
+        // This implements "immediate transparency" - containers disappear even within the same turn
+        if (collapsingState.ContainersExpandedThisTurn.Count > 0)
+        {
+            FilterCollapseContainersFromMessages(context, collapsingState.ContainersExpandedThisTurn);
+        }
+
+        //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 1: Filter tool visibility
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
         var expandedContainers = collapsingState.ExpandedContainers;
 
-        // Extract AIFunctions from tools (single-pass for performance)
-        var aiFunctions = new List<AIFunction>(context.Options.Tools.Count);
-        for (int i = 0; i < context.Options.Tools.Count; i++)
-        {
-            if (context.Options.Tools[i] is AIFunction af)
-            {
-                aiFunctions.Add(af);
-            }
-        }
+        // 🔧 CRITICAL FIX: Always filter from _initialTools (complete list), not context.Options.Tools (already filtered)
+        // This ensures that when containers expand, their nested functions become visible in subsequent iterations
+        var aiFunctions = _initialTools.OfType<AIFunction>().ToList();
 
         // Apply visibility rules (unified container tracking)
         var visibleFunctions = _visibilityManager.GetToolsForAgentTurn(
@@ -145,10 +157,9 @@ public class ContainerMiddleware : IAgentMiddleware
             visibleTools.Add(visibleFunctions[i]);
         }
 
-        // Update options with filtered tool list using Clone() + mutation
-        var clonedOptions = context.Options.Clone();
-        clonedOptions.Tools = visibleTools;
-        context.Options = clonedOptions;
+        // V2: Mutate Options.Tools directly (ChatOptions object is mutable)
+        // The Options property itself is init-only, but the object it references is mutable
+        context.Options.Tools = visibleTools;
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 2: InjectSystemPrompt for active containers
@@ -178,15 +189,16 @@ public class ContainerMiddleware : IAgentMiddleware
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
-    // AFTER ITERATION: Detect container expansions
+    // BEFORE TOOL EXECUTION: Detect container expansions (V2)
     //═════════════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Called after tool execution completes.
-    /// Detects container expansions and updates state with instruction contexts.
+    /// Called before tools execute.
+    /// Detects container expansions from tool calls and updates state with instruction contexts.
+    /// V2: Moved from AfterIteration to BeforeToolExecution to have access to tool calls.
     /// </summary>
-    public Task AfterIterationAsync(
-        AgentMiddlewareContext context,
+    public Task BeforeToolExecutionAsync(
+        BeforeToolExecutionContext context,
         CancellationToken cancellationToken)
     {
         // Skip if disabled or no tool calls
@@ -194,8 +206,9 @@ public class ContainerMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Detect container expansions (unified for plugins and skills)
+        // Use the original DetectContainers method with tool calls from context
         var (containerExpansions, containerInstructions) =
-            DetectContainers(context.ToolCalls, context.Options?.Tools);
+            DetectContainers(context.ToolCalls, _initialTools);
 
         if (containerExpansions.Count == 0)
             return Task.CompletedTask;
@@ -205,10 +218,16 @@ public class ContainerMiddleware : IAgentMiddleware
         {
             var collapsingState = state.MiddlewareState.Collapsing ?? new CollapsingStateData();
 
+            _logger?.LogInformation("BeforeToolExecutionAsync: Before expansion - ExpandedContainers count = {Count}",
+                collapsingState.ExpandedContainers.Count);
+
             // Expand containers (unified - both plugins and skills)
+            // WithExpandedContainer adds to both ExpandedContainers (session) and ContainersExpandedThisTurn (turn-level)
             foreach (var container in containerExpansions)
             {
                 collapsingState = collapsingState.WithExpandedContainer(container);
+                _logger?.LogInformation("BeforeToolExecutionAsync: Added container '{Container}' to ExpandedContainers and ContainersExpandedThisTurn",
+                    container);
             }
 
             // Store container instructions (for SystemPrompt injection)
@@ -217,31 +236,150 @@ public class ContainerMiddleware : IAgentMiddleware
                 collapsingState = collapsingState.WithContainerInstructions(containerName, instructions);
             }
 
+            _logger?.LogInformation("BeforeToolExecutionAsync: After expansion - ExpandedContainers count = {Count}, ContainersExpandedThisTurn count = {TurnCount}",
+                collapsingState.ExpandedContainers.Count,
+                collapsingState.ContainersExpandedThisTurn.Count);
+
             return state with
             {
                 MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState)
             };
         });
 
-        // Mark container results as ephemeral (should not be persisted in history)
-        // AfterMessageTurnAsync will use this to filter results from turnHistory
-        var ephemeralCallIds = new HashSet<string>();
-        foreach (var toolCall in context.ToolCalls)
-        {
-            var function = FindFunctionInList(toolCall.Name, context.Options?.Tools);
-            if (function?.AdditionalProperties?.TryGetValue("IsContainer", out var isContainerVal) == true
-                && isContainerVal is bool isContainer && isContainer)
-            {
-                ephemeralCallIds.Add(toolCall.CallId);
-            }
-        }
-
-        if (ephemeralCallIds.Count > 0)
-        {
-            context.Properties["EphemeralCallIds"] = ephemeralCallIds;
-        }
+        // NOTE: Tool visibility refresh happens automatically in the NEXT BeforeIterationAsync call
+        // because BeforeIterationAsync now filters from _initialTools (complete list) instead of
+        // context.Options.Tools (already filtered list). This ensures expanded functions become visible.
 
         return Task.CompletedTask;
+    }
+
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+    // AFTER ITERATION: No-op (filtering moved to BeforeIterationAsync)
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Called after each iteration completes.
+    /// NOTE: Container filtering happens in BeforeIterationAsync (before messages are sent to LLM).
+    /// This hook is kept for potential future use.
+    /// </summary>
+    public Task AfterIterationAsync(
+        AfterIterationContext context,
+        CancellationToken cancellationToken)
+    {
+        // Container filtering moved to BeforeIterationAsync for immediate transparency
+        return Task.CompletedTask;
+    }
+
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+    // AFTER MESSAGE TURN: Final cleanup (all containers including skills)
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// V2: Removes container function calls and results from the TurnHistory.
+    /// Used in AfterMessageTurnAsync before session persistence.
+    /// Works directly with mutable TurnHistory list from typed context.
+    /// </summary>
+    private void RemoveContainerCallsFromTurnHistory_V2(
+        List<ChatMessage> turnHistory,
+        HashSet<string> containerNames)
+    {
+        if (containerNames.Count == 0)
+            return;
+
+        _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Scanning for containers: {Containers}",
+            string.Join(", ", containerNames));
+
+        // Remove from TurnHistory (this is where messages get added for session persistence)
+        if (turnHistory != null && turnHistory.Count > 0)
+        {
+            _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: TurnHistory has {Count} messages",
+                turnHistory.Count);
+
+            // PASS 1: Collect all container CallIds by scanning Assistant messages
+            var containerCallIds = new HashSet<string>();
+
+            for (int i = 0; i < turnHistory.Count; i++)
+            {
+                var message = turnHistory[i];
+
+                if (message.Role == ChatRole.Assistant)
+                {
+                    // Find container function calls by matching container names
+                    foreach (var content in message.Contents)
+                    {
+                        if (content is FunctionCallContent fcc && containerNames.Contains(fcc.Name))
+                        {
+                            // This is a container call - track its CallId
+                            _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Found container call '{Name}' with CallId '{CallId}'",
+                                fcc.Name, fcc.CallId);
+                            containerCallIds.Add(fcc.CallId);
+                        }
+                    }
+                }
+            }
+
+            _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Collected {Count} container CallIds: {CallIds}",
+                containerCallIds.Count, string.Join(", ", containerCallIds));
+
+            // PASS 2: Remove container calls and results from messages (backwards to safely remove)
+            for (int i = turnHistory.Count - 1; i >= 0; i--)
+            {
+                var message = turnHistory[i];
+
+                if (message.Role == ChatRole.Assistant)
+                {
+                    // Remove container function calls
+                    var nonContainerCalls = message.Contents
+                        .Where(c => c is not FunctionCallContent fcc || !containerNames.Contains(fcc.Name))
+                        .ToList();
+
+                    if (nonContainerCalls.Count < message.Contents.Count)
+                    {
+                        _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Removed {Count} container calls from Assistant message",
+                            message.Contents.Count - nonContainerCalls.Count);
+
+                        if (nonContainerCalls.Count == 0)
+                            turnHistory.RemoveAt(i);
+                        else
+                            turnHistory[i] = new ChatMessage(
+                                ChatRole.Assistant, nonContainerCalls);
+                    }
+                }
+                else if (message.Role == ChatRole.Tool)
+                {
+                    _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Found Tool message with {Count} contents",
+                        message.Contents.Count);
+
+                    // Log all CallIds in this Tool message
+                    foreach (var content in message.Contents)
+                    {
+                        if (content is FunctionResultContent frc)
+                        {
+                            _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Tool message has result with CallId '{CallId}', container CallIds: {ContainerCallIds}",
+                                frc.CallId, string.Join(", ", containerCallIds));
+                        }
+                    }
+
+                    // Remove container function results using the CallIds we collected
+                    var nonContainerResults = message.Contents
+                        .Where(c => c is not FunctionResultContent frc
+                            || !containerCallIds.Contains(frc.CallId))
+                        .ToList();
+
+                    if (nonContainerResults.Count < message.Contents.Count)
+                    {
+                        _logger?.LogInformation("RemoveContainerCallsFromTurnHistory: Removed {Count} container results from Tool message",
+                            message.Contents.Count - nonContainerResults.Count);
+
+                        if (nonContainerResults.Count == 0)
+                            turnHistory.RemoveAt(i);
+                        else
+                            turnHistory[i] = new ChatMessage(
+                                ChatRole.Tool, nonContainerResults);
+                    }
+                }
+            }
+        }
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -250,71 +388,67 @@ public class ContainerMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Called after the message turn completes.
-    /// 1. Filters ephemeral container results from turn history
+    /// 1. Remove any remaining container calls from TurnHistory (before session persistence)
     /// 2. ClearsSystemPrompt injections (if configured to not persist)
     /// </summary>
     public Task AfterMessageTurnAsync(
-        AgentMiddlewareContext context,
+        AfterMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         if (!_config.Enabled)
             return Task.CompletedTask;
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
-        // STEP 1: Filter ephemeral container results from turn history
+        // STEP 1: Final cleanup - remove container calls from TurnHistory before session persistence
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        if (context.TurnHistory != null && context.TurnHistory.Count > 0)
+        var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+
+        _logger?.LogInformation("AfterMessageTurnAsync: ExpandedContainers count = {Count}, ContainersExpandedThisTurn count = {TurnCount}, TurnHistory count = {HistoryCount}",
+            collapsingState.ExpandedContainers.Count,
+            collapsingState.ContainersExpandedThisTurn.Count,
+            context.TurnHistory?.Count ?? 0);
+
+        // Use state-based tracking (thread-safe, flows through context)
+        if (collapsingState.ContainersExpandedThisTurn.Count > 0 && context.TurnHistory != null && context.TurnHistory.Count > 0)
         {
-            // Get ephemeral CallIds marked during AfterIterationAsync
-            if (context.Properties.TryGetValue("EphemeralCallIds", out var ephemeralObj) &&
-                ephemeralObj is HashSet<string> ephemeralCallIds &&
-                ephemeralCallIds.Count > 0)
-            {
-                // Filter turnHistory in-place to remove ephemeral results
-                for (int i = context.TurnHistory.Count - 1; i >= 0; i--)
-                {
-                    var message = context.TurnHistory[i];
+            _logger?.LogInformation("AfterMessageTurnAsync: Removing container calls for: {Containers}",
+                string.Join(", ", collapsingState.ContainersExpandedThisTurn));
 
-                    if (message.Role != ChatRole.Tool)
-                        continue;
+            // Convert ImmutableHashSet to HashSet for the removal method
+            var containersToRemove = collapsingState.ContainersExpandedThisTurn.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                    // Filter out ephemeral function results
-                    var persistentResults = message.Contents
-                        .Where(c => c is not FunctionResultContent frc || !ephemeralCallIds.Contains(frc.CallId))
-                        .ToList();
-
-                    if (persistentResults.Count == 0)
-                    {
-                        // Entire message was ephemeral - remove it
-                        context.TurnHistory.RemoveAt(i);
-                    }
-                    else if (persistentResults.Count < message.Contents.Count)
-                    {
-                        // Some results were ephemeral - update message
-                        context.TurnHistory[i] = new ChatMessage(
-                            ChatRole.Tool,
-                            persistentResults);
-                    }
-                }
-            }
+            // V2: Filter TurnHistory (mutable list in context)
+            RemoveContainerCallsFromTurnHistory_V2(context.TurnHistory, containersToRemove);
+        }
+        else
+        {
+            _logger?.LogInformation("AfterMessageTurnAsync: No containers to remove (none were expanded this turn)");
         }
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 2: ClearSystemPrompt injections (if not configured to persist)
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        // Always clear turn containers (turn-level state)
+        var updatedCollapsing = collapsingState.ClearTurnContainers();
 
-        if (!_config.PersistSystemPromptInjections && collapsingState.ActiveContainerInstructions.Any())
+        // Optionally clear system prompt injections (if configured to not persist)
+        if (!_config.PersistSystemPromptInjections && updatedCollapsing.ActiveContainerInstructions.Any())
         {
-            // Clear instructions at end of message turn (NOT during iteration)
-            // This prevents instructions from leaking across message turns
-            var updatedCollapsing = collapsingState.ClearContainerInstructions();
+            updatedCollapsing = updatedCollapsing.ClearContainerInstructions();
+        }
+
+        // Update state if any changes were made
+        if (collapsingState.ContainersExpandedThisTurn.Count > 0 ||
+            (!_config.PersistSystemPromptInjections && collapsingState.ActiveContainerInstructions.Any()))
+        {
             context.UpdateState(s => s with
             {
                 MiddlewareState = s.MiddlewareState.WithCollapsing(updatedCollapsing)
             });
+
+            _logger?.LogInformation("AfterMessageTurnAsync: Cleared turn-level state - ContainersExpandedThisTurn reset to 0");
         }
 
         return Task.CompletedTask;
@@ -499,6 +633,161 @@ public class ContainerMiddleware : IAgentMiddleware
         for (int i = 0; i < tools.Count; i++)
         {
             if (tools[i] is AIFunction af && af.Name == name)
+                return af;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Filters [Collapse] container calls/results from the messages list in BeforeIterationContext.
+    /// This implements "immediate transparency" - containers disappear even within the same turn.
+    /// Only filters [Collapse] containers, not [Skill] containers.
+    /// </summary>
+    private void FilterCollapseContainersFromMessages(
+        BeforeIterationContext context,
+        ImmutableHashSet<string> containersExpandedThisTurn)
+    {
+        // Identify which containers are [Collapse] vs [Skill]
+        var collapseContainersToFilter = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var containerName in containersExpandedThisTurn)
+        {
+            var containerFunction = FindContainerInInitialTools(containerName);
+            if (containerFunction == null)
+                continue;
+
+            // Check if it's a [Collapse] container (IsCollapse=true OR just IsContainer=true without IsSkill)
+            var isCollapse = containerFunction.AdditionalProperties?.TryGetValue("IsCollapse", out var collapseVal) == true
+                && collapseVal is bool collapseFlag && collapseFlag;
+
+            var isSkill = containerFunction.AdditionalProperties?.TryGetValue("IsSkill", out var skillVal) == true
+                && skillVal is bool skillFlag && skillFlag;
+
+            // Filter if it's a [Collapse] container OR a regular container (not a skill container)
+            if (isCollapse || !isSkill)
+            {
+                collapseContainersToFilter.Add(containerName);
+                _logger?.LogDebug("BeforeIterationAsync: Will filter [Collapse] container '{Container}' from messages (IsCollapse={IsCollapse}, IsSkill={IsSkill})",
+                    containerName, isCollapse, isSkill);
+            }
+        }
+
+        if (collapseContainersToFilter.Count == 0)
+            return;
+
+        _logger?.LogInformation("BeforeIterationAsync: Filtering {Count} [Collapse] containers from messages: {Containers}",
+            collapseContainersToFilter.Count,
+            string.Join(", ", collapseContainersToFilter));
+
+        // First pass: Collect container CallIds
+        var containerCallIds = new HashSet<string>();
+
+        foreach (var message in context.Messages)
+        {
+            if (message.Role == ChatRole.Assistant)
+            {
+                foreach (var content in message.Contents)
+                {
+                    if (content is FunctionCallContent fcc && collapseContainersToFilter.Contains(fcc.Name))
+                    {
+                        containerCallIds.Add(fcc.CallId);
+                        _logger?.LogDebug("BeforeIterationAsync: Found container call '{Name}' with CallId '{CallId}'",
+                            fcc.Name, fcc.CallId);
+                    }
+                }
+            }
+        }
+
+        if (containerCallIds.Count == 0)
+            return;
+
+        _logger?.LogInformation("BeforeIterationAsync: Collected {Count} container CallIds to filter", containerCallIds.Count);
+
+        // Second pass: Remove container calls and results
+        for (int i = context.Messages.Count - 1; i >= 0; i--)
+        {
+            var message = context.Messages[i];
+
+            if (message.Role == ChatRole.Assistant)
+            {
+                // Filter out container function calls
+                var nonContainerContents = message.Contents
+                    .Where(c => c is not FunctionCallContent fcc || !collapseContainersToFilter.Contains(fcc.Name))
+                    .ToList();
+
+                if (nonContainerContents.Count < message.Contents.Count)
+                {
+                    _logger?.LogInformation("BeforeIterationAsync: Removed {Count} container calls from Assistant message",
+                        message.Contents.Count - nonContainerContents.Count);
+
+                    if (nonContainerContents.Count == 0)
+                    {
+                        context.Messages.RemoveAt(i);
+                    }
+                    else
+                    {
+                        context.Messages[i] = new ChatMessage(ChatRole.Assistant, nonContainerContents);
+                    }
+                }
+            }
+            else if (message.Role == ChatRole.Tool)
+            {
+                // Filter out container function results using collected CallIds
+                var nonContainerResults = message.Contents
+                    .Where(c => c is not FunctionResultContent frc || !containerCallIds.Contains(frc.CallId))
+                    .ToList();
+
+                if (nonContainerResults.Count < message.Contents.Count)
+                {
+                    _logger?.LogInformation("BeforeIterationAsync: Removed {Count} container results from Tool message",
+                        message.Contents.Count - nonContainerResults.Count);
+
+                    if (nonContainerResults.Count == 0)
+                    {
+                        context.Messages.RemoveAt(i);
+                    }
+                    else
+                    {
+                        context.Messages[i] = new ChatMessage(ChatRole.Tool, nonContainerResults);
+                    }
+                }
+            }
+        }
+
+        _logger?.LogInformation("BeforeIterationAsync: Filtered {Count} [Collapse] containers from {MessageCount} messages",
+            collapseContainersToFilter.Count, context.Messages.Count);
+    }
+
+    /// <summary>
+    /// Finds a container function by name in the initial tools list.
+    /// Checks both Name and PluginName metadata.
+    /// </summary>
+    private AIFunction? FindContainerInInitialTools(string containerName)
+    {
+        if (string.IsNullOrEmpty(containerName))
+            return null;
+
+        foreach (var tool in _initialTools)
+        {
+            if (tool is not AIFunction af)
+                continue;
+
+            // Check if it's a container
+            var isContainer = af.AdditionalProperties?.TryGetValue("IsContainer", out var val) == true
+                && val is bool b && b;
+
+            if (!isContainer)
+                continue;
+
+            // Check if name matches (either function name or PluginName)
+            if (af.Name == containerName)
+                return af;
+
+            var pluginName = af.AdditionalProperties?.TryGetValue("PluginName", out var pnVal) == true
+                && pnVal is string pn ? pn : null;
+
+            if (pluginName == containerName)
                 return af;
         }
 

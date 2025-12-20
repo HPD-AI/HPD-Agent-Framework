@@ -1,31 +1,26 @@
 using Microsoft.Extensions.AI;
+using System.Runtime.CompilerServices;
 
 namespace HPD.Agent.Middleware;
 
-
-#region Agnet Middleware Pipeline
 /// <summary>
-/// Executes middleware hooks in the correct order for each lifecycle phase.
+/// Executes V2 middleware hooks in the correct order for each lifecycle phase.
 /// Handles Before* hooks in registration order and After* hooks in reverse order.
 /// </summary>
 /// <remarks>
+/// <para><b>V2 Improvements:</b></para>
+/// <list type="bullet">
+/// <item>✅ Typed context passing - each hook gets strongly-typed context</item>
+/// <item>✅ Dual pattern support - automatically routes to simple or streaming LLM hooks</item>
+/// <item>✅ Centralized error routing - OnErrorAsync called in reverse order</item>
+/// <item>✅ Immutable request pattern - preserve original for debugging/retry</item>
+/// </list>
+///
 /// <para><b>Execution Order:</b></para>
 /// <para>
-/// Before* hooks run in registration order (first registered = first executed).
-/// After* hooks run in reverse order (last registered = first executed, like stack unwinding).
-/// </para>
-///
-/// <para><b>Error Handling:</b></para>
-/// <para>
-/// Exceptions in Before* hooks stop the chain and propagate immediately.
-/// After* hooks always run (even if the operation failed), to allow cleanup.
-/// </para>
-///
-/// <para><b>Short-Circuiting:</b></para>
-/// <para>
-/// Middlewares can set context flags (SkipLLMCall, SkipToolExecution, BlockFunctionExecution)
-/// to prevent execution. The pipeline continues to run remaining Before* hooks, but the
-/// actual operation is skipped.
+/// Before* hooks run in registration order (first registered = first executed).<br/>
+/// After* hooks run in reverse order (last registered = first executed, like stack unwinding).<br/>
+/// OnErrorAsync runs in reverse order (error unwinding).
 /// </para>
 /// </remarks>
 public class AgentMiddlewarePipeline
@@ -33,50 +28,28 @@ public class AgentMiddlewarePipeline
     private readonly IReadOnlyList<IAgentMiddleware> _middlewares;
     private readonly IReadOnlyList<IAgentMiddleware> _reversedMiddlewares;
 
-    /// <summary>
-    /// Creates a new middleware pipeline with the given middlewares.
-    /// </summary>
-    /// <param name="middlewares">Middlewares in registration order</param>
     public AgentMiddlewarePipeline(IEnumerable<IAgentMiddleware> middlewares)
     {
         _middlewares = middlewares?.ToList() ?? throw new ArgumentNullException(nameof(middlewares));
         _reversedMiddlewares = _middlewares.Reverse().ToList();
     }
 
-    /// <summary>
-    /// Creates a new middleware pipeline with the given middlewares.
-    /// </summary>
-    /// <param name="middlewares">Middlewares in registration order</param>
     public AgentMiddlewarePipeline(IReadOnlyList<IAgentMiddleware> middlewares)
     {
         _middlewares = middlewares ?? throw new ArgumentNullException(nameof(middlewares));
         _reversedMiddlewares = _middlewares.Reverse().ToList();
     }
 
-    /// <summary>
-    /// Returns true if there are no middlewares in the pipeline.
-    /// </summary>
     public bool IsEmpty => _middlewares.Count == 0;
-
-    /// <summary>
-    /// Number of middlewares in the pipeline.
-    /// </summary>
     public int Count => _middlewares.Count;
-
-    /// <summary>
-    /// Gets all middlewares in the pipeline (registration order).
-    /// </summary>
     public IReadOnlyList<IAgentMiddleware> Middlewares => _middlewares;
 
-    //     
-    // MESSAGE TURN LEVEL
-    //     
+    //
+    // TURN LEVEL
+    //
 
-    /// <summary>
-    /// Executes BeforeMessageTurnAsync on all middlewares in registration order.
-    /// </summary>
     public async Task ExecuteBeforeMessageTurnAsync(
-        AgentMiddlewareContext context,
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
@@ -86,12 +59,8 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    /// <summary>
-    /// Executes AfterMessageTurnAsync on all middlewares in reverse order.
-    /// Always runs even if earlier operations failed.
-    /// </summary>
     public async Task ExecuteAfterMessageTurnAsync(
-        AgentMiddlewareContext context,
+        AfterMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         List<Exception>? exceptions = null;
@@ -100,128 +69,119 @@ public class AgentMiddlewarePipeline
         {
             try
             {
-                // Don't throw on cancellation in After* hooks - allow cleanup
                 await middleware.AfterMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // Collect exceptions but continue running other After* hooks
                 exceptions ??= new List<Exception>();
                 exceptions.Add(ex);
             }
         }
 
-        // Throw aggregate if any After* hooks failed
         if (exceptions != null)
-        {
-            throw new AggregateException(
-                "One or more AfterMessageTurn middleware hooks failed",
-                exceptions);
-        }
+            throw new AggregateException("One or more After* hooks failed", exceptions);
     }
 
-    //     
+    //
     // ITERATION LEVEL
-    //     
+    //
 
-    /// <summary>
-    /// Executes BeforeIterationAsync on all middlewares in registration order.
-    /// </summary>
     public async Task ExecuteBeforeIterationAsync(
-        AgentMiddlewareContext context,
+        BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await middleware.BeforeIterationAsync(context, cancellationToken).ConfigureAwait(false);
-
-            // If middleware signaled to skip LLM, we still run remaining Before* hooks
-            // but the actual LLM call will be skipped
         }
     }
 
     /// <summary>
-    /// Executes the LLM call through the middleware pipeline with full streaming control.
-    /// Middleware chains execute in REVERSE order (last registered = outermost layer).
+    /// Executes WrapModelCall hooks using DUAL PATTERN (simple or streaming).
+    /// Automatically routes to streaming variant if middleware provides it.
     /// </summary>
-    /// <remarks>
-    /// <para><b>Onion Architecture:</b></para>
-    /// <para>
-    /// Middlewares wrap each other in reverse registration order:
-    /// - Last registered middleware wraps everything (outermost)
-    /// - First registered middleware is closest to the actual LLM call (innermost)
-    /// </para>
-    ///
-    /// <para><b>Example Flow:</b></para>
-    /// <code>
-    /// // Registration order: [Logging, Caching, Retry]
-    /// // Execution order: Retry → Caching → Logging → LLM
-    ///
-    /// Retry.ExecuteLLMCallAsync(next: () =>
-    ///   Caching.ExecuteLLMCallAsync(next: () =>
-    ///     Logging.ExecuteLLMCallAsync(next: () =>
-    ///       actualLLMCall()
-    ///     )
-    ///   )
-    /// )
-    /// </code>
-    ///
-    /// <para><b>Streaming Behavior:</b></para>
-    /// <para>
-    /// Each middleware can intercept, transform, or cache the streaming response.
-    /// Updates flow back through the chain in reverse order.
-    /// </para>
-    /// </remarks>
-    /// <param name="context">The middleware context with full agent state</param>
-    /// <param name="innerCall">The innermost operation (actual LLM call)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Streaming LLM response after passing through all middleware</returns>
-    public IAsyncEnumerable<ChatResponseUpdate> ExecuteLLMCallAsync(
-        AgentMiddlewareContext context,
-        Func<IAsyncEnumerable<ChatResponseUpdate>> innerCall,
+    public async Task<ModelResponse> ExecuteModelCallAsync(
+        ModelRequest request,
+        Func<ModelRequest, Task<ModelResponse>> coreHandler,
         CancellationToken cancellationToken)
     {
-        // Build the pipeline chain in registration order (first registered = outermost)
-        // Loop backwards so that first registered middleware wraps everything
-        Func<IAsyncEnumerable<ChatResponseUpdate>> pipeline = innerCall;
+        // Build handler chain in reverse order (last middleware wraps first)
+        Func<ModelRequest, Task<ModelResponse>> handler = coreHandler;
 
         for (int i = _middlewares.Count - 1; i >= 0; i--)
         {
             var middleware = _middlewares[i];
-            var currentPipeline = pipeline;
+            var previousHandler = handler;
 
-            // Wrap the current pipeline with this middleware's ExecuteLLMCallAsync
-            pipeline = () => middleware.ExecuteLLMCallAsync(context, currentPipeline, cancellationToken);
+            handler = async (req) =>
+            {
+                return await middleware.WrapModelCallAsync(req, previousHandler, cancellationToken)
+                    .ConfigureAwait(false);
+            };
         }
 
-        // Execute the outermost middleware (which will call the next, and so on)
-        return pipeline();
+        return await handler(request).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Executes BeforeToolExecutionAsync on all middlewares in registration order.
+    /// Executes WrapModelCall hooks using STREAMING PATTERN.
+    /// Checks each middleware for streaming support, falls back to simple pattern if null.
     /// </summary>
+    public async IAsyncEnumerable<ChatResponseUpdate> ExecuteModelCallStreamingAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> coreHandler,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // Build handler chain in reverse order (last middleware wraps first)
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler = coreHandler;
+
+        for (int i = _middlewares.Count - 1; i >= 0; i--)
+        {
+            var middleware = _middlewares[i];
+            var previousHandler = handler;
+
+            // Check if middleware provides streaming variant
+            var streamingResult = middleware.WrapModelCallStreamingAsync(
+                request,
+                previousHandler,
+                cancellationToken);
+
+            if (streamingResult != null)
+            {
+                // Middleware provides streaming - use it
+                handler = (req) => middleware.WrapModelCallStreamingAsync(
+                    req,
+                    previousHandler,
+                    cancellationToken) ?? previousHandler(req);
+            }
+            else
+            {
+                // Middleware doesn't provide streaming - convert simple to streaming
+                var prevHandler = previousHandler;
+                handler = (req) => ConvertSimpleToStreamingWrapper(middleware, prevHandler, req, cancellationToken);
+            }
+        }
+
+        await foreach (var update in handler(request).WithCancellation(cancellationToken))
+        {
+            yield return update;
+        }
+    }
+
     public async Task ExecuteBeforeToolExecutionAsync(
-        AgentMiddlewareContext context,
+        BeforeToolExecutionContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await middleware.BeforeToolExecutionAsync(context, cancellationToken).ConfigureAwait(false);
-
-            // If middleware signaled to skip tool execution, we still run remaining Before* hooks
-            // but the actual tool execution will be skipped
         }
     }
 
-    /// <summary>
-    /// Executes AfterIterationAsync on all middlewares in reverse order.
-    /// Always runs even if tool execution failed.
-    /// </summary>
     public async Task ExecuteAfterIterationAsync(
-        AgentMiddlewareContext context,
+        AfterIterationContext context,
         CancellationToken cancellationToken)
     {
         List<Exception>? exceptions = null;
@@ -240,24 +200,15 @@ public class AgentMiddlewarePipeline
         }
 
         if (exceptions != null)
-        {
-            throw new AggregateException(
-                "One or more AfterIteration middleware hooks failed",
-                exceptions);
-        }
+            throw new AggregateException("One or more After* hooks failed", exceptions);
     }
 
     //
     // FUNCTION LEVEL
     //
 
-    /// <summary>
-    /// Executes BeforeParallelBatchAsync on all middlewares in registration order.
-    /// Called ONCE before multiple functions execute in parallel.
-    /// Allows middlewares to handle batch operations (e.g., batch permission checking).
-    /// </summary>
     public async Task ExecuteBeforeParallelBatchAsync(
-        AgentMiddlewareContext context,
+        BeforeParallelBatchContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
@@ -267,127 +218,54 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    /// <summary>
-    /// [DEPRECATED] Use ExecuteBeforeParallelBatchAsync instead.
-    /// </summary>
-    [Obsolete("Use ExecuteBeforeParallelBatchAsync instead.")]
-    public Task ExecuteBeforeParallelFunctionsAsync(
-        AgentMiddlewareContext context,
-        CancellationToken cancellationToken)
-        => ExecuteBeforeParallelBatchAsync(context, cancellationToken);
-
-    /// <summary>
-    /// Executes BeforeFunctionAsync on all middlewares in registration order.
-    /// Runs for ALL functions - both sequential and parallel execution.
-    /// Filters middlewares by Collapse - only executes those that apply to the current function context.
-    /// </summary>
-    /// <returns>True if function should execute, false if blocked by middleware</returns>
-    public async Task<bool> ExecuteBeforeFunctionAsync(
-        AgentMiddlewareContext context,
+    public async Task ExecuteBeforeFunctionAsync(
+        BeforeFunctionContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _middlewares)
         {
-            // Check if middleware should execute based on its Collapse
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Check if middleware should execute based on its scope
             if (!middleware.ShouldExecute(context))
                 continue;
 
-            cancellationToken.ThrowIfCancellationRequested();
             await middleware.BeforeFunctionAsync(context, cancellationToken).ConfigureAwait(false);
-
-            // If any middleware blocks execution, stop the chain immediately
-            // This is different from iteration-level hooks where we continue
-            // the chain but skip the operation. For permissions, we want to
-            // stop as soon as one middleware denies.
-            if (context.BlockFunctionExecution)
-            {
-                return false;
-            }
         }
-
-        return true;
     }
 
-    /// <summary>
-    /// [DEPRECATED] Use ExecuteBeforeFunctionAsync instead.
-    /// </summary>
-    [Obsolete("Use ExecuteBeforeFunctionAsync instead. This method runs for ALL functions, not just sequential.")]
-    public Task<bool> ExecuteBeforeSequentialFunctionAsync(
-        AgentMiddlewareContext context,
-        CancellationToken cancellationToken)
-        => ExecuteBeforeFunctionAsync(context, cancellationToken);
-
-    /// <summary>
-    /// Executes the function call through the middleware pipeline with full control.
-    /// Middleware chains execute in REVERSE order (last registered = outermost layer).
-    /// </summary>
-    /// <remarks>
-    /// <para><b>Onion Architecture:</b></para>
-    /// <para>
-    /// Middlewares wrap each other in reverse registration order:
-    /// - Last registered middleware wraps everything (outermost)
-    /// - First registered middleware is closest to the actual function (innermost)
-    /// </para>
-    ///
-    /// <para><b>Example Flow:</b></para>
-    /// <code>
-    /// // Registration order: [Permissions, Retry, Telemetry]
-    /// // Execution order: Telemetry → Retry → Permissions → Function
-    ///
-    /// Telemetry.ExecuteFunctionAsync(next: () =>
-    ///   Retry.ExecuteFunctionAsync(next: () =>
-    ///     Permissions.ExecuteFunctionAsync(next: () =>
-    ///       actualFunctionExecution()
-    ///     )
-    ///   )
-    /// )
-    /// </code>
-    /// </remarks>
-    /// <param name="context">The middleware context with function info</param>
-    /// <param name="innerCall">The innermost operation (actual function execution)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The function result after passing through all middleware</returns>
-    public ValueTask<object?> ExecuteFunctionAsync(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> innerCall,
+    public async Task<object?> ExecuteFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> coreHandler,
         CancellationToken cancellationToken)
     {
-        // Build the pipeline chain in registration order (first registered = outermost)
-        // Loop backwards so that first registered middleware wraps everything
-        Func<ValueTask<object?>> pipeline = innerCall;
+        // Build handler chain in reverse order (last middleware wraps first)
+        Func<FunctionRequest, Task<object?>> handler = coreHandler;
 
         for (int i = _middlewares.Count - 1; i >= 0; i--)
         {
             var middleware = _middlewares[i];
+            var previousHandler = handler;
 
-            // Check if middleware should execute based on Collapse
-            if (!middleware.ShouldExecute(context))
-                continue;
-
-            var currentPipeline = pipeline;
-
-            // Wrap the current pipeline with this middleware's ExecuteFunctionAsync
-            pipeline = () => middleware.ExecuteFunctionAsync(context, currentPipeline, cancellationToken);
+            handler = async (req) =>
+            {
+                return await middleware.WrapFunctionCallAsync(req, previousHandler, cancellationToken)
+                    .ConfigureAwait(false);
+            };
         }
 
-        // Execute the outermost middleware (which will call the next, and so on)
-        return pipeline();
+        return await handler(request).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Executes AfterFunctionAsync on all middlewares in reverse order.
-    /// Filters middlewares by Collapse - only executes those that apply to the current function context.
-    /// Always runs even if function execution failed.
-    /// </summary>
     public async Task ExecuteAfterFunctionAsync(
-        AgentMiddlewareContext context,
+        AfterFunctionContext context,
         CancellationToken cancellationToken)
     {
         List<Exception>? exceptions = null;
 
         foreach (var middleware in _reversedMiddlewares)
         {
-            // Check if middleware should execute based on its Collapse
+            // Check if middleware should execute based on its scope
             if (!middleware.ShouldExecute(context))
                 continue;
 
@@ -403,152 +281,114 @@ public class AgentMiddlewarePipeline
         }
 
         if (exceptions != null)
-        {
-            throw new AggregateException(
-                "One or more AfterFunction middleware hooks failed",
-                exceptions);
-        }
+            throw new AggregateException("One or more After* hooks failed", exceptions);
     }
 
     //
-    // UPSTREAM EVENT HANDLING
+    // ERROR HANDLING (NEW IN V2)
     //
 
     /// <summary>
-    /// Executes OnUpstreamEventAsync on all middlewares in REVERSE order.
-    /// Upstream events flow back through the pipeline (last registered = first to receive).
+    /// Executes OnErrorAsync hooks in REVERSE order (error unwinding).
+    /// Each hook sees the original error. If a hook throws, the original error is preserved.
     /// </summary>
-    /// <remarks>
-    /// <para><b>Error Handling:</b></para>
-    /// <para>
-    /// Exceptions in upstream handlers are logged but don't stop the chain.
-    /// All middlewares get a chance to handle the upstream event.
-    /// </para>
-    /// </remarks>
-    /// <param name="context">The middleware context</param>
-    /// <param name="upstreamEvent">The upstream event to propagate</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    public async Task ExecuteOnUpstreamEventAsync(
-        AgentMiddlewareContext context,
-        AgentEvent upstreamEvent,
+    public async Task ExecuteOnErrorAsync(
+        ErrorContext context,
         CancellationToken cancellationToken)
     {
         foreach (var middleware in _reversedMiddlewares)
         {
             try
             {
-                await middleware.OnUpstreamEventAsync(context, upstreamEvent, cancellationToken)
-                    .ConfigureAwait(false);
+                await middleware.OnErrorAsync(context, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch
             {
-                // Log but continue - upstream handlers shouldn't crash the pipeline
-                System.Diagnostics.Debug.WriteLine(
-                    $"Upstream handler failed in {middleware.GetType().Name}: {ex.Message}");
+                // Swallow errors in error handlers to preserve original error
+                // Could log this to observability system if needed
             }
         }
     }
 
     //
-    // CONVENIENCE METHODS
+    // HELPER METHODS FOR STREAMING CONVERSION
     //
 
-    /// <summary>
-    /// Wraps a function execution with Before/After hooks.
-    /// Handles BlockFunctionExecution and exception propagation.
-    /// </summary>
-    /// <param name="context">The middleware context (must have function info set)</param>
-    /// <param name="executeFunction">The function to execute if not blocked</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The function result (either from execution or from middleware blocking)</returns>
-    public async Task<object?> ExecuteFunctionWithHooksAsync(
-        AgentMiddlewareContext context,
-        Func<Task<object?>> executeFunction,
-        CancellationToken cancellationToken)
+    private static ChatMessage ConvertUpdatesToMessage(List<ChatResponseUpdate> updates)
     {
-        // Run Before* hooks
-        var shouldExecute = await ExecuteBeforeFunctionAsync(context, cancellationToken)
-            .ConfigureAwait(false);
+        // Combine all text updates
+        var textBuilder = new System.Text.StringBuilder();
+        var toolCalls = new List<FunctionCallContent>();
 
-        if (shouldExecute)
+        foreach (var update in updates)
         {
-            // Execute the actual function
-            // Note: Exception handling is delegated to middleware (e.g., ErrorFormattingMiddleware)
-            // or to the Agent.cs FormatErrorForLLM() fallback.
-            // This ensures consistent, security-aware error formatting.
-            context.FunctionResult = await executeFunction().ConfigureAwait(false);
+            if (update.Contents != null)
+            {
+                foreach (var content in update.Contents)
+                {
+                    if (content is TextContent text)
+                        textBuilder.Append(text.Text);
+                    else if (content is FunctionCallContent toolCall)
+                        toolCalls.Add(toolCall);
+                }
+            }
         }
-        // If blocked, FunctionResult should already be set by the blocking middleware
 
-        // Run After* hooks (always, even if blocked or failed)
-        await ExecuteAfterFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+        var contents = new List<AIContent>();
+        if (textBuilder.Length > 0)
+            contents.Add(new TextContent(textBuilder.ToString()));
+        contents.AddRange(toolCalls);
 
-        return context.FunctionResult;
+        return new ChatMessage(ChatRole.Assistant, contents);
     }
 
-    /// <summary>
-    /// Wraps an iteration with Before/After hooks.
-    /// Handles SkipLLMCall, SkipToolExecution, and exception propagation.
-    /// </summary>
-    /// <param name="context">The middleware context</param>
-    /// <param name="executeLLMCall">The LLM call to execute if not skipped</param>
-    /// <param name="executeTools">The tool execution to run if not skipped</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    public async Task ExecuteIterationWithHooksAsync(
-        AgentMiddlewareContext context,
-        Func<Task> executeLLMCall,
-        Func<Task> executeTools,
-        CancellationToken cancellationToken)
+    private static IReadOnlyList<FunctionCallContent> ExtractToolCalls(ChatMessage message)
     {
-        // BeforeIteration
-        await ExecuteBeforeIterationAsync(context, cancellationToken).ConfigureAwait(false);
+        return message.Contents
+            .OfType<FunctionCallContent>()
+            .ToList();
+    }
 
-        // LLM Call (unless skipped)
-        if (!context.SkipLLMCall)
+    private static async IAsyncEnumerable<ChatResponseUpdate> ConvertSimpleToStreamingWrapper(
+        IAgentMiddleware middleware,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> previousHandler,
+        ModelRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var response = await middleware.WrapModelCallAsync(
+            request,
+            async (r) =>
+            {
+                // Consume streaming and convert to simple response
+                var updates = new List<ChatResponseUpdate>();
+                await foreach (var update in previousHandler(r).WithCancellation(cancellationToken))
+                {
+                    updates.Add(update);
+                }
+
+                // Convert updates to final response
+                var message = ConvertUpdatesToMessage(updates);
+                var toolCalls = ExtractToolCalls(message);
+
+                return new ModelResponse
+                {
+                    Message = message,
+                    ToolCalls = toolCalls,
+                    Error = null
+                };
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        // Convert simple response back to streaming
+        if (response.Error != null)
         {
-            try
-            {
-                await executeLLMCall().ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                context.IterationException = ex;
-            }
+            throw response.Error;
         }
 
-        // BeforeToolExecution (only if LLM succeeded and has tool calls)
-        if (context.IterationException == null && context.ToolCalls.Count > 0)
+        // Emit single update with full message
+        yield return new ChatResponseUpdate
         {
-            await ExecuteBeforeToolExecutionAsync(context, cancellationToken).ConfigureAwait(false);
-
-            // Tool Execution (unless skipped)
-            if (!context.SkipToolExecution)
-            {
-                await executeTools().ConfigureAwait(false);
-            }
-        }
-
-        // AfterIteration (always runs)
-        await ExecuteAfterIterationAsync(context, cancellationToken).ConfigureAwait(false);
+            Contents = response.Message.Contents.ToList()
+        };
     }
 }
-
-/// <summary>
-/// Extension methods for building middleware pipelines from AgentBuilder.
-/// </summary>
-public static class AgentMiddlewarePipelineExtensions
-{
-    /// <summary>
-    /// Creates a middleware pipeline from a list of middlewares.
-    /// </summary>
-    public static AgentMiddlewarePipeline ToPipeline(this IEnumerable<IAgentMiddleware> middlewares)
-        => new AgentMiddlewarePipeline(middlewares);
-
-    /// <summary>
-    /// Creates a middleware pipeline from a list of middlewares.
-    /// </summary>
-    public static AgentMiddlewarePipeline ToPipeline(this IReadOnlyList<IAgentMiddleware> middlewares)
-        => new AgentMiddlewarePipeline(middlewares);
-}
-    
-#endregion

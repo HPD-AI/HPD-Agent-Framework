@@ -966,6 +966,14 @@ public class CollapsingConfig
     public bool PersistSystemPromptInjections { get; set; } = false;
 
     /// <summary>
+    /// Enable automatic error recovery for [Collapse] containers (Container Transparency V2).
+    /// When true, calling a hidden function automatically expands its parent container silently.
+    /// This allows smaller models to work seamlessly without understanding container mechanics.
+    /// Default: true (enabled).
+    /// </summary>
+    public bool EnableErrorRecovery { get; set; } = true;
+
+    /// <summary>
     /// Optional post-expansion instructions for specific MCP servers.
     /// Key = MCP server name (e.g., "filesystem", "github")
     /// Value = Instructions shown to the agent after that server's container is expanded.

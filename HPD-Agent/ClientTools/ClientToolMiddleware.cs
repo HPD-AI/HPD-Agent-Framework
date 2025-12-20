@@ -47,12 +47,10 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// Registration is ATOMIC: if any plugin fails validation (including cross-plugin
     /// skill references), NO plugins are registered. This prevents partial state.
     /// </summary>
-    public Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken ct)
+    public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken ct)
     {
-        // Get AgentRunInput from context (if provided)
-        var runInput = context.Properties.TryGetValue("AgentRunInput", out var input)
-            ? input as AgentRunInput
-            : null;
+        // Get AgentRunInput from RunOptions (if provided)
+        var runInput = context.RunOptions.ClientToolInput;
 
         if (runInput == null)
             return Task.CompletedTask;
@@ -188,7 +186,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// Apply tool visibility based on current state.
     /// Converts Client tool definitions to AIFunction and adds to context.Options.Tools.
     /// </summary>
-    public Task BeforeIterationAsync(AgentMiddlewareContext context, CancellationToken ct)
+    public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken ct)
     {
         var state = context.State.MiddlewareState.ClientTool;
         if (state == null || state.RegisteredPlugins.Count == 0)
@@ -213,11 +211,29 @@ public class ClientToolMiddleware : IAgentMiddleware
         // Clone options and add Client tools
         if (context.Options != null)
         {
-            var existingTools = context.Options.Tools?.ToList() ?? new List<AITool>();
-            existingTools.AddRange(visibleAIFunctions);
-            var clonedOptions = context.Options.Clone();
-            clonedOptions.Tools = existingTools;
-            context.Options = clonedOptions;
+            // V2: Options is mutable - modify Tools collection directly
+            if (context.Options.Tools == null)
+            {
+                context.Options.Tools = new List<AITool>(visibleAIFunctions);
+            }
+            else
+            {
+                var toolsList = context.Options.Tools as IList<AITool>;
+                if (toolsList != null)
+                {
+                    foreach (var tool in visibleAIFunctions)
+                    {
+                        toolsList.Add(tool);
+                    }
+                }
+                else
+                {
+                    // Tools is not a mutable list, need to recreate
+                    var existingTools = context.Options.Tools.ToList();
+                    existingTools.AddRange(visibleAIFunctions);
+                    context.Options.Tools = existingTools;
+                }
+            }
         }
 
         return Task.CompletedTask;
@@ -512,7 +528,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// Intercept Client tool calls - emit request and wait for response.
     /// Detects Client tools by checking IsClientTool in AdditionalProperties.
     /// </summary>
-    public async Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+    public async Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken ct)
     {
         // Check if this is a Client tool
         if (context.Function?.AdditionalProperties?.TryGetValue("IsClientTool", out var isClientTool) != true
@@ -529,7 +545,7 @@ public class ClientToolMiddleware : IAgentMiddleware
             RequestId: requestId,
             ToolName: toolName,
             CallId: context.FunctionCallId ?? string.Empty,
-            Arguments: context.FunctionArguments?.ToDictionary(
+            Arguments: context.Arguments?.ToDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value) ?? new Dictionary<string, object?>(),
             Description: context.Function.Description));
@@ -544,24 +560,24 @@ public class ClientToolMiddleware : IAgentMiddleware
         }
         catch (TimeoutException)
         {
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = HandleTimeout(toolName);
+            context.BlockExecution = true;
+            context.OverrideResult = HandleTimeout(toolName);
             return;
         }
         catch (OperationCanceledException)
         {
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = $"Client tool '{toolName}' was cancelled.";
+            context.BlockExecution = true;
+            context.OverrideResult = $"Client tool '{toolName}' was cancelled.";
             return;
         }
 
         // Block execution (we have the result from Client)
-        context.BlockFunctionExecution = true;
+        context.BlockExecution = true;
 
         if (response.Success)
         {
             // Convert Content to appropriate result format
-            context.FunctionResult = ConvertContentToResult(response.Content);
+            context.OverrideResult = ConvertContentToResult(response.Content);
 
             // Store augmentation for next iteration
             if (response.Augmentation != null)
@@ -579,7 +595,7 @@ public class ClientToolMiddleware : IAgentMiddleware
         }
         else
         {
-            context.FunctionResult = $"Error: {response.ErrorMessage ?? "Unknown error"}";
+            context.OverrideResult = $"Error: {response.ErrorMessage ?? "Unknown error"}";
         }
     }
 

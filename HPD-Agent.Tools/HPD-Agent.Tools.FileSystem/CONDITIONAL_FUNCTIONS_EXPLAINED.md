@@ -39,7 +39,7 @@ public class FileSystemContext : IPluginMetadata
 ```csharp
 public partial class FileSystemPlugin
 {
-    // ✅ Always available (no condition)
+    //  Always available (no condition)
     [AIFunction<FileSystemContext>]
     public Task<string> ReadFile(string path) { ... }
 
@@ -63,9 +63,9 @@ var context = new FileSystemContext(enableSearch: true);
 var functions = pluginManager.CreateAllFunctions(context);
 
 // Result: AI sees ALL 3 functions
-// ✅ ReadFile
-// ✅ FindFiles      ← Available!
-// ✅ SearchContent  ← Available!
+//  ReadFile
+//  FindFiles      ← Available!
+//  SearchContent  ← Available!
 ```
 
 #### **Scenario B: Production (Search Disabled)**
@@ -74,7 +74,7 @@ var context = new FileSystemContext(enableSearch: false);
 var functions = pluginManager.CreateAllFunctions(context);
 
 // Result: AI sees ONLY 1 function
-// ✅ ReadFile
+//  ReadFile
 // ❌ FindFiles      ← Hidden! (condition failed)
 // ❌ SearchContent  ← Hidden! (condition failed)
 ```
@@ -148,24 +148,24 @@ The condition can be more complex than just a single property:
 ```csharp
 [ConditionalFunction("EnableSearch")]
 ```
-✅ Checks if `context.EnableSearch == true`
+ Checks if `context.EnableSearch == true`
 
 ### **Comparison**
 ```csharp
 [ConditionalFunction("MaxFileSize > 1000000")]
 ```
-✅ Only available if max file size > 1MB
+ Only available if max file size > 1MB
 
 ### **Complex Logic**
 ```csharp
 [ConditionalFunction("EnableSearch && AllowAdvanced")]
 ```
-✅ Both conditions must be true
+ Both conditions must be true
 
 ```csharp
 [ConditionalFunction("ProviderCount > 0")]
 ```
-✅ Only available if at least one provider configured
+ Only available if at least one provider configured
 
 ---
 
@@ -243,7 +243,7 @@ Now you can have:
 
 ---
 
-## ✅ Benefits
+##  Benefits
 
 1. **Type-Safe** - Validated at compile time by your source generator
 2. **Zero Runtime Overhead** - Condition evaluated once when creating functions
@@ -258,10 +258,10 @@ Now you can have:
 Your DSL validator ([DSLValidator.cs](../../HPD-Agent.SourceGenerator/Security/DSLValidator.cs)) supports:
 
 ### **Allowed Patterns:**
-- ✅ Property access: `EnableSearch`, `HasProvider`
-- ✅ Comparisons: `Count > 5`, `Size >= 1000`
-- ✅ Boolean logic: `A && B`, `C || D`, `!E`
-- ✅ Complex: `(HasA || HasB) && Count > 0`
+-  Property access: `EnableSearch`, `HasProvider`
+-  Comparisons: `Count > 5`, `Size >= 1000`
+-  Boolean logic: `A && B`, `C || D`, `!E`
+-  Complex: `(HasA || HasB) && Count > 0`
 
 ### **Security Blocked:**
 - ❌ Method calls: `GetType()`, `LoadAssembly()`
@@ -305,7 +305,7 @@ All validated at **compile time** for maximum safety!
 │  4. Create Functions                                        │
 │                                                             │
 │  CreateAllFunctions(context):                              │
-│    - ReadFile: ✅ Always added                             │
+│    - ReadFile:  Always added                             │
 │    - FindFiles: ❌ Skipped (EnableSearch = false)          │
 │    - SearchContent: ❌ Skipped (EnableSearch = false)      │
 └─────────────────┬───────────────────────────────────────────┘
