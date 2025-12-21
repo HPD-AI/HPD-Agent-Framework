@@ -159,9 +159,18 @@ public class AgentUIRenderer
                 case PermissionRequestEvent permissionRequest:
                     RenderPermissionRequest(permissionRequest);
                     break;
-                    
-                case Reasoning reasoning:
-                    RenderReasoning(reasoning);
+
+                case ReasoningMessageStartEvent:
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[dim italic]🧠 Thinking...[/]");
+                    break;
+
+                case ReasoningDeltaEvent delta:
+                    AnsiConsole.Markup($"[dim]{Markup.Escape(delta.Text)}[/]");
+                    break;
+
+                case ReasoningMessageEndEvent:
+                    AnsiConsole.WriteLine();
                     break;
             }
         }
@@ -420,24 +429,5 @@ public class AgentUIRenderer
         .BorderColor(Color.Yellow);
         
         AnsiConsole.Write(panel);
-    }
-    
-    private void RenderReasoning(Reasoning evt)
-    {
-        switch (evt.Phase)
-        {
-            case ReasoningPhase.SessionStart:
-                AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("[dim italic]🧠 Thinking...[/]");
-                break;
-                
-            case ReasoningPhase.Delta when !string.IsNullOrEmpty(evt.Text):
-                AnsiConsole.Markup($"[dim]{Markup.Escape(evt.Text)}[/]");
-                break;
-                
-            case ReasoningPhase.SessionEnd:
-                AnsiConsole.WriteLine();
-                break;
-        }
     }
 }

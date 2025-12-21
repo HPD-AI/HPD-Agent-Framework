@@ -24,7 +24,7 @@ namespace HPD.Agent;
 /// // During execution (3 parallel calls)
 /// GetWeather() → Success → Save pending write
 /// GetNews() → Success → Save pending write
-/// AnalyzeData() → CRASH ❌
+/// AnalyzeData() → CRASH   
 ///
 /// // On resume
 /// Load pending writes → Restore GetWeather and GetNews results

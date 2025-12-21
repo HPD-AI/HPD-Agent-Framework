@@ -74,9 +74,9 @@ Absolute Change = Current Value - Prior Value
 | Line Item | FY 2023 | FY 2024 | $ Change | Interpretation |
 |-----------|---------|---------|----------|-----------------|
 | Revenue | $500,000 | $575,000 | +$75,000 |  Revenue grew |
-| COGS | $300,000 | $345,000 | +$45,000 | ⚠️ COGS grew (check margin) |
+| COGS | $300,000 | $345,000 | +$45,000 |   COGS grew (check margin) |
 | Gross Profit | $200,000 | $230,000 | +$30,000 |  Margin increased |
-| SG&A | $100,000 | $115,000 | +$15,000 | ⚠️ Expenses grew (check efficiency) |
+| SG&A | $100,000 | $115,000 | +$15,000 |   Expenses grew (check efficiency) |
 | Net Income | $60,000 | $69,000 | +$9,000 |  Profitability grew |
 
 **Interpretation Guidelines:**
@@ -88,11 +88,11 @@ Absolute Change = Current Value - Prior Value
 | Zero | No change | Unusual - investigate why |
 
 **Acme Analysis:**
-- Revenue: +$75,000 (growing top line) ✅
-- COGS: +$45,000 (cost growing slower than revenue) ✅
-- Gross Profit: +$30,000 (margin expanding) ✅
-- SG&A: +$15,000 (overhead controlled) ✅
-- Net Income: +$9,000 (profitability improved) ✅
+- Revenue: +$75,000 (growing top line)  
+- COGS: +$45,000 (cost growing slower than revenue)  
+- Gross Profit: +$30,000 (margin expanding)  
+- SG&A: +$15,000 (overhead controlled)  
+- Net Income: +$9,000 (profitability improved)  
 
 ---
 
@@ -112,7 +112,7 @@ Absolute Change = Current Value - Prior Value
 | Revenue | $500,000 | $575,000 | +15.0% |  Strong growth |
 | COGS | $300,000 | $345,000 | +15.0% | ℹ️ Growing in line with revenue |
 | Gross Profit | $200,000 | $230,000 | +15.0% |  Margin stable (same %) |
-| SG&A | $100,000 | $115,000 | +15.0% | ⚠️ Growing in line with revenue |
+| SG&A | $100,000 | $115,000 | +15.0% |   Growing in line with revenue |
 | Net Income | $60,000 | $69,000 | +15.0% |  Growing in line with revenue |
 
 **Interpretation Guidelines:**
@@ -127,7 +127,7 @@ Absolute Change = Current Value - Prior Value
 
 **Acme Analysis:**
 - All metrics: +15.0% growth
-- Implication: Balanced growth across all dimensions (no red flags) ✅
+- Implication: Balanced growth across all dimensions (no red flags)  
 - Growth rate: 15% is healthy (need to compare to industry average)
 
 ---
@@ -161,7 +161,7 @@ Absolute Change = Current Value - Prior Value
 
 | pp Change | Meaning | Assessment |
 |-----------|---------|-----------|
-| < -2.0 pp | Negative margin compression | ⚠️ Investigate |
+| < -2.0 pp | Negative margin compression |   Investigate |
 | -2.0 to -0.5 pp | Slight deterioration | ℹ️ Monitor |
 | -0.5 to +0.5 pp | Essentially flat |  Stable |
 | +0.5 to +2.0 pp | Slight improvement |  Good |
@@ -169,7 +169,7 @@ Absolute Change = Current Value - Prior Value
 
 **Acme Analysis:**
 - All margins: 0.0 pp change
-- Implication: Profitability structure unchanged (perfectly proportional growth) ✅
+- Implication: Profitability structure unchanged (perfectly proportional growth)  
 
 ---
 
@@ -257,7 +257,7 @@ Example: If Gross Margin goes from 35% to 38%:
 2. **Percentage:** Revenue +30%, COGS only +19.3%, profit +45%
 3. **Percentage Point:** Gross margin +4.9 pp, Net margin +1.4 pp
 
-**Story:** Excellent execution. Revenue growing, costs under control, operating leverage kicking in. ✅
+**Story:** Excellent execution. Revenue growing, costs under control, operating leverage kicking in.  
 
 ---
 
@@ -367,7 +367,7 @@ Example: If Gross Margin goes from 35% to 38%:
 
 ## Next Steps
 
-### If Changes are Positive ✅
+### If Changes are Positive  
 - Compare to industry benchmarks
 - Analyze sustainability (is it repeatable?)
 - Use period data to project forward
@@ -377,7 +377,7 @@ Example: If Gross Margin goes from 35% to 38%:
 - Understand the story (growth? efficiency? mix?)
 - Plan next actions
 
-### If Changes are Negative ⚠️
+### If Changes are Negative  
 - Investigate root causes
 - Review management commentary
 - Analyze deeper with other skills

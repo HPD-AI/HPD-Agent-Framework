@@ -214,12 +214,12 @@ Example of limitations:
     "Name": "MyAgent",
     "SystemInstructions": "You are helpful.",
     "Provider": { "ProviderKey": "openai", "ModelName": "gpt-4o" },
-    // No way to register MyCalculatorTool here ❌
+    // No way to register MyCalculatorTool here   
 }
 
 // You still need code:
 var agent = await AgentConfig.BuildFromFileAsync("agent-config.json");
-agent.WithTools<MyCalculatorTool>();  // Has to be separate! ❌
+agent.WithTools<MyCalculatorTool>();  // Has to be separate!   
 ```
 
 **With Builder + Config Pattern:**

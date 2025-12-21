@@ -15,10 +15,10 @@ namespace HPD.Agent.Middleware;
 /// </para>
 /// <para><b>Immutability Benefits:</b></para>
 /// <list type="bullet">
-/// <item>✅ Original request preserved for debugging</item>
-/// <item>✅ Safe to pass between middleware layers</item>
-/// <item>✅ Enables request/response comparison for telemetry</item>
-/// <item>✅ Thread-safe (can be shared across async operations)</item>
+/// <item>  Original request preserved for debugging</item>
+/// <item>  Safe to pass between middleware layers</item>
+/// <item>  Enables request/response comparison for telemetry</item>
+/// <item>  Thread-safe (can be shared across async operations)</item>
 /// </list>
 /// <para><b>Example:</b></para>
 /// <code>
@@ -44,32 +44,32 @@ public sealed record ModelRequest
 {
     /// <summary>
     /// The chat client to use for this LLM call.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required IChatClient Model { get; init; }
 
     /// <summary>
     /// Messages to send to the LLM.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// Immutable list - use Override() to create modified copy
     /// </summary>
     public required IReadOnlyList<ChatMessage> Messages { get; init; }
 
     /// <summary>
     /// Chat options for this LLM call.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required ChatOptions Options { get; init; }
 
     /// <summary>
     /// Current agent state at time of request.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required AgentLoopState State { get; init; }
 
     /// <summary>
     /// Current iteration number (0-based).
-    /// ✅ Always available
+    ///   Always available
     /// </summary>
     public required int Iteration { get; init; }
 

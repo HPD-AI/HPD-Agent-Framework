@@ -215,7 +215,7 @@ Equity % of Assets = (Total Equity ÷ Total Assets) × 100
 
 **Balance Check:**
 ```
-Total Liabilities 55% + Total Equity 45% = 100% ✅
+Total Liabilities 55% + Total Equity 45% = 100%  
 
 (55% ÷ 45%) = 1.22, which matches D/E ratio of 1.22
 ```
@@ -290,7 +290,7 @@ Total Liabilities 55% + Total Equity 45% = 100% ✅
 | LT Debt | 30% | 20-35% |  In range |
 | Equity | 45% | 45-65% |  In range |
 
-**Conclusion:** Acme is structured like a typical manufacturer - no red flags ✅
+**Conclusion:** Acme is structured like a typical manufacturer - no red flags  
 
 ---
 
@@ -489,7 +489,7 @@ Low Equity % (<40%):      Aggressive/leveraged structure
 
 ## Next Steps
 
-### If Structure is Typical ✅
+### If Structure is Typical  
 - Compare to prior years (is it stable?)
 - Use findings to inform liquidity analysis
 - Proceed to profitability analysis
@@ -499,7 +499,7 @@ Low Equity % (<40%):      Aggressive/leveraged structure
 - Compare to peers (is it normal for industry?)
 - Investigate further if concerning
 
-### If Structure is Deteriorating ⚠️
+### If Structure is Deteriorating  
 - Track trend over time (is it accelerating?)
 - Investigate root causes
 - Assess sustainability

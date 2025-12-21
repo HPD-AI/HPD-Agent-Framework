@@ -1,10 +1,10 @@
 import type {
-  ClientPluginDefinition,
+  ClientToolDefinition,
   ClientToolInvokeResponse,
   ClientToolAugmentation
 } from '@hpd/hpd-agent-client';
 import {
-  createExpandedPlugin,
+  createExpandedToolGroup,
   createSuccessResponse,
   createErrorResponse
 } from '@hpd/hpd-agent-client';
@@ -14,7 +14,7 @@ import { artifactStore, type ArtifactType } from './artifact-store.js';
  * Artifact plugin - enables the agent to create and manage visual artifacts
  * like code snippets, markdown documents, diagrams, etc.
  */
-export const artifactPlugin: ClientPluginDefinition = createExpandedPlugin(
+export const artifactTool = createExpandedToolGroup(
   'Artifacts',
   [
     {

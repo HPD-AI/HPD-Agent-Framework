@@ -66,7 +66,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         var errState = context.State.MiddlewareState.ErrorTracking ?? new();
         var newState = errState.IncrementFailures();
 
-        // ✅ Immediate state update - visible to all subsequent hooks!
+        //   Immediate state update - visible to all subsequent hooks!
         context.UpdateState(s => s with
         {
             MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
@@ -96,7 +96,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
             var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
             var newState = currentState.ResetFailures();
 
-            // ✅ Immediate state update - no GetPendingState() needed!
+            //   Immediate state update - no GetPendingState() needed!
             context.UpdateState(s => s with
             {
                 MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
@@ -121,7 +121,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
             .Replace("{max}", MaxConsecutiveErrors.ToString());
 
         // Message for user visibility (with emoji)
-        var userMessage = $"⚠️ {formattedMessage}";
+        var userMessage = $"  {formattedMessage}";
 
         // Update state to signal termination
         context.UpdateState(s => s with

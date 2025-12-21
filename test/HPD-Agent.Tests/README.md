@@ -65,7 +65,7 @@ dotnet test --collect:"XPlat Code Coverage"
 
 ## Phase 0: Characterization Tests (Current)
 
-**Status**: Infrastructure setup complete ✅
+**Status**: Infrastructure setup complete  
 **Tests**: 7 tests covering major scenarios
 **Purpose**: Lock in current behavior before refactoring
 

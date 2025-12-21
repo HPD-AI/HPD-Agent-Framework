@@ -86,19 +86,19 @@ public sealed record ErrorContext : HookContext
 {
     /// <summary>
     /// The exception that occurred.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public Exception Error { get; init; }
 
     /// <summary>
     /// Where the error originated.
-    /// ✅ Always available
+    ///   Always available
     /// </summary>
     public ErrorSource Source { get; init; }
 
     /// <summary>
     /// Current iteration number (if error during iteration).
-    /// ✅ Always available
+    ///   Always available
     /// </summary>
     public int Iteration { get; init; }
 

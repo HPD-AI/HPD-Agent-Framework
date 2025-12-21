@@ -294,13 +294,33 @@ public class AgentEventSerializerTests
     }
 
     [Fact]
-    public void ToJson_ReasoningEvent_SerializesCorrectly()
+    public void ToJson_ReasoningDeltaEvent_SerializesCorrectly()
     {
-        // Reasoning event
-        var evt = new Reasoning(ReasoningPhase.Delta, "msg-1", "assistant", "Let me think about this...");
+        // Reasoning delta event
+        var evt = new ReasoningDeltaEvent("Let me think about this...", "msg-1");
         var json = AgentEventSerializer.ToJson(evt);
-        Assert.Contains("\"type\":\"REASONING\"", json);
+        Assert.Contains("\"type\":\"REASONING_DELTA\"", json);
         Assert.Contains("\"text\":\"Let me think about this...\"", json);
+    }
+
+    [Fact]
+    public void ToJson_ReasoningMessageStartEvent_SerializesCorrectly()
+    {
+        // Reasoning message start event
+        var evt = new ReasoningMessageStartEvent("msg-1", "assistant");
+        var json = AgentEventSerializer.ToJson(evt);
+        Assert.Contains("\"type\":\"REASONING_MESSAGE_START\"", json);
+        Assert.Contains("\"role\":\"assistant\"", json);
+    }
+
+    [Fact]
+    public void ToJson_ReasoningMessageEndEvent_SerializesCorrectly()
+    {
+        // Reasoning message end event
+        var evt = new ReasoningMessageEndEvent("msg-1");
+        var json = AgentEventSerializer.ToJson(evt);
+        Assert.Contains("\"type\":\"REASONING_MESSAGE_END\"", json);
+        Assert.Contains("\"messageId\":\"msg-1\"", json);
     }
 
     #endregion

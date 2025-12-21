@@ -1,7 +1,7 @@
-# Phase 0: Test Infrastructure & Characterization Tests - COMPLETE ✅
+# Phase 0: Test Infrastructure & Characterization Tests - COMPLETE  
 
 **Date**: November 7, 2025
-**Status**: **PHASE 0 COMPLETE** ✅
+**Status**: **PHASE 0 COMPLETE**  
 **Tests**: 20/15 required (133% complete)
 **Infrastructure**: 10/10 core + 4/4 additional helpers
 
@@ -19,9 +19,9 @@
 
 ---
 
-## Test Results ✅
+## Test Results  
 
-### Phase 0 Characterization Tests: **20/20 PASSING** ✅
+### Phase 0 Characterization Tests: **20/20 PASSING**  
 
 **Command**: `dotnet test --filter "FullyQualifiedName~Phase0_Characterization"`
 
@@ -35,7 +35,7 @@ Total tests: 20
 
 ### Test Breakdown by Category
 
-#### 1. Event Sequence Tests (7/7 required) ✅
+#### 1. Event Sequence Tests (7/7 required)  
 -  Simple text response - [SimpleTextResponseTest.cs](Phase0_Characterization/SimpleTextResponseTest.cs)
 -  Single tool call - [CharacterizationTests.cs](Phase0_Characterization/CharacterizationTests.cs)
 -  Multiple parallel tool calls - [CharacterizationTests.cs](Phase0_Characterization/CharacterizationTests.cs)
@@ -44,24 +44,24 @@ Total tests: 20
 -  Permission denied flow - [PermissionTests.cs](Phase0_Characterization/PermissionTests.cs)
 -  Consecutive errors - [CharacterizationTests.cs](Phase0_Characterization/CharacterizationTests.cs)
 
-#### 2. State Snapshot Tests (5/5 required) ✅
+#### 2. State Snapshot Tests (5/5 required)  
 -  Initial state snapshot - [StateSnapshotTests.cs](Phase0_Characterization/StateSnapshotTests.cs)
 -  After first iteration - [StateSnapshotTests.cs](Phase0_Characterization/StateSnapshotTests.cs)
 -  After tool execution - [StateSnapshotTests.cs](Phase0_Characterization/StateSnapshotTests.cs)
 -  Circuit breaker state - [StateSnapshotTests.cs](Phase0_Characterization/StateSnapshotTests.cs)
 -  History optimization enabled - [StateSnapshotTests.cs](Phase0_Characterization/StateSnapshotTests.cs)
 
-#### 3. Performance Baseline Tests (3/3 required) ✅
+#### 3. Performance Baseline Tests (3/3 required)  
 -  Simple conversation baseline - [PerformanceBaselineTests.cs](Phase0_Characterization/PerformanceBaselineTests.cs)
 -  Single tool call baseline - [PerformanceBaselineTests.cs](Phase0_Characterization/PerformanceBaselineTests.cs)
 -  Parallel tools baseline - [PerformanceBaselineTests.cs](Phase0_Characterization/PerformanceBaselineTests.cs)
 
-#### 4. Permission Tests (3 BONUS tests) ✅
+#### 4. Permission Tests (3 BONUS tests)  
 -  Permission approved allows execution - [PermissionTests.cs](Phase0_Characterization/PermissionTests.cs)
 -  Permission denied blocks execution - [PermissionTests.cs](Phase0_Characterization/PermissionTests.cs)
 -  Multiple permissions handled sequentially - [PermissionTests.cs](Phase0_Characterization/PermissionTests.cs)
 
-#### 5. Container Expansion Tests (3 BONUS tests) ✅
+#### 5. Container Expansion Tests (3 BONUS tests)  
 -  Two-turn expansion flow - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
 -  Multiple member functions - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
 -  Mixed Collapsed and non-Collapsed - [ContainerExpansionTests.cs](Phase0_Characterization/ContainerExpansionTests.cs)
@@ -70,9 +70,9 @@ Total tests: 20
 
 ## Infrastructure Components
 
-### Core Infrastructure (10/10 Complete) ✅
+### Core Infrastructure (10/10 Complete)  
 
-#### 1. AgentTestBase ✅
+#### 1. AgentTestBase  
 **File**: [Infrastructure/AgentTestBase.cs](Infrastructure/AgentTestBase.cs)
 
 **Features**:
@@ -84,7 +84,7 @@ Total tests: 20
 
 **Status**: Fully functional, used by all tests
 
-#### 2. FakeChatClient ✅
+#### 2. FakeChatClient  
 **File**: [Infrastructure/FakeChatClient.cs](Infrastructure/FakeChatClient.cs)
 
 **Features**:
@@ -96,7 +96,7 @@ Total tests: 20
 
 **Status**: Fully functional, powers all LLM simulation
 
-#### 3. TestBidirectionalCoordinator ✅
+#### 3. TestBidirectionalCoordinator  
 **File**: [Infrastructure/TestBidirectionalCoordinator.cs](Infrastructure/TestBidirectionalCoordinator.cs)
 
 **Features**:
@@ -107,7 +107,7 @@ Total tests: 20
 
 **Status**: Fully functional
 
-#### 4. TestAgentFactory ✅
+#### 4. TestAgentFactory  
 **File**: [Infrastructure/TestAgentFactory.cs](Infrastructure/TestAgentFactory.cs)
 
 **Features**:
@@ -118,7 +118,7 @@ Total tests: 20
 
 **Status**: Fully functional, simplifies agent creation
 
-#### 5. MockPermissionHandler ✅
+#### 5. MockPermissionHandler  
 **File**: [Infrastructure/MockPermissionHandler.cs](Infrastructure/MockPermissionHandler.cs)
 
 **Features**:
@@ -130,7 +130,7 @@ Total tests: 20
 
 **Status**: Fully functional, fixed dual event stream consumption issue
 
-#### 6. CollapsedPluginTestHelper ✅
+#### 6. CollapsedPluginTestHelper  
 **File**: [Infrastructure/CollapsedPluginTestHelper.cs](Infrastructure/CollapsedPluginTestHelper.cs)
 
 **Features**:
@@ -141,7 +141,7 @@ Total tests: 20
 
 **Status**: Fully functional, used by container expansion tests
 
-#### 7. ToolVisibilityTracker ✅
+#### 7. ToolVisibilityTracker  
 **File**: [Infrastructure/ToolVisibilityTracker.cs](Infrastructure/ToolVisibilityTracker.cs)
 
 **Features**:
@@ -151,9 +151,9 @@ Total tests: 20
 
 **Status**: Built for future advanced testing
 
-### Additional Helper Infrastructure (4/4 Complete) ✅
+### Additional Helper Infrastructure (4/4 Complete)  
 
-#### 8. ConversationPlanBuilder ✅
+#### 8. ConversationPlanBuilder  
 **File**: [Infrastructure/ConversationPlanBuilder.cs](Infrastructure/ConversationPlanBuilder.cs)
 
 **Features**:
@@ -180,7 +180,7 @@ Total tests: 20
 
 **Status**: Functional, ready for use in tests
 
-#### 10. InMemoryPermissionStorage ✅
+#### 10. InMemoryPermissionStorage  
 **File**: [Infrastructure/InMemoryPermissionStorage.cs](Infrastructure/InMemoryPermissionStorage.cs)
 
 **Features**:
@@ -208,7 +208,7 @@ Total tests: 20
 
 ## Key Fixes Completed During Phase 0
 
-### 1. MockPermissionHandler Event Stream Consumption ✅
+### 1. MockPermissionHandler Event Stream Consumption  
 **Problem**: Both test and handler tried to consume same `IAsyncEnumerable<AgentEvent>`, causing handler to miss events.
 
 **Solution**:
@@ -219,7 +219,7 @@ Total tests: 20
 
 **Result**: All permission tests pass reliably
 
-### 2. Permission Denial Message Consistency ✅
+### 2. Permission Denial Message Consistency  
 **Problem**: Inconsistent denial messages - sometimes empty, sometimes had fallback text.
 
 **Root Cause**: Dual fallback layers:
@@ -243,28 +243,28 @@ Total tests: 20
 
 ```
 test/HPD-Agent.Tests/
-├── HPD-Agent.Tests.csproj ✅
-├── README.md ✅
+├── HPD-Agent.Tests.csproj  
+├── README.md  
 ├── PHASE0_STATUS.md  (this file)
 ├── Infrastructure/ (11 files)
-│   ├── AgentTestBase.cs ✅
-│   ├── FakeChatClient.cs ✅
-│   ├── TestBidirectionalCoordinator.cs ✅
-│   ├── TestAgentFactory.cs ✅
-│   ├── MockPermissionHandler.cs ✅
-│   ├── CollapsedPluginTestHelper.cs ✅
-│   ├── ToolVisibilityTracker.cs ✅
+│   ├── AgentTestBase.cs  
+│   ├── FakeChatClient.cs  
+│   ├── TestBidirectionalCoordinator.cs  
+│   ├── TestAgentFactory.cs  
+│   ├── MockPermissionHandler.cs  
+│   ├── CollapsedPluginTestHelper.cs  
+│   ├── ToolVisibilityTracker.cs  
 │   ├── ConversationPlanBuilder.cs  NEW
 │   ├── AssertExtensions.cs  NEW (partial)
 │   ├── InMemoryPermissionStorage.cs  NEW
 │   └── TestDataBuilders.cs  NEW (partial)
 └── Phase0_Characterization/ (6 test files)
-    ├── SimpleTextResponseTest.cs ✅
-    ├── CharacterizationTests.cs ✅
-    ├── StateSnapshotTests.cs ✅
-    ├── PerformanceBaselineTests.cs ✅
-    ├── PermissionTests.cs ✅
-    └── ContainerExpansionTests.cs ✅
+    ├── SimpleTextResponseTest.cs  
+    ├── CharacterizationTests.cs  
+    ├── StateSnapshotTests.cs  
+    ├── PerformanceBaselineTests.cs  
+    ├── PermissionTests.cs  
+    └── ContainerExpansionTests.cs  
 ```
 
 ---
@@ -288,7 +288,7 @@ test/HPD-Agent.Tests/
 - [x] All 20 tests pass (20/20 = 100%)
 - [x] Phase 0 complete and ready for refactoring
 
-**Progress**: **100% COMPLETE** ✅
+**Progress**: **100% COMPLETE**  
 
 ---
 
@@ -318,7 +318,7 @@ The following components require types that will be introduced during refactorin
 
 ## Next Steps
 
-### Immediate: Begin Refactoring ✅
+### Immediate: Begin Refactoring  
 
 Phase 0 provides a **comprehensive safety net** of characterization tests. Any behavior changes during refactoring will be immediately detected.
 
@@ -345,7 +345,7 @@ With the refactored architecture (`AgentDecisionEngine`, `AgentLoopState`, etc.)
 - [x] State snapshots validated
 - [x] Performance baselines established
 
-**Phase 0 Status**: **COMPLETE AND VERIFIED** ✅
+**Phase 0 Status**: **COMPLETE AND VERIFIED**  
 
 ---
 
@@ -368,5 +368,5 @@ With the refactored architecture (`AgentDecisionEngine`, `AgentLoopState`, etc.)
 
 **Prepared by**: Claude Code Assistant
 **Date**: November 7, 2025
-**Status**: PHASE 0 COMPLETE ✅
+**Status**: PHASE 0 COMPLETE  
 **Ready for**: Phase 1 (Foundation Tests after refactor)

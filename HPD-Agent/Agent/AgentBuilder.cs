@@ -3438,7 +3438,7 @@ public static class AgentBuilderConfigExtensions
     /// <summary>
     /// Sets a custom configuration source for reading API keys and other settings.
     ///
-    /// ⚠️ OPTIONAL: AgentBuilder automatically loads configuration from:
+    ///   OPTIONAL: AgentBuilder automatically loads configuration from:
     ///    - appsettings.json (in current directory)
     ///    - Environment variables
     ///    - User secrets (development only)
@@ -3471,7 +3471,7 @@ public static class AgentBuilderConfigExtensions
     /// <summary>
     /// Sets a custom configuration source from a specific JSON file.
     ///
-    /// ⚠️ OPTIONAL: AgentBuilder automatically loads appsettings.json from the current directory.
+    ///   OPTIONAL: AgentBuilder automatically loads appsettings.json from the current directory.
     ///
     /// 💡 Only use this method if you need to load from a different file or location.
     ///

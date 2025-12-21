@@ -911,7 +911,7 @@ public class CodingPlugin
         sb.AppendLine("---");
         if (timedOut)
         {
-            sb.AppendLine("❌ TIMED OUT");
+            sb.AppendLine("   TIMED OUT");
         }
         else if (exitCode == 0)
         {
@@ -919,7 +919,7 @@ public class CodingPlugin
         }
         else
         {
-            sb.AppendLine($"❌ FAILED (Exit Code: {exitCode})");
+            sb.AppendLine($"   FAILED (Exit Code: {exitCode})");
         }
 
         return sb.ToString();

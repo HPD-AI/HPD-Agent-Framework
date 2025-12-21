@@ -128,7 +128,7 @@ public class HistoryReductionMiddleware : IAgentMiddleware
             return; // Done - cache hit path
         }
 
-        // ❌ CACHE MISS: Need to perform reduction
+        //    CACHE MISS: Need to perform reduction
         if (ChatReducer != null && ShouldTriggerReduction(conversationMessages))
         {
             // Run reduction (this calls the LLM for summarization)

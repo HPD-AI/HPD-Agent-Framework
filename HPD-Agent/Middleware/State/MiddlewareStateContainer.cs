@@ -55,7 +55,7 @@ public sealed partial class MiddlewareState
     /// Values: State instances (runtime) or JsonElement (deserialized)
     /// </summary>
     /// <remarks>
-    /// <para>⚠️ <b>Internal API - Do not use directly!</b></para>
+    /// <para>  <b>Internal API - Do not use directly!</b></para>
     /// <para>
     /// This property is public only for JSON serialization compatibility.
     /// Always use the generated properties (e.g., <c>CircuitBreaker</c>, <c>ErrorTracking</c>)

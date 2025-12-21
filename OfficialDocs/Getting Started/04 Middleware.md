@@ -17,7 +17,7 @@ var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithTools<MyTools>()
     .WithMiddleware(new LoggingMiddleware())
-    .WithMiddleware(new CircuitBreakerMiddleware())
+    .WithMiddleware(new CircuitBreakerMiddlewa())
     .Build();
 ```
 
@@ -70,6 +70,51 @@ Ready-to-use middleware for common use cases: rate limiting, circuit breakers, e
 
 ### 5. [Custom Middleware](../Middleware/05.5%20Custom%20Middleware.md)
 Build your own middleware from scratch. Learn patterns, state management, event coordination, and best practices.
+
+## Quick Example
+
+```csharp
+public class SimpleRetryMiddleware : IAgentMiddleware
+{
+    public async Task<ModelResponse> WrapModelCallAsync(
+        ModelRequest request,
+        Func<ModelRequest, Task<ModelResponse>> handler,
+        CancellationToken ct)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            try
+            {
+                return await handler(request);
+            }
+            catch (HttpRequestException) when (i < 2)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i)), ct);
+            }
+        }
+        return await handler(request);
+    }
+}
+```
+
+Register it:
+
+```csharp
+var agent = new AgentBuilder()
+    .WithProvider("openai", "gpt-4o")
+    .WithTools<MyTools>()
+    .WithMiddleware(new SimpleRetryMiddleware())
+    .WithMiddleware(new CircuitBreakerMiddleware())
+    .Build();
+```
+
+## Key Features
+
+  **Typed contexts** - Compile-time safety, zero NULL properties
+  **Immutable requests** - `ModelRequest`, `FunctionRequest` preserve originals
+  **Dual pattern** - Simple + streaming LLM hooks
+  **Centralized errors** - `OnErrorAsync` handles all error types
+  **Immediate state updates** - Updates visible instantly
 
 ## Next Steps
 

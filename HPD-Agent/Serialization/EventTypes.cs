@@ -59,7 +59,9 @@ public static partial class EventTypes
     /// </summary>
     public static class Reasoning
     {
-        public const string REASONING = "REASONING";
+        public const string REASONING_MESSAGE_START = "REASONING_MESSAGE_START";
+        public const string REASONING_DELTA = "REASONING_DELTA";
+        public const string REASONING_MESSAGE_END = "REASONING_MESSAGE_END";
     }
 
     #endregion

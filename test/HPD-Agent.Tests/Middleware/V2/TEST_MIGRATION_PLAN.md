@@ -8,7 +8,7 @@ All tests need migration to V2 typed contexts.
 
 ## Migration Strategy
 
-### Phase 1: Create Test Helpers ✅
+### Phase 1: Create Test Helpers  
 Create shared test utilities for V2 context creation.
 
 **File**: `test/HPD-Agent.Tests/Middleware/V2/TestHelpers.cs`
@@ -150,7 +150,7 @@ private static BeforeIterationContext CreateContext()
 
 ### Phase 5: Execution Plan
 
-1. ✅ Create `TestHelpers.cs` with context creation utilities
+1.   Create `TestHelpers.cs` with context creation utilities
 2. 🔄 Fix `AgentMiddlewarePipelineTests.cs` (most errors)
 3. ⏸️ Fix remaining test files in priority order
 4. ⏸️ Run full test suite

@@ -84,11 +84,11 @@ public static class ClarificationFunction
             }
             catch (TimeoutException)
             {
-                return $"⚠️ Clarification request timed out after {effectiveTimeout.TotalMinutes} minutes. Please proceed with available information or ask the user to respond more promptly.";
+                return $"  Clarification request timed out after {effectiveTimeout.TotalMinutes} minutes. Please proceed with available information or ask the user to respond more promptly.";
             }
             catch (OperationCanceledException)
             {
-                return "⚠️ Clarification request was cancelled. Please proceed with available information.";
+                return "  Clarification request was cancelled. Please proceed with available information.";
             }
 
             // Return the user's answer

@@ -26,6 +26,16 @@ public class ObservabilityConfig
     public bool EnableSampling { get; set; } = false;
 
     /// <summary>
+    /// Whether to emit observability events (IObservabilityEvent).
+    /// Observability events are internal diagnostic events for logging, metrics, and debugging.
+    /// When false (default), observability events are not emitted, improving performance
+    /// and reducing noise for typical applications.
+    /// Set to true to enable internal diagnostics for debugging or monitoring.
+    /// Default: false (observability events disabled).
+    /// </summary>
+    public bool EmitObservabilityEvents { get; set; } = false;
+
+    /// <summary>
     /// Maximum observers to notify concurrently per event.
     /// Prevents task explosion with many observers.
     /// Default: 10.

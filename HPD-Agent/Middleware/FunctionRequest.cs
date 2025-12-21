@@ -48,26 +48,26 @@ public sealed record FunctionRequest
 {
     /// <summary>
     /// The function being invoked.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required AIFunction Function { get; init; }
 
     /// <summary>
     /// Unique call ID for this function invocation.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required string CallId { get; init; }
 
     /// <summary>
     /// Arguments to pass to the function.
-    /// ✅ Always available (never NULL, but may be empty)
+    ///   Always available (never NULL, but may be empty)
     /// Immutable dictionary - use Override() to create modified copy
     /// </summary>
     public required IReadOnlyDictionary<string, object?> Arguments { get; init; }
 
     /// <summary>
     /// Current agent state at time of request.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public required AgentLoopState State { get; init; }
 

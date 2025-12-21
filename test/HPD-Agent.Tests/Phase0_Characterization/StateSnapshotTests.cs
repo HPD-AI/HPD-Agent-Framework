@@ -160,7 +160,7 @@ public class StateSnapshotTests : AgentTestBase
 
         // Check if ANY error-related events were emitted
         var textDeltas = capturedEvents.OfType<TextDeltaEvent>().ToList();
-        var errorTerminationMessages = textDeltas.Where(t => t.Text.Contains("consecutive errors") || t.Text.Contains("⚠️")).ToList();
+        var errorTerminationMessages = textDeltas.Where(t => t.Text.Contains("consecutive errors") || t.Text.Contains(" ")).ToList();
 
         // If TextDeltaEvent with termination message was emitted, StateSnapshotEvent should also be emitted
         if (errorTerminationMessages.Any())

@@ -324,32 +324,20 @@ public record TextMessageEndEvent(string MessageId) : AgentEvent;
 #region Reasoning Events (For reasoning-capable models like o1, DeepSeek-R1)
 
 /// <summary>
-/// Reasoning phase within a reasoning session.
+/// Emitted when the agent starts producing reasoning content.
+/// Reasoning is extended thinking used by models like o1, DeepSeek-R1.
 /// </summary>
-public enum ReasoningPhase
-{
-    /// <summary>Overall reasoning session begins</summary>
-    SessionStart,
-    /// <summary>Individual reasoning message starts</summary>
-    MessageStart,
-    /// <summary>Streaming reasoning content (delta)</summary>
-    Delta,
-    /// <summary>Individual reasoning message ends</summary>
-    MessageEnd,
-    /// <summary>Overall reasoning session ends</summary>
-    SessionEnd
-}
+public record ReasoningMessageStartEvent(string MessageId, string Role) : AgentEvent;
 
 /// <summary>
-/// Emitted for all reasoning-related events during agent execution.
-/// Supports reasoning-capable models like o1, DeepSeek-R1.
+/// Emitted when the agent produces reasoning content (streaming delta).
 /// </summary>
-public record Reasoning(
-    ReasoningPhase Phase,
-    string MessageId,
-    string? Role = null,
-    string? Text = null
-) : AgentEvent;
+public record ReasoningDeltaEvent(string Text, string MessageId) : AgentEvent;
+
+/// <summary>
+/// Emitted when the agent finishes producing reasoning content.
+/// </summary>
+public record ReasoningMessageEndEvent(string MessageId) : AgentEvent;
 
 #endregion
 

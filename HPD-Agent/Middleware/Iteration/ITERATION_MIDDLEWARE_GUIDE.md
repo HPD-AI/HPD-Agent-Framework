@@ -253,7 +253,7 @@ internal class IterationGuidanceMiddleware : IIterationMiddleWare
         {
             var remaining = _maxIterations - context.Iteration;
             context.Options.Instructions +=
-                $"\n\n⚠️ WARNING: Only {remaining} iteration(s) remaining. " +
+                $"\n\n  WARNING: Only {remaining} iteration(s) remaining. " +
                 "Wrap up your analysis and provide a conclusion.";
         }
 
@@ -569,14 +569,14 @@ await foreach (var evt in agent.RunAsync("Do something complex"))
 
 ## Performance Guidelines
 
-### DO ✅
+### DO  
 - Keep Middlewares fast (< 1ms per Middleware)
 - Inspect state (cheap, immutable)
 - Modify strings (cheap)
 - Add simple conditionals
 - Use early returns to skip unnecessary work
 
-### DON'T ❌
+### DON'T   
 - Make API calls (use prompt Middlewares for that)
 - Query databases (use prompt Middlewares for that)
 - Perform heavy computations
@@ -593,12 +593,12 @@ await foreach (var evt in agent.RunAsync("Do something complex"))
 | **Execution Frequency** | Once per message turn | Every LLM call (multiple per turn) |
 | **Runs In** | `PrepareTurnAsync` | `RunAgenticLoopInternal` |
 | **Timing** | Before agentic loop starts | Before each LLM call in loop |
-| **Access to Tool Results** | ❌ No |  Yes (from previous iterations) |
-| **Iteration Number** | ❌ N/A |  `context.Iteration` |
-| **Agent State Access** | ❌ Limited |  Full `AgentLoopState` |
+| **Access to Tool Results** |    No |  Yes (from previous iterations) |
+| **Iteration Number** |    N/A |  `context.Iteration` |
+| **Agent State Access** |    Limited |  Full `AgentLoopState` |
 | **Modify Instructions** |  Initial setup only |  Dynamic per iteration |
-| **See LLM Response** | ❌ No (via separate PostInvoke) |  Yes (in `AfterIterationAsync`) |
-| **Detect Final Iteration** | ❌ N/A |  `context.IsFinalIteration` |
+| **See LLM Response** |    No (via separate PostInvoke) |  Yes (in `AfterIterationAsync`) |
+| **Detect Final Iteration** |    N/A |  `context.IsFinalIteration` |
 | **Use Case** | Initial context injection | Iterative guidance + response processing |
 | **Example** | RAG, memory retrieval | Skill instructions, iteration guidance |
 | **Performance Impact** | Once (acceptable for heavy ops) | Multiple (must be lightweight) |
@@ -623,7 +623,7 @@ await foreach (var evt in agent.RunAsync("Do something complex"))
 
 **Solution**: `State` is immutable (record type). Use `context.Properties` to signal changes:
 ```csharp
-// ❌ WRONG: Direct modification doesn't work
+//    WRONG: Direct modification doesn't work
 context.State.ActiveSkillInstructions = newValue;
 
 //  CORRECT: Signal via Properties
@@ -689,11 +689,11 @@ await foreach (var update in _agentTurn.RunAsync(messages, options, ct))
 **Problem**: C# **does not allow `yield return` inside lambda expressions**. This means we cannot wrap the LLM streaming call in a middleware pattern like:
 
 ```csharp
-// ❌ DOESN'T COMPILE - yield return in lambda forbidden
+//    DOESN'T COMPILE - yield return in lambda forbidden
 await Middleware.InvokeAsync(context, async ctx => {
     await foreach (var update in _agentTurn.RunAsync(...))
     {
-        yield return new TextDeltaEvent(...);  // ❌ Compiler error!
+        yield return new TextDeltaEvent(...);  //    Compiler error!
     }
 });
 ```

@@ -112,7 +112,7 @@ Proceed to foundation skills
 | Current Ratio | 1.79 |  Healthy |
 | Quick Ratio | 1.14 |  Healthy |
 | Working Capital | $110,000 |  Good cushion |
-| **Liquidity Rating** | | **STRONG ✅** |
+| **Liquidity Rating** | | **STRONG  ** |
 
 **Interpretation in Dashboard Context:**
 - Can company meet short-term obligations? **YES**
@@ -151,7 +151,7 @@ Proceed to foundation skills
 **Connection to Liquidity:**
 - Strong liquidity + Elevated leverage = Can service debt currently
 - But elevated leverage + weak liquidity = Problem
-- In this case: Strong position despite leverage ✅
+- In this case: Strong position despite leverage  
 
 **Red Flags at This Stage:**
 - D/E > 2.5 = High leverage
@@ -175,7 +175,7 @@ Proceed to foundation skills
 | COGS | +$45,000 | +15% | 0 pp | ↗ Proportional |
 | Net Income | +$9,000 | +15% | 0 pp | ↗ Proportional |
 | D/E Ratio | 0.0 | 0% | N/A | → Stable |
-| **Trend Rating** | | | | **POSITIVE ✅** |
+| **Trend Rating** | | | | **POSITIVE  ** |
 
 **Interpretation in Dashboard Context:**
 - Is business growing? **YES - solidly**
@@ -187,7 +187,7 @@ Proceed to foundation skills
 - Growth + stable leverage = Financial position strengthening
 - Growth + rising leverage = Need to monitor
 - Decline + rising leverage = Major warning
-- In this case: Positive trajectory ✅
+- In this case: Positive trajectory  
 
 **Red Flags at This Stage:**
 - Revenue declining but expenses rising
@@ -212,7 +212,7 @@ Proceed to foundation skills
 | Current Liab | 20% | 15-25% |  In range |
 | LT Debt | 30% | 20-35% |  In range |
 | Equity | 45% | 45-65% |  In range |
-| **Structure Rating** | | | **TYPICAL ✅** |
+| **Structure Rating** | | | **TYPICAL  ** |
 
 **Interpretation in Dashboard Context:**
 - Is company structured like peers? **YES**
@@ -223,7 +223,7 @@ Proceed to foundation skills
 - Typical structure + strong liquidity = Good financial position
 - Typical structure + weak liquidity = Liquidity is the issue (not structure)
 - Unusual structure + weakness = Structure and composition issues
-- In this case: Typical structure, strong fundamentals ✅
+- In this case: Typical structure, strong fundamentals  
 
 **Red Flags at This Stage:**
 - 40%+ in "Other" assets (what are they?)
@@ -386,7 +386,7 @@ STAKEHOLDER RECOMMENDATIONS
 For Lenders:
    Approve credit within normal parameters
    Monitor leverage ratio as covenant
-  ⚠️  Note above-average leverage vs. peers
+     Note above-average leverage vs. peers
   Recommendation: APPROVE with elevated leverage covenant
 
 
@@ -394,14 +394,14 @@ For Equity Investors:
    Solid financial position
    Strong growth trajectory
    Reasonable risk/reward
-  ⚠️  Limited debt capacity (constrains growth capex)
+     Limited debt capacity (constrains growth capex)
   Recommendation: BUY with moderate conviction
 
 
 For Company Management:
    Strong operational performance
    Continue revenue growth strategy
-  ⚠️  Prioritize debt reduction when opportunities arise
+     Prioritize debt reduction when opportunities arise
   Recommendation: Maintain course, target debt reduction
 
 
@@ -468,7 +468,7 @@ Interpretation:
   • Growth decelerating (25% → 15%)
   • But still strong (15% well above inflation)
   • Margins stable (profitability keeping pace)
-  • Trajectory: Sustainable ✅
+  • Trajectory: Sustainable  
 ```
 
 ---
@@ -491,7 +491,7 @@ Conclusion: Company resilient to single shocks, stressed by combined
 
 ## Common Dashboard Interpretations
 
-### Scenario A: Healthy Company ✅
+### Scenario A: Healthy Company  
 
 ```
 Liquidity:         STRONG (CR > 1.5)
@@ -515,15 +515,15 @@ Result:           🟡 MODERATE RISK - Monitor closely
 Action:           PROCEED WITH CAUTION - Monitor quarterly
 ```
 
-### Scenario C: Troubled Company ⚠️
+### Scenario C: Troubled Company  
 
 ```
-Liquidity:        ⚠️  WEAK (CR < 1.0)
-Leverage:         ⚠️  HIGH (D/E > 2.0)
-Growth:           ⚠️  NEGATIVE (Revenue declining)
-Structure:        ⚠️  DETERIORATING (Equity shrinking)
+Liquidity:           WEAK (CR < 1.0)
+Leverage:            HIGH (D/E > 2.0)
+Growth:              NEGATIVE (Revenue declining)
+Structure:           DETERIORATING (Equity shrinking)
 
-Result:           ⚠️  HIGH RISK - Serious concerns
+Result:              HIGH RISK - Serious concerns
 Action:           RED LIGHT - Decline credit/divest
 ```
 
@@ -589,7 +589,7 @@ See full dashboard above with all components
 
 ### What to Do After Dashboard Assessment
 
-**If Financial Health is Strong ✅**
+**If Financial Health is Strong  **
 - Approve credit/investment with confidence
 - Consider increased financing capacity
 - Monitor annually for changes
@@ -600,7 +600,7 @@ See full dashboard above with all components
 - Develop improvement plan with management
 - Reassess in 6-12 months
 
-**If Financial Health is Weak ⚠️**
+**If Financial Health is Weak  **
 - Conduct deeper investigation
 - Assess turnaround probability
 - Determine recovery strategy

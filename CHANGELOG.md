@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - 0.2.0
 
-### ⚠️ BREAKING CHANGES
+###   BREAKING CHANGES
 
 This release contains significant terminology changes to improve API clarity and consistency before the 1.0 release. **No backward compatibility aliases are provided** - you must update your code to use the new names.
 

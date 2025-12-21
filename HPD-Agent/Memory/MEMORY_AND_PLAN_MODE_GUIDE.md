@@ -362,10 +362,10 @@ You control sharing behavior with **3 variables**:
 | Thread Instance | Store Instance | Result | Use Case |
 |----------------|---------------|--------|----------|
 | **Same** | **Same** |  **Real-time sharing** | Multi-agent collaboration |
-| **Same** | Different (in-memory) | ❌ No sharing | Bug/misconfiguration |
-| **Same** | Different (file, same dir) | ⚠️ **Eventual consistency** | Multi-process/distributed |
-| **Different** | Same | ❌ No sharing | Independent conversations |
-| **Different** | Different | ❌ No sharing | Independent conversations |
+| **Same** | Different (in-memory) |    No sharing | Bug/misconfiguration |
+| **Same** | Different (file, same dir) |   **Eventual consistency** | Multi-process/distributed |
+| **Different** | Same |    No sharing | Independent conversations |
+| **Different** | Different |    No sharing | Independent conversations |
 
 ### Scenario 1: Real-Time Collaboration (Same Thread + Same Store)
 
@@ -426,7 +426,7 @@ var conv2 = new Conversation(agent2, thread);
 // Both use thread.Id = "abc123"
 // store1 writes: ./shared-plans/abc123.json
 // store2 reads: ./shared-plans/abc123.json
-// ⚠️ Not real-time (file I/O latency), but eventually consistent
+//   Not real-time (file I/O latency), but eventually consistent
 ```
 
 **Why it works**:

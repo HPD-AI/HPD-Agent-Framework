@@ -186,11 +186,11 @@ public static class FileSystemPluginExamples
         var result1 = await plugin.ReadFile("/safe/workspace/file.txt");
         Console.WriteLine(result1);
 
-        // ❌ Blocked: Outside workspace
+        //    Blocked: Outside workspace
         var result2 = await plugin.ReadFile("/etc/passwd");
         Console.WriteLine(result2);  // Error: File path must be within workspace
 
-        // ❌ Blocked: Path traversal attempt
+        //    Blocked: Path traversal attempt
         var result3 = await plugin.ReadFile("/safe/workspace/../../etc/passwd");
         Console.WriteLine(result3);  // Error: File path must be within workspace
     }

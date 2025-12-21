@@ -73,7 +73,7 @@ public record ClientSkillDefinition(
 
         foreach (var reference in References)
         {
-            if (string.IsNullOrEmpty(reference.PluginName))
+            if (string.IsNullOrEmpty(reference.ToolsetName))
             {
                 // Local reference - tool must be in parent plugin
                 if (!localToolNames.Contains(reference.ToolName))
@@ -86,11 +86,11 @@ public record ClientSkillDefinition(
             else
             {
                 // Cross-plugin reference - verify target plugin and tool exist
-                if (!registeredPlugins.TryGetValue(reference.PluginName, out var targetPlugin))
+                if (!registeredPlugins.TryGetValue(reference.ToolsetName, out var targetPlugin))
                 {
                     throw new ArgumentException(
                         $"Skill '{Name}' in plugin '{parentPluginName}' references " +
-                        $"plugin '{reference.PluginName}' which is not registered.");
+                        $"plugin '{reference.ToolsetName}' which is not registered.");
                 }
 
                 var toolExists = targetPlugin.Tools.Any(t => t.Name == reference.ToolName);
@@ -98,7 +98,7 @@ public record ClientSkillDefinition(
                 {
                     throw new ArgumentException(
                         $"Skill '{Name}' in plugin '{parentPluginName}' references " +
-                        $"tool '{reference.ToolName}' in plugin '{reference.PluginName}', " +
+                        $"tool '{reference.ToolName}' in plugin '{reference.ToolsetName}', " +
                         $"but that tool does not exist.");
                 }
             }
@@ -110,10 +110,10 @@ public record ClientSkillDefinition(
 /// Reference to a tool that becomes visible when the skill is activated.
 /// </summary>
 /// <param name="ToolName">Name of the tool to reference</param>
-/// <param name="PluginName">Plugin containing the tool. If null, uses the skill's parent plugin</param>
+/// <param name="ToolsetName">Plugin containing the tool. If null, uses the skill's parent plugin</param>
 public record ClientSkillReference(
     string ToolName,
-    string? PluginName = null
+    string? ToolsetName = null
 );
 
 /// <summary>

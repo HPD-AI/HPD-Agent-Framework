@@ -457,15 +457,15 @@ public class ClientToolMiddleware : IAgentMiddleware
             foreach (var reference in skill.References)
             {
                 // Build qualified function name
-                var qualifiedName = string.IsNullOrEmpty(reference.PluginName)
+                var qualifiedName = string.IsNullOrEmpty(reference.ToolsetName)
                     ? reference.ToolName  // Local reference
-                    : $"{reference.PluginName}.{reference.ToolName}";  // Cross-plugin reference
+                    : $"{reference.ToolsetName}.{reference.ToolName}";  // Cross-plugin reference
                 funcList.Add(qualifiedName);
 
                 // Track referenced plugins for visibility
-                if (!string.IsNullOrEmpty(reference.PluginName))
+                if (!string.IsNullOrEmpty(reference.ToolsetName))
                 {
-                    pluginSet.Add(reference.PluginName);
+                    pluginSet.Add(reference.ToolsetName);
                 }
             }
             referencedFunctions = funcList.ToArray();

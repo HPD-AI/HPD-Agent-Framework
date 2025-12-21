@@ -13,10 +13,10 @@ namespace HPD.Agent.Middleware;
 /// </para>
 /// <para><b>Key Benefits:</b></para>
 /// <list type="bullet">
-/// <item>✅ Compile-time safety - only valid properties exposed</item>
-/// <item>✅ Better IDE autocomplete - no NULL-able properties to check</item>
-/// <item>✅ Clear documentation - hook signature shows exactly what's available</item>
-/// <item>✅ Easier testing - mock only the properties that matter for each hook</item>
+/// <item>  Compile-time safety - only valid properties exposed</item>
+/// <item>  Better IDE autocomplete - no NULL-able properties to check</item>
+/// <item>  Clear documentation - hook signature shows exactly what's available</item>
+/// <item>  Easier testing - mock only the properties that matter for each hook</item>
 /// </list>
 /// </remarks>
 public abstract record HookContext
@@ -47,7 +47,7 @@ public abstract record HookContext
 
     /// <summary>
     /// Updates agent state immutably.
-    /// ⚠️ CRITICAL: Updates are applied IMMEDIATELY - subsequent hooks see the updated state.
+    ///   CRITICAL: Updates are applied IMMEDIATELY - subsequent hooks see the updated state.
     /// </summary>
     /// <param name="transform">Function that transforms the current state to new state</param>
     public void UpdateState(Func<AgentLoopState, AgentLoopState> transform)

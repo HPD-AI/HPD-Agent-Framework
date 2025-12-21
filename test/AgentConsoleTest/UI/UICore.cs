@@ -268,11 +268,8 @@ public class UIStateManager
                 }
                 break;
                 
-            case Reasoning reasoning:
-                if (reasoning.Phase == ReasoningPhase.SessionStart)
-                {
-                    _state.State = StreamingState.Thinking;
-                }
+            case ReasoningMessageStartEvent:
+                _state.State = StreamingState.Thinking;
                 break;
         }
         

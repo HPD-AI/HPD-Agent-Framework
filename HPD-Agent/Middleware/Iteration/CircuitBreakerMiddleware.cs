@@ -65,7 +65,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
     /// Placeholders: {toolName}, {count}
     /// </summary>
     public string TerminationMessageTemplate { get; set; } =
-        "⚠️ Circuit breaker triggered: Function '{toolName}' with same arguments would be called {count} times consecutively. " +
+        "  Circuit breaker triggered: Function '{toolName}' with same arguments would be called {count} times consecutively. " +
         "Stopping to prevent infinite loop.";
 
     //     

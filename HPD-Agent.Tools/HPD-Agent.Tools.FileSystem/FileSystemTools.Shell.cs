@@ -177,7 +177,7 @@ public partial class FileSystemTools
 
         if (result.ExitCode != 0)
         {
-            output.AppendLine($"⚠️ Command failed with exit code {result.ExitCode}");
+            output.AppendLine($"  Command failed with exit code {result.ExitCode}");
         }
         else
         {

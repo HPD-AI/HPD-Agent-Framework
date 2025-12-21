@@ -38,7 +38,7 @@ class MiddlewareTest
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Test FAILED: {ex.Message}");
+            Console.WriteLine($"   Test FAILED: {ex.Message}");
             Console.WriteLine(ex.StackTrace);
         }
     }

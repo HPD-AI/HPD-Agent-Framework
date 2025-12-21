@@ -44,8 +44,9 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(TextMessageEndEvent))]
 
 // Reasoning Events
-[JsonSerializable(typeof(Reasoning))]
-[JsonSerializable(typeof(ReasoningPhase))]
+[JsonSerializable(typeof(ReasoningMessageStartEvent))]
+[JsonSerializable(typeof(ReasoningDeltaEvent))]
+[JsonSerializable(typeof(ReasoningMessageEndEvent))]
 
 // Tool Events
 [JsonSerializable(typeof(ToolCallStartEvent))]

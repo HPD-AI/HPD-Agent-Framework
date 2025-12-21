@@ -227,7 +227,7 @@ public sealed class Agent
 
         // Create bidirectional event coordinator for Middleware events and human-in-the-loop
         // ExecutionContext is set lazily on first RunAsync via SetExecutionContext()
-        _eventCoordinator = new BidirectionalEventCoordinator();
+        _eventCoordinator = new BidirectionalEventCoordinator(config: Config);
 
         // Plan mode instructions now injected by AgentPlanAgentMiddleware (middleware-based)
         _messageProcessor = new MessageProcessor(
@@ -412,6 +412,12 @@ public sealed class Agent
     private void NotifyObservers(AgentEvent evt)
     {
         if (_observers.Count == 0) return;
+
+        // Skip observability events if disabled (default)
+        if (evt is IObservabilityEvent && !(Config?.Observability?.EmitObservabilityEvents ?? false))
+        {
+            return;
+        }
 
         foreach (var observer in _observers)
         {
@@ -926,7 +932,6 @@ public sealed class Agent
                     var assistantContents = new List<AIContent>();
                     var toolRequests = new List<FunctionCallContent>();
                     bool messageStarted = false;
-                    bool reasoningStarted = false;
                     bool reasoningMessageStarted = false;
                     bool backgroundOperationEventEmitted = false;
                     ResponseContinuationToken? lastContinuationToken = null;
@@ -1045,44 +1050,26 @@ public sealed class Agent
                             {
                                 if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
                                 {
-                                    if (!reasoningStarted)
-                                    {
-                                        yield return new Reasoning(
-                                            Phase: ReasoningPhase.SessionStart,
-                                            MessageId: assistantMessageId);
-                                        reasoningStarted = true;
-                                    }
-
                                     if (!reasoningMessageStarted)
                                     {
-                                        yield return new Reasoning(
-                                            Phase: ReasoningPhase.MessageStart,
+                                        yield return new ReasoningMessageStartEvent(
                                             MessageId: assistantMessageId,
                                             Role: "assistant");
                                         reasoningMessageStarted = true;
                                     }
 
-                                    yield return new Reasoning(
-                                        Phase: ReasoningPhase.Delta,
-                                        MessageId: assistantMessageId,
-                                        Text: reasoning.Text);
+                                    yield return new ReasoningDeltaEvent(
+                                        Text: reasoning.Text,
+                                        MessageId: assistantMessageId);
                                     assistantContents.Add(reasoning);
                                 }
                                 else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
                                 {
                                     if (reasoningMessageStarted)
                                     {
-                                        yield return new Reasoning(
-                                            Phase: ReasoningPhase.MessageEnd,
+                                        yield return new ReasoningMessageEndEvent(
                                             MessageId: assistantMessageId);
                                         reasoningMessageStarted = false;
-                                    }
-                                    if (reasoningStarted)
-                                    {
-                                        yield return new Reasoning(
-                                            Phase: ReasoningPhase.SessionEnd,
-                                            MessageId: assistantMessageId);
-                                        reasoningStarted = false;
                                     }
 
                                     if (!messageStarted)
@@ -1133,17 +1120,9 @@ public sealed class Agent
                         {
                             if (reasoningMessageStarted)
                             {
-                                yield return new Reasoning(
-                                    Phase: ReasoningPhase.MessageEnd,
+                                yield return new ReasoningMessageEndEvent(
                                     MessageId: assistantMessageId);
                                 reasoningMessageStarted = false;
-                            }
-                            if (reasoningStarted)
-                            {
-                                yield return new Reasoning(
-                                    Phase: ReasoningPhase.SessionEnd,
-                                    MessageId: assistantMessageId);
-                                reasoningStarted = false;
                             }
                         }
                     }
@@ -4433,7 +4412,7 @@ internal class FunctionCallProcessor
             else if (result.Error != null)
             {
                 // Include error in results
-                var errorContent = new TextContent($"⚠️ Error executing tool: {result.Error.Message}");
+                var errorContent = new TextContent($"  Error executing tool: {result.Error.Message}");
                 allContents.Add(errorContent);
             }
         }
@@ -5292,6 +5271,11 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     private AgentExecutionContext? _executionContext;
 
     /// <summary>
+    /// Agent configuration for accessing observability settings.
+    /// </summary>
+    private readonly AgentConfig? _config;
+
+    /// <summary>
     /// Stream registry for managing interruptible streams.
     /// </summary>
     private readonly StreamRegistry _streamRegistry = new();
@@ -5304,9 +5288,11 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     /// Creates a new bidirectional event coordinator with priority-based routing.
     /// </summary>
     /// <param name="executionContext">The execution context for event attribution (optional)</param>
-    public BidirectionalEventCoordinator(AgentExecutionContext? executionContext = null)
+    /// <param name="config">The agent configuration for observability settings (optional)</param>
+    public BidirectionalEventCoordinator(AgentExecutionContext? executionContext = null, AgentConfig? config = null)
     {
         _executionContext = executionContext;
+        _config = config;
 
         // Priority channel: bounded, for Immediate/Control events
         _priorityChannel = Channel.CreateBounded<AgentEvent>(new BoundedChannelOptions(64)
@@ -5433,6 +5419,12 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     {
         if (evt == null)
             throw new ArgumentNullException(nameof(evt));
+
+        // Skip observability events if disabled (default)
+        if (evt is IObservabilityEvent && !(_config?.Observability?.EmitObservabilityEvents ?? false))
+        {
+            return;
+        }
 
         var sequenced = PrepareEvent(evt, EventDirection.Downstream);
 

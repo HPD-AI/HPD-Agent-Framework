@@ -14,20 +14,20 @@ public sealed record BeforeMessageTurnContext : HookContext
 {
     /// <summary>
     /// The user message that initiated this turn.
-    /// ⚠️ Can be NULL in continuation scenarios (when resuming from checkpoint with no new user input)
+    ///   Can be NULL in continuation scenarios (when resuming from checkpoint with no new user input)
     /// </summary>
     public ChatMessage? UserMessage { get; init; }
 
     /// <summary>
     /// Complete conversation history prior to this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// MUTABLE - middleware can modify history before processing
     /// </summary>
     public IList<ChatMessage> ConversationHistory { get; init; }
 
     /// <summary>
     /// Agent run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// Contains configuration like ClientToolInput, MaxIterations, etc.
     /// </summary>
     public AgentRunOptions RunOptions { get; init; }
@@ -53,20 +53,20 @@ public sealed record AfterMessageTurnContext : HookContext
 {
     /// <summary>
     /// Final assistant response for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public ChatResponse FinalResponse { get; init; }
 
     /// <summary>
     /// Messages that will be persisted to the thread after this turn completes.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// MUTABLE - middleware can filter/modify before persistence
     /// </summary>
     public List<ChatMessage> TurnHistory { get; init; }
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for logging, metrics, and turn-level decisions based on user context.
     /// </summary>
@@ -97,27 +97,27 @@ public sealed record BeforeIterationContext : HookContext
 {
     /// <summary>
     /// Current iteration number (0-based).
-    /// ✅ Always available
+    ///   Always available
     /// </summary>
     public int Iteration { get; init; }
 
     /// <summary>
     /// Messages to send to the LLM for this iteration.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// MUTABLE - add context, modify history
     /// </summary>
     public List<ChatMessage> Messages { get; init; }
 
     /// <summary>
     /// Chat options for this LLM call.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// MUTABLE - modify tools, instructions, temperature
     /// </summary>
     public ChatOptions Options { get; init; }
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for iteration-specific decisions based on user preferences and context.
     /// Examples: Adapt temperature, filter tools, access ContextOverrides for tenant/user info.
@@ -171,19 +171,19 @@ public sealed record BeforeToolExecutionContext : HookContext
 {
     /// <summary>
     /// LLM response for this iteration.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public ChatMessage Response { get; init; }
 
     /// <summary>
     /// Tool calls requested by LLM in this iteration.
-    /// ✅ Always available (never NULL, but may be empty)
+    ///   Always available (never NULL, but may be empty)
     /// </summary>
     public IReadOnlyList<FunctionCallContent> ToolCalls { get; init; }
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission checks, dry-run mode (SkipTools), and tool-level validation.
     /// </summary>
@@ -225,19 +225,19 @@ public sealed record AfterIterationContext : HookContext
 {
     /// <summary>
     /// Current iteration number (0-based).
-    /// ✅ Always available
+    ///   Always available
     /// </summary>
     public int Iteration { get; init; }
 
     /// <summary>
     /// Results from tool execution.
-    /// ✅ Always available (never NULL, but may be empty)
+    ///   Always available (never NULL, but may be empty)
     /// </summary>
     public IReadOnlyList<FunctionResultContent> ToolResults { get; init; }
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for error tracking, metrics collection, and iteration-level logging with user context.
     /// </summary>
@@ -282,13 +282,13 @@ public sealed record BeforeParallelBatchContext : HookContext
 {
     /// <summary>
     /// Information about functions being executed in parallel.
-    /// ✅ Always available (never NULL, always has at least 2 functions)
+    ///   Always available (never NULL, always has at least 2 functions)
     /// </summary>
     public IReadOnlyList<ParallelFunctionInfo> ParallelFunctions { get; init; }
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for rate limiting, batch-level validation, and parallel execution control based on user tier/context.
     /// </summary>
@@ -313,19 +313,19 @@ public sealed record BeforeFunctionContext : HookContext
 {
     /// <summary>
     /// The function being invoked.
-    /// ⚠️ Can be NULL when LLM calls an unknown/unavailable function (unless TerminateOnUnknownCalls is enabled)
+    ///   Can be NULL when LLM calls an unknown/unavailable function (unless TerminateOnUnknownCalls is enabled)
     /// </summary>
     public AIFunction? Function { get; init; }
 
     /// <summary>
     /// Unique call ID for this function invocation.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public string FunctionCallId { get; init; }
 
     /// <summary>
     /// Arguments passed to this function call.
-    /// ✅ Always available (never NULL, but may be empty)
+    ///   Always available (never NULL, but may be empty)
     /// </summary>
     public IReadOnlyDictionary<string, object?> Arguments { get; init; }
 
@@ -343,7 +343,7 @@ public sealed record BeforeFunctionContext : HookContext
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission validation, dry-run mode (SkipTools), and function-level authorization.
     /// </summary>
@@ -405,13 +405,13 @@ public sealed record AfterFunctionContext : HookContext
 {
     /// <summary>
     /// The function that was invoked.
-    /// ⚠️ Can be NULL when an unknown function was called
+    ///   Can be NULL when an unknown function was called
     /// </summary>
     public AIFunction? Function { get; init; }
 
     /// <summary>
     /// Unique call ID for this function invocation.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// </summary>
     public string FunctionCallId { get; init; }
 
@@ -443,7 +443,7 @@ public sealed record AfterFunctionContext : HookContext
 
     /// <summary>
     /// Original run options for this turn.
-    /// ✅ Always available (never NULL)
+    ///   Always available (never NULL)
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for audit logging, metrics, and result transformation based on user context.
     /// </summary>

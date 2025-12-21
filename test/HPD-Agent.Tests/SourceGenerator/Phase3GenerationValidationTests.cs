@@ -204,7 +204,7 @@ public class Phase3GenerationValidationTests
         //  Task 3.4: Add feature flag (USE_NEW_GENERATION)
         //  Task 3.5: Enable new generation (USE_NEW_GENERATION = true)
         //  Task 3.6: Fix build errors (empty array types)
-        //  Task 3.7: Verify all tests pass (650/650 ✅)
+        //  Task 3.7: Verify all tests pass (650/650  )
 
         // REMAINING VALIDATION (manual):
         // - Character-by-character comparison with old generation

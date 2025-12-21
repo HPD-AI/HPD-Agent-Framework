@@ -556,7 +556,7 @@ var config = new AgentConfig
 {
     ErrorHandling = new ErrorHandlingConfig
     {
-        IncludeDetailedErrorsInChat = true  // ⚠️ Only in trusted environments
+        IncludeDetailedErrorsInChat = true  //   Only in trusted environments
     }
 };
 
@@ -642,7 +642,7 @@ Native AOT doesn't support reflection APIs like `GetProperty()`, `GetMethod()`, 
 
 ### Azure Exception Parsing (Before)
 ```csharp
-// ❌ NOT AOT-compatible
+//    NOT AOT-compatible
 var statusProp = exception.GetType().GetProperty("Status");
 var status = (int?)statusProp.GetValue(exception);
 ```

@@ -10,11 +10,11 @@ namespace HPD.Agent.Middleware;
 /// <remarks>
 /// <para><b>V2 Improvements:</b></para>
 /// <list type="bullet">
-/// <item>✅ Typed contexts - compile-time safety, no NULL properties</item>
-/// <item>✅ Immutable requests - preserve original for debugging/retry</item>
-/// <item>✅ Dual pattern - simple + streaming LLM hooks</item>
-/// <item>✅ Centralized errors - OnErrorAsync hook for all errors</item>
-/// <item>✅ Immediate state updates - no scheduled updates</item>
+/// <item>  Typed contexts - compile-time safety, no NULL properties</item>
+/// <item>  Immutable requests - preserve original for debugging/retry</item>
+/// <item>  Dual pattern - simple + streaming LLM hooks</item>
+/// <item>  Centralized errors - OnErrorAsync hook for all errors</item>
+/// <item>  Immediate state updates - no scheduled updates</item>
 /// </list>
 ///
 /// <para><b>Lifecycle Overview:</b></para>
@@ -141,7 +141,7 @@ public interface IAgentMiddleware
     /// <para>By default, if not overridden, returns null and the simple
     /// WrapModelCallAsync is used instead.</para>
     ///
-    /// <para><b>⚠️ IMPORTANT - Null Semantics:</b></para>
+    /// <para><b>  IMPORTANT - Null Semantics:</b></para>
     /// <para>
     /// Return <c>null</c> (default) to indicate "I don't need streaming, use simple pattern."
     /// The agent checks for null and falls back to <see cref="WrapModelCallAsync"/>.

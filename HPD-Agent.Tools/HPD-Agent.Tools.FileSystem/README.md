@@ -326,8 +326,8 @@ All operations are validated against the workspace root:
 
 ```csharp
 //  Allowed: /workspace/src/file.txt
-// ❌ Blocked: /etc/passwd
-// ❌ Blocked: ../../../etc/passwd
+//    Blocked: /etc/passwd
+//    Blocked: ../../../etc/passwd
 ```
 
 ### Permission System

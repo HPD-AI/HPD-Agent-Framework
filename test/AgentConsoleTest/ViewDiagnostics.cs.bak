@@ -22,7 +22,7 @@ public class ViewDiagnostics
         }
         else
         {
-            Console.WriteLine("❌ Diagnostic class not found");
+            Console.WriteLine("   Diagnostic class not found");
         }
     }
 }

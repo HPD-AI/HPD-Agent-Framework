@@ -75,8 +75,8 @@ var functions = pluginManager.CreateAllFunctions(context);
 
 // Result: AI sees ONLY 1 function
 //  ReadFile
-// ❌ FindFiles      ← Hidden! (condition failed)
-// ❌ SearchContent  ← Hidden! (condition failed)
+//    FindFiles      ← Hidden! (condition failed)
+//    SearchContent  ← Hidden! (condition failed)
 ```
 
 ---
@@ -197,12 +197,12 @@ User configures context:
 // User A: Has Tavily API key
 var contextA = new WebSearchContext(hasTavily: true, hasBrave: false);
 var functionsA = CreateAllFunctions(contextA);
-// Result: AI sees AnswerSearch ✅
+// Result: AI sees AnswerSearch  
 
 // User B: No Tavily, only Brave
 var contextB = new WebSearchContext(hasTavily: false, hasBrave: true);
 var functionsB = CreateAllFunctions(contextB);
-// Result: AI does NOT see AnswerSearch ❌
+// Result: AI does NOT see AnswerSearch   
 ```
 
 The AI **automatically adapts** to what's available!
@@ -264,10 +264,10 @@ Your DSL validator ([DSLValidator.cs](../../HPD-Agent.SourceGenerator/Security/D
 -  Complex: `(HasA || HasB) && Count > 0`
 
 ### **Security Blocked:**
-- ❌ Method calls: `GetType()`, `LoadAssembly()`
-- ❌ Reflection: `typeof()`, `nameof()`
-- ❌ Dangerous namespaces: `System.IO`, `System.Reflection`
-- ❌ Code injection: `eval()`, SQL commands
+-    Method calls: `GetType()`, `LoadAssembly()`
+-    Reflection: `typeof()`, `nameof()`
+-    Dangerous namespaces: `System.IO`, `System.Reflection`
+-    Code injection: `eval()`, SQL commands
 
 All validated at **compile time** for maximum safety!
 
@@ -306,8 +306,8 @@ All validated at **compile time** for maximum safety!
 │                                                             │
 │  CreateAllFunctions(context):                              │
 │    - ReadFile:  Always added                             │
-│    - FindFiles: ❌ Skipped (EnableSearch = false)          │
-│    - SearchContent: ❌ Skipped (EnableSearch = false)      │
+│    - FindFiles:    Skipped (EnableSearch = false)          │
+│    - SearchContent:    Skipped (EnableSearch = false)      │
 └─────────────────┬───────────────────────────────────────────┘
                   │
                   ▼

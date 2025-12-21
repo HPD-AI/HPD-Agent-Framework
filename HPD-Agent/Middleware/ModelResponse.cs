@@ -41,13 +41,13 @@ public sealed record ModelResponse
 {
     /// <summary>
     /// The assistant message returned by the LLM.
-    /// ✅ Always available when successful (NULL only if Error is set)
+    ///   Always available when successful (NULL only if Error is set)
     /// </summary>
     public required ChatMessage Message { get; init; }
 
     /// <summary>
     /// Tool calls requested by the LLM in this response.
-    /// ✅ Always available (never NULL, but may be empty)
+    ///   Always available (never NULL, but may be empty)
     /// </summary>
     public required IReadOnlyList<FunctionCallContent> ToolCalls { get; init; }
 

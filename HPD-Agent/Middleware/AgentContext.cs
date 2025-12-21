@@ -15,10 +15,10 @@ namespace HPD.Agent.Middleware;
 /// </para>
 /// <para><b>Key Improvements:</b></para>
 /// <list type="bullet">
-/// <item>✅ Single context instance - no manual synchronization needed</item>
-/// <item>✅ Immediate state updates - updates visible to all subsequent hooks instantly</item>
-/// <item>✅ Type-safe views - factory methods create typed contexts for each hook</item>
-/// <item>✅ No scheduled updates - no awkward GetPendingState() pattern</item>
+/// <item>  Single context instance - no manual synchronization needed</item>
+/// <item>  Immediate state updates - updates visible to all subsequent hooks instantly</item>
+/// <item>  Type-safe views - factory methods create typed contexts for each hook</item>
+/// <item>  No scheduled updates - no awkward GetPendingState() pattern</item>
 /// </list>
 /// </remarks>
 public sealed class AgentContext
@@ -91,7 +91,7 @@ public sealed class AgentContext
     /// Updates agent state immutably.
     /// </summary>
     /// <remarks>
-    /// <para><b>⚠️ CRITICAL: Updates are applied IMMEDIATELY</b></para>
+    /// <para><b>  CRITICAL: Updates are applied IMMEDIATELY</b></para>
     /// <para>
     /// Subsequent hooks see the updated state immediately. This is different from V1
     /// which scheduled updates for later. Middleware is responsible for validating
@@ -114,8 +114,8 @@ public sealed class AgentContext
     {
         if (transform == null) throw new ArgumentNullException(nameof(transform));
         _state = transform(_state);
-        // ✅ Updates visible to ALL subsequent hooks (same instance!)
-        // ✅ No scheduled updates - no awkward GetPendingState() needed
+        //   Updates visible to ALL subsequent hooks (same instance!)
+        //   No scheduled updates - no awkward GetPendingState() needed
     }
 
     /// <summary>

@@ -87,7 +87,7 @@ public sealed record HistoryReductionStateData
 /// ┌────────────────────────────────────────────────────────┐
 /// │ Turn 3: 106 messages                                   │
 /// │         106 - 100 = 6 new messages                     │
-/// │         6 &gt; 5 (threshold) → CACHE MISS ❌               │
+/// │         6 &gt; 5 (threshold) → CACHE MISS                  │
 /// │         Re-summarize required                          │
 /// └────────────────────────────────────────────────────────┘
 /// </code>

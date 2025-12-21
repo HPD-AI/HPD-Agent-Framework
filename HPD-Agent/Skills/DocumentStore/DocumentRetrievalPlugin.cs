@@ -52,7 +52,7 @@ public class DocumentRetrievalPlugin
 
             if (content == null)
             {
-                return $"⚠️ Document '{documentId}' not found.";
+                return $"  Document '{documentId}' not found.";
             }
 
             return content;
@@ -60,7 +60,7 @@ public class DocumentRetrievalPlugin
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to read document {DocumentId}", documentId);
-            return $"⚠️ Error reading document '{documentId}': {ex.Message}\n" +
+            return $"  Error reading document '{documentId}': {ex.Message}\n" +
                    $"The document may be temporarily unavailable. Please try again.";
         }
     }

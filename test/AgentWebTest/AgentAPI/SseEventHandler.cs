@@ -49,8 +49,8 @@ public class SseEventHandler : IAgentEventHandler
                 Console.WriteLine($"[SSE] Sending {typeName}: {textPreview}...");
                 break;
 
-            case Reasoning reasoning when reasoning.Phase == ReasoningPhase.Delta:
-                var reasoningPreview = reasoning.Text?.Length > 50 ? reasoning.Text.Substring(0, 50) : reasoning.Text;
+            case ReasoningDeltaEvent delta:
+                var reasoningPreview = delta.Text?.Length > 50 ? delta.Text.Substring(0, 50) : delta.Text;
                 Console.WriteLine($"[SSE] Sending {typeName}: {reasoningPreview}...");
                 break;
 

@@ -19,7 +19,9 @@ export const EventTypes = {
   TEXT_MESSAGE_END: 'TEXT_MESSAGE_END',
 
   // Reasoning (extended thinking)
-  REASONING: 'REASONING',
+  REASONING_MESSAGE_START: 'REASONING_MESSAGE_START',
+  REASONING_DELTA: 'REASONING_DELTA',
+  REASONING_MESSAGE_END: 'REASONING_MESSAGE_END',
 
   // Tool Execution
   TOOL_CALL_START: 'TOOL_CALL_START',
@@ -215,19 +217,21 @@ export interface TextMessageEndEvent extends BaseEvent {
 // Reasoning Events
 // ============================================
 
-export type ReasoningPhase =
-  | 'SessionStart'
-  | 'MessageStart'
-  | 'Delta'
-  | 'MessageEnd'
-  | 'SessionEnd';
-
-export interface ReasoningEvent extends BaseEvent {
-  type: typeof EventTypes.REASONING;
-  phase: ReasoningPhase;
+export interface ReasoningMessageStartEvent extends BaseEvent {
+  type: typeof EventTypes.REASONING_MESSAGE_START;
   messageId: string;
-  role?: string;
-  text?: string;
+  role: string;
+}
+
+export interface ReasoningDeltaEvent extends BaseEvent {
+  type: typeof EventTypes.REASONING_DELTA;
+  text: string;
+  messageId: string;
+}
+
+export interface ReasoningMessageEndEvent extends BaseEvent {
+  type: typeof EventTypes.REASONING_MESSAGE_END;
+  messageId: string;
 }
 
 // ============================================
@@ -583,7 +587,9 @@ export type AgentEvent =
   | TextDeltaEvent
   | TextMessageEndEvent
   // Reasoning Events
-  | ReasoningEvent
+  | ReasoningMessageStartEvent
+  | ReasoningDeltaEvent
+  | ReasoningMessageEndEvent
   // Tool Events
   | ToolCallStartEvent
   | ToolCallArgsEvent
@@ -650,8 +656,16 @@ export function isPermissionRequestEvent(event: BaseEvent): event is PermissionR
   return event.type === EventTypes.PERMISSION_REQUEST;
 }
 
-export function isReasoningEvent(event: BaseEvent): event is ReasoningEvent {
-  return event.type === EventTypes.REASONING;
+export function isReasoningMessageStartEvent(event: BaseEvent): event is ReasoningMessageStartEvent {
+  return event.type === EventTypes.REASONING_MESSAGE_START;
+}
+
+export function isReasoningDeltaEvent(event: BaseEvent): event is ReasoningDeltaEvent {
+  return event.type === EventTypes.REASONING_DELTA;
+}
+
+export function isReasoningMessageEndEvent(event: BaseEvent): event is ReasoningMessageEndEvent {
+  return event.type === EventTypes.REASONING_MESSAGE_END;
 }
 
 export function isMessageTurnFinishedEvent(event: BaseEvent): event is MessageTurnFinishedEvent {

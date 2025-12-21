@@ -287,11 +287,11 @@ public async Task PostInvokeAsync(PostInvokeContext context, CancellationToken c
 | Feature | IPromptMiddleware | AIContextProvider |
 |---------|---------------|-------------------|
 | **Add messages** |  `context.Messages = ...` |  `AIContext.Messages` |
-| **Transform messages** |  Full control | ❌ Read-only input |
+| **Transform messages** |  Full control |    Read-only input |
 | **Add tools** |  `context.Options.Tools.Add(...)` |  `AIContext.Tools` |
 | **Modify instructions** |  `context.Options.Instructions` |  `AIContext.Instructions` |
-| **Context passing** |  `context.Properties["Project"]` | ❌ Must inject at construction |
-| **Short-circuit** |  Don't call `next()` | ❌ All providers always run |
+| **Context passing** |  `context.Properties["Project"]` |    Must inject at construction |
+| **Short-circuit** |  Don't call `next()` |    All providers always run |
 | **Post-processing** |  `PostInvokeAsync` |  `InvokedAsync` |
 | **Execution** | Sequential pipeline | Parallel merge |
 | **Error handling** |  Post-invoke sees exception |  InvokedContext.Exception |

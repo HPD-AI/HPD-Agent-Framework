@@ -210,7 +210,7 @@ Equity % = $400,000 ÷ $1,000,000 × 100 = 40%
 - **Investigation:** Why is company taking on more debt?
   - Growth capex? (positive)
   - Debt restructuring? (neutral)
-  - Funding losses? (negative) ⚠️
+  - Funding losses? (negative)  
 - **Risk:** If funding losses, deteriorating business quality
 
 ### Red Flag 2: D/E Much Higher Than Industry
@@ -218,14 +218,14 @@ Equity % = $400,000 ÷ $1,000,000 × 100 = 40%
 - **Investigation:** Why? Different business model or financial distress?
   - Leveraged buyout? (LBO companies intentionally high D/E)
   - Acquisition funding? (temporary)
-  - Weak profitability? (concern) ⚠️
+  - Weak profitability? (concern)  
 - **Risk:** Limited flexibility; vulnerable to rate increases or downturns
 
 ### Red Flag 3: High D/A But Equity Still Declining
 - **Example:** D/A 60% and rising
 - **Investigation:** Company building reserves? Or burning cash?
-  - If equity declining: burning cash ⚠️
-  - If equity stable: company is profitable ✅
+  - If equity declining: burning cash  
+  - If equity stable: company is profitable  
 - **Risk:** If equity declining, business is not generating adequate returns
 
 ### Red Flag 4: Equity Multiplier > 5.0x
@@ -233,7 +233,7 @@ Equity % = $400,000 ÷ $1,000,000 × 100 = 40%
 - **Investigation:** Extreme leverage - why?
   - Financial institution? (normal)
   - LBO? (may be intentional)
-  - In distress? ⚠️
+  - In distress?  
 - **Risk:** Any downturn could wipe out equity; bankruptcy risk elevated
 
 ---
@@ -267,10 +267,10 @@ Capital structure varies significantly by industry:
 -  **Cost:** Debt often cheaper than equity
 
 ### Negative Aspects of Debt Financing:
-- ⚠️ **Fixed obligations:** Debt must be paid regardless of profitability
-- ⚠️ **Bankruptcy risk:** Too much debt = insolvency risk
-- ⚠️ **Opportunity cost:** Debt limits financial flexibility
-- ⚠️ **Refinancing risk:** If debt comes due, need to refinance at potentially higher rates
+-   **Fixed obligations:** Debt must be paid regardless of profitability
+-   **Bankruptcy risk:** Too much debt = insolvency risk
+-   **Opportunity cost:** Debt limits financial flexibility
+-   **Refinancing risk:** If debt comes due, need to refinance at potentially higher rates
 
 ---
 

@@ -717,7 +717,7 @@ public class HistoryReductionConfig
     /// <summary>
     /// Maximum token budget before triggering reduction (optional, FFI-friendly).
     ///
-    /// ⚠️ CURRENTLY DISABLED - Token tracking is not implemented.
+    ///   CURRENTLY DISABLED - Token tracking is not implemented.
     /// See docs/TOKEN_TRACKING_README.md for why this is architecturally impossible.
     ///
     /// This setting exists for API compatibility but is IGNORED by the history reduction system.
@@ -740,7 +740,7 @@ public class HistoryReductionConfig
     /// <summary>
     /// Target token count after reduction (default: 4000).
     ///
-    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    ///   CURRENTLY IGNORED - Token tracking is not implemented.
     /// Only used when MaxTokenBudget is set (which is also disabled).
     /// See MaxTokenBudget documentation for details.
     /// </summary>
@@ -750,7 +750,7 @@ public class HistoryReductionConfig
     /// Token threshold for triggering reduction when using token budgets.
     /// Number of tokens allowed beyond TargetTokenBudget before reduction is triggered.
     ///
-    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    ///   CURRENTLY IGNORED - Token tracking is not implemented.
     /// Only used when MaxTokenBudget is set (which is also disabled).
     /// See MaxTokenBudget documentation for details.
     /// </summary>
@@ -761,7 +761,7 @@ public class HistoryReductionConfig
     /// Requires ContextWindowSize to be configured.
     /// Example: 0.7 = trigger reduction at 70% of context window.
     ///
-    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    ///   CURRENTLY IGNORED - Token tracking is not implemented.
     /// See MaxTokenBudget documentation for why token-based reduction doesn't work.
     /// Use TargetMessageCount instead for reliable history reduction.
     /// </summary>
@@ -772,7 +772,7 @@ public class HistoryReductionConfig
     /// Only used when TokenBudgetTriggerPercentage is set.
     /// Example: 0.3 = keep 30% of context window after compression.
     ///
-    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    ///   CURRENTLY IGNORED - Token tracking is not implemented.
     /// See MaxTokenBudget documentation for details.
     /// </summary>
     public double TokenBudgetPreservePercentage { get; set; } = 0.3;
@@ -781,7 +781,7 @@ public class HistoryReductionConfig
     /// Context window size for percentage calculations.
     /// Required when using TokenBudgetTriggerPercentage.
     ///
-    /// ⚠️ CURRENTLY IGNORED - Token tracking is not implemented.
+    ///   CURRENTLY IGNORED - Token tracking is not implemented.
     /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int? ContextWindowSize { get; set; } = null;

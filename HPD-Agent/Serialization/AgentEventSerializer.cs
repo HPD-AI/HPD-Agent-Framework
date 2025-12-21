@@ -48,7 +48,9 @@ public static partial class AgentEventSerializer
         [typeof(TextMessageEndEvent)] = EventTypes.Content.TEXT_MESSAGE_END,
 
         // Reasoning Events
-        [typeof(Reasoning)] = EventTypes.Reasoning.REASONING,
+        [typeof(ReasoningMessageStartEvent)] = EventTypes.Reasoning.REASONING_MESSAGE_START,
+        [typeof(ReasoningDeltaEvent)] = EventTypes.Reasoning.REASONING_DELTA,
+        [typeof(ReasoningMessageEndEvent)] = EventTypes.Reasoning.REASONING_MESSAGE_END,
 
         // Tool Events
         [typeof(ToolCallStartEvent)] = EventTypes.Tool.TOOL_CALL_START,

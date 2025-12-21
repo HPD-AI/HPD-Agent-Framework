@@ -60,11 +60,11 @@ Available AI Functions (all providers):
 |---------|-----------|--------------|-----------|
 | Web Search |  |  |  |
 | News Search |  |  |  |
-| Video Search | ❌ |  |  |
-| Shopping Search | ❌ | ❌ |  |
-| AI Answers |  | ❌ | ❌ |
-| Raw Content |  | ❌ | ❌ |
-| Privacy Focus | ❌ |  | ❌ |
+| Video Search |    |  |  |
+| Shopping Search |    |    |  |
+| AI Answers |  |    |    |
+| Raw Content |  |    |    |
+| Privacy Focus |    |  |    |
 
 ## 🔧 Configuration Examples
 
@@ -358,7 +358,7 @@ await agent.InvokeAsync("What are the main benefits of quantum computing?");
 
 ## 📈 Roadmap
 
-### Phase 1: Core Infrastructure ✅
+### Phase 1: Core Infrastructure  
 - [x] Base interfaces and models
 - [x] Tavily connector implementation
 - [x] Plugin with conditional functions

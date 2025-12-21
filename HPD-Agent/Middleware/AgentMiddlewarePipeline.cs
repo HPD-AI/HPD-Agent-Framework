@@ -10,10 +10,10 @@ namespace HPD.Agent.Middleware;
 /// <remarks>
 /// <para><b>V2 Improvements:</b></para>
 /// <list type="bullet">
-/// <item>✅ Typed context passing - each hook gets strongly-typed context</item>
-/// <item>✅ Dual pattern support - automatically routes to simple or streaming LLM hooks</item>
-/// <item>✅ Centralized error routing - OnErrorAsync called in reverse order</item>
-/// <item>✅ Immutable request pattern - preserve original for debugging/retry</item>
+/// <item>  Typed context passing - each hook gets strongly-typed context</item>
+/// <item>  Dual pattern support - automatically routes to simple or streaming LLM hooks</item>
+/// <item>  Centralized error routing - OnErrorAsync called in reverse order</item>
+/// <item>  Immutable request pattern - preserve original for debugging/retry</item>
 /// </list>
 ///
 /// <para><b>Execution Order:</b></para>

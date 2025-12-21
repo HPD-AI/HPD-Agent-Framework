@@ -118,7 +118,7 @@ internal class OpenRouterProvider : IProviderExtendedFeatures
 
     /// <summary>
     /// Validates an OpenRouter API key by checking if it can access the key info endpoint.
-    /// ⚠️  NETWORK CALL: This method makes HTTP requests and can be slow (2-5 seconds).
+    ///    NETWORK CALL: This method makes HTTP requests and can be slow (2-5 seconds).
     /// Only use when you need live API validation. For fast builds, use ValidateConfiguration() instead.
     /// ✨ PERFORMANCE: Set OPENROUTER_SKIP_VALIDATION=true to skip validation entirely
     /// </summary>
@@ -176,7 +176,7 @@ internal class OpenRouterProvider : IProviderExtendedFeatures
         }
         catch (Exception)
         {
-            // ⚠️  Don't fail builds on network errors - just warn and proceed
+            //    Don't fail builds on network errors - just warn and proceed
             return ProviderValidationResult.Success(); // Allow build to continue despite validation errors
         }
     }
