@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPDAgent.Graph.Abstractions</RootNamespace>
+    <AssemblyName>HPDAgent.Graph.Abstractions</AssemblyName>
+    <IsPackable>true</IsPackable>
+
+    <!-- Package metadata -->
+    <PackageId>HPDAgent.Graph.Abstractions</PackageId>
+    <Description>Core abstractions for HPD.Graph - a universal DAG execution engine. Domain-agnostic interfaces and types for building workflow orchestration systems.</Description>
+    <PackageTags>graph;dag;workflow;orchestration;execution-engine;abstractions</PackageTags>
+  </PropertyGroup>
+
+</Project>

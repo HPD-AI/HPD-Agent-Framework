@@ -1,0 +1,30 @@
+namespace HPDAgent.Graph.Abstractions.Caching;
+
+/// <summary>
+/// Snapshot of graph execution state for incremental detection.
+/// Stores fingerprints from previous execution to detect changes.
+/// </summary>
+public sealed record GraphSnapshot
+{
+    /// <summary>
+    /// Fingerprint for each node from previous execution.
+    /// Format: nodeId → fingerprint hash
+    /// </summary>
+    public required Dictionary<string, string> NodeFingerprints { get; init; }
+
+    /// <summary>
+    /// Global graph hash (graph structure + config).
+    /// If this changes, entire graph must re-execute.
+    /// </summary>
+    public required string GraphHash { get; init; }
+
+    /// <summary>
+    /// Timestamp of snapshot creation.
+    /// </summary>
+    public required DateTimeOffset Timestamp { get; init; }
+
+    /// <summary>
+    /// Execution ID this snapshot was created from.
+    /// </summary>
+    public string? ExecutionId { get; init; }
+}
