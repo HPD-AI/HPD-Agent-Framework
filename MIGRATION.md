@@ -274,7 +274,7 @@ const handlers: EventHandlers = {
     return createSuccessResponse(request.requestId, 'Done');
   },
   onFrontendPluginsRegistered: (event) => {
-    console.log(`Registered: ${event.registeredPlugins.join(', ')}`);
+    console.log(`Registered: ${event.RegisteredToolGroups.join(', ')}`);
   }
 };
 ```

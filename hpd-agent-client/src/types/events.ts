@@ -77,12 +77,6 @@ export const EventTypes = {
   SCHEMA_CHANGED: 'SCHEMA_CHANGED',
   COLLAPSING_STATE: 'COLLAPSING_STATE',
 
-  // Branch Events
-  BRANCH_CREATED: 'BRANCH_CREATED',
-  BRANCH_SWITCHED: 'BRANCH_SWITCHED',
-  BRANCH_DELETED: 'BRANCH_DELETED',
-  BRANCH_RENAMED: 'BRANCH_RENAMED',
-
   // Audio Events (TTS)
   SYNTHESIS_STARTED: 'SYNTHESIS_STARTED',
   AUDIO_CHUNK: 'AUDIO_CHUNK',
@@ -388,45 +382,6 @@ export interface ClientToolGroupsRegisteredEvent extends BaseEvent {
 }
 
 // ============================================
-// Branch Events
-// ============================================
-
-export interface BranchCreatedEvent extends BaseEvent {
-  type: typeof EventTypes.BRANCH_CREATED;
-  threadId: string;
-  branchName: string;
-  checkpointId: string;
-  parentCheckpointId: string;
-  forkMessageIndex: number;
-  createdAt: string;
-}
-
-export interface BranchSwitchedEvent extends BaseEvent {
-  type: typeof EventTypes.BRANCH_SWITCHED;
-  threadId: string;
-  previousBranch?: string;
-  newBranch?: string;
-  checkpointId: string;
-  switchedAt: string;
-}
-
-export interface BranchDeletedEvent extends BaseEvent {
-  type: typeof EventTypes.BRANCH_DELETED;
-  threadId: string;
-  branchName: string;
-  checkpointsPruned: number;
-  deletedAt: string;
-}
-
-export interface BranchRenamedEvent extends BaseEvent {
-  type: typeof EventTypes.BRANCH_RENAMED;
-  threadId: string;
-  oldName: string;
-  newName: string;
-  renamedAt: string;
-}
-
-// ============================================
 // Audio Events (TTS - Synthesis)
 // ============================================
 
@@ -613,11 +568,6 @@ export type AgentEvent =
   | ClientToolInvokeRequestEvent
   | ClientToolInvokeResponseEvent
   | ClientToolGroupsRegisteredEvent
-  // Branch Events
-  | BranchCreatedEvent
-  | BranchSwitchedEvent
-  | BranchDeletedEvent
-  | BranchRenamedEvent
   // Audio Events (TTS)
   | SynthesisStartedEvent
   | AudioChunkEvent
@@ -694,22 +644,6 @@ export function isClientToolGroupsRegisteredEvent(
   event: BaseEvent
 ): event is ClientToolGroupsRegisteredEvent {
   return event.type === EventTypes.CLIENT_TOOL_GROUPS_REGISTERED;
-}
-
-export function isBranchCreatedEvent(event: BaseEvent): event is BranchCreatedEvent {
-  return event.type === EventTypes.BRANCH_CREATED;
-}
-
-export function isBranchSwitchedEvent(event: BaseEvent): event is BranchSwitchedEvent {
-  return event.type === EventTypes.BRANCH_SWITCHED;
-}
-
-export function isBranchDeletedEvent(event: BaseEvent): event is BranchDeletedEvent {
-  return event.type === EventTypes.BRANCH_DELETED;
-}
-
-export function isBranchRenamedEvent(event: BaseEvent): event is BranchRenamedEvent {
-  return event.type === EventTypes.BRANCH_RENAMED;
 }
 
 // Audio Type Guards

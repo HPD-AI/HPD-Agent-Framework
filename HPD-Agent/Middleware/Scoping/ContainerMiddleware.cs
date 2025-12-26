@@ -76,25 +76,25 @@ public class ContainerMiddleware : IAgentMiddleware
     /// Creates a new ContainerMiddleware instance.
     /// </summary>
     /// <param name="initialTools">All available tools for the agent</param>
-    /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithTools (always visible)</param>
+    /// <param name="explicitlyRegisteredToolGroups">Plugins explicitly registered via WithTools (always visible)</param>
     /// <param name="config">Container configuration (optional, defaults to enabled)</param>
     /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerMiddleware(
         IList<AITool> initialTools,
-        ImmutableHashSet<string> explicitlyRegisteredPlugins,
+        ImmutableHashSet<string> explicitlyRegisteredToolGroups,
         CollapsingConfig? config = null,
         Microsoft.Extensions.Logging.ILogger<ContainerMiddleware>? logger = null)
     {
         if (initialTools == null)
             throw new ArgumentNullException(nameof(initialTools));
-        if (explicitlyRegisteredPlugins == null)
-            throw new ArgumentNullException(nameof(explicitlyRegisteredPlugins));
+        if (explicitlyRegisteredToolGroups == null)
+            throw new ArgumentNullException(nameof(explicitlyRegisteredToolGroups));
 
         // Extract AIFunctions from tools
         var aiFunctions = initialTools.OfType<AIFunction>().ToList();
 
         // Create ToolVisibilityManager for filtering
-        _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredPlugins);
+        _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredToolGroups);
 
         _config = config ?? new CollapsingConfig { Enabled = true };
         _logger = logger;

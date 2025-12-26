@@ -34,7 +34,7 @@ namespace HPD.Agent;
 ///
 /// <para><b>Lifecycle:</b></para>
 /// <para>
-/// - RegisteredPlugins persist across message turns (unless ResetClientState=true)
+/// - RegisteredToolGroups persist across message turns (unless ResetClientState=true)
 /// - ExpandedPlugins and HiddenTools can be modified via augmentation
 /// - PendingAugmentation is applied at the start of each iteration
 /// </para>
@@ -46,7 +46,7 @@ public sealed record ClientToolStateData
     /// Registered plugins (source of truth for tools).
     /// Key is plugin name, value is the plugin definition.
     /// </summary>
-    public ImmutableDictionary<string, ClientToolGroupDefinition> RegisteredPlugins { get; init; }
+    public ImmutableDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups { get; init; }
         = ImmutableDictionary<string, ClientToolGroupDefinition>.Empty;
 
     /// <summary>
@@ -89,7 +89,7 @@ public sealed record ClientToolStateData
     {
         return this with
         {
-            RegisteredPlugins = RegisteredPlugins.SetItem(plugin.Name, plugin)
+            RegisteredToolGroups = RegisteredToolGroups.SetItem(plugin.Name, plugin)
         };
     }
 
@@ -100,7 +100,7 @@ public sealed record ClientToolStateData
     {
         return this with
         {
-            RegisteredPlugins = RegisteredPlugins.Remove(toolName),
+            RegisteredToolGroups = RegisteredToolGroups.Remove(toolName),
             ExpandedPlugins = ExpandedPlugins.Remove(toolName)
         };
     }

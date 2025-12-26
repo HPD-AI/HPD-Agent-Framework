@@ -21,12 +21,11 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint src --ext .ts",
+    "build": "~/.bun/bin/bunx tsc",
+    "test": "~/.bun/bin/bun test",
+    "test:watch": "~/.bun/bin/bun test --watch",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "~/.bun/bin/bun run build"
   },
   "keywords": [
     "hpd-agent",

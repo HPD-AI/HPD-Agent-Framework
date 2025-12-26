@@ -1,346 +1,316 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { AgentClient, type PermissionRequestEvent, type PermissionChoice, type ClientToolInvokeRequestEvent } from '@hpd/hpd-agent-client';
-    import Artifact from '$lib/artifacts/Artifact.svelte';
-    import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
-    import { artifactPlugin, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
+	import { onMount } from 'svelte';
+	import {
+		createAgent,
+		Message,
+		MessageList,
+		Input,
+		ToolExecution,
+		type Agent,
+	} from '@hpd/hpd-agent-headless-ui';
+	import Artifact from '$lib/artifacts/Artifact.svelte';
+	import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
+	import { artifactTool, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
 
-    const API_BASE = 'http://localhost:5135';
+	const API_BASE = 'http://localhost:5135';
 
-    interface Message {
-        role: 'user' | 'assistant';
-        content: string;
-        thinking?: string;
-    }
+	let conversationId = $state<string | null>(null);
+	let currentMessage = $state('');
+	let agent = $state<Agent | null>(null);
 
-    interface PendingPermission {
-        permissionId: string;
-        functionName: string;
-        description?: string;
-        callId: string;
-        arguments?: Record<string, unknown>;
-        resolve: (response: { approved: boolean; choice?: PermissionChoice; reason?: string }) => void;
-    }
+	// Artifact state (reactive)
+	let artifact = $state<ArtifactState>({
+		isOpen: false,
+		content: '',
+		language: 'html',
+		title: '',
+		highlightedLines: [],
+	});
+	artifactStore.subscribe((value) => (artifact = value));
 
-    let conversationId: string | null = null;
-    let messages: Message[] = [];
-    let currentMessage = '';
-    let isLoading = false;
-    let streamingContent = '';
-    let currentThinking = '';
-    let pendingPermission: PendingPermission | null = null;
-    let showPermissionDialog = false;
+	onMount(async () => {
+		const saved = localStorage.getItem('conversationId');
+		if (saved) {
+			try {
+				const res = await fetch(`${API_BASE}/conversations/${saved}`);
+				if (res.ok) {
+					conversationId = saved;
+					initializeAgent(saved);
+					return;
+				}
+			} catch (e) {
+				console.error('Failed to verify conversation:', e);
+			}
+		}
+		await createConversation();
+	});
 
-    // Artifact state (reactive)
-    let artifact: ArtifactState;
-    artifactStore.subscribe(value => artifact = value);
+	async function createConversation() {
+		const res = await fetch(`${API_BASE}/conversations`, { method: 'POST' });
+		const data = await res.json();
+		conversationId = data.id;
+		console.log('[CREATE] Created new conversation:', conversationId);
+		localStorage.setItem('conversationId', conversationId!);
+		artifactStore.close();
+		if (conversationId) {
+			initializeAgent(conversationId);
+		}
+	}
 
-    // Create the client with artifact plugin
-    const client = new AgentClient({
-        baseUrl: API_BASE,
-        ClientPlugins: [artifactPlugin]
-    });
+	function initializeAgent(convId: string) {
+		agent = createAgent({
+			baseUrl: API_BASE,
+			conversationId: convId,
+			clientToolGroups: [artifactTool],
+			onClientToolInvoke: async (request) => {
+				console.log('[TOOL INVOKE]', request.toolName, request.arguments);
 
-    onMount(async () => {
-        const saved = localStorage.getItem('conversationId');
-        if (saved) {
-            // Verify conversation still exists
-            try {
-                const res = await fetch(`${API_BASE}/conversations/${saved}`);
-                if (res.ok) {
-                    conversationId = saved;
-                    return;
-                }
-            } catch (e) {
-                console.error('Failed to verify conversation:', e);
-            }
-        }
-        // Create new conversation if none exists or verification failed
-        await createConversation();
-    });
+				// Handle artifact tools
+				const response = handleArtifactTool(
+					request.toolName,
+					request.arguments,
+					request.requestId
+				);
 
-    async function createConversation() {
-        const res = await fetch(`${API_BASE}/conversations`, { method: 'POST' });
-        const data = await res.json();
-        conversationId = data.id;
-        console.log('[CREATE] Created new conversation:', conversationId);
-        localStorage.setItem('conversationId', conversationId!);
-        messages = [];
-        // Close any open artifact on new conversation
-        artifactStore.close();
-    }
+				console.log('[TOOL RESPONSE]', response);
+				return response;
+			},
+			onError: (message) => {
+				console.error('[AGENT ERROR]', message);
+			},
+			onComplete: () => {
+				console.log('[AGENT] Turn complete');
+			},
+		});
+		console.log('[AGENT] Created agent:', agent);
+	}
 
-    async function sendMessage() {
-        if (!currentMessage.trim() || isLoading || !conversationId) return;
+	async function sendMessage(details: { value: string }) {
+		if (!agent || !conversationId) return;
 
-        const userMsg = currentMessage.trim();
-        currentMessage = '';
+		console.log('[SEND] Sending message to conversation:', conversationId);
 
-        console.log('[SEND] Sending message to conversation:', conversationId);
-        messages = [...messages, { role: 'user', content: userMsg }];
-        messages = [...messages, { role: 'assistant', content: '', thinking: '' }];
+		// Clear the input BEFORE sending (don't wait for streaming)
+		currentMessage = '';
 
-        isLoading = true;
-        streamingContent = '';
-        currentThinking = '';
-
-        try {
-            await client.stream(
-                conversationId,
-                [{ content: userMsg }],
-                {
-                    // Content handlers
-                    onTextDelta: (text) => {
-                        console.log('Text delta:', text);
-                        streamingContent += text;
-                        currentThinking = '';
-                        updateLastMessage();
-                    },
-
-                    // Reasoning handlers
-                    onReasoning: (text, phase) => {
-                        if (phase === 'Delta') {
-                            console.log('Reasoning:', text?.substring(0, 100));
-                            currentThinking = text;
-                            updateLastMessage();
-                        }
-                    },
-
-                    // Tool handlers
-                    onToolCallStart: (_callId, name) => {
-                        console.log('Tool call:', name);
-                        currentThinking = `Using ${name}...`;
-                        updateLastMessage();
-                    },
-
-                    onToolCallResult: (callId) => {
-                        console.log('Tool result:', callId);
-                    },
-
-                    // Permission handler - async, waits for user response
-                    onPermissionRequest: async (request: PermissionRequestEvent) => {
-                        console.log('Permission request:', request.functionName);
-                        currentThinking = `Waiting for permission to use ${request.functionName}...`;
-                        updateLastMessage();
-
-                        // Return a promise that resolves when user responds
-                        return new Promise((resolve) => {
-                            pendingPermission = {
-                                permissionId: request.permissionId,
-                                functionName: request.functionName,
-                                description: request.description,
-                                callId: request.callId,
-                                arguments: request.arguments,
-                                resolve
-                            };
-                            showPermissionDialog = true;
-                        });
-                    },
-
-                    // Client tool handler - handles artifact tools
-                    onClientToolInvoke: async (request: ClientToolInvokeRequestEvent) => {
-                        console.log('Client tool invoke:', request.toolName, request.arguments);
-                        currentThinking = `Executing ${request.toolName}...`;
-                        updateLastMessage();
-
-                        // Handle artifact tools
-                        const response = handleArtifactTool(
-                            request.toolName,
-                            request.arguments,
-                            request.requestId
-                        );
-
-                        console.log('Client tool response:', response);
-                        return response;
-                    },
-
-                    // Client plugins registered
-                    onClientPluginsRegistered: (event) => {
-                        console.log('Client plugins registered:', event.registeredPlugins, 'Total tools:', event.totalTools);
-                    },
-
-                    // Lifecycle handlers
-                    onTurnStart: (iteration) => {
-                        console.log('Agent turn started:', iteration);
-                    },
-
-                    onTurnEnd: (iteration) => {
-                        console.log('Agent turn finished:', iteration);
-                    },
-
-                    onComplete: () => {
-                        console.log('Message complete');
-                        isLoading = false;
-                    },
-
-                    onError: (message) => {
-                        console.error('Error:', message);
-                        streamingContent = `Error: ${message}`;
-                        updateLastMessage();
-                        isLoading = false;
-                    },
-
-                    // Raw event access for debugging
-                    onEvent: (event) => {
-                        console.log(`[v${event.version}] ${event.type}:`, event);
-                    }
-                }
-            );
-        } catch (error) {
-            console.error('Stream error:', error);
-            streamingContent = `Error: ${error}`;
-            updateLastMessage();
-        } finally {
-            isLoading = false;
-        }
-    }
-
-    function updateLastMessage() {
-        if (messages.length === 0) return;
-        const lastMsg = { ...messages[messages.length - 1] };
-        lastMsg.content = streamingContent;
-        lastMsg.thinking = currentThinking;
-        messages = [...messages.slice(0, -1), lastMsg];
-    }
-
-    function respondToPermission(approved: boolean, choice: PermissionChoice = 'ask') {
-        if (!pendingPermission) return;
-
-        // Resolve the promise that the SDK is waiting on
-        pendingPermission.resolve({
-            approved,
-            choice,
-            reason: approved ? undefined : 'User denied permission'
-        });
-
-        showPermissionDialog = false;
-        currentThinking = '';
-        updateLastMessage();
-        pendingPermission = null;
-    }
-
-    function handleKeypress(e: KeyboardEvent) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    }
+		// Send the message (this will stream and take time)
+		await agent.send(details.value);
+	}
 </script>
 
 <div class="h-screen flex flex-col bg-gray-50">
-    <!-- Header -->
-    <div class="bg-white border-b px-6 py-4 flex justify-between items-center">
-        <div>
-            <h1 class="text-xl font-semibold">HPD-Agent Chat</h1>
-            <p class="text-sm text-gray-500">{messages.length} messages</p>
-        </div>
-        <button
-            onclick={createConversation}
-            class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm"
-        >
-            New Chat
-        </button>
-    </div>
+	<!-- Header -->
+	<div class="bg-white border-b px-6 py-4 flex justify-between items-center">
+		<div>
+			<h1 class="text-xl font-semibold">HPD-Agent Chat (createAgent API)</h1>
+			<p class="text-sm text-gray-500">{agent?.state.messages.length ?? 0} messages</p>
+		</div>
+		<button
+			onclick={createConversation}
+			class="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-md text-sm"
+		>
+			New Chat
+		</button>
+	</div>
 
-    <!-- Main Content - Split View when artifact is open -->
-    <div class="flex-1 flex overflow-hidden">
-        <!-- Chat Panel -->
-        <div class="flex-1 flex flex-col {artifact.isOpen ? 'w-1/3 min-w-[300px] border-r' : ''}">
-            <!-- Messages -->
-            <div class="flex-1 overflow-y-auto p-6 space-y-4">
-                {#each messages as message, index}
-                    <div class="flex gap-3 {message.role === 'user' ? 'justify-end' : ''}">
-                        <div class="max-w-[80%] {message.role === 'user' ? 'bg-blue-500 text-white' : 'bg-white border'} rounded-lg p-4">
-                            {#if message.thinking && index === messages.length - 1 && isLoading}
-                                <div class="text-sm italic opacity-70 mb-2">
-                                    {message.thinking}
-                                </div>
-                            {/if}
-                            <div class="whitespace-pre-wrap">
-                                {message.content}
-                            </div>
-                        </div>
-                    </div>
-                {/each}
-            </div>
+	<!-- Main Content -->
+	<div class="flex-1 flex overflow-hidden">
+		<!-- Chat Panel -->
+		<div class="flex-1 flex flex-col {artifact.isOpen ? 'w-1/3 min-w-[300px] border-r' : ''}">
+			<!-- Messages using MessageList -->
+			{#if agent}
+				<MessageList.Root
+					messages={agent.state.messages}
+					autoScroll={true}
+					keyboardNav={false}
+					aria-label="Chat conversation"
+					class="flex-1 overflow-y-auto p-6"
+				>
+					{#each agent.state.messages as message (message.id)}
+						<Message {message}>
+							{#snippet children({ content, role, streaming, thinking, reasoning, hasReasoning, status, toolCalls })}
+								{@const debugToolCalls = console.log(`[MESSAGE ${message.id}] toolCalls:`, toolCalls?.length ?? 0, toolCalls)}
+								<div
+									class="flex gap-3 {role === 'user' ? 'justify-end' : ''} mb-4"
+								>
+									<div
+										class="max-w-[80%] {role === 'user'
+											? 'bg-blue-500 text-white'
+											: 'bg-white border'} rounded-lg p-4"
+									>
+										<!-- Status Badge -->
+										{#if role === 'assistant'}
+											<div class="text-xs mb-2 flex items-center gap-2">
+												<span class="font-semibold opacity-70">Status:</span>
+												<span
+													class="px-2 py-0.5 rounded"
+													class:bg-blue-100={status === 'streaming'}
+													class:bg-purple-100={status === 'thinking'}
+													class:bg-green-100={status === 'complete'}
+													class:text-blue-700={status === 'streaming'}
+													class:text-purple-700={status === 'thinking'}
+													class:text-green-700={status === 'complete'}
+												>
+													{status}
+												</span>
+											</div>
+										{/if}
 
-            <!-- Input -->
-            <div class="bg-white border-t p-4">
-                <div class="flex gap-2">
-                    <input
-                        bind:value={currentMessage}
-                        onkeypress={handleKeypress}
-                        placeholder="Type a message..."
-                        disabled={isLoading}
-                        class="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                    />
-                    <button
-                        onclick={sendMessage}
-                        disabled={isLoading || !currentMessage.trim()}
-                        class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-                    >
-                        {isLoading ? '...' : 'Send'}
-                    </button>
-                </div>
-            </div>
-        </div>
+										<!-- Reasoning -->
+										{#if hasReasoning}
+											<div
+												class="text-sm italic opacity-70 mb-2 bg-purple-50 border-l-2 border-purple-500 pl-2 py-1"
+											>
+												<strong>Thinking:</strong>
+												{reasoning}
+											</div>
+										{/if}
 
-        <!-- Artifact Panel (2/3 width when open) -->
-        {#if artifact.isOpen}
-            <div class="w-2/3 flex flex-col">
-                <Artifact />
-            </div>
-        {/if}
-    </div>
+										<!-- Tool Calls -->
+										{#if toolCalls && toolCalls.length > 0}
+											<div class="mb-3 space-y-2">
+												{#each toolCalls as toolCall (toolCall.callId)}
+													<ToolExecution.Root {toolCall} class="bg-gray-50 rounded border border-gray-200 overflow-hidden text-gray-900">
+														<ToolExecution.Trigger class="w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors flex items-center justify-between">
+															{#snippet children({ expanded })}
+																<div class="flex items-center gap-2 flex-1">
+																	<span class="text-sm">🔧</span>
+																	<span class="text-sm font-medium">{toolCall.name}</span>
+																	<ToolExecution.Status>
+																		{#snippet children({ status: toolStatus, isActive })}
+																			<span class="text-xs px-2 py-0.5 rounded {isActive ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}">
+																				{toolStatus}
+																			</span>
+																		{/snippet}
+																	</ToolExecution.Status>
+																</div>
+																<span class="text-gray-400 transition-transform {expanded ? 'rotate-180' : ''}">▼</span>
+															{/snippet}
+														</ToolExecution.Trigger>
+
+														<ToolExecution.Content class="border-t border-gray-200">
+															<div class="p-3 space-y-2">
+																<ToolExecution.Args>
+																	{#snippet children({ argsJson, hasArgs })}
+																		{#if hasArgs}
+																			<div>
+																				<div class="text-xs font-semibold text-gray-600 mb-1">Arguments:</div>
+																				<pre class="text-xs bg-gray-100 text-gray-800 p-2 rounded overflow-auto">{argsJson}</pre>
+																			</div>
+																		{/if}
+																	{/snippet}
+																</ToolExecution.Args>
+
+																<ToolExecution.Result>
+																	{#snippet children({ result, error, hasResult, hasError })}
+																		{#if hasError}
+																			<div>
+																				<div class="text-xs font-semibold text-red-600 mb-1">Error:</div>
+																				<pre class="text-xs bg-red-50 text-red-700 p-2 rounded overflow-auto">{error}</pre>
+																			</div>
+																		{:else if hasResult}
+																			<div>
+																				<div class="text-xs font-semibold text-green-600 mb-1">Result:</div>
+																				<pre class="text-xs bg-green-50 text-green-700 p-2 rounded overflow-auto">{result}</pre>
+																			</div>
+																		{/if}
+																	{/snippet}
+																</ToolExecution.Result>
+															</div>
+														</ToolExecution.Content>
+													</ToolExecution.Root>
+												{/each}
+											</div>
+										{/if}
+
+										<!-- Content -->
+										<div class="whitespace-pre-wrap">
+											{content}
+											{#if streaming}
+												<span
+													class="inline-block w-1.5 h-4 bg-current ml-1 animate-pulse"
+													>▊</span
+												>
+											{/if}
+										</div>
+									</div>
+								</div>
+							{/snippet}
+						</Message>
+					{/each}
+				</MessageList.Root>
+			{/if}
+
+			<!-- Input using Input component -->
+			<div class="bg-white border-t p-4">
+				<div class="flex gap-2">
+					<Input.Root
+						value={currentMessage}
+						onChange={(details) => {
+							currentMessage = details.value;
+						}}
+						onSubmit={sendMessage}
+						placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+						disabled={!agent || agent.state.streaming}
+						maxRows={5}
+						class="flex-1 px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+					/>
+					<button
+						onclick={() => sendMessage({ value: currentMessage })}
+						disabled={!currentMessage.trim() || !agent || agent.state.streaming}
+						class="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+					>
+						{agent?.state.streaming ? '...' : 'Send'}
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Artifact Panel -->
+		{#if artifact.isOpen}
+			<div class="w-2/3 flex flex-col">
+				<Artifact />
+			</div>
+		{/if}
+	</div>
 </div>
 
 <!-- Permission Dialog -->
-{#if showPermissionDialog && pendingPermission}
-    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 class="text-lg font-semibold mb-2">Permission Required</h3>
-            <p class="text-gray-700 mb-1">
-                Agent wants to call: <span class="font-mono font-semibold">{pendingPermission.functionName}</span>
-            </p>
-            <p class="text-sm text-gray-600 mb-4">{pendingPermission.description || 'No description available'}</p>
-
-            {#if pendingPermission.arguments && Object.keys(pendingPermission.arguments).length > 0}
-                <div class="bg-gray-50 rounded p-3 mb-4">
-                    <p class="text-xs font-semibold text-gray-700 mb-1">Arguments:</p>
-                    <pre class="text-xs text-gray-600 overflow-x-auto">{JSON.stringify(pendingPermission.arguments, null, 2)}</pre>
-                </div>
-            {/if}
-
-            <div class="flex flex-col gap-2">
-                <div class="flex gap-2">
-                    <button
-                        onclick={() => respondToPermission(true, 'ask')}
-                        class="flex-1 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
-                    >
-                        Allow Once
-                    </button>
-                    <button
-                        onclick={() => respondToPermission(true, 'allow_always')}
-                        class="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                    >
-                        Always Allow
-                    </button>
-                </div>
-                <div class="flex gap-2">
-                    <button
-                        onclick={() => respondToPermission(false, 'ask')}
-                        class="flex-1 px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
-                    >
-                        Deny Once
-                    </button>
-                    <button
-                        onclick={() => respondToPermission(false, 'deny_always')}
-                        class="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                    >
-                        Never Allow
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+{#if agent && agent.state.pendingPermissions.length > 0}
+	{@const permission = agent.state.pendingPermissions[0]}
+	<div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+		<div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+			<h3 class="text-lg font-semibold mb-2">Permission Required</h3>
+			<p class="text-sm text-gray-600 mb-4">
+				The agent wants to use: <strong>{permission.functionName}</strong>
+			</p>
+			{#if permission.description}
+				<p class="text-sm text-gray-500 mb-4">{permission.description}</p>
+			{/if}
+			{#if permission.arguments}
+				<pre class="text-xs bg-gray-100 p-2 rounded mb-4 overflow-auto">
+{JSON.stringify(permission.arguments, null, 2)}</pre>
+			{/if}
+			<div class="flex gap-2">
+				<button
+					onclick={() => agent?.approve(permission.permissionId, 'ask')}
+					class="flex-1 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+				>
+					Allow Once
+				</button>
+				<button
+					onclick={() => agent?.approve(permission.permissionId, 'allow_always')}
+					class="flex-1 px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
+				>
+					Always Allow
+				</button>
+				<button
+					onclick={() => agent?.deny(permission.permissionId, 'User denied')}
+					class="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+				>
+					Never Allow
+				</button>
+			</div>
+		</div>
+	</div>
 {/if}

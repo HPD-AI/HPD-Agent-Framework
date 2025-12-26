@@ -271,8 +271,18 @@ public class UIStateManager
             case ReasoningMessageStartEvent:
                 _state.State = StreamingState.Thinking;
                 break;
+
+            case ReasoningDeltaEvent reasoningDelta:
+                // Accumulate reasoning content similar to text deltas
+                _state.CurrentStreamingText += reasoningDelta.Text;
+                break;
+
+            case ReasoningMessageEndEvent:
+                // Reasoning complete, return to idle state
+                _state.State = StreamingState.Idle;
+                break;
         }
-        
+
         OnStateChanged?.Invoke();
     }
     

@@ -451,7 +451,7 @@ internal class ConversationManager
     public async Task<Agent> GetAgentAsync(string conversationId, IAgentEventHandler? eventHandler = null)
     {
         var builder = new AgentBuilder()
-            .WithProvider("openrouter", "google/gemini-2.5-pro")
+            .WithProvider("openrouter", "z-ai/glm-4.6")
             .WithName("AI Assistant")
             .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
             .WithDynamicMemory(opts => opts

@@ -19,11 +19,11 @@ public class ToolVisibilityManager
 
     public ToolVisibilityManager(
         IEnumerable<AIFunction> allFunctions,
-        ImmutableHashSet<string> explicitlyRegisteredPlugins,
+        ImmutableHashSet<string> explicitlyRegisteredTools,
         ILogger<ToolVisibilityManager>? logger = null)
     {
         _logger = logger;
-        _explicitlyRegisteredTools = explicitlyRegisteredPlugins ?? ImmutableHashSet<string>.Empty;
+        _explicitlyRegisteredTools = explicitlyRegisteredTools ?? ImmutableHashSet<string>.Empty;
         _allFunctionsByReference = BuildFunctionLookup(allFunctions);
     }
 

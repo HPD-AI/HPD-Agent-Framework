@@ -55,9 +55,9 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.State.MiddlewareState.ClientTool;
         Assert.NotNull(state);
-        Assert.Equal(2, state.RegisteredPlugins.Count);
-        Assert.True(state.RegisteredPlugins.ContainsKey("Plugin1"));
-        Assert.True(state.RegisteredPlugins.ContainsKey("Plugin2"));
+        Assert.Equal(2, state.RegisteredToolGroups.Count);
+        Assert.True(state.RegisteredToolGroups.ContainsKey("Plugin1"));
+        Assert.True(state.RegisteredToolGroups.ContainsKey("Plugin2"));
     }
 
     [Fact]
@@ -198,9 +198,9 @@ public class ClientToolMiddlewareTests
         // Assert - only new plugin registered
         var state = context2.State.MiddlewareState.ClientTool;
         Assert.NotNull(state);
-        Assert.Single(state.RegisteredPlugins);
-        Assert.True(state.RegisteredPlugins.ContainsKey("NewPlugin"));
-        Assert.False(state.RegisteredPlugins.ContainsKey("OldPlugin"));
+        Assert.Single(state.RegisteredToolGroups);
+        Assert.True(state.RegisteredToolGroups.ContainsKey("NewPlugin"));
+        Assert.False(state.RegisteredToolGroups.ContainsKey("OldPlugin"));
     }
 
     // ============================================
@@ -387,10 +387,10 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.State.MiddlewareState.ClientTool;
         Assert.NotNull(state);
-        Assert.Single(state.RegisteredPlugins);
-        Assert.NotNull(state.RegisteredPlugins["ECommerce"].Skills);
-        Assert.Single(state.RegisteredPlugins["ECommerce"].Skills!);
-        Assert.Equal("CheckoutWorkflow", state.RegisteredPlugins["ECommerce"].Skills![0].Name);
+        Assert.Single(state.RegisteredToolGroups);
+        Assert.NotNull(state.RegisteredToolGroups["ECommerce"].Skills);
+        Assert.Single(state.RegisteredToolGroups["ECommerce"].Skills!);
+        Assert.Equal("CheckoutWorkflow", state.RegisteredToolGroups["ECommerce"].Skills![0].Name);
     }
 
     [Fact]
@@ -558,7 +558,7 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.State.MiddlewareState.ClientTool;
         Assert.NotNull(state);
-        Assert.Equal(2, state.RegisteredPlugins.Count);
+        Assert.Equal(2, state.RegisteredToolGroups.Count);
     }
 
     [Fact]

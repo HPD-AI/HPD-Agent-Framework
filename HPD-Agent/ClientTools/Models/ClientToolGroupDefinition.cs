@@ -66,15 +66,15 @@ public record ClientToolGroupDefinition(
     /// Validates skill references against registered plugins.
     /// Call this after all plugins are registered to validate cross-plugin references.
     /// </summary>
-    /// <param name="registeredPlugins">All registered plugins by name</param>
+    /// <param name="RegisteredToolGroups">All registered plugins by name</param>
     /// <exception cref="ArgumentException">If a skill references a non-existent tool</exception>
-    public void ValidateSkillReferences(IReadOnlyDictionary<string, ClientToolGroupDefinition> registeredPlugins)
+    public void ValidateSkillReferences(IReadOnlyDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups)
     {
         if (Skills == null) return;
 
         foreach (var skill in Skills)
         {
-            skill.ValidateReferences(Name, registeredPlugins);
+            skill.ValidateReferences(Name, RegisteredToolGroups);
         }
     }
 }

@@ -98,7 +98,7 @@ public class ClientToolMiddleware : IAgentMiddleware
 
             foreach (var skill in plugin.Skills)
             {
-                skill.ValidateReferences(plugin.Name, state.RegisteredPlugins);
+                skill.ValidateReferences(plugin.Name, state.RegisteredToolGroups);
             }
         }
 
@@ -146,8 +146,8 @@ public class ClientToolMiddleware : IAgentMiddleware
 
         // Emit registration confirmation (optional - works without EventCoordinator)
         context.TryEmit(new ClientToolGroupsRegisteredEvent(
-            RegisteredPlugins: state.RegisteredPlugins.Keys.ToList(),
-            TotalTools: state.RegisteredPlugins.Values.Sum(p => p.Tools.Count),
+           RegisteredToolGroups: state.RegisteredToolGroups.Keys.ToList(),
+            TotalTools: state.RegisteredToolGroups.Values.Sum(p => p.Tools.Count),
             Timestamp: DateTimeOffset.UtcNow));
 
         return Task.CompletedTask;
@@ -189,7 +189,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken ct)
     {
         var state = context.State.MiddlewareState.ClientTool;
-        if (state == null || state.RegisteredPlugins.Count == 0)
+        if (state == null || state.RegisteredToolGroups.Count == 0)
             return Task.CompletedTask;
 
         // Apply any pending augmentation from previous iteration
@@ -339,7 +339,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     {
         var allFunctions = new List<AIFunction>();
 
-        foreach (var (toolName, plugin) in state.RegisteredPlugins)
+        foreach (var (toolName, plugin) in state.RegisteredToolGroups)
         {
             // Convert ClientToolDefinitions to AIFunctions
             var toolAIFunctions = plugin.Tools

@@ -66,11 +66,11 @@ public record ClientToolInvokeResponseEvent(
 /// Emitted after Client plugins are successfully registered.
 /// Useful for debugging and observability.
 /// </summary>
-/// <param name="RegisteredPlugins">Names of all registered plugins</param>
-/// <param name="TotalTools">Total number of tools across all plugins</param>
+/// <param name="RegisteredToolGroups">Names of all registered tool groups</param>
+/// <param name="TotalTools">Total number of tools across all tool groups</param>
 /// <param name="Timestamp">When registration completed</param>
 public record ClientToolGroupsRegisteredEvent(
-    IReadOnlyList<string> RegisteredPlugins,
+    IReadOnlyList<string>RegisteredToolGroups,
     int TotalTools,
     DateTimeOffset Timestamp
 ) : AgentEvent;

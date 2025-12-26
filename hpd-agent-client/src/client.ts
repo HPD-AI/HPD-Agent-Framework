@@ -1,16 +1,11 @@
 import type {
   AgentEvent,
-  ReasoningPhase,
   PermissionRequestEvent,
   ClarificationRequestEvent,
   ContinuationRequestEvent,
   ClientToolInvokeRequestEvent,
   ClientToolGroupsRegisteredEvent,
   PermissionChoice,
-  BranchCreatedEvent,
-  BranchSwitchedEvent,
-  BranchDeletedEvent,
-  BranchRenamedEvent,
 } from './types/events.js';
 import { EventTypes } from './types/events.js';
 import type { AgentTransport } from './types/transport.js';
@@ -93,7 +88,7 @@ export interface EventHandlers {
   // ============================================
 
   /** Called for reasoning/thinking content */
-  onReasoning?: (text: string, phase: ReasoningPhase, messageId: string) => void;
+  onReasoning?: (text: string, messageId: string) => void;
 
   // ============================================
   // Bidirectional Handlers (async for user interaction)
@@ -152,22 +147,6 @@ export interface EventHandlers {
 
   /** Called on middleware progress */
   onProgress?: (sourceName: string, message: string, percentComplete?: number) => void;
-
-  // ============================================
-  // Branch Handlers
-  // ============================================
-
-  /** Called when a new conversation branch is created */
-  onBranchCreated?: (event: BranchCreatedEvent) => void;
-
-  /** Called when the active branch is switched */
-  onBranchSwitched?: (event: BranchSwitchedEvent) => void;
-
-  /** Called when a branch is deleted */
-  onBranchDeleted?: (event: BranchDeletedEvent) => void;
-
-  /** Called when a branch is renamed */
-  onBranchRenamed?: (event: BranchRenamedEvent) => void;
 
   // ============================================
   // Raw Event Access
@@ -268,13 +247,40 @@ export class AgentClient {
         }
       };
 
-      // Set up event dispatching
-      this.transport.onEvent((event) => {
-        // Always call raw handler first
-        handlers.onEvent?.(event);
+      // Event queue for sequential processing
+      const eventQueue: AgentEvent[] = [];
+      let processing = false;
 
-        // Dispatch to typed handlers (async but we don't await)
-        this.dispatchEvent(event, handlers, complete, fail).catch(fail);
+      // Process events sequentially to ensure proper reactivity
+      const processQueue = async () => {
+        if (processing || eventQueue.length === 0) return;
+
+        processing = true;
+        try {
+          while (eventQueue.length > 0) {
+            const event = eventQueue.shift()!;
+
+            // Call raw handler first (synchronous)
+            handlers.onEvent?.(event);
+
+            // Dispatch to typed handlers (await to ensure sequential processing)
+            try {
+              await this.dispatchEvent(event, handlers, complete, fail);
+            } catch (error) {
+              fail(error as Error);
+              break;
+            }
+          }
+        } finally {
+          processing = false;
+        }
+      };
+
+      // Set up event dispatching - queue events for sequential processing
+      this.transport.onEvent((event) => {
+        eventQueue.push(event);
+        // Process queue asynchronously but don't await
+        processQueue().catch(fail);
       });
 
       this.transport.onError((error) => {
@@ -352,10 +358,8 @@ export class AgentClient {
           break;
 
         // Reasoning
-        case EventTypes.REASONING:
-          if (event.text) {
-            handlers.onReasoning?.(event.text, event.phase, event.messageId);
-          }
+        case EventTypes.REASONING_DELTA:
+          handlers.onReasoning?.(event.text, event.messageId);
           break;
 
         // Bidirectional - Permission
@@ -441,23 +445,6 @@ export class AgentClient {
         case EventTypes.MESSAGE_TURN_ERROR:
           handlers.onError?.(event.message);
           fail(new Error(event.message));
-          break;
-
-        // Branch events
-        case EventTypes.BRANCH_CREATED:
-          handlers.onBranchCreated?.(event);
-          break;
-
-        case EventTypes.BRANCH_SWITCHED:
-          handlers.onBranchSwitched?.(event);
-          break;
-
-        case EventTypes.BRANCH_DELETED:
-          handlers.onBranchDeleted?.(event);
-          break;
-
-        case EventTypes.BRANCH_RENAMED:
-          handlers.onBranchRenamed?.(event);
           break;
       }
     } catch (error) {

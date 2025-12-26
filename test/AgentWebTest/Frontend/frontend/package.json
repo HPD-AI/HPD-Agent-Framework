@@ -14,10 +14,11 @@
 		"test": "npm run test:unit -- --run"
 	},
 	"dependencies": {
-		"@hpd/hpd-agent-client": "file:../../../../hpd-agent-client"
+		"@hpd/hpd-agent-client": "file:../../../../hpd-agent-client",
+		"@hpd/hpd-agent-headless-ui": "file:../../../../hpd-agent-headless-ui"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-auto": "^6.0.0",
+		"@sveltejs/adapter-auto": "^6.1.1",
 		"@sveltejs/kit": "^2.22.0",
 		"@sveltejs/vite-plugin-svelte": "^6.0.0",
 		"@tailwindcss/vite": "^4.0.0",

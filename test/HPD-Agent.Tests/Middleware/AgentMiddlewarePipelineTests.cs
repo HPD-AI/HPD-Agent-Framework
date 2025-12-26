@@ -545,4 +545,117 @@ public class AgentMiddlewarePipelineTests
         return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
     }
 
+    //
+    // STREAMING REGRESSION TESTS
+    //
+
+    [Fact]
+    public async Task ExecuteModelCallStreamingAsync_WithNullStreamingImplementation_PassesThroughStream()
+    {
+        // Regression test for: Middleware that returns null for WrapModelCallStreamingAsync
+        // should pass through the stream unchanged (not buffer it)
+
+        // Arrange
+        var middleware = new NoOpMiddleware(); // Returns null for streaming
+        var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
+
+        var mockChatClient = new MiddlewareTestHelpers.TestChatClient();
+        var agentState = AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        var request = new ModelRequest
+        {
+            Model = mockChatClient,
+            Messages = new List<ChatMessage>(),
+            Options = new ChatOptions(),
+            State = agentState,
+            Iteration = 0
+        };
+
+        var expectedUpdates = new[]
+        {
+            new ChatResponseUpdate { Contents = new List<AIContent> { new TextContent("Hello") } },
+            new ChatResponseUpdate { Contents = new List<AIContent> { new TextContent(" world") } },
+            new ChatResponseUpdate { Contents = new List<AIContent> { new TextContent("!") } }
+        };
+
+        async IAsyncEnumerable<ChatResponseUpdate> StreamingHandler(ModelRequest req)
+        {
+            foreach (var update in expectedUpdates)
+            {
+                yield return update;
+            }
+        }
+
+        // Act
+        var actualUpdates = new List<ChatResponseUpdate>();
+        await foreach (var update in pipeline.ExecuteModelCallStreamingAsync(request, StreamingHandler, CancellationToken.None))
+        {
+            actualUpdates.Add(update);
+        }
+
+        // Assert - Should receive ALL individual updates (not buffered into one)
+        Assert.Equal(3, actualUpdates.Count);
+        Assert.Equal("Hello", ((TextContent)actualUpdates[0].Contents[0]).Text);
+        Assert.Equal(" world", ((TextContent)actualUpdates[1].Contents[0]).Text);
+        Assert.Equal("!", ((TextContent)actualUpdates[2].Contents[0]).Text);
+    }
+
+    [Fact]
+    public async Task ExecuteModelCallStreamingAsync_WithMultipleNullMiddlewares_PassesThroughStream()
+    {
+        // Regression test: Multiple middlewares returning null should all pass through
+
+        // Arrange
+        var middleware1 = new NoOpMiddleware();
+        var middleware2 = new NoOpMiddleware();
+        var middleware3 = new NoOpMiddleware();
+        var pipeline = new AgentMiddlewarePipeline(new[] { middleware1, middleware2, middleware3 });
+
+        var mockChatClient = new MiddlewareTestHelpers.TestChatClient();
+        var agentState = AgentLoopState.Initial(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        var request = new ModelRequest
+        {
+            Model = mockChatClient,
+            Messages = new List<ChatMessage>(),
+            Options = new ChatOptions(),
+            State = agentState,
+            Iteration = 0
+        };
+
+        async IAsyncEnumerable<ChatResponseUpdate> StreamingHandler(ModelRequest req)
+        {
+            yield return new ChatResponseUpdate { Contents = new List<AIContent> { new TextContent("A") } };
+            yield return new ChatResponseUpdate { Contents = new List<AIContent> { new TextContent("B") } };
+        }
+
+        // Act
+        var actualUpdates = new List<ChatResponseUpdate>();
+        await foreach (var update in pipeline.ExecuteModelCallStreamingAsync(request, StreamingHandler, CancellationToken.None))
+        {
+            actualUpdates.Add(update);
+        }
+
+        // Assert - Should receive individual updates (not buffered)
+        Assert.Equal(2, actualUpdates.Count);
+    }
+
+    /// <summary>
+    /// Middleware that returns null for streaming (default behavior).
+    /// Used to test that null streaming implementation passes through correctly.
+    /// </summary>
+    public class NoOpMiddleware : IAgentMiddleware
+    {
+        // All hooks use default implementation (no-op)
+        // WrapModelCallStreamingAsync returns null by default
+    }
+
 }

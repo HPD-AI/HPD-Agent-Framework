@@ -25,7 +25,7 @@ public class ClientToolStateDataTests
 
         // Assert
         Assert.NotNull(state);
-        Assert.Empty(state.RegisteredPlugins);
+        Assert.Empty(state.RegisteredToolGroups);
         Assert.Empty(state.ExpandedPlugins);
         Assert.Empty(state.HiddenTools);
         Assert.Empty(state.Context);
@@ -49,9 +49,9 @@ public class ClientToolStateDataTests
 
         // Assert
         Assert.NotSame(state, updated);
-        Assert.Single(updated.RegisteredPlugins);
-        Assert.True(updated.RegisteredPlugins.ContainsKey("TestPlugin"));
-        Assert.Equal(plugin, updated.RegisteredPlugins["TestPlugin"]);
+        Assert.Single(updated.RegisteredToolGroups);
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("TestPlugin"));
+        Assert.Equal(plugin, updated.RegisteredToolGroups["TestPlugin"]);
     }
 
     [Fact]
@@ -68,9 +68,9 @@ public class ClientToolStateDataTests
             .WithRegisteredPlugin(plugin2);
 
         // Assert
-        Assert.Equal(2, updated.RegisteredPlugins.Count);
-        Assert.True(updated.RegisteredPlugins.ContainsKey("Plugin1"));
-        Assert.True(updated.RegisteredPlugins.ContainsKey("Plugin2"));
+        Assert.Equal(2, updated.RegisteredToolGroups.Count);
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin1"));
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin2"));
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public class ClientToolStateDataTests
             .WithRegisteredPlugin(plugin2);
 
         // Assert
-        Assert.Single(updated.RegisteredPlugins);
-        Assert.Equal("Tool2", updated.RegisteredPlugins["TestPlugin"].Tools[0].Name);
+        Assert.Single(updated.RegisteredToolGroups);
+        Assert.Equal("Tool2", updated.RegisteredToolGroups["TestPlugin"].Tools[0].Name);
     }
 
     [Fact]
@@ -103,9 +103,9 @@ public class ClientToolStateDataTests
         var updated = state.WithoutRegisteredPlugin("Plugin1");
 
         // Assert
-        Assert.Single(updated.RegisteredPlugins);
-        Assert.False(updated.RegisteredPlugins.ContainsKey("Plugin1"));
-        Assert.True(updated.RegisteredPlugins.ContainsKey("Plugin2"));
+        Assert.Single(updated.RegisteredToolGroups);
+        Assert.False(updated.RegisteredToolGroups.ContainsKey("Plugin1"));
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin2"));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class ClientToolStateDataTests
         var updated = state.WithoutRegisteredPlugin("NonExistent");
 
         // Assert
-        Assert.Single(updated.RegisteredPlugins);
+        Assert.Single(updated.RegisteredToolGroups);
     }
 
     // ============================================
@@ -347,7 +347,7 @@ public class ClientToolStateDataTests
         // Assert
         Assert.NotSame(container, updated);
         Assert.NotNull(updated.ClientTool);
-        Assert.Single(updated.ClientTool.RegisteredPlugins);
+        Assert.Single(updated.ClientTool.RegisteredToolGroups);
     }
 
     [Fact]
@@ -363,11 +363,11 @@ public class ClientToolStateDataTests
             .WithHiddenTool("Tool1");
 
         // Assert
-        Assert.Empty(original.RegisteredPlugins);
+        Assert.Empty(original.RegisteredToolGroups);
         Assert.Empty(original.ExpandedPlugins);
         Assert.Empty(original.HiddenTools);
 
-        Assert.Single(updated.RegisteredPlugins);
+        Assert.Single(updated.RegisteredToolGroups);
         Assert.Single(updated.ExpandedPlugins);
         Assert.Single(updated.HiddenTools);
     }

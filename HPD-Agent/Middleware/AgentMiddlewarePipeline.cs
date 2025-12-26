@@ -157,9 +157,10 @@ public class AgentMiddlewarePipeline
             }
             else
             {
-                // Middleware doesn't provide streaming - convert simple to streaming
-                var prevHandler = previousHandler;
-                handler = (req) => ConvertSimpleToStreamingWrapper(middleware, prevHandler, req, cancellationToken);
+                // Middleware doesn't provide streaming - just pass through
+                // (streaming is preferred by default to maintain token-by-token flow)
+                // Only buffer if middleware explicitly needs non-streaming via WrapModelCallAsync
+                handler = previousHandler;
             }
         }
 
@@ -318,6 +319,7 @@ public class AgentMiddlewarePipeline
     {
         // Combine all text updates
         var textBuilder = new System.Text.StringBuilder();
+        var reasoningBuilder = new System.Text.StringBuilder();
         var toolCalls = new List<FunctionCallContent>();
 
         foreach (var update in updates)
@@ -326,7 +328,9 @@ public class AgentMiddlewarePipeline
             {
                 foreach (var content in update.Contents)
                 {
-                    if (content is TextContent text)
+                    if (content is TextReasoningContent reasoning)
+                        reasoningBuilder.Append(reasoning.Text);
+                    else if (content is TextContent text)
                         textBuilder.Append(text.Text);
                     else if (content is FunctionCallContent toolCall)
                         toolCalls.Add(toolCall);
@@ -335,8 +339,13 @@ public class AgentMiddlewarePipeline
         }
 
         var contents = new List<AIContent>();
+        // Add reasoning content first (if any)
+        if (reasoningBuilder.Length > 0)
+            contents.Add(new TextReasoningContent(reasoningBuilder.ToString()));
+        // Then text content
         if (textBuilder.Length > 0)
             contents.Add(new TextContent(textBuilder.ToString()));
+        // Then tool calls
         contents.AddRange(toolCalls);
 
         return new ChatMessage(ChatRole.Assistant, contents);

@@ -55,11 +55,11 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
     /// Creates a new ContainerErrorRecoveryMiddleware instance.
     /// </summary>
     /// <param name="allTools">All available tools for the agent</param>
-    /// <param name="explicitlyRegisteredPlugins">Plugins explicitly registered via WithTools</param>
+    /// <param name="explicitlyRegisteredToolGroups">Plugins explicitly registered via WithTools</param>
     /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerErrorRecoveryMiddleware(
         IList<AITool> allTools,
-        ImmutableHashSet<string> explicitlyRegisteredPlugins,
+        ImmutableHashSet<string> explicitlyRegisteredToolGroups,
         ILogger<ContainerErrorRecoveryMiddleware>? logger = null)
     {
         _logger = logger;
@@ -67,7 +67,7 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
 
         // Create ToolVisibilityManager for updating visible tools after expansion
         var aiFunctions = allTools.OfType<AIFunction>().ToList();
-        _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredPlugins);
+        _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredToolGroups);
     }
 
     /// <summary>

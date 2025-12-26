@@ -45,12 +45,11 @@ var loggerFactory = LoggerFactory.Create(builder =>
 });
 
 var agent = await new AgentBuilder(config)
-    .WithProvider("openrouter", "google/gemini-2.5-flash-lite")
+    .WithProvider("openrouter", "z-ai/glm-4.7")
     .WithTools<CodingPlugin>()
     .WithTools<MathTools>()
     .WithMiddleware(new EnvironmentContextMiddleware())
     .WithSessionStore(sessionStore, persistAfterTurn: true)
-    .WithLogging(loggerFactory)
     .Build();
 
 // Generate a unique session ID for this run

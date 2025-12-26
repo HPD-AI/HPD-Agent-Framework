@@ -54,16 +54,16 @@ public record ClientSkillDefinition(
     /// Validates skill references against registered plugins.
     /// </summary>
     /// <param name="parentPluginName">Name of the plugin containing this skill</param>
-    /// <param name="registeredPlugins">All registered plugins by name</param>
+    /// <param name="RegisteredToolGroups">All registered plugins by name</param>
     /// <exception cref="ArgumentException">If a reference is invalid</exception>
     public void ValidateReferences(
         string parentPluginName,
-        IReadOnlyDictionary<string, ClientToolGroupDefinition> registeredPlugins)
+        IReadOnlyDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups)
     {
         if (References == null) return;
 
         // Get tools from parent plugin
-        if (!registeredPlugins.TryGetValue(parentPluginName, out var parentPlugin))
+        if (!RegisteredToolGroups.TryGetValue(parentPluginName, out var parentPlugin))
         {
             throw new ArgumentException(
                 $"Skill '{Name}' belongs to plugin '{parentPluginName}' which is not registered.");
@@ -86,7 +86,7 @@ public record ClientSkillDefinition(
             else
             {
                 // Cross-plugin reference - verify target plugin and tool exist
-                if (!registeredPlugins.TryGetValue(reference.ToolsetName, out var targetPlugin))
+                if (!RegisteredToolGroups.TryGetValue(reference.ToolsetName, out var targetPlugin))
                 {
                     throw new ArgumentException(
                         $"Skill '{Name}' in plugin '{parentPluginName}' references " +
