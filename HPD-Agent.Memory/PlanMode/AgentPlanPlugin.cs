@@ -28,7 +28,7 @@ public class AgentPlanPlugin
         [Description("The goal or objective this plan aims to accomplish")] string goal,
         [Description("Array of step descriptions (e.g., ['Analyze code', 'Refactor auth', 'Run tests'])")] string[] steps)
     {
-        var conversationId = Agent.CurrentFunctionContext?.State?.ConversationId;
+        var conversationId = Agent.CurrentFunctionContext?.ConversationId;
         if (string.IsNullOrEmpty(conversationId))
         {
             return "Error: No conversation context available.";
@@ -57,7 +57,7 @@ public class AgentPlanPlugin
         [Description("The new status: 'pending', 'in_progress', 'completed', or 'blocked'")] string status,
         [Description("Optional notes about this step's progress, findings, or blockers")] string? notes = null)
     {
-        var conversationId = Agent.CurrentFunctionContext?.State?.ConversationId;
+        var conversationId = Agent.CurrentFunctionContext?.ConversationId;
         if (string.IsNullOrEmpty(conversationId))
         {
             return "Error: No conversation context available.";
@@ -107,7 +107,7 @@ public class AgentPlanPlugin
         [Description("Description of the new step to add")] string description,
         [Description("Optional: ID of step to insert after (e.g., '2'). If omitted, adds to end.")] string? afterStepId = null)
     {
-        var conversationId = Agent.CurrentFunctionContext?.State?.ConversationId;
+        var conversationId = Agent.CurrentFunctionContext?.ConversationId;
         if (string.IsNullOrEmpty(conversationId))
         {
             return "Error: No conversation context available.";
@@ -137,7 +137,7 @@ public class AgentPlanPlugin
     public async Task<string> AddContextNoteAsync(
         [Description("The note to add (e.g., 'Discovered auth uses JWT not sessions')")] string note)
     {
-        var conversationId = Agent.CurrentFunctionContext?.State?.ConversationId;
+        var conversationId = Agent.CurrentFunctionContext?.ConversationId;
         if (string.IsNullOrEmpty(conversationId))
         {
             return "Error: No conversation context available.";
@@ -165,7 +165,7 @@ public class AgentPlanPlugin
     [Description("Mark the entire plan as complete. Use this when all steps are done and the goal is achieved.")]
     public async Task<string> CompletePlanAsync()
     {
-        var conversationId = Agent.CurrentFunctionContext?.State?.ConversationId;
+        var conversationId = Agent.CurrentFunctionContext?.ConversationId;
         if (string.IsNullOrEmpty(conversationId))
         {
             return "Error: No conversation context available.";

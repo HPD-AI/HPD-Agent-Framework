@@ -84,8 +84,10 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
         if (context.ToolCalls.Count == 0)
             return Task.CompletedTask;
 
-        // Read state from context (type-safe via generated property)
-        var cbState = context.State.MiddlewareState.CircuitBreaker ?? new();
+        // Read state using Analyze for safety
+        var cbState = context.Analyze(s =>
+            s.MiddlewareState.CircuitBreaker ?? new()
+        );
 
         foreach (var toolCall in context.ToolCalls)
         {

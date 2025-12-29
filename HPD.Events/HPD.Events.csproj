@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>HPD.Events</RootNamespace>
+    <AssemblyName>HPD.Events</AssemblyName>
+    <IsPackable>true</IsPackable>
+
+    <!-- Package metadata -->
+    <PackageId>HPD.Events</PackageId>
+    <Description>Universal event coordination system for the HPD ecosystem. Provides priority-based event streaming, hierarchical event bubbling, and cross-domain event composition with zero dependencies.</Description>
+    <PackageTags>events;event-coordination;streaming;priority-channels;event-bubbling</PackageTags>
+  </PropertyGroup>
+
+</Project>

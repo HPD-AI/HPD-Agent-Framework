@@ -103,13 +103,15 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
         if (context.Iteration == 0)
             return Task.CompletedTask;
 
-        // Read state from context (type-safe!)
-        var thresholdState = context.State.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
+        // Check threshold using Analyze for safe state read
+        var currentErrorCount = context.Analyze(s =>
+            s.MiddlewareState.TotalErrorThreshold?.TotalErrorCount ?? 0
+        );
 
-        if (thresholdState.TotalErrorCount >= MaxTotalErrors)
+        if (currentErrorCount >= MaxTotalErrors)
         {
             // Already at threshold - terminate before wasting LLM call
-            TriggerTermination(context, thresholdState.TotalErrorCount);
+            TriggerTermination(context, currentErrorCount);
         }
 
         return Task.CompletedTask;
@@ -132,22 +134,27 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
 
         if (errorCount > 0)
         {
-            // Read current state
-            var currentState = context.State.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
-            var newTotalCount = currentState.TotalErrorCount + errorCount;
-
-            // Check if this iteration puts us over threshold
-            if (newTotalCount >= MaxTotalErrors)
+            // Update state with cumulative error count (read inside lambda for thread safety)
+            context.UpdateState(s =>
             {
-                TriggerTermination(context, newTotalCount);
-            }
+                var current = s.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
+                var newTotalCount = current.TotalErrorCount + errorCount;
+                var updated = current with { TotalErrorCount = newTotalCount };
 
-            // Update state with cumulative error count
-            var newThresholdState = currentState with { TotalErrorCount = newTotalCount };
-            context.UpdateState(s => s with
-            {
-                MiddlewareState = s.MiddlewareState.WithTotalErrorThreshold(newThresholdState)
+                return s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithTotalErrorThreshold(updated)
+                };
             });
+
+            // Check if this iteration puts us over threshold using Analyze
+            var currentTotalCount = context.Analyze(s =>
+                s.MiddlewareState.TotalErrorThreshold?.TotalErrorCount ?? 0
+            );
+            if (currentTotalCount >= MaxTotalErrors)
+            {
+                TriggerTermination(context, currentTotalCount);
+            }
         }
 
         return Task.CompletedTask;

@@ -46,6 +46,14 @@ public sealed record GraphCheckpoint
     public required string ContextJson { get; init; }
 
     /// <summary>
+    /// Node state metadata for version-aware resume.
+    /// Maps node ID to versioned state metadata.
+    /// Used to validate compatibility during checkpoint resume.
+    /// </summary>
+    public IReadOnlyDictionary<string, NodeStateMetadata> NodeStateMetadata { get; init; } =
+        new Dictionary<string, NodeStateMetadata>();
+
+    /// <summary>
     /// Optional metadata about this checkpoint.
     /// </summary>
     public CheckpointMetadata? Metadata { get; init; }

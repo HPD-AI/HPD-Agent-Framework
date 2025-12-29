@@ -66,14 +66,22 @@ public sealed class ReducerChannel<T> : IGraphChannel
     {
         lock (_lock)
         {
+            var hasChanges = false;
             foreach (var value in values)
             {
                 if (value is T typedValue)
                 {
                     _value = _reducer(_value, typedValue);
+                    hasChanges = true;
                 }
             }
-            Version++;
+
+            // Only increment version if at least one value was processed
+            // Maintains consistency with Set() which increments once per call
+            if (hasChanges)
+            {
+                Version++;
+            }
         }
     }
 }

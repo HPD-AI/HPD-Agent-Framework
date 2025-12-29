@@ -407,7 +407,7 @@ internal class ConversationManager
     private readonly ISessionStore _threadStore;
     private readonly Dictionary<string, AgentSession> _threadCache = new(); // In-memory cache
     private readonly Dictionary<string, Agent> _runningAgents = new(); // Track active agents
-    private readonly InMemoryPermissionStorage _permissionStorage = new();
+    // Note: Permission storage is now automatic per-session in MiddlewareState
 
     public ConversationManager(ISessionStore threadStore)
     {
@@ -458,7 +458,7 @@ internal class ConversationManager
                 .WithStorageDirectory("./agent-memory-storage")
                 .WithMaxTokens(6000))
             .WithTools<MathTools>()
-            .WithPermissions(_permissionStorage); // ← Enable permission system!
+            .WithPermissions(); // ← Enable permission system! (Automatic per-session persistence)
 
         if (eventHandler != null)
             builder = builder.WithEventHandler(eventHandler);
@@ -473,42 +473,6 @@ internal class ConversationManager
 
     public Agent? GetRunningAgent(string conversationId) =>
         _runningAgents.GetValueOrDefault(conversationId);
-}
-
-// Simple in-memory permission storage
-internal class InMemoryPermissionStorage : IPermissionStorage
-{
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PermissionChoice> _permissions = new();
-
-    public Task<PermissionChoice?> GetStoredPermissionAsync(string functionName, string? conversationId = null)
-    {
-        // Try conversation-Collapsed first
-        if (!string.IsNullOrEmpty(conversationId))
-        {
-            var conversationKey = $"conv:{conversationId}:{functionName}";
-            if (_permissions.TryGetValue(conversationKey, out var conversationPerm))
-                return Task.FromResult<PermissionChoice?>(conversationPerm);
-        }
-
-        // Try global-Collapsed
-        var globalKey = $"global:{functionName}";
-        if (_permissions.TryGetValue(globalKey, out var globalPerm))
-            return Task.FromResult<PermissionChoice?>(globalPerm);
-
-        return Task.FromResult<PermissionChoice?>(null);
-    }
-
-    public Task SavePermissionAsync(string functionName, PermissionChoice choice, string? conversationId = null)
-    {
-        if (choice != PermissionChoice.Ask)
-        {
-            var key = string.IsNullOrEmpty(conversationId)
-                ? $"global:{functionName}"
-                : $"conv:{conversationId}:{functionName}";
-            _permissions[key] = choice;
-        }
-        return Task.CompletedTask;
-    }
 }
 
 // DTOs

@@ -164,7 +164,7 @@ public class ContainerMiddlewareTests
 
         // Assert - container detection happens but we check state instead
         // When disabled, no containers should be expanded
-        Assert.Empty(context.State.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
+        Assert.Empty(context.Analyze(s => s.MiddlewareState.Collapsing)?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]

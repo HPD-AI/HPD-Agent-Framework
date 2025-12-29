@@ -165,6 +165,13 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         client.EnqueueTextResponse("Test response");
 
         var config = DefaultConfig();
+
+        // Enable observability events so SchemaChangedEvent is emitted to observers
+        config.Observability = new ObservabilityConfig
+        {
+            EmitObservabilityEvents = true
+        };
+
         var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(_loggerProvider));
         var providerRegistry = new TestProviderRegistry(client);
 

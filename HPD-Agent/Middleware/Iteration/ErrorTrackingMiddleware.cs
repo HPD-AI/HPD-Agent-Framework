@@ -62,20 +62,26 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
     /// </summary>
     public Task OnErrorAsync(ErrorContext context, CancellationToken cancellationToken)
     {
-        // Get current error state
-        var errState = context.State.MiddlewareState.ErrorTracking ?? new();
-        var newState = errState.IncrementFailures();
-
         //   Immediate state update - visible to all subsequent hooks!
-        context.UpdateState(s => s with
+        // Read state inside lambda for thread safety
+        context.UpdateState(s =>
         {
-            MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
+            var current = s.MiddlewareState.ErrorTracking ?? new();
+            var updated = current.IncrementFailures();
+
+            return s with
+            {
+                MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)
+            };
         });
 
-        // Check if threshold exceeded
-        if (newState.ConsecutiveFailures >= MaxConsecutiveErrors)
+        // Check if threshold exceeded (read fresh state using Analyze)
+        var currentFailures = context.Analyze(s =>
+            s.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0
+        );
+        if (currentFailures >= MaxConsecutiveErrors)
         {
-            TriggerTermination(context, newState.ConsecutiveFailures);
+            TriggerTermination(context, currentFailures);
         }
 
         return Task.CompletedTask;
@@ -92,14 +98,17 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         // Only reset if ALL tools succeeded
         if (context.AllToolsSucceeded)
         {
-            // Reset failure counter
-            var currentState = context.State.MiddlewareState.ErrorTracking ?? new();
-            var newState = currentState.ResetFailures();
-
             //   Immediate state update - no GetPendingState() needed!
-            context.UpdateState(s => s with
+            // Read state inside lambda for thread safety
+            context.UpdateState(s =>
             {
-                MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
+                var current = s.MiddlewareState.ErrorTracking ?? new();
+                var updated = current.ResetFailures();
+
+                return s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)
+                };
             });
         }
 
@@ -135,8 +144,11 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         try
         {
             // MaxIterations comes from continuation permission (if extended) or default config
-            // Since we don't have access to config here, use a reasonable default
-            var maxIterations = context.State.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? 50;
+            // Extract both values using Analyze to ensure fresh reads
+            var (maxIterations, completedFunctions) = context.Analyze(s => (
+                s.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? 50,
+                s.CompletedFunctions.ToList()
+            ));
 
             var snapshot = new StateSnapshotEvent(
                 CurrentIteration: context.Iteration,
@@ -144,9 +156,8 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
                 IsTerminated: true,
                 TerminationReason: formattedMessage,
                 ConsecutiveErrorCount: errorCount,
-                CompletedFunctions: context.State.CompletedFunctions.ToList(),
-                AgentName: context.AgentName,
-                Timestamp: DateTimeOffset.UtcNow);
+                CompletedFunctions: completedFunctions,
+                AgentName: context.AgentName);
 
             context.Emit(snapshot);
         }

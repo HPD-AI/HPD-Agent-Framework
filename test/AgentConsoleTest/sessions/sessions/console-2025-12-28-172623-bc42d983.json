@@ -1,0 +1,119 @@
+{
+  "sessionId": "console-2025-12-28-172623-bc42d983",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "I\u0027m Claude, an AI assistant created by Anthropic. I\u0027m designed to be helpful, harmless, and honest in my interactions with users.\n\nI can assist with a variety of tasks including:\n- Writing, editing, and analyzing text\n- Coding and programming help\n- Answering questions and explaining concepts\n- Problem-solving and brainstorming\n- And much more\n\nI have access to some tools that can help me work with files, perform mathematical operations, and execute commands when needed.\n\nHow can I help you today?"
+        }
+      ],
+      "messageId": "gen-1766964386-EV4BJpO5jBcOosTNrIpt"
+    },
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "add 383838 and 33883"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "functionCall",
+          "callId": "chatcmpl-tool-af73bd9eb4e6d8ec",
+          "name": "MathTools/Add",
+          "arguments": {
+            "a": 383838,
+            "b": 33883
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "chatcmpl-tool-af73bd9eb4e6d8ec",
+          "result": "Function \u0027MathTools/Add\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "Let me calculate that for you:\n\n383838 \u002B 33883 = 417,721"
+        }
+      ],
+      "messageId": "gen-1766964396-ZsG6RIZwZJvpf9AGKS53"
+    },
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "try again"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "\u003Ctool_call\u003EMath"
+        },
+        {
+          "$type": "functionCall",
+          "callId": "call_6d183a380d054598ab978101",
+          "name": "MathTools/Add",
+          "arguments": {
+            "a": "383838",
+            "b": "33883"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_6d183a380d054598ab978101",
+          "result": "Function \u0027MathTools/Add\u0027 not found."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "I apologize, it seems the math tools aren\u0027t accessible. Let me calculate this manually:\n\n383,838 \u002B 33,883 = 417,721"
+        }
+      ],
+      "messageId": "gen-1766964436-GPdVaYYFD8FhviSRi6dF"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2025-12-28T23:26:26.508855Z",
+  "lastActivity": "2025-12-28T23:27:18.728785Z",
+  "conversationId": "615201d8-b377-4db1-acb3-1dd9cd8e0fe0",
+  "version": 1
+}

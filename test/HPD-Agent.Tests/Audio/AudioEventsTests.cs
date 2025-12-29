@@ -1,8 +1,10 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using HPD.Agent.Audio;
+using HPD.Events;
 using System.Text.Json;
 using Xunit;
+using EventPriority = HPD.Events.EventPriority;
 
 namespace HPD.Agent.Tests.Audio;
 
@@ -156,7 +158,7 @@ public class AudioEventsTests
         var evt = new VadStartOfSpeechEvent(TimeSpan.FromSeconds(1.5), 0.92f);
 
         // Assert
-        Assert.Equal(TimeSpan.FromSeconds(1.5), evt.Timestamp);
+        Assert.Equal(TimeSpan.FromSeconds(1.5), evt.AudioTimestamp);
         Assert.Equal(0.92f, evt.SpeechProbability);
     }
 
@@ -170,7 +172,7 @@ public class AudioEventsTests
             0.15f);
 
         // Assert
-        Assert.Equal(TimeSpan.FromSeconds(5.0), evt.Timestamp);
+        Assert.Equal(TimeSpan.FromSeconds(5.0), evt.AudioTimestamp);
         Assert.Equal(TimeSpan.FromSeconds(3.5), evt.SpeechDuration);
         Assert.Equal(0.15f, evt.SpeechProbability);
     }

@@ -20,7 +20,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
 
     const API_BASE = 'http://localhost:5135';
 
-    // ❌ Manual state management (20+ lines)
+    //   Manual state management (20+ lines)
     interface MessageType {
         id: string;
         role: 'user' | 'assistant' | 'system';
@@ -40,14 +40,14 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
     let currentReasoning = '';
     let pendingPermission: PendingPermission | null = null;
 
-    // ❌ Manual client creation
+    //   Manual client creation
     const client = new AgentClient({
         baseUrl: API_BASE,
         clientToolGroups: [artifactTool]
     });
 
     async function sendMessage() {
-        // ❌ Manually create user message
+        //   Manually create user message
         messages = [...messages, {
             id: `user-${Date.now()}`,
             role: 'user',
@@ -58,7 +58,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
             timestamp: new Date()
         }];
 
-        // ❌ Manually create assistant placeholder
+        //   Manually create assistant placeholder
         messages = [...messages, {
             id: `assistant-${Date.now()}`,
             role: 'assistant',
@@ -74,7 +74,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
         streamingContent = '';
         currentReasoning = '';
 
-        // ❌ Wire up ALL callbacks manually (100+ lines)
+        //   Wire up ALL callbacks manually (100+ lines)
         await client.stream(conversationId, [{ content: userMsg }], {
             onTextDelta: (text) => {
                 console.log('Text delta:', text);
@@ -144,7 +144,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
         });
     }
 
-    // ❌ Manual update logic (10+ lines)
+    //   Manual update logic (10+ lines)
     function updateLastMessage(updates: Partial<MessageType> = {}) {
         if (messages.length === 0) return;
         const lastMsg = { ...messages[messages.length - 1] };
@@ -154,7 +154,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
         messages = [...messages.slice(0, -1), lastMsg];
     }
 
-    // ❌ Manual permission handling (10+ lines)
+    //   Manual permission handling (10+ lines)
     function respondToPermission(approved: boolean, choice: PermissionChoice = 'ask') {
         if (!pendingPermission) return;
 

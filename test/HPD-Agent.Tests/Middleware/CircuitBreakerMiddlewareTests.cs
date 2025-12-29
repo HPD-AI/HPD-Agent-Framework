@@ -80,8 +80,8 @@ public class CircuitBreakerMiddlewareTests
         Assert.NotNull(context.OverrideResponse);
         Assert.Contains("test_tool", context.OverrideResponse!.Text);
         Assert.Contains("3", context.OverrideResponse!.Text);
-        Assert.True(context.State.IsTerminated);
-        Assert.Contains("Circuit breaker", context.State.TerminationReason ?? "");
+        Assert.True(context.Analyze(s => s.IsTerminated));
+        Assert.Contains("Circuit breaker", context.Analyze(s => s.TerminationReason) ?? "");
     }
 
     [Fact]

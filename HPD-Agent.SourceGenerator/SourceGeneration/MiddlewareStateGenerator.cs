@@ -209,8 +209,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         if (ReservedPropertyNames.Contains(propertyName))
             return null;
 
-        // Extract version from attribute
+        // Extract version and persistent from attribute
         int version = 1;
+        bool persistent = false;
         var attribute = typeSymbol.GetAttributes()
             .FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attributeSymbol));
 
@@ -221,7 +222,10 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 if (namedArg.Key == "Version" && namedArg.Value.Value is int v)
                 {
                     version = v;
-                    break;
+                }
+                else if (namedArg.Key == "Persistent" && namedArg.Value.Value is bool p)
+                {
+                    persistent = p;
                 }
             }
         }
@@ -232,6 +236,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             PropertyName: propertyName,
             Namespace: namespaceName,
             Version: version,
+            Persistent: persistent,
             Diagnostics: new List<Diagnostic>(), // No diagnostics for referenced types
             IsFromReference: true);
     }
@@ -266,6 +271,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 PropertyName: "",
                 Namespace: "",
                 Version: 1,
+                Persistent: false,
                 Diagnostics: diagnostics);
         }
 
@@ -285,8 +291,9 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
         var propertyName = GetPropertyName(typeName);
 
-        // Extract version from [MiddlewareState(Version = X)] attribute
+        // Extract version and persistent from [MiddlewareState(Version = X, Persistent = Y)] attribute
         int version = 1; // Default
+        bool persistent = false; // Default
         var attribute = context.Attributes.FirstOrDefault();
         if (attribute != null)
         {
@@ -295,7 +302,10 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 if (namedArg.Key == "Version" && namedArg.Value.Value is int v)
                 {
                     version = v;
-                    break;
+                }
+                else if (namedArg.Key == "Persistent" && namedArg.Value.Value is bool p)
+                {
+                    persistent = p;
                 }
             }
         }
@@ -314,6 +324,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 PropertyName: propertyName,
                 Namespace: namespaceName,
                 Version: version,
+                Persistent: persistent,
                 Diagnostics: diagnostics);
         }
 
@@ -323,6 +334,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             PropertyName: propertyName,
             Namespace: namespaceName,
             Version: version,
+            Persistent: persistent,
             Diagnostics: diagnostics);
     }
 
@@ -452,6 +464,24 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         sb.AppendLine("        }.ToImmutableDictionary();");
         sb.AppendLine();
 
+        // Generate persistence metadata
+        var persistentStates = uniqueTypes.Where(s => s.Persistent).ToList();
+
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Persistent state type mapping (type FQN → should persist).");
+        sb.AppendLine("    /// Used by LoadFromSession/SaveToSession for automatic persistence.");
+        sb.AppendLine("    /// Only includes states marked with Persistent = true.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    internal static readonly ImmutableDictionary<string, bool> CompiledPersistenceMap =");
+        sb.AppendLine("        new Dictionary<string, bool>");
+        sb.AppendLine("        {");
+        foreach (var state in persistentStates)
+        {
+            sb.AppendLine($"            [\"{state.FullyQualifiedName}\"] = true,");
+        }
+        sb.AppendLine("        }.ToImmutableDictionary();");
+        sb.AppendLine();
+
         // Generate properties and WithX methods for each state type
         foreach (var stateInfo in uniqueTypes)
         {
@@ -485,6 +515,76 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
+        // Generate LoadFromSession and SaveToSession methods
+        sb.AppendLine("    //");
+        sb.AppendLine("    // AUTOMATIC PERSISTENCE (Generated)");
+        sb.AppendLine("    //");
+        sb.AppendLine();
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Load persistent middleware state from Session (called at agent start).");
+        sb.AppendLine("    /// Automatically generated - restores all states marked with Persistent = true.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <param name=\"session\">Session to load state from (null returns empty state)</param>");
+        sb.AppendLine("    /// <returns>MiddlewareState with restored persistent state</returns>");
+        sb.AppendLine("    public static MiddlewareState LoadFromSession(AgentSession? session)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (session == null)");
+        sb.AppendLine("            return new MiddlewareState();");
+        sb.AppendLine();
+        sb.AppendLine("        var state = new MiddlewareState();");
+        sb.AppendLine();
+
+        // Generate load code for each persistent state
+        foreach (var stateInfo in persistentStates)
+        {
+            sb.AppendLine($"        // Load {stateInfo.PropertyName}");
+            sb.AppendLine($"        {{");
+            sb.AppendLine($"            var key = \"{stateInfo.FullyQualifiedName}\";");
+            sb.AppendLine($"            var json = session.GetMiddlewarePersistentState(key);");
+            sb.AppendLine($"            if (json != null)");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                var data = System.Text.Json.JsonSerializer.Deserialize<{stateInfo.FullyQualifiedName}>(");
+            sb.AppendLine($"                    json, Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);");
+            sb.AppendLine($"                if (data != null)");
+            sb.AppendLine($"                    state = state.With{stateInfo.PropertyName}(data);");
+            sb.AppendLine($"            }}");
+            sb.AppendLine($"        }}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("        return state;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        // Generate SaveToSession method
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// Save persistent middleware state to Session (called at agent end).");
+        sb.AppendLine("    /// Automatically generated - persists all states marked with Persistent = true.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    /// <param name=\"session\">Session to save state to</param>");
+        sb.AppendLine("    public void SaveToSession(AgentSession session)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (session == null)");
+        sb.AppendLine("            throw new System.ArgumentNullException(nameof(session));");
+        sb.AppendLine();
+
+        // Generate save code for each persistent state
+        foreach (var stateInfo in persistentStates)
+        {
+            sb.AppendLine($"        // Save {stateInfo.PropertyName}");
+            sb.AppendLine($"        if (this.{stateInfo.PropertyName} != null)");
+            sb.AppendLine($"        {{");
+            sb.AppendLine($"            var key = \"{stateInfo.FullyQualifiedName}\";");
+            sb.AppendLine($"            var json = System.Text.Json.JsonSerializer.Serialize(");
+            sb.AppendLine($"                this.{stateInfo.PropertyName},");
+            sb.AppendLine($"                Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);");
+            sb.AppendLine($"            session.SetMiddlewarePersistentState(key, json);");
+            sb.AppendLine($"        }}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("    }");
+
         sb.AppendLine("}");
 
         context.AddSource("MiddlewareState.g.cs", sb.ToString());
@@ -500,6 +600,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         string PropertyName,
         string Namespace,
         int Version,
+        bool Persistent,
         List<Diagnostic> Diagnostics,
         bool IsFromReference = false);
 }

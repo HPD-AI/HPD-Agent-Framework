@@ -66,7 +66,9 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
         CancellationToken cancellationToken)
     {
         // Get or initialize the current extended limit from state
-        var permState = context.State.MiddlewareState.ContinuationPermission ?? new();
+        var permState = context.Analyze(s =>
+            s.MiddlewareState.ContinuationPermission ?? new()
+        );
 
         // Initialize state with configured max iterations if this is the first check
         if (permState.CurrentExtendedLimit == 20 && _maxIterations != 20)
@@ -77,7 +79,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
             {
                 MiddlewareState = s.MiddlewareState.WithContinuationPermission(newState)
             });
-            permState = context.State.MiddlewareState.ContinuationPermission ?? new();
+            permState = context.Analyze(s => s.MiddlewareState.ContinuationPermission ?? new());
         }
 
         // Check if we've EXCEEDED the iteration limit

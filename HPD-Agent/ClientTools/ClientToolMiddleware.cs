@@ -56,7 +56,7 @@ public class ClientToolMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Handle state persistence vs reset
-        var existingState = context.State.MiddlewareState.ClientTool;
+        var existingState = context.Analyze(s => s.MiddlewareState.ClientTool);
         var state = runInput.ResetClientState || existingState == null
             ? new ClientToolStateData()
             : existingState;
@@ -188,7 +188,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// </summary>
     public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken ct)
     {
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         if (state == null || state.RegisteredToolGroups.Count == 0)
             return Task.CompletedTask;
 
@@ -582,7 +582,7 @@ public class ClientToolMiddleware : IAgentMiddleware
             // Store augmentation for next iteration
             if (response.Augmentation != null)
             {
-                var state = context.State.MiddlewareState.ClientTool;
+                var state = context.Analyze(s => s.MiddlewareState.ClientTool);
                 if (state != null)
                 {
                     var updatedState = state.WithPendingAugmentation(response.Augmentation);

@@ -415,4 +415,66 @@ public class GraphValidationTests
     }
 
     #endregion
+
+    #region Default Edge Validation
+
+    [Fact]
+    public void Validate_MultipleDefaultEdgesFromSameSource_ShouldFail()
+    {
+        // Arrange - Two default edges from same node
+        var graph = new TestGraphBuilder()
+            .AddStartNode()
+            .AddHandlerNode("handler1", "SuccessHandler")
+            .AddHandlerNode("handler2", "SuccessHandler")
+            .AddHandlerNode("handler3", "SuccessHandler")
+            .AddEndNode()
+            .AddEdge("start", "handler1")
+            .AddEdge("handler1", "handler2", new EdgeCondition { Type = ConditionType.Default })
+            .AddEdge("handler1", "handler3", new EdgeCondition { Type = ConditionType.Default })
+            .AddEdge("handler2", "end")
+            .AddEdge("handler3", "end")
+            .Build();
+
+        // Act
+        var result = GraphValidator.Validate(graph);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.Code == "MULTIPLE_DEFAULT_EDGES");
+        result.Errors.First(e => e.Code == "MULTIPLE_DEFAULT_EDGES").Message
+            .Should().Contain("handler1")
+            .And.Contain("Only one default edge per source node is allowed");
+    }
+
+    [Fact]
+    public void Validate_SingleDefaultEdge_ShouldSucceed()
+    {
+        // Arrange - One default edge from node
+        var graph = new TestGraphBuilder()
+            .AddStartNode()
+            .AddHandlerNode("handler1", "SuccessHandler")
+            .AddHandlerNode("handler2", "SuccessHandler")
+            .AddHandlerNode("handler3", "SuccessHandler")
+            .AddEndNode()
+            .AddEdge("start", "handler1")
+            .AddEdge("handler1", "handler2", new EdgeCondition
+            {
+                Type = ConditionType.FieldEquals,
+                Field = "status",
+                Value = "success"
+            })
+            .AddEdge("handler1", "handler3", new EdgeCondition { Type = ConditionType.Default })
+            .AddEdge("handler2", "end")
+            .AddEdge("handler3", "end")
+            .Build();
+
+        // Act
+        var result = GraphValidator.Validate(graph);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
+
+    #endregion
 }

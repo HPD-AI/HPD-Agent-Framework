@@ -122,7 +122,9 @@ public class ContainerMiddleware : IAgentMiddleware
             return Task.CompletedTask;
         }
 
-        var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        var collapsingState = context.Analyze(s =>
+            s.MiddlewareState.Collapsing ?? new CollapsingStateData()
+        );
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 0: Filter [Collapse] container calls from messages (IMMEDIATE TRANSPARENCY)
@@ -402,7 +404,9 @@ public class ContainerMiddleware : IAgentMiddleware
         // STEP 1: Final cleanup - remove container calls from TurnHistory before session persistence
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        var collapsingState = context.State.MiddlewareState.Collapsing ?? new CollapsingStateData();
+        var collapsingState = context.Analyze(s =>
+            s.MiddlewareState.Collapsing ?? new CollapsingStateData()
+        );
 
         _logger?.LogInformation("AfterMessageTurnAsync: ExpandedContainers count = {Count}, ContainersExpandedThisTurn count = {TurnCount}, TurnHistory count = {HistoryCount}",
             collapsingState.ExpandedContainers.Count,

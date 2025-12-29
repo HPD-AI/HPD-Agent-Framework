@@ -121,12 +121,42 @@ public class SocketBridgeGenerator : ISourceGenerator
             sb.AppendLine();
         }
 
+        // Generate private field to store current node (for GetNodeConfig)
+        sb.AppendLine("    private HPDAgent.Graph.Abstractions.Graph.Node? _currentNode;");
+        sb.AppendLine();
+
+        // Check if handler has a nested Config class
+        var configClass = FindNestedConfigClass(classSymbol);
+        if (configClass != null)
+        {
+            // Generate GetNodeConfig helper method
+            var configTypeName = configClass.ToDisplayString();
+            sb.AppendLine("    /// <summary>");
+            sb.AppendLine("    /// Gets the node-specific configuration for the current node being executed.");
+            sb.AppendLine("    /// Deserializes from Node.Config dictionary into strongly-typed Config object.");
+            sb.AppendLine("    /// </summary>");
+            sb.AppendLine($"    protected {configTypeName} GetNodeConfig()");
+            sb.AppendLine("    {");
+            sb.AppendLine("        if (_currentNode?.Config == null || _currentNode.Config.Count == 0)");
+            sb.AppendLine($"            return new {configTypeName}();");
+            sb.AppendLine();
+            sb.AppendLine("        // Serialize to JSON then deserialize to Config type");
+            sb.AppendLine("        var json = System.Text.Json.JsonSerializer.Serialize(_currentNode.Config);");
+            sb.AppendLine($"        return System.Text.Json.JsonSerializer.Deserialize<{configTypeName}>(json)");
+            sb.AppendLine($"            ?? new {configTypeName}();");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+        }
+
         // Generate IGraphNodeHandler.ExecuteAsync implementation
         sb.AppendLine($"    async System.Threading.Tasks.Task<HPDAgent.Graph.Abstractions.Execution.NodeExecutionResult> HPDAgent.Graph.Abstractions.Handlers.IGraphNodeHandler<{contextType}>.ExecuteAsync(");
         sb.AppendLine($"        {contextType} context,");
         sb.AppendLine($"        HPDAgent.Graph.Abstractions.Handlers.HandlerInputs inputs,");
         sb.AppendLine($"        System.Threading.CancellationToken ct)");
         sb.AppendLine("    {");
+        sb.AppendLine("        // Store current node for GetNodeConfig access");
+        sb.AppendLine("        _currentNode = context.Graph.GetNode(context.CurrentNodeId);");
+        sb.AppendLine();
         sb.AppendLine("        var stopwatch = System.Diagnostics.Stopwatch.StartNew();");
         sb.AppendLine("        try");
         sb.AppendLine("        {");
@@ -322,6 +352,13 @@ public class SocketBridgeGenerator : ISourceGenerator
             return $"{type.ToDisplayString()}.{value}";
 
         return value.ToString() ?? "null";
+    }
+
+    private INamedTypeSymbol? FindNestedConfigClass(INamedTypeSymbol classSymbol)
+    {
+        // Look for a nested class named "Config"
+        return classSymbol.GetTypeMembers()
+            .FirstOrDefault(t => t.Name == "Config");
     }
 
     /// <summary>

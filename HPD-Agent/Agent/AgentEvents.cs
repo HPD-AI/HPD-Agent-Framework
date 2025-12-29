@@ -1,5 +1,8 @@
 using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
+// EventPriority and EventDirection are now in HPD.Events namespace
+using EventPriority = HPD.Events.EventPriority;
+using EventDirection = HPD.Events.EventDirection;
 
 namespace HPD.Agent;
 /// <summary>
@@ -45,61 +48,7 @@ public record AgentExecutionContext
 
 
 #region Priority and Direction Enums
-
-/// <summary>
-/// Priority levels for event processing.
-/// Higher priority events are processed before lower priority events.
-/// Events at the same priority level are processed in sequence order (FIFO).
-/// </summary>
-public enum EventPriority
-{
-    /// <summary>
-    /// Highest priority. User-initiated control: stop, cancel, abort.
-    /// These events are NEVER queued behind lower priority events.
-    /// Use for: User cancellation, emergency stops, critical errors.
-    /// </summary>
-    Immediate = 0,
-
-    /// <summary>
-    /// System control signals: state changes, configuration updates, interruption acks.
-    /// Processed before normal events but after immediate events.
-    /// Use for: Interruption acknowledgments, state transitions, control flow.
-    /// </summary>
-    Control = 1,
-
-    /// <summary>
-    /// Standard data flow. Default priority for most events.
-    /// Use for: Text deltas, tool results, normal agent responses.
-    /// </summary>
-    Normal = 2,
-
-    /// <summary>
-    /// Lowest priority. Background operations: metrics, telemetry, observability.
-    /// Processed only when no higher priority events are pending.
-    /// Use for: Logging events, metrics emission, non-critical notifications.
-    /// </summary>
-    Background = 3
-}
-
-/// <summary>
-/// Direction of event flow through the agent pipeline.
-/// </summary>
-public enum EventDirection
-{
-    /// <summary>
-    /// Normal flow: user input → agent processing → response output.
-    /// Events flow through middleware in registration order.
-    /// </summary>
-    Downstream,
-
-    /// <summary>
-    /// Control flow: cancellation/interruption signals flowing back to source.
-    /// Events flow through middleware in reverse order.
-    /// Used for: Cancellation propagation, abort signals, upstream notifications.
-    /// </summary>
-    Upstream
-}
-
+// EventPriority and EventDirection enums moved to HPD.Events (imported via using aliases at top of file)
 #endregion
 
 #region Interruption Types
@@ -128,7 +77,10 @@ public enum InterruptionSource
 public record InterruptionRequestEvent(
     string? StreamId,
     string Reason,
-    InterruptionSource Source) : AgentEvent;
+    InterruptionSource Source) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+}
 
 #endregion
 
@@ -197,45 +149,16 @@ public readonly struct OperationStatus : IEquatable<OperationStatus>
 /// - AGENT TURN: A single call to the LLM (one iteration in the agentic loop)
 ///   Multiple agent turns happen within one message turn when using tools
 ///
+/// Inherits from HPD.Events.Event to participate in unified cross-domain event streaming.
 /// Adapters convert these to protocol-specific formats as needed.
 /// </summary>
-public abstract record AgentEvent
+public abstract record AgentEvent : HPD.Events.Event
 {
     /// <summary>
     /// Context about which agent emitted this event (optional for backwards compatibility).
-    /// Automatically attached by BidirectionalEventCoordinator.Emit() if not already set.
+    /// Automatically attached by EventCoordinator.Emit() if not already set.
     /// </summary>
     public AgentExecutionContext? ExecutionContext { get; init; }
-
-    /// <summary>
-    /// Processing priority for this event.
-    /// Defaults to Normal for standard data flow events.
-    /// </summary>
-    public EventPriority Priority { get; init; } = EventPriority.Normal;
-
-    /// <summary>
-    /// Monotonically increasing sequence number assigned by the coordinator.
-    /// Used for ordering events within the same priority level.
-    /// </summary>
-    public long SequenceNumber { get; internal set; }
-
-    /// <summary>
-    /// Direction of event flow through the middleware pipeline.
-    /// </summary>
-    public EventDirection Direction { get; init; } = EventDirection.Downstream;
-
-    /// <summary>
-    /// Stream ID for grouping related interruptible events.
-    /// Null if this event is not part of a managed stream.
-    /// </summary>
-    public string? StreamId { get; init; }
-
-    /// <summary>
-    /// Whether this event can be dropped on stream interruption.
-    /// True for: Data chunks, progress updates, intermediate results.
-    /// False for: Completion markers, error reports, cleanup events.
-    /// </summary>
-    public bool CanInterrupt { get; init; } = true;
 }
 
 #region Message Turn Events (Entire User Interaction)
@@ -247,8 +170,10 @@ public abstract record AgentEvent
 public record MessageTurnStartedEvent(
     string MessageTurnId,
     string ConversationId,
-    string AgentName,
-    DateTimeOffset Timestamp) : AgentEvent;
+    string AgentName) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Lifecycle;
+}
 
 /// <summary>
 /// Emitted when a message turn completes successfully
@@ -258,8 +183,10 @@ public record MessageTurnFinishedEvent(
     string MessageTurnId,
     string ConversationId,
     string AgentName,
-    TimeSpan Duration,
-    DateTimeOffset Timestamp) : AgentEvent;
+    TimeSpan Duration) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Lifecycle;
+}
 
 /// <summary>
 /// Emitted when an error occurs during message turn execution
@@ -279,12 +206,18 @@ public record MessageTurnErrorEvent(string Message, Exception? Exception = null)
 /// An agent turn represents one iteration where the LLM processes messages and responds.
 /// Multiple agent turns may occur in one message turn when tools are called.
 /// </summary>
-public record AgentTurnStartedEvent(int Iteration) : AgentEvent;
+public record AgentTurnStartedEvent(int Iteration) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Lifecycle;
+}
 
 /// <summary>
 /// Emitted when an agent turn completes
 /// </summary>
-public record AgentTurnFinishedEvent(int Iteration) : AgentEvent;
+public record AgentTurnFinishedEvent(int Iteration) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Lifecycle;
+}
 
 /// <summary>
 /// Emitted during agent execution to expose internal state for testing/debugging.
@@ -297,8 +230,10 @@ public record StateSnapshotEvent(
     string? TerminationReason,
     int ConsecutiveErrorCount,
     List<string> CompletedFunctions,
-    string AgentName,
-    DateTimeOffset Timestamp) : AgentEvent;
+    string AgentName) : AgentEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Diagnostic;
+}
 
 #endregion
 
@@ -411,7 +346,10 @@ public record PermissionRequestEvent(
     string FunctionName,
     string? Description,
     string CallId,
-    IDictionary<string, object?>? Arguments) : AgentEvent, IPermissionEvent;
+    IDictionary<string, object?>? Arguments) : AgentEvent, IPermissionEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+}
 
 /// <summary>
 /// Response to permission request.
@@ -422,7 +360,10 @@ public record PermissionResponseEvent(
     string SourceName,
     bool Approved,
     string? Reason = null,
-    PermissionChoice Choice = PermissionChoice.Ask) : AgentEvent, IPermissionEvent;
+    PermissionChoice Choice = PermissionChoice.Ask) : AgentEvent, IPermissionEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+}
 
 /// <summary>
 /// Emitted after permission is approved (for observability).
@@ -499,7 +440,10 @@ public record ClarificationRequestEvent(
     string SourceName,
     string Question,
     string? AgentName = null,
-    string[]? Options = null) : AgentEvent, IClarificationEvent;
+    string[]? Options = null) : AgentEvent, IClarificationEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+}
 
 /// <summary>
 /// Response to clarification request.
@@ -509,7 +453,10 @@ public record ClarificationResponseEvent(
     string RequestId,
     string SourceName,
     string Question,
-    string Answer) : AgentEvent, IClarificationEvent;
+    string Answer) : AgentEvent, IClarificationEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+}
 
 /// <summary>
 /// Middleware reports progress (one-way, no response needed).
@@ -634,8 +581,7 @@ public record IterationStartEvent(
     int CurrentMessageCount,
     int HistoryMessageCount,
     int TurnHistoryMessageCount,
-    int CompletedFunctionsCount,
-    DateTimeOffset Timestamp
+    int CompletedFunctionsCount
 ) : AgentEvent, IObservabilityEvent;
 
 /// <summary>
@@ -850,8 +796,7 @@ public record AgentDecisionEvent(
     string DecisionType,
     int Iteration,
     int ConsecutiveFailures,
-    int CompletedFunctionsCount,
-    DateTimeOffset Timestamp
+    int CompletedFunctionsCount
 ) : AgentEvent, IObservabilityEvent;
 
 /// <summary>
@@ -883,21 +828,18 @@ public record SchemaChangedEvent(
     string NewSignature,
     IReadOnlyList<string> RemovedTypes,
     IReadOnlyList<string> AddedTypes,
-    bool IsUpgrade,
-    DateTimeOffset Timestamp
+    bool IsUpgrade
 ) : AgentEvent, IObservabilityEvent
 {
     public SchemaChangedEvent(
         string? oldSignature,
-        string newSignature,
-        DateTimeOffset timestamp)
+        string newSignature)
         : this(
             OldSignature: oldSignature,
             NewSignature: newSignature,
             RemovedTypes: Array.Empty<string>(),
             AddedTypes: Array.Empty<string>(),
-            IsUpgrade: oldSignature == null,
-            Timestamp: timestamp)
+            IsUpgrade: oldSignature == null)
     {
     }
 }
@@ -996,6 +938,18 @@ public sealed record StructuredOutputCompleteEvent(
     int FinalJsonLength,
     TimeSpan Duration
 ) : AgentEvent, IObservabilityEvent;
+
+/// <summary>
+/// Emitted when an event is dropped due to stream interruption.
+/// Provides observability into dropped events.
+/// </summary>
+public record EventDroppedEvent(
+    string DroppedStreamId,
+    string DroppedEventType,
+    long DroppedSequenceNumber) : AgentEvent, IObservabilityEvent
+{
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Diagnostic;
+}
 
 #endregion
 

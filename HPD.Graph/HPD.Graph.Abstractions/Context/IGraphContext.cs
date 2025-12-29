@@ -135,6 +135,21 @@ public interface IGraphContext
     IServiceProvider Services { get; }
 
     // ========================================
+    // Event Coordination
+    // ========================================
+
+    /// <summary>
+    /// Event coordinator for emitting graph lifecycle events.
+    /// Integrates with HPD.Events for hierarchical event streaming.
+    /// Null = no event emission (default).
+    /// When set, events are emitted at key lifecycle points:
+    /// - Graph start/completion
+    /// - Layer start/completion
+    /// - Node start/completion
+    /// </summary>
+    HPD.Events.IEventCoordinator? EventCoordinator { get; }
+
+    // ========================================
     // Context Isolation (For Parallel Execution)
     // ========================================
 

@@ -4,7 +4,6 @@ namespace HPD.Agent.Middleware;
 
 /// <summary>
 /// Immutable request object for function/tool calls.
-/// Follows LangChain's pattern for request modification.
 /// </summary>
 /// <remarks>
 /// <para><b>Design Philosophy:</b></para>

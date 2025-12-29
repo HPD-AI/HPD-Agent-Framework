@@ -114,7 +114,7 @@ async function analyzeComponent(component: ComponentSizeLimit): Promise<{
 			withinLimit: gzipped <= component.limit
 		};
 	} catch (error) {
-		console.error(`❌ Error analyzing ${component.name}:`, error);
+		console.error(`  Error analyzing ${component.name}:`, error);
 		throw error;
 	}
 }
@@ -141,7 +141,7 @@ async function analyzeAllComponents() {
 			totalGzipped += result.gzipped;
 
 			// Print result
-			const status = result.withinLimit ? ' ' : '❌';
+			const status = result.withinLimit ? ' ' : ' ';
 			const sizePct = formatPercentage(result.gzipped, result.limit);
 
 			console.log(`${status} ${result.name}`);
@@ -172,7 +172,7 @@ async function analyzeAllComponents() {
 		console.log(`    WITHIN LIMIT (${totalPct})`);
 	} else {
 		const overage = totalGzipped - TOTAL_LIBRARY_LIMIT;
-		console.log(`   ❌ EXCEEDS LIMIT by ${formatBytes(overage)} (${totalPct})`);
+		console.log(`     EXCEEDS LIMIT by ${formatBytes(overage)} (${totalPct})`);
 		hasFailures = true;
 	}
 
@@ -195,7 +195,7 @@ async function analyzeAllComponents() {
 
 	// Exit with error if any failures
 	if (hasFailures) {
-		console.error('❌ Bundle size analysis FAILED - components exceed limits\n');
+		console.error('  Bundle size analysis FAILED - components exceed limits\n');
 		process.exit(1);
 	} else {
 		console.log('  Bundle size analysis PASSED - all components within limits\n');
@@ -207,6 +207,6 @@ async function analyzeAllComponents() {
 // ========================================
 
 analyzeAllComponents().catch((error) => {
-	console.error('❌ Bundle analysis failed:', error);
+	console.error('  Bundle analysis failed:', error);
 	process.exit(1);
 });

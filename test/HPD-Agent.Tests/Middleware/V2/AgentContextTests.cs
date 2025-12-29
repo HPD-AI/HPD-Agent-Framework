@@ -19,7 +19,7 @@ public class AgentContextTests
         context.UpdateState(s => s with { Iteration = 5 });
 
         // Assert - state updated immediately, no GetPendingState needed!
-        Assert.Equal(5, context.State.Iteration);
+        Assert.Equal(5, context.Analyze(s => s.Iteration));
     }
 
     [Fact]
@@ -35,7 +35,7 @@ public class AgentContextTests
         context.UpdateState(s => s with { Iteration = s.Iteration + 1 });
 
         // Assert
-        Assert.Equal(3, context.State.Iteration);
+        Assert.Equal(3, context.Analyze(s => s.Iteration));
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public class AgentContextTests
         typedContext.UpdateState(s => s with { Iteration = 10 });
 
         // Assert - base context sees the update
-        Assert.Equal(10, context.State.Iteration);
+        Assert.Equal(10, context.Analyze(s => s.Iteration));
         Assert.Equal(10, typedContext.State.Iteration);
     }
 

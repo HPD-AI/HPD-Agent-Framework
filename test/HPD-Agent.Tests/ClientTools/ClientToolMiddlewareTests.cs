@@ -30,7 +30,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert - state unchanged
-        Assert.Null(context.State.MiddlewareState.ClientTool);
+        Assert.Null(context.Analyze(s => s.MiddlewareState.ClientTool));
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Equal(2, state.RegisteredToolGroups.Count);
         Assert.True(state.RegisteredToolGroups.ContainsKey("Plugin1"));
@@ -81,7 +81,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Contains("Plugin1", state.ExpandedPlugins);
         Assert.DoesNotContain("Plugin2", state.ExpandedPlugins);
@@ -111,7 +111,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Contains("Tool1", state.HiddenTools);
         Assert.DoesNotContain("Tool2", state.HiddenTools);
@@ -138,7 +138,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Equal(2, state.Context.Count);
         Assert.True(state.Context.ContainsKey("prefs"));
@@ -163,7 +163,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.NotNull(state.State);
     }
@@ -341,7 +341,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        var updatedState = context.State.MiddlewareState.ClientTool;
+        var updatedState = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(updatedState);
 
         // Augmentation should have been applied
@@ -385,7 +385,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Single(state.RegisteredToolGroups);
         Assert.NotNull(state.RegisteredToolGroups["ECommerce"].Skills);
@@ -556,7 +556,7 @@ public class ClientToolMiddlewareTests
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var state = context.State.MiddlewareState.ClientTool;
+        var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Equal(2, state.RegisteredToolGroups.Count);
     }

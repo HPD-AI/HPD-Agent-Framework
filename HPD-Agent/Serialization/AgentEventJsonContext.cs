@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using EventPriority = HPD.Events.EventPriority;
+using EventDirection = HPD.Events.EventDirection;
 
 namespace HPD.Agent.Serialization;
 

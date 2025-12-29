@@ -7,12 +7,13 @@ using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using System.Security.Cryptography;
 using System.Text;
-using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.StructuredOutput;
+using HPD.Events;
+
 
 namespace HPD.Agent;
 
@@ -330,8 +331,7 @@ public sealed class Agent
                 NewSignature: MiddlewareState.CompiledSchemaSignature,
                 RemovedTypes: Array.Empty<string>(),
                 AddedTypes: Array.Empty<string>(),
-                IsUpgrade: true,
-                Timestamp: DateTimeOffset.UtcNow);
+                IsUpgrade: true);
 
             // Notify observers using existing NotifyObservers method
             NotifyObservers(upgradeEvent);
@@ -388,8 +388,7 @@ public sealed class Agent
             NewSignature: MiddlewareState.CompiledSchemaSignature,
             RemovedTypes: removed,
             AddedTypes: added,
-            IsUpgrade: false,
-            Timestamp: DateTimeOffset.UtcNow);
+            IsUpgrade: false);
 
         // Notify observers using existing NotifyObservers method
         NotifyObservers(schemaEvent);
@@ -579,8 +578,7 @@ public sealed class Agent
             yield return new MessageTurnStartedEvent(
                 messageTurnId,
                 conversationId,
-                _name,
-                DateTimeOffset.UtcNow);
+                _name);
  
             // MESSAGE PREPARATION: Split logic between Fresh Run vs Resume
             // FRESH RUN: Process documents → PrepareMessages → Create initial state
@@ -668,7 +666,7 @@ public sealed class Agent
                 //
 
                 // Load persistent middleware state from session (cross-run caching)
-                var persistentState = MiddlewareState.LoadFromThread(session);
+                var persistentState = MiddlewareState.LoadFromSession(session);
 
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
@@ -775,8 +773,7 @@ public sealed class Agent
                     TerminationReason: state.TerminationReason,
                     ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
                     CompletedFunctions: new List<string>(state.CompletedFunctions),
-                    AgentName: _name,
-                    Timestamp: DateTimeOffset.UtcNow);
+                    AgentName: _name);
 
                 // Drain middleware events before decision
                 while (_eventCoordinator.TryRead(out var MiddlewareEvt))
@@ -800,8 +797,7 @@ public sealed class Agent
                     CurrentMessageCount: state.CurrentMessages.Count,
                     HistoryMessageCount: 0, // History is part of CurrentMessages
                     TurnHistoryMessageCount: state.TurnHistory.Count,
-                    CompletedFunctionsCount: state.CompletedFunctions.Count,
-                    Timestamp: DateTimeOffset.UtcNow);
+                    CompletedFunctionsCount: state.CompletedFunctions.Count);
 
                 // Emit decision event
                 yield return new AgentDecisionEvent(
@@ -809,8 +805,7 @@ public sealed class Agent
                     DecisionType: decision.GetType().Name,
                     Iteration: state.Iteration,
                     ConsecutiveFailures: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
-                    CompletedFunctionsCount: state.CompletedFunctions.Count,
-                    Timestamp: DateTimeOffset.UtcNow);
+                    CompletedFunctionsCount: state.CompletedFunctions.Count);
 
                 // NOTE: Circuit breaker events are now emitted directly by CircuitBreakerIterationMiddleware
                 // via context.Emit() in BeforeToolExecutionAsync.
@@ -1538,8 +1533,7 @@ public sealed class Agent
                 messageTurnId,
                 conversationId,
                 _name,
-                turnStopwatch.Elapsed,
-                DateTimeOffset.UtcNow);
+                turnStopwatch.Elapsed);
 
             // Record orchestration telemetry metrics
             orchestrationActivity?.SetTag("agent.total_iterations", state.Iteration);
@@ -1642,7 +1636,7 @@ public sealed class Agent
             {
                 try
                 {
-                    state.MiddlewareState.SaveToThread(session);
+                    state.MiddlewareState.SaveToSession(session);
                 }
                 catch (Exception)
                 {
@@ -5203,86 +5197,19 @@ internal static class ErrorFormatter
 }
 
 #endregion
-#region BidirectionalEventCoordinator
 
+#region BidirectionalEventCoordinator
 /// <summary>
-/// Manages bidirectional event coordination for request/response patterns.
-/// Used by Middlewares (permissions, clarifications) and supports nested agent communication.
-/// Thread-safe for concurrent event emission and response coordination.
-/// </summary>
-/// <summary>
-/// Manages bidirectional event coordination with priority-based routing.
-/// Immediate/Control events are never blocked behind Normal/Background events.
+/// Agent-specific event coordinator wrapper around HPD.Events.EventCoordinator.
+/// Provides backward-compatible API with domain-specific features (SetExecutionContext, AgentEvent typing).
+/// Delegates all core coordination logic to the shared HPD.Events.EventCoordinator.
 /// </summary>
 public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 {
-    //
-    // CHANNELS
-    //
-
-    /// <summary>
-    /// Priority channel for Immediate and Control events.
-    /// Bounded to prevent memory issues, but should rarely fill.
-    /// </summary>
-    private readonly Channel<AgentEvent> _priorityChannel;
-
-    /// <summary>
-    /// Standard channel for Normal and Background events.
-    /// Unbounded to prevent blocking during high-throughput streaming.
-    /// </summary>
-    private readonly Channel<AgentEvent> _standardChannel;
-
-    /// <summary>
-    /// Upstream channel for events flowing back through the pipeline.
-    /// Used for interruption propagation.
-    /// </summary>
-    private readonly Channel<AgentEvent> _upstreamChannel;
-
-    //
-    // STATE
-    //
-
-    /// <summary>
-    /// Monotonically increasing sequence counter for event ordering.
-    /// </summary>
-    private long _sequenceCounter;
-
-    /// <summary>
-    /// Response coordination for bidirectional patterns.
-    /// Maps requestId -> (TaskCompletionSource, CancellationTokenSource)
-    /// Thread-safe: ConcurrentDictionary handles concurrent access.
-    /// </summary>
-    private readonly ConcurrentDictionary<string, (TaskCompletionSource<AgentEvent>, CancellationTokenSource)>
-        _responseWaiters = new();
-
-    /// <summary>
-    /// Parent coordinator for event bubbling in nested agent scenarios.
-    /// Set via SetParent() when an agent is used as a tool by another agent.
-    /// Events emitted to this coordinator will also bubble to the parent.
-    /// </summary>
-    private BidirectionalEventCoordinator? _parentCoordinator;
-
-    /// <summary>
-    /// Execution context for automatic attachment to events.
-    /// Used to attach ExecutionContext to events that don't already have it.
-    /// Decoupled from Agent for testability and clean architecture.
-    /// Can be set after construction via SetExecutionContext() for lazy initialization.
-    /// </summary>
+    private readonly HPD.Events.Core.EventCoordinator _inner;
     private AgentExecutionContext? _executionContext;
-
-    /// <summary>
-    /// Agent configuration for accessing observability settings.
-    /// </summary>
     private readonly AgentConfig? _config;
-
-    /// <summary>
-    /// Stream registry for managing interruptible streams.
-    /// </summary>
-    private readonly StreamRegistry _streamRegistry = new();
-
-    //
-    // CONSTRUCTION
-    //
+    private BidirectionalEventCoordinator? _parent;
 
     /// <summary>
     /// Creates a new bidirectional event coordinator with priority-based routing.
@@ -5294,39 +5221,15 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
         _executionContext = executionContext;
         _config = config;
 
-        // Priority channel: bounded, for Immediate/Control events
-        _priorityChannel = Channel.CreateBounded<AgentEvent>(new BoundedChannelOptions(64)
-        {
-            SingleWriter = false,
-            SingleReader = true,
-            FullMode = BoundedChannelFullMode.Wait
-        });
-
-        // Standard channel: unbounded, for Normal/Background events
-        _standardChannel = Channel.CreateUnbounded<AgentEvent>(new UnboundedChannelOptions
-        {
-            SingleWriter = false,
-            SingleReader = true,
-            AllowSynchronousContinuations = false
-        });
-
-        // Upstream channel: bounded, for interruptions flowing back
-        _upstreamChannel = Channel.CreateBounded<AgentEvent>(new BoundedChannelOptions(64)
-        {
-            SingleWriter = false,
-            SingleReader = true,
-            FullMode = BoundedChannelFullMode.Wait
-        });
+        _inner = new HPD.Events.Core.EventCoordinator(
+            eventEnricher: EnrichWithAgentContext
+        );
     }
-
-    //
-    // PUBLIC API
-    //
 
     /// <summary>
     /// Gets the stream registry for managing interruptible streams.
     /// </summary>
-    public IStreamRegistry Streams => _streamRegistry;
+    public IStreamRegistry Streams => _inner.Streams;
 
     /// <summary>
     /// Sets the execution context for event attribution.
@@ -5341,540 +5244,134 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
 
     /// <summary>
     /// Attempts to read an event synchronously using priority ordering.
-    /// Checks priority channel first, then upstream, then standard channel.
     /// </summary>
     /// <param name="event">The event if one was available</param>
     /// <returns>True if an event was read, false otherwise</returns>
     public bool TryRead([NotNullWhen(true)] out AgentEvent? @event)
     {
-        // 1. Check priority channel first (Immediate/Control)
-        if (_priorityChannel.Reader.TryRead(out var priorityEvent))
+        while (_inner.TryRead(out var evt))
         {
-            @event = priorityEvent;
-            return true;
+            // Skip universal events (e.g., EventDroppedEvent) that aren't AgentEvents
+            if (evt is AgentEvent agentEvt)
+            {
+                @event = agentEvt;
+                return true;
+            }
+            // Universal events are silently dropped from Agent-specific streams
         }
-
-        // 2. Check upstream channel (interruptions flowing back)
-        if (_upstreamChannel.Reader.TryRead(out var upstreamEvent))
-        {
-            @event = upstreamEvent;
-            return true;
-        }
-
-        // 3. Check standard channel (Normal/Background)
-        if (_standardChannel.Reader.TryRead(out var standardEvent))
-        {
-            @event = standardEvent;
-            return true;
-        }
-
         @event = null;
         return false;
     }
 
     /// <summary>
-    /// Sets the parent coordinator for event bubbling in nested agent scenarios.
-    /// When a parent is set, all events emitted via Emit() will bubble to the parent.
+    /// Sets the parent coordinator for hierarchical event bubbling.
     /// </summary>
-    /// <param name="parent">The parent coordinator to bubble events to</param>
-    /// <exception cref="ArgumentNullException">If parent is null</exception>
-    /// <exception cref="InvalidOperationException">If setting this parent would create a cycle</exception>
     public void SetParent(BidirectionalEventCoordinator parent)
     {
         if (parent == null)
             throw new ArgumentNullException(nameof(parent));
 
-        // Check for self-reference (simplest cycle)
+        // Check for self-reference
         if (parent == this)
             throw new InvalidOperationException(
                 "Cannot set coordinator as its own parent. This would create an infinite loop during event emission.");
 
-        // Check for cycles in the parent chain
+        // Check for cycles by traversing the parent chain
         var current = parent;
-        var visited = new HashSet<BidirectionalEventCoordinator> { this };
-
+        var visited = new HashSet<BidirectionalEventCoordinator>();
         while (current != null)
         {
+            if (current == this)
+                throw new InvalidOperationException(
+                    "Cycle detected in coordinator hierarchy. Cannot set parent: this would cause infinite loops during event emission.");
+
             if (!visited.Add(current))
             {
-                throw new InvalidOperationException(
-                    "Cycle detected in parent coordinator chain. Setting this parent would create an infinite loop during event emission. " +
-                    "Ensure parent chains form a tree structure (child -> parent -> grandparent) without loops.");
+                // We've seen this coordinator before - there's already a cycle in the parent chain
+                break;
             }
 
-            current = current._parentCoordinator;
+            // Traverse to the next parent in the chain
+            current = current._parent;
         }
 
-        _parentCoordinator = parent;
+        _parent = parent;
+        _inner.SetParent(parent._inner);
     }
 
     /// <summary>
-    /// Emits an event downstream with automatic priority routing.
-    /// Immediate/Control events go to priority channel, Normal/Background to standard channel.
-    /// Thread-safe: Can be called from any session.
+    /// Emits an event downstream with automatic context enrichment.
     /// </summary>
-    /// <param name="evt">The event to emit</param>
-    /// <exception cref="ArgumentNullException">If event is null</exception>
     public void Emit(AgentEvent evt)
     {
-        if (evt == null)
-            throw new ArgumentNullException(nameof(evt));
-
-        // Skip observability events if disabled (default)
-        if (evt is IObservabilityEvent && !(_config?.Observability?.EmitObservabilityEvents ?? false))
-        {
-            return;
-        }
-
-        var sequenced = PrepareEvent(evt, EventDirection.Downstream);
-
-        // Check if event should be dropped (stream interrupted)
-        if (sequenced.StreamId != null && sequenced.CanInterrupt)
-        {
-            var handle = _streamRegistry.Get(sequenced.StreamId);
-            if (handle?.IsInterrupted == true)
-            {
-                ((StreamHandle)handle).IncrementDropped();
-
-                // Emit observability event for dropped event (to standard channel, won't recurse)
-                EmitInternal(new EventDroppedEvent(
-                    sequenced.StreamId,
-                    evt.GetType().Name,
-                    sequenced.SequenceNumber)
-                {
-                    Priority = EventPriority.Background
-                });
-
-                return; // Drop the event
-            }
-
-            ((StreamHandle?)handle)?.IncrementEmitted();
-        }
-
-        EmitInternal(sequenced);
-        _parentCoordinator?.Emit(sequenced);
+        _inner.Emit(evt);
     }
 
     /// <summary>
     /// Emits an event upstream for interruption propagation.
-    /// Used for cancellation signals flowing back through the pipeline.
     /// </summary>
-    /// <param name="evt">The event to emit upstream</param>
-    /// <exception cref="ArgumentNullException">If event is null</exception>
     public void EmitUpstream(AgentEvent evt)
     {
-        if (evt == null)
-            throw new ArgumentNullException(nameof(evt));
-
-        var sequenced = PrepareEvent(evt, EventDirection.Upstream);
-
-        if (!_upstreamChannel.Writer.TryWrite(sequenced))
-        {
-            throw new InvalidOperationException(
-                "Upstream event channel full. This indicates a processing bottleneck.");
-        }
-
-        _parentCoordinator?.EmitUpstream(sequenced);
+        _inner.EmitUpstream(evt);
     }
 
     /// <summary>
     /// Reads events with priority ordering.
-    /// Immediate/Control events are always processed before Normal/Background events.
     /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Async enumerable of events in priority order</returns>
     public async IAsyncEnumerable<AgentEvent> ReadAllAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        await foreach (var evt in _inner.ReadAllAsync(cancellationToken))
         {
-            // 1. ALWAYS drain priority channel first (Immediate/Control)
-            while (_priorityChannel.Reader.TryRead(out var priorityEvent))
-            {
-                yield return priorityEvent;
-            }
-
-            // 2. Check upstream channel (interruptions flowing back)
-            while (_upstreamChannel.Reader.TryRead(out var upstreamEvent))
-            {
-                yield return upstreamEvent;
-            }
-
-            // 3. Then read from standard channel (Normal/Background)
-            if (_standardChannel.Reader.TryRead(out var standardEvent))
-            {
-                yield return standardEvent;
-            }
-            else
-            {
-                // Wait for any channel to have data
-                try
-                {
-                    var priorityTask = _priorityChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
-                    var upstreamTask = _upstreamChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
-                    var standardTask = _standardChannel.Reader.WaitToReadAsync(cancellationToken).AsTask();
-
-                    await Task.WhenAny(priorityTask, upstreamTask, standardTask);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    yield break;
-                }
-            }
+            yield return (AgentEvent)evt;
         }
     }
 
     /// <summary>
-    /// Sends a response to a Middleware waiting for a specific request.
-    /// Called by external handlers when user provides input.
-    /// Thread-safe: Can be called from any session.
+    /// Sends a response event to complete a waiting request.
     /// </summary>
-    /// <param name="requestId">The unique identifier for the request</param>
-    /// <param name="response">The response event to deliver</param>
-    /// <exception cref="ArgumentNullException">If response is null</exception>
     public void SendResponse(string requestId, AgentEvent response)
     {
-        if (response == null)
-            throw new ArgumentNullException(nameof(response));
-
-        if (_responseWaiters.TryRemove(requestId, out var entry))
-        {
-            entry.Item1.TrySetResult(response);
-            entry.Item2.Dispose();
-        }
-        // Note: If requestId not found, silently ignore (response may have timed out)
+        _inner.SendResponse(requestId, response);
     }
 
     /// <summary>
-    /// Wait for a response to a previously emitted request event.
-    /// Blocks until response received, timeout expires, or cancellation requested.
+    /// Waits for a response event matching the given request ID.
     /// </summary>
-    /// <typeparam name="T">Expected response event type</typeparam>
-    /// <param name="requestId">Unique identifier matching the request event</param>
-    /// <param name="timeout">Maximum time to wait for response</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The typed response event</returns>
-    /// <exception cref="TimeoutException">No response received within timeout</exception>
-    /// <exception cref="OperationCanceledException">Operation was cancelled</exception>
-    /// <exception cref="InvalidOperationException">Response type mismatch</exception>
     public async Task<T> WaitForResponseAsync<T>(
         string requestId,
         TimeSpan timeout,
-        CancellationToken cancellationToken) where T : AgentEvent
+        CancellationToken cancellationToken = default) where T : AgentEvent
     {
-        var tcs = new TaskCompletionSource<AgentEvent>();
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(timeout);
+        return await _inner.WaitForResponseAsync<T>(requestId, timeout, cancellationToken);
+    }
 
-        _responseWaiters[requestId] = (tcs, cts);
-
-        // Register cancellation/timeout cleanup
-        cts.Token.Register(() =>
-        {
-            if (_responseWaiters.TryRemove(requestId, out var entry))
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    entry.Item1.TrySetCanceled(cancellationToken);
-                }
-                else
-                {
-                    entry.Item1.TrySetException(
-                        new TimeoutException($"No response received for request '{requestId}' within {timeout}"));
-                }
-                entry.Item2.Dispose();
-            }
-        });
-
-        try
-        {
-            var response = await tcs.Task;
-
-            if (response is not T typedResponse)
-            {
-                throw new InvalidOperationException(
-                    $"Expected response of type {typeof(T).Name}, but received {response.GetType().Name}");
-            }
-
-            return typedResponse;
-        }
-        finally
-        {
-            if (_responseWaiters.TryRemove(requestId, out var entry))
-            {
-                entry.Item2.Dispose();
-            }
-        }
+    /// <summary>
+    /// Dispose coordinator and complete all channels.
+    /// </summary>
+    public void Dispose()
+    {
+        _inner.Dispose();
     }
 
     //
     // PRIVATE HELPERS
     //
 
-    private AgentEvent PrepareEvent(AgentEvent evt, EventDirection direction)
-    {
-        return evt with
-        {
-            SequenceNumber = Interlocked.Increment(ref _sequenceCounter),
-            Direction = direction,
-            ExecutionContext = evt.ExecutionContext ?? _executionContext
-        };
-    }
-
-    private void EmitInternal(AgentEvent evt)
-    {
-        var channel = evt.Priority <= EventPriority.Control
-            ? _priorityChannel
-            : _standardChannel;
-
-        if (!channel.Writer.TryWrite(evt))
-        {
-            if (evt.Priority <= EventPriority.Control)
-            {
-                throw new InvalidOperationException(
-                    $"Priority event channel full. Event type: {evt.GetType().Name}");
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"Failed to write event to standard channel: {evt.GetType().Name}");
-        }
-    }
-
     /// <summary>
-    /// Disposes the coordinator, completing all channels and cancelling all pending waiters.
-    /// Should be called when the agent is being disposed.
+    /// Enriches events with AgentExecutionContext if not already present.
     /// </summary>
-    public void Dispose()
+    private HPD.Events.Event EnrichWithAgentContext(HPD.Events.Event evt)
     {
-        _priorityChannel.Writer.Complete();
-        _standardChannel.Writer.Complete();
-        _upstreamChannel.Writer.Complete();
-
-        foreach (var waiter in _responseWaiters.Values)
+        if (evt is AgentEvent agentEvt && agentEvt.ExecutionContext == null && _executionContext != null)
         {
-            waiter.Item1.TrySetCanceled();
-            waiter.Item2.Dispose();
+            return agentEvt with { ExecutionContext = _executionContext };
         }
-        _responseWaiters.Clear();
+        return evt;
     }
+
 }
 
-#region Stream Management
-
-/// <summary>
-/// Handle for managing an interruptible stream of events.
-/// Provides lifecycle management and interruption control.
-/// </summary>
-public interface IStreamHandle
-{
-    /// <summary>
-    /// Unique identifier for this stream.
-    /// Used to group related events.
-    /// </summary>
-    string StreamId { get; }
-
-    /// <summary>
-    /// Whether this stream has been interrupted.
-    /// Check this before emitting new events.
-    /// </summary>
-    bool IsInterrupted { get; }
-
-    /// <summary>
-    /// Whether this stream has completed (either normally or via interruption).
-    /// </summary>
-    bool IsCompleted { get; }
-
-    /// <summary>
-    /// Number of events emitted on this stream.
-    /// </summary>
-    int EmittedCount { get; }
-
-    /// <summary>
-    /// Number of events dropped due to interruption.
-    /// </summary>
-    int DroppedCount { get; }
-
-    /// <summary>
-    /// Interrupt this stream. Subsequent CanInterrupt events will be dropped.
-    /// </summary>
-    void Interrupt();
-
-    /// <summary>
-    /// Mark this stream as completed (normal completion).
-    /// </summary>
-    void Complete();
-
-    /// <summary>
-    /// Wait for stream completion (either normal or via interruption).
-    /// </summary>
-    Task WaitAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Raised when the stream is interrupted.
-    /// </summary>
-    event Action<IStreamHandle>? OnInterrupted;
-
-    /// <summary>
-    /// Raised when the stream completes (normal or interrupted).
-    /// </summary>
-    event Action<IStreamHandle>? OnCompleted;
-}
-
-/// <summary>
-/// Manages active interruptible streams for coordinated cancellation.
-/// </summary>
-public interface IStreamRegistry
-{
-    /// <summary>
-    /// Creates a new stream handle.
-    /// </summary>
-    IStreamHandle Create(string? streamId = null);
-
-    /// <summary>
-    /// Gets an existing stream handle by ID.
-    /// </summary>
-    IStreamHandle? Get(string streamId);
-
-    /// <summary>
-    /// Interrupts all active streams.
-    /// </summary>
-    void InterruptAll();
-
-    /// <summary>
-    /// Interrupts streams matching a predicate.
-    /// </summary>
-    void InterruptWhere(Func<IStreamHandle, bool> predicate);
-
-    /// <summary>
-    /// Gets all active (non-completed) streams.
-    /// </summary>
-    IReadOnlyList<IStreamHandle> ActiveStreams { get; }
-
-    /// <summary>
-    /// Gets the count of active streams.
-    /// </summary>
-    int ActiveCount { get; }
-}
-
-/// <summary>
-/// Internal implementation of IStreamHandle.
-/// </summary>
-internal sealed class StreamHandle : IStreamHandle
-{
-    private readonly TaskCompletionSource _completionTcs = new();
-    private volatile bool _isInterrupted;
-    private volatile bool _isCompleted;
-    private int _emittedCount;
-    private int _droppedCount;
-
-    public string StreamId { get; }
-    public bool IsInterrupted => _isInterrupted;
-    public bool IsCompleted => _isCompleted;
-    public int EmittedCount => _emittedCount;
-    public int DroppedCount => _droppedCount;
-
-    public event Action<IStreamHandle>? OnInterrupted;
-    public event Action<IStreamHandle>? OnCompleted;
-
-    public StreamHandle(string? streamId = null)
-    {
-        StreamId = streamId ?? Guid.NewGuid().ToString("N");
-    }
-
-    public void Interrupt()
-    {
-        if (_isCompleted) return;
-
-        _isInterrupted = true;
-        OnInterrupted?.Invoke(this);
-        Complete();
-    }
-
-    public void Complete()
-    {
-        if (_isCompleted) return;
-
-        _isCompleted = true;
-        _completionTcs.TrySetResult();
-        OnCompleted?.Invoke(this);
-    }
-
-    public Task WaitAsync(CancellationToken cancellationToken = default)
-    {
-        return _completionTcs.Task.WaitAsync(cancellationToken);
-    }
-
-    internal void IncrementEmitted() => Interlocked.Increment(ref _emittedCount);
-    internal void IncrementDropped() => Interlocked.Increment(ref _droppedCount);
-}
-
-/// <summary>
-/// Internal implementation of IStreamRegistry.
-/// </summary>
-internal sealed class StreamRegistry : IStreamRegistry
-{
-    private readonly ConcurrentDictionary<string, StreamHandle> _streams = new();
-
-    public IStreamHandle Create(string? streamId = null)
-    {
-        var handle = new StreamHandle(streamId);
-
-        // Only remove non-interrupted streams from registry when completed.
-        // Interrupted streams stay in registry so Emit() can check IsInterrupted.
-        handle.OnCompleted += h =>
-        {
-            if (!h.IsInterrupted)
-            {
-                _streams.TryRemove(h.StreamId, out _);
-            }
-        };
-
-        if (!_streams.TryAdd(handle.StreamId, handle))
-        {
-            throw new InvalidOperationException($"Stream with ID '{handle.StreamId}' already exists.");
-        }
-
-        return handle;
-    }
-
-    public IStreamHandle? Get(string streamId)
-    {
-        _streams.TryGetValue(streamId, out var handle);
-        return handle;
-    }
-
-    public void InterruptAll()
-    {
-        foreach (var handle in _streams.Values.ToArray())
-        {
-            handle.Interrupt();
-        }
-    }
-
-    public void InterruptWhere(Func<IStreamHandle, bool> predicate)
-    {
-        foreach (var handle in _streams.Values.Where(predicate).ToArray())
-        {
-            handle.Interrupt();
-        }
-    }
-
-    public IReadOnlyList<IStreamHandle> ActiveStreams =>
-        _streams.Values.Where(h => !h.IsCompleted).ToList<IStreamHandle>();
-
-    public int ActiveCount => _streams.Count(kvp => !kvp.Value.IsCompleted);
-}
-
-/// <summary>
-/// Emitted when an event is dropped due to stream interruption.
-/// For observability and debugging.
-/// </summary>
-public record EventDroppedEvent(
-    string DroppedStreamId,
-    string DroppedEventType,
-    long DroppedSequenceNumber) : AgentEvent, IObservabilityEvent;
-
-#endregion
 #endregion
 
 

@@ -24,6 +24,11 @@
   <ItemGroup>
     <ProjectReference Include="..\HPD.Graph.Abstractions\HPD.Graph.Abstractions.csproj" />
     <ProjectReference Include="..\HPD.Graph.Core\HPD.Graph.Core.csproj" />
+
+    <!-- Source Generator Reference for testing generated code -->
+    <ProjectReference Include="..\HPD.Graph.SourceGenerator\HPD.Graph.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

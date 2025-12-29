@@ -159,7 +159,7 @@ public class PipelineV2Tests
         await pipeline.ExecuteBeforeIterationAsync(context, CancellationToken.None);
 
         // Assert - M2 saw M1's state update immediately
-        Assert.Equal(42, context.State.Iteration);
+        Assert.Equal(42, context.Analyze(s => s.Iteration));
         Assert.True(StateReaderMiddleware.SawUpdatedState);
     }
 
@@ -286,7 +286,7 @@ public class PipelineV2Tests
         public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken ct)
         {
             // Check if we see M1's update immediately
-            SawUpdatedState = context.State.Iteration == 42;
+            SawUpdatedState = context.Analyze(s => s.Iteration) == 42;
             return Task.CompletedTask;
         }
     }

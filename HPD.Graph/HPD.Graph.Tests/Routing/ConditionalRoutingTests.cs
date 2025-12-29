@@ -640,5 +640,82 @@ public class ConditionalRoutingTests
         description.Should().Be("message contains error");
     }
 
+    [Fact]
+    public void GetDescription_Default_ReturnsCorrectString()
+    {
+        // Arrange
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Default
+        };
+
+        // Act
+        var description = condition.GetDescription();
+
+        // Assert
+        description.Should().Be("Default (fallback)");
+    }
+
+    #endregion
+
+    #region Default Edge Tests
+
+    [Fact]
+    public void DefaultEdge_FiresWhenNoRegularConditionsMatch()
+    {
+        // Arrange
+        var condition1 = new EdgeCondition
+        {
+            Type = ConditionType.FieldEquals,
+            Field = "status",
+            Value = "low"
+        };
+
+        var condition2 = new EdgeCondition
+        {
+            Type = ConditionType.FieldEquals,
+            Field = "status",
+            Value = "high"
+        };
+
+        var defaultCondition = new EdgeCondition
+        {
+            Type = ConditionType.Default
+        };
+
+        var outputs = new Dictionary<string, object> { ["status"] = "medium" };
+
+        // Act
+        var result1 = ConditionEvaluator.Evaluate(condition1, outputs);
+        var result2 = ConditionEvaluator.Evaluate(condition2, outputs);
+
+        // Assert
+        result1.Should().BeFalse("regular condition should not match");
+        result2.Should().BeFalse("regular condition should not match");
+        // Default edge should be used when both regular conditions fail
+        // This will be tested in integration tests with the orchestrator
+    }
+
+    [Fact]
+    public void DefaultEdge_DoesNotFireWhenRegularConditionMatches()
+    {
+        // Arrange
+        var regularCondition = new EdgeCondition
+        {
+            Type = ConditionType.FieldEquals,
+            Field = "status",
+            Value = "success"
+        };
+
+        var outputs = new Dictionary<string, object> { ["status"] = "success" };
+
+        // Act
+        var regularResult = ConditionEvaluator.Evaluate(regularCondition, outputs);
+
+        // Assert
+        regularResult.Should().BeTrue("regular condition should match");
+        // Default edge should NOT be used - verified in integration tests
+    }
+
     #endregion
 }

@@ -116,6 +116,61 @@ public class TestGraphBuilder
         return this;
     }
 
+    public TestGraphBuilder AddMapNode(
+        string id,
+        HPDAgent.Graph.Abstractions.Graph.Graph processorGraph,
+        string? name = null,
+        int? maxParallelMapTasks = null,
+        MapErrorMode? errorMode = null,
+        string? mapInputChannel = null,
+        string? mapOutputChannel = null,
+        string? mapItemType = null,
+        string? mapResultType = null)
+    {
+        _nodes.Add(new Node
+        {
+            Id = id,
+            Name = name ?? id,
+            Type = NodeType.Map,
+            MapProcessorGraph = processorGraph,
+            MaxParallelMapTasks = maxParallelMapTasks,
+            MapErrorMode = errorMode,
+            MapInputChannel = mapInputChannel,
+            MapOutputChannel = mapOutputChannel,
+            MapItemType = mapItemType,
+            MapResultType = mapResultType
+        });
+        return this;
+    }
+
+    // Overload for heterogeneous maps
+    public TestGraphBuilder AddMapNode(
+        string id,
+        IReadOnlyDictionary<string, HPDAgent.Graph.Abstractions.Graph.Graph>? mapProcessorGraphs = null,
+        string? mapRouterName = null,
+        HPDAgent.Graph.Abstractions.Graph.Graph? mapDefaultGraph = null,
+        string? name = null,
+        int? maxParallelMapTasks = null,
+        MapErrorMode? errorMode = null,
+        string? mapInputChannel = null,
+        string? mapOutputChannel = null)
+    {
+        _nodes.Add(new Node
+        {
+            Id = id,
+            Name = name ?? id,
+            Type = NodeType.Map,
+            MapProcessorGraphs = mapProcessorGraphs,
+            MapRouterName = mapRouterName,
+            MapDefaultGraph = mapDefaultGraph,
+            MaxParallelMapTasks = maxParallelMapTasks,
+            MapErrorMode = errorMode,
+            MapInputChannel = mapInputChannel,
+            MapOutputChannel = mapOutputChannel
+        });
+        return this;
+    }
+
     public TestGraphBuilder AddEdge(
         string from,
         string to,

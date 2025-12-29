@@ -32,6 +32,12 @@ public static class GraphValidator
         // Check handler names
         ValidateHandlerNames(graph, warnings);
 
+        // Check default edges
+        ValidateDefaultEdges(graph, errors);
+
+        // Check map nodes
+        ValidateMapNodes(graph, errors, warnings);
+
         if (errors.Count > 0)
         {
             return GraphValidationResult.Failure(errors, warnings);
@@ -243,6 +249,192 @@ public static class GraphValidator
                 {
                     Code = "MISSING_HANDLER_NAME",
                     Message = $"Node '{node.Id}' is type {node.Type} but has no handler name",
+                    NodeId = node.Id
+                });
+            }
+        }
+    }
+
+    private static void ValidateDefaultEdges(GraphDefinition graph, List<GraphValidationError> errors)
+    {
+        // Ensure only one default edge per source node
+        var defaultEdgesBySource = graph.Edges
+            .Where(e => e.Condition?.Type == ConditionType.Default)
+            .GroupBy(e => e.From);
+
+        foreach (var group in defaultEdgesBySource)
+        {
+            if (group.Count() > 1)
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "MULTIPLE_DEFAULT_EDGES",
+                    Message = $"Node '{group.Key}' has {group.Count()} default edges. Only one default edge per source node is allowed.",
+                    NodeId = group.Key
+                });
+            }
+        }
+    }
+
+    private static void ValidateMapNodes(GraphDefinition graph, List<GraphValidationError> errors, List<GraphValidationWarning> warnings)
+    {
+        foreach (var node in graph.Nodes.Where(n => n.Type == NodeType.Map))
+        {
+            // Rule 1: MapProcessorGraph and MapProcessorGraphs are mutually exclusive
+            if (node.MapProcessorGraph != null && node.MapProcessorGraphs != null)
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "MAP_CONFLICTING_PROCESSORS",
+                    Message = $"Map node '{node.Id}' cannot have both MapProcessorGraph and MapProcessorGraphs. Use MapProcessorGraph for homogeneous or MapProcessorGraphs for heterogeneous mapping.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Rule 2: MapProcessorGraphs requires MapRouterName
+            if (node.MapProcessorGraphs != null && string.IsNullOrWhiteSpace(node.MapRouterName))
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "MAP_MISSING_ROUTER",
+                    Message = $"Map node '{node.Id}' has MapProcessorGraphs but no MapRouterName. MapRouterName is required for heterogeneous mapping.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Rule 3: At least one processor must be specified
+            if (node.MapProcessorGraph == null &&
+                node.MapProcessorGraphRef == null &&
+                node.MapProcessorGraphs == null)
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "MAP_NO_PROCESSOR",
+                    Message = $"Map node '{node.Id}' must have MapProcessorGraph, MapProcessorGraphRef, or MapProcessorGraphs",
+                    NodeId = node.Id
+                });
+            }
+
+            // Rule 4: Validate single processor graph if provided
+            if (node.MapProcessorGraph != null)
+            {
+                var processorValidation = Validate(node.MapProcessorGraph);
+                if (!processorValidation.IsValid)
+                {
+                    foreach (var error in processorValidation.Errors)
+                    {
+                        errors.Add(new GraphValidationError
+                        {
+                            Code = "MAP_INVALID_PROCESSOR",
+                            Message = $"Map node '{node.Id}' has invalid processor graph: {error.Message}",
+                            NodeId = node.Id
+                        });
+                    }
+                }
+            }
+
+            // Rule 5: Validate all processor graphs in dictionary
+            if (node.MapProcessorGraphs != null)
+            {
+                foreach (var kvp in node.MapProcessorGraphs)
+                {
+                    var processorValidation = Validate(kvp.Value);
+                    if (!processorValidation.IsValid)
+                    {
+                        foreach (var error in processorValidation.Errors)
+                        {
+                            errors.Add(new GraphValidationError
+                            {
+                                Code = "MAP_INVALID_PROCESSOR_GRAPH",
+                                Message = $"Map node '{node.Id}' processor graph '{kvp.Key}' is invalid: {error.Message}",
+                                NodeId = node.Id
+                            });
+                        }
+                    }
+                }
+
+                // Warn if dictionary is empty
+                if (node.MapProcessorGraphs.Count == 0)
+                {
+                    warnings.Add(new GraphValidationWarning
+                    {
+                        Code = "MAP_EMPTY_PROCESSORS",
+                        Message = $"Map node '{node.Id}' has empty MapProcessorGraphs dictionary",
+                        NodeId = node.Id
+                    });
+                }
+            }
+
+            // Rule 6: Validate default graph if specified
+            if (node.MapDefaultGraph != null)
+            {
+                var defaultValidation = Validate(node.MapDefaultGraph);
+                if (!defaultValidation.IsValid)
+                {
+                    foreach (var error in defaultValidation.Errors)
+                    {
+                        errors.Add(new GraphValidationError
+                        {
+                            Code = "MAP_INVALID_DEFAULT_GRAPH",
+                            Message = $"Map node '{node.Id}' default graph is invalid: {error.Message}",
+                            NodeId = node.Id
+                        });
+                    }
+                }
+            }
+
+            // Rule 7: MaxParallelMapTasks validation
+            if (node.MaxParallelMapTasks.HasValue)
+            {
+                if (node.MaxParallelMapTasks < 0)
+                {
+                    errors.Add(new GraphValidationError
+                    {
+                        Code = "MAP_INVALID_CONCURRENCY",
+                        Message = $"Map node '{node.Id}' MaxParallelMapTasks cannot be negative (value: {node.MaxParallelMapTasks})",
+                        NodeId = node.Id
+                    });
+                }
+                else if (node.MaxParallelMapTasks > 1000)
+                {
+                    warnings.Add(new GraphValidationWarning
+                    {
+                        Code = "MAP_HIGH_CONCURRENCY",
+                        Message = $"Map node '{node.Id}' has very high MaxParallelMapTasks ({node.MaxParallelMapTasks}). Consider using a lower value to prevent resource exhaustion.",
+                        NodeId = node.Id
+                    });
+                }
+            }
+
+            // Warning: MapRouterName without MapProcessorGraphs
+            if (!string.IsNullOrWhiteSpace(node.MapRouterName) && node.MapProcessorGraphs == null)
+            {
+                warnings.Add(new GraphValidationWarning
+                {
+                    Code = "MAP_ROUTER_IGNORED",
+                    Message = $"Map node '{node.Id}' has MapRouterName '{node.MapRouterName}' but no MapProcessorGraphs. MapRouterName is ignored in homogeneous maps.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Warning: MapDefaultGraph without MapProcessorGraphs
+            if (node.MapDefaultGraph != null && node.MapProcessorGraphs == null)
+            {
+                warnings.Add(new GraphValidationWarning
+                {
+                    Code = "MAP_DEFAULT_IGNORED",
+                    Message = $"Map node '{node.Id}' has MapDefaultGraph but no MapProcessorGraphs. MapDefaultGraph is ignored in homogeneous maps.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Warning: Map node with HandlerName (should be null)
+            if (!string.IsNullOrEmpty(node.HandlerName))
+            {
+                warnings.Add(new GraphValidationWarning
+                {
+                    Code = "MAP_HAS_HANDLER",
+                    Message = $"Map node '{node.Id}' has HandlerName '{node.HandlerName}' which will be ignored. Map nodes use MapProcessorGraph/MapProcessorGraphs instead.",
                     NodeId = node.Id
                 });
             }

@@ -10,7 +10,7 @@ Comprehensive test plan for HPD.Graph v1.0 covering all implemented components.
 
 ## Implementation Status
 
-### ✅ Completed Components
+###   Completed Components
 - **Channel System** (LastValue, Append, Reducer, Barrier, Ephemeral) - All 5 types
 - GraphStateScope with channel mapping
 - ManagedContext for execution metadata
@@ -757,7 +757,7 @@ Comprehensive test plan for HPD.Graph v1.0 covering all implemented components.
 
 ## Next Steps
 
-1. ✅ Complete HPD.Graph implementation
+1.   Complete HPD.Graph implementation
 2. ⏳ Set up test project with xUnit, FluentAssertions, Moq
 3. ⏳ Implement P0 tests first
 4. ⏳ Create sample graphs for integration tests

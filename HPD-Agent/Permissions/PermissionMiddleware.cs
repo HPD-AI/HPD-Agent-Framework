@@ -41,7 +41,6 @@ namespace HPD.Agent.Permissions;
 /// </example>
 public class PermissionMiddleware : IAgentMiddleware
 {
-    private readonly IPermissionStorage? _storage;
     private readonly AgentConfig? _config;
     private readonly string _middlewareName;
     private readonly PermissionOverrideRegistry? _overrideRegistry;
@@ -49,17 +48,19 @@ public class PermissionMiddleware : IAgentMiddleware
     /// <summary>
     /// Creates a new permission middleware.
     /// </summary>
-    /// <param name="storage">Optional permission storage for persistent decisions</param>
     /// <param name="config">Optional agent configuration for default messages</param>
     /// <param name="middlewareName">Optional name for this middleware instance (for event correlation)</param>
     /// <param name="overrideRegistry">Optional registry for runtime permission overrides</param>
+    /// <remarks>
+    /// Permission choices are now automatically persisted in MiddlewareState
+    /// (PermissionPersistentStateData) and saved to AgentSession. No external
+    /// storage is needed.
+    /// </remarks>
     public PermissionMiddleware(
-        IPermissionStorage? storage = null,
         AgentConfig? config = null,
         string? middlewareName = null,
         PermissionOverrideRegistry? overrideRegistry = null)
     {
-        _storage = storage;
         _config = config;
         _middlewareName = middlewareName ?? "PermissionMiddleware";
         _overrideRegistry = overrideRegistry;
@@ -95,7 +96,9 @@ public class PermissionMiddleware : IAgentMiddleware
         if (parallelFunctions == null || parallelFunctions.Count == 0)
             return;
 
-        var batchState = context.State.MiddlewareState.BatchPermission ?? new BatchPermissionStateData();
+        var batchState = context.Analyze(s =>
+            s.MiddlewareState.BatchPermission ?? new BatchPermissionStateData()
+        );
 
         // Loop through each function and check permission individually
         // This matches the old PermissionManager.CheckPermissionsAsync behavior
@@ -176,7 +179,9 @@ public class PermissionMiddleware : IAgentMiddleware
         // CHECK BATCH PERMISSION STATE (for parallel execution optimization)
         //     
 
-        var batchState = context.State.MiddlewareState.BatchPermission ?? new BatchPermissionStateData();
+        var batchState = context.Analyze(s =>
+            s.MiddlewareState.BatchPermission ?? new BatchPermissionStateData()
+        );
 
         // If already approved in batch, allow execution immediately
         if (batchState.ApprovedFunctions.Contains(functionName))
@@ -194,26 +199,17 @@ public class PermissionMiddleware : IAgentMiddleware
             return;
         }
 
-        //     
-        // HIERARCHICAL PERMISSION LOOKUP
-        //     
+        //
+        // STORED PERMISSION LOOKUP (from MiddlewareState)
+        //
 
-        if (_storage != null)
+        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent);
+        if (permState != null)
         {
-            PermissionChoice? storedChoice = null;
+            // Check for stored permission choice (session-scoped)
+            var storedChoice = permState.GetPermission(functionName);
 
-            // 1. Try conversation-Collapsed permission first
-            if (!string.IsNullOrEmpty(conversationId))
-            {
-                storedChoice = await _storage.GetStoredPermissionAsync(functionName, conversationId)
-                    .ConfigureAwait(false);
-            }
-
-            // 2. Fallback to global permission
-            storedChoice ??= await _storage.GetStoredPermissionAsync(functionName, conversationId: null)
-                .ConfigureAwait(false);
-
-            // 3. Apply stored choice if found
+            // Apply stored choice if found
             if (storedChoice == PermissionChoice.AlwaysAllow)
             {
                 // Record approval in batch state for parallel optimization
@@ -300,21 +296,33 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionApprovedEvent(permissionId, _middlewareName));
 
             // Store persistent choice if requested
-            if (_storage != null && response.Choice != PermissionChoice.Ask)
+            // Save permission choice to persistent state (if user chose to remember)
+            if (response.Choice != PermissionChoice.Ask)
             {
-                await _storage.SavePermissionAsync(
-                    functionName,
-                    response.Choice,
-                    conversationId)
-                    .ConfigureAwait(false);
-            }
+                // Update both batch state AND persistent state atomically
+                context.UpdateState(s =>
+                {
+                    var currentPermState = s.MiddlewareState.PermissionPersistent ?? new();
+                    var updatedPermState = currentPermState.WithPermission(functionName, response.Choice);
+                    var updatedBatchState = batchState.RecordApproval(functionName);
 
-            // Record approval in batch state (for parallel execution optimization)
-            var updatedBatchState = batchState.RecordApproval(functionName);
-            context.UpdateState(s => s with
+                    return s with
+                    {
+                        MiddlewareState = s.MiddlewareState
+                            .WithBatchPermission(updatedBatchState)
+                            .WithPermissionPersistent(updatedPermState)
+                    };
+                });
+            }
+            else
             {
-                MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
-            });
+                // Just update batch state (don't persist "Ask" choice)
+                var updatedBatchState = batchState.RecordApproval(functionName);
+                context.UpdateState(s => s with
+                {
+                    MiddlewareState = s.MiddlewareState.WithBatchPermission(updatedBatchState)
+                });
+            }
 
             // Allow execution (don't set BlockFunctionExecution)
         }
@@ -357,21 +365,11 @@ public class PermissionMiddleware : IAgentMiddleware
         IReadOnlyDictionary<string, object?> arguments,
         CancellationToken cancellationToken)
     {
-        var conversationId = context.ConversationId;
-
-        // Check stored permissions (conversation-Collapsed first, then global)
-        if (_storage != null)
+        // Check stored permissions from MiddlewareState
+        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent);
+        if (permState != null)
         {
-            PermissionChoice? storedChoice = null;
-
-            if (!string.IsNullOrEmpty(conversationId))
-            {
-                storedChoice = await _storage.GetStoredPermissionAsync(functionName, conversationId)
-                    .ConfigureAwait(false);
-            }
-
-            storedChoice ??= await _storage.GetStoredPermissionAsync(functionName, conversationId: null)
-                .ConfigureAwait(false);
+            var storedChoice = permState.GetPermission(functionName);
 
             if (storedChoice == PermissionChoice.AlwaysAllow)
             {
@@ -427,14 +425,20 @@ public class PermissionMiddleware : IAgentMiddleware
             // Emit approval event for observability
             context.Emit(new PermissionApprovedEvent(permissionId, _middlewareName));
 
-            // Store persistent choice if requested
-            if (_storage != null && response.Choice != PermissionChoice.Ask)
+            // Store persistent choice if requested (AlwaysAllow or AlwaysDeny)
+            if (response.Choice != PermissionChoice.Ask)
             {
-                await _storage.SavePermissionAsync(
-                    functionName,
-                    response.Choice,
-                    conversationId)
-                    .ConfigureAwait(false);
+                // Read state INSIDE UpdateState lambda for thread safety
+                context.UpdateState(s =>
+                {
+                    var currentPermState = s.MiddlewareState.PermissionPersistent ?? new();
+                    var updatedPermState = currentPermState.WithPermission(functionName, response.Choice);
+
+                    return s with
+                    {
+                        MiddlewareState = s.MiddlewareState.WithPermissionPersistent(updatedPermState)
+                    };
+                });
             }
 
             return (true, string.Empty);

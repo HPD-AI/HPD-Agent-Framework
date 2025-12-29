@@ -43,23 +43,13 @@ public enum ConditionType
     /// <summary>
     /// Traverse if field contains value (for strings/collections).
     /// </summary>
-    FieldContains
-}
+    FieldContains,
 
-/// <summary>
-/// Comparison operator for conditions.
-/// </summary>
-public enum ComparisonOperator
-{
-    Equals,
-    NotEquals,
-    GreaterThan,
-    LessThan,
-    GreaterThanOrEqual,
-    LessThanOrEqual,
-    Contains,
-    StartsWith,
-    EndsWith
+    /// <summary>
+    /// Default/fallback edge - traverse only if no other conditions from the same source node match.
+    /// Only one default edge per source node is allowed.
+    /// </summary>
+    Default
 }
 
 /// <summary>
@@ -86,11 +76,6 @@ public sealed record EdgeCondition
     public object? Value { get; init; }
 
     /// <summary>
-    /// Comparison operator (for field comparisons).
-    /// </summary>
-    public ComparisonOperator? Operator { get; init; }
-
-    /// <summary>
     /// Get a human-readable description of this condition.
     /// </summary>
     public string GetDescription()
@@ -105,6 +90,7 @@ public sealed record EdgeCondition
             ConditionType.FieldExists => $"{Field} exists",
             ConditionType.FieldNotExists => $"{Field} not exists",
             ConditionType.FieldContains => $"{Field} contains {Value}",
+            ConditionType.Default => "Default (fallback)",
             _ => Type.ToString()
         };
     }

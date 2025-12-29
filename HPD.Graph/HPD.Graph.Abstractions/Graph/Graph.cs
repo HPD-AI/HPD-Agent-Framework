@@ -104,6 +104,12 @@ public sealed record Graph
         // Build adjacency list once for O(E) instead of O(V·E)
         var outgoingEdges = new Dictionary<string, List<Edge>>();
 
+        // Build HashSet of excluded node IDs for O(1) lookup instead of O(V) FirstOrDefault
+        var excludedNodes = new HashSet<string>(
+            Nodes.Where(n => n.Type is NodeType.Start or NodeType.End)
+                 .Select(n => n.Id)
+        );
+
         // Initialize structures
         foreach (var node in Nodes.Where(n => n.Type != NodeType.Start && n.Type != NodeType.End))
         {
@@ -114,11 +120,8 @@ public sealed record Graph
         // Build adjacency list and count in-degrees in one pass O(E)
         foreach (var edge in Edges)
         {
-            // Skip edges involving START/END nodes
-            var fromIsExcluded = Nodes.FirstOrDefault(n => n.Id == edge.From)?.Type is NodeType.Start or NodeType.End;
-            var toIsExcluded = Nodes.FirstOrDefault(n => n.Id == edge.To)?.Type is NodeType.Start or NodeType.End;
-
-            if (fromIsExcluded == true || toIsExcluded == true)
+            // Skip edges involving START/END nodes - O(1) HashSet lookup instead of O(V) FirstOrDefault
+            if (excludedNodes.Contains(edge.From) || excludedNodes.Contains(edge.To))
                 continue;
 
             if (inDegree.ContainsKey(edge.To))
@@ -174,5 +177,89 @@ public sealed record Graph
         }
 
         return layers;
+    }
+
+    /// <summary>
+    /// Generate Mermaid flowchart diagram for visualization.
+    /// Output can be rendered at https://mermaid.live or in Markdown.
+    /// </summary>
+    /// <returns>Mermaid flowchart syntax</returns>
+    public string ToMermaid()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("flowchart TD");
+
+        // Add nodes with appropriate shapes
+        foreach (var node in Nodes)
+        {
+            var nodeLabel = EscapeMermaidLabel(node.Name);
+            var shape = node.Type switch
+            {
+                NodeType.Start => $"{node.Id}([{nodeLabel}])",      // Stadium shape for Start
+                NodeType.End => $"{node.Id}([{nodeLabel}])",        // Stadium shape for End
+                NodeType.Router => $"{node.Id}{{{{{nodeLabel}}}}}",  // Diamond for Router
+                NodeType.SubGraph => $"{node.Id}[/{nodeLabel}/]",   // Trapezoid for SubGraph
+                NodeType.Handler => $"{node.Id}[{nodeLabel}]",      // Rectangle for Handler
+                _ => $"{node.Id}[{nodeLabel}]"
+            };
+            sb.AppendLine($"    {shape}");
+        }
+
+        sb.AppendLine();
+
+        // Add edges with labels for conditions
+        foreach (var edge in Edges)
+        {
+            if (edge.Condition != null)
+            {
+                var conditionLabel = EscapeMermaidLabel(edge.Condition.GetDescription() ?? "condition");
+                sb.AppendLine($"    {edge.From} -->|{conditionLabel}| {edge.To}");
+            }
+            else
+            {
+                sb.AppendLine($"    {edge.From} --> {edge.To}");
+            }
+        }
+
+        // Add styling
+        sb.AppendLine();
+        sb.AppendLine("    classDef startEnd fill:#e1f5e1,stroke:#4caf50,stroke-width:2px");
+        sb.AppendLine("    classDef handler fill:#e3f2fd,stroke:#2196f3,stroke-width:2px");
+        sb.AppendLine("    classDef router fill:#fff3e0,stroke:#ff9800,stroke-width:2px");
+        sb.AppendLine("    classDef subgraph fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px");
+
+        // Apply styles to nodes
+        var startEndNodes = Nodes.Where(n => n.Type == NodeType.Start || n.Type == NodeType.End)
+            .Select(n => n.Id);
+        var handlerNodes = Nodes.Where(n => n.Type == NodeType.Handler).Select(n => n.Id);
+        var routerNodes = Nodes.Where(n => n.Type == NodeType.Router).Select(n => n.Id);
+        var subGraphNodes = Nodes.Where(n => n.Type == NodeType.SubGraph).Select(n => n.Id);
+
+        if (startEndNodes.Any())
+            sb.AppendLine($"    class {string.Join(",", startEndNodes)} startEnd");
+        if (handlerNodes.Any())
+            sb.AppendLine($"    class {string.Join(",", handlerNodes)} handler");
+        if (routerNodes.Any())
+            sb.AppendLine($"    class {string.Join(",", routerNodes)} router");
+        if (subGraphNodes.Any())
+            sb.AppendLine($"    class {string.Join(",", subGraphNodes)} subgraph");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Escape special characters in Mermaid labels.
+    /// </summary>
+    private static string EscapeMermaidLabel(string label)
+    {
+        return label
+            .Replace("\"", "&quot;")
+            .Replace("[", "&#91;")
+            .Replace("]", "&#93;")
+            .Replace("{", "&#123;")
+            .Replace("}", "&#125;")
+            .Replace("|", "&#124;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
     }
 }

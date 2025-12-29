@@ -10,22 +10,25 @@ public static class AgentBuilderPermissionExtensions
     /// This gives you full control over how permission prompts are displayed to users.
     /// </summary>
     /// <param name="builder">The agent builder</param>
-    /// <param name="permissionStorage">Optional permission storage for persistent decisions</param>
     /// <returns>The agent builder for chaining</returns>
     /// <example>
     /// // In your Program.cs:
     /// var agent = new AgentBuilder()
-    ///     .WithPermissions(storage)  // Use new unified Middleware
+    ///     .WithPermissions()  // Permissions automatically persist in session
     ///     .Build();
     ///
     /// // Then handle events in your event loop (see Middleware_EVENTS_USAGE.md)
     /// </example>
-    public static AgentBuilder WithPermissions(
-        this AgentBuilder builder,
-        IPermissionStorage? permissionStorage = null)
+    /// <remarks>
+    /// Permission choices are now automatically persisted in MiddlewareState
+    /// (PermissionPersistentStateData) and saved to AgentSession. No external
+    /// storage is needed - permissions are session-scoped and persist across runs.
+    /// </remarks>
+    public static AgentBuilder WithPermissions(this AgentBuilder builder)
     {
-        var storage = permissionStorage ?? new InMemoryPermissionStorage();
-        var middleware = new HPD.Agent.Permissions.PermissionMiddleware(storage, builder.Config, overrideRegistry: builder._permissionOverrides);
+        var middleware = new HPD.Agent.Permissions.PermissionMiddleware(
+            config: builder.Config,
+            overrideRegistry: builder._permissionOverrides);
         builder._middlewares.Add(middleware);
         return builder;
     }
@@ -88,49 +91,5 @@ public static class AgentBuilderPermissionExtensions
     {
         builder._permissionOverrides.ClearOverride(functionName);
         return builder;
-    }
-}
-
-/// <summary>
-/// A default, non-persistent implementation of IPermissionStorage for development and testing.
-/// Uses implicit Collapsing based on the parameters provided.
-/// </summary>
-public class InMemoryPermissionStorage : IPermissionStorage
-{
-    private readonly ConcurrentDictionary<string, PermissionChoice> _permissions = new();
-
-    public Task<PermissionChoice?> GetStoredPermissionAsync(
-        string functionName,
-        string? conversationId = null)
-    {
-        var key = BuildKey(functionName, conversationId);
-        _permissions.TryGetValue(key, out var choice);
-        return Task.FromResult((PermissionChoice?)choice);
-    }
-
-    public Task SavePermissionAsync(
-        string functionName,
-        PermissionChoice choice,
-        string? conversationId = null)
-    {
-        if (choice != PermissionChoice.Ask)
-        {
-            var key = BuildKey(functionName, conversationId);
-            _permissions[key] = choice;
-        }
-        return Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Builds a storage key with implicit Collapsing based on provided parameters.
-    /// </summary>
-    private static string BuildKey(string functionName, string? conversationId)
-    {
-        // Collapsing is implicit in the key structure:
-        // - conversation-Collapsed: "conversationId:functionName"
-        // - global: "functionName"
-        if (!string.IsNullOrEmpty(conversationId))
-            return $"{conversationId}:{functionName}";
-        return functionName;
     }
 }

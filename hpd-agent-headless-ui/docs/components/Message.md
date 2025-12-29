@@ -568,7 +568,7 @@ Create a reusable styled message component:
                 <span class="tool-icon">
                   {#if tool.status === 'executing'}🔄
                   {:else if tool.status === 'complete'} 
-                  {:else if tool.status === 'error'}❌
+                  {:else if tool.status === 'error'} 
                   {:else}⏳{/if}
                 </span>
                 <span class="tool-name">{tool.name}</span>
@@ -609,7 +609,7 @@ Create a reusable styled message component:
 - Showing tool execution in conversational UIs
 - Implementing AI assistants with thinking/reasoning display
 
-❌ **Not recommended for:**
+  **Not recommended for:**
 - Static text display (just use `<p>` or `<div>`)
 - Messages without AI-specific features
 - Non-conversational interfaces
@@ -781,7 +781,7 @@ import type {
 Make sure you're updating the message object reference:
 
 ```svelte
-// ❌ Wrong - mutating
+//   Wrong - mutating
 message.content += 'new text';
 
 //   Correct - new reference

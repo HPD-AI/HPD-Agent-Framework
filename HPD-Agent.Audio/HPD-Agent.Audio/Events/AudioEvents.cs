@@ -116,7 +116,7 @@ public record PreemptiveGenerationDiscardedEvent(
 /// Emitted when voice activity detector detects start of speech.
 /// </summary>
 public record VadStartOfSpeechEvent(
-    TimeSpan Timestamp,
+    TimeSpan AudioTimestamp,
     float SpeechProbability
 ) : AgentEvent;
 
@@ -124,7 +124,7 @@ public record VadStartOfSpeechEvent(
 /// Emitted when voice activity detector detects end of speech.
 /// </summary>
 public record VadEndOfSpeechEvent(
-    TimeSpan Timestamp,
+    TimeSpan AudioTimestamp,
     TimeSpan SpeechDuration,
     float SpeechProbability
 ) : AgentEvent;

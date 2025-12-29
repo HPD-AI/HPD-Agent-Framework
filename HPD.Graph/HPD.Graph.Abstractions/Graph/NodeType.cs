@@ -28,5 +28,12 @@ public enum NodeType
     /// <summary>
     /// Nested graph execution (modular composition).
     /// </summary>
-    SubGraph
+    SubGraph,
+
+    /// <summary>
+    /// Parallel iteration over collections.
+    /// Executes a processor graph once per item in an input collection.
+    /// Similar to SubGraph but with iteration semantics and concurrency control.
+    /// </summary>
+    Map
 }

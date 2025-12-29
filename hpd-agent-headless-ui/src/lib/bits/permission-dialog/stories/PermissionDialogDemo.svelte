@@ -185,13 +185,13 @@
 
 				<PermissionDialog.Actions class="permission-actions">
 					<PermissionDialog.Deny class="btn btn-deny">
-						❌ Deny
+						  Deny
 					</PermissionDialog.Deny>
 					<PermissionDialog.Approve choice="ask" class="btn btn-approve-once">
 						⏸️ Ask Each Time
 					</PermissionDialog.Approve>
 					<PermissionDialog.Approve choice="allow_always" class="btn btn-approve-always">
-						✅ Always Allow
+						  Always Allow
 					</PermissionDialog.Approve>
 				</PermissionDialog.Actions>
 			</PermissionDialog.Content>

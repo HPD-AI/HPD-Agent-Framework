@@ -96,8 +96,8 @@ public class HistoryReductionMiddleware : IAgentMiddleware
         if (context.Iteration == 0 && context.Messages.Count <= Config.TargetMessageCount + (Config.SummarizationThreshold ?? 5))
             return;
 
-        // Read state from context
-        var hrState = context.State.MiddlewareState.HistoryReduction;
+        // Read state using Analyze for safety
+        var hrState = context.Analyze(s => s.MiddlewareState.HistoryReduction);
 
         // Separate system messages from conversation messages
         var systemMessages = context.Messages.Where(m => m.Role == ChatRole.System).ToList();
@@ -164,11 +164,16 @@ public class HistoryReductionMiddleware : IAgentMiddleware
                         context.Messages.Add(msg);
                     }
 
-                    // Store reduction in state for next iteration
-                    var newHrState = (hrState ?? new HistoryReductionStateData()).WithReduction(activeReduction);
-                    context.UpdateState(s => s with
+                    // Store reduction in state for next iteration (read inside lambda for thread safety)
+                    context.UpdateState(s =>
                     {
-                        MiddlewareState = s.MiddlewareState.WithHistoryReduction(newHrState)
+                        var current = s.MiddlewareState.HistoryReduction ?? new HistoryReductionStateData();
+                        var updated = current.WithReduction(activeReduction);
+
+                        return s with
+                        {
+                            MiddlewareState = s.MiddlewareState.WithHistoryReduction(updated)
+                        };
                     });
 
                     // Emit events for observability

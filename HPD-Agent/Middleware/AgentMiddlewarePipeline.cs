@@ -52,10 +52,19 @@ public class AgentMiddlewarePipeline
         BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _middlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
+            foreach (var middleware in _middlewares)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await middleware.BeforeMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Always clear flag, even on exception
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 
@@ -63,23 +72,31 @@ public class AgentMiddlewarePipeline
         AfterMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        List<Exception>? exceptions = null;
-
-        foreach (var middleware in _reversedMiddlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            try
-            {
-                await middleware.AfterMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                exceptions ??= new List<Exception>();
-                exceptions.Add(ex);
-            }
-        }
+            List<Exception>? exceptions = null;
 
-        if (exceptions != null)
-            throw new AggregateException("One or more After* hooks failed", exceptions);
+            foreach (var middleware in _reversedMiddlewares)
+            {
+                try
+                {
+                    await middleware.AfterMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    exceptions ??= new List<Exception>();
+                    exceptions.Add(ex);
+                }
+            }
+
+            if (exceptions != null)
+                throw new AggregateException("One or more After* hooks failed", exceptions);
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
+        }
     }
 
     //
@@ -90,10 +107,18 @@ public class AgentMiddlewarePipeline
         BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _middlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeIterationAsync(context, cancellationToken).ConfigureAwait(false);
+            foreach (var middleware in _middlewares)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await middleware.BeforeIterationAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 
@@ -174,10 +199,18 @@ public class AgentMiddlewarePipeline
         BeforeToolExecutionContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _middlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeToolExecutionAsync(context, cancellationToken).ConfigureAwait(false);
+            foreach (var middleware in _middlewares)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await middleware.BeforeToolExecutionAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 
@@ -185,23 +218,31 @@ public class AgentMiddlewarePipeline
         AfterIterationContext context,
         CancellationToken cancellationToken)
     {
-        List<Exception>? exceptions = null;
-
-        foreach (var middleware in _reversedMiddlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            try
-            {
-                await middleware.AfterIterationAsync(context, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                exceptions ??= new List<Exception>();
-                exceptions.Add(ex);
-            }
-        }
+            List<Exception>? exceptions = null;
 
-        if (exceptions != null)
-            throw new AggregateException("One or more After* hooks failed", exceptions);
+            foreach (var middleware in _reversedMiddlewares)
+            {
+                try
+                {
+                    await middleware.AfterIterationAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    exceptions ??= new List<Exception>();
+                    exceptions.Add(ex);
+                }
+            }
+
+            if (exceptions != null)
+                throw new AggregateException("One or more After* hooks failed", exceptions);
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
+        }
     }
 
     //
@@ -212,10 +253,18 @@ public class AgentMiddlewarePipeline
         BeforeParallelBatchContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _middlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            await middleware.BeforeParallelBatchAsync(context, cancellationToken).ConfigureAwait(false);
+            foreach (var middleware in _middlewares)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await middleware.BeforeParallelBatchAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 
@@ -223,15 +272,23 @@ public class AgentMiddlewarePipeline
         BeforeFunctionContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _middlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var middleware in _middlewares)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            // Check if middleware should execute based on its scope
-            if (!middleware.ShouldExecute(context))
-                continue;
+                // Check if middleware should execute based on its scope
+                if (!middleware.ShouldExecute(context))
+                    continue;
 
-            await middleware.BeforeFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+                await middleware.BeforeFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 
@@ -262,27 +319,35 @@ public class AgentMiddlewarePipeline
         AfterFunctionContext context,
         CancellationToken cancellationToken)
     {
-        List<Exception>? exceptions = null;
-
-        foreach (var middleware in _reversedMiddlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            // Check if middleware should execute based on its scope
-            if (!middleware.ShouldExecute(context))
-                continue;
+            List<Exception>? exceptions = null;
 
-            try
+            foreach (var middleware in _reversedMiddlewares)
             {
-                await middleware.AfterFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+                // Check if middleware should execute based on its scope
+                if (!middleware.ShouldExecute(context))
+                    continue;
+
+                try
+                {
+                    await middleware.AfterFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    exceptions ??= new List<Exception>();
+                    exceptions.Add(ex);
+                }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                exceptions ??= new List<Exception>();
-                exceptions.Add(ex);
-            }
+
+            if (exceptions != null)
+                throw new AggregateException("One or more After* hooks failed", exceptions);
         }
-
-        if (exceptions != null)
-            throw new AggregateException("One or more After* hooks failed", exceptions);
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
+        }
     }
 
     //
@@ -297,17 +362,25 @@ public class AgentMiddlewarePipeline
         ErrorContext context,
         CancellationToken cancellationToken)
     {
-        foreach (var middleware in _reversedMiddlewares)
+        context.Base.SetMiddlewareExecuting(true);
+        try
         {
-            try
+            foreach (var middleware in _reversedMiddlewares)
             {
-                await middleware.OnErrorAsync(context, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await middleware.OnErrorAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Swallow errors in error handlers to preserve original error
+                    // Could log this to observability system if needed
+                }
             }
-            catch
-            {
-                // Swallow errors in error handlers to preserve original error
-                // Could log this to observability system if needed
-            }
+        }
+        finally
+        {
+            context.Base.SetMiddlewareExecuting(false);
         }
     }
 

@@ -35,7 +35,7 @@ namespace HPD.Agent;
 /// });
 /// </code>
 /// </remarks>
-[MiddlewareState]
+[MiddlewareState(Persistent = true)]
 public sealed record HistoryReductionStateData
 {
 

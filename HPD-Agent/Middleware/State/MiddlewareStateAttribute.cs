@@ -85,4 +85,49 @@ public sealed class MiddlewareStateAttribute : Attribute
     /// </list>
     /// </remarks>
     public int Version { get; set; } = 1;
+
+    /// <summary>
+    /// Whether this middleware state should persist across agent runs.
+    /// Defaults to false (transient state).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Persistent States:</b></para>
+    /// <para>
+    /// Use Persistent = true for state that should survive across runs:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Expensive caches (e.g., HistoryReductionStateData - avoid re-summarization)</item>
+    /// <item>User preferences (e.g., PermissionStateData - remember permission choices)</item>
+    /// </list>
+    ///
+    /// <para><b>Transient States (Default):</b></para>
+    /// <para>
+    /// Most states are transient and reset on each agent run:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Error tracking (ErrorTrackingStateData - per-run metric)</item>
+    /// <item>Circuit breakers (CircuitBreakerStateData - safety must reset)</item>
+    /// <item>Batch optimization (BatchPermissionStateData - per-iteration optimization)</item>
+    /// <item>Per-run metrics (TotalErrorThresholdStateData - accumulator resets)</item>
+    /// </list>
+    ///
+    /// <para><b>Why Transient by Default?</b></para>
+    /// <para>
+    /// Safety middlewares MUST reset on new runs. Persisting error counts
+    /// or circuit breaker state would cause incorrect behavior on subsequent runs.
+    /// Only opt-in to persistence when truly needed.
+    /// </para>
+    ///
+    /// <para><b>Example Usage:</b></para>
+    /// <code>
+    /// // Persistent state (survives across runs)
+    /// [MiddlewareState(Persistent = true)]
+    /// public sealed record PermissionStateData { }
+    ///
+    /// // Transient state (resets each run - default)
+    /// [MiddlewareState]
+    /// public sealed record ErrorTrackingStateData { }
+    /// </code>
+    /// </remarks>
+    public bool Persistent { get; set; } = false;
 }

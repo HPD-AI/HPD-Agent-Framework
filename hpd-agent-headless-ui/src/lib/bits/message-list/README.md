@@ -4,11 +4,11 @@ Container for displaying chat messages with auto-scrolling and accessibility sup
 
 ## Features
 
-- ✅ **Auto-scroll** - Automatically scrolls to bottom when new messages arrive
-- ✅ **Keyboard navigation** - Optional keyboard navigation support
-- ✅ **Accessibility** - Proper ARIA attributes for screen readers (role="log", aria-live)
-- ✅ **Headless** - Zero styling, complete design control via data attributes
-- ✅ **Reactive** - Auto-updates message count
+-   **Auto-scroll** - Automatically scrolls to bottom when new messages arrive
+-   **Keyboard navigation** - Optional keyboard navigation support
+-   **Accessibility** - Proper ARIA attributes for screen readers (role="log", aria-live)
+-   **Headless** - Zero styling, complete design control via data attributes
+-   **Reactive** - Auto-updates message count
 
 ## Usage
 

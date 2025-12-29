@@ -33,6 +33,7 @@ public class GraphContext : IGraphContext
     public IManagedContext Managed { get; init; }
     public IReadOnlyList<GraphLogEntry> LogEntries => _logEntries.ToList();
     public IServiceProvider Services { get; init; }
+    public HPD.Events.IEventCoordinator? EventCoordinator { get; init; }
     public IDictionary<string, List<string>> Tags => _tags.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Distinct().ToList());
     public int CurrentLayerIndex { get; set; }
     public int TotalLayers { get; private set; }

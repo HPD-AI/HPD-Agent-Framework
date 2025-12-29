@@ -216,7 +216,7 @@ Check that you're creating new message objects (not mutating):
 //   Correct
 messages = [...messages.slice(0, -1), updatedMessage];
 
-// ❌ Wrong
+//   Wrong
 messages[messages.length - 1].content = 'new'; // Mutation!
 ```
 

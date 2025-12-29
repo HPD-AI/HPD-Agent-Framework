@@ -1,3 +1,5 @@
+using HPD.Events;
+
 namespace HPD.Agent.Middleware;
 
 /// <summary>
@@ -42,8 +44,101 @@ public abstract record HookContext
 
     /// <summary>
     /// Current agent loop state. Reflects any updates from earlier middlewares.
+    /// Internal access only - use <see cref="Analyze{T}"/> or read inside <see cref="UpdateState"/> for safe state access.
     /// </summary>
-    public AgentLoopState State => Base.State;
+    /// <remarks>
+    /// <para><b>Why is this internal?</b></para>
+    /// <para>
+    /// Direct state access was made internal in V2 to prevent the "stale state capture" footgun.
+    /// Runtime detection of stale captures is fundamentally impossible in C# (see ThreadSafetyTests.cs),
+    /// so we enforce safe patterns at compile-time instead.
+    /// </para>
+    ///
+    /// <para><b>The Footgun (prevented by making this internal):</b></para>
+    /// <code>
+    /// //   NO LONGER COMPILES (State is internal)
+    /// var errorState = context.State.MiddlewareState.ErrorTracking;
+    /// await Work();  // State might change during this!
+    /// context.UpdateState(s => s with {
+    ///     MiddlewareState = s.MiddlewareState.WithErrorTracking(errorState)  // STALE!
+    /// });
+    /// </code>
+    ///
+    /// <para><b>Safe alternatives:</b></para>
+    /// <code>
+    /// //   Use Analyze() for conditionals
+    /// var shouldStop = context.Analyze(s => s.ErrorCount >= 3);
+    /// if (shouldStop) {
+    ///     context.UpdateState(s => s with { IsTerminated = true });
+    /// }
+    ///
+    /// //   Or read inside UpdateState for mutations
+    /// context.UpdateState(s => {
+    ///     var current = s.MiddlewareState.ErrorTracking ?? new();
+    ///     return s with { /* ... */ };
+    /// });
+    /// </code>
+    /// </remarks>
+    internal AgentLoopState State => Base.State;
+
+    /// <summary>
+    /// Safely read state for conditional logic without risk of stale capture.
+    /// </summary>
+    /// <typeparam name="T">Return type of the analyzer function</typeparam>
+    /// <param name="analyzer">Function that reads state and returns a value</param>
+    /// <returns>The result of the analyzer function</returns>
+    /// <remarks>
+    /// <para><b>Use for conditionals:</b></para>
+    /// <code>
+    /// var shouldStop = context.Analyze(s =>
+    ///     s.MiddlewareState.ErrorTracking?.ConsecutiveFailures >= 3
+    /// );
+    /// if (shouldStop) {
+    ///     context.UpdateState(s => s with { IsTerminated = true });
+    /// }
+    /// </code>
+    ///
+    /// <para><b>Extract multiple values:</b></para>
+    /// <code>
+    /// var (errors, iteration) = context.Analyze(s => (
+    ///     s.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
+    ///     s.Iteration
+    /// ));
+    /// </code>
+    ///
+    /// <para><b>Why use Analyze()?</b></para>
+    /// <para>
+    /// The lambda pattern makes state reads explicit and prevents accidental stale
+    /// captures. Even if you add 'await' later, the lambda executes at call time
+    /// and gets fresh state.
+    /// </para>
+    ///
+    /// <para><b>Performance:</b></para>
+    /// <para>Zero overhead - the lambda is inlined by the JIT compiler.</para>
+    ///
+    /// <para><b>Best Practices:</b></para>
+    /// <code>
+    /// //   DO: Use Analyze() for extracting values before async operations
+    /// var count = context.Analyze(s => s.ErrorCount);
+    /// await LogAsync();
+    /// if (count >= 3) { /* ... */ }
+    ///
+    /// //   DON'T: Extract values for later mutation (will be stale)
+    /// var count = context.Analyze(s => s.ErrorCount);
+    /// await Work();
+    /// context.UpdateState(s => s with { ErrorCount = count + 1 });  // Uses old count!
+    ///
+    /// //   DO: Read inside UpdateState for mutations
+    /// await Work();
+    /// context.UpdateState(s => s with { ErrorCount = s.ErrorCount + 1 });  // Fresh read!
+    /// </code>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">Thrown if analyzer is null</exception>
+    public T Analyze<T>(Func<AgentLoopState, T> analyzer)
+    {
+        if (analyzer == null) throw new ArgumentNullException(nameof(analyzer));
+        return analyzer(Base.State);
+    }
 
     /// <summary>
     /// Updates agent state immutably.

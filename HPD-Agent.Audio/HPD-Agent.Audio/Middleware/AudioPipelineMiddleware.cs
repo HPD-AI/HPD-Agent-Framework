@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
+using HPD.Events;
 
 namespace HPD.Agent.Audio;
 

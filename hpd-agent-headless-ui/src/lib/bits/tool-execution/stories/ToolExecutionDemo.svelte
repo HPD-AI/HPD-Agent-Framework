@@ -223,11 +223,11 @@
 		<div class="info-box">
 			<h4>💡 Key Benefits:</h4>
 			<ul>
-				<li>✅ Each tool has completely custom UI</li>
-				<li>✅ Still gets state management from component</li>
-				<li>✅ Still gets accessibility attributes</li>
-				<li>✅ Data attributes for styling</li>
-				<li>✅ Event handling built-in</li>
+				<li>  Each tool has completely custom UI</li>
+				<li>  Still gets state management from component</li>
+				<li>  Still gets accessibility attributes</li>
+				<li>  Data attributes for styling</li>
+				<li>  Event handling built-in</li>
 			</ul>
 		</div>
 	</div>

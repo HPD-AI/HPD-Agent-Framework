@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using HPD.Events;
 
 namespace HPD.Agent.Middleware;
 
@@ -28,6 +29,8 @@ public sealed class AgentContext
     //
 
     private AgentLoopState _state;
+    private volatile bool _middlewareExecuting = false;
+    private int _stateGeneration = 0;
     private readonly IEventCoordinator _events;
     private readonly CancellationToken _cancellationToken;
 
@@ -88,32 +91,109 @@ public sealed class AgentContext
     public AgentLoopState State => _state;
 
     /// <summary>
-    /// Updates agent state immutably.
+    /// Safely read state for conditional logic without risk of stale capture.
+    /// </summary>
+    /// <typeparam name="T">Return type of the analyzer function</typeparam>
+    /// <param name="analyzer">Function that reads state and returns a value</param>
+    /// <returns>The result of the analyzer function</returns>
+    /// <remarks>
+    /// This method provides the same safe state access pattern as HookContext.Analyze().
+    /// Use this in tests or internal code where AgentContext is directly accessed.
+    /// </remarks>
+    public T Analyze<T>(Func<AgentLoopState, T> analyzer)
+    {
+        if (analyzer == null) throw new ArgumentNullException(nameof(analyzer));
+        return analyzer(_state);
+    }
+
+    /// <summary>
+    /// Updates agent state immutably with defense-in-depth guards.
     /// </summary>
     /// <remarks>
-    /// <para><b>  CRITICAL: Updates are applied IMMEDIATELY</b></para>
+    /// <para><b>RECOMMENDED PATTERN (async-safe):</b></para>
+    /// <code>
+    /// context.UpdateState(s =>
+    /// {
+    ///     var current = s.MiddlewareState.ErrorTracking ?? new();
+    ///     var updated = current.IncrementFailures();
+    ///     return s with
+    ///     {
+    ///         MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)
+    ///     };
+    /// });
+    /// </code>
+    ///
+    /// <para><b>COMPACT PATTERN (for simple transforms):</b></para>
+    /// <code>
+    /// context.UpdateState(s => s with { CurrentIteration = s.CurrentIteration + 1 });
+    /// </code>
+    ///
+    /// <para><b>⚠️ DANGEROUS (will throw at runtime):</b></para>
+    /// <code>
+    /// //   DANGEROUS: Reading state outside lambda
+    /// var state = context.State.MiddlewareState.ErrorTracking ?? new();
+    /// var updated = state.IncrementFailures();
+    ///
+    /// // If you add await here, state could become stale!
+    /// await SomeAsyncWork();  // ← State might change via SyncState during this gap
+    ///
+    /// context.UpdateState(s => s with
+    /// {
+    ///     MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)  // Uses stale 'updated'
+    /// });
+    /// // ⚠️ This WILL throw: "State was modified before UpdateState was called"
+    /// // The generation counter detects that SyncState() was called between read and update
+    /// </code>
+    ///
+    /// <para><b>Thread Safety:</b></para>
+    /// <para>
+    /// UpdateState is protected by two complementary mechanisms:
+    /// 1. _middlewareExecuting flag - Prevents Agent.cs from calling SyncState() during middleware execution
+    /// 2. State generation counter - Detects stale reads (state captured before async gap or SyncState call)
+    /// </para>
+    /// <para>
+    /// The generation counter increments on every SyncState() and UpdateState() call. If the generation
+    /// changed between capturing state and calling UpdateState, an exception is thrown. This catches:
+    /// - Async gaps where middleware reads state, awaits, then updates with stale data
+    /// - Background tasks that update state after middleware completes
+    /// - Concurrent modifications during async operations
+    /// </para>
+    ///
+    /// <para><b>CRITICAL: Updates are applied IMMEDIATELY</b></para>
     /// <para>
     /// Subsequent hooks see the updated state immediately. This is different from V1
     /// which scheduled updates for later. Middleware is responsible for validating
     /// updates before calling this method. There is no rollback mechanism.
     /// </para>
-    /// <para><b>Example:</b></para>
-    /// <code>
-    /// // Update state
-    /// context.UpdateState(s => s with
-    /// {
-    ///     MiddlewareState = s.MiddlewareState.WithErrorTracking(newState)
-    /// });
-    ///
-    /// // Next middleware in chain sees updated state immediately!
-    /// var errorCount = context.State.MiddlewareState.ErrorTracking.ConsecutiveFailures;
-    /// </code>
     /// </remarks>
     /// <param name="transform">Function that transforms the current state to new state</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if state was modified before UpdateState was called (generation counter mismatch).
+    /// This indicates stale state was captured - use block-scoped lambda pattern instead.
+    /// </exception>
     public void UpdateState(Func<AgentLoopState, AgentLoopState> transform)
     {
         if (transform == null) throw new ArgumentNullException(nameof(transform));
-        _state = transform(_state);
+
+        // GUARD: Detect concurrent state modifications during transform execution
+        var generationBefore = _stateGeneration;
+        var stateBefore = _state;
+        var stateAfter = transform(stateBefore);
+
+        // Check: Did state change DURING transform execution?
+        // This catches rare concurrent modifications (e.g., if Agent.cs called SyncState while transform was running)
+        if (_stateGeneration != generationBefore)
+        {
+            throw new InvalidOperationException(
+                "State was modified during UpdateState transform execution.\n\n" +
+                "This indicates a concurrent modification occurred while your transform was running.\n" +
+                "Agent.cs called SyncState() while the middleware was executing the transform lambda.\n\n" +
+                "This is a critical threading bug - please report this with stack trace.\n" +
+                $"Expected generation: {generationBefore}, actual: {_stateGeneration}");
+        }
+
+        _state = stateAfter;
+        _stateGeneration++;
         //   Updates visible to ALL subsequent hooks (same instance!)
         //   No scheduled updates - no awkward GetPendingState() needed
     }
@@ -125,7 +205,30 @@ public sealed class AgentContext
     /// <param name="newState">The new state to synchronize</param>
     internal void SyncState(AgentLoopState newState)
     {
+        // GUARD: Fail-fast on Agent.cs timing bugs
+        if (_middlewareExecuting)
+        {
+            throw new InvalidOperationException(
+                "CRITICAL BUG: SyncState() called during middleware execution.\n\n" +
+                "SyncState() must ONLY be called BETWEEN middleware phases:\n" +
+                "  ✓ After ExecuteBeforeIterationAsync() completes\n" +
+                "  ✓ Before next middleware phase starts\n\n" +
+                "This indicates a timing error in Agent.cs.\n" +
+                $"Stack trace:\n{Environment.StackTrace}");
+        }
+
         _state = newState ?? throw new ArgumentNullException(nameof(newState));
+        _stateGeneration++;  // Increment generation to invalidate any captured state references
+    }
+
+    /// <summary>
+    /// Sets the middleware execution flag.
+    /// Used by AgentMiddlewarePipeline to track when middleware is executing.
+    /// </summary>
+    /// <param name="executing">True if middleware is executing, false otherwise</param>
+    internal void SetMiddlewareExecuting(bool executing)
+    {
+        _middlewareExecuting = executing;
     }
 
     //

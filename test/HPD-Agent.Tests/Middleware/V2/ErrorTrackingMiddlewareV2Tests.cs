@@ -22,7 +22,7 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - failure count incremented
-        var errorState = context.State.MiddlewareState.ErrorTracking;
+        var errorState = context.Analyze(s => s.MiddlewareState.ErrorTracking);
         Assert.NotNull(errorState);
         Assert.Equal(1, errorState.ConsecutiveFailures);
     }
@@ -44,9 +44,9 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.True(context.State.IsTerminated);
-        Assert.Contains("Maximum consecutive errors", context.State.TerminationReason ?? "");
-        Assert.Equal(2, context.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.True(context.Analyze(s => s.IsTerminated));
+        Assert.Contains("Maximum consecutive errors", context.Analyze(s => s.TerminationReason) ?? "");
+        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -119,13 +119,13 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - state updated immediately, visible in context.State (no GetPendingState!)
-        Assert.Equal(1, context.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
 
         // Second error
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - immediately visible
-        Assert.Equal(2, context.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -178,7 +178,7 @@ public class ErrorTrackingMiddlewareTests
         }
 
         // Assert
-        Assert.Contains("Custom: 5 out of 5 errors", context.State.TerminationReason ?? "");
+        Assert.Contains("Custom: 5 out of 5 errors", context.Analyze(s => s.TerminationReason) ?? "");
     }
 
     // Helper methods

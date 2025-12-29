@@ -1,20 +1,30 @@
 using HPD.Agent;
 using HPD.Agent.Middleware;
 using HPD.Agent.Serialization;
+using HPD.Events;
 using Xunit;
+using EventPriority = HPD.Events.EventPriority;
+using EventDirection = HPD.Events.EventDirection;
 
 namespace HPD.Agent.Tests.Core;
 
 /// <summary>
-/// Tests for priority-based streaming architecture:
-/// - Priority routing (Immediate/Control events bypass Normal/Background)
-/// - Stream management (IStreamHandle, IStreamRegistry)
-/// - Upstream event flow (interruption propagation)
-/// - Event dropping on stream interruption
+/// Tests for agent-specific priority streaming and event coordinator integration.
+///
+/// NOTE: Core priority routing tests have been migrated to HPD.Events.Tests/EventCoordinatorTests.cs:
+/// - PriorityEvents_ImmediateProcessedBeforeNormal (core priority behavior)
+/// - PriorityEvents_ControlProcessedBeforeNormal (core priority behavior)
+/// - PriorityEvents_NormalAndBackgroundInFIFOOrder (core FIFO behavior)
+///
+/// This file focuses on agent-specific tests using AgentEvent subtypes:
+/// - Integration with agent middleware (TextDeltaEvent, InterruptionRequestEvent, etc.)
+/// - AgentEvent serialization with priority fields
+/// - Stream management integration with agent events
+/// - Upstream event flow with agent-specific middleware
 /// </summary>
 public class PriorityStreamingTests
 {
-    #region Priority Routing Tests
+    #region Priority Routing Tests (Agent-Specific Integration)
 
     [Fact]
     public async Task PriorityEvents_ProcessedBeforeNormalEvents()
@@ -68,7 +78,7 @@ public class PriorityStreamingTests
         }
 
         // Emit control priority event
-        coordinator.Emit(new MessageTurnFinishedEvent("turn1", "conv1", "agent", TimeSpan.Zero, DateTimeOffset.Now)
+        coordinator.Emit(new MessageTurnFinishedEvent("turn1", "conv1", "agent", TimeSpan.Zero)
         {
             Priority = EventPriority.Control
         });
@@ -96,7 +106,7 @@ public class PriorityStreamingTests
 
         // Both Normal and Background go to the standard channel
         // They are read in FIFO order within the same channel
-        coordinator.Emit(new StateSnapshotEvent(1, 10, false, null, 0, new List<string>(), "agent", DateTimeOffset.Now)
+        coordinator.Emit(new StateSnapshotEvent(1, 10, false, null, 0, new List<string>(), "agent")
         {
             Priority = EventPriority.Background
         });
@@ -391,7 +401,7 @@ public class PriorityStreamingTests
 
     #region Event Dropping Tests
 
-    [Fact]
+    [Fact(Skip = "Event dropping is universal (HPD.Events) - see HPD.Events.Tests.StreamRegistryTests.EventCoordinator_DropsInterruptedStreamEvents")]
     public void Emit_DropsCanInterruptEvents_WhenStreamInterrupted()
     {
         // Arrange
@@ -428,11 +438,9 @@ public class PriorityStreamingTests
         Assert.Single(textEvents);
         Assert.Equal("first", textEvents[0].Text);
 
-        // Should have EventDroppedEvent for the dropped event
-        var droppedEvents = events.OfType<EventDroppedEvent>().ToList();
-        Assert.Single(droppedEvents);
-        Assert.Equal(streamId, droppedEvents[0].DroppedStreamId);
-        Assert.Equal("TextDeltaEvent", droppedEvents[0].DroppedEventType);
+        // NOTE: EventDroppedEvent is now universal (HPD.Events.Event), not AgentEvent
+        // So it won't appear in AgentEvent streams. Event dropping tests are in HPD.Events.Tests
+        Assert.Single(events); // Only the first TextDeltaEvent
     }
 
     [Fact]
@@ -571,19 +579,8 @@ public class PriorityStreamingTests
 
     #region Serialization Tests
 
-    [Fact]
-    public void EventDroppedEvent_SerializesWithType()
-    {
-        // Arrange
-        var evt = new EventDroppedEvent("stream-123", "TextDeltaEvent", 42);
-
-        // Act
-        var json = AgentEventSerializer.ToJson(evt);
-
-        // Assert - Type discriminator is correct
-        Assert.Contains("\"type\":\"EVENT_DROPPED\"", json);
-        Assert.Contains("\"version\":\"1.0\"", json);
-    }
+    // NOTE: EventDroppedEvent is now universal (HPD.Events.Event), not AgentEvent
+    // Serialization tests for universal events belong in HPD.Events.Tests
 
     [Fact]
     public void InterruptionRequestEvent_SerializesWithType()
@@ -636,14 +633,14 @@ public class PriorityStreamingTests
     {
         // Assert known event types
         Assert.Equal("INTERRUPTION_REQUEST", AgentEventSerializer.GetEventTypeName(typeof(InterruptionRequestEvent)));
-        Assert.Equal("EVENT_DROPPED", AgentEventSerializer.GetEventTypeName(typeof(EventDroppedEvent)));
+        // NOTE: EventDroppedEvent is now universal (HPD.Events.Event), not serialized by AgentEventSerializer
     }
 
     #endregion
 
     #region Integration Tests
 
-    [Fact]
+    [Fact(Skip = "Event dropping is universal (HPD.Events) - see HPD.Events.Tests.StreamRegistryTests.EventCoordinator_FullInterruptionFlow_TracksEmittedAndDroppedCounts")]
     public async Task FullInterruptionFlow_Works()
     {
         // Arrange
@@ -692,12 +689,14 @@ public class PriorityStreamingTests
         // Assert
         var textDeltas = events.OfType<TextDeltaEvent>().ToList();
         var endEvents = events.OfType<TextMessageEndEvent>().ToList();
-        var droppedEvents = events.OfType<EventDroppedEvent>().ToList();
 
         Assert.Equal(5, textDeltas.Count); // First 5 before interruption
         Assert.Single(endEvents); // End marker delivered (CanInterrupt = false)
-        Assert.Equal(5, droppedEvents.Count); // 5 dropped after interruption
-        Assert.Equal(5, stream.DroppedCount);
+
+        // NOTE: EventDroppedEvent is now universal (HPD.Events.Event), not AgentEvent
+        // So it won't appear in AgentEvent streams. Event dropping tests are in HPD.Events.Tests
+        Assert.Equal(6, events.Count); // 5 textDeltas + 1 endEvent (no EventDroppedEvents in Agent stream)
+        Assert.Equal(5, stream.DroppedCount); // But dropping still tracked in StreamHandle
         Assert.Equal(5, stream.EmittedCount);
     }
 
