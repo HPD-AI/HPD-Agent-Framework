@@ -122,9 +122,7 @@ public class ContainerMiddleware : IAgentMiddleware
             return Task.CompletedTask;
         }
 
-        var collapsingState = context.Analyze(s =>
-            s.MiddlewareState.Collapsing ?? new CollapsingStateData()
-        );
+        var collapsingState = context.GetMiddlewareState<CollapsingStateData>() ?? new CollapsingStateData();
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 0: Filter [Collapse] container calls from messages (IMMEDIATE TRANSPARENCY)
@@ -216,10 +214,8 @@ public class ContainerMiddleware : IAgentMiddleware
             return Task.CompletedTask;
 
         // Update state with expanded containers
-        context.UpdateState(state =>
+        context.UpdateMiddlewareState<CollapsingStateData>(collapsingState =>
         {
-            var collapsingState = state.MiddlewareState.Collapsing ?? new CollapsingStateData();
-
             _logger?.LogInformation("BeforeToolExecutionAsync: Before expansion - ExpandedContainers count = {Count}",
                 collapsingState.ExpandedContainers.Count);
 
@@ -242,10 +238,7 @@ public class ContainerMiddleware : IAgentMiddleware
                 collapsingState.ExpandedContainers.Count,
                 collapsingState.ContainersExpandedThisTurn.Count);
 
-            return state with
-            {
-                MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState)
-            };
+            return collapsingState;
         });
 
         // NOTE: Tool visibility refresh happens automatically in the NEXT BeforeIterationAsync call
@@ -404,9 +397,7 @@ public class ContainerMiddleware : IAgentMiddleware
         // STEP 1: Final cleanup - remove container calls from TurnHistory before session persistence
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        var collapsingState = context.Analyze(s =>
-            s.MiddlewareState.Collapsing ?? new CollapsingStateData()
-        );
+        var collapsingState = context.GetMiddlewareState<CollapsingStateData>() ?? new CollapsingStateData();
 
         _logger?.LogInformation("AfterMessageTurnAsync: ExpandedContainers count = {Count}, ContainersExpandedThisTurn count = {TurnCount}, TurnHistory count = {HistoryCount}",
             collapsingState.ExpandedContainers.Count,
@@ -447,10 +438,7 @@ public class ContainerMiddleware : IAgentMiddleware
         if (collapsingState.ContainersExpandedThisTurn.Count > 0 ||
             (!_config.PersistSystemPromptInjections && collapsingState.ActiveContainerInstructions.Any()))
         {
-            context.UpdateState(s => s with
-            {
-                MiddlewareState = s.MiddlewareState.WithCollapsing(updatedCollapsing)
-            });
+            context.UpdateMiddlewareState<CollapsingStateData>(_ => updatedCollapsing);
 
             _logger?.LogInformation("AfterMessageTurnAsync: Cleared turn-level state - ContainersExpandedThisTurn reset to 0");
         }

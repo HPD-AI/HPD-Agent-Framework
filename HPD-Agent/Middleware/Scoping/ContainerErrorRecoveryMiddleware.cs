@@ -113,22 +113,13 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
         string containerName)
     {
         // Update state to mark container as expanded
-        context.UpdateState(state =>
-        {
-            var collapsingState = state.MiddlewareState.Collapsing
-                ?? new CollapsingStateData();
+        context.UpdateMiddlewareState<CollapsingStateData>(s =>
+            s.WithExpandedContainer(containerName)
+        );
 
-            collapsingState = collapsingState.WithExpandedContainer(containerName);
-
-            // V2 NOTE: We don't have access to Options in BeforeToolExecutionContext
-            // Container instructions should be handled in BeforeIterationAsync
-            // Here we just mark the container as expanded
-
-            return state with
-            {
-                MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState)
-            };
-        });
+        // V2 NOTE: We don't have access to Options in BeforeToolExecutionContext
+        // Container instructions should be handled in BeforeIterationAsync
+        // Here we just mark the container as expanded
     }
 
     /// <summary>

@@ -63,22 +63,12 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
     public Task OnErrorAsync(ErrorContext context, CancellationToken cancellationToken)
     {
         //   Immediate state update - visible to all subsequent hooks!
-        // Read state inside lambda for thread safety
-        context.UpdateState(s =>
-        {
-            var current = s.MiddlewareState.ErrorTracking ?? new();
-            var updated = current.IncrementFailures();
+        context.UpdateMiddlewareState<ErrorTrackingStateData>(s => s.IncrementFailures());
 
-            return s with
-            {
-                MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)
-            };
-        });
+        // Check if threshold exceeded
+        var currentFailures = context.GetMiddlewareState<ErrorTrackingStateData>()?
+            .ConsecutiveFailures ?? 0;
 
-        // Check if threshold exceeded (read fresh state using Analyze)
-        var currentFailures = context.Analyze(s =>
-            s.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0
-        );
         if (currentFailures >= MaxConsecutiveErrors)
         {
             TriggerTermination(context, currentFailures);
@@ -99,17 +89,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
         if (context.AllToolsSucceeded)
         {
             //   Immediate state update - no GetPendingState() needed!
-            // Read state inside lambda for thread safety
-            context.UpdateState(s =>
-            {
-                var current = s.MiddlewareState.ErrorTracking ?? new();
-                var updated = current.ResetFailures();
-
-                return s with
-                {
-                    MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)
-                };
-            });
+            context.UpdateMiddlewareState<ErrorTrackingStateData>(s => s.ResetFailures());
         }
 
         return Task.CompletedTask;

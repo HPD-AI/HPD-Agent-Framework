@@ -149,6 +149,72 @@ public interface IGraphContext
     /// </summary>
     HPD.Events.IEventCoordinator? EventCoordinator { get; }
 
+    /// <summary>
+    /// Waits for a response to a bidirectional event (approvals, permissions).
+    /// Convenience wrapper around EventCoordinator.WaitForResponseAsync.
+    /// </summary>
+    /// <typeparam name="TResponse">Expected response event type (must inherit from GraphEvent)</typeparam>
+    /// <param name="requestId">Unique identifier matching the request event</param>
+    /// <param name="timeout">Maximum time to wait for response</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The typed response event</returns>
+    /// <exception cref="InvalidOperationException">EventCoordinator is null</exception>
+    /// <exception cref="TimeoutException">No response received within timeout</exception>
+    /// <exception cref="OperationCanceledException">Operation was cancelled</exception>
+    /// <remarks>
+    /// <para>
+    /// This method is used by node handlers that need bidirectional communication:
+    /// </para>
+    /// <list type="number">
+    /// <item>Handler emits request event (e.g., NodeApprovalRequestEvent)</item>
+    /// <item>Handler calls WaitForResponseAsync() - BLOCKS HERE</item>
+    /// <item>External handler receives request event (via EventCoordinator.ReadAllAsync)</item>
+    /// <item>User provides input</item>
+    /// <item>External handler calls EventCoordinator.SendResponse()</item>
+    /// <item>Handler receives response and continues</item>
+    /// </list>
+    /// <para><b>Timeout vs. Cancellation:</b></para>
+    /// <para>
+    /// - TimeoutException: No response received within the specified timeout
+    /// </para>
+    /// <para>
+    /// - OperationCanceledException: External cancellation (e.g., user stopped graph)
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // In node handler
+    /// var requestId = Guid.NewGuid().ToString();
+    ///
+    /// context.EventCoordinator?.Emit(new NodeApprovalRequestEvent
+    /// {
+    ///     RequestId = requestId,
+    ///     NodeId = context.CurrentNodeId,
+    ///     Message = "Approve deletion of 1000 records?"
+    /// });
+    ///
+    /// var response = await context.WaitForResponseAsync&lt;NodeApprovalResponseEvent&gt;(
+    ///     requestId,
+    ///     timeout: TimeSpan.FromMinutes(5),
+    ///     cancellationToken
+    /// );
+    ///
+    /// if (!response.Approved)
+    ///     return new NodeExecutionResult.Skipped(SkipReason.UserCancelled);
+    /// </code>
+    /// </example>
+    Task<TResponse> WaitForResponseAsync<TResponse>(
+        string requestId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+        where TResponse : HPD.Events.Event
+    {
+        if (EventCoordinator == null)
+            throw new InvalidOperationException("EventCoordinator is not configured for this context");
+
+        return EventCoordinator.WaitForResponseAsync<TResponse>(requestId, timeout, cancellationToken);
+    }
+
     // ========================================
     // Context Isolation (For Parallel Execution)
     // ========================================

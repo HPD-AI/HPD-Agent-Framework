@@ -60,22 +60,9 @@ namespace HPD.Agent;
 ///     .Build();
 /// </code>
 /// </example>
-public interface IAgentEventHandler
+public interface IAgentEventHandler : HPD.Events.IEventHandler<AgentEvent>
 {
-    /// <summary>
-    /// Determines if this handler should process the given event.
-    /// Called for every event - keep this fast (check type, not content).
-    /// Default: true (process all events).
-    /// </summary>
-    /// <param name="evt">The event to potentially process</param>
-    /// <returns>True if OnEventAsync should be called, false to skip</returns>
-    bool ShouldProcess(AgentEvent evt) => true;
-
-    /// <summary>
-    /// Processes the event synchronously within the event loop.
-    /// Keep this fast - it blocks the stream until complete.
-    /// </summary>
-    /// <param name="evt">The event to process</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    Task OnEventAsync(AgentEvent evt, CancellationToken cancellationToken = default);
+    // Inherits:
+    // - bool ShouldProcess(AgentEvent evt)
+    // - Task OnEventAsync(AgentEvent evt, CancellationToken cancellationToken)
 }

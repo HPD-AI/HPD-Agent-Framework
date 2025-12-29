@@ -161,7 +161,7 @@ public class StructuredOutputTests
         // Assert - bidirectional events (if any) should pass through
         // Note: This test verifies the mechanism works; actual bidirectional events
         // would come from middleware like permission requests
-        var bidirectionalEvents = events.Where(e => e is IBidirectionalEvent).ToList();
+        var bidirectionalEvents = events.Where(e => e is IBidirectionalAgentEvent).ToList();
         // Just verify we can enumerate without error - bidirectional events depend on middleware config
         Assert.NotNull(events);
     }

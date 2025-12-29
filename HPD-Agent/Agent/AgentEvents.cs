@@ -308,18 +308,16 @@ public record ToolCallResultEvent(
 #region Middleware Events
 
 /// <summary>
-/// Marker interface for events that support bidirectional communication.
+/// Marker interface for agent-specific bidirectional events.
+/// Inherits from HPD.Events.IBidirectionalEvent for cross-domain consistency.
 /// Events implementing this interface can:
 /// - Be emitted during execution
 /// - Bubble to parent agents via AsyncLocal
 /// - Wait for responses using WaitForResponseAsync
 /// </summary>
-public interface IBidirectionalEvent
+public interface IBidirectionalAgentEvent : HPD.Events.IBidirectionalEvent
 {
-    /// <summary>
-    /// Name of the Middleware that emitted this event.
-    /// </summary>
-    string SourceName { get; }
+    // Inherits RequestId and SourceName from HPD.Events.IBidirectionalEvent
 }
 
 /// <summary>
@@ -327,11 +325,16 @@ public interface IBidirectionalEvent
 /// Permission events are a specialized subset of Middleware events
 /// that require user interaction and approval workflows.
 /// </summary>
-public interface IPermissionEvent : IBidirectionalEvent
+/// <remarks>
+/// Implements IBidirectionalAgentEvent.RequestId via PermissionId.
+/// Each implementing record must provide: string IBidirectionalAgentEvent.RequestId => PermissionId;
+/// </remarks>
+public interface IPermissionEvent : IBidirectionalAgentEvent
 {
     /// <summary>
     /// Unique identifier for this permission interaction.
     /// Used to correlate requests and responses.
+    /// Maps to IBidirectionalAgentEvent.RequestId for consistency.
     /// </summary>
     string PermissionId { get; }
 }
@@ -349,6 +352,9 @@ public record PermissionRequestEvent(
     IDictionary<string, object?>? Arguments) : AgentEvent, IPermissionEvent
 {
     public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+
+    /// <summary>Explicit interface implementation - maps PermissionId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => PermissionId;
 }
 
 /// <summary>
@@ -363,6 +369,9 @@ public record PermissionResponseEvent(
     PermissionChoice Choice = PermissionChoice.Ask) : AgentEvent, IPermissionEvent
 {
     public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+
+    /// <summary>Explicit interface implementation - maps PermissionId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => PermissionId;
 }
 
 /// <summary>
@@ -370,7 +379,11 @@ public record PermissionResponseEvent(
 /// </summary>
 public record PermissionApprovedEvent(
     string PermissionId,
-    string SourceName) : AgentEvent, IPermissionEvent;
+    string SourceName) : AgentEvent, IPermissionEvent
+{
+    /// <summary>Explicit interface implementation - maps PermissionId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => PermissionId;
+}
 
 /// <summary>
 /// Emitted after permission is denied (for observability).
@@ -378,7 +391,11 @@ public record PermissionApprovedEvent(
 public record PermissionDeniedEvent(
     string PermissionId,
     string SourceName,
-    string Reason) : AgentEvent, IPermissionEvent;
+    string Reason) : AgentEvent, IPermissionEvent
+{
+    /// <summary>Explicit interface implementation - maps PermissionId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => PermissionId;
+}
 
 /// <summary>
 /// Middleware requests permission to continue beyond max iterations.
@@ -394,6 +411,9 @@ public record ContinuationRequestEvent(
     /// Maps ContinuationId to PermissionId for consistency.
     /// </summary>
     string IPermissionEvent.PermissionId => ContinuationId;
+
+    /// <summary>Explicit interface implementation - maps ContinuationId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => ContinuationId;
 }
 
 /// <summary>
@@ -410,6 +430,9 @@ public record ContinuationResponseEvent(
     /// Maps ContinuationId to PermissionId for consistency.
     /// </summary>
     string IPermissionEvent.PermissionId => ContinuationId;
+
+    /// <summary>Explicit interface implementation - maps ContinuationId to RequestId</summary>
+    string HPD.Events.IBidirectionalEvent.RequestId => ContinuationId;
 }
 
 /// <summary>
@@ -417,7 +440,7 @@ public record ContinuationResponseEvent(
 /// Clarification events enable agents/plugins to ask the user for additional information
 /// during execution, supporting human-in-the-loop workflows beyond just permissions.
 /// </summary>
-public interface IClarificationEvent : IBidirectionalEvent
+public interface IClarificationEvent : IBidirectionalAgentEvent
 {
     /// <summary>
     /// Unique identifier for this clarification interaction.
@@ -460,19 +483,21 @@ public record ClarificationResponseEvent(
 
 /// <summary>
 /// Middleware reports progress (one-way, no response needed).
+/// This is NOT a bidirectional event - it's just informational.
 /// </summary>
 public record MiddlewareProgressEvent(
     string SourceName,
     string Message,
-    int? PercentComplete = null) : AgentEvent, IBidirectionalEvent;
+    int? PercentComplete = null) : AgentEvent;
 
 /// <summary>
 /// Middleware reports an error (one-way, no response needed).
+/// This is NOT a bidirectional event - it's just informational.
 /// </summary>
 public record MiddlewareErrorEvent(
     string SourceName,
     string ErrorMessage,
-    Exception? Exception = null) : AgentEvent, IBidirectionalEvent, IErrorEvent;
+    Exception? Exception = null) : AgentEvent, IErrorEvent;
 
 #endregion
 

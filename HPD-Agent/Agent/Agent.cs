@@ -2175,7 +2175,7 @@ public sealed class Agent
             // ContinuationRequestEvent, ClarificationRequestEvent, and any
             // custom events implementing IBidirectionalEvent
             // ═══════════════════════════════════════════════════════════════
-            if (evt is IBidirectionalEvent)
+            if (evt is IBidirectionalAgentEvent)
             {
                 yield return evt;
                 continue;

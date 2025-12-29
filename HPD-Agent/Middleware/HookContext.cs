@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using HPD.Events;
 
 namespace HPD.Agent.Middleware;
@@ -132,8 +133,12 @@ public abstract record HookContext
     /// await Work();
     /// context.UpdateState(s => s with { ErrorCount = s.ErrorCount + 1 });  // Fresh read!
     /// </code>
+    ///
+    /// <para><b>TIP:</b> For simple middleware state reads, consider using
+    /// <see cref="MiddlewareStateExtensions.GetMiddlewareState{TState}(HookContext)"/> instead.</para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown if analyzer is null</exception>
+    [EditorBrowsable(EditorBrowsableState.Advanced)]
     public T Analyze<T>(Func<AgentLoopState, T> analyzer)
     {
         if (analyzer == null) throw new ArgumentNullException(nameof(analyzer));
@@ -145,6 +150,11 @@ public abstract record HookContext
     ///   CRITICAL: Updates are applied IMMEDIATELY - subsequent hooks see the updated state.
     /// </summary>
     /// <param name="transform">Function that transforms the current state to new state</param>
+    /// <remarks>
+    /// <para><b>TIP:</b> For simple middleware state updates, consider using
+    /// <see cref="MiddlewareStateExtensions.UpdateMiddlewareState{TState}(HookContext, Func{TState, TState})"/> instead.</para>
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Advanced)]
     public void UpdateState(Func<AgentLoopState, AgentLoopState> transform)
         => Base.UpdateState(transform);
 

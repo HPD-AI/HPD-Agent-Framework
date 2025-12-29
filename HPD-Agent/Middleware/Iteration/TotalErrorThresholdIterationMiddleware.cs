@@ -103,10 +103,9 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
         if (context.Iteration == 0)
             return Task.CompletedTask;
 
-        // Check threshold using Analyze for safe state read
-        var currentErrorCount = context.Analyze(s =>
-            s.MiddlewareState.TotalErrorThreshold?.TotalErrorCount ?? 0
-        );
+        // Check threshold
+        var currentErrorCount = context.GetMiddlewareState<TotalErrorThresholdStateData>()?
+            .TotalErrorCount ?? 0;
 
         if (currentErrorCount >= MaxTotalErrors)
         {
@@ -134,23 +133,16 @@ public class TotalErrorThresholdMiddleware : IAgentMiddleware
 
         if (errorCount > 0)
         {
-            // Update state with cumulative error count (read inside lambda for thread safety)
-            context.UpdateState(s =>
+            // Update state with cumulative error count
+            context.UpdateMiddlewareState<TotalErrorThresholdStateData>(s => s with
             {
-                var current = s.MiddlewareState.TotalErrorThreshold ?? new TotalErrorThresholdStateData();
-                var newTotalCount = current.TotalErrorCount + errorCount;
-                var updated = current with { TotalErrorCount = newTotalCount };
-
-                return s with
-                {
-                    MiddlewareState = s.MiddlewareState.WithTotalErrorThreshold(updated)
-                };
+                TotalErrorCount = s.TotalErrorCount + errorCount
             });
 
-            // Check if this iteration puts us over threshold using Analyze
-            var currentTotalCount = context.Analyze(s =>
-                s.MiddlewareState.TotalErrorThreshold?.TotalErrorCount ?? 0
-            );
+            // Check if this iteration puts us over threshold
+            var currentTotalCount = context.GetMiddlewareState<TotalErrorThresholdStateData>()?
+                .TotalErrorCount ?? 0;
+
             if (currentTotalCount >= MaxTotalErrors)
             {
                 TriggerTermination(context, currentTotalCount);
