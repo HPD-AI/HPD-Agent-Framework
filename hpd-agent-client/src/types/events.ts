@@ -475,14 +475,19 @@ export interface PreemptiveGenerationDiscardedEvent extends BaseEvent {
 
 export interface VadStartOfSpeechEvent extends BaseEvent {
   type: typeof EventTypes.VAD_START_OF_SPEECH;
+  /** ISO 8601 duration from audio start (e.g., "PT5.2S" for 5.2 seconds) */
   timestamp: string;
+  /** Speech probability (0.0 - 1.0) */
   speechProbability: number;
 }
 
 export interface VadEndOfSpeechEvent extends BaseEvent {
   type: typeof EventTypes.VAD_END_OF_SPEECH;
+  /** ISO 8601 duration from audio start (e.g., "PT5.2S" for 5.2 seconds) */
   timestamp: string;
+  /** ISO 8601 duration of speech (e.g., "PT2.5S" for 2.5 seconds of speech) */
   speechDuration: string;
+  /** Speech probability (0.0 - 1.0) */
   speechProbability: number;
 }
 

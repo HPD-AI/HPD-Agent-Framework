@@ -14,6 +14,12 @@ import type {
 	ClarificationRequest,
 	ClientToolInvokeRequest
 } from './types.js';
+import { AudioPlayerState } from '../audio-player/audio-player.svelte.js';
+import { TranscriptionState } from '../transcription/transcription.svelte.js';
+import { VoiceActivityIndicatorState } from '../voice-activity-indicator/voice-activity-indicator.svelte.js';
+import { InterruptionIndicatorState } from '../interruption-indicator/interruption-indicator.svelte.js';
+import { TurnIndicatorState } from '../turn-indicator/turn-indicator.svelte.js';
+import { AudioVisualizerState } from '../audio-visualizer/audio-visualizer.svelte.js';
 
 export class AgentState {
 	// ============================================
@@ -36,6 +42,14 @@ export class AgentState {
 	// Turn tracking
 	#currentTurnId = $state<string | null>(null);
 	#currentConversationId = $state<string | null>(null);
+
+	// Audio component states (Phase 3 - Voice UI)
+	#audioPlayer = $state<AudioPlayerState>(new AudioPlayerState());
+	#transcription = $state<TranscriptionState>(new TranscriptionState());
+	#voiceActivity = $state<VoiceActivityIndicatorState>(new VoiceActivityIndicatorState());
+	#interruption = $state<InterruptionIndicatorState>(new InterruptionIndicatorState());
+	#turnIndicator = $state<TurnIndicatorState>(new TurnIndicatorState());
+	#audioVisualizer = $state<AudioVisualizerState>(new AudioVisualizerState());
 
 	// ============================================
 	// Derived State ($derived)
@@ -81,6 +95,31 @@ export class AgentState {
 
 	get pendingClarifications() {
 		return this.#pendingClarifications;
+	}
+
+	// Audio component accessors
+	get audioPlayer() {
+		return this.#audioPlayer;
+	}
+
+	get transcription() {
+		return this.#transcription;
+	}
+
+	get voiceActivity() {
+		return this.#voiceActivity;
+	}
+
+	get interruption() {
+		return this.#interruption;
+	}
+
+	get turnIndicator() {
+		return this.#turnIndicator;
+	}
+
+	get audioVisualizer() {
+		return this.#audioVisualizer;
 	}
 
 	// ============================================
@@ -312,6 +351,124 @@ export class AgentState {
 		this.#streaming = false;
 		this.#reasoning = false;
 		console.error('[AgentState] Turn error:', message);
+	}
+
+	// --- Audio Events (TTS) ---
+
+	onSynthesisStarted(synthesisId: string, modelId?: string, voice?: string, streamId?: string) {
+		this.#audioPlayer.onSynthesisStarted(synthesisId, modelId, voice, streamId);
+		this.#turnIndicator.onSynthesisStarted(synthesisId, modelId, voice, streamId);
+	}
+
+	onAudioChunk(
+		synthesisId: string,
+		base64Audio: string,
+		mimeType: string,
+		chunkIndex: number,
+		duration: string,
+		isLast: boolean,
+		streamId?: string
+	) {
+		this.#audioPlayer.onAudioChunk(synthesisId, base64Audio, mimeType, chunkIndex, duration, isLast, streamId);
+		this.#audioVisualizer.onAudioChunk(synthesisId, base64Audio, mimeType, chunkIndex, duration, isLast, streamId);
+	}
+
+	onSynthesisCompleted(
+		synthesisId: string,
+		wasInterrupted: boolean,
+		totalChunks: number,
+		deliveredChunks: number,
+		streamId?: string
+	) {
+		this.#audioPlayer.onSynthesisCompleted(synthesisId, wasInterrupted, totalChunks, deliveredChunks, streamId);
+	}
+
+	// --- Audio Events (STT) ---
+
+	onTranscriptionDelta(
+		transcriptionId: string,
+		text: string,
+		isFinal: boolean,
+		confidence?: number
+	) {
+		this.#transcription.onTranscriptionDelta(transcriptionId, text, isFinal, confidence);
+	}
+
+	onTranscriptionCompleted(
+		transcriptionId: string,
+		finalText: string,
+		processingDuration: string
+	) {
+		this.#transcription.onTranscriptionCompleted(transcriptionId, finalText, processingDuration);
+	}
+
+	// --- Audio Events (Interruption) ---
+
+	onUserInterrupted(transcribedText?: string) {
+		this.#interruption.onUserInterrupted(transcribedText);
+	}
+
+	onSpeechPaused(synthesisId: string, reason: 'user_speaking' | 'potential_interruption') {
+		this.#interruption.onSpeechPaused(synthesisId, reason);
+		this.#audioPlayer.onSpeechPaused(synthesisId, reason);
+	}
+
+	onSpeechResumed(synthesisId: string, pauseDuration: string) {
+		this.#interruption.onSpeechResumed(synthesisId, pauseDuration);
+		this.#audioPlayer.onSpeechResumed(synthesisId, pauseDuration);
+	}
+
+	// --- Audio Events (Preemptive Generation) ---
+
+	onPreemptiveGenerationStarted(generationId: string, turnCompletionProbability: number) {
+		console.log(`[AgentState] Preemptive generation started: ${generationId}`, { turnCompletionProbability });
+		// TODO: Handle preemptive generation state when needed
+	}
+
+	onPreemptiveGenerationDiscarded(generationId: string, reason: 'user_continued' | 'low_confidence') {
+		console.log(`[AgentState] Preemptive generation discarded: ${generationId}`, { reason });
+		// TODO: Handle preemptive generation state when needed
+	}
+
+	// --- Audio Events (VAD) ---
+
+	onVadStartOfSpeech(timestamp: string, speechProbability: number) {
+		this.#voiceActivity.onVadStartOfSpeech(timestamp, speechProbability);
+		this.#turnIndicator.onVadStartOfSpeech(timestamp, speechProbability);
+	}
+
+	onVadEndOfSpeech(timestamp: string, speechDuration: string, speechProbability: number) {
+		this.#voiceActivity.onVadEndOfSpeech(timestamp, speechDuration, speechProbability);
+	}
+
+	// --- Audio Events (Metrics) ---
+
+	onAudioPipelineMetrics(
+		metricType: 'latency' | 'quality' | 'throughput' | 'error',
+		metricName: string,
+		value: number,
+		unit?: string
+	) {
+		console.log(`[AgentState] Audio pipeline metrics:`, { metricType, metricName, value, unit });
+		// TODO: Expose metrics for debugging/monitoring UI
+	}
+
+	// --- Audio Events (Turn Detection) ---
+
+	onTurnDetected(
+		transcribedText: string,
+		completionProbability: number,
+		silenceDuration: string,
+		detectionMethod: 'heuristic' | 'ml' | 'manual' | 'timeout'
+	) {
+		this.#turnIndicator.onTurnDetected(transcribedText, completionProbability, silenceDuration, detectionMethod);
+	}
+
+	// --- Audio Events (Filler) ---
+
+	onFillerAudioPlayed(phrase: string, duration: string) {
+		console.log(`[AgentState] Filler audio played: ${phrase}`, { duration });
+		// TODO: Handle filler audio indication when needed
 	}
 
 	// ============================================

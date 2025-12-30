@@ -236,6 +236,140 @@ export function createAgent(options: CreateAgentOptions): Agent {
 			options.onError?.(message);
 		},
 
+		// ============================================
+		// Audio Events (TTS) → AgentState
+		// ============================================
+
+		onSynthesisStarted: (event) => {
+			state.onSynthesisStarted(
+				event.synthesisId,
+				event.modelId,
+				event.voice,
+				event.streamId
+			);
+		},
+
+		onAudioChunk: (event) => {
+			state.onAudioChunk(
+				event.synthesisId,
+				event.base64Audio,
+				event.mimeType,
+				event.chunkIndex,
+				event.duration,
+				event.isLast,
+				event.streamId
+			);
+		},
+
+		onSynthesisCompleted: (event) => {
+			state.onSynthesisCompleted(
+				event.synthesisId,
+				event.wasInterrupted,
+				event.totalChunks,
+				event.deliveredChunks,
+				event.streamId
+			);
+		},
+
+		// ============================================
+		// Audio Events (STT) → AgentState
+		// ============================================
+
+		onTranscriptionDelta: (event) => {
+			state.onTranscriptionDelta(
+				event.transcriptionId,
+				event.text,
+				event.isFinal,
+				event.confidence
+			);
+		},
+
+		onTranscriptionCompleted: (event) => {
+			state.onTranscriptionCompleted(
+				event.transcriptionId,
+				event.finalText,
+				event.processingDuration
+			);
+		},
+
+		// ============================================
+		// Audio Events (Interruption) → AgentState
+		// ============================================
+
+		onUserInterrupted: (event) => {
+			state.onUserInterrupted(event.transcribedText);
+		},
+
+		onSpeechPaused: (event) => {
+			state.onSpeechPaused(event.synthesisId, event.reason);
+		},
+
+		onSpeechResumed: (event) => {
+			state.onSpeechResumed(event.synthesisId, event.pauseDuration);
+		},
+
+		// ============================================
+		// Audio Events (Preemptive Generation) → AgentState
+		// ============================================
+
+		onPreemptiveGenerationStarted: (event) => {
+			state.onPreemptiveGenerationStarted(event.generationId, event.turnCompletionProbability);
+		},
+
+		onPreemptiveGenerationDiscarded: (event) => {
+			state.onPreemptiveGenerationDiscarded(event.generationId, event.reason);
+		},
+
+		// ============================================
+		// Audio Events (VAD) → AgentState
+		// ============================================
+
+		onVadStartOfSpeech: (event) => {
+			state.onVadStartOfSpeech(event.timestamp, event.speechProbability);
+		},
+
+		onVadEndOfSpeech: (event) => {
+			state.onVadEndOfSpeech(
+				event.timestamp,
+				event.speechDuration,
+				event.speechProbability
+			);
+		},
+
+		// ============================================
+		// Audio Events (Metrics) → AgentState
+		// ============================================
+
+		onAudioPipelineMetrics: (event) => {
+			state.onAudioPipelineMetrics(
+				event.metricType,
+				event.metricName,
+				event.value,
+				event.unit
+			);
+		},
+
+		// ============================================
+		// Audio Events (Turn Detection) → AgentState
+		// ============================================
+
+		onTurnDetected: (event) => {
+			state.onTurnDetected(
+				event.transcribedText,
+				event.completionProbability,
+				event.silenceDuration,
+				event.detectionMethod
+			);
+		},
+
+		// ============================================
+		// Audio Events (Filler) → AgentState
+		// ============================================
+
+		onFillerAudioPlayed: (event) => {
+			state.onFillerAudioPlayed(event.phrase, event.duration);
+		},
+
 		// Optional: Log all events for debugging
 		// onEvent: (event) => {
 		// 	console.log('[HPD EVENT]', event.type, event);

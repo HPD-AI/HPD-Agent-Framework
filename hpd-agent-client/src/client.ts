@@ -149,6 +149,55 @@ export interface EventHandlers {
   onProgress?: (sourceName: string, message: string, percentComplete?: number) => void;
 
   // ============================================
+  // Audio Event Handlers (TTS/STT/Voice)
+  // ============================================
+
+  /** Called when TTS synthesis starts */
+  onSynthesisStarted?: (event: import('./types/events.js').SynthesisStartedEvent) => void;
+
+  /** Called for each audio chunk during TTS */
+  onAudioChunk?: (event: import('./types/events.js').AudioChunkEvent) => void;
+
+  /** Called when TTS synthesis completes */
+  onSynthesisCompleted?: (event: import('./types/events.js').SynthesisCompletedEvent) => void;
+
+  /** Called with streaming transcription updates */
+  onTranscriptionDelta?: (event: import('./types/events.js').TranscriptionDeltaEvent) => void;
+
+  /** Called when transcription completes */
+  onTranscriptionCompleted?: (event: import('./types/events.js').TranscriptionCompletedEvent) => void;
+
+  /** Called when user interrupts agent speech */
+  onUserInterrupted?: (event: import('./types/events.js').UserInterruptedEvent) => void;
+
+  /** Called when speech is paused (potential interruption) */
+  onSpeechPaused?: (event: import('./types/events.js').SpeechPausedEvent) => void;
+
+  /** Called when paused speech resumes (false interruption) */
+  onSpeechResumed?: (event: import('./types/events.js').SpeechResumedEvent) => void;
+
+  /** Called when preemptive LLM generation starts */
+  onPreemptiveGenerationStarted?: (event: import('./types/events.js').PreemptiveGenerationStartedEvent) => void;
+
+  /** Called when preemptive generation is discarded */
+  onPreemptiveGenerationDiscarded?: (event: import('./types/events.js').PreemptiveGenerationDiscardedEvent) => void;
+
+  /** Called when voice activity detected (user starts speaking) */
+  onVadStartOfSpeech?: (event: import('./types/events.js').VadStartOfSpeechEvent) => void;
+
+  /** Called when voice activity ends (user stops speaking) */
+  onVadEndOfSpeech?: (event: import('./types/events.js').VadEndOfSpeechEvent) => void;
+
+  /** Called with audio pipeline metrics */
+  onAudioPipelineMetrics?: (event: import('./types/events.js').AudioPipelineMetricsEvent) => void;
+
+  /** Called when turn detected (user finished speaking) */
+  onTurnDetected?: (event: import('./types/events.js').TurnDetectedEvent) => void;
+
+  /** Called when filler audio is played */
+  onFillerAudioPlayed?: (event: import('./types/events.js').FillerAudioPlayedEvent) => void;
+
+  // ============================================
   // Raw Event Access
   // ============================================
 
@@ -434,6 +483,72 @@ export class AgentClient {
         // Middleware progress
         case EventTypes.MIDDLEWARE_PROGRESS:
           handlers.onProgress?.(event.sourceName, event.message, event.percentComplete);
+          break;
+
+        // Audio Events (TTS)
+        case EventTypes.SYNTHESIS_STARTED:
+          handlers.onSynthesisStarted?.(event);
+          break;
+
+        case EventTypes.AUDIO_CHUNK:
+          handlers.onAudioChunk?.(event);
+          break;
+
+        case EventTypes.SYNTHESIS_COMPLETED:
+          handlers.onSynthesisCompleted?.(event);
+          break;
+
+        // Audio Events (STT)
+        case EventTypes.TRANSCRIPTION_DELTA:
+          handlers.onTranscriptionDelta?.(event);
+          break;
+
+        case EventTypes.TRANSCRIPTION_COMPLETED:
+          handlers.onTranscriptionCompleted?.(event);
+          break;
+
+        // Audio Events (Interruption)
+        case EventTypes.USER_INTERRUPTED:
+          handlers.onUserInterrupted?.(event);
+          break;
+
+        case EventTypes.SPEECH_PAUSED:
+          handlers.onSpeechPaused?.(event);
+          break;
+
+        case EventTypes.SPEECH_RESUMED:
+          handlers.onSpeechResumed?.(event);
+          break;
+
+        // Audio Events (Preemptive Generation)
+        case EventTypes.PREEMPTIVE_GENERATION_STARTED:
+          handlers.onPreemptiveGenerationStarted?.(event);
+          break;
+
+        case EventTypes.PREEMPTIVE_GENERATION_DISCARDED:
+          handlers.onPreemptiveGenerationDiscarded?.(event);
+          break;
+
+        // Audio Events (VAD)
+        case EventTypes.VAD_START_OF_SPEECH:
+          handlers.onVadStartOfSpeech?.(event);
+          break;
+
+        case EventTypes.VAD_END_OF_SPEECH:
+          handlers.onVadEndOfSpeech?.(event);
+          break;
+
+        // Audio Events (Metrics/Turn/Filler)
+        case EventTypes.AUDIO_PIPELINE_METRICS:
+          handlers.onAudioPipelineMetrics?.(event);
+          break;
+
+        case EventTypes.TURN_DETECTED:
+          handlers.onTurnDetected?.(event);
+          break;
+
+        case EventTypes.FILLER_AUDIO_PLAYED:
+          handlers.onFillerAudioPlayed?.(event);
           break;
 
         // Terminal events
