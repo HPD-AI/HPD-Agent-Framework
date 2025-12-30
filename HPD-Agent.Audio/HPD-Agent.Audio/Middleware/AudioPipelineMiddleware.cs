@@ -16,6 +16,16 @@ namespace HPD.Agent.Audio;
 public partial class AudioPipelineMiddleware : IAgentMiddleware
 {
     //
+    // CONFIGURATION (uses AudioPipelineConfig for all settings)
+    //
+
+    /// <summary>
+    /// Middleware-level default configuration.
+    /// Per-request overrides via AudioRunOptions are merged with these defaults.
+    /// </summary>
+    private readonly AudioPipelineConfig _config = new();
+
+    //
     // PROCESSING MODE (HOW audio is processed)
     //
 
@@ -63,143 +73,294 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     public ITurnDetector? TurnDetector { get; set; }
 
     //
-    // VAD CONFIGURATION (like PIIMiddleware per-type strategies)
+    // VAD CONFIGURATION (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Minimum speech duration to confirm speech start. Default: 50ms.</summary>
-    public float VadMinSpeechDuration { get; set; } = 0.05f;
+    public float VadMinSpeechDuration
+    {
+        get => _config.VadMinSpeechDuration ?? 0.05f;
+        set => _config.VadMinSpeechDuration = value;
+    }
 
     /// <summary>Minimum silence duration to confirm speech end. Default: 550ms.</summary>
-    public float VadMinSilenceDuration { get; set; } = 0.55f;
+    public float VadMinSilenceDuration
+    {
+        get => _config.VadMinSilenceDuration ?? 0.55f;
+        set => _config.VadMinSilenceDuration = value;
+    }
 
     /// <summary>Audio to buffer before speech confirmed. Default: 500ms.</summary>
-    public float VadPrefixPaddingDuration { get; set; } = 0.5f;
+    public float VadPrefixPaddingDuration
+    {
+        get => _config.VadPrefixPaddingDuration ?? 0.5f;
+        set => _config.VadPrefixPaddingDuration = value;
+    }
 
     /// <summary>Speech probability threshold. Default: 0.5.</summary>
-    public float VadActivationThreshold { get; set; } = 0.5f;
+    public float VadActivationThreshold
+    {
+        get => _config.VadActivationThreshold ?? 0.5f;
+        set => _config.VadActivationThreshold = value;
+    }
 
     //
-    // TURN DETECTION CONFIGURATION (strategy pattern like PIIMiddleware)
+    // TURN DETECTION CONFIGURATION (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Turn detection strategy for silence. Default: FastPath.</summary>
-    public TurnDetectionStrategy SilenceStrategy { get; set; } = TurnDetectionStrategy.FastPath;
+    public TurnDetectionStrategy SilenceStrategy
+    {
+        get => _config.SilenceStrategy ?? TurnDetectionStrategy.FastPath;
+        set => _config.SilenceStrategy = value;
+    }
 
     /// <summary>Turn detection strategy for ML. Default: OnAmbiguous.</summary>
-    public TurnDetectionStrategy MlStrategy { get; set; } = TurnDetectionStrategy.OnAmbiguous;
+    public TurnDetectionStrategy MlStrategy
+    {
+        get => _config.MlStrategy ?? TurnDetectionStrategy.OnAmbiguous;
+        set => _config.MlStrategy = value;
+    }
 
     /// <summary>Silence threshold for fast-path rejection. Default: 1.5s.</summary>
-    public float SilenceFastPathThreshold { get; set; } = 1.5f;
+    public float SilenceFastPathThreshold
+    {
+        get => _config.SilenceFastPathThreshold ?? 1.5f;
+        set => _config.SilenceFastPathThreshold = value;
+    }
 
     /// <summary>Min endpointing delay when ML is confident. Default: 0.3s.</summary>
-    public float MinEndpointingDelay { get; set; } = 0.3f;
+    public float MinEndpointingDelay
+    {
+        get => _config.MinEndpointingDelay ?? 0.3f;
+        set => _config.MinEndpointingDelay = value;
+    }
 
     /// <summary>Max endpointing delay when ML is uncertain. Default: 1.5s.</summary>
-    public float MaxEndpointingDelay { get; set; } = 1.5f;
+    public float MaxEndpointingDelay
+    {
+        get => _config.MaxEndpointingDelay ?? 1.5f;
+        set => _config.MaxEndpointingDelay = value;
+    }
 
     //
-    // QUICK ANSWER (Low-Latency TTS)
+    // QUICK ANSWER (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Enable TTS on first complete sentence. Default: true.</summary>
-    public bool EnableQuickAnswer { get; set; } = true;
+    public bool EnableQuickAnswer
+    {
+        get => _config.EnableQuickAnswer ?? true;
+        set => _config.EnableQuickAnswer = value;
+    }
 
     //
-    // SPEED ADAPTATION (built-in, no separate SpeedManager class)
+    // SPEED ADAPTATION (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Enable adaptive endpointing based on user speaking speed. Default: true.</summary>
-    public bool EnableSpeedAdaptation { get; set; } = true;
+    public bool EnableSpeedAdaptation
+    {
+        get => _config.EnableSpeedAdaptation ?? true;
+        set => _config.EnableSpeedAdaptation = value;
+    }
 
     private float _currentWpm = 150f; // Internal state
     private TurnMetrics? _turnMetrics; // Metrics for current turn
+
+    // FALSE INTERRUPTION RECOVERY STATE
+    private PausedSynthesisState? _pausedSynthesis;
+    private readonly object _pauseLock = new();
+
+    // FILLER AUDIO STATE
+    private List<CachedFillerAudio>? _cachedFillers;
+    private CancellationTokenSource? _fillerCts;
+    private Task? _fillerTask;
 
     /// <summary>Current estimated user words-per-minute.</summary>
     public float CurrentWpm => _currentWpm;
 
     //
-    // BACKCHANNEL DETECTION (built-in, no separate IBackchannelDetector)
+    // BACKCHANNEL DETECTION (delegates to AudioPipelineConfig)
     //
 
     /// <summary>How to handle short utterances during bot speech. Default: IgnoreShortUtterances.</summary>
-    public BackchannelStrategy BackchannelStrategy { get; set; } = BackchannelStrategy.IgnoreShortUtterances;
+    public BackchannelStrategy BackchannelStrategy
+    {
+        get => _config.BackchannelStrategy ?? BackchannelStrategy.IgnoreShortUtterances;
+        set => _config.BackchannelStrategy = value;
+    }
 
     /// <summary>Minimum words required to trigger interruption. Default: 2.</summary>
-    public int MinWordsForInterruption { get; set; } = 2;
+    public int MinWordsForInterruption
+    {
+        get => _config.MinWordsForInterruption ?? 2;
+        set => _config.MinWordsForInterruption = value;
+    }
 
     //
-    // FILLER AUDIO (built-in, no separate FillerAudioConfig)
+    // FILLER AUDIO (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Enable filler audio during LLM thinking. Default: false.</summary>
-    public bool EnableFillerAudio { get; set; } = false;
+    public bool EnableFillerAudio
+    {
+        get => _config.EnableFillerAudio ?? false;
+        set => _config.EnableFillerAudio = value;
+    }
 
     /// <summary>Silence duration before playing filler. Default: 1.5s.</summary>
-    public float FillerSilenceThreshold { get; set; } = 1.5f;
+    public float FillerSilenceThreshold
+    {
+        get => _config.FillerSilenceThreshold ?? 1.5f;
+        set => _config.FillerSilenceThreshold = value;
+    }
 
     /// <summary>Filler phrases to synthesize. Default: ["Um...", "Let me see..."].</summary>
-    public string[] FillerPhrases { get; set; } = ["Um...", "Let me see...", "One moment..."];
+    public string[] FillerPhrases
+    {
+        get => _config.FillerPhrases ?? ["Um...", "Let me see...", "One moment..."];
+        set => _config.FillerPhrases = value;
+    }
 
     //
-    // TEXT FILTERING (clean text before TTS)
+    // TEXT FILTERING (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Enable filtering of markdown/code from TTS input. Default: true.</summary>
-    public bool EnableTextFiltering { get; set; } = true;
+    public bool EnableTextFiltering
+    {
+        get => _config.EnableTextFiltering ?? true;
+        set => _config.EnableTextFiltering = value;
+    }
 
     /// <summary>Remove code blocks (```...```) from TTS. Default: true.</summary>
-    public bool FilterCodeBlocks { get; set; } = true;
+    public bool FilterCodeBlocks
+    {
+        get => _config.FilterCodeBlocks ?? true;
+        set => _config.FilterCodeBlocks = value;
+    }
 
     /// <summary>Remove markdown tables from TTS. Default: true.</summary>
-    public bool FilterTables { get; set; } = true;
+    public bool FilterTables
+    {
+        get => _config.FilterTables ?? true;
+        set => _config.FilterTables = value;
+    }
 
     /// <summary>Remove URLs from TTS (speaks domain only). Default: true.</summary>
-    public bool FilterUrls { get; set; } = true;
+    public bool FilterUrls
+    {
+        get => _config.FilterUrls ?? true;
+        set => _config.FilterUrls = value;
+    }
 
     /// <summary>Remove markdown formatting (**bold**, *italic*, etc). Default: true.</summary>
-    public bool FilterMarkdownFormatting { get; set; } = true;
+    public bool FilterMarkdownFormatting
+    {
+        get => _config.FilterMarkdownFormatting ?? true;
+        set => _config.FilterMarkdownFormatting = value;
+    }
 
     /// <summary>Remove emoji characters from TTS. Default: true. ( )</summary>
-    public bool FilterEmoji { get; set; } = true;
+    public bool FilterEmoji
+    {
+        get => _config.FilterEmoji ?? true;
+        set => _config.FilterEmoji = value;
+    }
 
     //
-    // FALSE INTERRUPTION RECOVERY ( handles noise without speech)
+    // FALSE INTERRUPTION RECOVERY (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Enable false interruption recovery. Default: true. ( )</summary>
-    public bool EnableFalseInterruptionRecovery { get; set; } = true;
+    public bool EnableFalseInterruptionRecovery
+    {
+        get => _config.EnableFalseInterruptionRecovery ?? true;
+        set => _config.EnableFalseInterruptionRecovery = value;
+    }
 
     /// <summary>Time to wait for transcript after interruption before resuming. Default: 2.0s. ( )</summary>
-    public float FalseInterruptionTimeout { get; set; } = 2.0f;
+    public float FalseInterruptionTimeout
+    {
+        get => _config.FalseInterruptionTimeout ?? 2.0f;
+        set => _config.FalseInterruptionTimeout = value;
+    }
 
     /// <summary>Resume paused speech if no transcript received. Default: true. ( )</summary>
-    public bool ResumeFalseInterruption { get; set; } = true;
+    public bool ResumeFalseInterruption
+    {
+        get => _config.ResumeFalseInterruption ?? true;
+        set => _config.ResumeFalseInterruption = value;
+    }
 
     //
-    // PREEMPTIVE GENERATION ( speculative LLM inference for lower latency)
+    // PREEMPTIVE GENERATION (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Start LLM inference before turn is confirmed. Reduces latency but uses more compute. Default: false. ( )</summary>
-    public bool EnablePreemptiveGeneration { get; set; } = false;
+    public bool EnablePreemptiveGeneration
+    {
+        get => _config.EnablePreemptiveGeneration ?? false;
+        set => _config.EnablePreemptiveGeneration = value;
+    }
 
     /// <summary>Minimum turn completion probability to trigger preemptive generation. Default: 0.7. ( )</summary>
-    public float PreemptiveGenerationThreshold { get; set; } = 0.7f;
+    public float PreemptiveGenerationThreshold
+    {
+        get => _config.PreemptiveGenerationThreshold ?? 0.7f;
+        set => _config.PreemptiveGenerationThreshold = value;
+    }
 
     //
-    // TTS DEFAULTS
+    // TTS DEFAULTS (delegates to AudioPipelineConfig)
     //
 
     /// <summary>Default TTS voice.</summary>
-    public string? DefaultVoice { get; set; }
+    public string? DefaultVoice
+    {
+        get => _config.Voice;
+        set => _config.Voice = value;
+    }
 
     /// <summary>Default TTS model.</summary>
-    public string? DefaultModel { get; set; }
+    public string? DefaultModel
+    {
+        get => _config.Model;
+        set => _config.Model = value;
+    }
 
     /// <summary>Default TTS output format.</summary>
-    public string? DefaultOutputFormat { get; set; }
+    public string? DefaultOutputFormat
+    {
+        get => _config.OutputFormat;
+        set => _config.OutputFormat = value;
+    }
 
     /// <summary>Default TTS sample rate.</summary>
-    public int? DefaultSampleRate { get; set; }
+    public int? DefaultSampleRate
+    {
+        get => _config.SampleRate;
+        set => _config.SampleRate = value;
+    }
+
+    //
+    // CONFIGURATION HELPERS
+    //
+
+    /// <summary>
+    /// Gets the effective configuration by merging per-request overrides with middleware defaults.
+    /// Per-request values from AudioRunOptions take precedence over middleware defaults.
+    /// </summary>
+    private AudioPipelineConfig GetEffectiveConfig(AudioRunOptions? audioOptions)
+    {
+        // If no per-request overrides, return middleware defaults
+        if (audioOptions == null)
+            return _config;
+
+        // Merge per-request overrides with middleware defaults
+        return _config.MergeWith(audioOptions);
+    }
 
     //
     // MIDDLEWARE HOOKS
@@ -211,7 +372,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// </summary>
     public async Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
-        var audioOptions = ResolveAudioOptions(context);
+        var audioOptions = context.RunOptions?.Audio as AudioRunOptions;
 
         // Check if audio input processing is needed
         if (audioOptions?.Disabled == true || !HasAudioInput || SpeechToTextClient == null)
@@ -344,30 +505,47 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// Intercepts LLM streaming to enable Quick Answer (TTS on first sentence).
     /// </summary>
     /// <remarks>
-    /// V2 TODO: This hook (ExecuteLLMCallAsync) doesn't exist in V2 middleware yet.
-    /// Streaming interception needs to be reimplemented when V2 adds streaming hooks.
-    /// For now, this method signature is updated but won't be called.
+    /// <para><b>Streaming Architecture:</b></para>
+    /// <para>
+    /// This hook wraps the LLM streaming response to synthesize audio in real-time.
+    /// Audio synthesis happens on sentence boundaries (Quick Answer) for low latency.
+    /// </para>
+    /// <para>
+    /// Returns null if audio is disabled or not configured, allowing the pipeline
+    /// to pass through the stream without interception.
+    /// </para>
     /// </remarks>
-    public async IAsyncEnumerable<ChatResponseUpdate> ExecuteLLMCallAsync(
-        BeforeIterationContext context,
-        Func<IAsyncEnumerable<ChatResponseUpdate>> next,
+    public IAsyncEnumerable<ChatResponseUpdate>? WrapModelCallStreamingAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        // Resolve audio options from AgentRunOptions
-        var audioOptions = ResolveAudioOptions(context);
+        // Resolve audio options from request
+        var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
 
         // Check if audio is disabled for this request
         if (audioOptions?.Disabled == true || TextToSpeechClient == null || !HasAudioOutput)
         {
-            // Pass through if no TTS configured or disabled
-            await foreach (var update in next().WithCancellation(ct))
-                yield return update;
-            yield break;
+            // Return null to pass through without interception
+            return null;
         }
 
+        // Delegate to implementation method
+        return StreamWithTtsAsync(request, handler, ct);
+    }
+
+    /// <summary>
+    /// Implementation of TTS streaming with Quick Answer support.
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> StreamWithTtsAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
+
         // Create stream handle for interruption support (from Priority Streaming)
-        var streams = context.Streams;
-        var stream = streams?.Create();
+        var stream = request.Streams?.Create();
         var sentenceBuffer = new StringBuilder();
         var synthesisId = Guid.NewGuid().ToString("N")[..8];
         var synthesisState = new SynthesisState();
@@ -382,16 +560,22 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         var ttsStartTime = DateTime.UtcNow;
         DateTime? firstAudioTime = null;
 
+        // Start filler monitoring task
+        _fillerCts = new CancellationTokenSource();
+        _fillerTask = MonitorForFillerAsync(request.EventCoordinator, stream, synthesisId, _fillerCts.Token);
+
         try
         {
-            context.TryEmit(new SynthesisStartedEvent(synthesisId, model, voice)
+            request.EventCoordinator?.Emit(new SynthesisStartedEvent(synthesisId, model, voice)
             {
                 Priority = EventPriority.Normal,
                 StreamId = stream?.StreamId
             });
 
-            await foreach (var update in next().WithCancellation(ct))
+            await foreach (var update in handler(request).WithCancellation(ct))
             {
+                // Cancel filler as soon as first token arrives
+                _fillerCts?.Cancel();
                 // Extract text from update
                 var text = ExtractText(update);
                 if (text != null && EnableQuickAnswer)
@@ -405,7 +589,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                         if (!string.IsNullOrWhiteSpace(textToSynthesize))
                         {
                             await foreach (var chunk in SynthesizeAndEmitAsync(
-                                context, textToSynthesize, stream, synthesisId, voice, model, speed, synthesisState, ct))
+                                request.EventCoordinator, textToSynthesize, stream, synthesisId, voice, model, speed, synthesisState, ct))
                             {
                                 // Track time to first audio
                                 firstAudioTime ??= DateTime.UtcNow;
@@ -425,7 +609,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                 if (!string.IsNullOrWhiteSpace(textToSynthesize))
                 {
                     await foreach (var chunk in SynthesizeAndEmitAsync(
-                        context, textToSynthesize, stream, synthesisId, voice, model, speed, synthesisState, ct))
+                        request.EventCoordinator, textToSynthesize, stream, synthesisId, voice, model, speed, synthesisState, ct))
                     {
                         // Track time to first audio
                         firstAudioTime ??= DateTime.UtcNow;
@@ -435,9 +619,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         }
         finally
         {
+            // Ensure filler task is cancelled and awaited
+            _fillerCts?.Cancel();
+            if (_fillerTask != null)
+                await _fillerTask;
+
             var wasInterrupted = stream?.IsInterrupted ?? false;
 
-            context.TryEmit(new SynthesisCompletedEvent(synthesisId, wasInterrupted, synthesisState.ChunkIndex, synthesisState.ChunkIndex)
+            request.EventCoordinator?.Emit(new SynthesisCompletedEvent(synthesisId, wasInterrupted, synthesisState.ChunkIndex, synthesisState.ChunkIndex)
             {
                 Priority = EventPriority.Control,
                 StreamId = stream?.StreamId,
@@ -457,14 +646,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                 _turnMetrics.TimeToFirstAudio = firstAudioTime.Value - _turnMetrics.TurnStartTime;
             }
 
-            EmitTurnMetrics(context);
+            EmitTurnMetrics(request.EventCoordinator);
         }
     }
 
     /// <summary>
     /// Emits metrics for the completed audio turn.
     /// </summary>
-    private void EmitTurnMetrics(HookContext context)
+    private void EmitTurnMetrics(IEventCoordinator? eventCoordinator)
     {
         if (_turnMetrics == null)
             return;
@@ -474,7 +663,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         // Emit individual metrics
         if (_turnMetrics.SttDuration.HasValue)
         {
-            context.TryEmit(new AudioPipelineMetricsEvent("latency", "stt_duration", _turnMetrics.SttDuration.Value.TotalMilliseconds, "ms")
+            eventCoordinator?.Emit(new AudioPipelineMetricsEvent("latency", "stt_duration", _turnMetrics.SttDuration.Value.TotalMilliseconds, "ms")
             {
                 Priority = EventPriority.Background
             });
@@ -482,7 +671,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
 
         if (_turnMetrics.TtsDuration.HasValue)
         {
-            context.TryEmit(new AudioPipelineMetricsEvent("latency", "tts_duration", _turnMetrics.TtsDuration.Value.TotalMilliseconds, "ms")
+            eventCoordinator?.Emit(new AudioPipelineMetricsEvent("latency", "tts_duration", _turnMetrics.TtsDuration.Value.TotalMilliseconds, "ms")
             {
                 Priority = EventPriority.Background
             });
@@ -490,20 +679,20 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
 
         if (_turnMetrics.TimeToFirstAudio.HasValue)
         {
-            context.TryEmit(new AudioPipelineMetricsEvent("latency", "time_to_first_audio", _turnMetrics.TimeToFirstAudio.Value.TotalMilliseconds, "ms")
+            eventCoordinator?.Emit(new AudioPipelineMetricsEvent("latency", "time_to_first_audio", _turnMetrics.TimeToFirstAudio.Value.TotalMilliseconds, "ms")
             {
                 Priority = EventPriority.Background
             });
         }
 
-        context.TryEmit(new AudioPipelineMetricsEvent("latency", "total_latency", totalLatency.TotalMilliseconds, "ms")
+        eventCoordinator?.Emit(new AudioPipelineMetricsEvent("latency", "total_latency", totalLatency.TotalMilliseconds, "ms")
         {
             Priority = EventPriority.Background
         });
 
         if (_turnMetrics.UserWpm.HasValue)
         {
-            context.TryEmit(new AudioPipelineMetricsEvent("quality", "user_wpm", _turnMetrics.UserWpm.Value, "wpm")
+            eventCoordinator?.Emit(new AudioPipelineMetricsEvent("quality", "user_wpm", _turnMetrics.UserWpm.Value, "wpm")
             {
                 Priority = EventPriority.Background
             });
@@ -511,13 +700,13 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
 
         if (_turnMetrics.WasInterrupted)
         {
-            context.TryEmit(new AudioPipelineMetricsEvent("quality", "was_interrupted", 1, "bool")
+            eventCoordinator?.Emit(new AudioPipelineMetricsEvent("quality", "was_interrupted", 1, "bool")
             {
                 Priority = EventPriority.Background
             });
         }
 
-        context.TryEmit(new AudioPipelineMetricsEvent("throughput", "total_chunks", _turnMetrics.TotalChunks, "chunks")
+        eventCoordinator?.Emit(new AudioPipelineMetricsEvent("throughput", "total_chunks", _turnMetrics.TotalChunks, "chunks")
         {
             Priority = EventPriority.Background
         });
@@ -546,10 +735,135 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                 return; // Don't interrupt for "uh-huh", etc.
         }
 
-        // Interrupt all active audio streams (uses core IStreamRegistry)
+        // FALSE INTERRUPTION RECOVERY: Pause first, confirm interruption after timeout/transcript
+        if (EnableFalseInterruptionRecovery && string.IsNullOrWhiteSpace(transcribedText))
+        {
+            lock (_pauseLock)
+            {
+                // If not already paused and have an active stream
+                if (_pausedSynthesis == null && context.Streams != null)
+                {
+                    var activeStreams = context.Streams.GetType()
+                        .GetMethod("GetActiveStreams")
+                        ?.Invoke(context.Streams, null) as System.Collections.IEnumerable;
+
+                    IStreamHandle? activeStream = null;
+                    if (activeStreams != null)
+                    {
+                        foreach (var stream in activeStreams)
+                        {
+                            if (stream is IStreamHandle handle && !handle.IsInterrupted)
+                            {
+                                activeStream = handle;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (activeStream != null)
+                    {
+                        // Pause synthesis
+                        _pausedSynthesis = new PausedSynthesisState
+                        {
+                            SynthesisId = activeStream.StreamId,
+                            StreamHandle = activeStream,
+                            PausedAt = DateTime.UtcNow
+                        };
+
+                        context.Emit(new SpeechPausedEvent(
+                            activeStream.StreamId,
+                            "potential_interruption")
+                        {
+                            Priority = EventPriority.Control,
+                            StreamId = activeStream.StreamId
+                        });
+
+                        // Start timeout timer
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await Task.Delay(
+                                    TimeSpan.FromSeconds(FalseInterruptionTimeout),
+                                    _pausedSynthesis.ResumeTimeoutCts.Token);
+
+                                // Timeout expired - resume if still paused
+                                await ResumeIfStillPausedAsync(context);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // Cancelled - either resumed or interrupted
+                            }
+                        });
+
+                        return; // Don't interrupt yet, wait for confirmation
+                    }
+                }
+            }
+        }
+
+        // Confirmed interruption (or false interruption recovery disabled)
+        ConfirmInterruption(context, transcribedText);
+    }
+
+    private async Task ResumeIfStillPausedAsync(HookContext context)
+    {
+        PausedSynthesisState? stateToResume;
+
+        lock (_pauseLock)
+        {
+            if (_pausedSynthesis == null || !ResumeFalseInterruption)
+                return;
+
+            stateToResume = _pausedSynthesis;
+            _pausedSynthesis = null;
+        }
+
+        var pauseDuration = DateTime.UtcNow - stateToResume.PausedAt;
+
+        context.Emit(new SpeechResumedEvent(
+            stateToResume.SynthesisId,
+            pauseDuration)
+        {
+            Priority = EventPriority.Control,
+            StreamId = stateToResume.SynthesisId
+        });
+
+        // Flush buffered chunks
+        foreach (var chunk in stateToResume.BufferedChunks)
+        {
+            context.Emit(chunk);
+        }
+
+        // Emit metrics
+        context.Emit(new AudioPipelineMetricsEvent(
+            "quality",
+            "false_interruption_recovered",
+            pauseDuration.TotalMilliseconds,
+            "ms")
+        {
+            Priority = EventPriority.Background
+        });
+
+        await Task.CompletedTask;
+    }
+
+    private void ConfirmInterruption(HookContext context, string? transcribedText)
+    {
+        lock (_pauseLock)
+        {
+            // Cancel resume timer if running
+            _pausedSynthesis?.ResumeTimeoutCts.Cancel();
+            _pausedSynthesis = null;
+        }
+
+        // Interrupt all active audio streams
         context.Streams?.InterruptAll();
 
-        context.Emit(new UserInterruptedEvent(transcribedText));
+        context.Emit(new UserInterruptedEvent(transcribedText)
+        {
+            Priority = EventPriority.Immediate
+        });
     }
 
     //
@@ -589,16 +903,21 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         }
 
         // ML path: get completion probability
-        float probability = 0.5f;
+        float mlProbability = 0.5f;
         if (TurnDetector != null && MlStrategy != TurnDetectionStrategy.Disabled)
         {
-            probability = TurnDetector.GetCompletionProbability(text);
+            mlProbability = TurnDetector.GetCompletionProbability(text);
         }
 
-        // Interpolate delay based on probability
-        var baseDelay = probability > 0.7f
+        // Combine ML probability with silence duration
+        // Longer silence → boost probability confidence
+        float silenceBoost = Math.Min(silenceDuration / SilenceFastPathThreshold, 1.0f);
+        float combinedProbability = Math.Max(mlProbability, silenceBoost * 0.7f);
+
+        // Interpolate delay based on combined probability
+        var baseDelay = combinedProbability > 0.7f
             ? MinEndpointingDelay
-            : MaxEndpointingDelay - (probability * (MaxEndpointingDelay - MinEndpointingDelay));
+            : MaxEndpointingDelay - (combinedProbability * (MaxEndpointingDelay - MinEndpointingDelay));
 
         return AdjustEndpointingDelay(baseDelay);
     }
@@ -671,6 +990,101 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     }
 
     //
+    // FILLER AUDIO
+    //
+
+    /// <summary>
+    /// Pre-synthesize filler phrases at startup for instant playback.
+    /// Call this once during agent initialization.
+    /// </summary>
+    public async Task PreCacheFillerAudioAsync(CancellationToken ct = default)
+    {
+        if (!EnableFillerAudio || TextToSpeechClient == null)
+            return;
+
+        _cachedFillers = new List<CachedFillerAudio>();
+
+        foreach (var phrase in FillerPhrases)
+        {
+            try
+            {
+                var response = await TextToSpeechClient.GetSpeechAsync(
+                    phrase,
+                    new TextToSpeechOptions
+                    {
+                        Voice = DefaultVoice,
+                        ModelId = DefaultModel,
+                        Speed = 0.95f // Slightly slower for "thinking" effect
+                    },
+                    ct);
+
+                _cachedFillers.Add(new CachedFillerAudio
+                {
+                    Phrase = phrase,
+                    AudioData = response.Audio?.Data.ToArray() ?? [],
+                    MimeType = response.Audio?.MediaType ?? "audio/mpeg",
+                    Duration = response.Duration ?? TimeSpan.Zero
+                });
+            }
+            catch (Exception ex)
+            {
+                // Log but don't fail - filler audio is optional
+                System.Diagnostics.Debug.WriteLine($"Failed to cache filler '{phrase}': {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Monitors LLM generation and plays filler audio if threshold exceeded.
+    /// </summary>
+    private async Task MonitorForFillerAsync(
+        IEventCoordinator? eventCoordinator,
+        IStreamHandle? stream,
+        string synthesisId,
+        CancellationToken ct)
+    {
+        if (!EnableFillerAudio || _cachedFillers == null || _cachedFillers.Count == 0)
+            return;
+
+        try
+        {
+            // Wait for silence threshold
+            await Task.Delay(TimeSpan.FromSeconds(FillerSilenceThreshold), ct);
+
+            // If we're still waiting for LLM, play filler
+            if (!ct.IsCancellationRequested)
+            {
+                var filler = _cachedFillers[Random.Shared.Next(_cachedFillers.Count)];
+                var fillerChunk = new AudioChunkEvent(
+                    synthesisId,
+                    Convert.ToBase64String(filler.AudioData),
+                    filler.MimeType,
+                    -1, // Negative index indicates filler
+                    filler.Duration,
+                    true)
+                {
+                    Priority = EventPriority.Normal,
+                    StreamId = stream?.StreamId,
+                    CanInterrupt = true
+                };
+
+                eventCoordinator?.Emit(fillerChunk);
+
+                eventCoordinator?.Emit(new FillerAudioPlayedEvent(
+                    filler.Phrase,
+                    filler.Duration)
+                {
+                    Priority = EventPriority.Background
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal - LLM responded before threshold
+        }
+    }
+
+    //
     // HELPERS
     //
 
@@ -683,7 +1097,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     }
 
     private async IAsyncEnumerable<AudioChunkEvent> SynthesizeAndEmitAsync(
-        HookContext context,
+        IEventCoordinator? eventCoordinator,
         string text,
         IStreamHandle? stream,
         string synthesisId,
@@ -723,21 +1137,11 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                 CanInterrupt = true
             };
 
-            context.Emit(audioChunk);
+            eventCoordinator?.Emit(audioChunk);
             yield return audioChunk;
         }
     }
 
-    private AudioRunOptions? ResolveAudioOptions(HookContext context)
-    {
-        // V2: AudioRunOptions should be accessed from BeforeMessageTurnContext.RunOptions.Audio
-        // For now, AudioPipelineMiddleware doesn't have a way to access RunOptions from iteration context
-        // This is a known limitation - audio options should be configured on the middleware instance itself
-        // or passed through middleware state if dynamic per-turn configuration is needed.
-
-        // TODO: Add AudioRunOptions to middleware state if dynamic per-turn configuration is needed
-        return null;
-    }
 
     private static bool IsSentenceBoundary(string text)
     {
@@ -816,6 +1220,37 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
 
     //
     // INTERNAL TYPES
+    //
+    // FILLER AUDIO HELPERS
+    //
+
+    /// <summary>
+    /// Cached pre-synthesized filler audio for instant playback.
+    /// </summary>
+    private sealed class CachedFillerAudio
+    {
+        public required string Phrase { get; init; }
+        public required byte[] AudioData { get; init; }
+        public required string MimeType { get; init; }
+        public required TimeSpan Duration { get; init; }
+    }
+
+    //
+    // FALSE INTERRUPTION RECOVERY HELPERS
+    //
+
+    /// <summary>
+    /// State for tracking paused synthesis during false interruption detection.
+    /// </summary>
+    private sealed class PausedSynthesisState
+    {
+        public required string SynthesisId { get; init; }
+        public required IStreamHandle StreamHandle { get; init; }
+        public required DateTime PausedAt { get; init; }
+        public Queue<AudioChunkEvent> BufferedChunks { get; } = new();
+        public CancellationTokenSource ResumeTimeoutCts { get; init; } = new();
+    }
+
     //
 
     /// <summary>

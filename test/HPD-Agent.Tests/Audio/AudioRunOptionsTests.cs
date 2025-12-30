@@ -19,7 +19,8 @@ public class AudioRunOptionsTests
 
         // Assert
         Assert.Equal(AudioIOMode.AudioToAudioAndText, options.IOMode);
-        Assert.False(options.Disabled);
+        // Disabled is null by default (use middleware default)
+        Assert.Null(options.Disabled);
     }
 
     [Fact]
@@ -151,11 +152,15 @@ public class AudioRunOptionsTests
         // Act
         var json = JsonSerializer.Serialize(options);
 
-        // Assert
+        // Assert - AudioRunOptions-specific properties use camelCase via [JsonPropertyName]
         Assert.Contains("\"processingMode\"", json);
-        Assert.Contains("\"voice\"", json);
-        // Should not contain PascalCase
+        Assert.Contains("\"ioMode\"", json);
+
+        // Inherited AudioPipelineConfig properties use PascalCase (no JSON attributes)
+        Assert.Contains("\"Voice\"", json);
+
+        // Should not contain wrong casing for AudioRunOptions-specific properties
         Assert.DoesNotContain("\"ProcessingMode\"", json);
-        Assert.DoesNotContain("\"Voice\"", json);
+        Assert.DoesNotContain("\"IOMode\"", json);
     }
 }

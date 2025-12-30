@@ -123,35 +123,8 @@ public class AgentMiddlewarePipeline
     }
 
     /// <summary>
-    /// Executes WrapModelCall hooks using DUAL PATTERN (simple or streaming).
-    /// Automatically routes to streaming variant if middleware provides it.
-    /// </summary>
-    public async Task<ModelResponse> ExecuteModelCallAsync(
-        ModelRequest request,
-        Func<ModelRequest, Task<ModelResponse>> coreHandler,
-        CancellationToken cancellationToken)
-    {
-        // Build handler chain in reverse order (last middleware wraps first)
-        Func<ModelRequest, Task<ModelResponse>> handler = coreHandler;
-
-        for (int i = _middlewares.Count - 1; i >= 0; i--)
-        {
-            var middleware = _middlewares[i];
-            var previousHandler = handler;
-
-            handler = async (req) =>
-            {
-                return await middleware.WrapModelCallAsync(req, previousHandler, cancellationToken)
-                    .ConfigureAwait(false);
-            };
-        }
-
-        return await handler(request).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Executes WrapModelCall hooks using STREAMING PATTERN.
-    /// Checks each middleware for streaming support, falls back to simple pattern if null.
+    /// Executes WrapModelCallStreamingAsync hooks in chain order.
+    /// Middleware can opt-in by returning non-null, or pass through by returning null.
     /// </summary>
     public async IAsyncEnumerable<ChatResponseUpdate> ExecuteModelCallStreamingAsync(
         ModelRequest request,
@@ -182,9 +155,7 @@ public class AgentMiddlewarePipeline
             }
             else
             {
-                // Middleware doesn't provide streaming - just pass through
-                // (streaming is preferred by default to maintain token-by-token flow)
-                // Only buffer if middleware explicitly needs non-streaming via WrapModelCallAsync
+                // Middleware returns null - pass through without interception
                 handler = previousHandler;
             }
         }
@@ -384,93 +355,4 @@ public class AgentMiddlewarePipeline
         }
     }
 
-    //
-    // HELPER METHODS FOR STREAMING CONVERSION
-    //
-
-    private static ChatMessage ConvertUpdatesToMessage(List<ChatResponseUpdate> updates)
-    {
-        // Combine all text updates
-        var textBuilder = new System.Text.StringBuilder();
-        var reasoningBuilder = new System.Text.StringBuilder();
-        var toolCalls = new List<FunctionCallContent>();
-
-        foreach (var update in updates)
-        {
-            if (update.Contents != null)
-            {
-                foreach (var content in update.Contents)
-                {
-                    if (content is TextReasoningContent reasoning)
-                        reasoningBuilder.Append(reasoning.Text);
-                    else if (content is TextContent text)
-                        textBuilder.Append(text.Text);
-                    else if (content is FunctionCallContent toolCall)
-                        toolCalls.Add(toolCall);
-                }
-            }
-        }
-
-        var contents = new List<AIContent>();
-        // Add reasoning content first (if any)
-        if (reasoningBuilder.Length > 0)
-            contents.Add(new TextReasoningContent(reasoningBuilder.ToString()));
-        // Then text content
-        if (textBuilder.Length > 0)
-            contents.Add(new TextContent(textBuilder.ToString()));
-        // Then tool calls
-        contents.AddRange(toolCalls);
-
-        return new ChatMessage(ChatRole.Assistant, contents);
-    }
-
-    private static IReadOnlyList<FunctionCallContent> ExtractToolCalls(ChatMessage message)
-    {
-        return message.Contents
-            .OfType<FunctionCallContent>()
-            .ToList();
-    }
-
-    private static async IAsyncEnumerable<ChatResponseUpdate> ConvertSimpleToStreamingWrapper(
-        IAgentMiddleware middleware,
-        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> previousHandler,
-        ModelRequest request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var response = await middleware.WrapModelCallAsync(
-            request,
-            async (r) =>
-            {
-                // Consume streaming and convert to simple response
-                var updates = new List<ChatResponseUpdate>();
-                await foreach (var update in previousHandler(r).WithCancellation(cancellationToken))
-                {
-                    updates.Add(update);
-                }
-
-                // Convert updates to final response
-                var message = ConvertUpdatesToMessage(updates);
-                var toolCalls = ExtractToolCalls(message);
-
-                return new ModelResponse
-                {
-                    Message = message,
-                    ToolCalls = toolCalls,
-                    Error = null
-                };
-            },
-            cancellationToken).ConfigureAwait(false);
-
-        // Convert simple response back to streaming
-        if (response.Error != null)
-        {
-            throw response.Error;
-        }
-
-        // Emit single update with full message
-        yield return new ChatResponseUpdate
-        {
-            Contents = response.Message.Contents.ToList()
-        };
-    }
 }

@@ -35,7 +35,8 @@
       "Bash(dotnet sln add:*)",
       "Bash(dotnet sln:*)",
       "Bash(git ls-tree:*)",
-      "Bash(dotnet clean:*)"
+      "Bash(dotnet clean:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []

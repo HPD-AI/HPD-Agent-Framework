@@ -12,7 +12,7 @@ namespace HPD.Agent.Middleware;
 /// <list type="bullet">
 /// <item>  Typed contexts - compile-time safety, no NULL properties</item>
 /// <item>  Immutable requests - preserve original for debugging/retry</item>
-/// <item>  Dual pattern - simple + streaming LLM hooks</item>
+/// <item>  Streaming-first architecture - all LLM calls stream by default</item>
 /// <item>  Centralized errors - OnErrorAsync hook for all errors</item>
 /// <item>  Immediate state updates - no scheduled updates</item>
 /// </list>
@@ -21,8 +21,7 @@ namespace HPD.Agent.Middleware;
 /// <code>
 /// BeforeMessageTurnAsync(BeforeMessageTurnContext)
 ///   └─► [LOOP] BeforeIterationAsync(BeforeIterationContext)
-///               └─► WrapModelCallAsync(ModelRequest) OR
-///                   WrapModelCallStreamingAsync(ModelRequest)
+///               └─► WrapModelCallStreamingAsync(ModelRequest) - streaming LLM call
 ///               └─► BeforeToolExecutionAsync(BeforeToolExecutionContext)
 ///                     └─► BeforeParallelBatchAsync(BeforeParallelBatchContext)
 ///                     └─► [LOOP] BeforeFunctionAsync(BeforeFunctionContext)
@@ -38,6 +37,7 @@ namespace HPD.Agent.Middleware;
 /// <para>
 /// Before* hooks run in registration order.<br/>
 /// After* hooks run in reverse registration order (stack unwinding).<br/>
+/// Wrap* hooks run in chain order (last registered = outermost wrapper).<br/>
 /// OnErrorAsync runs in reverse registration order (error unwinding).
 /// </para>
 /// </remarks>
@@ -85,73 +85,43 @@ public interface IAgentMiddleware
         => Task.CompletedTask;
 
     /// <summary>
-    /// Wraps the LLM model call (SIMPLE PATTERN - 90% of cases).
-    /// Use for: retry, caching, request modification, simple response transformation.
+    /// Wraps the LLM model call with full streaming control.
+    /// Use for: retry, caching, request modification, streaming transformation, progressive metrics.
     /// </summary>
     /// <remarks>
-    /// <para><b>This is the recommended pattern for most middleware.</b></para>
+    /// <para><b>Streaming Architecture:</b></para>
     /// <para>
-    /// Returns the complete response after LLM call finishes.
-    /// For streaming transformation, use <see cref="WrapModelCallStreamingAsync"/>.
+    /// The agent ALWAYS uses streaming for LLM calls. This hook gives middleware full control
+    /// over the streaming response updates, or can simply pass through if no interception is needed.
     /// </para>
-    /// <para><b>Example: RetryMiddleware </b></para>
-    /// <code>
-    /// public async Task&lt;ModelResponse&gt; WrapModelCallAsync(
-    ///     ModelRequest request,
-    ///     Func&lt;ModelRequest, Task&lt;ModelResponse&gt;&gt; handler,
-    ///     CancellationToken ct)
-    /// {
-    ///     for (int attempt = 0; attempt &lt; 3; attempt++)
-    ///     {
-    ///         try { return await handler(request); }
-    ///         catch (Exception ex) when (ShouldRetry(ex) &amp;&amp; attempt &lt; 2)
-    ///         {
-    ///             await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-    ///         }
-    ///     }
-    ///     return await handler(request);
-    /// }
-    /// </code>
-    /// </remarks>
-    /// <param name="request">Immutable request object</param>
-    /// <param name="handler">Next handler in chain</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    Task<ModelResponse> WrapModelCallAsync(
-        ModelRequest request,
-        Func<ModelRequest, Task<ModelResponse>> handler,
-        CancellationToken cancellationToken)
-        => handler(request);
-
-    /// <summary>
-    /// Wraps the LLM model call (STREAMING PATTERN - advanced cases).
-    /// Use for: streaming transformation, synthetic updates, progressive metrics.
-    /// </summary>
-    /// <remarks>
-    /// <para><b>Advanced Hook - Most middleware won't need this!</b></para>
     ///
-    /// <para>This hook gives middleware control over streaming response updates:</para>
+    /// <para><b>Null Semantics - Opt-in Pattern:</b></para>
+    /// <para>
+    /// Return <c>null</c> (default) to indicate "I don't need to intercept streaming."
+    /// The pipeline will pass through the stream directly without invoking your middleware.
+    /// Only override this method if your middleware specifically needs streaming access.
+    /// </para>
+    ///
+    /// <para><b>Use Cases:</b></para>
     /// <list type="bullet">
-    /// <item>Transform updates mid-stream</item>
-    /// <item>Inject synthetic updates for better UX</item>
-    /// <item>Implement progressive token counting</item>
-    /// <item>Cache streaming responses</item>
+    /// <item><b>Token-level inspection:</b> Progressive token counting, metrics collection</item>
+    /// <item><b>Streaming transformation:</b> Modify or filter updates mid-stream</item>
+    /// <item><b>Progressive synthesis:</b> TTS Quick Answer (speak first sentence while LLM continues)</item>
+    /// <item><b>Retry/Caching:</b> Buffer stream for retry logic or cache storage</item>
+    /// <item><b>Request modification:</b> Modify request before calling handler</item>
     /// </list>
-    ///
-    /// <para><b>Default Implementation:</b></para>
-    /// <para>By default, if not overridden, returns null and the simple
-    /// WrapModelCallAsync is used instead.</para>
-    ///
-    /// <para><b>  IMPORTANT - Null Semantics:</b></para>
-    /// <para>
-    /// Return <c>null</c> (default) to indicate "I don't need streaming, use simple pattern."
-    /// The agent checks for null and falls back to <see cref="WrapModelCallAsync"/>.
-    /// Only override this method if your middleware specifically needs token-level streaming access
-    /// (e.g., AudioPipelineMiddleware for TTS Quick Answer, progressive token counting).
-    /// </para>
     ///
     /// <para><b>Example: Progressive Token Counting</b></para>
     /// <code>
-    /// public async IAsyncEnumerable&lt;ChatResponseUpdate&gt; WrapModelCallStreamingAsync(
+    /// public IAsyncEnumerable&lt;ChatResponseUpdate&gt;? WrapModelCallStreamingAsync(
+    ///     ModelRequest request,
+    ///     Func&lt;ModelRequest, IAsyncEnumerable&lt;ChatResponseUpdate&gt;&gt; handler,
+    ///     [EnumeratorCancellation] CancellationToken ct)
+    /// {
+    ///     return CountTokensAsync(request, handler, ct);
+    /// }
+    ///
+    /// private async IAsyncEnumerable&lt;ChatResponseUpdate&gt; CountTokensAsync(
     ///     ModelRequest request,
     ///     Func&lt;ModelRequest, IAsyncEnumerable&lt;ChatResponseUpdate&gt;&gt; handler,
     ///     [EnumeratorCancellation] CancellationToken ct)
@@ -171,20 +141,58 @@ public interface IAgentMiddleware
     ///         yield return update;
     ///     }
     ///
-    ///     // Emit final count
+    ///     // Emit final count after stream completes
     ///     context.Emit(new TokenUsageEvent(tokenCount));
+    /// }
+    /// </code>
+    ///
+    /// <para><b>Example: Simple Retry (buffered)</b></para>
+    /// <code>
+    /// public IAsyncEnumerable&lt;ChatResponseUpdate&gt;? WrapModelCallStreamingAsync(
+    ///     ModelRequest request,
+    ///     Func&lt;ModelRequest, IAsyncEnumerable&lt;ChatResponseUpdate&gt;&gt; handler,
+    ///     [EnumeratorCancellation] CancellationToken ct)
+    /// {
+    ///     return RetryAsync(request, handler, ct);
+    /// }
+    ///
+    /// private async IAsyncEnumerable&lt;ChatResponseUpdate&gt; RetryAsync(
+    ///     ModelRequest request,
+    ///     Func&lt;ModelRequest, IAsyncEnumerable&lt;ChatResponseUpdate&gt;&gt; handler,
+    ///     [EnumeratorCancellation] CancellationToken ct)
+    /// {
+    ///     for (int attempt = 0; attempt &lt; 3; attempt++)
+    ///     {
+    ///         var updates = new List&lt;ChatResponseUpdate&gt;();
+    ///         try
+    ///         {
+    ///             await foreach (var update in handler(request).WithCancellation(ct))
+    ///             {
+    ///                 updates.Add(update);
+    ///             }
+    ///
+    ///             // Success - replay buffered updates
+    ///             foreach (var update in updates)
+    ///                 yield return update;
+    ///             yield break;
+    ///         }
+    ///         catch (Exception ex) when (ShouldRetry(ex) &amp;&amp; attempt &lt; 2)
+    ///         {
+    ///             await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
+    ///         }
+    ///     }
     /// }
     /// </code>
     /// </remarks>
     /// <param name="request">Immutable request object</param>
-    /// <param name="handler">Next handler in chain</param>
+    /// <param name="handler">Next handler in chain - call this to continue the pipeline</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Null (default) to use simple pattern, or async enumerable for streaming</returns>
+    /// <returns>Null (default) to pass through without interception, or async enumerable to intercept streaming</returns>
     IAsyncEnumerable<ChatResponseUpdate>? WrapModelCallStreamingAsync(
         ModelRequest request,
         Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
         [EnumeratorCancellation] CancellationToken cancellationToken)
-        => null;  // null = "I don't need streaming, use simple pattern"
+        => null;  // null = "I don't need to intercept streaming"
 
     /// <summary>
     /// Called AFTER LLM returns but BEFORE tools execute.

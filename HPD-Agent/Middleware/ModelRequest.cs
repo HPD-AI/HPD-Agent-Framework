@@ -1,3 +1,4 @@
+using HPD.Events;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Middleware;
@@ -73,6 +74,80 @@ public sealed record ModelRequest
     /// </summary>
     public required int Iteration { get; init; }
 
+    //
+    // MIDDLEWARE CAPABILITIES
+    //
+
+    /// <summary>
+    /// Stream registry for creating interruptible audio/video streams.
+    /// Used by middleware like AudioPipelineMiddleware for stream management.
+    ///   May be NULL if streaming features not available
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Middleware can use this to create interruptible streams for audio, video,
+    /// or any other content that needs coordinated cancellation support.
+    /// </para>
+    /// <para><b>Example (AudioPipelineMiddleware):</b></para>
+    /// <code>
+    /// var stream = request.Streams?.Create();
+    /// try
+    /// {
+    ///     await foreach (var update in handler(request))
+    ///     {
+    ///         if (stream?.IsInterrupted == true) break;
+    ///         // Synthesize audio and emit events...
+    ///     }
+    /// }
+    /// finally
+    /// {
+    ///     stream?.Complete();
+    /// }
+    /// </code>
+    /// </remarks>
+    public IStreamRegistry? Streams { get; init; }
+
+    /// <summary>
+    /// Original run options for this agent turn.
+    /// Contains per-request configuration like Audio settings, StructuredOutput, etc.
+    ///   May be NULL in test scenarios
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Middleware can access per-request overrides through this property.
+    /// For example, AudioPipelineMiddleware reads Audio settings:
+    /// </para>
+    /// <code>
+    /// var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
+    /// var voice = audioOptions?.Voice ?? "default";
+    /// </code>
+    /// </remarks>
+    public AgentRunOptions? RunOptions { get; init; }
+
+    /// <summary>
+    /// Event coordinator for emitting events during streaming.
+    /// Middleware can emit progress, audio chunks, metrics, etc.
+    ///   May be NULL in test scenarios
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use this to emit events during streaming without blocking the pipeline.
+    /// Events are automatically routed to the appropriate handlers.
+    /// </para>
+    /// <para><b>Example:</b></para>
+    /// <code>
+    /// request.EventCoordinator?.Emit(new AudioChunkEvent(
+    ///     Base64Audio: audioData,
+    ///     MimeType: "audio/mp3",
+    ///     Duration: TimeSpan.FromMilliseconds(100))
+    /// {
+    ///     Priority = EventPriority.Normal,
+    ///     StreamId = stream?.StreamId
+    /// });
+    /// </code>
+    /// </remarks>
+    public IEventCoordinator? EventCoordinator { get; init; }
+
     /// <summary>
     /// Creates a modified copy of this request.
     /// Follows the LangChain pattern for immutable request modification.
@@ -85,6 +160,11 @@ public sealed record ModelRequest
     /// <para>
     /// This method preserves the original request intact while creating a modified copy.
     /// Useful for adding context, transforming messages, or modifying options.
+    /// </para>
+    /// <para><b>Note:</b></para>
+    /// <para>
+    /// Streams, RunOptions, and EventCoordinator are NOT overrideable via this method.
+    /// These properties come from the agent runtime and should not be modified by middleware.
     /// </para>
     /// <para><b>Example:</b></para>
     /// <code>

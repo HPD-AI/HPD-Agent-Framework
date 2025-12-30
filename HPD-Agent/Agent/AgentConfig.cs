@@ -115,6 +115,12 @@ public class AgentConfig
     public BackgroundResponsesConfig? BackgroundResponses { get; set; }
 
     /// <summary>
+    /// Configuration for audio providers (TTS/STT/VAD).
+    /// Enables voice interaction capabilities for the agent.
+    /// </summary>
+    public AudioConfig? Audio { get; set; }
+
+    /// <summary>
     /// Whether to preserve reasoning tokens (from models like o1, DeepSeek-R1) in conversation history.
     /// Default: false (reasoning is shown during streaming but excluded from history to save tokens).
     /// When true, reasoning content is included in history and available in future context.
@@ -1162,6 +1168,60 @@ public class BackgroundResponsesConfig
     /// Default: 1000 (with 2s interval = ~33 minutes)
     /// </summary>
     public int MaxPollAttempts { get; set; } = 1000;
+}
+
+/// <summary>
+/// Configuration for audio providers (TTS/STT/VAD).
+/// Supports multiple providers with different capabilities.
+/// </summary>
+public class AudioConfig
+{
+    /// <summary>
+    /// TTS (Text-to-Speech) provider configuration.
+    /// Provider identifier (e.g., "openai-audio", "elevenlabs").
+    /// </summary>
+    public string? TtsProvider { get; set; }
+
+    /// <summary>
+    /// STT (Speech-to-Text) provider configuration.
+    /// Provider identifier (e.g., "openai-audio", "deepgram").
+    /// </summary>
+    public string? SttProvider { get; set; }
+
+    /// <summary>
+    /// VAD (Voice Activity Detection) provider configuration.
+    /// Provider identifier (e.g., "silero-vad", "webrtc-vad").
+    /// </summary>
+    public string? VadProvider { get; set; }
+
+    /// <summary>
+    /// TTS provider-specific configuration as raw JSON string.
+    /// This is the preferred way for FFI/JSON configuration.
+    /// The JSON is deserialized using the provider's registered deserializer.
+    ///
+    /// Example JSON config for OpenAI:
+    /// <code>
+    /// {
+    ///   "Audio": {
+    ///     "TtsProvider": "openai-audio",
+    ///     "TtsProviderOptionsJson": "{\"apiKey\":\"sk-...\",\"model\":\"tts-1-hd\",\"voice\":\"nova\"}"
+    ///   }
+    /// }
+    /// </code>
+    /// </summary>
+    public string? TtsProviderOptionsJson { get; set; }
+
+    /// <summary>
+    /// STT provider-specific configuration as raw JSON string.
+    /// See TtsProviderOptionsJson for usage pattern.
+    /// </summary>
+    public string? SttProviderOptionsJson { get; set; }
+
+    /// <summary>
+    /// VAD provider-specific configuration as raw JSON string.
+    /// See TtsProviderOptionsJson for usage pattern.
+    /// </summary>
+    public string? VadProviderOptionsJson { get; set; }
 }
 
 #endregion

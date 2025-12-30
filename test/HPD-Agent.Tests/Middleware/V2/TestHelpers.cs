@@ -190,7 +190,7 @@ public static class MiddlewareTestHelpers
     }
 
     /// <summary>
-    /// Creates a ModelRequest for testing WrapModelCallAsync.
+    /// Creates a ModelRequest for testing WrapModelCallStreamingAsync.
     /// </summary>
     public static ModelRequest CreateModelRequest(
         IChatClient? model = null,

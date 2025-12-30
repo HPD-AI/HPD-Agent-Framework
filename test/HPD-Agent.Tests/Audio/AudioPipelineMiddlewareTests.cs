@@ -183,4 +183,131 @@ public class AudioPipelineMiddlewareTests
         Assert.Equal("opus", middleware.DefaultOutputFormat);
         Assert.Equal(48000, middleware.DefaultSampleRate);
     }
+
+    //
+    // NEW TESTS: Silence-Based Probability Boost
+    //
+
+    [Fact]
+    public void CalculateEndpointingDelay_FastPath_ReturnsZero()
+    {
+        // Arrange
+        var middleware = new AudioPipelineMiddleware
+        {
+            SilenceStrategy = TurnDetectionStrategy.FastPath,
+            SilenceFastPathThreshold = 1.5f
+        };
+
+        // Act - silence >= threshold should trigger fast path
+        var delay = middleware.CalculateEndpointingDelay("Hello", silenceDuration: 2.0f);
+
+        // Assert
+        Assert.Equal(0f, delay);
+    }
+
+    [Fact]
+    public void CalculateEndpointingDelay_SilenceBoost_IncreasesConfidence()
+    {
+        // Arrange
+        var middleware = new AudioPipelineMiddleware
+        {
+            SilenceStrategy = TurnDetectionStrategy.Disabled,
+            SilenceFastPathThreshold = 1.5f,
+            MinEndpointingDelay = 0.3f,
+            MaxEndpointingDelay = 1.5f,
+            EnableSpeedAdaptation = false  // Disable to test pure logic
+        };
+
+        // Act
+        var shortSilenceDelay = middleware.CalculateEndpointingDelay("Incomplete text", silenceDuration: 0.2f);
+        var longSilenceDelay = middleware.CalculateEndpointingDelay("Incomplete text", silenceDuration: 1.4f);
+
+        // Assert - longer silence should result in shorter delay (higher confidence)
+        Assert.True(longSilenceDelay < shortSilenceDelay,
+            $"Long silence delay ({longSilenceDelay}) should be < short silence delay ({shortSilenceDelay})");
+    }
+
+    [Fact]
+    public void CalculateEndpointingDelay_CombinesSilenceAndMLProbability()
+    {
+        // Arrange
+        var mockDetector = new MockTurnDetector { Probability = 0.3f };
+        var middleware = new AudioPipelineMiddleware
+        {
+            TurnDetector = mockDetector,
+            MlStrategy = TurnDetectionStrategy.Always,
+            SilenceFastPathThreshold = 1.5f,
+            MinEndpointingDelay = 0.3f,
+            MaxEndpointingDelay = 1.5f,
+            EnableSpeedAdaptation = false
+        };
+
+        // Act - compare delays with different silence durations
+        var lowSilenceDelay = middleware.CalculateEndpointingDelay("Text", silenceDuration: 0.2f);
+        var highSilenceDelay = middleware.CalculateEndpointingDelay("Text", silenceDuration: 1.4f);
+
+        // Assert - higher silence should reduce delay (boost confidence)
+        Assert.True(highSilenceDelay < lowSilenceDelay,
+            $"High silence delay ({highSilenceDelay}) should be < low silence delay ({lowSilenceDelay})");
+    }
+
+    //
+    // NEW TESTS: Filler Audio
+    //
+
+    [Fact]
+    public async Task PreCacheFillerAudioAsync_DisabledFiller_DoesNothing()
+    {
+        // Arrange
+        var middleware = new AudioPipelineMiddleware
+        {
+            EnableFillerAudio = false,
+            TextToSpeechClient = new FakeTextToSpeechClient()
+        };
+
+        // Act
+        await middleware.PreCacheFillerAudioAsync();
+
+        // Assert - should complete without error
+        Assert.False(middleware.EnableFillerAudio);
+    }
+
+    [Fact]
+    public async Task PreCacheFillerAudioAsync_NullTTS_DoesNothing()
+    {
+        // Arrange
+        var middleware = new AudioPipelineMiddleware
+        {
+            EnableFillerAudio = true,
+            TextToSpeechClient = null
+        };
+
+        // Act & Assert - should not throw
+        await middleware.PreCacheFillerAudioAsync();
+    }
+
+    [Fact]
+    public void FillerPhrases_HasDefaultValues()
+    {
+        // Arrange
+        var middleware = new AudioPipelineMiddleware();
+
+        // Assert
+        Assert.NotEmpty(middleware.FillerPhrases);
+        Assert.Contains("Um...", middleware.FillerPhrases);
+        Assert.Contains("Let me see...", middleware.FillerPhrases);
+        Assert.Contains("One moment...", middleware.FillerPhrases);
+    }
+
+    //
+    // Helper Classes
+    //
+
+    private class MockTurnDetector : ITurnDetector
+    {
+        public float Probability { get; set; } = 0.5f;
+
+        public float GetCompletionProbability(string text) => Probability;
+        public void Reset() { }
+    }
 }

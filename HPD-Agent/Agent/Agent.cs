@@ -997,7 +997,10 @@ public sealed class Agent
                             Messages = messagesToSend.ToList(),
                             Options = CollapsedOptions,
                             State = agentContext.State,
-                            Iteration = state.Iteration
+                            Iteration = state.Iteration,
+                            Streams = _eventCoordinator.Streams,
+                            RunOptions = runOptions,
+                            EventCoordinator = _eventCoordinator
                         };
 
                         // Stream LLM response through middleware pipeline with IMMEDIATE event yielding

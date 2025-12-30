@@ -75,40 +75,45 @@ public class PipelineV2Tests
     }
 
     /// <summary>
-    /// Tests that WrapModelCall builds a proper middleware chain using the simple pattern.
+    /// Tests that WrapModelCallStreamingAsync builds a proper middleware chain with retry logic.
     /// </summary>
     [Fact]
-    public async Task WrapModelCall_SimplePattern_BuildsChain()
+    public async Task WrapModelCallStreaming_RetryPattern_BuildsChain()
     {
         // Arrange
-        var middleware = new RetryMiddleware (maxRetries: 2);
+        var middleware = new RetryMiddleware(maxRetries: 2);
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
 
         var request = CreateModelRequest();
         var callCount = 0;
 
-        // Handler that fails once, then succeeds
-        Task<ModelResponse> Handler(ModelRequest req)
+        // Handler that fails once, then succeeds with streaming
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
         {
             callCount++;
             if (callCount == 1)
                 throw new HttpRequestException("Transient error");
 
-            return Task.FromResult(new ModelResponse
+            // Success - return streaming response
+            yield return new ChatResponseUpdate
             {
-                Message = new ChatMessage(ChatRole.Assistant, "Success"),
-                ToolCalls = Array.Empty<FunctionCallContent>(),
-                Error = null
-            });
+                Contents = new List<AIContent> { new TextContent("Success") }
+            };
         }
 
         // Act
-        var response = await pipeline.ExecuteModelCallAsync(request, Handler, CancellationToken.None);
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in pipeline.ExecuteModelCallStreamingAsync(request, Handler, CancellationToken.None))
+        {
+            updates.Add(update);
+        }
 
         // Assert - retry worked!
         Assert.Equal(2, callCount);
-        Assert.True(response.IsSuccess);
-        Assert.Equal("Success", response.Message.Text);
+        Assert.Single(updates);
+        var textContent = updates[0].Contents?.OfType<TextContent>().FirstOrDefault();
+        Assert.NotNull(textContent);
+        Assert.Equal("Success", textContent.Text);
     }
 
     /// <summary>
@@ -205,29 +210,66 @@ public class PipelineV2Tests
     }
 
     /// <summary>
-    /// Test middleware that retries model calls.
+    /// Test middleware that retries model calls using streaming pattern with buffering.
     /// </summary>
-    public class RetryMiddleware  : IAgentMiddleware
+    public class RetryMiddleware : IAgentMiddleware
     {
         private readonly int _maxRetries;
 
         /// <summary>
         /// Initializes a new instance of the RetryMiddleware class.
         /// </summary>
-        public RetryMiddleware (int maxRetries) => _maxRetries = maxRetries;
+        public RetryMiddleware(int maxRetries) => _maxRetries = maxRetries;
 
         /// <inheritdoc />
-        public async Task<ModelResponse> WrapModelCallAsync(
+        public IAsyncEnumerable<ChatResponseUpdate>? WrapModelCallStreamingAsync(
             ModelRequest request,
-            Func<ModelRequest, Task<ModelResponse>> handler,
+            Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
             CancellationToken ct)
         {
-            for (int i = 0; i < _maxRetries; i++)
+            return RetryAsync(request, handler, ct);
+        }
+
+        private async IAsyncEnumerable<ChatResponseUpdate> RetryAsync(
+            ModelRequest request,
+            Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            List<ChatResponseUpdate>? bufferedUpdates = null;
+
+            for (int attempt = 0; attempt < _maxRetries; attempt++)
             {
-                try { return await handler(request); }
-                catch when (i < _maxRetries - 1) { }
+                var updates = new List<ChatResponseUpdate>();
+
+                try
+                {
+                    // Buffer the stream
+                    await foreach (var update in handler(request).WithCancellation(ct))
+                    {
+                        updates.Add(update);
+                    }
+
+                    // Success - store buffered updates to replay after try-catch
+                    bufferedUpdates = updates;
+                    break;
+                }
+                catch when (attempt < _maxRetries - 1)
+                {
+                    // Retry on next iteration
+                }
+                catch
+                {
+                    // Final attempt failed - rethrow
+                    throw;
+                }
             }
-            return await handler(request);
+
+            // Replay buffered updates outside of try-catch
+            if (bufferedUpdates != null)
+            {
+                foreach (var update in bufferedUpdates)
+                    yield return update;
+            }
         }
     }
 

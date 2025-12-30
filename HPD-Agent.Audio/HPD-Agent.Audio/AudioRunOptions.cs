@@ -6,10 +6,10 @@ namespace HPD.Agent.Audio;
 
 /// <summary>
 /// Per-request audio configuration for AgentRunOptions.
-/// Follows same pattern as ChatRunOptions, StructuredOutputOptions.
+/// Inherits from AudioPipelineConfig for full configuration control.
 /// JSON-serializable for FFI compatibility.
 /// </summary>
-public class AudioRunOptions
+public class AudioRunOptions : AudioPipelineConfig
 {
     /// <summary>
     /// How audio is processed internally. Null = use middleware default.
@@ -24,47 +24,10 @@ public class AudioRunOptions
     public AudioIOMode? IOMode { get; set; }
 
     /// <summary>
-    /// Override TTS voice for this request. Null = use middleware default.
-    /// </summary>
-    [JsonPropertyName("voice")]
-    public string? Voice { get; set; }
-
-    /// <summary>
-    /// Override TTS model for this request. Null = use middleware default.
-    /// </summary>
-    [JsonPropertyName("model")]
-    public string? Model { get; set; }
-
-    /// <summary>
-    /// Override TTS speed for this request. Null = use middleware default.
-    /// </summary>
-    [JsonPropertyName("speed")]
-    public float? Speed { get; set; }
-
-    /// <summary>
-    /// Disable audio entirely for this request (equivalent to IOMode = AudioToText with no TTS).
-    /// </summary>
-    [JsonPropertyName("disabled")]
-    public bool Disabled { get; set; } = false;
-
-    /// <summary>
     /// Override language for STT/TTS for this request. Null = use middleware default.
     /// </summary>
     [JsonPropertyName("language")]
     public string? Language { get; set; }
-
-    /// <summary>
-    /// Output audio format for this request (e.g., "mp3", "pcm", "opus").
-    /// Null = use middleware default.
-    /// </summary>
-    [JsonPropertyName("outputFormat")]
-    public string? OutputFormat { get; set; }
-
-    /// <summary>
-    /// Sample rate for output audio in Hz. Null = use middleware default.
-    /// </summary>
-    [JsonPropertyName("sampleRate")]
-    public int? SampleRate { get; set; }
 
     //
     // Static factory methods for common configurations
@@ -94,4 +57,29 @@ public class AudioRunOptions
 
     /// <summary>Text input with voice output only (no text).</summary>
     public static AudioRunOptions TextToVoice() => new() { IOMode = AudioIOMode.TextToAudio };
+
+    /// <summary>
+    /// Quick Answer only (low latency, minimal features).
+    /// </summary>
+    public static AudioRunOptions QuickAnswer() => new()
+    {
+        EnableQuickAnswer = true,
+        EnableSpeedAdaptation = false,
+        EnableFalseInterruptionRecovery = false,
+        EnableFillerAudio = false,
+        EnableTextFiltering = true
+    };
+
+    /// <summary>
+    /// Full feature set (all enhancements enabled).
+    /// </summary>
+    public static AudioRunOptions FullFeatures() => new()
+    {
+        EnableQuickAnswer = true,
+        EnableSpeedAdaptation = true,
+        EnableFalseInterruptionRecovery = true,
+        EnableFillerAudio = true,
+        EnableTextFiltering = true,
+        UseCombinedProbability = true
+    };
 }
