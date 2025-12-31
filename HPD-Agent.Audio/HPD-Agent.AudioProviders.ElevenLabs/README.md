@@ -4,14 +4,14 @@ ElevenLabs audio provider for HPD-Agent Framework. Provides high-quality text-to
 
 ## Features
 
-- ✅ **Text-to-Speech (TTS)** - High-quality voice synthesis with 32 languages
-- ✅ **Speech-to-Text (STT)** - Accurate transcription via ElevenLabs Scribe
-- ✅ **Streaming Support** - HTTP-based audio streaming
-- ✅ **WebRTC Ready** - Real-time communication via ConvAI agents
-- ✅ **Voice Cloning** - Custom voice creation
-- ✅ **Multilingual** - Support for 32 languages
-- ✅ **Character Timestamps** - Word-level alignment data
-- ✅ **Dubbing & Sound Generation** - Via ElevenLabs extended features
+-   **Text-to-Speech (TTS)** - High-quality voice synthesis with 32 languages
+-   **Speech-to-Text (STT)** - Accurate transcription via ElevenLabs Scribe
+-   **Streaming Support** - HTTP-based audio streaming
+-   **WebRTC Ready** - Real-time communication via ConvAI agents
+-   **Voice Cloning** - Custom voice creation
+-   **Multilingual** - Support for 32 languages
+-   **Character Timestamps** - Word-level alignment data
+-   **Dubbing & Sound Generation** - Via ElevenLabs extended features
 
 ## Installation
 
@@ -281,10 +281,10 @@ Console.WriteLine($"Languages: {string.Join(", ", features.SupportedLanguages)}"
 | **Voice Quality** | ⭐⭐⭐⭐⭐ (Best) | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | **Latency (Turbo)** | <100ms | ~500ms | ~300ms |
 | **Languages** | 32 | 57 | 100+ |
-| **Voice Cloning** | ✅ Yes | ❌ No | ⚠️ Neural only |
+| **Voice Cloning** |   Yes | ❌ No | ⚠️ Neural only |
 | **Pricing (1M chars)** | ~$300 | ~$15 | ~$16 |
 | **STT Quality** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
-| **Real-time** | ✅ WebRTC | ✅ Realtime API | ✅ WebSocket |
+| **Real-time** |   WebRTC |   Realtime API |   WebSocket |
 
 **Best for:**
 - **High-quality voice experiences** (podcasts, audiobooks, premium apps)

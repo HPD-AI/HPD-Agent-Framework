@@ -73,7 +73,7 @@
 						{:else if state.isPaused}
 							⏸ Paused
 						{:else}
-							✅ Normal
+							  Normal
 						{/if}
 					</div>
 
