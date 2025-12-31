@@ -28,7 +28,8 @@
 	const snippetProps = $derived.by(() => ({
 		description: descriptionState.root.currentRequest?.description,
 		arguments: descriptionState.root.currentRequest?.arguments,
-		functionName: descriptionState.root.currentRequest?.functionName
+		functionName: descriptionState.root.currentRequest?.functionName,
+		status: descriptionState.root.status
 	}));
 </script>
 

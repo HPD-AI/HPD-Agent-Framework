@@ -25,6 +25,17 @@ export { ToolExecution } from './bits/tool-execution/index.js';
 // PermissionDialog component
 export * as PermissionDialog from './bits/permission-dialog/index.js';
 
+// Audio components (Phase 3A)
+export * as AudioPlaybackGate from './bits/audio-playback-gate/index.js';
+export * as AudioPlayer from './bits/audio-player/index.js';
+export * as Transcription from './bits/transcription/index.js';
+export * as VoiceActivityIndicator from './bits/voice-activity-indicator/index.js';
+
+// Audio components (Phase 3B)
+export * as InterruptionIndicator from './bits/interruption-indicator/index.js';
+export * as TurnIndicator from './bits/turn-indicator/index.js';
+export * as AudioVisualizer from './bits/audio-visualizer/index.js';
+
 // Testing utilities (mock agent)
 export { createMockAgent } from './testing/mock-agent.js';
 export type { MockAgentOptions } from './testing/mock-agent.js';

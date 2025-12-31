@@ -21,7 +21,8 @@ public static class BuiltInCommands
             CreateStatsCommand(),
             CreateExitCommand(),
             CreateModelCommand(),
-            CreateSessionsCommand()
+            CreateSessionsCommand(),
+            CreateAudioCommand()
         );
     }
     
@@ -223,6 +224,120 @@ public static class BuiltInCommands
                 catch (Exception ex)
                 {
                     return CommandResult.Error($"Failed to restore session: {ex.Message}");
+                }
+            }
+        };
+    }
+
+    /// <summary>
+    /// /audio - Process audio through TTS/STT pipeline
+    /// </summary>
+    private static SlashCommand CreateAudioCommand()
+    {
+        return new SlashCommand
+        {
+            Name = "audio",
+            AltNames = new List<string> { "voice", "tts" },
+            Description = "Process audio through STT → Agent → TTS pipeline (usage: /audio <path>)",
+            AutoExecute = false,
+            Action = async (ctx) =>
+            {
+                if (string.IsNullOrWhiteSpace(ctx.Arguments))
+                {
+                    return CommandResult.Error("Usage: /audio <input-audio-file-path>");
+                }
+
+                var inputPath = ctx.Arguments.Trim().Trim('"');
+
+                if (!File.Exists(inputPath))
+                {
+                    return CommandResult.Error($"File not found: {inputPath}");
+                }
+
+                try
+                {
+                    AnsiConsole.MarkupLine("[yellow]Processing audio through pipeline...[/]");
+
+                    // Get ElevenLabs API key from configuration or environment
+                    var config = ctx.Data.TryGetValue("Configuration", out var configObj)
+                        ? configObj as Microsoft.Extensions.Configuration.IConfiguration
+                        : null;
+
+                    var apiKey = config?["ElevenLabs:ApiKey"] ?? Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY");
+                    if (string.IsNullOrEmpty(apiKey))
+                    {
+                        return CommandResult.Error("ElevenLabs:ApiKey not set in appsettings.json or ELEVENLABS_API_KEY environment variable");
+                    }
+
+                    // Get agent from context
+                    if (!ctx.Data.TryGetValue("Agent", out var agentObj) || agentObj is not HPD.Agent.Agent agent)
+                    {
+                        return CommandResult.Error("Agent not available in context");
+                    }
+
+                    // Create ElevenLabs STT client
+                    var sttConfig = new HPD.Agent.Audio.ElevenLabs.ElevenLabsAudioConfig
+                    {
+                        ApiKey = apiKey
+                    };
+                    var sttClient = new HPD.Agent.Audio.ElevenLabs.ElevenLabsSpeechToTextClient(sttConfig);
+
+                    // Step 1: STT - Convert audio to text
+                    AnsiConsole.MarkupLine("[cyan]Step 1/3:[/] Transcribing audio to text...");
+                    string transcribedText;
+                    await using (var audioStream = File.OpenRead(inputPath))
+                    {
+                        var sttResponse = await sttClient.GetTextAsync(audioStream);
+                        transcribedText = sttResponse.Text;
+                        AnsiConsole.MarkupLine($"[green]✓[/] Transcribed: [white]{transcribedText}[/]");
+                    }
+
+                    // Step 2: Agent - Send to agent and get response
+                    AnsiConsole.MarkupLine("[cyan]Step 2/3:[/] Sending to agent...");
+                    string responseText = string.Empty;
+                    await foreach (var evt in agent.RunAsync(transcribedText))
+                    {
+                        if (evt is HPD.Agent.TextDeltaEvent textDelta)
+                        {
+                            responseText += textDelta.Text;
+                        }
+                    }
+                    AnsiConsole.MarkupLine($"[green]✓[/] Agent response: [white]{responseText}[/]");
+
+                    // Step 3: TTS - Convert agent response to speech
+                    AnsiConsole.MarkupLine("[cyan]Step 3/3:[/] Converting response to speech...");
+                    var ttsConfig = new HPD.Agent.Audio.ElevenLabs.ElevenLabsAudioConfig
+                    {
+                        ApiKey = apiKey
+                    };
+                    var ttsClient = new HPD.Agent.Audio.ElevenLabs.ElevenLabsTextToSpeechClient(ttsConfig);
+
+                    var ttsResponse = await ttsClient.GetSpeechAsync(responseText);
+
+                    // Save output audio next to input file
+                    var inputDir = Path.GetDirectoryName(inputPath) ?? ".";
+                    var inputFileName = Path.GetFileNameWithoutExtension(inputPath);
+                    var outputPath = Path.Combine(inputDir, $"{inputFileName}_output.mp3");
+
+                    if (ttsResponse.Audio?.Data != null)
+                    {
+                        var audioData = ttsResponse.Audio.Data.ToArray();
+                        await File.WriteAllBytesAsync(outputPath, audioData);
+
+                        AnsiConsole.MarkupLine($"[green]✓[/] Audio saved to: [blue]{outputPath}[/]");
+                        AnsiConsole.MarkupLine($"[dim]Size: {FormatBytes(audioData.Length)}[/]");
+
+                        return CommandResult.Ok($"Pipeline complete! Output: {outputPath}");
+                    }
+                    else
+                    {
+                        return CommandResult.Error("TTS response contained no audio data");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+                    return CommandResult.Error($"Audio processing failed: {ex.Message}");
                 }
             }
         };

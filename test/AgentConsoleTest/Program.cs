@@ -1,4 +1,9 @@
-﻿using HPD.Agent;
+﻿#pragma warning disable MEAI001 // Microsoft.Extensions.AI is experimental
+
+using HPD.Agent;
+using HPD.Agent.Audio;
+using HPD.Agent.Audio.ElevenLabs;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
@@ -16,6 +21,13 @@ AnsiConsole.WriteLine();
 
 var currentDirectory = Directory.GetCurrentDirectory();
 AnsiConsole.MarkupLine($"[dim]Working Directory: {currentDirectory}[/]");
+
+// Load configuration from appsettings.json
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(currentDirectory)
+    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+    .AddEnvironmentVariables()
+    .Build();
 
 // Set up session persistence
 var sessionsPath = Path.Combine(
@@ -44,13 +56,42 @@ var loggerFactory = LoggerFactory.Create(builder =>
     builder.AddConsole();
 });
 
-var agent = await new AgentBuilder(config)
+// Configure audio providers (optional - reads from appsettings.json or environment)
+ITextToSpeechClient? ttsClient = null;
+Microsoft.Extensions.AI.ISpeechToTextClient? sttClient = null;
+
+var elevenLabsApiKey = configuration["ElevenLabs:ApiKey"] ?? Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY");
+if (!string.IsNullOrEmpty(elevenLabsApiKey))
+{
+    var audioConfig = new ElevenLabsAudioConfig
+    {
+        ApiKey = elevenLabsApiKey
+    };
+
+    ttsClient = new ElevenLabsTextToSpeechClient(audioConfig);
+    sttClient = new ElevenLabsSpeechToTextClient(audioConfig);
+
+    AnsiConsole.MarkupLine("[green]✓[/] ElevenLabs audio providers configured");
+}
+else
+{
+    AnsiConsole.MarkupLine("[yellow]ℹ[/] ElevenLabs:ApiKey not set in appsettings.json - audio features disabled");
+}
+
+var agentBuilder = new AgentBuilder(config)
     .WithProvider("openrouter", "z-ai/glm-4.7")
     .WithTools<CodingPlugin>()
     .WithTools<MathTools>()
     .WithMiddleware(new EnvironmentContextMiddleware())
-    .WithSessionStore(sessionStore, persistAfterTurn: true)
-    .Build();
+    .WithSessionStore(sessionStore, persistAfterTurn: true);
+
+// Add audio pipeline if providers are available
+if (ttsClient != null || sttClient != null)
+{
+    agentBuilder = agentBuilder.UseAudioPipeline(ttsClient, sttClient);
+}
+
+var agent = await agentBuilder.Build();
 
 // Generate a unique session ID for this run
 var sessionId = $"console-{DateTime.Now:yyyy-MM-dd-HHmmss}-{Guid.NewGuid().ToString()[..8]}";
@@ -64,6 +105,7 @@ var commandContextData = new Dictionary<string, object>
 {
     { "SessionsPath", sessionsPath },
     { "Agent", agent },
+    { "Configuration", configuration },
     { "OnSessionSwitch", new Func<string, Task>(async (newSessionId) =>
     {
         sessionId = newSessionId;

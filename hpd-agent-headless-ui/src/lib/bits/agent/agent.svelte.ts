@@ -44,12 +44,13 @@ export class AgentState {
 	#currentConversationId = $state<string | null>(null);
 
 	// Audio component states (Phase 3 - Voice UI)
-	#audioPlayer = $state<AudioPlayerState>(new AudioPlayerState());
-	#transcription = $state<TranscriptionState>(new TranscriptionState());
-	#voiceActivity = $state<VoiceActivityIndicatorState>(new VoiceActivityIndicatorState());
-	#interruption = $state<InterruptionIndicatorState>(new InterruptionIndicatorState());
-	#turnIndicator = $state<TurnIndicatorState>(new TurnIndicatorState());
-	#audioVisualizer = $state<AudioVisualizerState>(new AudioVisualizerState());
+	// TODO: These are placeholder states - they will be properly initialized when needed
+	#audioPlayer = $state<AudioPlayerState | null>(null);
+	#transcription = $state<TranscriptionState | null>(null);
+	#voiceActivity = $state<VoiceActivityIndicatorState | null>(null);
+	#interruption = $state<InterruptionIndicatorState | null>(null);
+	#turnIndicator = $state<TurnIndicatorState | null>(null);
+	#audioVisualizer = $state<AudioVisualizerState | null>(null);
 
 	// ============================================
 	// Derived State ($derived)
@@ -356,8 +357,8 @@ export class AgentState {
 	// --- Audio Events (TTS) ---
 
 	onSynthesisStarted(synthesisId: string, modelId?: string, voice?: string, streamId?: string) {
-		this.#audioPlayer.onSynthesisStarted(synthesisId, modelId, voice, streamId);
-		this.#turnIndicator.onSynthesisStarted(synthesisId, modelId, voice, streamId);
+		this.#audioPlayer?.onSynthesisStarted(synthesisId, modelId, voice, streamId);
+		this.#turnIndicator?.onSynthesisStarted(synthesisId, modelId, voice, streamId);
 	}
 
 	onAudioChunk(
@@ -369,8 +370,8 @@ export class AgentState {
 		isLast: boolean,
 		streamId?: string
 	) {
-		this.#audioPlayer.onAudioChunk(synthesisId, base64Audio, mimeType, chunkIndex, duration, isLast, streamId);
-		this.#audioVisualizer.onAudioChunk(synthesisId, base64Audio, mimeType, chunkIndex, duration, isLast, streamId);
+		this.#audioPlayer?.onAudioChunk(synthesisId, base64Audio, mimeType, chunkIndex, duration, isLast, streamId);
+		// AudioVisualizer uses AnalyserNode from AudioPlayer, not direct audio chunks
 	}
 
 	onSynthesisCompleted(
@@ -380,7 +381,7 @@ export class AgentState {
 		deliveredChunks: number,
 		streamId?: string
 	) {
-		this.#audioPlayer.onSynthesisCompleted(synthesisId, wasInterrupted, totalChunks, deliveredChunks, streamId);
+		this.#audioPlayer?.onSynthesisCompleted(synthesisId, wasInterrupted, totalChunks, deliveredChunks, streamId);
 	}
 
 	// --- Audio Events (STT) ---
@@ -391,31 +392,32 @@ export class AgentState {
 		isFinal: boolean,
 		confidence?: number
 	) {
-		this.#transcription.onTranscriptionDelta(transcriptionId, text, isFinal, confidence);
+		this.#transcription?.onTranscriptionDelta(transcriptionId, text, isFinal, confidence);
 	}
 
 	onTranscriptionCompleted(
 		transcriptionId: string,
 		finalText: string,
-		processingDuration: string
+		_processingDuration: string
 	) {
-		this.#transcription.onTranscriptionCompleted(transcriptionId, finalText, processingDuration);
+		// Note: _processingDuration is ignored as TranscriptionState expects confidence instead
+		this.#transcription?.onTranscriptionCompleted(transcriptionId, finalText);
 	}
 
 	// --- Audio Events (Interruption) ---
 
 	onUserInterrupted(transcribedText?: string) {
-		this.#interruption.onUserInterrupted(transcribedText);
+		this.#interruption?.onUserInterrupted(transcribedText);
 	}
 
 	onSpeechPaused(synthesisId: string, reason: 'user_speaking' | 'potential_interruption') {
-		this.#interruption.onSpeechPaused(synthesisId, reason);
-		this.#audioPlayer.onSpeechPaused(synthesisId, reason);
+		this.#interruption?.onSpeechPaused(synthesisId, reason);
+		this.#audioPlayer?.onSpeechPaused(synthesisId, reason);
 	}
 
 	onSpeechResumed(synthesisId: string, pauseDuration: string) {
-		this.#interruption.onSpeechResumed(synthesisId, pauseDuration);
-		this.#audioPlayer.onSpeechResumed(synthesisId, pauseDuration);
+		this.#interruption?.onSpeechResumed(synthesisId, pauseDuration);
+		this.#audioPlayer?.onSpeechResumed(synthesisId, pauseDuration);
 	}
 
 	// --- Audio Events (Preemptive Generation) ---
@@ -433,12 +435,12 @@ export class AgentState {
 	// --- Audio Events (VAD) ---
 
 	onVadStartOfSpeech(timestamp: string, speechProbability: number) {
-		this.#voiceActivity.onVadStartOfSpeech(timestamp, speechProbability);
-		this.#turnIndicator.onVadStartOfSpeech(timestamp, speechProbability);
+		this.#voiceActivity?.onVadStartOfSpeech(timestamp, speechProbability);
+		this.#turnIndicator?.onVadStartOfSpeech(timestamp, speechProbability);
 	}
 
 	onVadEndOfSpeech(timestamp: string, speechDuration: string, speechProbability: number) {
-		this.#voiceActivity.onVadEndOfSpeech(timestamp, speechDuration, speechProbability);
+		this.#voiceActivity?.onVadEndOfSpeech(timestamp, speechDuration, speechProbability);
 	}
 
 	// --- Audio Events (Metrics) ---
@@ -461,7 +463,7 @@ export class AgentState {
 		silenceDuration: string,
 		detectionMethod: 'heuristic' | 'ml' | 'manual' | 'timeout'
 	) {
-		this.#turnIndicator.onTurnDetected(transcribedText, completionProbability, silenceDuration, detectionMethod);
+		this.#turnIndicator?.onTurnDetected(transcribedText, completionProbability, silenceDuration, detectionMethod);
 	}
 
 	// --- Audio Events (Filler) ---

@@ -2,9 +2,10 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using HPD.Agent;
 using HPD.Agent.ClientTools;
 using HPD.Agent.Memory;
+using HPD.Agent.Audio;
+using HPD.Agent.Audio.ElevenLabs;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 

@@ -231,6 +231,11 @@ export type PermissionDialogDescriptionSnippetProps = {
 	 * The function name
 	 */
 	functionName: string | undefined;
+
+	/**
+	 * Current execution status
+	 */
+	status: PermissionDialogStatus;
 };
 
 export type PermissionDialogDescriptionPropsWithoutHTML = {
