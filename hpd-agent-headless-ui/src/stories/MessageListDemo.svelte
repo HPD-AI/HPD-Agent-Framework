@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { MessageList, Message } from '$lib/index.js';
-	import type { Message as MessageType } from '$lib/bits/agent/types.js';
+	import type { Message as MessageType } from '$lib/agent/types.js';
 
 	let {
 		messageCount = 3,

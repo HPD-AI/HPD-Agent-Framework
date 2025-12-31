@@ -92,6 +92,7 @@
 	"dependencies": {
 		"@hpd/hpd-agent-client": "file:../hpd-agent-client",
 		"runed": "^0.37.1",
-		"svelte-toolbelt": "^0.10.6"
+		"svelte-toolbelt": "^0.10.6",
+		"tabbable": "^6.3.0"
 	}
 }

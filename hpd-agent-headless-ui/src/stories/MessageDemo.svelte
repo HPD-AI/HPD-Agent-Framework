@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Message } from '$lib/index.js';
-	import type { Message as MessageType, MessageRole } from '$lib/bits/agent/types.js';
+	import type { Message as MessageType, MessageRole } from '$lib/agent/types.js';
 
 	let {
 		role = 'assistant' as MessageRole,

@@ -11,7 +11,7 @@ import { render } from 'vitest-browser-svelte';
 import PermissionDialogTest from './permission-dialog-test.svelte';
 import PermissionDialogTestRender from './permission-dialog-test-render.svelte';
 import { createMockAgent } from '$lib/testing/mock-agent.js';
-import type { PermissionRequest } from '$lib/bits/agent/types.js';
+import type { PermissionRequest } from '$lib/agent/types.js';
 
 // Helper to wait for element existence
 async function expectExists(locator: ReturnType<typeof page.getByTestId>) {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createMockAgent } from '$lib/testing/mock-agent.js';
 	import * as PermissionDialog from '../index.js';
-	import type { PermissionRequest } from '$lib/bits/agent/types.js';
+	import type { PermissionRequest } from '$lib/agent/types.js';
 
 	// Props for demo customization
 	let {
