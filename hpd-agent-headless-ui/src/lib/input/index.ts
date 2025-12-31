@@ -6,7 +6,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { Input } from '$lib/bits/input';
+ *   import { Input } from '$lib/input';
  *
  *   let message = $state('');
  *

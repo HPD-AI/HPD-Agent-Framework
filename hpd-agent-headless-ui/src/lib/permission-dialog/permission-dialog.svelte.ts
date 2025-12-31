@@ -28,8 +28,8 @@ import type {
 } from '$lib/internal/types.js';
 import { createHPDAttrs, getDataOpenClosed } from '$lib/internal/attrs.js';
 import { PresenceManager } from '$lib/internal/presence-manager.svelte.js';
-import type { Agent } from '$lib/bits/agent/create-agent.svelte.js';
-import type { PermissionRequest, PermissionChoice } from '$lib/bits/agent/types.js';
+import type { Agent } from '$lib/agent/create-agent.svelte.js';
+import type { PermissionRequest, PermissionChoice } from '$lib/agent/types.js';
 
 // ============================================
 // Data Attributes for CSS Hooks

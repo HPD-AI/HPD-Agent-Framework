@@ -5,7 +5,7 @@
  * Calls AgentState methods directly to simulate HPD events.
  */
 
-import { AgentState } from '../bits/agent/agent.svelte.js';
+import { AgentState } from '../agent/agent.svelte.js';
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -128,7 +128,7 @@ export class MockAgent {
 	/**
 	 * Approve a permission request
 	 */
-	async approve(permissionId: string, choice?: import('../bits/agent/types.js').PermissionChoice): Promise<void> {
+	async approve(permissionId: string, choice?: import('../agent/types.js').PermissionChoice): Promise<void> {
 		this.state.onPermissionApproved(permissionId, '');
 	}
 

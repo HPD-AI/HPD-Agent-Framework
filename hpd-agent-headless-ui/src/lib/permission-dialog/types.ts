@@ -4,8 +4,8 @@
  * Type definitions for the PermissionDialog component.
  */
 
-import type { Agent } from '$lib/bits/agent/create-agent.svelte.js';
-import type { PermissionChoice, PermissionRequest } from '$lib/bits/agent/types.js';
+import type { Agent } from '$lib/agent/create-agent.svelte.js';
+import type { PermissionChoice, PermissionRequest } from '$lib/agent/types.js';
 import type { OnChangeFn, WithChild } from '$lib/internal/types.js';
 import type { HPDPrimitiveDivAttributes } from '$lib/shared/types.js';
 import type { Without } from 'svelte-toolbelt';

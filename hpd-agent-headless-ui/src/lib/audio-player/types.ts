@@ -98,7 +98,7 @@ export type AudioPlayerRootSnippetProps = {
 		streamId?: string
 	) => void;
 	onSynthesisCompleted: (synthesisId: string, wasInterrupted: boolean, totalChunks: number, deliveredChunks: number) => void;
-	onSpeechPaused: (synthesisId: string, reason: string) => void;
+	onSpeechPaused: (synthesisId: string, reason: 'user_speaking' | 'potential_interruption') => void;
 	onSpeechResumed: (synthesisId: string, pauseDuration: string) => void;
 };
 

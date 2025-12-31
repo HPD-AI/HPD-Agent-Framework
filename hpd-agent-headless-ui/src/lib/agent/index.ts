@@ -6,5 +6,5 @@
  */
 
 export * from './exports.js';
-export { createMockAgent } from '../../testing/mock-agent.js';
-export type { MockAgentOptions } from '../../testing/mock-agent.js';
+export { createMockAgent } from '../testing/mock-agent.js';
+export type { MockAgentOptions } from '../testing/mock-agent.js';
