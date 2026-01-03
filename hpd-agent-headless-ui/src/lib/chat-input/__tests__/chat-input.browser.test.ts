@@ -564,14 +564,17 @@ describe('ChatInput', () => {
 
 	describe('Edge Cases', () => {
 		it('should handle emoji input', async () => {
-			const user = userEvent.setup();
 			render(ChatInputTest, { props: {} });
 
 			const input = page.getByTestId('chat-input-input');
-			await user.click(input);
-			await user.keyboard('👋 Hello 🌍');
 
-			await expect.element(input).toHaveValue('👋 Hello 🌍');
+			// Directly set the value to test emoji handling
+			// Note: userEvent.keyboard() and userEvent.type() don't handle multi-byte unicode properly
+			await input.fill('👋 Hello 🌍');
+
+			// Verify the component state updated correctly
+			const currentValue = page.getByTestId('current-value');
+			await expect.element(currentValue).toHaveTextContent('👋 Hello 🌍');
 		});
 
 		it('should handle rapid typing', async () => {

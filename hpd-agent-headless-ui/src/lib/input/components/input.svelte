@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { boxWith, mergeProps } from 'svelte-toolbelt';
-	import { onDestroy } from 'svelte';
+	import { mergeProps } from 'svelte-toolbelt';
 	import { createId } from '$lib/internal/create-id.js';
-	import { InputState } from '../input.svelte.js';
 	import type { InputProps } from '../types.js';
+	import { kbd } from '$lib/internal/kbd.js';
 
 	const uid = $props.id();
 
@@ -15,7 +14,6 @@
 		onChange,
 		onSubmit,
 		disabled = false,
-		maxRows = 5,
 		placeholder = 'Type a message...',
 		autoFocus = false,
 		name,
@@ -28,7 +26,6 @@
 
 	// Determine if controlled mode
 	const isControlled = value !== undefined;
-	// Capture defaultValue once (it shouldn't change after mount per React/Svelte conventions)
 	let internalValue = $state(defaultValue ?? '');
 
 	// Sync internal value with controlled value
@@ -41,49 +38,19 @@
 	// Resolved value (controlled takes precedence)
 	const resolvedValue = $derived(isControlled ? (value ?? '') : internalValue);
 
-	// Sync rows when value changes (for controlled mode or programmatic updates)
-	// Note: handleInput also calls updateRows, resulting in double measurement on user input
-	// This is acceptable because: (1) ensures controlled mode works, (2) performance impact is minimal
-	$effect(() => {
-		resolvedValue; // Track changes
-		inputState.syncRows();
-	});
+	// Event handlers
+	function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
+		const input = event.currentTarget;
+		const newValue = input.value;
 
-	// Create state manager
-	const inputState = new InputState({
-		id: boxWith(() => id),
-		ref: boxWith(
-			() => ref,
-			(v) => (ref = v)
-		),
-		value: boxWith(
-			() => resolvedValue,
-			(v) => {
-				if (isControlled) {
-					value = v;
-				} else {
-					internalValue = v;
-				}
-			}
-		),
-		disabled: boxWith(() => disabled),
-		maxRows: boxWith(() => maxRows),
-		placeholder: boxWith(() => placeholder),
-		autoFocus: boxWith(() => autoFocus),
-		name: boxWith(() => name),
-		required: boxWith(() => required),
-		ariaLabel: boxWith(() => ariaLabel),
-	});
+		// Update value
+		if (isControlled) {
+			value = newValue;
+		} else {
+			internalValue = newValue;
+		}
 
-	// Event handlers with change event details
-	function handleInput(event: Event & { currentTarget: HTMLTextAreaElement }) {
-		const textarea = event.currentTarget;
-		const newValue = textarea.value;
-
-		inputState.handleInput(event);
-
-		// Trigger onChange callback with the actual textarea value
-		// (not inputState.value which may be stale in controlled mode)
+		// Trigger onChange callback
 		onChange?.({
 			reason: 'input-change',
 			event,
@@ -92,45 +59,60 @@
 	}
 
 	function handleKeyDown(event: KeyboardEvent) {
-		const shouldSubmit = inputState.handleKeyDown(event);
-
-		if (shouldSubmit && onSubmit) {
+		// Submit on Enter (no Shift key needed for single-line input)
+		if (event.key === kbd.ENTER && !event.isComposing) {
 			event.preventDefault();
 
 			// Only submit if value is not empty (trimmed)
-			const trimmedValue = inputState.value.trim();
-			if (trimmedValue) {
+			const trimmedValue = resolvedValue.trim();
+			if (trimmedValue && onSubmit) {
 				onSubmit({
 					value: trimmedValue,
 					event,
 				});
-
-				// NOTE: We don't auto-clear here - let consumers control clearing via bind:value
-				// This keeps the component headless and prevents resize bugs
 			}
 		}
 	}
 
-	// Merge props with state props
+	let focused = $state(false);
+
+	function handleFocus() {
+		focused = true;
+	}
+
+	function handleBlur() {
+		focused = false;
+	}
+
+	// Merge props
 	const mergedProps = $derived(
-		mergeProps(restProps, inputState.props, {
+		mergeProps(restProps, {
+			id,
+			type: 'text',
+			role: 'textbox',
+			'aria-label': ariaLabel,
+			'aria-disabled': disabled,
+			'data-input': '',
+			'data-disabled': disabled ? '' : undefined,
+			'data-filled': resolvedValue.length > 0 ? '' : undefined,
+			'data-focused': focused ? '' : undefined,
 			class: className,
-			value: inputState.value,
+			disabled,
+			placeholder,
+			autofocus: autoFocus,
+			name,
+			required,
+			value: resolvedValue,
 			oninput: handleInput,
-			onfocus: inputState.handleFocus,
-			onblur: inputState.handleBlur,
+			onfocus: handleFocus,
+			onblur: handleBlur,
 			onkeydown: handleKeyDown,
 		})
 	);
-
-	// Cleanup when component unmounts
-	onDestroy(() => {
-		inputState.destroy();
-	});
 </script>
 
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
-	<textarea bind:this={ref} {...mergedProps}></textarea>
+	<input bind:this={ref} {...mergedProps} />
 {/if}

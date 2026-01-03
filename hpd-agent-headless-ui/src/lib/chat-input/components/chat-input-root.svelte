@@ -15,6 +15,9 @@
 		...restProps
 	}: ChatInputRootProps = $props();
 
+	// Determine if controlled mode at creation
+	const isControlled = value !== undefined;
+
 	// Create root state with boxed values
 	const rootState = ChatInputRootState.create({
 		value: boxWith(() => value),
@@ -24,9 +27,9 @@
 		onChange: boxWith(() => onChange)
 	});
 
-	// Sync bindable value with state
+	// Sync bindable value with state (only in controlled mode)
 	$effect(() => {
-		if (value !== rootState.value) {
+		if (isControlled && value !== rootState.value) {
 			value = rootState.value;
 		}
 	});

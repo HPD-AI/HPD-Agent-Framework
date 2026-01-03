@@ -62,6 +62,7 @@ export {
 	getDataChecked,
 	getAriaChecked
 } from './internal/attrs.js';
+export type { CreateHPDAttrsReturn } from './internal/attrs.js';
 
 // Keyboard constants
 export { kbd } from './internal/kbd.js';

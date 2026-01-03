@@ -72,17 +72,19 @@
 		{@render children(snippetProps)}
 	</div>
 {:else}
-	<!-- Default: Use existing Input.Root component -->
-	<InputRoot
-		bind:ref
-		value={controlledValue}
-		{placeholder}
-		{maxRows}
-		disabled={resolvedDisabled}
-		onSubmit={handleSubmit}
-		onChange={handleChange}
-		onfocus={handleFocus}
-		onblur={handleBlur}
-		{...restProps}
-	/>
+	<!-- Default: Use existing Input.Root component wrapped in div with data-chat-input-input -->
+	<div {...props}>
+		<InputRoot
+			bind:ref
+			value={controlledValue}
+			{placeholder}
+			{maxRows}
+			disabled={resolvedDisabled}
+			onSubmit={handleSubmit}
+			onChange={handleChange}
+			onfocus={handleFocus}
+			onblur={handleBlur}
+			{...restProps}
+		/>
+	</div>
 {/if}
