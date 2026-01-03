@@ -53,7 +53,7 @@ public class Phase3GenerationValidationTests
         // - Name property
         // - Description property
         // - Correct parameter schema
-        // - ParentPlugin metadata (for PluginReferences)
+        // - ParentToolkit metadata (for ToolkitReferences)
 
         // This is verified by the 650 passing tests which exercise
         // all function generation scenarios extensively.
@@ -72,7 +72,7 @@ public class Phase3GenerationValidationTests
         // - IsContainer = true
         // - IsSkill = true
         // - ReferencedFunctions array (string[])
-        // - ReferencedPlugins array (string[])
+        // - ReferencedToolkits array (string[])
         // - Instructions (if present)
 
         // The fix for empty arrays (new string[] { } instead of new[] { })
@@ -92,7 +92,7 @@ public class Phase3GenerationValidationTests
         // - IsContainer = false (SubAgents are wrappers, NOT containers)
         // - IsSubAgent = true
         // - ThreadMode (Stateless, SharedThread, or PerSession)
-        // - PluginName (parent plugin name)
+        // - ToolkitName (parent Toolkit name)
 
         // Event bubbling and execution context setup happens in the
         // generated invocation code, not in metadata.
@@ -111,7 +111,7 @@ public class Phase3GenerationValidationTests
         // if (func.IsConditional) {
         //     sb.AppendLine($"if (Evaluate{func.Name}Condition(context))");
         //     sb.AppendLine("{");
-        //     sb.AppendLine($"    functions.Add({func.GenerateRegistrationCode(plugin)});");
+        //     sb.AppendLine($"    functions.Add({func.GenerateRegistrationCode(Toolkit)});");
         //     sb.AppendLine("}");
         // }
 
@@ -130,9 +130,9 @@ public class Phase3GenerationValidationTests
     public void NewGeneration_TypeSpecificGeneration_WorksCorrectly()
     {
         // The new generation uses:
-        // - Functions: functions.Add(func.GenerateRegistrationCode(plugin))
-        // - Skills: sb.Append(skill.GenerateRegistrationCode(plugin))
-        // - SubAgents: sb.Append(subAgent.GenerateRegistrationCode(plugin))
+        // - Functions: functions.Add(func.GenerateRegistrationCode(Toolkit))
+        // - Skills: sb.Append(skill.GenerateRegistrationCode(Toolkit))
+        // - SubAgents: sb.Append(subAgent.GenerateRegistrationCode(Toolkit))
 
         // This type-specific handling ensures each capability type
         // generates code in the correct format.
@@ -148,11 +148,11 @@ public class Phase3GenerationValidationTests
     public void NewGeneration_UsesPolymorphicArchitecture()
     {
         // Evidence:
-        // 1. GenerateCreatePluginMethodNew() iterates over plugin.Capabilities
+        // 1. GenerateCreateToolkitMethodNew() iterates over Toolkit.Capabilities
         // 2. Uses .OfType<FunctionCapability>(), .OfType<SkillCapability>(), etc.
         // 3. Calls GenerateRegistrationCode() on each capability polymorphically
 
-        // The old path (GenerateCreatePluginMethodOld) is preserved but not used.
+        // The old path (GenerateCreateToolkitMethodOld) is preserved but not used.
 
         Assert.True(true, "Polymorphic architecture verified by code inspection");
     }
@@ -176,19 +176,19 @@ public class Phase3GenerationValidationTests
 
     /// <summary>
     /// Integration test: All capability types work together.
-    /// Complex plugins with Functions + Skills + SubAgents generate correctly.
+    /// Complex Toolkits with Functions + Skills + SubAgents generate correctly.
     /// </summary>
     [Fact]
-    public void NewGeneration_ComplexPlugins_GenerateCorrectly()
+    public void NewGeneration_ComplexToolkits_GenerateCorrectly()
     {
-        // Complex plugins with all three types:
+        // Complex Toolkits with all three types:
         // - MathTools (functions + skills)
         // - TestSubAgentTools (functions + subagents)
         // - FinancialAnalysisSkills (functions + multiple skills)
 
         // All generate correctly and pass their tests.
 
-        Assert.True(true, "Complex plugin generation verified by existing tests");
+        Assert.True(true, "Complex Toolkit generation verified by existing tests");
     }
 
     /// <summary>

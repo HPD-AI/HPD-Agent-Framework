@@ -73,7 +73,8 @@ public class TestGraphBuilder
         string id,
         string handlerName,
         string? name = null,
-        Dictionary<string, object>? config = null)
+        Dictionary<string, object>? config = null,
+        HPDAgent.Graph.Abstractions.Execution.SuspensionOptions? suspensionOptions = null)
     {
         _nodes.Add(new Node
         {
@@ -81,7 +82,8 @@ public class TestGraphBuilder
             Name = name ?? id,
             Type = NodeType.Handler,
             HandlerName = handlerName,
-            Config = config ?? new Dictionary<string, object>()
+            Config = config ?? new Dictionary<string, object>(),
+            SuspensionOptions = suspensionOptions
         });
         return this;
     }

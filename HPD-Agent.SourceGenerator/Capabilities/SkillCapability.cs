@@ -39,19 +39,19 @@ internal class SkillCapability : BaseCapability
 
     /// <summary>
     /// Resolved function references (populated during resolution phase)
-    /// Format: "PluginName.FunctionName"
+    /// Format: "ToolkitName.FunctionName"
     /// </summary>
     public List<string> ResolvedFunctionReferences { get; set; } = new();
 
     /// <summary>
-    /// Resolved plugin types (populated during resolution phase)
+    /// Resolved Toolkit types (populated during resolution phase)
     /// </summary>
-    public List<string> ResolvedPluginTypes { get; set; } = new();
+    public List<string> ResolvedToolkitTypes { get; set; } = new();
 
     /// <summary>
     /// Full name: "ClassName.MethodName"
     /// </summary>
-    public string FullQualifiedName => $"{ParentPluginName}.{MethodName}";
+    public string FullQualifiedName => $"{ParentToolkitName}.{MethodName}";
 
     // ========== Code Generation ==========
 
@@ -60,7 +60,7 @@ internal class SkillCapability : BaseCapability
     /// This method exists for API completeness but is never called due to the hybrid registration pattern.
     /// See V2_ARCHITECTURAL_DECISIONS.md Decision 1 for rationale.
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this skill (ToolInfo).</param>
+    /// <param name="parent">The parent Toolkit that contains this skill (ToolkitInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     /// <exception cref="NotImplementedException">
     /// Skills use helper method registration. This method should never be called.
@@ -94,9 +94,9 @@ internal class SkillCapability : BaseCapability
         var props = base.GetAdditionalProperties();
         props["IsContainer"] = true;
         props["IsSkill"] = true;
-        props["ParentSkillContainer"] = ParentPluginName;
+        props["ParentSkillContainer"] = ParentToolkitName;
         props["ReferencedFunctions"] = ResolvedFunctionReferences.ToArray();
-        props["ReferencedPlugins"] = ResolvedPluginTypes.ToArray();
+        props["ReferencedToolkits"] = ResolvedToolkitTypes.ToArray();
         props["RequiresPermission"] = RequiresPermission;
 
         // Dual-context support (CRITICAL for runtime compatibility)
@@ -116,7 +116,7 @@ internal class SkillCapability : BaseCapability
     /// For Phase 1, this is a placeholder. Full implementation will delegate to SkillResolver
     /// in Phase 2-3, then be fully migrated in Phase 5.
     /// </summary>
-    /// <param name="allCapabilities">All capabilities from all plugins in the compilation.</param>
+    /// <param name="allCapabilities">All capabilities from all Toolkits in the compilation.</param>
     public override void ResolveReferences(List<ICapability> allCapabilities)
     {
         // TODO: For Phase 1, this is a placeholder
@@ -247,9 +247,9 @@ internal class ReferenceInfo
     public ReferenceType ReferenceType { get; set; }
 
     /// <summary>
-    /// Plugin type name (e.g., "FileSystemPlugin")
+    /// Toolkit type name (e.g., "FileSystemToolkit")
     /// </summary>
-    public string PluginType { get; set; } = string.Empty;
+    public string ToolkitType { get; set; } = string.Empty;
 
     /// <summary>
     /// Method name (e.g., "ReadFile" or "FileDebugging")
@@ -257,7 +257,7 @@ internal class ReferenceInfo
     public string MethodName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Full name: "PluginType.MethodName"
+    /// Full name: "ToolkitType.MethodName"
     /// </summary>
     public string FullName { get; set; } = string.Empty;
 

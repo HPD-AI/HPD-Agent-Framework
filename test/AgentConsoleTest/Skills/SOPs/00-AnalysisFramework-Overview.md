@@ -78,7 +78,7 @@ Start here: What question are you trying to answer?
 For most financial analysis projects, follow this sequence:
 
 ### Phase 1: Data Validation
-- Run `FinancialAnalysisPlugin.ValidateBalanceSheetEquation()` first
+- Run `FinancialAnalysisToolkit.ValidateBalanceSheetEquation()` first
 - If invalid, stop and investigate data quality
 - If valid, proceed to Phase 2
 

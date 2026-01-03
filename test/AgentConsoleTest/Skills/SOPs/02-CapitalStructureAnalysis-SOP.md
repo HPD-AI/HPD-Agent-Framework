@@ -44,7 +44,7 @@ Analyze how a company is financed (debt vs. equity) and assess financial leverag
 
 ### Step 2: Calculate Debt-to-Equity Ratio
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateDebtToEquityRatio(totalLiabilities, totalEquity)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateDebtToEquityRatio(totalLiabilities, totalEquity)`
 
 **Calculation:**
 ```
@@ -77,7 +77,7 @@ D/E Ratio = $400,000 ÷ $400,000 = 1.0
 
 ### Step 3: Calculate Debt-to-Assets Ratio
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateDebtToAssetsRatio(totalLiabilities, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateDebtToAssetsRatio(totalLiabilities, totalAssets)`
 
 **Calculation:**
 ```
@@ -110,7 +110,7 @@ D/A Ratio = $400,000 ÷ $1,000,000 = 0.40 or 40%
 
 ### Step 4: Calculate Equity Multiplier
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateEquityMultiplier(totalAssets, totalEquity)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateEquityMultiplier(totalAssets, totalEquity)`
 
 **Calculation:**
 ```
@@ -143,7 +143,7 @@ Equity Multiplier = $1,000,000 ÷ $400,000 = 2.5x
 
 ### Step 5: Calculate Equity-to-Assets Percentage
 
-**Function Call:** `FinancialAnalysisPlugin.EquityToTotalAssetsPercentage(totalEquity, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.EquityToTotalAssetsPercentage(totalEquity, totalAssets)`
 
 **Calculation:**
 ```

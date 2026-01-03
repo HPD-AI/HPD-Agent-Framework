@@ -21,22 +21,22 @@ See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
 
 | Category | Old Term | New Term |
 |----------|----------|----------|
-| **Tool Classes** | `*Plugin` | `*Tools` |
-| **Tool Metadata** | `IPluginMetadata` | `IToolMetadata` |
+| **Tool Classes** | `*Toolkit` | `*Tools` |
+| **Tool Metadata** | `IToolkitMetadata` | `IToolMetadata` |
 | **Client Tools** | `FrontendTool*` | `ClientTool*` |
-| **Client Tool Groups** | `FrontendPluginDefinition` | `ClientToolGroupDefinition` |
+| **Client Tool Groups** | `FrontendToolkitDefinition` | `ClientToolGroupDefinition` |
 
 #### C# API Changes
 
 **Tool Class Naming Convention:**
-- `WeatherPlugin` → `WeatherTools`
-- `SearchPlugin` → `SearchTools`
-- `FileSystemPlugin` → `FileSystemTools`
+- `WeatherToolkit` → `WeatherTools`
+- `SearchToolkit` → `SearchTools`
+- `FileSystemToolkit` → `FileSystemTools`
 
 **Interfaces & Attributes:**
-- `IPluginMetadata` → `IToolMetadata`
-- `IPluginMetadataContext` → `IToolMetadataContext`
-- `[PluginMetadata]` → `[ToolMetadata]`
+- `IToolkitMetadata` → `IToolMetadata`
+- `IToolkitMetadataContext` → `IToolMetadataContext`
+- `[ToolkitMetadata]` → `[ToolMetadata]`
 
 **AgentBuilder Methods:**
 - ` .WithTools<T>()` → `.WithTools<T>()`
@@ -47,14 +47,14 @@ See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
 - `FrontendToolsInstructions` → `ClientToolsInstructions`
 
 **Source Generator:**
-- `HPDPluginSourceGenerator` → `HPDToolSourceGenerator`
-- `PluginInfo` → `ToolInfo`
+- `HPDToolkitSourceGenerator` → `HPDToolSourceGenerator`
+- `ToolkitInfo` → `ToolInfo`
 
 #### TypeScript Client API Changes
 
 **Types:**
 - `FrontendToolDefinition` → `ClientToolDefinition`
-- `FrontendPluginDefinition` → `ClientToolGroupDefinition`
+- `FrontendToolkitDefinition` → `ClientToolGroupDefinition`
 - `FrontendSkillDefinition` → `ClientSkillDefinition`
 - `FrontendSkillReference` → `ClientSkillReference`
 - `FrontendSkillDocument` → `ClientSkillDocument`
@@ -65,34 +65,34 @@ See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
 
 **Events:**
 - `FrontendToolInvokeRequestEvent` → `ClientToolInvokeRequestEvent`
-- `FrontendPluginsRegisteredEvent` → `ClientToolGroupsRegisteredEvent`
+- `FrontendToolkitsRegisteredEvent` → `ClientToolGroupsRegisteredEvent`
 
 **Event Type Constants:**
 - `FRONTEND_TOOL_INVOKE_REQUEST` → `CLIENT_TOOL_INVOKE_REQUEST`
 - `FRONTEND_TOOL_INVOKE_RESPONSE` → `CLIENT_TOOL_INVOKE_RESPONSE`
-- `FRONTEND_PLUGINS_REGISTERED` → `CLIENT_TOOL_GROUPS_REGISTERED`
+- `FRONTEND_ToolkitS_REGISTERED` → `CLIENT_TOOL_GROUPS_REGISTERED`
 
 **Helper Functions:**
-- `createCollapsedPlugin()` → `createCollapsedToolGroup()`
-- `createExpandedPlugin()` → `createExpandedToolGroup()`
+- `createCollapsedToolkit()` → `createCollapsedToolGroup()`
+- `createExpandedToolkit()` → `createExpandedToolGroup()`
 
 **AgentClient Methods:**
-- `registerPlugin()` → `registerToolGroup()`
-- `registerPlugins()` → `registerToolGroups()`
-- `unregisterPlugin()` → `unregisterToolGroup()`
-- `plugins` property → `toolGroups` property
+- `registerToolkit()` → `registerToolGroup()`
+- `registerToolkits()` → `registerToolGroups()`
+- `unregisterToolkit()` → `unregisterToolGroup()`
+- `Toolkits` property → `toolGroups` property
 
 **Event Handlers:**
 - `onFrontendToolInvoke` → `onClientToolInvoke`
-- `onFrontendPluginsRegistered` → `onClientToolGroupsRegistered`
+- `onFrontendToolkitsRegistered` → `onClientToolGroupsRegistered`
 
 **Stream Options:**
-- `frontendPlugins` → `clientToolGroups`
+- `frontendToolkits` → `clientToolGroups`
 - `resetFrontendState` → `resetClientState`
 
 **Type Guards:**
 - `isFrontendToolInvokeRequestEvent()` → `isClientToolInvokeRequestEvent()`
-- `isFrontendPluginsRegisteredEvent()` → `isClientToolGroupsRegisteredEvent()`
+- `isFrontendToolkitsRegisteredEvent()` → `isClientToolGroupsRegisteredEvent()`
 
 #### Wire Protocol Changes
 
@@ -102,7 +102,7 @@ If you have custom integrations that parse events directly:
 |----------------|----------------|
 | `FRONTEND_TOOL_INVOKE_REQUEST` | `CLIENT_TOOL_INVOKE_REQUEST` |
 | `FRONTEND_TOOL_INVOKE_RESPONSE` | `CLIENT_TOOL_INVOKE_RESPONSE` |
-| `FRONTEND_PLUGINS_REGISTERED` | `CLIENT_TOOL_GROUPS_REGISTERED` |
+| `FRONTEND_ToolkitS_REGISTERED` | `CLIENT_TOOL_GROUPS_REGISTERED` |
 
 ### Changed
 
@@ -113,8 +113,8 @@ If you have custom integrations that parse events directly:
 
 ### Removed
 
-- `HPD-Agent.Plugins.FileSystem` package (moved to `HPD-Agent.Tools.FileSystem`)
-- `HPD-Agent.Plugins.WebSearch` package (moved to `HPD-Agent.Tools.WebSearch`)
+- `HPD-Agent.Toolkits.FileSystem` package (moved to `HPD-Agent.Tools.FileSystem`)
+- `HPD-Agent.Toolkits.WebSearch` package (moved to `HPD-Agent.Tools.WebSearch`)
 
 ### Migration
 
@@ -127,7 +127,7 @@ See [MIGRATION.md](MIGRATION.md) for step-by-step upgrade instructions with find
 Last stable release before terminology changes.
 
 ### Features
-- Plugin-based tool registration
+- Toolkit-based tool registration
 - Frontend tools for client-side execution
 - Conversation threading with branching support
 - MCP server integration

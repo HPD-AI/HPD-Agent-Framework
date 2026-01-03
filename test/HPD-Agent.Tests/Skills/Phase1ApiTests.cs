@@ -9,14 +9,14 @@ namespace HPD.Agent.Tests.Skills;
 /// </summary>
 public class Phase1ApiTests
 {
-    // Mock plugins for testing
+    // Mock Toolkits for testing
     private static class MockFileSystemTools
     {
         public static string ReadFile(string path) => $"Reading {path}";
         public static void WriteFile(string path, string content) { }
     }
 
-    private static class MockDebugPlugin
+    private static class MockDebugToolkit
     {
         public static string GetStackTrace() => "Stack trace...";
     }
@@ -57,7 +57,7 @@ public class Phase1ApiTests
             systemPrompt: "Test instructions",
             options: options,
             "MockFileSystemTools.ReadFile",
-            "MockDebugPlugin.GetStackTrace"
+            "MockDebugToolkit.GetStackTrace"
         );
 
         // Assert
@@ -303,11 +303,11 @@ public class Phase1ApiTests
         var skill = SkillFactory.Create("Test", "Test", "FunctionResult", "SystemPrompt");
 
         // Act
-        skill.ResolvedFunctionReferences = new[] { "Plugin1.Func1", "Plugin2.Func2" };
-        skill.ResolvedPluginTypes = new[] { "Plugin1", "Plugin2" };
+        skill.ResolvedFunctionReferences = new[] { "Toolkit1.Func1", "Toolkit2.Func2" };
+        skill.ResolvedToolkitTypes = new[] { "Toolkit1", "Toolkit2" };
 
         // Assert
         Assert.Equal(2, skill.ResolvedFunctionReferences.Length);
-        Assert.Equal(2, skill.ResolvedPluginTypes.Length);
+        Assert.Equal(2, skill.ResolvedToolkitTypes.Length);
     }
 }

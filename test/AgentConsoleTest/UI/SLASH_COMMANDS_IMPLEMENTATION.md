@@ -12,7 +12,7 @@ Modeled after Gemini CLI's extensible command architecture:
   - Primary name and aliases
   - Description for help text
   - AutoExecute flag (execute on Enter vs autocomplete)
-  - Category tagging (Built-in, Plugin, MCP, etc.)
+  - Category tagging (Built-in, Toolkit, MCP, etc.)
   - Support for subcommands
   - Async action handlers
   - Argument completion providers
@@ -167,7 +167,7 @@ Based on Gemini CLI features we could add:
 4. **Command Aliases**: User-defined command shortcuts
 
 ### Medium-term
-1. **Plugin Commands**: Load commands from external assemblies
+1. **Toolkit Commands**: Load commands from external assemblies
 2. **MCP Integration**: Commands from Model Context Protocol servers
 3. **Subcommands**: Full support for nested command hierarchies
 4. **Command Help**: Per-command detailed help (`/help stats`)

@@ -4,7 +4,7 @@ namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
 /// Tracks tool visibility changes across agent iterations.
-/// Used for testing container expansion and plugin Collapsing.
+/// Used for testing container expansion and Toolkit Collapsing.
 /// </summary>
 public sealed class ToolVisibilityTracker
 {
@@ -27,8 +27,8 @@ public sealed class ToolVisibilityTracker
     {
         var toolList = availableTools.ToList();
         var toolNames = toolList.Select(t => t.Name ?? "").ToList();
-        var containers = toolList.Where(CollapsedPluginTestHelper.IsContainer).Select(t => t.Name ?? "").ToList();
-        var regularFunctions = toolList.Where(t => !CollapsedPluginTestHelper.IsContainer(t)).Select(t => t.Name ?? "").ToList();
+        var containers = toolList.Where(CollapsedToolkitTestHelper.IsContainer).Select(t => t.Name ?? "").ToList();
+        var regularFunctions = toolList.Where(t => !CollapsedToolkitTestHelper.IsContainer(t)).Select(t => t.Name ?? "").ToList();
 
         var snapshot = new ToolSnapshot(iteration, toolNames, containers, regularFunctions);
 

@@ -11,12 +11,12 @@ namespace HPD.Agent.Tests.ClientTools;
 
 /// <summary>
 /// Unit tests for ClientToolMiddleware.
-/// Tests plugin registration, tool visibility, and tool invocation interception.
+/// Tests Toolkit registration, tool visibility, and tool invocation interception.
 /// </summary>
 public class ClientToolMiddlewareTests
 {
     // ============================================
-    // BeforeMessageTurnAsync - Plugin Registration Tests
+    // BeforeMessageTurnAsync - Toolkit Registration Tests
     // ============================================
 
     [Fact]
@@ -34,7 +34,7 @@ public class ClientToolMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeMessageTurn_WithToolss_RegistersPlugins()
+    public async Task BeforeMessageTurn_WithToolss_RegistersToolkits()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
@@ -43,8 +43,8 @@ public class ClientToolMiddlewareTests
         {
             ClientToolGroups = new[]
             {
-                CreateTestPlugin("Plugin1", tools: new[] { CreateTestTool("Tool1") }),
-                CreateTestPlugin("Plugin2", tools: new[] { CreateTestTool("Tool2") })
+                CreateTestToolkit("Toolkit1", tools: new[] { CreateTestTool("Tool1") }),
+                CreateTestToolkit("Toolkit2", tools: new[] { CreateTestTool("Tool2") })
             }
         };
         context.RunOptions.ClientToolInput = runInput;
@@ -56,8 +56,8 @@ public class ClientToolMiddlewareTests
         var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
         Assert.Equal(2, state.RegisteredToolGroups.Count);
-        Assert.True(state.RegisteredToolGroups.ContainsKey("Plugin1"));
-        Assert.True(state.RegisteredToolGroups.ContainsKey("Plugin2"));
+        Assert.True(state.RegisteredToolGroups.ContainsKey("Toolkit1"));
+        Assert.True(state.RegisteredToolGroups.ContainsKey("Toolkit2"));
     }
 
     [Fact]
@@ -70,10 +70,10 @@ public class ClientToolMiddlewareTests
         {
             ClientToolGroups = new[]
             {
-                CreateTestPlugin("Plugin1", startCollapsed: true),
-                CreateTestPlugin("Plugin2", startCollapsed: true)
+                CreateTestToolkit("Toolkit1", startCollapsed: true),
+                CreateTestToolkit("Toolkit2", startCollapsed: true)
             },
-            ExpandedContainers = new HashSet<string> { "Plugin1" }
+            ExpandedContainers = new HashSet<string> { "Toolkit1" }
         };
         context.RunOptions.ClientToolInput = runInput;
 
@@ -83,8 +83,8 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.Analyze(s => s.MiddlewareState.ClientTool);
         Assert.NotNull(state);
-        Assert.Contains("Plugin1", state.ExpandedPlugins);
-        Assert.DoesNotContain("Plugin2", state.ExpandedPlugins);
+        Assert.Contains("Toolkit1", state.ExpandedToolkits);
+        Assert.DoesNotContain("Toolkit2", state.ExpandedToolkits);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class ClientToolMiddlewareTests
         {
             ClientToolGroups = new[]
             {
-                CreateTestPlugin("Plugin1", tools: new[]
+                CreateTestToolkit("Toolkit1", tools: new[]
                 {
                     CreateTestTool("Tool1"),
                     CreateTestTool("Tool2")
@@ -125,7 +125,7 @@ public class ClientToolMiddlewareTests
         var context = CreateContext();
         var runInput = new AgentRunInput
         {
-            ClientToolGroups = new[] { CreateTestPlugin("Plugin1") },
+            ClientToolGroups = new[] { CreateTestToolkit("Toolkit1") },
             Context = new[]
             {
                 new ContextItem("User preferences", "dark-theme", "prefs"),
@@ -154,7 +154,7 @@ public class ClientToolMiddlewareTests
         var appState = JsonSerializer.SerializeToElement(new { cartItems = 3, userId = "user123" });
         var runInput = new AgentRunInput
         {
-            ClientToolGroups = new[] { CreateTestPlugin("Plugin1") },
+            ClientToolGroups = new[] { CreateTestToolkit("Toolkit1") },
             State = appState
         };
         context.RunOptions.ClientToolInput = runInput;
@@ -174,11 +174,11 @@ public class ClientToolMiddlewareTests
         // Arrange
         var middleware = new ClientToolMiddleware();
 
-        // First call - register plugins
+        // First call - register Toolkits
         var context1 = CreateContext();
         var runInput1 = new AgentRunInput
         {
-            ClientToolGroups = new[] { CreateTestPlugin("OldPlugin") }
+            ClientToolGroups = new[] { CreateTestToolkit("OldToolkit") }
         };
         context1.RunOptions.ClientToolInput = runInput1;
         await middleware.BeforeMessageTurnAsync(context1, CancellationToken.None);
@@ -187,7 +187,7 @@ public class ClientToolMiddlewareTests
         var context2 = CreateContext(context1.State);
         var runInput2 = new AgentRunInput
         {
-            ClientToolGroups = new[] { CreateTestPlugin("NewPlugin") },
+            ClientToolGroups = new[] { CreateTestToolkit("NewToolkit") },
             ResetClientState = true
         };
         context2.RunOptions.ClientToolInput = runInput2;
@@ -195,12 +195,12 @@ public class ClientToolMiddlewareTests
         // Act
         await middleware.BeforeMessageTurnAsync(context2, CancellationToken.None);
 
-        // Assert - only new plugin registered
+        // Assert - only new Toolkit registered
         var state = context2.State.MiddlewareState.ClientTool;
         Assert.NotNull(state);
         Assert.Single(state.RegisteredToolGroups);
-        Assert.True(state.RegisteredToolGroups.ContainsKey("NewPlugin"));
-        Assert.False(state.RegisteredToolGroups.ContainsKey("OldPlugin"));
+        Assert.True(state.RegisteredToolGroups.ContainsKey("NewToolkit"));
+        Assert.False(state.RegisteredToolGroups.ContainsKey("OldToolkit"));
     }
 
     // ============================================
@@ -222,19 +222,19 @@ public class ClientToolMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeIteration_WithExpandedPlugin_AddsToolsToOptions()
+    public async Task BeforeIteration_WithExpandedToolkit_AddsToolsToOptions()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
 
-        // Set up state with registered and expanded plugin
+        // Set up state with registered and expanded Toolkit
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1", tools: new[]
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1", tools: new[]
             {
                 CreateTestTool("Tool1"),
                 CreateTestTool("Tool2")
             }))
-            .WithExpandedPlugin("Plugin1");
+            .WithExpandedToolkit("Toolkit1");
 
         var agentState = CreateEmptyState() with
         {
@@ -257,12 +257,12 @@ public class ClientToolMiddlewareTests
         var middleware = new ClientToolMiddleware();
 
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1", tools: new[]
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1", tools: new[]
             {
                 CreateTestTool("Tool1"),
                 CreateTestTool("Tool2")
             }))
-            .WithExpandedPlugin("Plugin1")
+            .WithExpandedToolkit("Toolkit1")
             .WithHiddenTool("Tool1");
 
         var agentState = CreateEmptyState() with
@@ -282,25 +282,25 @@ public class ClientToolMiddlewareTests
     }
 
     // ============================================
-    // Plugin Validation Tests
+    // Toolkit Validation Tests
     // ============================================
 
     [Fact]
-    public async Task BeforeMessageTurn_CollapsedPluginWithoutDescription_ThrowsValidationError()
+    public async Task BeforeMessageTurn_CollapsedToolkitWithoutDescription_ThrowsValidationError()
     {
         // Arrange
         var middleware = new ClientToolMiddleware(new ClientToolConfig { ValidateSchemaOnRegistration = true });
         var context = CreateBeforeMessageTurnContext();
 
-        // Create plugin with startCollapsed=true but no description
-        var plugin = new ClientToolGroupDefinition(
-            Name: "BadPlugin",
+        // Create Toolkit with startCollapsed=true but no description
+        var Toolkit = new ClientToolGroupDefinition(
+            Name: "BadToolkit",
             Description: null, // No description!
             Tools: new[] { CreateTestTool("Tool1") },
             StartCollapsed: true
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
+        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
         context.RunOptions.ClientToolInput = runInput;
 
         // Act & Assert
@@ -320,14 +320,14 @@ public class ClientToolMiddlewareTests
 
         var augmentation = new ClientToolAugmentation
         {
-            ExpandPlugins = new HashSet<string> { "Plugin2" },
+            ExpandToolkits = new HashSet<string> { "Toolkit2" },
             HideTools = new HashSet<string> { "Tool1" }
         };
 
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1", tools: new[] { CreateTestTool("Tool1") }))
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin2", tools: new[] { CreateTestTool("Tool2") }))
-            .WithExpandedPlugin("Plugin1")
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1", tools: new[] { CreateTestTool("Tool1") }))
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit2", tools: new[] { CreateTestTool("Tool2") }))
+            .WithExpandedToolkit("Toolkit1")
             .WithPendingAugmentation(augmentation);
 
         var agentState = CreateEmptyState() with
@@ -345,7 +345,7 @@ public class ClientToolMiddlewareTests
         Assert.NotNull(updatedState);
 
         // Augmentation should have been applied
-        Assert.Contains("Plugin2", updatedState.ExpandedPlugins);
+        Assert.Contains("Toolkit2", updatedState.ExpandedToolkits);
         Assert.Contains("Tool1", updatedState.HiddenTools);
 
         // Augmentation should be cleared
@@ -370,7 +370,7 @@ public class ClientToolMiddlewareTests
             References: new[] { new ClientSkillReference("AddToCart") }
         );
 
-        var plugin = new ClientToolGroupDefinition(
+        var Toolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -378,7 +378,7 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
+        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
         context.RunOptions.ClientToolInput = runInput;
 
         // Act
@@ -405,7 +405,7 @@ public class ClientToolMiddlewareTests
             SystemPrompt: "1. Verify cart\n2. Get payment\n3. Confirm order"
         );
 
-        var plugin = new ClientToolGroupDefinition(
+        var Toolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -414,8 +414,8 @@ public class ClientToolMiddlewareTests
         );
 
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(plugin)
-            .WithExpandedPlugin("ECommerce");
+            .WithRegisteredToolkit(Toolkit)
+            .WithExpandedToolkit("ECommerce");
 
         var agentState = CreateEmptyState() with
         {
@@ -450,7 +450,7 @@ public class ClientToolMiddlewareTests
             }
         );
 
-        var plugin = new ClientToolGroupDefinition(
+        var Toolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -459,8 +459,8 @@ public class ClientToolMiddlewareTests
         );
 
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(plugin)
-            .WithExpandedPlugin("ECommerce");
+            .WithRegisteredToolkit(Toolkit)
+            .WithExpandedToolkit("ECommerce");
 
         var agentState = CreateEmptyState() with
         {
@@ -488,7 +488,7 @@ public class ClientToolMiddlewareTests
         var middleware = new ClientToolMiddleware();
         var context = CreateBeforeMessageTurnContext();
 
-        // Skill references a tool that doesn't exist in the plugin
+        // Skill references a tool that doesn't exist in the Toolkit
         var skill = new ClientSkillDefinition(
             Name: "CheckoutWorkflow",
             Description: "Guides through checkout process",
@@ -496,7 +496,7 @@ public class ClientToolMiddlewareTests
             References: new[] { new ClientSkillReference("NonExistentTool") }
         );
 
-        var plugin = new ClientToolGroupDefinition(
+        var Toolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -504,7 +504,7 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
+        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
         context.RunOptions.ClientToolInput = runInput;
 
         // Act & Assert - should throw because skill references non-existent tool
@@ -513,25 +513,25 @@ public class ClientToolMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeMessageTurn_SkillWithCrossPluginReference_ValidatesCorrectly()
+    public async Task BeforeMessageTurn_SkillWithCrossToolkitReference_ValidatesCorrectly()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateBeforeMessageTurnContext();
 
-        // Plugin A has a skill that references a tool in Plugin B
+        // Toolkit A has a skill that references a tool in Toolkit B
         var skillWithCrossRef = new ClientSkillDefinition(
             Name: "FullOrderWorkflow",
             Description: "Complete order workflow",
-            SystemPrompt: "Use tools from both plugins",
+            SystemPrompt: "Use tools from both Toolkits",
             References: new[]
             {
                 new ClientSkillReference("AddToCart"),  // Local tool
-                new ClientSkillReference("ProcessPayment", "PaymentPlugin")  // Cross-plugin ref
+                new ClientSkillReference("ProcessPayment", "PaymentToolkit")  // Cross-Toolkit ref
             }
         );
 
-        var ecommercePlugin = new ClientToolGroupDefinition(
+        var ecommerceToolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -539,8 +539,8 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var paymentPlugin = new ClientToolGroupDefinition(
-            Name: "PaymentPlugin",
+        var paymentToolkit = new ClientToolGroupDefinition(
+            Name: "PaymentToolkit",
             Description: "Payment tools",
             Tools: new[] { CreateTestTool("ProcessPayment") },
             StartCollapsed: false
@@ -548,11 +548,11 @@ public class ClientToolMiddlewareTests
 
         var runInput = new AgentRunInput
         {
-            ClientToolGroups = new[] { ecommercePlugin, paymentPlugin }
+            ClientToolGroups = new[] { ecommerceToolkit, paymentToolkit }
         };
         context.RunOptions.ClientToolInput = runInput;
 
-        // Act - should succeed because PaymentPlugin.ProcessPayment exists
+        // Act - should succeed because PaymentToolkit.ProcessPayment exists
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
@@ -562,48 +562,48 @@ public class ClientToolMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeMessageTurn_SkillWithInvalidCrossPluginReference_ThrowsValidationError()
+    public async Task BeforeMessageTurn_SkillWithInvalidCrossToolkitReference_ThrowsValidationError()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateBeforeMessageTurnContext();
 
-        // Skill references a tool in a plugin that doesn't exist
+        // Skill references a tool in a Toolkit that doesn't exist
         var skillWithBadRef = new ClientSkillDefinition(
             Name: "BadWorkflow",
             Description: "Workflow with invalid reference",
             SystemPrompt: "This will fail",
             References: new[]
             {
-                new ClientSkillReference("SomeTool", "NonExistentPlugin")
+                new ClientSkillReference("SomeTool", "NonExistentToolkit")
             }
         );
 
-        var plugin = new ClientToolGroupDefinition(
-            Name: "MyPlugin",
+        var Toolkit = new ClientToolGroupDefinition(
+            Name: "MyToolkit",
             Description: "My tools",
             Tools: new[] { CreateTestTool("LocalTool") },
             Skills: new[] { skillWithBadRef },
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { plugin } };
+        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
         context.RunOptions.ClientToolInput = runInput;
 
-        // Act & Assert - should throw because referenced plugin doesn't exist
+        // Act & Assert - should throw because referenced Toolkit doesn't exist
         await Assert.ThrowsAsync<ArgumentException>(
             async () => await middleware.BeforeMessageTurnAsync(context, CancellationToken.None));
     }
 
     [Fact]
-    public async Task BeforeIteration_CollapsedPlugin_HasContainerAndSkills()
+    public async Task BeforeIteration_CollapsedToolkit_HasContainerAndSkills()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
 
-        // When a plugin is collapsed:
+        // When a Toolkit is collapsed:
         // - Container function (Client_ECommerce) is added
-        // - Collapsed tools (with ParentPlugin metadata) are added for ToolCollapsingMiddleware
+        // - Collapsed tools (with ParentToolkit metadata) are added for ToolCollapsingMiddleware
         // - Skills are ALWAYS added (they're entry points)
         var skill = new ClientSkillDefinition(
             Name: "QuickCheckout",
@@ -611,7 +611,7 @@ public class ClientToolMiddlewareTests
             SystemPrompt: "Use this for quick orders"
         );
 
-        var plugin = new ClientToolGroupDefinition(
+        var Toolkit = new ClientToolGroupDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart"), CreateTestTool("RemoveFromCart") },
@@ -619,10 +619,10 @@ public class ClientToolMiddlewareTests
             StartCollapsed: true
         );
 
-        // Plugin is NOT expanded
+        // Toolkit is NOT expanded
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(plugin);
-        // Note: NOT calling .WithExpandedPlugin()
+            .WithRegisteredToolkit(Toolkit);
+        // Note: NOT calling .WithExpandedToolkit()
 
         var agentState = CreateEmptyState() with
         {
@@ -644,14 +644,14 @@ public class ClientToolMiddlewareTests
         // Skill is visible (skills are always available as entry points)
         Assert.Contains("QuickCheckout", functionNames);
 
-        // Tools exist (with ParentPlugin metadata for ToolCollapsingMiddleware to filter)
+        // Tools exist (with ParentToolkit metadata for ToolCollapsingMiddleware to filter)
         Assert.Contains("AddToCart", functionNames);
         Assert.Contains("RemoveFromCart", functionNames);
 
-        // Verify tools have ParentPlugin metadata (for Collapsing middleware)
+        // Verify tools have ParentToolkit metadata (for Collapsing middleware)
         var addToCart = functions.First(f => f.Name == "AddToCart");
-        Assert.True(addToCart.AdditionalProperties?.ContainsKey("ParentPlugin") == true);
-        Assert.Equal("Client_ECommerce", addToCart.AdditionalProperties!["ParentPlugin"]);
+        Assert.True(addToCart.AdditionalProperties?.ContainsKey("ParentToolkit") == true);
+        Assert.Equal("Client_ECommerce", addToCart.AdditionalProperties!["ParentToolkit"]);
     }
 
     [Fact]
@@ -781,14 +781,14 @@ public class ClientToolMiddlewareTests
             agentName: "TestAgent");
     }
 
-    private static ClientToolGroupDefinition CreateTestPlugin(
+    private static ClientToolGroupDefinition CreateTestToolkit(
         string name,
         ClientToolDefinition[]? tools = null,
         bool startCollapsed = false)
     {
         return new ClientToolGroupDefinition(
             Name: name,
-            Description: $"Test plugin {name}",
+            Description: $"Test Toolkit {name}",
             Tools: tools ?? new[] { CreateTestTool($"{name}_DefaultTool") },
             StartCollapsed: startCollapsed
         );

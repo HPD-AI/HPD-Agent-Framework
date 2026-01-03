@@ -4,7 +4,7 @@ using System.ComponentModel;
 using Microsoft.Extensions.AI;
 
 /// <summary>
-/// Simple math plugin for testing plugin registration and invocation.
+/// Simple math Toolkit for testing Toolkit registration and invocation.
 /// </summary>
 public class MathToolMetadataContext : IToolMetadata
 {
@@ -38,8 +38,8 @@ public class MathToolMetadataContext : IToolMetadata
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
 
-[Collapse("Math Plugin")]
-public class MathTools
+[Toolkit("Math Toolkit")]
+public class MathToolkit
 {
     [AIFunction<MathToolMetadataContext>]
     [AIDescription("Adds two numbers and returns the sum.")]

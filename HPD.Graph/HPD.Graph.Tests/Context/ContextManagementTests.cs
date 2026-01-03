@@ -139,8 +139,10 @@ public class ContextManagementTests
         // Act
         var isolated = original.CreateIsolatedCopy();
 
-        // Assert - Isolated copy should not have completed nodes
-        isolated.IsNodeComplete("node1").Should().BeFalse();
+        // Assert - Isolated copy SHOULD have completed nodes (needed for PrepareInputs to work)
+        // This was changed from BeFalse() to BeTrue() because isolated contexts need to know
+        // which upstream nodes have completed in order to properly evaluate edge conditions
+        isolated.IsNodeComplete("node1").Should().BeTrue();
         isolated.ExecutionId.Should().Be(original.ExecutionId);
     }
 

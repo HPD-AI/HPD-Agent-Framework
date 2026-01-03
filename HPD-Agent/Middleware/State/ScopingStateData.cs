@@ -5,7 +5,7 @@ using System.Collections.Immutable;
 namespace HPD.Agent;
 
 /// <summary>
-/// State for tool Collapsing middleware. Tracks which containers (plugins and skills)
+/// State for tool Collapsing middleware. Tracks which containers (Toolkits and skills)
 /// have been expanded during the current message turn.
 /// </summary>
 /// <remarks>
@@ -20,13 +20,13 @@ namespace HPD.Agent;
 /// <code>
 /// // Read state
 /// var CollapsingState = context.State.MiddlewareState.Collapsing ?? new();
-/// var isExpanded = CollapsingState.ExpandedContainers.Contains("FinancialPlugin");
+/// var isExpanded = CollapsingState.ExpandedContainers.Contains("FinancialToolkit");
 ///
 /// // Update state
 /// context.UpdateState(s => s with
 /// {
 ///     MiddlewareState = s.MiddlewareState.WithCollapsing(
-///         CollapsingState.WithExpandedContainer("FinancialPlugin"))
+///         CollapsingState.WithExpandedContainer("FinancialToolkit"))
 /// });
 /// </code>
 ///
@@ -41,7 +41,7 @@ namespace HPD.Agent;
 public sealed record CollapsingStateData
 {
     /// <summary>
-    /// All expanded containers (plugins AND skills) across the entire session.
+    /// All expanded containers (Toolkits AND skills) across the entire session.
     /// Containers in this set have their member functions visible.
     /// Persists across message turns.
     /// </summary>
@@ -65,7 +65,7 @@ public sealed record CollapsingStateData
         = ImmutableDictionary<string, ContainerInstructionSet>.Empty;
 
     /// <summary>
-    /// Records a container expansion (plugin or skill).
+    /// Records a container expansion (Toolkit or skill).
     /// Adds to both session-level ExpandedContainers and turn-level ContainersExpandedThisTurn.
     /// </summary>
     /// <param name="containerName">Name of the container being expanded</param>
@@ -120,7 +120,7 @@ public sealed record CollapsingStateData
 }
 
 /// <summary>
-/// Instruction contexts for a container (plugin or skill).
+/// Instruction contexts for a container (Toolkit or skill).
 /// Supports dual-injection: function result (ephemeral) + system prompt (persistent).
 /// </summary>
 public sealed record ContainerInstructionSet(

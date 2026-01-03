@@ -509,6 +509,17 @@ internal sealed class OpenRouterChatClient : IChatClient
         var requestMessages = new List<OpenRouterRequestMessage>();
         bool hasPdfContent = false; // ✨ PERFORMANCE: Track PDF content during iteration
 
+        // ✨ FIX: Add system instructions from ChatOptions.Instructions as first message
+        // This follows Microsoft.Extensions.AI convention where system prompts are passed via ChatOptions
+        if (!string.IsNullOrEmpty(options?.Instructions))
+        {
+            requestMessages.Add(new OpenRouterRequestMessage
+            {
+                Role = "system",
+                Content = options.Instructions
+            });
+        }
+
         foreach (var m in messages)
         {
             // ✨ FIX: Handle parallel function calls by creating separate messages for each FunctionResultContent
@@ -674,12 +685,12 @@ internal sealed class OpenRouterChatClient : IChatClient
             };
         }
 
-        // ✨ PERFORMANCE: Only add PDF plugin if we detected PDF content
+        // ✨ PERFORMANCE: Only add PDF Toolkit if we detected PDF content
         if (hasPdfContent)
         {
-            request.Plugins = new List<OpenRouterPlugin>
+            request.Toolkits = new List<OpenRouterToolkit>
             {
-                new OpenRouterPlugin
+                new OpenRouterToolkit
                 {
                     Id = "file-parser",
                     Pdf = new OpenRouterPdfConfig
@@ -866,20 +877,20 @@ internal sealed class OpenRouterChatClient : IChatClient
                 // Support PDF engine configuration
                 if (options.AdditionalProperties.TryGetValue("pdf_engine", out var pdfEngine) && pdfEngine is string pdfEngineVal && hasPdfContent)
                 {
-                    if (request.Plugins == null)
+                    if (request.Toolkits == null)
                     {
-                        request.Plugins = new List<OpenRouterPlugin>();
+                        request.Toolkits = new List<OpenRouterToolkit>();
                     }
                     
-                    // Update or add PDF plugin
-                    var existingPlugin = request.Plugins.FirstOrDefault(p => p.Id == "file-parser");
-                    if (existingPlugin != null)
+                    // Update or add PDF Toolkit
+                    var existingToolkit = request.Toolkits.FirstOrDefault(p => p.Id == "file-parser");
+                    if (existingToolkit != null)
                     {
-                        existingPlugin.Pdf = new OpenRouterPdfConfig { Engine = pdfEngineVal };
+                        existingToolkit.Pdf = new OpenRouterPdfConfig { Engine = pdfEngineVal };
                     }
                     else
                     {
-                        request.Plugins.Add(new OpenRouterPlugin
+                        request.Toolkits.Add(new OpenRouterToolkit
                         {
                             Id = "file-parser",
                             Pdf = new OpenRouterPdfConfig { Engine = pdfEngineVal }

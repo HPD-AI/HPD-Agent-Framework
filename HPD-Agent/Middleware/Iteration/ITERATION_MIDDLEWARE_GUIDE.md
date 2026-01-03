@@ -348,7 +348,7 @@ if (_logger != null)
 }
 
 // Skill instruction Middleware (if skills registered)
-if (_pluginManager.GetPluginRegistrations().Any())
+if (_ToolkitManager.GetToolkitRegistrations().Any())
 {
     _IterationMiddleWares.Add(new SkillInstructionIterationMiddleWare());
 }

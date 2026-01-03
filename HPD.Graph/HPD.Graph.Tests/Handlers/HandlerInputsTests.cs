@@ -401,4 +401,326 @@ public class HandlerInputsTests
     }
 
     #endregion
+
+    #region GetAllMatching Tests (Phase 3)
+
+    [Fact]
+    public void GetAllMatching_WildcardSuffix_CollectsMatchingValues()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+        inputs.Add("solver2.answer", "42");
+        inputs.Add("solver3.answer", "41");
+        inputs.Add("classifier.question", "What is 6*7?");
+
+        // Act
+        var answers = inputs.GetAllMatching<string>("*.answer");
+
+        // Assert
+        answers.Should().HaveCount(3);
+        answers.Should().Contain("42");
+        answers.Should().Contain("41");
+    }
+
+    [Fact]
+    public void GetAllMatching_WildcardPrefix_CollectsMatchingValues()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.result", "A");
+        inputs.Add("solver2.result", "B");
+        inputs.Add("verifier.result", "C");
+
+        // Act
+        var solverResults = inputs.GetAllMatching<string>("solver*");
+
+        // Assert
+        solverResults.Should().HaveCount(2);
+        solverResults.Should().Contain("A");
+        solverResults.Should().Contain("B");
+    }
+
+    [Fact]
+    public void GetAllMatching_NoMatches_ReturnsEmptyList()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("key1", "value1");
+        inputs.Add("key2", "value2");
+
+        // Act
+        var matches = inputs.GetAllMatching<string>("*.answer");
+
+        // Assert
+        matches.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetAllMatching_TypeMismatch_FiltersOutWrongTypes()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "string answer");
+        inputs.Add("solver2.answer", 42); // Integer, not string
+
+        // Act
+        var stringAnswers = inputs.GetAllMatching<string>("*.answer");
+
+        // Assert
+        stringAnswers.Should().HaveCount(1);
+        stringAnswers.Should().Contain("string answer");
+    }
+
+    [Fact]
+    public void GetAllMatching_SpecialCharactersInNodeId_WorksCorrectly()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("node-with-dashes.answer", "A");
+        inputs.Add("node_with_underscores.answer", "B");
+        inputs.Add("node123.answer", "C");
+
+        // Act
+        var answers = inputs.GetAllMatching<string>("*.answer");
+
+        // Assert
+        answers.Should().HaveCount(3);
+    }
+
+    #endregion
+
+    #region GetAllMatchingWithKeys Tests (Phase 3)
+
+    [Fact]
+    public void GetAllMatchingWithKeys_PreservesSourceAttribution()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+        inputs.Add("solver2.answer", "84");
+
+        // Act
+        var results = inputs.GetAllMatchingWithKeys<string>("solver*.answer");
+
+        // Assert
+        results.Should().HaveCount(2);
+        results["solver1.answer"].Should().Be("42");
+        results["solver2.answer"].Should().Be("84");
+    }
+
+    [Fact]
+    public void GetAllMatchingWithKeys_NoMatches_ReturnsEmptyDictionary()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("key1", "value1");
+
+        // Act
+        var results = inputs.GetAllMatchingWithKeys<string>("*.answer");
+
+        // Assert
+        results.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region GetNamespace Tests (Phase 3)
+
+    [Fact]
+    public void GetNamespace_ReturnsAllOutputsFromSource()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+        inputs.Add("solver1.confidence", 0.95);
+        inputs.Add("solver2.answer", "84");
+
+        // Act
+        var solver1Outputs = inputs.GetNamespace<object>("solver1");
+
+        // Assert
+        solver1Outputs.Should().HaveCount(2);
+        solver1Outputs["answer"].Should().Be("42");
+        solver1Outputs["confidence"].Should().Be(0.95);
+    }
+
+    [Fact]
+    public void GetNamespace_NonExistentSource_ReturnsEmptyDictionary()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+
+        // Act
+        var solver2Outputs = inputs.GetNamespace<object>("solver2");
+
+        // Assert
+        solver2Outputs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetNamespace_StripsPrefix()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+
+        // Act
+        var outputs = inputs.GetNamespace<string>("solver1");
+
+        // Assert
+        outputs.Should().ContainKey("answer"); // Not "solver1.answer"
+        outputs.Should().NotContainKey("solver1.answer");
+    }
+
+    #endregion
+
+    #region TryGetNamespace Tests (Phase 3)
+
+    [Fact]
+    public void TryGetNamespace_ExistingNamespace_ReturnsTrueAndSetsResult()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+        inputs.Add("solver1.confidence", 0.95);
+
+        // Act
+        var success = inputs.TryGetNamespace<object>("solver1", out var result);
+
+        // Assert
+        success.Should().BeTrue();
+        result.Should().HaveCount(2);
+        result["answer"].Should().Be("42");
+    }
+
+    [Fact]
+    public void TryGetNamespace_NonExistentNamespace_ReturnsFalseAndEmptyResult()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "42");
+
+        // Act
+        var success = inputs.TryGetNamespace<object>("solver2", out var result);
+
+        // Assert
+        success.Should().BeFalse();
+        result.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region GetAllFromSources Tests (Phase 3)
+
+    [Fact]
+    public void GetAllFromSources_CollectsFromExplicitSources()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "A");
+        inputs.Add("solver2.answer", "B");
+        inputs.Add("solver3.answer", "C");
+
+        // Act
+        var answers = inputs.GetAllFromSources<string>("answer", "solver1", "solver3");
+
+        // Assert
+        answers.Should().HaveCount(2);
+        answers.Should().Contain("A");
+        answers.Should().Contain("C");
+        answers.Should().NotContain("B");
+    }
+
+    [Fact]
+    public void GetAllFromSources_MissingSourcesAreSkipped()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "A");
+        // solver2 doesn't have an answer
+
+        // Act
+        var answers = inputs.GetAllFromSources<string>("answer", "solver1", "solver2");
+
+        // Assert
+        answers.Should().HaveCount(1);
+        answers.Should().Contain("A");
+    }
+
+    [Fact]
+    public void GetAllFromSources_TypeMismatchFiltersOut()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "string");
+        inputs.Add("solver2.answer", 42); // Integer
+
+        // Act
+        var stringAnswers = inputs.GetAllFromSources<string>("answer", "solver1", "solver2");
+
+        // Assert
+        stringAnswers.Should().HaveCount(1);
+        stringAnswers.Should().Contain("string");
+    }
+
+    #endregion
+
+    #region GetSourceNodeIds Tests (Phase 3)
+
+    [Fact]
+    public void GetSourceNodeIds_ReturnsDistinctSourceIds()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.answer", "A");
+        inputs.Add("solver1.confidence", 0.9);
+        inputs.Add("solver2.answer", "B");
+        inputs.Add("classifier.question", "Q");
+
+        // Act
+        var sourceIds = inputs.GetSourceNodeIds();
+
+        // Assert
+        sourceIds.Should().HaveCount(3);
+        sourceIds.Should().Contain("solver1");
+        sourceIds.Should().Contain("solver2");
+        sourceIds.Should().Contain("classifier");
+    }
+
+    [Fact]
+    public void GetSourceNodeIds_NoNamespacedKeys_ReturnsEmpty()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("simple_key", "value");
+        inputs.Add("another_key", "value2");
+
+        // Act
+        var sourceIds = inputs.GetSourceNodeIds();
+
+        // Assert
+        sourceIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetSourceNodeIds_MultipleDotsInKey_UsesFirstSegment()
+    {
+        // Arrange
+        var inputs = new HandlerInputs();
+        inputs.Add("solver1.nested.value", "A");
+        inputs.Add("solver2.answer", "B");
+
+        // Act
+        var sourceIds = inputs.GetSourceNodeIds();
+
+        // Assert
+        sourceIds.Should().HaveCount(2);
+        sourceIds.Should().Contain("solver1");
+        sourceIds.Should().Contain("solver2");
+        sourceIds.Should().NotContain("solver1.nested");
+    }
+
+    #endregion
 }

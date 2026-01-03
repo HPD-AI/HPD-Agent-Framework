@@ -437,7 +437,7 @@ public record ContinuationResponseEvent(
 
 /// <summary>
 /// Marker interface for clarification-related events.
-/// Clarification events enable agents/plugins to ask the user for additional information
+/// Clarification events enable agents/Toolkits to ask the user for additional information
 /// during execution, supporting human-in-the-loop workflows beyond just permissions.
 /// </summary>
 public interface IClarificationEvent : IBidirectionalAgentEvent
@@ -455,7 +455,7 @@ public interface IClarificationEvent : IBidirectionalAgentEvent
 }
 
 /// <summary>
-/// Agent/plugin requests user clarification or additional input.
+/// Agent/Toolkit requests user clarification or additional input.
 /// Handler should prompt user and send ClarificationResponseEvent.
 /// </summary>
 public record ClarificationRequestEvent(
@@ -470,7 +470,7 @@ public record ClarificationRequestEvent(
 
 /// <summary>
 /// Response to clarification request.
-/// Sent by external handler back to waiting agent/plugin.
+/// Sent by external handler back to waiting agent/Toolkit.
 /// </summary>
 public record ClarificationResponseEvent(
     string RequestId,
@@ -544,14 +544,14 @@ public record CollapsedToolsVisibleEvent(
     string AgentName,
     int Iteration,
     IReadOnlyList<string> VisibleToolNames,
-    ImmutableHashSet<string> ExpandedPlugins,
+    ImmutableHashSet<string> ExpandedToolkits,
     ImmutableHashSet<string> ExpandedSkills,
     int TotalToolCount,
     DateTimeOffset Timestamp
 ) : AgentEvent, IObservabilityEvent;
 
 /// <summary>
-/// Emitted when a plugin or skill container is expanded.
+/// Emitted when a Toolkit or skill container is expanded.
 /// </summary>
 public record ContainerExpandedEvent(
     string ContainerName,
@@ -561,7 +561,7 @@ public record ContainerExpandedEvent(
     DateTimeOffset Timestamp
 ) : AgentEvent, IObservabilityEvent;
 
-public enum ContainerType { Plugin, Skill }
+public enum ContainerType { Toolkit, Skill }
 
 /// <summary>
 /// Emitted when Middleware pipeline execution starts.
@@ -871,12 +871,12 @@ public record SchemaChangedEvent(
 
 /// <summary>
 /// Emitted by ToolCollapsingMiddleware at iteration start to report Collapsing state.
-/// Tracks how many plugins and skills have been expanded.
+/// Tracks how many Toolkits and skills have been expanded.
 /// </summary>
 public record CollapsingStateEvent(
     string AgentName,
     int Iteration,
-    int ExpandedPluginsCount,
+    int ExpandedToolkitsCount,
     int ExpandedSkillsCount,
     DateTimeOffset Timestamp
 ) : AgentEvent, IObservabilityEvent;

@@ -1,4 +1,4 @@
-# HPD-Agent FileSystem Plugin
+# HPD-Agent FileSystem Toolkit
 
 
 ## 🚀 Features
@@ -24,13 +24,13 @@
 
 ### Via NuGet (when published)
 ```bash
-dotnet add package HPD.Agent.Plugins.FileSystem
+dotnet add package HPD.Agent.Toolkits.FileSystem
 ```
 
 ### Via Project Reference
 ```xml
 <ItemGroup>
-  <ProjectReference Include="path/to/HPD-Agent.Plugins/HPD-Agent.Plugins.FileSystem/HPD-Agent.Plugins.FileSystem.csproj" />
+  <ProjectReference Include="path/to/HPD-Agent.Toolkits/HPD-Agent.Toolkits.FileSystem/HPD-Agent.Toolkits.FileSystem.csproj" />
 </ItemGroup>
 ```
 
@@ -39,11 +39,11 @@ dotnet add package HPD.Agent.Plugins.FileSystem
 ### Option 1: Simple Usage (Default Settings)
 
 ```csharp
-using HPD.Agent.Plugins.FileSystem;
+using HPD.Agent.Toolkits.FileSystem;
 
-// Just add the plugin - uses current directory with safe defaults
+// Just add the Toolkit - uses current directory with safe defaults
 var agent = new AgentBuilder()
-     .WithTool<FileSystemPlugin>()  // ← That's it!
+     .WithTool<FileSystemToolkit>()  // ← That's it!
     .Build();
 
 // Default context:
@@ -56,7 +56,7 @@ var agent = new AgentBuilder()
 ### Option 2: Custom Context (Full Control)
 
 ```csharp
-using HPD.Agent.Plugins.FileSystem;
+using HPD.Agent.Toolkits.FileSystem;
 
 // 1. Create a custom context
 var context = new FileSystemContext(
@@ -68,24 +68,24 @@ var context = new FileSystemContext(
     enableSearch: true                  // Enable glob/grep operations
 );
 
-// 2. Create plugin instance with context
-var fileSystemPlugin = new FileSystemPlugin(context);
+// 2. Create Toolkit instance with context
+var fileSystemToolkit = new FileSystemToolkit(context);
 
 // 3. Register with AgentBuilder
 var agent = new AgentBuilder()
-     .WithTool(fileSystemPlugin, context)  // ← Pass instance + context
+     .WithTool(fileSystemToolkit, context)  // ← Pass instance + context
     .Build();
 ```
 
-### Option 3: Using PluginManager Directly
+### Option 3: Using ToolkitManager Directly
 
 ```csharp
 var context = new FileSystemContext("/workspace");
-var pluginManager = new PluginManager();
+var ToolkitManager = new ToolkitManager();
 
 // Register and create functions
-pluginManager.RegisterPlugin<FileSystemPlugin>();
-var functions = pluginManager.CreateAllFunctions(context);
+ToolkitManager.RegisterToolkit<FileSystemToolkit>();
+var functions = ToolkitManager.CreateAllFunctions(context);
 
 // Add to your AI client
 chatClient.Tools = functions;
@@ -362,7 +362,7 @@ var context = new FileSystemContext(
 | Source generation | HPD-Agent.SourceGenerator | Compile-time code generation |
 
 ### AOT Compatibility
-This plugin is fully AOT-compatible:
+This Toolkit is fully AOT-compatible:
 - No reflection at runtime
 - All metadata generated at compile-time
 - Manual JSON parsing for parameters
@@ -425,7 +425,7 @@ var recentLogs = await ReadFile(
 
 ## 🤝 Contributing
 
-This plugin is part of the HPD-Agent plugin ecosystem. Contributions are welcome!
+This Toolkit is part of the HPD-Agent Toolkit ecosystem. Contributions are welcome!
 
 ## 📄 License
 
@@ -435,7 +435,7 @@ MIT License - See LICENSE file for details
 
 - [HPD-Agent Core](../../HPD-Agent/)
 - [HPD-Agent Source Generator](../../HPD-Agent.SourceGenerator/)
-- [Gemini CLI](https://github.com/google-gemini/gemini-cli) - Inspiration for this plugin
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli) - Inspiration for this Toolkit
 
 ---
 

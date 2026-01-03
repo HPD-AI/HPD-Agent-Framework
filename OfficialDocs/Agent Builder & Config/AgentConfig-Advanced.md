@@ -41,7 +41,7 @@ Useful for serverless/API gateways with timeout limits. Return immediately with 
 ### Collapsing
 Hierarchical function organization to reduce token usage.
 
-Default: Enabled for plugins
+Default: Enabled for Toolkits
 
 [Detailed docs →](./AgentConfig-Collapsing.md)
 

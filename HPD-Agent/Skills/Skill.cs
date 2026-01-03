@@ -31,9 +31,9 @@ public class Skill
     public string? SystemPrompt { get; internal set; }
 
     /// <summary>
-    /// String-based references to functions or skills in "PluginName.FunctionName" format.
+    /// String-based references to functions or skills in "ToolkitName.FunctionName" format.
     /// Validated at compile-time by source generator, works with instance methods at runtime.
-    /// Example: "FileSystemPlugin.ReadFile"
+    /// Example: "FileSystemToolkit.ReadFile"
     /// </summary>
     public string[] References { get; internal set; } = Array.Empty<string>();
 
@@ -49,14 +49,14 @@ public class Skill
     // Internal - resolved by source generator during code generation
 
     /// <summary>
-    /// Resolved function references in "PluginName.FunctionName" format
+    /// Resolved function references in "ToolkitName.FunctionName" format
     /// Set by source generator after flattening skill references
     /// </summary>
     internal string[] ResolvedFunctionReferences { get; set; } = Array.Empty<string>();
 
     /// <summary>
-    /// Resolved plugin types that need to be registered
+    /// Resolved Toolkit types that need to be registered
     /// Set by source generator after analyzing all references
     /// </summary>
-    internal string[] ResolvedPluginTypes { get; set; } = Array.Empty<string>();
+    internal string[] ResolvedToolkitTypes { get; set; } = Array.Empty<string>();
 }

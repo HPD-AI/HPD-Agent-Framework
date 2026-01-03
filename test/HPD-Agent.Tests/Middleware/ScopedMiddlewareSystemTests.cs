@@ -53,7 +53,7 @@ public class CollapsedMiddlewareSystemTests
     {
         // Ensure Collapse values are in correct order for priority
         Assert.Equal(0, (int)MiddlewareScope.Global);
-        Assert.Equal(1, (int)MiddlewareScope.Plugin);
+        Assert.Equal(1, (int)MiddlewareScope.Toolkit);
         Assert.Equal(2, (int)MiddlewareScope.Skill);
         Assert.Equal(3, (int)MiddlewareScope.Function);
     }
@@ -70,20 +70,20 @@ public class CollapsedMiddlewareSystemTests
 
         // Act & Assert - should apply to any context
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin", skillName: "AnySkill")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyToolkit")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyToolkit", skillName: "AnySkill")));
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", isSkillContainer: true)));
     }
 
     [Fact]
-    public void PluginMiddleware_AppliesToPluginFunctions()
+    public void ToolkitMiddleware_AppliesToToolkitFunctions()
     {
         // Arrange
-        var middleware = new TestMiddleware("plugin").ForPlugin("FileSystemTools");
+        var middleware = new TestMiddleware("Toolkit").ForToolkit("FileSystemTools");
 
         // Act & Assert
         Assert.True(middleware.ShouldExecute(CreateContext("ReadFile", toolName: "FileSystemTools")));
-        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", toolName: "DatabasePlugin")));
+        Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", toolName: "DatabaseToolkit")));
         Assert.False(middleware.ShouldExecute(CreateContext("ReadFile", toolName: null)));
     }
 
@@ -179,19 +179,19 @@ public class CollapsedMiddlewareSystemTests
     {
         // Arrange
         var globalMiddleware = new TestMiddleware("Global");
-        var pluginMiddleware = new TestMiddleware("Plugin");
+        var ToolkitMiddleware = new TestMiddleware("Toolkit");
         var skillMiddleware = new TestMiddleware("Skill");
         var functionMiddleware = new TestMiddleware("Function");
 
         globalMiddleware.AsGlobal();
-        pluginMiddleware.ForPlugin("FileSystemTools");
+        ToolkitMiddleware.ForToolkit("FileSystemTools");
         skillMiddleware.ForSkill("analyze_codebase");
         functionMiddleware.ForFunction("ReadFile");
 
         var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[]
         {
             globalMiddleware,
-            pluginMiddleware,
+            ToolkitMiddleware,
             skillMiddleware,
             functionMiddleware
         });
@@ -208,7 +208,7 @@ public class CollapsedMiddlewareSystemTests
 
         // Assert - all 4 middlewares should have executed
         Assert.True(globalMiddleware.WasCalled);
-        Assert.True(pluginMiddleware.WasCalled);
+        Assert.True(ToolkitMiddleware.WasCalled);
         Assert.True(skillMiddleware.WasCalled);
         Assert.True(functionMiddleware.WasCalled);
     }
@@ -218,19 +218,19 @@ public class CollapsedMiddlewareSystemTests
     {
         // Arrange
         var globalMiddleware = new TestMiddleware("Global");
-        var pluginMiddleware = new TestMiddleware("Plugin");
+        var ToolkitMiddleware = new TestMiddleware("Toolkit");
         var skillMiddleware = new TestMiddleware("Skill");
         var functionMiddleware = new TestMiddleware("Function");
 
         globalMiddleware.AsGlobal();
-        pluginMiddleware.ForPlugin("DatabasePlugin"); // Wrong plugin
+        ToolkitMiddleware.ForToolkit("DatabaseToolkit"); // Wrong Toolkit
         skillMiddleware.ForSkill("refactor_code"); // Wrong skill
         functionMiddleware.ForFunction("WriteFile"); // Wrong function
 
         var pipeline = new AgentMiddlewarePipeline(new IAgentMiddleware[]
         {
             globalMiddleware,
-            pluginMiddleware,
+            ToolkitMiddleware,
             skillMiddleware,
             functionMiddleware
         });
@@ -247,7 +247,7 @@ public class CollapsedMiddlewareSystemTests
 
         // Assert - only global middleware should execute
         Assert.True(globalMiddleware.WasCalled);
-        Assert.False(pluginMiddleware.WasCalled);
+        Assert.False(ToolkitMiddleware.WasCalled);
         Assert.False(skillMiddleware.WasCalled);
         Assert.False(functionMiddleware.WasCalled);
     }
@@ -326,19 +326,19 @@ public class CollapsedMiddlewareSystemTests
 
         // Act & Assert - should behave as global
         Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction")));
-        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyPlugin")));
+        Assert.True(middleware.ShouldExecute(CreateContext("AnyFunction", toolName: "AnyToolkit")));
     }
 
     [Fact]
-    public void ForPlugin_ThrowsOnNullOrEmpty()
+    public void ForToolkit_ThrowsOnNullOrEmpty()
     {
         // Arrange
         var middleware = new TestMiddleware("test");
 
         // Act & Assert
-        Assert.Throws<ArgumentException>(() => middleware.ForPlugin(null!));
-        Assert.Throws<ArgumentException>(() => middleware.ForPlugin(""));
-        Assert.Throws<ArgumentException>(() => middleware.ForPlugin("   "));
+        Assert.Throws<ArgumentException>(() => middleware.ForToolkit(null!));
+        Assert.Throws<ArgumentException>(() => middleware.ForToolkit(""));
+        Assert.Throws<ArgumentException>(() => middleware.ForToolkit("   "));
     }
 
     [Fact]
@@ -410,7 +410,7 @@ public class CollapsedMiddlewareSystemTests
             callId: "test-call",
             arguments: new Dictionary<string, object?>(),
             runOptions: new AgentRunOptions(),
-            pluginName: toolName,
+            toolkitName: toolName,
             skillName: skillName);
     }
 

@@ -94,7 +94,7 @@ Percentage: A has higher liquidity (proportion)
 
 ### Step 2: Calculate Common-Size Percentages - Assets
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateCommonSizePercentage(itemValue, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateCommonSizePercentage(itemValue, totalAssets)`
 
 **Calculation:**
 ```
@@ -124,7 +124,7 @@ Common-Size % = (Line Item ÷ Total Assets) × 100
 
 ### Step 3: Drill Down - Current Assets Breakdown
 
-**Function Call:** `FinancialAnalysisPlugin.CommonSizeBalanceSheetAssets(currentAssets, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.CommonSizeBalanceSheetAssets(currentAssets, totalAssets)`
 
 **Purpose:** Understand what makes up the 30% current assets
 
@@ -170,7 +170,7 @@ Common-Size % = (Line Item ÷ Total Assets) × 100
 
 ### Step 5: Calculate Common-Size Percentages - Liabilities
 
-**Function Call:** `FinancialAnalysisPlugin.CommonSizeBalanceSheetLiabilities(totalLiabilities, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.CommonSizeBalanceSheetLiabilities(totalLiabilities, totalAssets)`
 
 **Calculation:**
 ```
@@ -199,7 +199,7 @@ Liability Common-Size % = (Liability ÷ Total Assets) × 100
 
 ### Step 6: Calculate Common-Size Percentages - Equity
 
-**Function Call:** `FinancialAnalysisPlugin.EquityToTotalAssetsPercentage(totalEquity, totalAssets)`
+**Function Call:** `FinancialAnalysisToolkit.EquityToTotalAssetsPercentage(totalEquity, totalAssets)`
 
 **Calculation:**
 ```

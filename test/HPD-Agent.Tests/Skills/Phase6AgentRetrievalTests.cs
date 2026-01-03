@@ -28,27 +28,27 @@ public class Phase6AgentRetrievalTests : IDisposable
     }
 
     [Fact]
-    public async Task DocumentRetrievalPlugin_CanBeCreated()
+    public async Task DocumentRetrievalToolkit_CanBeCreated()
     {
         // Arrange & Act
-        var plugin = new DocumentRetrievalPlugin();
+        var Toolkit = new DocumentRetrievalToolkit();
 
         // Assert
-        Assert.NotNull(plugin);
+        Assert.NotNull(Toolkit);
     }
 
     [Fact]
-    public void DocumentRetrievalPlugin_RegisteredByAgentBuilder_WhenDocumentStoreConfigured()
+    public void DocumentRetrievalToolkit_RegisteredByAgentBuilder_WhenDocumentStoreConfigured()
     {
         // Arrange
         var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
 
-        // Act - The DocumentRetrievalPlugin should be auto-registered when document store is configured
+        // Act - The DocumentRetrievalToolkit should be auto-registered when document store is configured
         // We verify this by checking that it builds without errors (tested in integration tests)
 
-        // Assert - DocumentRetrievalPlugin is created and ready
-        var plugin = new DocumentRetrievalPlugin();
-        Assert.NotNull(plugin);
+        // Assert - DocumentRetrievalToolkit is created and ready
+        var Toolkit = new DocumentRetrievalToolkit();
+        Assert.NotNull(Toolkit);
 
         // Note: Full integration test with agent building requires a configured provider,
         // which is tested in separate integration test suites.
@@ -68,10 +68,10 @@ public class Phase6AgentRetrievalTests : IDisposable
         };
         await store.UploadFromContentAsync("debugging-workflow", metadata, testContent);
 
-        var plugin = new DocumentRetrievalPlugin();
+        var Toolkit = new DocumentRetrievalToolkit();
 
         // Act
-        var result = await plugin.ReadSkillDocument("debugging-workflow", store);
+        var result = await Toolkit.ReadSkillDocument("debugging-workflow", store);
 
         // Assert
         Assert.Equal(testContent, result);
@@ -82,10 +82,10 @@ public class Phase6AgentRetrievalTests : IDisposable
     {
         // Arrange
         var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
-        var plugin = new DocumentRetrievalPlugin();
+        var Toolkit = new DocumentRetrievalToolkit();
 
         // Act
-        var result = await plugin.ReadSkillDocument("non-existent-doc", store);
+        var result = await Toolkit.ReadSkillDocument("non-existent-doc", store);
 
         // Assert
         Assert.Contains("not found", result, StringComparison.OrdinalIgnoreCase);
@@ -97,10 +97,10 @@ public class Phase6AgentRetrievalTests : IDisposable
     {
         // Arrange
         var store = new ThrowingDocumentStore();
-        var plugin = new DocumentRetrievalPlugin();
+        var Toolkit = new DocumentRetrievalToolkit();
 
         // Act
-        var result = await plugin.ReadSkillDocument("any-doc", store);
+        var result = await Toolkit.ReadSkillDocument("any-doc", store);
 
         // Assert
         Assert.Contains("Error reading document", result);
@@ -130,12 +130,12 @@ public class Phase6AgentRetrievalTests : IDisposable
             await store.UploadFromContentAsync(docId, metadata, content);
         }
 
-        var plugin = new DocumentRetrievalPlugin();
+        var Toolkit = new DocumentRetrievalToolkit();
 
         // Act & Assert
         foreach (var (docId, expectedContent) in docs)
         {
-            var result = await plugin.ReadSkillDocument(docId, store);
+            var result = await Toolkit.ReadSkillDocument(docId, store);
             Assert.Equal(expectedContent, result);
         }
     }

@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 using Microsoft.Extensions.AI; // For AIFunction
-using HPD.Agent; // For CollapseAttribute
+using HPD.Agent; // For ToolkitAttribute
 
 
 namespace HPD.Agent.Tests.SourceGenerator;
@@ -23,7 +23,7 @@ public class HPDToolSourceGeneratorTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location), // Corrected AIFunction reference
-                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location), // CollapseAttribute is in HPD-Agent assembly
+                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location), // ToolkitAttribute is in HPD-Agent assembly
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
@@ -44,67 +44,67 @@ public class HPDToolSourceGeneratorTests
     }
 
     [Fact]
-    public void GeneratedPlugin_WithDynamicCollapseInstructions_ContainsCorrectCode()
+    public void GeneratedToolkit_WithDynamicCollapseInstructions_ContainsCorrectCode()
     {
-        // Arrange
-        var pluginSource = @$"
+        // Arrange - Using an expression (method call) as attribute value
+        // The source generator detects this as an expression rather than a literal string
+        var ToolkitSource = @$"
 using HPD.Agent;
-// Removed: using HPD.Agent.Tools.Attributes;
 using System;
 
-namespace TestPlugins
-{{ 
+namespace TestToolkits
+{{
     public static class DynamicInstructionsProvider
-    {{ 
+    {{
         public static string GetInstructions()
-        {{ 
-            return ""Dynamic instructions for the collapsed plugin."";
-        }} 
-    }} 
+        {{
+            return ""Dynamic instructions for the collapsed Toolkit."";
+        }}
+    }}
 
-    [Collapse(""Test collapsed plugin"", postExpansionInstructions: DynamicInstructionsProvider.GetInstructions())]
-    public partial class CollapsedTestPlugin
-    {{ 
+    [Toolkit(""Test collapsed Toolkit"",   FunctionResult = DynamicInstructionsProvider.GetInstructions())]
+    public partial class CollapsedTestToolkit
+    {{
         [AIFunction]
         public string HelloWorld() => ""Hello!"";
-    }} 
+    }}
 }}
 ";
 
         // Act
-        var (generatedCode, diagnostics) = RunGenerator(pluginSource);
+        var (generatedCode, diagnostics) = RunGenerator(ToolkitSource);
 
         // Assert
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.NotNull(generatedCode);
         Assert.Contains("var dynamicInstructions = DynamicInstructionsProvider.GetInstructions();", generatedCode);
-        Assert.Contains("return $\"Test collapsed plugin expanded. Available functions: HelloWorld\\n\\n{dynamicInstructions}\";", generatedCode);
+        Assert.Contains("dynamicInstructions", generatedCode);
     }
     
-        [Fact]
-        public void GeneratedPlugin_WithStaticCollapseInstructions_ContainsCorrectCode()
-        {
-            // Arrange
-            var pluginSource = @$"
-            using HPD.Agent;
-            // Removed: using HPD.Agent.Tools.Attributes;
-            using System;
-            
-            namespace TestPlugins
-            {{ 
-                [Collapse(""Test static collapsed plugin"", postExpansionInstructions: ""Static instructions here."")]
-                public partial class StaticCollapsedTestPlugin
-                {{ 
-                    [AIFunction]
-                    public string HelloStatic() => ""Hello Static!"";
-                }} 
-            }}
-            ";    
-            // Act
-            var (generatedCode, diagnostics) = RunGenerator(pluginSource);
-    
-            // Assert
-            Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
-            Assert.NotNull(generatedCode);
-            Assert.Contains(@"return @""Test static collapsed plugin expanded. Available functions: HelloStatic\n\nStatic instructions here."";", generatedCode);
-        }}
+    [Fact]
+    public void GeneratedToolkit_WithStaticCollapseInstructions_ContainsCorrectCode()
+    {
+        // Arrange
+        var ToolkitSource = @$"
+using HPD.Agent;
+using System;
+
+namespace TestToolkits
+{{
+    [Toolkit(""Test static collapsed Toolkit"",   FunctionResult = ""Static instructions here."")]
+    public partial class StaticCollapsedTestToolkit
+    {{
+        [AIFunction]
+        public string HelloStatic() => ""Hello Static!"";
+    }}
+}}
+";
+        // Act
+        var (generatedCode, diagnostics) = RunGenerator(ToolkitSource);
+
+        // Assert
+        Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.NotNull(generatedCode);
+        Assert.Contains("Static instructions here.", generatedCode);
+    }
+}

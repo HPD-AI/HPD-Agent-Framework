@@ -1,11 +1,11 @@
 using HPD.Agent;
 using HPD.Agent;
 
-namespace HPD.Agent.Tests.TestPlugins;
+namespace HPD.Agent.Tests.TestToolkits;
 
 /// <summary>
-/// Test plugin that combines all three capability types: AIFunctions, Skills, and SubAgents.
-/// Used to verify the source generator correctly handles plugins with mixed capabilities.
+/// Test Toolkit that combines all three capability types: AIFunctions, Skills, and SubAgents.
+/// Used to verify the source generator correctly handles Toolkits with mixed capabilities.
 /// </summary>
 public partial class CombinedCapabilitiesTools
 {
@@ -87,9 +87,9 @@ public partial class CombinedCapabilitiesTools
 }
 
 /// <summary>
-/// Plugin with only AIFunctions and SubAgents (no Skills)
+/// Toolkit with only AIFunctions and SubAgents (no Skills)
 /// </summary>
-public partial class FunctionsAndSubAgentsPlugin
+public partial class FunctionsAndSubAgentsToolkit
 {
     // AI Functions
     [AIFunction, AIDescription("Search for items")]
@@ -120,10 +120,10 @@ public partial class FunctionsAndSubAgentsPlugin
 }
 
 /// <summary>
-/// Plugin with only Skills and SubAgents (no direct AIFunctions)
-/// Note: Skills reference functions from other plugins
+/// Toolkit with only Skills and SubAgents (no direct AIFunctions)
+/// Note: Skills reference functions from other Toolkits
 /// </summary>
-public partial class SkillsAndSubAgentsPlugin
+public partial class SkillsAndSubAgentsToolkit
 {
     // Skill that references functions from MockFileSystemTools
     [Skill]

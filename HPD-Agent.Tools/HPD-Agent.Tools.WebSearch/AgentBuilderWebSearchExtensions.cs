@@ -33,7 +33,7 @@ public static class AgentBuilderWebSearchExtensions
 
         AddWebSearchConnector(builder, connector);
 
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
 
@@ -54,7 +54,7 @@ public static class AgentBuilderWebSearchExtensions
             return ((IWebSearchProviderBuilder<ITavilyWebSearchBuilder>)tavilyBuilder).Build();
         });
 
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
     
@@ -76,7 +76,7 @@ public static class AgentBuilderWebSearchExtensions
         
         AddWebSearchConnector(builder, connector);
         
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
 
@@ -94,7 +94,7 @@ public static class AgentBuilderWebSearchExtensions
         
         AddWebSearchConnector(builder, connector);
         
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
     
@@ -116,7 +116,7 @@ public static class AgentBuilderWebSearchExtensions
         
         AddWebSearchConnector(builder, connector);
         
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
 
@@ -134,7 +134,7 @@ public static class AgentBuilderWebSearchExtensions
         
         AddWebSearchConnector(builder, connector);
         
-        // Auto-finalize to register the plugin immediately
+        // Auto-finalize to register the Toolkit immediately
         return FinalizeWebSearch(builder);
     }
     
@@ -189,7 +189,7 @@ public static class AgentBuilderWebSearchExtensions
         // Store the default provider preference
         _defaultProviders[builder] = providerName.ToLowerInvariant();
         
-        // Note: Plugin will be created when FinalizeWebSearch() is called
+        // Note: Toolkit will be created when FinalizeWebSearch() is called
         
         return builder;
     }
@@ -235,8 +235,8 @@ public static class AgentBuilderWebSearchExtensions
         var context = new WebSearchContext(connectors, defaultProvider);
 
         // Register the WebSearchTools with the context
-        var plugin = new WebSearchTools(context);
-        builder.WithTools(plugin, context);
+        var Toolkit = new WebSearchTools(context);
+        builder.WithTools(Toolkit, context);
 
         // Clean up the temporary storage
         _pendingConnectors.Remove(builder);

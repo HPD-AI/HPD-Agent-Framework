@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace HPD.Agent.FFI
 {
     /// <summary>
-    /// Language-agnostic FFI bindings for external plugin systems.
+    /// Language-agnostic FFI bindings for external Toolkit systems.
     /// Supports any language that exports C-compatible functions (Rust, C++, Zig, Go, Swift, etc.)
     ///
     /// Protocol: JSON over C ABI
@@ -23,20 +23,20 @@ namespace HPD.Agent.FFI
     /// - Python (with ctypes/cffi)
     /// - Node.js (with Node-API/NAPI)
     /// </summary>
-    public static class NativePluginFFI
+    public static class NativeToolkitFFI
     {
         //    
         // CONFIGURATION: Native library name
         //
         // Customize per platform/language:
         // - Rust:   "hpd_rust_agent" or "libhpd_rust_agent.so"
-        // - C++:    "hpd_cpp_plugins" or "hpd_cpp_plugins.dll"
-        // - Zig:    "hpd_zig_plugins"
-        // - Go:     "hpd_go_plugins"
-        // - Swift:  "hpd_swift_plugins"
-        // - Multi:  "hpd_native_plugins" (any language)
+        // - C++:    "hpd_cpp_Toolkits" or "hpd_cpp_Toolkits.dll"
+        // - Zig:    "hpd_zig_Toolkits"
+        // - Go:     "hpd_go_Toolkits"
+        // - Swift:  "hpd_swift_Toolkits"
+        // - Multi:  "hpd_native_Toolkits" (any language)
         //    
-        private const string LibraryName = "hpd_native_plugins";
+        private const string LibraryName = "hpd_native_Toolkits";
 
         //    
         // FFI IMPORTS: C ABI functions (language-agnostic)
@@ -46,25 +46,25 @@ namespace HPD.Agent.FFI
         //    
 
         /// <summary>
-        /// Get plugin registry as JSON string.
-        /// Native signature: const char* get_plugin_registry()
+        /// Get Toolkit registry as JSON string.
+        /// Native signature: const char* get_Toolkit_registry()
         /// </summary>
-        [DllImport(LibraryName, EntryPoint = "get_plugin_registry", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr GetPluginRegistryNative();
+        [DllImport(LibraryName, EntryPoint = "get_Toolkit_registry", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr GetToolkitRegistryNative();
 
         /// <summary>
-        /// Get plugin schemas as JSON string.
-        /// Native signature: const char* get_plugin_schemas()
+        /// Get Toolkit schemas as JSON string.
+        /// Native signature: const char* get_Toolkit_schemas()
         /// </summary>
-        [DllImport(LibraryName, EntryPoint = "get_plugin_schemas", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr GetPluginSchemasNative();
+        [DllImport(LibraryName, EntryPoint = "get_Toolkit_schemas", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr GetToolkitSchemasNative();
 
         /// <summary>
-        /// Get plugin statistics as JSON string.
-        /// Native signature: const char* get_plugin_stats()
+        /// Get Toolkit statistics as JSON string.
+        /// Native signature: const char* get_Toolkit_stats()
         /// </summary>
-        [DllImport(LibraryName, EntryPoint = "get_plugin_stats", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr GetPluginStatsNative();
+        [DllImport(LibraryName, EntryPoint = "get_Toolkit_stats", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr GetToolkitStatsNative();
 
         /// <summary>
         /// Get list of function names as JSON array.
@@ -74,65 +74,65 @@ namespace HPD.Agent.FFI
         private static extern IntPtr GetFunctionListNative();
 
         /// <summary>
-        /// Execute a plugin function with JSON arguments, returns JSON result.
-        /// Native signature: const char* execute_plugin_function(const char* function_name, const char* args_json)
+        /// Execute a Toolkit function with JSON arguments, returns JSON result.
+        /// Native signature: const char* execute_Toolkit_function(const char* function_name, const char* args_json)
         /// </summary>
-        [DllImport(LibraryName, EntryPoint = "execute_plugin_function", CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr ExecutePluginFunctionNative(
+        [DllImport(LibraryName, EntryPoint = "execute_Toolkit_function", CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr ExecuteToolkitFunctionNative(
             [MarshalAs(UnmanagedType.LPStr)] string functionName,
             [MarshalAs(UnmanagedType.LPStr)] string argsJson);
 
         /// <summary>
-        /// Free a string allocated by the native plugin runtime.
+        /// Free a string allocated by the native Toolkit runtime.
         /// Native signature: void free_string(char* ptr)
         /// </summary>
         [DllImport(LibraryName, EntryPoint = "free_string", CallingConvention = CallingConvention.Cdecl)]
         private static extern void FreeStringNative(IntPtr ptr);
 
         /// <summary>
-        /// Register plugin executors in the native runtime.
-        /// Native signature: bool register_plugin_executors(const char* plugin_name)
+        /// Register Toolkit executors in the native runtime.
+        /// Native signature: bool register_Toolkit_executors(const char* Toolkit_name)
         /// </summary>
-        [DllImport(LibraryName, EntryPoint = "register_plugin_executors", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport(LibraryName, EntryPoint = "register_Toolkit_executors", CallingConvention = CallingConvention.Cdecl)]
         [return: MarshalAs(UnmanagedType.I1)]
-        private static extern bool RegisterPluginExecutorsNative(
-            [MarshalAs(UnmanagedType.LPStr)] string pluginName);
+        private static extern bool RegisterToolkitExecutorsNative(
+            [MarshalAs(UnmanagedType.LPStr)] string ToolkitName);
 
         //    
         // PUBLIC API: Language-agnostic wrapper methods
         //    
 
         /// <summary>
-        /// Register plugin executors in the native plugin runtime.
-        /// This MUST be called after loading plugin info to populate the function registry.
+        /// Register Toolkit executors in the native Toolkit runtime.
+        /// This MUST be called after loading Toolkit info to populate the function registry.
         /// Works with any language that implements the C ABI.
         /// </summary>
-        /// <param name="pluginName">Name of the plugin to register</param>
+        /// <param name="ToolkitName">Name of the Toolkit to register</param>
         /// <returns>True if registration succeeded</returns>
-        public static bool RegisterPluginExecutors(string pluginName)
+        public static bool RegisterToolkitExecutors(string ToolkitName)
         {
-            return RegisterPluginExecutorsNative(pluginName);
+            return RegisterToolkitExecutorsNative(ToolkitName);
         }
 
         /// <summary>
-        /// Get all registered plugins from the native runtime.
-        /// Returns JSON data from Rust, C++, Zig, Go, Swift, or any C-compatible plugin system.
+        /// Get all registered Toolkits from the native runtime.
+        /// Returns JSON data from Rust, C++, Zig, Go, Swift, or any C-compatible Toolkit system.
         /// </summary>
-        /// <returns>Plugin registry containing all registered plugins</returns>
-        public static PluginRegistry GetPluginRegistry()
+        /// <returns>Toolkit registry containing all registered Toolkits</returns>
+        public static ToolkitRegistry GetToolkitRegistry()
         {
-            var ptr = GetPluginRegistryNative();
+            var ptr = GetToolkitRegistryNative();
             if (ptr == IntPtr.Zero)
-                return new PluginRegistry { Plugins = new List<PluginInfo>() };
+                return new ToolkitRegistry { Toolkits = new List<ToolkitInfo>() };
 
             try
             {
                 var json = Marshal.PtrToStringAnsi(ptr);
                 if (string.IsNullOrEmpty(json))
-                    return new PluginRegistry { Plugins = new List<PluginInfo>() };
+                    return new ToolkitRegistry { Toolkits = new List<ToolkitInfo>() };
 
-                return JsonSerializer.Deserialize(json, HPDFFIJsonContext.Default.PluginRegistry) ??
-                       new PluginRegistry { Plugins = new List<PluginInfo>() };
+                return JsonSerializer.Deserialize(json, HPDFFIJsonContext.Default.ToolkitRegistry) ??
+                       new ToolkitRegistry { Toolkits = new List<ToolkitInfo>() };
             }
             finally
             {
@@ -145,9 +145,9 @@ namespace HPD.Agent.FFI
         /// Schemas describe function parameters, return types, and documentation.
         /// </summary>
         /// <returns>JSON document containing all function schemas</returns>
-        public static JsonDocument GetPluginSchemas()
+        public static JsonDocument GetToolkitSchemas()
         {
-            var ptr = GetPluginSchemasNative();
+            var ptr = GetToolkitSchemasNative();
             if (ptr == IntPtr.Zero)
                 return JsonDocument.Parse("{}");
 
@@ -163,22 +163,22 @@ namespace HPD.Agent.FFI
         }
 
         /// <summary>
-        /// Get plugin statistics (counts, performance metrics, etc.).
+        /// Get Toolkit statistics (counts, performance metrics, etc.).
         /// </summary>
-        /// <returns>Plugin statistics from the native runtime</returns>
-        public static PluginStats GetPluginStats()
+        /// <returns>Toolkit statistics from the native runtime</returns>
+        public static ToolkitStats GetToolkitStats()
         {
-            var ptr = GetPluginStatsNative();
+            var ptr = GetToolkitStatsNative();
             if (ptr == IntPtr.Zero)
-                return new PluginStats();
+                return new ToolkitStats();
 
             try
             {
                 var json = Marshal.PtrToStringAnsi(ptr);
                 if (string.IsNullOrEmpty(json))
-                    return new PluginStats();
+                    return new ToolkitStats();
 
-                return JsonSerializer.Deserialize(json, HPDFFIJsonContext.Default.PluginStats) ?? new PluginStats();
+                return JsonSerializer.Deserialize(json, HPDFFIJsonContext.Default.ToolkitStats) ?? new ToolkitStats();
             }
             finally
             {
@@ -211,20 +211,20 @@ namespace HPD.Agent.FFI
         }
 
         /// <summary>
-        /// Execute a plugin function in the native runtime.
+        /// Execute a Toolkit function in the native runtime.
         /// Communicates via JSON - works with any language.
         /// </summary>
         /// <param name="functionName">Name of the function to execute</param>
         /// <param name="arguments">Function arguments as a dictionary (will be serialized to JSON)</param>
         /// <returns>Execution result containing success status, result data, or error message</returns>
-        public static PluginExecutionResult ExecuteFunction(string functionName, Dictionary<string, object> arguments)
+        public static ToolkitExecutionResult ExecuteFunction(string functionName, Dictionary<string, object> arguments)
         {
             var argsJson = JsonSerializer.Serialize(arguments, HPDFFIJsonContext.Default.DictionaryStringObject);
-            var ptr = ExecutePluginFunctionNative(functionName, argsJson);
+            var ptr = ExecuteToolkitFunctionNative(functionName, argsJson);
 
             if (ptr == IntPtr.Zero)
             {
-                return new PluginExecutionResult
+                return new ToolkitExecutionResult
                 {
                     Success = false,
                     Error = "Failed to execute function"
@@ -236,7 +236,7 @@ namespace HPD.Agent.FFI
                 var json = Marshal.PtrToStringAnsi(ptr);
                 if (string.IsNullOrEmpty(json))
                 {
-                    return new PluginExecutionResult
+                    return new ToolkitExecutionResult
                     {
                         Success = false,
                         Error = "Empty response from function"
@@ -244,7 +244,7 @@ namespace HPD.Agent.FFI
                 }
 
                 var response = JsonDocument.Parse(json);
-                return new PluginExecutionResult
+                return new ToolkitExecutionResult
                 {
                     Success = true,
                     Result = response
@@ -252,7 +252,7 @@ namespace HPD.Agent.FFI
             }
             catch (Exception ex)
             {
-                return new PluginExecutionResult
+                return new ToolkitExecutionResult
                 {
                     Success = false,
                     Error = ex.Message
@@ -273,18 +273,18 @@ namespace HPD.Agent.FFI
     //    
 
     /// <summary>
-    /// Plugin registry information from native runtime.
+    /// Toolkit registry information from native runtime.
     /// Language-agnostic: works with JSON from Rust, C++, Zig, Go, Swift, etc.
     /// </summary>
-    public class PluginRegistry
+    public class ToolkitRegistry
     {
-        public List<PluginInfo> Plugins { get; set; } = new();
+        public List<ToolkitInfo> Toolkits { get; set; } = new();
     }
 
     /// <summary>
-    /// Information about a single plugin.
+    /// Information about a single Toolkit.
     /// </summary>
-    public class PluginInfo
+    public class ToolkitInfo
     {
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
@@ -292,7 +292,7 @@ namespace HPD.Agent.FFI
     }
 
     /// <summary>
-    /// Information about a plugin function.
+    /// Information about a Toolkit function.
     /// </summary>
     public class FunctionInfo
     {
@@ -301,19 +301,19 @@ namespace HPD.Agent.FFI
     }
 
     /// <summary>
-    /// Plugin statistics from native runtime.
+    /// Toolkit statistics from native runtime.
     /// </summary>
-    public class PluginStats
+    public class ToolkitStats
     {
-        public int TotalPlugins { get; set; }
+        public int TotalToolkits { get; set; }
         public int TotalFunctions { get; set; }
-        public List<PluginSummary> Plugins { get; set; } = new();
+        public List<ToolkitSummary> Toolkits { get; set; } = new();
     }
 
     /// <summary>
-    /// Summary information about a plugin.
+    /// Summary information about a Toolkit.
     /// </summary>
-    public class PluginSummary
+    public class ToolkitSummary
     {
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
@@ -321,10 +321,10 @@ namespace HPD.Agent.FFI
     }
 
     /// <summary>
-    /// Result of executing a plugin function.
+    /// Result of executing a Toolkit function.
     /// Language-agnostic: success/error pattern works across all languages.
     /// </summary>
-    public class PluginExecutionResult
+    public class ToolkitExecutionResult
     {
         public bool Success { get; set; }
         public JsonDocument? Result { get; set; }

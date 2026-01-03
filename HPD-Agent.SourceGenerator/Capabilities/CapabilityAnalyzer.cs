@@ -248,7 +248,7 @@ internal static class CapabilityAnalyzer
             Description = description,
             FunctionResult = functionResult,
             SystemPrompt = systemPrompt,
-            ParentPluginName = className,
+            ParentToolkitName = className,
             ParentNamespace = namespaceName,
             Options = options ?? new SkillOptionsInfo(),
             UnresolvedReferences = references,
@@ -258,7 +258,7 @@ internal static class CapabilityAnalyzer
             ContextTypeName = contextTypeName,
             ConditionalExpression = conditionalExpression,
 
-            // Note: ResolvedFunctionReferences and ResolvedPluginTypes will be populated
+            // Note: ResolvedFunctionReferences and ResolvedToolkitTypes will be populated
             // during the resolution phase in HPDToolSourceGenerator
         };
     }
@@ -314,7 +314,7 @@ internal static class CapabilityAnalyzer
             MethodName = methodName,
             SubAgentName = name,  // Actual sub-agent name
             Description = description ?? GetDescription(attrs) ?? $"Sub-agent: {name}",
-            ParentPluginName = className,
+            ParentToolkitName = className,
             ParentNamespace = namespaceName,
             IsStatic = isStatic,
             ThreadMode = threadMode,  // Extracted from factory method (Create vs CreateStateful vs CreatePerSession)
@@ -447,7 +447,7 @@ internal static class CapabilityAnalyzer
             Name = methodName,
             CustomName = customName,
             Description = description ?? $"Function: {methodName}",
-            ParentPluginName = className,
+            ParentToolkitName = className,
             ParentNamespace = namespaceName,
 
             // Context and conditionals (feature parity!)
@@ -593,8 +593,10 @@ internal static class CapabilityAnalyzer
                 if (attributeType.IsGenericType && attributeType.TypeArguments.Length == 1)
                 {
                     var contextType = attributeType.TypeArguments[0];
-                    System.Diagnostics.Debug.WriteLine($"[GetMetadataTypeName] Found context type: {contextType.Name}");
-                    return contextType.Name;
+                    // Use fully qualified name for code generation (global:: prefix ensures no ambiguity)
+                    var fullyQualifiedName = contextType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    System.Diagnostics.Debug.WriteLine($"[GetMetadataTypeName] Found context type: {fullyQualifiedName}");
+                    return fullyQualifiedName;
                 }
             }
         }
@@ -681,7 +683,7 @@ internal static class CapabilityAnalyzer
         ExpressionSyntax expression,
         SemanticModel semanticModel)
     {
-        // Extract string literal: "FileSystemPlugin.ReadFile"
+        // Extract string literal: "FileSystemToolkit.ReadFile"
         var reference = ExtractStringLiteral(expression, semanticModel);
 
         if (string.IsNullOrWhiteSpace(reference))
@@ -689,7 +691,7 @@ internal static class CapabilityAnalyzer
             return null;
         }
 
-        // Parse "PluginName.FunctionName" format
+        // Parse "ToolkitName.FunctionName" format
         var parts = reference!.Split('.');
 
         if (parts.Length != 2)
@@ -708,7 +710,7 @@ internal static class CapabilityAnalyzer
         return new ReferenceInfo
         {
             ReferenceType = ReferenceType.Function,
-            PluginType = toolName,
+            ToolkitType = toolName,
             MethodName = methodName,
             FullName = reference,
             Location = expression.GetLocation()

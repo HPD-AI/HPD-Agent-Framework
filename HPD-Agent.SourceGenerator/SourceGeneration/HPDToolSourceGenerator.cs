@@ -10,7 +10,7 @@ using System.Threading;
 using HPD.Agent.SourceGenerator.Capabilities;
 
 /// <summary>
-/// Source generator for HPD-Agent AI plugins. Generates AOT-compatible plugin registration code.
+/// Source generator for HPD-Agent AI Toolkits. Generates AOT-compatible Toolkit registration code.
 /// </summary>
 [Generator]
 public class HPDToolSourceGenerator : IIncrementalGenerator
@@ -25,14 +25,25 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
     /// <param name="context">The generator initialization context.</param>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+        // Toolkit detection (classes with [AIFunction], [Skill], or [SubAgent] methods)
         var toolClasses = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, ct) => IsToolClass(node, ct),
                 transform: static (ctx, ct) => GetToolDeclaration(ctx, ct))
-            .Where(static plugin => plugin is not null)
+            .Where(static Toolkit => Toolkit is not null)
             .Collect();
 
         context.RegisterSourceOutput(toolClasses, GenerateToolRegistrations);
+
+        // Middleware detection (classes with [Middleware] attribute)
+        var middlewareClasses = context.SyntaxProvider
+            .CreateSyntaxProvider(
+                predicate: static (node, ct) => IsMiddlewareClass(node),
+                transform: static (ctx, ct) => GetMiddlewareDeclaration(ctx, ct))
+            .Where(static middleware => middleware is not null)
+            .Collect();
+
+        context.RegisterSourceOutput(middlewareClasses, GenerateMiddlewareRegistry);
     }
     
     private static bool IsToolClass(SyntaxNode node, CancellationToken cancellationToken = default)
@@ -62,7 +73,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 .SelectMany(attrList => attrList.Attributes)
                 .Select(attr => attr.Name.ToString());
 
-            // A plugin class has methods with any of these attributes
+            // A Toolkit class has methods with any of these attributes
             return attrs.Any(name =>
                 name.Contains("AIFunction") ||
                 name.Contains("Skill") ||
@@ -77,7 +88,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         return hasCapabilityMethods;
     }
     
-    private static ToolInfo? GetToolDeclaration(GeneratorSyntaxContext context, CancellationToken cancellationToken)
+    private static ToolkitInfo? GetToolDeclaration(GeneratorSyntaxContext context, CancellationToken cancellationToken)
     {
         var classDecl = (ClassDeclarationSyntax)context.Node;
         var semanticModel = context.SemanticModel;
@@ -100,15 +111,15 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         if (!capabilities.Any())
             return null;
 
-        // Check for [Collapse] attribute and validate dual-context configuration
-        var (hasCollapseAttribute, CollapseDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics) = GetCollapseAttribute(classDecl, semanticModel);
+        // Check for [Toolkit] attribute and validate dual-context configuration
+        var (isCollapsed, containerDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics, customName) = GetToolkitAttribute(classDecl, semanticModel);
 
-        // Diagnostics will be stored in ToolInfo and reported in GenerateToolRegistrations
+        // Diagnostics will be stored in ToolkitInfo and reported in GenerateToolRegistrations
 
         // Check if the class has a parameterless constructor (either explicit or implicit)
         var hasParameterlessConstructor = HasParameterlessConstructor(classDecl);
 
-        // Check if the class is publicly accessible (for ToolRegistry.All inclusion)
+        // Check if the class is publicly accessible (for ToolkitRegistry.All inclusion)
         // A class is publicly accessible if it's public and not nested inside a non-public class
         var isPubliclyAccessible = IsClassPubliclyAccessible(classDecl);
 
@@ -116,31 +127,89 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         var functionCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>().Count();
         var skillCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
         var subAgentCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
-        var description = BuildPluginDescription(functionCount, skillCount, subAgentCount);
+        var description = BuildToolkitDescription(functionCount, skillCount, subAgentCount);
 
-        return new ToolInfo
+        // NEW: Extract function names for selective registration
+        var functionNames = capabilities
+            .OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>()
+            .Select(f => f.FunctionName)
+            .ToList();
+
+        // NEW: Extract config constructor type (single-parameter constructor with *Config type)
+        var configConstructorTypeName = GetConfigConstructorTypeName(classDecl, semanticModel);
+
+        // NEW: Extract metadata type from capabilities (first one wins, should all be same per proposal)
+        var metadataTypeName = capabilities
+            .OfType<HPD.Agent.SourceGenerator.Capabilities.BaseCapability>()
+            .Where(c => !string.IsNullOrEmpty(c.ContextTypeName))
+            .Select(c => c.ContextTypeName)
+            .FirstOrDefault();
+
+        return new ToolkitInfo
         {
-            Name = classDecl.Identifier.ValueText,
+            // ClassName is always the class identifier; CustomName comes from [Toolkit(Name = "...")]
+            ClassName = classDecl.Identifier.ValueText,
+            CustomName = customName,
             Description = description,
             Namespace = namespaceName,
 
             // PHASE 5: Unified Capabilities list (all capability types)
             Capabilities = capabilities!,
 
-            HasCollapseAttribute = hasCollapseAttribute,
-            CollapseDescription = CollapseDescription,
+            IsCollapsed = isCollapsed,
+            ContainerDescription = containerDescription,
             FunctionResult = FunctionResult,
             FunctionResultExpression = FunctionResultExpression,
             FunctionResultIsStatic = FunctionResultIsStatic,
-                    SystemPrompt = SystemPrompt,
-                    SystemPromptExpression = SystemPromptExpression,
+            SystemPrompt = SystemPrompt,
+            SystemPromptExpression = SystemPromptExpression,
             SystemPromptIsStatic = SystemPromptIsStatic,
             HasParameterlessConstructor = hasParameterlessConstructor,
 
             // Diagnostics from dual-context validation
             Diagnostics = diagnostics,
-            IsPubliclyAccessible = isPubliclyAccessible
+            IsPubliclyAccessible = isPubliclyAccessible,
+
+            // NEW: Config serialization fields
+            FunctionNames = functionNames,
+            ConfigConstructorTypeName = configConstructorTypeName,
+            MetadataTypeName = metadataTypeName
         };
+    }
+
+    /// <summary>
+    /// Detects if the toolkit class has a constructor that accepts a single *Config parameter.
+    /// This enables config-based instantiation from JSON.
+    /// </summary>
+    private static string? GetConfigConstructorTypeName(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
+    {
+        var constructors = classDecl.Members
+            .OfType<ConstructorDeclarationSyntax>()
+            .ToList();
+
+        foreach (var ctor in constructors)
+        {
+            // Look for single-parameter constructor where parameter type ends with "Config"
+            if (ctor.ParameterList.Parameters.Count == 1)
+            {
+                var param = ctor.ParameterList.Parameters[0];
+                var paramTypeName = param.Type?.ToString() ?? "";
+
+                // Check if parameter type ends with "Config" (convention for config classes)
+                if (paramTypeName.EndsWith("Config"))
+                {
+                    // Get fully qualified type name via semantic model
+                    var typeInfo = semanticModel.GetTypeInfo(param.Type!);
+                    if (typeInfo.Type != null)
+                    {
+                        return typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    }
+                    return paramTypeName;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -192,7 +261,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         return true;
     }
 
-    private static string BuildPluginDescription(int functionCount, int skillCount, int subAgentCount)
+    private static string BuildToolkitDescription(int functionCount, int skillCount, int subAgentCount)
     {
         var parts = new List<string>();
         if (functionCount > 0) parts.Add($"{functionCount} AI functions");
@@ -200,25 +269,25 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         if (subAgentCount > 0) parts.Add($"{subAgentCount} sub-agents");
 
         if (parts.Count == 0)
-            return "Empty plugin container.";
+            return "Empty Toolkit container.";
         else if (parts.Count == 1)
-            return $"Plugin containing {parts[0]}.";
+            return $"Toolkit containing {parts[0]}.";
         else if (parts.Count == 2)
-            return $"Plugin containing {parts[0]} and {parts[1]}.";
+            return $"Toolkit containing {parts[0]} and {parts[1]}.";
         else
-            return $"Plugin containing {parts[0]}, {parts[1]}, and {parts[2]}.";
+            return $"Toolkit containing {parts[0]}, {parts[1]}, and {parts[2]}.";
     }
     
-    private static void GenerateToolRegistrations(SourceProductionContext context, ImmutableArray<ToolInfo?> plugins)
+    private static void GenerateToolRegistrations(SourceProductionContext context, ImmutableArray<ToolkitInfo?> Toolkits)
     {
-        // Group plugins by name+namespace to handle partial classes FIRST
+        // Group Toolkits by name+namespace to handle partial classes FIRST
         // This prevents duplicate generation by merging partial classes before validation
-        var pluginGroups = plugins
+        var ToolkitGroups = Toolkits
             .Where(p => p != null)
             .GroupBy(p => $"{p!.Namespace}.{p.Name}")
             .Select(group =>
             {
-                // Merge all partial class parts into one plugin
+                // Merge all partial class parts into one Toolkit
                 var first = group.First()!;
 
                 // PHASE 5: Merge unified Capabilities list (all capability types)
@@ -229,49 +298,62 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 var skillCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
                 var subAgentCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
 
-                // Preserve HasCollapseAttribute and CollapseDescription from any partial class that has it
-                var hasCollapseAttribute = group.Any(p => p!.HasCollapseAttribute);
-                var CollapseDescription = group.FirstOrDefault(p => p!.HasCollapseAttribute)?.CollapseDescription;
+                // Preserve IsCollapsed and ContainerDescription from any partial class that has it
+                var isCollapsed = group.Any(p => p!.IsCollapsed);
+                var containerDescription = group.FirstOrDefault(p => p!.IsCollapsed)?.ContainerDescription;
 
-                // All partial class parts must have parameterless constructor for the plugin to be AOT-instantiable
+                // All partial class parts must have parameterless constructor for the Toolkit to be AOT-instantiable
                 // (If any part declares a constructor with parameters, no implicit parameterless constructor is generated)
                 var hasParameterlessConstructor = group.All(p => p!.HasParameterlessConstructor);
 
-                // All partial class parts must be publicly accessible for the plugin to be in the registry
+                // All partial class parts must be publicly accessible for the Toolkit to be in the registry
                 var isPubliclyAccessible = group.All(p => p!.IsPubliclyAccessible);
 
                 // Merge diagnostics from all partial class parts
                 var allDiagnostics = group.SelectMany(p => p!.Diagnostics).ToList();
 
-                return new ToolInfo
+                // Merge function names from all partial classes
+                var allFunctionNames = group.SelectMany(p => p!.FunctionNames).Distinct().ToList();
+
+                // Use first config constructor type found (should only be defined in one partial)
+                var configConstructorTypeName = group.FirstOrDefault(p => !string.IsNullOrEmpty(p!.ConfigConstructorTypeName))?.ConfigConstructorTypeName;
+
+                // Use first metadata type found (should be consistent across all capabilities per proposal)
+                var metadataTypeName = group.FirstOrDefault(p => !string.IsNullOrEmpty(p!.MetadataTypeName))?.MetadataTypeName;
+
+                return new ToolkitInfo
                 {
                     Name = first.Name,
-                    Description = BuildPluginDescription(functionCount, skillCount, subAgentCount),
+                    Description = BuildToolkitDescription(functionCount, skillCount, subAgentCount),
                     Namespace = first.Namespace,
 
                     // PHASE 5: Unified Capabilities list (all capability types)
                     Capabilities = allCapabilities,
-                    HasCollapseAttribute = hasCollapseAttribute,
-                    CollapseDescription = CollapseDescription,
+                    IsCollapsed = isCollapsed,
+                    ContainerDescription = containerDescription,
                     // NEW: Dual-context properties
                     FunctionResult = group.FirstOrDefault(p => p?.FunctionResult != null)?.FunctionResult,
                     FunctionResultExpression = group.FirstOrDefault(p => p?.FunctionResultExpression != null)?.FunctionResultExpression,
                     FunctionResultIsStatic = group.FirstOrDefault(p => p?.FunctionResultExpression != null)?.FunctionResultIsStatic ?? true,
-                            SystemPrompt = group.FirstOrDefault(p => p?.SystemPrompt != null)?.SystemPrompt,
-                            SystemPromptExpression = group.FirstOrDefault(p => p?.SystemPromptExpression != null)?.SystemPromptExpression,
+                    SystemPrompt = group.FirstOrDefault(p => p?.SystemPrompt != null)?.SystemPrompt,
+                    SystemPromptExpression = group.FirstOrDefault(p => p?.SystemPromptExpression != null)?.SystemPromptExpression,
                     SystemPromptIsStatic = group.FirstOrDefault(p => p?.SystemPromptExpression != null)?.SystemPromptIsStatic ?? true,
                     HasParameterlessConstructor = hasParameterlessConstructor,
                     IsPubliclyAccessible = isPubliclyAccessible,
                     // Diagnostics from dual-context validation
-                    Diagnostics = allDiagnostics
+                    Diagnostics = allDiagnostics,
+                    // NEW: Config serialization fields
+                    FunctionNames = allFunctionNames,
+                    ConfigConstructorTypeName = configConstructorTypeName,
+                    MetadataTypeName = metadataTypeName
                 };
             })
             .ToList();
 
-        // Report diagnostics for all plugins
-        foreach (var plugin in pluginGroups)
+        // Report diagnostics for all Toolkits
+        foreach (var Toolkit in ToolkitGroups)
         {
-            foreach (var diagnostic in plugin.Diagnostics)
+            foreach (var diagnostic in Toolkit.Diagnostics)
             {
                 context.ReportDiagnostic(diagnostic);
             }
@@ -282,11 +364,11 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         var diagnosticCode = $@"
 // HPD Source Generator Diagnostic Report
 // Generated at: {DateTime.Now}
-// Plugins found: {plugins.Length} raw, {pluginGroups.Count} after merging
+// Toolkits found: {Toolkits.Length} raw, {ToolkitGroups.Count} after merging
 namespace HPD.Agent.Diagnostics {{
     public static class SourceGeneratorDiagnostic {{
         public const string Message = ""Source generator executed successfully"";
-        public const int PluginsFound = {pluginGroups.Count};
+        public const int ToolkitsFound = {ToolkitGroups.Count};
         public const string DetailedReport = @""{reportLines}"";
     }}
 }}";
@@ -296,17 +378,17 @@ namespace HPD.Agent.Diagnostics {{
         _diagnosticMessages.Clear();
 
         var debugInfo = new StringBuilder();
-        debugInfo.AppendLine($"// Found {plugins.Length} plugin parts total");
-        debugInfo.AppendLine($"// Merged into {pluginGroups.Count} unique plugins");
-        foreach (var plugin in pluginGroups)
+        debugInfo.AppendLine($"// Found {Toolkits.Length} Toolkit parts total");
+        debugInfo.AppendLine($"// Merged into {ToolkitGroups.Count} unique Toolkits");
+        foreach (var Toolkit in ToolkitGroups)
         {
-            debugInfo.AppendLine($"// Plugin: {plugin.Namespace}.{plugin.Name} with {plugin.FunctionCapabilities.Count()} functions, {plugin.SkillCapabilities.Count()} skills, and {plugin.SubAgentCapabilities.Count()} sub-agents");
+            debugInfo.AppendLine($"// Toolkit: {Toolkit.Namespace}.{Toolkit.Name} with {Toolkit.FunctionCapabilities.Count()} functions, {Toolkit.SkillCapabilities.Count()} skills, and {Toolkit.SubAgentCapabilities.Count()} sub-agents");
         }
         context.AddSource("HPD.Agent.Generated.SourceGeneratorDebug.g.cs", debugInfo.ToString());
 
         // Resolve skill references before validation and code generation
         // PHASE 5: Use unified SkillCapabilities from Capabilities list
-        var allSkillCapabilities = pluginGroups
+        var allSkillCapabilities = ToolkitGroups
             .SelectMany(p => p.SkillCapabilities)
             .ToList();
         if (allSkillCapabilities.Any())
@@ -314,11 +396,11 @@ namespace HPD.Agent.Diagnostics {{
             ResolveSkillCapabilities(allSkillCapabilities);
         }
 
-        foreach (var plugin in pluginGroups)
+        foreach (var Toolkit in ToolkitGroups)
         {
-            if (plugin == null) continue;
+            if (Toolkit == null) continue;
 
-            foreach (var function in plugin.FunctionCapabilities)
+            foreach (var function in Toolkit.FunctionCapabilities)
             {
                 if (function.ValidationData?.NeedsValidation == true)
                 {
@@ -347,33 +429,33 @@ namespace HPD.Agent.Diagnostics {{
                 }
             }
 
-            var source = GeneratePluginRegistration(plugin);
+            var source = GenerateToolkitRegistration(Toolkit);
             // Use fully qualified name as hint to prevent duplicates
-            var hintName = string.IsNullOrEmpty(plugin.Namespace)
-                ? $"{plugin.Name}Registration.g.cs"
-                : $"{plugin.Namespace}.{plugin.Name}Registration.g.cs";
+            var hintName = string.IsNullOrEmpty(Toolkit.Namespace)
+                ? $"{Toolkit.Name}Registration.g.cs"
+                : $"{Toolkit.Namespace}.{Toolkit.Name}Registration.g.cs";
             context.AddSource(hintName, source);
         }
 
-        // NEW: Generate plugin registry catalog for AOT-compatible plugin discovery
-        if (pluginGroups.Any())
+        // NEW: Generate Toolkit registry catalog for AOT-compatible Toolkit discovery
+        if (ToolkitGroups.Any())
         {
-            var registrySource = GenerateToolRegistry(pluginGroups);
-            context.AddSource("HPD.Agent.Generated.ToolRegistry.g.cs", registrySource);
+            var registrySource = GenerateToolkitRegistry(ToolkitGroups);
+            context.AddSource("HPD.Agent.Generated.ToolkitRegistry.g.cs", registrySource);
         }
     }
 
     /// <summary>
-    /// Generates the ToolRegistry.All array that serves as a catalog of all plugins in the assembly.
+    /// Generates the ToolkitRegistry.All array that serves as a catalog of all Toolkits in the assembly.
     /// This eliminates reflection in hot paths by providing direct delegate references.
-    /// Only plugins with parameterless constructors and public accessibility are included.
+    /// Only Toolkits with parameterless constructors and public accessibility are included.
     /// </summary>
-    private static string GenerateToolRegistry(List<ToolInfo> plugins)
+    private static string GenerateToolkitRegistry(List<ToolkitInfo> Toolkits)
     {
-        // Filter to only include plugins that can be instantiated via the registry:
-        // 1. Must have parameterless constructor (plugins requiring DI use reflection fallback)
+        // Filter to only include Toolkits that can be instantiated via the registry:
+        // 1. Must have parameterless constructor (Toolkits requiring DI use reflection fallback)
         // 2. Must be publicly accessible (private/internal test classes are excluded)
-        var instantiablePlugins = plugins
+        var instantiableToolkits = Toolkits
             .Where(p => p.HasParameterlessConstructor && p.IsPubliclyAccessible)
             .OrderBy(p => p.Name)
             .ToList();
@@ -385,58 +467,98 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine();
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Text.Json;");
         sb.AppendLine("using Microsoft.Extensions.AI;");
-        sb.AppendLine("using HPD.Agent;  // For ToolFactory and IToolMetadata types");
+        sb.AppendLine("using HPD.Agent;  // For ToolkitFactory and IToolMetadata types");
         sb.AppendLine();
         sb.AppendLine("namespace HPD.Agent.Generated");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// AOT-compatible catalog of all plugins in this assembly.");
+        sb.AppendLine("    /// AOT-compatible catalog of all Toolkits in this assembly.");
         sb.AppendLine("    /// Generated by HPDToolSourceGenerator.");
         sb.AppendLine("    /// Provides direct delegate references eliminating reflection in hot paths.");
-        sb.AppendLine($"    /// Contains {instantiablePlugins.Count} plugins (plugins requiring DI are excluded).");
+        sb.AppendLine($"    /// Contains {instantiableToolkits.Count} Toolkits (Toolkits requiring DI are excluded).");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    [System.CodeDom.Compiler.GeneratedCodeAttribute(\"HPDToolSourceGenerator\", \"1.0.0.0\")]");
-        sb.AppendLine("    public static class ToolRegistry");
+        sb.AppendLine("    public static class ToolkitRegistry");
         sb.AppendLine("    {");
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine("        /// Catalog of all plugins in this assembly that have parameterless constructors.");
+        sb.AppendLine("        /// Catalog of all Toolkits in this assembly that have parameterless constructors.");
         sb.AppendLine("        /// AgentBuilder automatically discovers and uses this at construction time.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine("        public static readonly ToolFactory[] All = new ToolFactory[]");
+        sb.AppendLine("        public static readonly ToolkitFactory[] All = new ToolkitFactory[]");
         sb.AppendLine("        {");
 
-        foreach (var plugin in instantiablePlugins)
+        foreach (var Toolkit in instantiableToolkits)
         {
-            var ns = string.IsNullOrEmpty(plugin.Namespace) ? "" : $"{plugin.Namespace}.";
-            var fullTypeName = $"{ns}{plugin.Name}";
+            var ns = string.IsNullOrEmpty(Toolkit.Namespace) ? "" : $"{Toolkit.Namespace}.";
+            var fullTypeName = $"{ns}{Toolkit.ClassName}";
 
-            sb.AppendLine($"            new ToolFactory(");
-            sb.AppendLine($"                \"{plugin.Name}\",");
-            sb.AppendLine($"                typeof({fullTypeName}),");
-            sb.AppendLine($"                () => new {fullTypeName}(),  // Direct instantiation (AOT-safe)");
+            sb.AppendLine($"            new ToolkitFactory(");
+            sb.AppendLine($"                // ========== EXISTING FIELDS ==========");
+            // Use EffectiveName for registry lookup (supports [Toolkit(Name = "...")] override)
+            sb.AppendLine($"                Name: \"{Toolkit.EffectiveName}\",");
+            sb.AppendLine($"                ToolkitType: typeof({fullTypeName}),");
+            sb.AppendLine($"                CreateInstance: () => new {fullTypeName}(),  // Direct instantiation (AOT-safe)");
 
             // Handle skill-only containers (no instance parameter)
-            if (!plugin.RequiresInstance)
+            if (!Toolkit.RequiresInstance)
             {
-                sb.AppendLine($"                (_, ctx) => {plugin.Name}Registration.CreatePlugin(ctx),");
+                sb.AppendLine($"                CreateFunctions: (_, ctx) => {Toolkit.Name}Registration.CreateToolkit(ctx),");
             }
             else
             {
-                sb.AppendLine($"                (instance, ctx) => {plugin.Name}Registration.CreatePlugin(({fullTypeName})instance, ctx),");
+                sb.AppendLine($"                CreateFunctions: (instance, ctx) => {Toolkit.Name}Registration.CreateToolkit(({fullTypeName})instance, ctx),");
             }
 
-            // Add GetReferencedPlugins if plugin has skills
-            if (plugin.SkillCapabilities.Any())
+            // Add GetReferencedToolkits if Toolkit has skills
+            if (Toolkit.SkillCapabilities.Any())
             {
-                sb.AppendLine($"                {plugin.Name}Registration.GetReferencedPlugins,");
-                sb.AppendLine($"                {plugin.Name}Registration.GetReferencedFunctions");
+                sb.AppendLine($"                GetReferencedToolkits: {Toolkit.Name}Registration.GetReferencedToolkits,");
+                sb.AppendLine($"                GetReferencedFunctions: {Toolkit.Name}Registration.GetReferencedFunctions,");
             }
             else
             {
-                sb.AppendLine($"                () => Array.Empty<string>(),");
-                sb.AppendLine($"                () => new Dictionary<string, string[]>()");
+                sb.AppendLine($"                GetReferencedToolkits: () => Array.Empty<string>(),");
+                sb.AppendLine($"                GetReferencedFunctions: () => new Dictionary<string, string[]>(),");
             }
+
+            // NEW: Collapsing metadata (from [Toolkit] attribute)
+            sb.AppendLine($"                // ========== COLLAPSING METADATA ==========");
+            sb.AppendLine($"                HasDescription: {Toolkit.IsCollapsed.ToString().ToLower()},");
+            sb.AppendLine($"                Description: {(string.IsNullOrEmpty(Toolkit.ContainerDescription) ? "null" : $"@\"{EscapeForVerbatim(Toolkit.ContainerDescription)}\"")},");
+            sb.AppendLine($"                FunctionResult: {(string.IsNullOrEmpty(Toolkit.FunctionResult) ? "null" : $"@\"{EscapeForVerbatim(Toolkit.FunctionResult)}\"")},");
+            sb.AppendLine($"                SystemPrompt: {(string.IsNullOrEmpty(Toolkit.SystemPrompt) ? "null" : $"@\"{EscapeForVerbatim(Toolkit.SystemPrompt)}\"")},");
+
+            // NEW: Config-based instantiation
+            sb.AppendLine($"                // ========== CONFIG INSTANTIATION ==========");
+            if (!string.IsNullOrEmpty(Toolkit.ConfigConstructorTypeName))
+            {
+                sb.AppendLine($"                ConfigType: typeof({Toolkit.ConfigConstructorTypeName}),");
+                sb.AppendLine($"                CreateFromConfig: json => new {fullTypeName}(System.Text.Json.JsonSerializer.Deserialize<{Toolkit.ConfigConstructorTypeName}>(json.GetRawText())!),");
+            }
+            else
+            {
+                sb.AppendLine($"                ConfigType: null,");
+                sb.AppendLine($"                CreateFromConfig: null,");
+            }
+
+            // NEW: Metadata type
+            sb.AppendLine($"                // ========== METADATA ==========");
+            if (!string.IsNullOrEmpty(Toolkit.MetadataTypeName))
+            {
+                sb.AppendLine($"                MetadataType: typeof({Toolkit.MetadataTypeName}),");
+            }
+            else
+            {
+                sb.AppendLine($"                MetadataType: null,");
+            }
+
+            // NEW: Function names for selective registration
+            var functionNamesArray = Toolkit.FunctionNames.Any()
+                ? $"new string[] {{ {string.Join(", ", Toolkit.FunctionNames.Select(n => $"\"{n}\""))} }}"
+                : "Array.Empty<string>()";
+            sb.AppendLine($"                FunctionNames: {functionNamesArray}");
 
             sb.AppendLine($"            ),");
         }
@@ -449,27 +571,210 @@ namespace HPD.Agent.Diagnostics {{
     }
 
     /// <summary>
-    /// Generates the CreatePlugin method using unified polymorphic ICapability iteration.
+    /// Escapes a string for use in a verbatim string literal (@"...").
+    /// Only quotes need to be doubled.
+    /// </summary>
+    private static string EscapeForVerbatim(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+        return value.Replace("\"", "\"\"");
+    }
+
+    // ========== MIDDLEWARE SOURCE GENERATION ==========
+
+    /// <summary>
+    /// Checks if a class has the [Middleware] attribute.
+    /// </summary>
+    private static bool IsMiddlewareClass(SyntaxNode node)
+    {
+        if (node is not ClassDeclarationSyntax classDecl)
+            return false;
+
+        // Skip private classes
+        if (classDecl.Modifiers.Any(SyntaxKind.PrivateKeyword))
+            return false;
+
+        // Check for [Middleware] attribute on the class
+        var hasMiddlewareAttribute = classDecl.AttributeLists
+            .SelectMany(attrList => attrList.Attributes)
+            .Any(attr => attr.Name.ToString().Contains("Middleware"));
+
+        return hasMiddlewareAttribute;
+    }
+
+    /// <summary>
+    /// Extracts middleware information from a class with [Middleware] attribute.
+    /// </summary>
+    private static HPD.Agent.SourceGenerator.MiddlewareInfo? GetMiddlewareDeclaration(GeneratorSyntaxContext context, CancellationToken ct)
+    {
+        var classDecl = (ClassDeclarationSyntax)context.Node;
+        var semanticModel = context.SemanticModel;
+
+        var className = classDecl.Identifier.ValueText;
+        var namespaceName = GetNamespace(classDecl);
+
+        // Get custom name from [Middleware(Name = "...")] or [Middleware("name")]
+        var customName = GetMiddlewareCustomName(classDecl);
+
+        // Check constructor patterns
+        var hasParameterlessConstructor = HasParameterlessConstructor(classDecl);
+        var configConstructorTypeName = GetConfigConstructorTypeName(classDecl, semanticModel);
+        var isPubliclyAccessible = IsClassPubliclyAccessible(classDecl);
+
+        return new HPD.Agent.SourceGenerator.MiddlewareInfo
+        {
+            ClassName = className,
+            CustomName = customName,
+            Namespace = namespaceName,
+            HasParameterlessConstructor = hasParameterlessConstructor,
+            ConfigConstructorTypeName = configConstructorTypeName,
+            IsPubliclyAccessible = isPubliclyAccessible
+        };
+    }
+
+    /// <summary>
+    /// Gets the custom name from [Middleware] attribute if specified.
+    /// </summary>
+    private static string? GetMiddlewareCustomName(ClassDeclarationSyntax classDecl)
+    {
+        var middlewareAttr = classDecl.AttributeLists
+            .SelectMany(attrList => attrList.Attributes)
+            .FirstOrDefault(attr => attr.Name.ToString().Contains("Middleware"));
+
+        if (middlewareAttr?.ArgumentList?.Arguments.Count > 0)
+        {
+            var args = middlewareAttr.ArgumentList.Arguments;
+
+            // Check for named argument: Name = "..."
+            var namedArg = args.FirstOrDefault(a => a.NameEquals?.Name.Identifier.ValueText == "Name");
+            if (namedArg != null)
+            {
+                return ExtractStringLiteral(namedArg.Expression);
+            }
+
+            // Check for positional argument: [Middleware("name")]
+            var firstArg = args.FirstOrDefault();
+            if (firstArg != null && firstArg.NameEquals == null)
+            {
+                var value = ExtractStringLiteral(firstArg.Expression);
+                if (!string.IsNullOrEmpty(value))
+                    return value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Generates the MiddlewareRegistry.All array for AOT-compatible middleware resolution.
+    /// Only middlewares with parameterless constructors OR config constructors are included.
+    /// DI-only middlewares are marked with RequiresDI = true.
+    /// </summary>
+    private static void GenerateMiddlewareRegistry(SourceProductionContext context, ImmutableArray<HPD.Agent.SourceGenerator.MiddlewareInfo?> middlewares)
+    {
+        var validMiddlewares = middlewares
+            .Where(m => m != null && m.IsPubliclyAccessible)
+            .OrderBy(m => m!.EffectiveName)
+            .ToList();
+
+        if (!validMiddlewares.Any())
+            return;
+
+        var sb = new StringBuilder();
+
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#pragma warning disable");
+        sb.AppendLine();
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Generic;");
+        sb.AppendLine("using System.Text.Json;");
+        sb.AppendLine("using HPD.Agent.Middleware;  // For MiddlewareFactory and IAgentMiddleware");
+        sb.AppendLine();
+        sb.AppendLine("namespace HPD.Agent.Generated");
+        sb.AppendLine("{");
+        sb.AppendLine("    /// <summary>");
+        sb.AppendLine("    /// AOT-compatible catalog of all middlewares in this assembly.");
+        sb.AppendLine("    /// Generated by HPDToolSourceGenerator.");
+        sb.AppendLine("    /// Provides direct delegate references eliminating reflection in hot paths.");
+        sb.AppendLine($"    /// Contains {validMiddlewares.Count} middlewares.");
+        sb.AppendLine("    /// </summary>");
+        sb.AppendLine("    [System.CodeDom.Compiler.GeneratedCodeAttribute(\"HPDToolSourceGenerator\", \"1.0.0.0\")]");
+        sb.AppendLine("    public static class MiddlewareRegistry");
+        sb.AppendLine("    {");
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine("        /// Catalog of all middlewares in this assembly.");
+        sb.AppendLine("        /// AgentBuilder automatically discovers and uses this at construction time.");
+        sb.AppendLine("        /// </summary>");
+        sb.AppendLine("        public static readonly MiddlewareFactory[] All = new MiddlewareFactory[]");
+        sb.AppendLine("        {");
+
+        foreach (var middleware in validMiddlewares)
+        {
+            var m = middleware!;
+            var fullTypeName = m.FullTypeName;
+
+            sb.AppendLine($"            new MiddlewareFactory(");
+            sb.AppendLine($"                Name: \"{m.EffectiveName}\",");
+            sb.AppendLine($"                MiddlewareType: typeof({fullTypeName}),");
+
+            // CreateInstance: Only if has parameterless constructor
+            if (m.HasParameterlessConstructor)
+            {
+                sb.AppendLine($"                CreateInstance: () => new {fullTypeName}(),");
+            }
+            else
+            {
+                sb.AppendLine($"                CreateInstance: null,");
+            }
+
+            // Config constructor support
+            if (!string.IsNullOrEmpty(m.ConfigConstructorTypeName))
+            {
+                sb.AppendLine($"                ConfigType: typeof({m.ConfigConstructorTypeName}),");
+                sb.AppendLine($"                CreateFromConfig: json => new {fullTypeName}(System.Text.Json.JsonSerializer.Deserialize<{m.ConfigConstructorTypeName}>(json.GetRawText())!),");
+            }
+            else
+            {
+                sb.AppendLine($"                ConfigType: null,");
+                sb.AppendLine($"                CreateFromConfig: null,");
+            }
+
+            sb.AppendLine($"                RequiresDI: {m.RequiresDI.ToString().ToLower()}");
+            sb.AppendLine($"            ),");
+        }
+
+        sb.AppendLine("        };");
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        context.AddSource("HPD.Agent.Generated.MiddlewareRegistry.g.cs", sb.ToString());
+    }
+
+    // ========== END MIDDLEWARE SOURCE GENERATION ==========
+
+    /// <summary>
+    /// Generates the CreateToolkit method using unified polymorphic ICapability iteration.
     /// Phase 4: Now the single unified generation path (old path removed).
     /// </summary>
-    private static string GenerateCreatePluginMethod(ToolInfo plugin)
+    private static string GenerateCreateToolkitMethod(ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine($"    /// Creates an AIFunction list for the {plugin.Name} plugin.");
+        sb.AppendLine($"    /// Creates an AIFunction list for the {Toolkit.Name} Toolkit.");
         sb.AppendLine("    /// </summary>");
 
-        // Only include instance parameter if plugin has capabilities that need it
-        if (!plugin.RequiresInstance)
+        // Only include instance parameter if Toolkit has capabilities that need it
+        if (!Toolkit.RequiresInstance)
         {
             sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
-            sb.AppendLine($"    public static List<AIFunction> CreatePlugin(IToolMetadata? context = null)");
+            sb.AppendLine($"    public static List<AIFunction> CreateToolkit(IToolMetadata? context = null)");
         }
         else
         {
-            sb.AppendLine($"    /// <param name=\"instance\">The plugin instance</param>");
+            sb.AppendLine($"    /// <param name=\"instance\">The Toolkit instance</param>");
             sb.AppendLine($"    /// <param name=\"context\">The execution context (optional)</param>");
-            sb.AppendLine($"    public static List<AIFunction> CreatePlugin({plugin.Name} instance, IToolMetadata? context = null)");
+            sb.AppendLine($"    public static List<AIFunction> CreateToolkit({Toolkit.Name} instance, IToolMetadata? context = null)");
         }
 
         sb.AppendLine("    {");
@@ -477,7 +782,7 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine();
 
         // Add collapse container registration if needed (BEFORE individual capabilities)
-        var skillRegistrations = SkillCodeGenerator.GenerateSkillRegistrations(plugin);
+        var skillRegistrations = SkillCodeGenerator.GenerateSkillRegistrations(Toolkit);
         if (!string.IsNullOrEmpty(skillRegistrations))
         {
             sb.Append(skillRegistrations);
@@ -489,7 +794,7 @@ namespace HPD.Agent.Diagnostics {{
         // IMPORTANT: Skills are registered via GenerateSkillRegistrations() above,
         // so we exclude them here to avoid duplicate registration.
         // Skills use helper methods (CreateSkillNameSkill) while other capabilities use inline code.
-        var nonSkillCapabilities = plugin.Capabilities.Where(c => c.Type != CapabilityType.Skill);
+        var nonSkillCapabilities = Toolkit.Capabilities.Where(c => c.Type != CapabilityType.Skill);
 
         if (nonSkillCapabilities.Any())
         {
@@ -507,12 +812,12 @@ namespace HPD.Agent.Diagnostics {{
                 {
                     sb.AppendLine($"        if (Evaluate{capability.Name}Condition(context))");
                     sb.AppendLine("        {");
-                    sb.AppendLine($"            functions.Add({capability.GenerateRegistrationCode(plugin)});");
+                    sb.AppendLine($"            functions.Add({capability.GenerateRegistrationCode(Toolkit)});");
                     sb.AppendLine("        }");
                 }
                 else
                 {
-                    sb.AppendLine($"        functions.Add({capability.GenerateRegistrationCode(plugin)});");
+                    sb.AppendLine($"        functions.Add({capability.GenerateRegistrationCode(Toolkit)});");
                 }
                 sb.AppendLine();
             }
@@ -524,7 +829,7 @@ namespace HPD.Agent.Diagnostics {{
     }
 
 
-    private static string GeneratePluginRegistration(ToolInfo plugin)
+    private static string GenerateToolkitRegistration(ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
         
@@ -550,63 +855,59 @@ namespace HPD.Agent.Diagnostics {{
         // Add HPD.Agent namespace for SubAgent types
         sb.AppendLine("using HPD.Agent;");
 
-        // Add using directive for the plugin's namespace if it's not empty
-        if (!string.IsNullOrEmpty(plugin.Namespace))
+        // Add using directive for the Toolkit's namespace if it's not empty
+        if (!string.IsNullOrEmpty(Toolkit.Namespace))
         {
-            sb.AppendLine($"using {plugin.Namespace};");
+            sb.AppendLine($"using {Toolkit.Namespace};");
         }
 
         sb.AppendLine();
 
-        sb.AppendLine(GenerateArgumentsDtoAndContext(plugin));
+        sb.AppendLine(GenerateArgumentsDtoAndContext(Toolkit));
 
         sb.AppendLine("/// <summary>");
-        sb.AppendLine($"/// Generated registration code for {plugin.Name} plugin.");
+        sb.AppendLine($"/// Generated registration code for {Toolkit.Name} Toolkit.");
         sb.AppendLine("/// </summary>");
         sb.AppendLine($"[System.CodeDom.Compiler.GeneratedCodeAttribute(\"HPDToolSourceGenerator\", \"1.0.0.0\")]");
-        sb.AppendLine($"public static partial class {plugin.Name}Registration");
+        sb.AppendLine($"public static partial class {Toolkit.Name}Registration");
         sb.AppendLine("    {");
 
-        // Generate GetReferencedPlugins() and GetReferencedFunctions() if there are skills
+        // Generate GetReferencedToolkits() and GetReferencedFunctions() if there are skills
         // PHASE 5: Use SkillCapabilities (fully populated with resolved references)
-        if (plugin.SkillCapabilities.Any())
+        if (Toolkit.SkillCapabilities.Any())
         {
-            sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedPluginsMethod(plugin));
+            sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedToolkitsMethod(Toolkit));
             sb.AppendLine();
-            sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedFunctionsMethod(plugin));
+            sb.AppendLine(SkillCodeGenerator.GenerateGetReferencedFunctionsMethod(Toolkit));
             sb.AppendLine();
         }
 
-        // Generate plugin metadata accessor (always generated for consistency)
+        // Generate Toolkit metadata accessor (always generated for consistency)
         // PHASE 5: Use SkillCapabilities instead of Skills
-        if (plugin.SkillCapabilities.Any())
+        if (Toolkit.SkillCapabilities.Any())
         {
-            sb.AppendLine(SkillCodeGenerator.UpdateToolMetadataWithSkills(plugin, ""));
+            sb.AppendLine(SkillCodeGenerator.UpdateToolMetadataWithSkills(Toolkit, ""));
         }
         else
         {
-            sb.AppendLine(GenerateToolMetadataMethod(plugin));
+            sb.AppendLine(GenerateToolMetadataMethod(Toolkit));
         }
         sb.AppendLine();
 
-        // Generate container function and helper if plugin is Collapsed OR has skills
-        if (plugin.HasCollapseAttribute || plugin.SkillCapabilities.Any())
+        // Generate empty schema helper if Toolkit is collapsed OR has skills
+        // Note: Container function is generated in SkillCodeGenerator.GenerateAllSkillCode
+        if (Toolkit.IsCollapsed || Toolkit.SkillCapabilities.Any())
         {
-            if (plugin.HasCollapseAttribute)
-            {
-                sb.AppendLine(GenerateContainerFunction(plugin));
-                sb.AppendLine();
-            }
             sb.AppendLine(GenerateEmptySchemaMethod());
             sb.AppendLine();
         }
 
-        sb.AppendLine(GenerateCreatePluginMethod(plugin));
+        sb.AppendLine(GenerateCreateToolkitMethod(Toolkit));
 
-        foreach (var function in plugin.FunctionCapabilities)
+        foreach (var function in Toolkit.FunctionCapabilities)
         {
             sb.AppendLine();
-            sb.AppendLine(GenerateSchemaValidator(function, plugin));
+            sb.AppendLine(GenerateSchemaValidator(function, Toolkit));
             
             // Generate manual JSON parser for AOT compatibility
             var relevantParams = function.Parameters
@@ -614,14 +915,14 @@ namespace HPD.Agent.Diagnostics {{
             if (relevantParams.Any())
             {
                 sb.AppendLine();
-                sb.AppendLine(GenerateJsonParser(function, plugin));
+                sb.AppendLine(GenerateJsonParser(function, Toolkit));
             }
         }
 
         // PHASE 2B: Generate context resolvers for ALL capabilities (Functions, Skills, SubAgents)
         // This enables Skills and SubAgents to use dynamic descriptions and conditionals (feature parity!)
         // Replaces the old DSL-based GenerateContextResolutionMethods() which only worked for Functions
-        foreach (var capability in plugin.Capabilities)
+        foreach (var capability in Toolkit.Capabilities)
         {
             var resolvers = capability.GenerateContextResolvers();
             if (!string.IsNullOrEmpty(resolvers))
@@ -631,11 +932,11 @@ namespace HPD.Agent.Diagnostics {{
             }
         }
 
-        // Generate skill code AND collapse container (if plugin has [Collapse] attribute)
-        // NOTE: Collapse container can exist even if there are no skills (e.g., collapsed plugin with only functions)
-        if (plugin.SkillCapabilities.Any() || plugin.HasCollapseAttribute)
+        // Generate skill code AND toolkit container (if Toolkit is collapsed)
+        // NOTE: Container can exist even if there are no skills (e.g., collapsed Toolkit with only functions)
+        if (Toolkit.SkillCapabilities.Any() || Toolkit.IsCollapsed)
         {
-            sb.AppendLine(SkillCodeGenerator.GenerateAllSkillCode(plugin));
+            sb.AppendLine(SkillCodeGenerator.GenerateAllSkillCode(Toolkit));
         }
 
         sb.AppendLine("    }");
@@ -643,20 +944,20 @@ namespace HPD.Agent.Diagnostics {{
         return sb.ToString();
     }
 
-    private static string GenerateArgumentsDtoAndContext(ToolInfo plugin)
+    private static string GenerateArgumentsDtoAndContext(ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
         var contextSerializableTypes = new List<string>();
 
-        // Generate SubAgentQueryArgs if there are sub-agents (Collapsed per plugin to avoid conflicts)
-        if (plugin.SubAgentCapabilities.Any())
+        // Generate SubAgentQueryArgs if there are sub-agents (Collapsed per Toolkit to avoid conflicts)
+        if (Toolkit.SubAgentCapabilities.Any())
         {
             sb.AppendLine(
 $@"    /// <summary>
     /// Represents the arguments for sub-agent invocations, generated at compile-time.
     /// </summary>
     [System.CodeDom.Compiler.GeneratedCodeAttribute(""HPDToolSourceGenerator"", ""1.0.0.0"")]
-    public class {plugin.Name}SubAgentQueryArgs
+    public class {Toolkit.Name}SubAgentQueryArgs
     {{
         [System.Text.Json.Serialization.JsonPropertyName(""query"")]
         [System.ComponentModel.Description(""Query for the sub-agent"")]
@@ -665,7 +966,7 @@ $@"    /// <summary>
 ");
         }
 
-        foreach (var function in plugin.FunctionCapabilities)
+        foreach (var function in Toolkit.FunctionCapabilities)
         {
             if (!function.Parameters.Any(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider")) continue;
 
@@ -697,7 +998,7 @@ $@"    /// <summary>
         return sb.ToString();
     }
 
-    private static string GenerateSchemaValidator(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, ToolInfo plugin)
+    private static string GenerateSchemaValidator(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, ToolkitInfo Toolkit)
     {
         var relevantParams = function.Parameters
             .Where(p => p.Type != "CancellationToken" && p.Type != "AIFunctionArguments" && p.Type != "IServiceProvider").ToList();
@@ -1289,101 +1590,119 @@ $@"    /// <summary>
     }
 
     /// <summary>
-    /// Detects [Collapse] attribute on a class and extracts its description and instruction contexts.
-    /// Supports both legacy postExpansionInstructions and new dual-context (FunctionResult,SystemPrompt).
+    /// Detects [Toolkit] attribute on a class and extracts its configuration.
+    /// Supports dual-context (FunctionResult, SystemPrompt) and custom naming.
     /// Analyzes expressions to determine if they're static or instance methods/properties.
     /// </summary>
     private static (
-        bool hasCollapseAttribute,
-        string? collapseDescription,
+        bool isCollapsed,
+        string? containerDescription,
         string? FunctionResult,
         string? FunctionResultExpression,
         bool FunctionResultIsStatic,
         string? SystemPrompt,
         string? SystemPromptExpression,
         bool SystemPromptIsStatic,
-        List<Diagnostic> diagnostics
-    ) GetCollapseAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
+        List<Diagnostic> diagnostics,
+        string? customName
+    ) GetToolkitAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
     {
-        var collapseAttributes = classDecl.AttributeLists
-            .SelectMany(attrList => attrList.Attributes)
-            .Where(attr => attr.Name.ToString() == "Collapse");
+        // Look for [Toolkit] attribute
+        var allAttributes = classDecl.AttributeLists
+            .SelectMany(attrList => attrList.Attributes);
 
-        foreach (var attr in collapseAttributes)
+        var attr = allAttributes.FirstOrDefault(attr =>
+            attr.Name.ToString() == "Toolkit" || attr.Name.ToString() == "ToolkitAttribute");
+
+        if (attr != null)
         {
             var arguments = attr.ArgumentList?.Arguments;
-            if (!arguments.HasValue || arguments.Value.Count < 1)
-            {
-                // Attribute present but no description
-                return (true, null, null, null, true, null, null, true, new List<Diagnostic>());
-            }
 
-            // First argument is always the description
-            var description = ExtractStringLiteral(arguments.Value[0].Expression);
-
+            string? description = null;
             string? funcResultCtx = null, funcResultExpr = null;
             bool funcResultIsStatic = true;
             string? sysPromptCtx = null, sysPromptExpr = null;
             bool sysPromptIsStatic = true;
+            string? customName = null;
+            bool hasDescription = false;
 
-            // Parse remaining arguments (positional or named)
-            for (int i = 1; i < arguments.Value.Count; i++)
+            // [Toolkit] attribute handling
+            // Constructor forms:
+            // - [Toolkit] - no args, not collapsed
+            // - [Toolkit(Name = "...")] - named arg, not collapsed
+            // - [Toolkit("description")] - collapsible (has description)
+            // - [Toolkit("description", FunctionResult = "...")] - collapsible with contexts
+            // Runtime override: CollapsingConfig.NeverCollapse to prevent collapsing at runtime
+
+            if (arguments.HasValue)
             {
-                var arg = arguments.Value[i];
-                var argName = arg.NameColon?.Name.Identifier.ValueText;
+                foreach (var arg in arguments.Value)
+                {
+                    var argName = arg.NameEquals?.Name.Identifier.ValueText
+                               ?? arg.NameColon?.Name.Identifier.ValueText;
 
-                // Check if argument is named or positional
-                if (argName == "FunctionResult" || (argName == null && i == 1))
-                {
-                    // FunctionResult (or 2nd positional argument)
-                    if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                    if (argName == "Name")
                     {
-                        funcResultCtx = literal.Token.ValueText;
+                        customName = ExtractStringLiteral(arg.Expression);
                     }
-                    else
+                    else if (argName == "Description")
                     {
-                        funcResultExpr = arg.Expression.ToString();
-                        funcResultIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
+                        description = ExtractStringLiteral(arg.Expression);
+                        hasDescription = true;
                     }
-                }
-                else if (argName == "SystemPrompt" || (argName == null && i == 2))
-                {
-                    // SystemPrompt (or 3rd positional argument)
-                    if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                    else if (argName == "FunctionResult")
                     {
-                        sysPromptCtx = literal.Token.ValueText;
+                        if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                        {
+                            funcResultCtx = literal.Token.ValueText;
+                        }
+                        else
+                        {
+                            funcResultExpr = arg.Expression.ToString();
+                            funcResultIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
+                        }
                     }
-                    else
+                    else if (argName == "SystemPrompt")
                     {
-                        sysPromptExpr = arg.Expression.ToString();
-                        sysPromptIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
+                        if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                        {
+                            sysPromptCtx = literal.Token.ValueText;
+                        }
+                        else
+                        {
+                            sysPromptExpr = arg.Expression.ToString();
+                            sysPromptIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
+                        }
                     }
-                }
-                else if (argName == "postExpansionInstructions")
-                {
-                    // Legacy parameter - maps to FunctionResult
-                    if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                    else if (argName == null && arg == arguments.Value[0])
                     {
-                        funcResultCtx = literal.Token.ValueText;
-                    }
-                    else
-                    {
-                        funcResultExpr = arg.Expression.ToString();
-                        funcResultIsStatic = IsExpressionStatic(arg.Expression, semanticModel, classDecl);
+                        // First positional argument is description (enables collapsing)
+                        description = ExtractStringLiteral(arg.Expression);
+                        hasDescription = true;
                     }
                 }
             }
 
-            // PHASE 2C: Validate dual-context configuration before returning
+            // Toolkit is collapsed if it has a description
+            // Runtime override available via CollapsingConfig.NeverCollapse
+            bool isCollapsed = hasDescription;
+
+            // If attribute is present but not collapsed, still return the customName
+            if (!isCollapsed)
+            {
+                return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), customName);
+            }
+
+            // If collapsed, validate and return
             var diagnostics = ValidateDualContextConfiguration(
                 funcResultCtx, funcResultExpr,
                 sysPromptCtx, sysPromptExpr,
                 classDecl, semanticModel);
 
-            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic, diagnostics);
+            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic, diagnostics, customName);
         }
 
-        return (false, null, null, null, true, null, null, true, new List<Diagnostic>());
+        return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), null);
     }
 
     /// <summary>
@@ -1405,7 +1724,7 @@ $@"    /// <summary>
                 new DiagnosticDescriptor(
                     "HPDAG0101",
                     "Conflicting FunctionResult configuration",
-                    "Plugin '{0}' specifies both FunctionResult literal and expression. Use one or the other, not both.",
+                    "Toolkit '{0}' specifies both FunctionResult literal and expression. Use one or the other, not both.",
                     "HPDAgent.SourceGenerator",
                     DiagnosticSeverity.Error,
                     isEnabledByDefault: true,
@@ -1424,7 +1743,7 @@ $@"    /// <summary>
                 new DiagnosticDescriptor(
                     "HPDAG0102",
                     "ConflictingSystemPrompt configuration",
-                    "Plugin '{0}' specifies bothSystemPrompt literal and expression. Use one or the other, not both.",
+                    "Toolkit '{0}' specifies bothSystemPrompt literal and expression. Use one or the other, not both.",
                     "HPDAgent.SourceGenerator",
                     DiagnosticSeverity.Error,
                     isEnabledByDefault: true,
@@ -1479,7 +1798,7 @@ $@"    /// <summary>
                 new DiagnosticDescriptor(
                     "HPDAG0103",
                     $"Invalid {propertyName} expression syntax",
-                    "Plugin '{0}' uses a string literal for {1} expression. Use the literal parameter instead, or provide a method/property reference.",
+                    "Toolkit '{0}' uses a string literal for {1} expression. Use the literal parameter instead, or provide a method/property reference.",
                     "HPDAgent.SourceGenerator",
                     DiagnosticSeverity.Warning,
                     isEnabledByDefault: true,
@@ -1584,7 +1903,7 @@ $@"    /// <summary>
     /// <summary>
     /// Generates a manual JSON parser for AOT compatibility - no reflection needed!
     /// </summary>
-    private static string GenerateJsonParser(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, ToolInfo plugin)
+    private static string GenerateJsonParser(HPD.Agent.SourceGenerator.Capabilities.FunctionCapability function, ToolkitInfo Toolkit)
     {
         var dtoName = $"{function.Name}Args";
         var relevantParams = function.Parameters
@@ -1784,31 +2103,32 @@ $@"    /// <summary>
     }
 
     /// <summary>
-    /// Generates the GetToolMetadata() method for plugin Collapsing support.
+    /// Generates the GetToolMetadata() method for Toolkit Collapsing support.
     /// </summary>
-    private static string GenerateToolMetadataMethod(ToolInfo plugin)
+    private static string GenerateToolMetadataMethod(ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
 
-        var functionNamesArray = string.Join(", ", plugin.FunctionCapabilities.Select(f => $"\"{f.FunctionName}\""));
-        var description = plugin.HasCollapseAttribute && !string.IsNullOrEmpty(plugin.CollapseDescription)
-            ? plugin.CollapseDescription
-            : plugin.Description;
+        var functionNamesArray = string.Join(", ", Toolkit.FunctionCapabilities.Select(f => $"\"{f.FunctionName}\""));
+        var description = Toolkit.IsCollapsed && !string.IsNullOrEmpty(Toolkit.ContainerDescription)
+            ? Toolkit.ContainerDescription
+            : Toolkit.Description;
 
         sb.AppendLine("        private static ToolMetadata? _cachedMetadata;");
         sb.AppendLine();
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for Collapsing).");
+        sb.AppendLine($"        /// Gets metadata for the {Toolkit.ClassName} Toolkit (used for Collapsing).");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static ToolMetadata GetToolMetadata()");
         sb.AppendLine("        {");
         sb.AppendLine("            return _cachedMetadata ??= new ToolMetadata");
         sb.AppendLine("            {");
-        sb.AppendLine($"                Name = \"{plugin.Name}\",");
+        // Use EffectiveName for LLM-visible name (supports [Toolkit(Name = "...")] override)
+        sb.AppendLine($"                Name = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                Description = \"{description}\",");
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
-        sb.AppendLine($"                FunctionCount = {plugin.FunctionCapabilities.Count()},");
-        sb.AppendLine($"                HasCollapseAttribute = {plugin.HasCollapseAttribute.ToString().ToLower()}");
+        sb.AppendLine($"                FunctionCount = {Toolkit.FunctionCapabilities.Count()},");
+        sb.AppendLine($"                IsCollapsed = {Toolkit.IsCollapsed.ToString().ToLower()}");
         sb.AppendLine("            };");
         sb.AppendLine("        }");
 
@@ -1816,51 +2136,53 @@ $@"    /// <summary>
     }
 
     /// <summary>
-    /// Generates the container function for a Collapsed plugin.
+    /// Generates the container function for a Collapsed Toolkit.
     /// </summary>
-    private static string GenerateContainerFunction(ToolInfo plugin)
+    private static string GenerateContainerFunction(ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
 
         // Combine both AI functions and skills
-        var allCapabilities = plugin.FunctionCapabilities.Select(f => f.FunctionName)
-            .Concat(plugin.SkillCapabilities.Select(s => s.Name))
+        var allCapabilities = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
+            .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
             .ToList();
         var capabilitiesList = string.Join(", ", allCapabilities);
-        var totalCount = plugin.FunctionCapabilities.Count() + plugin.SkillCapabilities.Count();
+        var totalCount = Toolkit.FunctionCapabilities.Count() + Toolkit.SkillCapabilities.Count();
 
-        var description = !string.IsNullOrEmpty(plugin.CollapseDescription)
-            ? plugin.CollapseDescription
-            : plugin.Description ?? string.Empty;
+        var description = !string.IsNullOrEmpty(Toolkit.ContainerDescription)
+            ? Toolkit.ContainerDescription
+            : Toolkit.Description ?? string.Empty;
 
         // Use shared helper to generate description and return message
-        var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
+        // Use EffectiveName for LLM-visible container name
+        var fullDescription = ToolkitContainerHelper.GenerateContainerDescription(description, Toolkit.EffectiveName, allCapabilities);
 
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Container function for {plugin.Name} plugin Collapsing.");
+        sb.AppendLine($"        /// Container function for {Toolkit.ClassName} Toolkit.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine($"        private static AIFunction Create{plugin.Name}Container({plugin.Name} instance)");
+        // Method signature uses ClassName for type reference
+        sb.AppendLine($"        private static AIFunction Create{Toolkit.ClassName}Container({Toolkit.ClassName} instance)");
         sb.AppendLine("        {");
         sb.AppendLine("            return HPDAIFunctionFactory.Create(");
         sb.AppendLine("                async (arguments, cancellationToken) =>");
         sb.AppendLine("                {");
 
-        // Use the CollapseDescription (or plugin description as fallback) in the return message
-        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.FunctionResult);
+        // Use the ContainerDescription (or Toolkit description as fallback) in the return message
+        var returnMessage = ToolkitContainerHelper.GenerateReturnMessage(description, allCapabilities, Toolkit.FunctionResult);
 
-        if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
+        if (!string.IsNullOrEmpty(Toolkit.FunctionResultExpression))
         {
             // Using an interpolated string to combine the base message and the dynamic instructions
-            var baseMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
+            var baseMessage = ToolkitContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
             // Escape special characters for the interpolated string - we need to convert \n\n to \\n\\n in source code
             baseMessage = baseMessage.Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\"", "\\\"");
             // Add separator between capabilities list and dynamic instructions
             var separator = "\\n\\n";  // This will be two backslash-n sequences in the source code
 
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.FunctionResultIsStatic
-                ? plugin.FunctionResultExpression
-                : $"instance.{plugin.FunctionResultExpression}";
+            var expressionCall = Toolkit.FunctionResultIsStatic
+                ? Toolkit.FunctionResultExpression
+                : $"instance.{Toolkit.FunctionResultExpression}";
 
             sb.AppendLine($"                    var dynamicInstructions = {expressionCall};");
             sb.AppendLine($"                    return $\"{baseMessage}{separator}{{dynamicInstructions}}\";");
@@ -1879,45 +2201,47 @@ $@"    /// <summary>
         sb.AppendLine("                },");
         sb.AppendLine("                new HPDAIFunctionFactoryOptions");
         sb.AppendLine("                {");
-        sb.AppendLine($"                    Name = \"{plugin.Name}\",");
+        // Use EffectiveName for LLM-visible container function name
+        sb.AppendLine($"                    Name = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                    Description = \"{fullDescription}\",");
         sb.AppendLine("                    SchemaProvider = () => CreateEmptyContainerSchema(),");
         sb.AppendLine("                    AdditionalProperties = new Dictionary<string, object>");
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
-        sb.AppendLine($"                        [\"PluginName\"] = \"{plugin.Name}\",");
+        // Use EffectiveName for ToolkitName metadata (supports custom naming)
+        sb.AppendLine($"                        [\"ToolkitName\"] = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount},");
 
         // AddSystemPrompt to metadata (for middleware injection)
-        if (!string.IsNullOrEmpty(plugin.SystemPrompt))
+        if (!string.IsNullOrEmpty(Toolkit.SystemPrompt))
         {
             // Use verbatim string literal - only escape quotes (double them), NOT newlines
-            var escapedSysPrompt = plugin.SystemPrompt.Replace("\"", "\"\"");
+            var escapedSysPrompt = Toolkit.SystemPrompt.Replace("\"", "\"\"");
             sb.AppendLine($"                        [\"SystemPrompt\"] = @\"{escapedSysPrompt}\",");
         }
-        else if (!string.IsNullOrEmpty(plugin.SystemPromptExpression))
+        else if (!string.IsNullOrEmpty(Toolkit.SystemPromptExpression))
         {
             // Expression - evaluate at container creation time
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.SystemPromptIsStatic
-                ? plugin.SystemPromptExpression
-                : $"instance.{plugin.SystemPromptExpression}";
+            var expressionCall = Toolkit.SystemPromptIsStatic
+                ? Toolkit.SystemPromptExpression
+                : $"instance.{Toolkit.SystemPromptExpression}";
 
             sb.AppendLine($"                        [\"SystemPrompt\"] = {expressionCall},");
         }
 
         // Optionally store FunctionResult for introspection
-        if (!string.IsNullOrEmpty(plugin.FunctionResult))
+        if (!string.IsNullOrEmpty(Toolkit.FunctionResult))
         {
             // Use verbatim string literal - only escape quotes (double them), NOT newlines
-            var escapedFuncResult = plugin.FunctionResult.Replace("\"", "\"\"");
+            var escapedFuncResult = Toolkit.FunctionResult.Replace("\"", "\"\"");
             sb.AppendLine($"                        [\"FunctionResult\"] = @\"{escapedFuncResult}\"");
         }
-        else if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
+        else if (!string.IsNullOrEmpty(Toolkit.FunctionResultExpression))
         {
             // Don't store expression in metadata (it's already executed in return statement)
-            sb.AppendLine($"                        // FunctionResult is dynamic: {plugin.FunctionResultExpression}");
+            sb.AppendLine($"                        // FunctionResult is dynamic: {Toolkit.FunctionResultExpression}");
         }
         else
         {
@@ -1957,7 +2281,7 @@ $@"    /// <summary>
 
     /// <summary>
     /// Resolves SkillCapability references recursively (Phase 5 migration).
-    /// Populates ResolvedFunctionReferences and ResolvedPluginTypes from UnresolvedReferences.
+    /// Populates ResolvedFunctionReferences and ResolvedToolkitTypes from UnresolvedReferences.
     /// </summary>
     private static void ResolveSkillCapabilities(List<HPD.Agent.SourceGenerator.Capabilities.SkillCapability> skills)
     {
@@ -2007,7 +2331,7 @@ $@"    /// <summary>
             if (reference.ReferenceType == HPD.Agent.SourceGenerator.Capabilities.ReferenceType.Skill)
             {
                 // It's a skill reference - resolve it recursively
-                var referencedSkillName = $"{reference.PluginType}.{reference.MethodName}";
+                var referencedSkillName = $"{reference.ToolkitType}.{reference.MethodName}";
                 if (skillLookup.TryGetValue(referencedSkillName, out var referencedSkill))
                 {
                     // Recursively resolve the referenced skill first
@@ -2015,7 +2339,7 @@ $@"    /// <summary>
 
                     // Add all its function references to our list
                     functionRefs.AddRange(referencedSkill.ResolvedFunctionReferences);
-                    foreach (var pt in referencedSkill.ResolvedPluginTypes)
+                    foreach (var pt in referencedSkill.ResolvedToolkitTypes)
                     {
                         toolTypes.Add(pt);
                     }
@@ -2025,13 +2349,13 @@ $@"    /// <summary>
             {
                 // It's a function reference - add directly
                 functionRefs.Add(reference.FullName);
-                toolTypes.Add(reference.PluginType);
+                toolTypes.Add(reference.ToolkitType);
             }
         }
 
         // Update the skill with resolved references
         skill.ResolvedFunctionReferences = functionRefs.Distinct().OrderBy(f => f).ToList();
-        skill.ResolvedPluginTypes = toolTypes.OrderBy(p => p).ToList();
+        skill.ResolvedToolkitTypes = toolTypes.OrderBy(p => p).ToList();
 
         stack.Pop();
     }

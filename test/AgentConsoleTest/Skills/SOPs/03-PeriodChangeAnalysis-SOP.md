@@ -62,7 +62,7 @@ Analyze how financial metrics changed from one period to another using multiple 
 
 ### Step 2: Calculate Absolute Changes
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateAbsoluteChange(currentValue, priorValue)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateAbsoluteChange(currentValue, priorValue)`
 
 **Calculation:**
 ```
@@ -98,7 +98,7 @@ Absolute Change = Current Value - Prior Value
 
 ### Step 3: Calculate Percentage Changes
 
-**Function Call:** `FinancialAnalysisPlugin.CalculatePercentageChange(currentValue, priorValue)`
+**Function Call:** `FinancialAnalysisToolkit.CalculatePercentageChange(currentValue, priorValue)`
 
 **Calculation:**
 ```
@@ -134,7 +134,7 @@ Absolute Change = Current Value - Prior Value
 
 ### Step 4: Calculate Percentage Point Changes (Common-Size)
 
-**Function Call:** `FinancialAnalysisPlugin.CalculatePercentagePointChange(currentPercent, priorPercent)`
+**Function Call:** `FinancialAnalysisToolkit.CalculatePercentagePointChange(currentPercent, priorPercent)`
 
 **Purpose:** Understand changes in composition/proportions
 

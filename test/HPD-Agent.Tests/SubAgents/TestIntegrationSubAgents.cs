@@ -2,7 +2,7 @@ using HPD.Agent;
 using HPD.Agent;
 
 /// <summary>
-/// Test plugin with sub-agents for integration testing
+/// Test Toolkit with sub-agents for integration testing
 /// Simulates real-world usage patterns
 /// </summary>
 public class TestIntegrationSubAgents

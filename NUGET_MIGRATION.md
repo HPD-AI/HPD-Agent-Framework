@@ -136,8 +136,8 @@ All packages now use dots:
 - `HPD.Agent.MCP`
 - `HPD.Agent.Memory`
 - `HPD.Agent.TextExtraction`
-- `HPD.Agent.Plugins.FileSystem`
-- `HPD.Agent.Plugins.WebSearch`
+- `HPD.Agent.Toolkits.FileSystem`
+- `HPD.Agent.Toolkits.WebSearch`
 - `HPD.Agent.Providers.Anthropic`
 - `HPD.Agent.Providers.AzureAIInference`
 - `HPD.Agent.Providers.Bedrock`

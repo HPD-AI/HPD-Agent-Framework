@@ -7,16 +7,17 @@ using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
+using HPD.Agent;
 
 
 /// <summary>
-/// CodingPlugin - Comprehensive coding assistant with file operations, search, execution, and analysis.
+/// CodingToolkit - Comprehensive coding assistant with file operations, search, execution, and analysis.
 /// Features: Line-based reading, diff generation, glob patterns, .gitignore support, grep search, shell execution.
 /// </summary>
-[Collapse(
+[Toolkit(
     "Contains tools Coding operations: file operations, code search, shell execution, and code analysis.",
-    SystemPrompt: CodingPluginPrompts.SystemPrompt)]
-public class CodingPlugin
+    SystemPrompt: CodingToolkitPrompts.SystemPrompt)]
+public class CodingToolkit
 {
 
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)

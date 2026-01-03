@@ -21,6 +21,9 @@ public class GraphContext : IGraphContext
     private readonly ConcurrentBag<GraphLogEntry> _logEntries = new();
     private readonly ConcurrentDictionary<string, ConcurrentBag<string>> _tags = new();
 
+    // Iteration tracking for cyclic graphs
+    private int _currentIteration;
+
     public string ExecutionId { get; init; }
     public GraphDefinition Graph { get; init; }
     public string? CurrentNodeId { get; private set; }
@@ -37,6 +40,7 @@ public class GraphContext : IGraphContext
     public IDictionary<string, List<string>> Tags => _tags.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Distinct().ToList());
     public int CurrentLayerIndex { get; set; }
     public int TotalLayers { get; private set; }
+    public int CurrentIteration => _currentIteration;
 
     public float Progress
     {
@@ -95,6 +99,34 @@ public class GraphContext : IGraphContext
         return _completedNodes.ContainsKey(nodeId);
     }
 
+    public void UnmarkNodeComplete(string nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            throw new ArgumentException("Node ID cannot be null or whitespace.", nameof(nodeId));
+        }
+
+        _completedNodes.TryRemove(nodeId, out _);
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    public void UnmarkNodesComplete(IEnumerable<string> nodeIds)
+    {
+        if (nodeIds == null)
+        {
+            throw new ArgumentNullException(nameof(nodeIds));
+        }
+
+        foreach (var nodeId in nodeIds)
+        {
+            if (!string.IsNullOrWhiteSpace(nodeId))
+            {
+                _completedNodes.TryRemove(nodeId, out _);
+            }
+        }
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     public int GetNodeExecutionCount(string nodeId)
     {
         if (string.IsNullOrWhiteSpace(nodeId))
@@ -148,13 +180,23 @@ public class GraphContext : IGraphContext
 
     public virtual IGraphContext CreateIsolatedCopy()
     {
-        return new GraphContext(ExecutionId, Graph, Services, CloneChannels(), Managed)
+        var copy = new GraphContext(ExecutionId, Graph, Services, CloneChannels(), Managed)
         {
             StartedAt = StartedAt,
             LastUpdatedAt = DateTimeOffset.UtcNow,
             CurrentLayerIndex = CurrentLayerIndex,
-            TotalLayers = TotalLayers
+            TotalLayers = TotalLayers,
+            _currentIteration = _currentIteration
         };
+
+        // Copy completed nodes so isolated context knows which upstream nodes have completed
+        // This is critical for PrepareInputs() to correctly evaluate edge conditions
+        foreach (var nodeId in CompletedNodes)
+        {
+            copy.MarkNodeComplete(nodeId);
+        }
+
+        return copy;
     }
 
     public virtual void MergeFrom(IGraphContext isolatedContext)
@@ -198,10 +240,11 @@ public class GraphContext : IGraphContext
             _completedNodes.TryAdd(nodeId, 0);
         }
 
-        // Merge execution counts (max, thread-safe)
+        // Merge execution counts (additive, thread-safe)
+        // Each isolated execution increments by 1, so we add to accumulate total executions
         foreach (var kvp in isolated._nodeExecutionCounts)
         {
-            _nodeExecutionCounts.AddOrUpdate(kvp.Key, kvp.Value, (_, existing) => Math.Max(existing, kvp.Value));
+            _nodeExecutionCounts.AddOrUpdate(kvp.Key, kvp.Value, (_, existing) => existing + kvp.Value);
         }
 
         // Merge logs (chronological, thread-safe via ConcurrentBag)
@@ -240,12 +283,42 @@ public class GraphContext : IGraphContext
         LastUpdatedAt = DateTimeOffset.UtcNow;
     }
 
+    internal void IncrementIteration()
+    {
+        Interlocked.Increment(ref _currentIteration);
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    internal void SetCurrentIteration(int iteration)
+    {
+        _currentIteration = iteration;
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     private IGraphChannelSet CloneChannels()
     {
-        // For isolated contexts (parallel execution), we DON'T copy channel values
-        // Each isolated context starts with empty channels
-        // Values are only merged back via MergeFrom() after parallel execution completes
-        // This avoids type erasure issues with generic channels like AppendChannel<T>
-        return new GraphChannelSet();
+        // Create a new channel set for the isolated context
+        var clonedChannels = new GraphChannelSet();
+
+        // Copy node_output channels - these are needed by PrepareInputs() to evaluate edge conditions
+        // and pass outputs from completed upstream nodes to downstream nodes
+        foreach (var channelName in Channels.ChannelNames)
+        {
+            if (channelName.StartsWith("node_output:"))
+            {
+                // Copy the node output dictionary to the isolated context
+                var outputs = Channels[channelName].Get<Dictionary<string, object>>();
+                if (outputs != null)
+                {
+                    clonedChannels[channelName].Set(outputs);
+                }
+            }
+        }
+
+        // Note: Other channels (user-defined) are NOT copied to avoid type erasure issues
+        // with generic channels like AppendChannel<T>. These will be merged back via MergeFrom()
+        // after parallel execution completes.
+
+        return clonedChannels;
     }
 }

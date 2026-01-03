@@ -1,6 +1,6 @@
-# WebSearch Plugin for HPD-Agent
+# WebSearch Toolkit for HPD-Agent
 
-The WebSearch plugin provides intelligent web search capabilities to HPD-Agent with support for multiple search providers, type-safe configuration, and AOT-compatible implementation.
+The WebSearch Toolkit provides intelligent web search capabilities to HPD-Agent with support for multiple search providers, type-safe configuration, and AOT-compatible implementation.
 
 ## 🎯 Features
 
@@ -21,7 +21,7 @@ var agent = AgentBuilder.Create()
     .WithWebSearchProvider(tavily => tavily
         .WithApiKey("your-tavily-api-key")
         .ForResearchMode()) // AI answers + raw content
-    .WithWebSearchPlugin()
+    .WithWebSearchToolkit()
     .Build();
 ```
 
@@ -43,7 +43,7 @@ var agent = AgentBuilder.Create()
     .WithWebSearchProvider(bing => bing
         .WithApiKey("bing-key")
         .ForEnterpriseSearch())
-    .WithWebSearchPlugin(defaultProvider: "tavily")
+    .WithWebSearchToolkit(defaultProvider: "tavily")
     .Build();
 ```
 
@@ -133,7 +133,7 @@ WebSearch/
 ├── Models/
 │   └── SearchModels.cs             # SearchResult, AnswerResult models
 ├── Context/
-│   └── WebSearchContext.cs         # IPluginMetadata implementation
+│   └── WebSearchContext.cs         # IToolkitMetadata implementation
 ├── Builders/
 │   ├── IWebSearchProviderBuilders.cs  # Type-safe builder interfaces
 │   ├── TavilyWebSearchBuilder.cs       # Tavily-specific builder
@@ -144,8 +144,8 @@ WebSearch/
 │   ├── TavilyJsonContext.cs            # AOT-compatible JSON context
 │   ├── BraveConnector.cs               # Brave API implementation (Phase 2)
 │   └── BingConnector.cs                # Bing wrapper (Phase 2)
-├── Plugin/
-│   └── WebSearchPlugin.cs              # Main plugin with conditional functions
+├── Toolkit/
+│   └── WebSearchToolkit.cs              # Main Toolkit with conditional functions
 ├── Extensions/
 │   └── AgentBuilderExtensions.cs       # Fluent configuration API
 └── Examples/
@@ -154,7 +154,7 @@ WebSearch/
 
 ### Conditional Function System
 
-The plugin uses HPD-Agent's V2 conditional function system with type-safe expressions to generate only relevant AI functions:
+The Toolkit uses HPD-Agent's V2 conditional function system with type-safe expressions to generate only relevant AI functions:
 
 ```csharp
 [ConditionalFunction<WebSearchContext>("HasTavilyProvider || HasBraveProvider || HasBingProvider")]
@@ -173,7 +173,7 @@ public async Task<string> WebSearchAsync(
 ### Provider Detection Logic
 
 ```csharp
-public class WebSearchContext : IPluginMetadata
+public class WebSearchContext : IToolkitMetadata
 {
     public bool HasProvider(string providerName) =>
         _connectors.ContainsKey(providerName.ToLowerInvariant());
@@ -281,23 +281,23 @@ public interface IBingWebSearchBuilder
 
 ## 🔌 Integration with HPD-Agent
 
-### Plugin Registration
+### Toolkit Registration
 
-The WebSearch plugin integrates seamlessly with HPD-Agent's plugin system:
+The WebSearch Toolkit integrates seamlessly with HPD-Agent's Toolkit system:
 
 ```csharp
-.WithWebSearchPlugin(defaultProvider: "tavily")
+.WithWebSearchToolkit(defaultProvider: "tavily")
 ```
 
 This registration:
 1. Analyzes configured providers and their capabilities
 2. Generates appropriate conditional functions
 3. Creates dynamic function descriptions
-4. Registers the plugin with the agent
+4. Registers the Toolkit with the agent
 
 ### Source Generator Integration
 
-The plugin works with HPD-Agent's source generator for:
+The Toolkit works with HPD-Agent's source generator for:
 - Conditional function evaluation
 - DSL expression parsing
 - Function description generation
@@ -361,7 +361,7 @@ await agent.InvokeAsync("What are the main benefits of quantum computing?");
 ### Phase 1: Core Infrastructure  
 - [x] Base interfaces and models
 - [x] Tavily connector implementation
-- [x] Plugin with conditional functions
+- [x] Toolkit with conditional functions
 - [x] AgentBuilder extensions
 - [x] AOT compatibility
 
@@ -403,4 +403,4 @@ dotnet test
 
 ## 📄 License
 
-This WebSearch plugin is part of the HPD-Agent project and follows the same licensing terms.
+This WebSearch Toolkit is part of the HPD-Agent project and follows the same licensing terms.

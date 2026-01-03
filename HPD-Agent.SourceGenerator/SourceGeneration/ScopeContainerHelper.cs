@@ -2,10 +2,10 @@ using System.Collections.Generic;
 using System.Linq;
 
 /// <summary>
-/// Shared helper for generating Collapse container descriptions and metadata.
+/// Shared helper for generating toolkit container descriptions and metadata.
 /// Used by both HPDToolSourceGenerator and SkillCodeGenerator to avoid code duplication.
 /// </summary>
-internal static class CollapseContainerHelper
+internal static class ToolkitContainerHelper
 {
     /// <summary>
     /// Generates a plain text description of the container's available functions.

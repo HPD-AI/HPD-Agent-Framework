@@ -4,7 +4,7 @@ using HPD.Agent;
 namespace HPD.Agent.Tools.FileSystem;
 
 /// <summary>
-/// Context for FileSystem plugin operations with workspace validation.
+/// Context for FileSystem Toolkit operations with workspace validation.
 /// </summary>
 public class FileSystemContext : IToolMetadata
 {

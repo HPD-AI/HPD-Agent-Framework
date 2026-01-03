@@ -2,9 +2,9 @@ using Microsoft.Extensions.AI;
 using System.Text.Json;
 
 /// <summary>
-/// Wraps external tools (MCP, Client) with plugin Collapsing metadata at runtime.
-/// Unlike C# plugins which get metadata from the source generator, external tools
-/// need runtime wrapping to support the plugin Collapsing architecture.
+/// Wraps external tools (MCP, Client) with Toolkit Collapsing metadata at runtime.
+/// Unlike C# Toolkits which get metadata from the source generator, external tools
+/// need runtime wrapping to support the Toolkit Collapsing architecture.
 /// </summary>
 public static class ExternalToolCollapsingWrapper
 {
@@ -82,7 +82,7 @@ public static class ExternalToolCollapsingWrapper
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["IsContainer"] = true,
-                    ["PluginName"] = containerName,
+                    ["ToolkitName"] = containerName,
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
                     ["SourceType"] = "MCP",
@@ -155,7 +155,7 @@ public static class ExternalToolCollapsingWrapper
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["IsContainer"] = true,
-                    ["PluginName"] = containerName,
+                    ["ToolkitName"] = containerName,
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
                     ["SourceType"] = "Client"
@@ -169,13 +169,13 @@ public static class ExternalToolCollapsingWrapper
     }
 
     /// <summary>
-    /// Wraps a group of Client tools from one plugin with a container function.
-    /// Uses "Client_" prefix to distinguish from other plugin types.
-    /// Requires a description (since collapsed plugins need to tell the LLM what they contain).
+    /// Wraps a group of Client tools from one Toolkit with a container function.
+    /// Uses "Client_" prefix to distinguish from other Toolkit types.
+    /// Requires a description (since collapsed Toolkits need to tell the LLM what they contain).
     /// </summary>
-    /// <param name="toolName">Name of the Client plugin (e.g., "ECommerce", "Settings")</param>
-    /// <param name="description">Description of the plugin (REQUIRED - tells LLM when to expand)</param>
-    /// <param name="tools">Tools in this plugin</param>
+    /// <param name="toolName">Name of the Client Toolkit (e.g., "ECommerce", "Settings")</param>
+    /// <param name="description">Description of the Toolkit (REQUIRED - tells LLM when to expand)</param>
+    /// <param name="tools">Tools in this Toolkit</param>
     /// <param name="maxFunctionNamesInDescription">Maximum number of function names to include in description (default: 10)</param>
     /// <param name="FunctionResult">Ephemeral instructions returned in function result after expansion</param>
     /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
@@ -189,11 +189,11 @@ public static class ExternalToolCollapsingWrapper
         string?SystemPrompt = null)
     {
         if (string.IsNullOrEmpty(toolName))
-            throw new ArgumentException("Plugin name cannot be null or empty", nameof(toolName));
+            throw new ArgumentException("Toolkit name cannot be null or empty", nameof(toolName));
 
         if (string.IsNullOrEmpty(description))
             throw new ArgumentException(
-                "Description is required for Client plugins so the LLM knows when to expand them",
+                "Description is required for Client Toolkits so the LLM knows when to expand them",
                 nameof(description));
 
         if (tools == null || tools.Count == 0)
@@ -215,7 +215,7 @@ public static class ExternalToolCollapsingWrapper
         var fullFunctionList = string.Join(", ", allFunctionNames);
 
         // Build return message with optional ephemeral context (function result)
-        var returnMessage = $"{toolName} plugin expanded. Available functions: {fullFunctionList}";
+        var returnMessage = $"{toolName} Toolkit expanded. Available functions: {fullFunctionList}";
         if (!string.IsNullOrEmpty(FunctionResult))
         {
             returnMessage += $"\n\n{FunctionResult}";
@@ -237,7 +237,7 @@ public static class ExternalToolCollapsingWrapper
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["IsContainer"] = true,
-                    ["PluginName"] = containerName,
+                    ["ToolkitName"] = containerName,
                     ["ClientToolGroupName"] = toolName, // Original name without prefix
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
@@ -257,18 +257,18 @@ public static class ExternalToolCollapsingWrapper
     }
 
     /// <summary>
-    /// Adds ParentPlugin metadata to an existing AIFunction by wrapping it.
+    /// Adds ParentToolkit metadata to an existing AIFunction by wrapping it.
     /// This is necessary because AIFunction.AdditionalProperties is read-only,
     /// so we create a new function that delegates to the original.
     /// </summary>
     /// <param name="tool">Original tool to wrap</param>
-    /// <param name="parentPluginName">Parent container name</param>
+    /// <param name="parentToolkitName">Parent container name</param>
     /// <param name="sourceType">Source type (MCP, Client, ClientToolGroup)</param>
     /// <returns>New AIFunction with metadata</returns>
-    private static AIFunction AddParentToolMetadata(AIFunction tool, string parentPluginName, string sourceType)
+    private static AIFunction AddParentToolMetadata(AIFunction tool, string parentToolkitName, string sourceType)
     {
         // Check if tool already has Collapsing metadata (avoid double-wrapping)
-        if (tool.AdditionalProperties?.ContainsKey("ParentPlugin") == true)
+        if (tool.AdditionalProperties?.ContainsKey("ParentToolkit") == true)
         {
             return tool;
         }
@@ -286,8 +286,8 @@ public static class ExternalToolCollapsingWrapper
                 Validator = _ => new List<ValidationError>(), // Original tool handles validation
                 AdditionalProperties = new Dictionary<string, object?>
                 {
-                    ["ParentPlugin"] = parentPluginName,
-                    ["PluginName"] = parentPluginName,
+                    ["ParentToolkit"] = parentToolkitName,
+                    ["ToolkitName"] = parentToolkitName,
                     ["IsContainer"] = false,
                     ["SourceType"] = sourceType
                 }

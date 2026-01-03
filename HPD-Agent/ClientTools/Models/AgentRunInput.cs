@@ -6,21 +6,21 @@ namespace HPD.Agent.ClientTools;
 
 /// <summary>
 /// Input configuration for agent execution with Client tool support.
-/// Tools are always registered via plugins (containers), matching HPD's C# plugin model.
-/// For "standalone" tools without grouping, use a default plugin with StartCollapsed=false.
+/// Tools are always registered via Toolkits (containers), matching HPD's C# Toolkit model.
+/// For "standalone" tools without grouping, use a default Toolkit with StartCollapsed=false.
 /// </summary>
 public record AgentRunInput
 {
     /// <summary>
-    /// Client plugin containers to register for this message turn.
-    /// Each plugin contains tools that can be collapsed/expanded together.
-    /// This is the ONLY way to register Client tools - matching HPD's plugin-centric model.
+    /// Client Toolkit containers to register for this message turn.
+    /// Each Toolkit contains tools that can be collapsed/expanded together.
+    /// This is the ONLY way to register Client tools - matching HPD's Toolkit-centric model.
     /// </summary>
     public IReadOnlyList<ClientToolGroupDefinition>? ClientToolGroups { get; init; }
 
     /// <summary>
     /// Containers that should start in expanded state.
-    /// By default, plugins with StartCollapsed=true are collapsed.
+    /// By default, Toolkits with StartCollapsed=true are collapsed.
     /// </summary>
     public IReadOnlySet<string>? ExpandedContainers { get; init; }
 

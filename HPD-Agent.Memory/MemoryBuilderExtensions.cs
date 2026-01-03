@@ -36,25 +36,25 @@ public static class MemoryBuilderExtensions
 
         // Use MemoryId if provided, otherwise fall back to agent name
         var memoryId = options.MemoryId ?? builder.AgentName;
-        var plugin = new DynamicMemoryPlugin(store, memoryId, builder.Logger?.CreateLogger<DynamicMemoryPlugin>());
+        var Toolkit = new DynamicMemoryToolkit(store, memoryId, builder.Logger?.CreateLogger<DynamicMemoryToolkit>());
         var middleware = new DynamicMemoryAgentMiddleware(store, options, builder.Logger?.CreateLogger<DynamicMemoryAgentMiddleware>());
 
-        // Register plugin and Middleware directly without cross-extension dependencies
-        RegisterDynamicMemoryPlugin(builder, plugin);
+        // Register Toolkit and Middleware directly without cross-extension dependencies
+        RegisterDynamicMemoryToolkit(builder, Toolkit);
         builder.Middlewares.Add(middleware);
 
         return builder;
     }
 
     /// <summary>
-    /// Registers the memory plugin directly with the builder's instance registrations.
+    /// Registers the memory Toolkit directly with the builder's instance registrations.
     /// Uses AOT-compatible instance registration (generated Registration class for function creation).
     /// </summary>
-    private static void RegisterDynamicMemoryPlugin(AgentBuilder builder, DynamicMemoryPlugin plugin)
+    private static void RegisterDynamicMemoryToolkit(AgentBuilder builder, DynamicMemoryToolkit Toolkit)
     {
-        var pluginName = typeof(DynamicMemoryPlugin).Name;
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(plugin, pluginName));
-        builder.PluginContexts[pluginName] = null; // No special context needed for memory plugin
+        var ToolkitName = typeof(DynamicMemoryToolkit).Name;
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(Toolkit, ToolkitName));
+        builder.ToolkitContexts[ToolkitName] = null; // No special context needed for memory Toolkit
     }
 
     /// <summary>
@@ -191,22 +191,22 @@ public static class MemoryBuilderExtensions
                 builder.Logger?.CreateLogger<InMemoryAgentPlanStore>());
         }
 
-        // Create plugin and middleware with store
+        // Create Toolkit and middleware with store
         var config = new PlanModeConfig
         {
             Enabled = options.Enabled,
             CustomInstructions = options.CustomInstructions
         };
-        var plugin = new AgentPlanPlugin(store, builder.Logger?.CreateLogger<AgentPlanPlugin>());
+        var Toolkit = new AgentPlanToolkit(store, builder.Logger?.CreateLogger<AgentPlanToolkit>());
         var middleware = new AgentPlanAgentMiddleware(
             store,
             config, // Pass config to middleware
             builder.Logger?.CreateLogger<AgentPlanAgentMiddleware>());
 
-        // Register plugin directly (instance-based for DI plugins)
-        var pluginName = typeof(AgentPlanPlugin).Name;
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(plugin, pluginName));
-        builder.PluginContexts[pluginName] = null;
+        // Register Toolkit directly (instance-based for DI Toolkits)
+        var ToolkitName = typeof(AgentPlanToolkit).Name;
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(Toolkit, ToolkitName));
+        builder.ToolkitContexts[ToolkitName] = null;
 
         // Register middleware directly
         builder.Middlewares.Add(middleware);

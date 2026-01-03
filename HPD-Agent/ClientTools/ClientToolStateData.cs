@@ -7,7 +7,7 @@ using HPD.Agent.ClientTools;
 namespace HPD.Agent;
 
 /// <summary>
-/// State for Client tool middleware. Tracks registered plugins, visibility,
+/// State for Client tool middleware. Tracks registered Toolkits, visibility,
 /// and pending augmentations during the current message turn.
 /// </summary>
 /// <remarks>
@@ -22,20 +22,20 @@ namespace HPD.Agent;
 /// <code>
 /// // Read state
 /// var ftState = context.State.MiddlewareState.ClientTool ?? new();
-/// var isExpanded = ftState.ExpandedPlugins.Contains("ECommercePlugin");
+/// var isExpanded = ftState.ExpandedToolkits.Contains("ECommerceToolkit");
 ///
 /// // Update state
 /// context.UpdateState(s => s with
 /// {
 ///     MiddlewareState = s.MiddlewareState.WithClientTool(
-///         ftState.WithExpandedPlugin("ECommercePlugin"))
+///         ftState.WithExpandedToolkit("ECommerceToolkit"))
 /// });
 /// </code>
 ///
 /// <para><b>Lifecycle:</b></para>
 /// <para>
 /// - RegisteredToolGroups persist across message turns (unless ResetClientState=true)
-/// - ExpandedPlugins and HiddenTools can be modified via augmentation
+/// - ExpandedToolkits and HiddenTools can be modified via augmentation
 /// - PendingAugmentation is applied at the start of each iteration
 /// </para>
 /// </remarks>
@@ -43,16 +43,16 @@ namespace HPD.Agent;
 public sealed record ClientToolStateData
 {
     /// <summary>
-    /// Registered plugins (source of truth for tools).
-    /// Key is plugin name, value is the plugin definition.
+    /// Registered Toolkits (source of truth for tools).
+    /// Key is Toolkit name, value is the Toolkit definition.
     /// </summary>
     public ImmutableDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups { get; init; }
         = ImmutableDictionary<string, ClientToolGroupDefinition>.Empty;
 
     /// <summary>
-    /// Plugins that are currently expanded (showing their tools).
+    /// Toolkits that are currently expanded (showing their tools).
     /// </summary>
-    public ImmutableHashSet<string> ExpandedPlugins { get; init; }
+    public ImmutableHashSet<string> ExpandedToolkits { get; init; }
         = ImmutableHashSet<string>.Empty;
 
     /// <summary>
@@ -80,50 +80,50 @@ public sealed record ClientToolStateData
     /// </summary>
     public ClientToolAugmentation? PendingAugmentation { get; init; }
 
-    // ========== PLUGIN METHODS ==========
+    // ========== Toolkit METHODS ==========
 
     /// <summary>
-    /// Registers a new plugin.
+    /// Registers a new Toolkit.
     /// </summary>
-    public ClientToolStateData WithRegisteredPlugin(ClientToolGroupDefinition plugin)
+    public ClientToolStateData WithRegisteredToolkit(ClientToolGroupDefinition Toolkit)
     {
         return this with
         {
-            RegisteredToolGroups = RegisteredToolGroups.SetItem(plugin.Name, plugin)
+            RegisteredToolGroups = RegisteredToolGroups.SetItem(Toolkit.Name, Toolkit)
         };
     }
 
     /// <summary>
-    /// Removes a registered plugin.
+    /// Removes a registered Toolkit.
     /// </summary>
-    public ClientToolStateData WithoutRegisteredPlugin(string toolName)
+    public ClientToolStateData WithoutRegisteredToolkit(string toolName)
     {
         return this with
         {
             RegisteredToolGroups = RegisteredToolGroups.Remove(toolName),
-            ExpandedPlugins = ExpandedPlugins.Remove(toolName)
+            ExpandedToolkits = ExpandedToolkits.Remove(toolName)
         };
     }
 
     /// <summary>
-    /// Marks a plugin as expanded.
+    /// Marks a Toolkit as expanded.
     /// </summary>
-    public ClientToolStateData WithExpandedPlugin(string toolName)
+    public ClientToolStateData WithExpandedToolkit(string toolName)
     {
         return this with
         {
-            ExpandedPlugins = ExpandedPlugins.Add(toolName)
+            ExpandedToolkits = ExpandedToolkits.Add(toolName)
         };
     }
 
     /// <summary>
-    /// Marks a plugin as collapsed.
+    /// Marks a Toolkit as collapsed.
     /// </summary>
-    public ClientToolStateData WithCollapsedPlugin(string toolName)
+    public ClientToolStateData WithCollapsedToolkit(string toolName)
     {
         return this with
         {
-            ExpandedPlugins = ExpandedPlugins.Remove(toolName)
+            ExpandedToolkits = ExpandedToolkits.Remove(toolName)
         };
     }
 

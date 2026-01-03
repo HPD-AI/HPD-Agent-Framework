@@ -6,11 +6,11 @@ This guide helps you upgrade from HPD-Agent 0.1.x to 0.2.0, which introduces ter
 
 | Old | New | Find & Replace Pattern |
 |-----|-----|------------------------|
-| `Plugin` (class suffix) | `Tools` | `class *Plugin` → `class *Tools` |
-| `IPluginMetadata` | `IToolMetadata` | Direct replacement |
+| `Toolkit` (class suffix) | `Tools` | `class *Toolkit` → `class *Tools` |
+| `IToolkitMetadata` | `IToolMetadata` | Direct replacement |
 | `FrontendTool` | `ClientTool` | Direct replacement |
-| `FrontendPlugin` | `ClientToolGroup` | Direct replacement |
-| `frontendPlugins` | `clientToolGroups` | Direct replacement |
+| `FrontendToolkit` | `ClientToolGroup` | Direct replacement |
+| `frontendToolkits` | `clientToolGroups` | Direct replacement |
 
 ---
 
@@ -20,13 +20,13 @@ This guide helps you upgrade from HPD-Agent 0.1.x to 0.2.0, which introduces ter
 
 **Before:**
 ```csharp
-public class WeatherPlugin
+public class WeatherToolkit
 {
     [AIFunction("Get weather for a location")]
     public string GetWeather(string city) => $"Weather in {city}: Sunny";
 }
 
-public class FileSystemPlugin
+public class FileSystemToolkit
 {
     [AIFunction("Read a file")]
     public string ReadFile(string path) => File.ReadAllText(path);
@@ -53,8 +53,8 @@ public class FileSystemTools
 **Before:**
 ```csharp
 var agent = new AgentBuilder()
-     .WithTools<WeatherPlugin>()
-     .WithTools<FileSystemPlugin>()
+     .WithTools<WeatherToolkit>()
+     .WithTools<FileSystemToolkit>()
     .WithFrontendTools()
     .Build();
 ```
@@ -72,9 +72,9 @@ var agent = new AgentBuilder()
 
 **Before:**
 ```csharp
-public class MyPlugin : IPluginMetadata
+public class MyToolkit : IToolkitMetadata
 {
-    public string PluginName => "MyPlugin";
+    public string ToolkitName => "MyToolkit";
     public string Description => "Does something useful";
 }
 ```
@@ -118,8 +118,8 @@ var config = new AgentConfig
 
 **Before:**
 ```csharp
-[PluginMetadata(Name = "Weather", Description = "Weather operations")]
-public class WeatherPlugin { }
+[ToolkitMetadata(Name = "Weather", Description = "Weather operations")]
+public class WeatherToolkit { }
 ```
 
 **After:**
@@ -137,11 +137,11 @@ public class WeatherTools { }
 **Before:**
 ```typescript
 import {
-  FrontendPluginDefinition,
+  FrontendToolkitDefinition,
   FrontendToolDefinition,
   FrontendToolInvokeResponse,
-  createCollapsedPlugin,
-  createExpandedPlugin,
+  createCollapsedToolkit,
+  createExpandedToolkit,
 } from '@hpd/hpd-agent-client';
 ```
 
@@ -160,7 +160,7 @@ import {
 
 **Before:**
 ```typescript
-const idePlugin: FrontendPluginDefinition = {
+const ideToolkit: FrontendToolkitDefinition = {
   name: 'IDE',
   description: 'IDE interaction tools',
   tools: [
@@ -194,12 +194,12 @@ const ideToolGroup: ClientToolGroupDefinition = {
 
 **Before:**
 ```typescript
-const plugin = createCollapsedPlugin('IDE', 'IDE tools', tools, {
+const Toolkit = createCollapsedToolkit('IDE', 'IDE tools', tools, {
   skills: mySkills,
   systemPrompt: 'Use these tools for IDE operations'
 });
 
-const expandedPlugin = createExpandedPlugin('Utils', utilityTools);
+const expandedToolkit = createExpandedToolkit('Utils', utilityTools);
 ```
 
 **After:**
@@ -218,16 +218,16 @@ const expandedToolGroup = createExpandedToolGroup('Utils', utilityTools);
 ```typescript
 const client = new AgentClient({
   baseUrl: 'http://localhost:5000',
-  frontendPlugins: [idePlugin],
+  frontendToolkits: [ideToolkit],
   onFrontendToolInvoke: async (request) => {
     // Handle tool invocation
     return { requestId: request.requestId, content: [], success: true };
   }
 });
 
-client.registerPlugin(anotherPlugin);
-client.registerPlugins([plugin1, plugin2]);
-console.log(client.plugins);
+client.registerToolkit(anotherToolkit);
+client.registerToolkits([Toolkit1, Toolkit2]);
+console.log(client.Toolkits);
 ```
 
 **After:**
@@ -251,7 +251,7 @@ console.log(client.toolGroups);
 **Before:**
 ```typescript
 await client.stream(conversationId, messages, handlers, {
-  frontendPlugins: [myPlugin],
+  frontendToolkits: [myToolkit],
   resetFrontendState: true
 });
 ```
@@ -273,7 +273,7 @@ const handlers: EventHandlers = {
     console.log(`Tool requested: ${request.toolName}`);
     return createSuccessResponse(request.requestId, 'Done');
   },
-  onFrontendPluginsRegistered: (event) => {
+  onFrontendToolkitsRegistered: (event) => {
     console.log(`Registered: ${event.RegisteredToolGroups.join(', ')}`);
   }
 };
@@ -332,10 +332,10 @@ Use these patterns in your IDE for bulk updates:
 
 ```
 # Class names
-Plugin\b → Tools
+Toolkit\b → Tools
 
 # Interface
-IPluginMetadata → IToolMetadata
+IToolkitMetadata → IToolMetadata
 
 # Builder methods
 \ .WithTools → .WithTools
@@ -350,7 +350,7 @@ FrontendToolsInstructions → ClientToolsInstructions
 
 ```
 # Types
-FrontendPluginDefinition → ClientToolGroupDefinition
+FrontendToolkitDefinition → ClientToolGroupDefinition
 FrontendToolDefinition → ClientToolDefinition
 FrontendSkillDefinition → ClientSkillDefinition
 FrontendToolAugmentation → ClientToolAugmentation
@@ -358,22 +358,22 @@ FrontendToolInvokeRequest → ClientToolInvokeRequest
 FrontendToolInvokeResponse → ClientToolInvokeResponse
 
 # Functions
-createCollapsedPlugin → createCollapsedToolGroup
-createExpandedPlugin → createExpandedToolGroup
+createCollapsedToolkit → createCollapsedToolGroup
+createExpandedToolkit → createExpandedToolGroup
 
 # Properties
-frontendPlugins → clientToolGroups
+frontendToolkits → clientToolGroups
 resetFrontendState → resetClientState
 
 # Event handlers
 onFrontendToolInvoke → onClientToolInvoke
-onFrontendPluginsRegistered → onClientToolGroupsRegistered
+onFrontendToolkitsRegistered → onClientToolGroupsRegistered
 
 # Methods
-registerPlugin\( → registerToolGroup(
-registerPlugins\( → registerToolGroups(
-unregisterPlugin\( → unregisterToolGroup(
-\.plugins\b → .toolGroups
+registerToolkit\( → registerToolGroup(
+registerToolkits\( → registerToolGroups(
+unregisterToolkit\( → unregisterToolGroup(
+\.Toolkits\b → .toolGroups
 ```
 
 ---
@@ -388,7 +388,7 @@ If you have custom integrations that parse events directly:
 |----------------|----------------|
 | `FRONTEND_TOOL_INVOKE_REQUEST` | `CLIENT_TOOL_INVOKE_REQUEST` |
 | `FRONTEND_TOOL_INVOKE_RESPONSE` | `CLIENT_TOOL_INVOKE_RESPONSE` |
-| `FRONTEND_PLUGINS_REGISTERED` | `CLIENT_TOOL_GROUPS_REGISTERED` |
+| `FRONTEND_ToolkitS_REGISTERED` | `CLIENT_TOOL_GROUPS_REGISTERED` |
 
 ### Request Body Changes
 
@@ -396,7 +396,7 @@ If you have custom integrations that parse events directly:
 ```json
 {
   "messages": [...],
-  "frontendPlugins": [...],
+  "frontendToolkits": [...],
   "resetFrontendState": true
 }
 ```
@@ -425,7 +425,7 @@ If you encounter issues during migration:
 
 ## Why These Changes?
 
-1. **"Tools" is clearer than "Plugin"** - Plugins traditionally mean extensible modules, but these are really just tool collections for the agent.
+1. **"Tools" is clearer than "Toolkit"** - Toolkits traditionally mean extensible modules, but these are really just tool collections for the agent.
 
 2. **"Client" is clearer than "Frontend"** - "Frontend" implies web UI, but these tools work in any client: CLI, desktop apps, mobile, etc.
 

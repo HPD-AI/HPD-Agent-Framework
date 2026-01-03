@@ -130,12 +130,12 @@ Total tests: 20
 
 **Status**: Fully functional, fixed dual event stream consumption issue
 
-#### 6. CollapsedPluginTestHelper  
-**File**: [Infrastructure/CollapsedPluginTestHelper.cs](Infrastructure/CollapsedPluginTestHelper.cs)
+#### 6. CollapsedToolkitTestHelper  
+**File**: [Infrastructure/CollapsedToolkitTestHelper.cs](Infrastructure/CollapsedToolkitTestHelper.cs)
 
 **Features**:
-- Creates Collapsed plugins for testing container expansion
-- `CreateCollapsedPlugin()` generates container + member functions
+- Creates Collapsed Toolkits for testing container expansion
+- `CreateCollapsedToolkit()` generates container + member functions
 - `MemberFunc()` helper for creating member functions
 - `CreateSimpleFunction()` for non-Collapsed functions
 
@@ -252,7 +252,7 @@ test/HPD-Agent.Tests/
 │   ├── TestBidirectionalCoordinator.cs  
 │   ├── TestAgentFactory.cs  
 │   ├── MockPermissionHandler.cs  
-│   ├── CollapsedPluginTestHelper.cs  
+│   ├── CollapsedToolkitTestHelper.cs  
 │   ├── ToolVisibilityTracker.cs  
 │   ├── ConversationPlanBuilder.cs  NEW
 │   ├── AssertExtensions.cs  NEW (partial)

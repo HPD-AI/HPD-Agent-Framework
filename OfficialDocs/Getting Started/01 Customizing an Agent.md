@@ -17,7 +17,7 @@ Each method offers distinct advantages and trade-offs.
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are helpful...")
-    .WithTools<MyTools>()
+    .WithToolkit<MyToolkit>()
     .WithTelemetry()
     .Build();
 ```
@@ -42,17 +42,16 @@ var config = new AgentConfig
         ModelName = "gpt-4o",
         ApiKey = "sk-..."
     },
-    MaxAgenticIterations = 10
+    MaxAgenticIterations = 10,
+    Toolkits = new List<ToolkitReference>
+    {
+        "CalculatorToolkit",
+        "FileToolkit"
+    }
 };
 
 // Build directly from config
 var agent = await config.BuildAsync();
-
-// Or use the sync version if needed
-var agent = config.Build();
-
-
-
 ```
 
 </div>
@@ -69,7 +68,8 @@ var agent = config.Build();
         "ModelName": "gpt-4o",
         "ApiKey": "sk-..."
     },
-    "MaxAgenticIterations": 10
+    "MaxAgenticIterations": 10,
+    "Toolkits": ["CalculatorToolkit", "FileToolkit"]
 }
 ```
 ```csharp
@@ -112,7 +112,7 @@ var agent = new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithLogging()
     .WithTelemetry()
-    .WithTools<MyTools>()
+    .WithToolkit<MyToolkit>()
     .WithMiddleware<MyCustomMiddleware>()
     .Build();
 ```
@@ -142,7 +142,7 @@ var agent = new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
     .WithLogging()
     .WithTelemetry()
-    .WithTools<MyTools>()
+    .WithToolkit<MyToolkit>()
     .WithMiddleware<MyCustomMiddleware>()
     .Build();
 ```
@@ -174,9 +174,9 @@ var agent1 = new AgentBuilder()
     .WithMiddleware<MyCustomMiddleware>()
     .WithMiddleware<ErrorHandlingMiddleware>()
     .WithMiddleware<HistoryReductionMiddleware>()
-    .WithTools<Tool1>()
-    .WithTools<Tool2>()
-    .WithTools<Tool3>()
+    .WithToolkit<Toolkit1>()
+    .WithToolkit<Toolkit2>()
+    .WithToolkit<Toolkit3>()
     // ... 20+ more configuration calls
     .Build();
 ```
@@ -197,29 +197,8 @@ var agent2 = new AgentBuilder()
     .WithMiddleware<MyCustomMiddleware>()
     .WithMiddleware<ErrorHandlingMiddleware>()  
     .WithMiddleware<HistoryReductionMiddleware>()  
-    .WithTools<Tool2>()
+    .WithToolkit<Toolkit2>()
     .Build();
-```
-
-**Against Pure Config Pattern:**
-- Config files can't register native C# tools directly
-- You lose compile-time type safety for tool registration
-- Native tools need to be registered via code anyway
-- You still need builder methods for these registrations
-
-Example of limitations:
-```csharp
-// agent-config.json - can't specify C# tools!
-{
-    "Name": "MyAgent",
-    "SystemInstructions": "You are helpful.",
-    "Provider": { "ProviderKey": "openai", "ModelName": "gpt-4o" },
-    // No way to register MyCalculatorTool here   
-}
-
-// You still need code:
-var agent = await AgentConfig.BuildFromFileAsync("agent-config.json");
-agent.WithTools<MyCalculatorTool>();  // Has to be separate!   
 ```
 
 **With Builder + Config Pattern:**
@@ -250,6 +229,15 @@ var config = new AgentConfig
         ApiKey = "sk-..."
     },
     MaxAgenticIterations = 10,
+    Toolkits = new List<ToolkitReference>
+    {
+        "CalculatorToolkit",
+        "FileToolkit"
+    },
+    Middlewares = new List<MiddlewareReference>
+    {
+        "LoggingMiddleware"
+    },
     Caching = new CachingConfig
     {
         Enabled = true,
@@ -259,27 +247,17 @@ var config = new AgentConfig
     {
         MaxRetries = 3,
         SingleFunctionTimeout = TimeSpan.FromSeconds(30)
-    },
-    AgenticLoop = new AgenticLoopConfig
-    {
-        MaxTurnDuration = TimeSpan.FromMinutes(5)
     }
 };
 
-// Reuse across multiple agents
+// Reuse across multiple agents with different overrides
 var agent1 = new AgentBuilder(config)
     .WithServiceProvider(services)
-    .WithTools<CalculatorTool>()
     .Build();
 
 var agent2 = new AgentBuilder(config)
     .WithServiceProvider(services)
-    .WithTools<FileSystemTool>()
-    .Build();
-
-var agent3 = new AgentBuilder(config)
-    .WithServiceProvider(services)
-    .WithTools<DatabaseTool>()
+    .WithToolkit<AdditionalTools>()  // Extend with more tools
     .Build();
 ```
 
@@ -298,6 +276,8 @@ var agent3 = new AgentBuilder(config)
         "ApiKey": "sk-..."
     },
     "MaxAgenticIterations": 10,
+    "Toolkits": ["CalculatorToolkit", "FileToolkit"],
+    "Middlewares": ["LoggingMiddleware"],
     "Caching": {
         "Enabled": true,
         "CacheExpiration": "00:30:00"
@@ -314,24 +294,18 @@ var agent3 = new AgentBuilder(config)
 
 **C# Usage:**
 ```csharp
-// Reuse across multiple agents
+// Reuse across multiple agents with different tool overrides
 var agent1 = new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
-    .WithTools<CalculatorTool>()
     .Build();
 
 var agent2 = new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
-    .WithTools<FileSystemTool>()
-    .Build();
-
-var agent3 = new AgentBuilder("agent-config.json")
-    .WithServiceProvider(services)
-    .WithTools<DatabaseTool>()
+    .WithToolkit<AdditionalTools>()  // Extend with more tools
     .Build();
 ```
 
 </div>
 </div>
 
-**Key insight:** All the tedious configuration (observability, caching, error handling, timeouts) is centralized once. Only tool-specific code stays in C#. No repetition, no middleware clutter—just load and customize tools.
+**Key insight:** All configuration (toolkits, middlewares, caching, error handling, timeouts) is centralized once. The builder pattern lets you extend or override as needed. No repetition—just load and customize.

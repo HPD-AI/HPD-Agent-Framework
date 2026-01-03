@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 
 /// <summary>
-/// Web search plugin that provides intelligent search capabilities with provider-aware functions.
-/// This plugin automatically adapts its available functions and descriptions based on configured providers.
+/// Web search Toolkit that provides intelligent search capabilities with provider-aware functions.
+/// This Toolkit automatically adapts its available functions and descriptions based on configured providers.
 /// </summary>
 public class WebSearchTools
 {

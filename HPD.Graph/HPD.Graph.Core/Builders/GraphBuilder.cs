@@ -1,6 +1,9 @@
 using HPDAgent.Graph.Abstractions.Execution;
 using HPDAgent.Graph.Abstractions.Graph;
 
+// Alias for SuspensionOptions to avoid conflicts
+using SuspensionOpts = HPDAgent.Graph.Abstractions.Execution.SuspensionOptions;
+
 namespace HPDAgent.Graph.Core.Builders;
 
 /// <summary>
@@ -294,6 +297,7 @@ public class NodeBuilder
     private string? _subGraphRef;
     private int? _maxInputBufferSize;
     private ErrorPropagationPolicy? _errorPolicy;
+    private SuspensionOpts? _suspensionOptions;
 
     internal NodeBuilder(string id, string name, NodeType type, string? handlerName)
     {
@@ -393,6 +397,37 @@ public class NodeBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets the suspension options for this node.
+    /// Controls behavior when handler returns Suspended result.
+    /// </summary>
+    public NodeBuilder WithSuspensionOptions(SuspensionOpts options)
+    {
+        _suspensionOptions = options;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures active wait timeout for suspension.
+    /// Convenience method for common case.
+    /// </summary>
+    /// <param name="timeout">How long to wait for approval response.</param>
+    public NodeBuilder WithActiveWait(TimeSpan timeout)
+    {
+        _suspensionOptions = new SuspensionOpts { ActiveWaitTimeout = timeout };
+        return this;
+    }
+
+    /// <summary>
+    /// Configures immediate suspend (no waiting).
+    /// Use when approval may take hours/days and caller will resume from checkpoint.
+    /// </summary>
+    public NodeBuilder WithImmediateSuspend()
+    {
+        _suspensionOptions = SuspensionOpts.ImmediateSuspend;
+        return this;
+    }
+
     internal Node Build()
     {
         return new Node
@@ -410,7 +445,8 @@ public class NodeBuilder
             SubGraph = _subGraph,
             SubGraphRef = _subGraphRef,
             MaxParallelExecutions = _maxInputBufferSize,
-            ErrorPolicy = _errorPolicy
+            ErrorPolicy = _errorPolicy,
+            SuspensionOptions = _suspensionOptions
         };
     }
 }

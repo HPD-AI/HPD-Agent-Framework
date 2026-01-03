@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.StructuredOutput;
@@ -197,7 +198,7 @@ public sealed class Agent
         AgentConfig config,
         IChatClient baseClient,
         ChatOptions? mergedOptions,
-        IReadOnlyDictionary<string, string>? functionToPluginMap = null,
+        IReadOnlyDictionary<string, string>? functionToToolkitMap = null,
         IReadOnlyDictionary<string, string>? functionToSkillMap = null,
         IReadOnlyList<IAgentMiddleware>? middlewares = null,
         IServiceProvider? serviceProvider = null,
@@ -875,6 +876,17 @@ public sealed class Agent
                         allTools.AddRange(runOptions.RuntimeTools);
 
                         effectiveOptions.Tools = allTools;
+                    }
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // RUNTIME TOOL MODE OVERRIDE (for structured output tool/union mode)
+                    // Forces LLM to call a tool - provider-enforced, not prompt-based
+                    // Only apply on first iteration - subsequent iterations follow same mode
+                    // ═══════════════════════════════════════════════════════════════
+                    if (runOptions?.RuntimeToolMode != null && state.Iteration == 0)
+                    {
+                        effectiveOptions = effectiveOptions?.Clone() ?? new ChatOptions();
+                        effectiveOptions.ToolMode = runOptions.RuntimeToolMode;
                     }
 
                     // UPDATE AGENT CONTEXT STATE (sync state changes from previous iteration)
@@ -2139,15 +2151,19 @@ public sealed class Agent
         string? outputToolCallId = null;  // Track output tool call ID for tool mode
         Type? matchedUnionType = null;   // Track which union type was matched (union mode only)
 
-        // Determine if we're in tool mode or union mode
+        // Determine the mode we're operating in
         var isToolMode = structuredOpts.Mode.Equals("tool", StringComparison.OrdinalIgnoreCase);
         var isUnionMode = structuredOpts.Mode.Equals("union", StringComparison.OrdinalIgnoreCase);
+        var isNativeUnionMode = !isToolMode && !isUnionMode && structuredOpts.UnionTypes is { Length: > 0 };
+
+        // Check if tool mode is using union types (merged union behavior)
+        var isToolModeWithUnionTypes = isToolMode && structuredOpts.UnionTypes is { Length: > 0 };
         var outputToolName = structuredOpts.ToolName ?? $"return_{schemaName}";
 
-        // Build set of output tool names for union mode
+        // Build set of output tool names for union mode OR tool mode with union types
         HashSet<string>? unionToolNames = null;
         Dictionary<string, Type>? unionToolTypeMap = null;
-        if (isUnionMode && structuredOpts.UnionTypes != null)
+        if ((isUnionMode || isToolModeWithUnionTypes) && structuredOpts.UnionTypes != null)
         {
             unionToolNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             unionToolTypeMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
@@ -2165,10 +2181,11 @@ public sealed class Agent
         var parseAttemptCount = 0;
 
         // Emit start event for observability
+        var outputMode = isUnionMode ? "union" : (isToolMode ? "tool" : (isNativeUnionMode ? "native-union" : "native"));
         yield return new StructuredOutputStartEvent(
             MessageId: messageId,
             OutputTypeName: schemaName,
-            OutputMode: isUnionMode ? "union" : (isToolMode ? "tool" : "native"));
+            OutputMode: outputMode);
 
         await foreach (var evt in RunAsync(messages, session, options, cancellationToken))
         {
@@ -2191,14 +2208,16 @@ public sealed class Agent
             {
                 if (evt is ToolCallStartEvent toolStart)
                 {
-                    // Check if this is our output tool (tool mode) or a union output tool (union mode)
-                    if (isToolMode && toolStart.Name == outputToolName)
+                    // Check if this is our output tool (tool mode) or a union output tool (union/tool+union mode)
+                    if (isToolMode && !isToolModeWithUnionTypes && toolStart.Name == outputToolName)
                     {
+                        // Single type tool mode: use the single return tool
                         outputToolCallId = toolStart.CallId;
                         continue;
                     }
-                    else if (isUnionMode && unionToolNames!.Contains(toolStart.Name))
+                    else if ((isUnionMode || isToolModeWithUnionTypes) && unionToolNames!.Contains(toolStart.Name))
                     {
+                        // Union mode or tool mode with union types: check against union tool names
                         outputToolCallId = toolStart.CallId;
                         matchedUnionType = unionToolTypeMap![toolStart.Name];
                         continue;
@@ -2220,7 +2239,7 @@ public sealed class Agent
                     // Note: Event draining is handled by RunAsync() - no need to drain here
                     var finalJson = textAccumulator.ToString();
                     var elapsed = Stopwatch.GetElapsedTime(startTime);
-                    var resultTypeName = isUnionMode && matchedUnionType != null
+                    var resultTypeName = (isUnionMode || isToolModeWithUnionTypes) && matchedUnionType != null
                         ? matchedUnionType.Name
                         : schemaName;
 
@@ -2232,9 +2251,9 @@ public sealed class Agent
                         FinalJsonLength: finalJson.Length,
                         Duration: elapsed);
 
-                    if (isUnionMode && matchedUnionType != null)
+                    if ((isUnionMode || isToolModeWithUnionTypes) && matchedUnionType != null)
                     {
-                        // Union mode: deserialize to the specific union type, then cast to T
+                        // Union mode or tool mode with union types: deserialize to the specific union type, then cast to T
                         yield return EmitUnionResult<T>(finalJson, matchedUnionType, serializerOptions);
                     }
                     else
@@ -2294,7 +2313,15 @@ public sealed class Agent
                     FinalJsonLength: finalJson.Length,
                     Duration: elapsed);
 
-                yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+                // Use appropriate emitter based on whether this is native union mode
+                if (isNativeUnionMode)
+                {
+                    yield return EmitNativeUnionResult<T>(finalJson, structuredOpts.UnionTypes!, serializerOptions);
+                }
+                else
+                {
+                    yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+                }
                 yield break;
             }
 
@@ -2317,7 +2344,15 @@ public sealed class Agent
                 FinalJsonLength: finalJson.Length,
                 Duration: elapsed);
 
-            yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+            // Use appropriate emitter based on whether this is native union mode
+            if (isNativeUnionMode)
+            {
+                yield return EmitNativeUnionResult<T>(finalJson, structuredOpts.UnionTypes!, serializerOptions);
+            }
+            else
+            {
+                yield return EmitFinalResult<T>(finalJson, schemaName, serializerOptions);
+            }
         }
     }
 
@@ -2358,13 +2393,42 @@ public sealed class Agent
         var schemaName = structuredOpts.SchemaName ?? typeof(T).Name;
         var schemaDesc = structuredOpts.SchemaDescription ?? $"Response of type {schemaName}";
 
-        if (structuredOpts.Mode.Equals("union", StringComparison.OrdinalIgnoreCase))
+        if (structuredOpts.Mode.Equals("tool", StringComparison.OrdinalIgnoreCase))
         {
-            // Union mode: Create output tool for each union type
+            // Tool mode: Create output tool(s) and add to RuntimeTools
+            // RuntimeTools are merged with agent's configured tools in RunAsync
+            options.RuntimeTools ??= new List<AITool>();
+
+            if (structuredOpts.UnionTypes is { Length: > 0 })
+            {
+                // Multiple types specified → create one tool per type (union behavior)
+                // LLM chooses which type to return by calling the corresponding tool
+                foreach (var unionType in structuredOpts.UnionTypes)
+                {
+                    var tool = CreateOutputToolForType(unionType, serializerOptions);
+                    options.RuntimeTools.Add(tool);
+                }
+            }
+            else
+            {
+                // Single type from generic parameter T
+                var outputTool = CreateOutputTool<T>(structuredOpts, serializerOptions);
+                options.RuntimeTools.Add(outputTool);
+            }
+
+            // Force LLM to call one of the return tools (provider-enforced, not prompt-based)
+            // This ensures the LLM cannot output free text - it MUST call a return tool
+            options.RuntimeToolMode = ChatToolMode.RequireAny;
+        }
+        else if (structuredOpts.Mode.Equals("union", StringComparison.OrdinalIgnoreCase))
+        {
+            // DEPRECATED: "union" mode is now just "tool" mode with UnionTypes set
+            // Kept for backward compatibility - redirect to tool mode logic
             if (structuredOpts.UnionTypes == null || structuredOpts.UnionTypes.Length == 0)
             {
                 throw new InvalidOperationException(
-                    "Union mode requires UnionTypes to be specified with at least one type.");
+                    "Union mode requires UnionTypes to be specified with at least one type. " +
+                    "Consider using Mode='tool' with UnionTypes instead.");
             }
 
             options.RuntimeTools ??= new List<AITool>();
@@ -2373,23 +2437,35 @@ public sealed class Agent
                 var tool = CreateOutputToolForType(unionType, serializerOptions);
                 options.RuntimeTools.Add(tool);
             }
-        }
-        else if (structuredOpts.Mode.Equals("tool", StringComparison.OrdinalIgnoreCase))
-        {
-            // Tool mode: Create output tool and add to RuntimeTools
-            // RuntimeTools are merged with agent's configured tools in RunAsync
-            var outputTool = CreateOutputTool<T>(structuredOpts, serializerOptions);
-            options.RuntimeTools ??= new List<AITool>();
-            options.RuntimeTools.Add(outputTool);
+
+            options.RuntimeToolMode = ChatToolMode.RequireAny;
         }
         else
         {
             // Native mode: Set response format with JSON schema
-            // Use provided serializerOptions for consistent schema generation
-            chatOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema<T>(
-                serializerOptions,
-                schemaName: schemaName,
-                schemaDescription: schemaDesc);
+            if (structuredOpts.UnionTypes is { Length: > 0 })
+            {
+                // Native union mode: Create anyOf schema combining all union types
+                // Provider enforces schema validation, supports streaming partials
+                var anyOfSchema = CreateAnyOfSchema(
+                    structuredOpts.UnionTypes,
+                    schemaName,
+                    schemaDesc,
+                    serializerOptions);
+
+                chatOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema(
+                    anyOfSchema,
+                    schemaName: schemaName,
+                    schemaDescription: schemaDesc);
+            }
+            else
+            {
+                // Single type native mode: Use provided serializerOptions for consistent schema generation
+                chatOptions.ResponseFormat = ChatResponseFormat.ForJsonSchema<T>(
+                    serializerOptions,
+                    schemaName: schemaName,
+                    schemaDescription: schemaDesc);
+            }
         }
     }
 
@@ -2592,6 +2668,97 @@ public sealed class Agent
         }
 
         return span.ToString();
+    }
+
+    /// <summary>
+    /// Creates an anyOf JSON schema combining multiple union types.
+    /// Used for native mode union support where the provider enforces schema validation.
+    /// </summary>
+    private static JsonElement CreateAnyOfSchema(
+        Type[] unionTypes,
+        string schemaName,
+        string schemaDescription,
+        JsonSerializerOptions serializerOptions)
+    {
+        var anyOfSchemas = new JsonArray();
+
+        foreach (var unionType in unionTypes)
+        {
+            // Generate schema for each union type
+            var typeSchema = AIJsonUtilities.CreateJsonSchema(
+                unionType,
+                description: unionType.Name,
+                serializerOptions: serializerOptions);
+
+            anyOfSchemas.Add(typeSchema);
+        }
+
+        // Create combined schema with anyOf
+        var combinedSchema = new JsonObject
+        {
+            ["title"] = schemaName,
+            ["description"] = schemaDescription,
+            ["anyOf"] = anyOfSchemas
+        };
+
+        return JsonSerializer.SerializeToElement(combinedSchema);
+    }
+
+    /// <summary>
+    /// Tries to detect which union type matches the given JSON by attempting deserialization.
+    /// Returns the first type that successfully deserializes and is assignable to T.
+    /// </summary>
+    private static (T? result, Type? matchedType) TryDeserializeUnionType<T>(
+        string json,
+        Type[] unionTypes,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        foreach (var unionType in unionTypes)
+        {
+            try
+            {
+                var typeInfo = serializerOptions.GetTypeInfo(unionType);
+                var result = JsonSerializer.Deserialize(json, typeInfo);
+
+                if (result is T typedResult)
+                {
+                    return (typedResult, unionType);
+                }
+            }
+            catch (JsonException)
+            {
+                // This type doesn't match, try next
+                continue;
+            }
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Emits a structured result for native union mode.
+    /// Tries to deserialize to each union type until one matches.
+    /// </summary>
+    private static AgentEvent EmitNativeUnionResult<T>(
+        string rawJson,
+        Type[] unionTypes,
+        JsonSerializerOptions serializerOptions) where T : class
+    {
+        var json = StripMarkdownFences(rawJson);
+
+        var (result, matchedType) = TryDeserializeUnionType<T>(json, unionTypes, serializerOptions);
+
+        if (result != null && matchedType != null)
+        {
+            return new StructuredResultEvent<T>(result, IsPartial: false, json);
+        }
+
+        // No type matched
+        var typeNames = string.Join(", ", unionTypes.Select(t => t.Name));
+        return new StructuredOutputErrorEvent(
+            json,
+            $"JSON did not match any union type. Expected one of: {typeNames}",
+            "UnionType");
     }
 
     #endregion
@@ -4314,13 +4481,13 @@ internal class FunctionCallProcessor
             if (function == null)
                 continue;
 
-            // Extract plugin/skill metadata (same logic as ProcessFunctionCallsAsync)
+            // Extract Toolkit/skill metadata (same logic as ProcessFunctionCallsAsync)
             string? toolTypeName = null;
-            if (function.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginCtx) == true)
+            if (function.AdditionalProperties?.TryGetValue("ParentToolkit", out var parentToolkitCtx) == true)
             {
-                toolTypeName = parentPluginCtx as string;
+                toolTypeName = parentToolkitCtx as string;
             }
-            else if (function.AdditionalProperties?.TryGetValue("PluginName", out var toolNameProp) == true)
+            else if (function.AdditionalProperties?.TryGetValue("ToolkitName", out var toolNameProp) == true)
             {
                 toolTypeName = toolNameProp as string;
             }
@@ -4536,20 +4703,20 @@ internal class FunctionCallProcessor
 
             // Extract Collapse information for middleware Collapsing
             string? toolTypeName = null;
-            if (function?.AdditionalProperties?.TryGetValue("ParentPlugin", out var parentPluginCtx) == true)
+            if (function?.AdditionalProperties?.TryGetValue("ParentToolkit", out var parentToolkitCtx) == true)
             {
-                toolTypeName = parentPluginCtx as string;
+                toolTypeName = parentToolkitCtx as string;
             }
-            else if (function?.AdditionalProperties?.TryGetValue("PluginName", out var toolNameProp) == true)
+            else if (function?.AdditionalProperties?.TryGetValue("ToolkitName", out var toolNameProp) == true)
             {
-                // For container functions, PluginName IS the plugin type
+                // For container functions, ToolkitName IS the Toolkit type
                 toolTypeName = toolNameProp as string;
             }
 
-            // Fallback: Try function-to-plugin mapping
+            // Fallback: Try function-to-Toolkit mapping
             if (string.IsNullOrEmpty(toolTypeName) && functionCall.Name != null)
             {
-                // Plugin metadata comes from AIFunction.AdditionalProperties (set by source generator)
+                // Toolkit metadata comes from AIFunction.AdditionalProperties (set by source generator)
             }
 
             // Extract skill metadata
@@ -4586,7 +4753,7 @@ internal class FunctionCallProcessor
                 callId: functionCall.CallId,
                 arguments: (IReadOnlyDictionary<string, object?>?)(functionCall.Arguments ?? new Dictionary<string, object?>()),
                 runOptions: runOptions,
-                pluginName: toolTypeName,
+                toolkitName: toolTypeName,
                 skillName: skillName);
 
             // Execute BeforeFunctionAsync middleware hooks (permission check happens here)
@@ -4691,7 +4858,7 @@ internal class FunctionCallProcessor
                 result: executionResult,
                 exception: executionException,
                 runOptions: runOptions,
-                pluginName: toolTypeName,
+                toolkitName: toolTypeName,
                 skillName: skillName);
 
             try

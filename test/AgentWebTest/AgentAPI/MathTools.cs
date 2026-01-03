@@ -4,7 +4,7 @@ using System.ComponentModel;
 using Microsoft.Extensions.AI;
 
 /// <summary>
-/// Simple math plugin for testing plugin registration and invocation.
+/// Simple math Toolkit for testing Toolkit registration and invocation.
 /// </summary>
 public class MathToolMetadataContext : IToolMetadata
 {
@@ -38,7 +38,7 @@ public class MathToolMetadataContext : IToolMetadata
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
 
-[Collapse("Math Plugin")]
+[Toolkit("Math Toolkit")]
 public class MathTools
 {
     [AIFunction<MathToolMetadataContext>]

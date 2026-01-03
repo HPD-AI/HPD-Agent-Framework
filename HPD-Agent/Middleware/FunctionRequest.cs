@@ -71,10 +71,10 @@ public sealed record FunctionRequest
     public required AgentLoopState State { get; init; }
 
     /// <summary>
-    /// Name of the plugin that contains this function, if any.
-    /// May be NULL if function is not part of a plugin.
+    /// Name of the Toolkit that contains this function, if any.
+    /// May be NULL if function is not part of a Toolkit.
     /// </summary>
-    public string? PluginName { get; init; }
+    public string? ToolkitName { get; init; }
 
     /// <summary>
     /// Name of the skill that referenced this function, if any.
@@ -132,9 +132,9 @@ public sealed record FunctionRequest
     public string FunctionName => Function.Name;
 
     /// <summary>
-    /// True if this function is part of a plugin.
+    /// True if this function is part of a Toolkit.
     /// </summary>
-    public bool IsPluginFunction => PluginName != null;
+    public bool IsToolkitFunction => ToolkitName != null;
 
     /// <summary>
     /// True if this function is part of a skill.

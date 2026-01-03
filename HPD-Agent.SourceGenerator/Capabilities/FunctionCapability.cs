@@ -82,11 +82,11 @@ internal class FunctionCapability : BaseCapability
     ///
     /// Phase 3: Full implementation migrated from HPDToolSourceGenerator.GenerateFunctionRegistration().
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this function (ToolInfo).</param>
+    /// <param name="parent">The parent Toolkit that contains this function (ToolkitInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     public override string GenerateRegistrationCode(object parent)
     {
-        var plugin = (ToolInfo)parent;
+        var Toolkit = (ToolkitInfo)parent;
 
         var nameCode = $"\"{FunctionName}\"";
         var descriptionCode = HasDynamicDescription
@@ -118,7 +118,7 @@ internal class FunctionCapability : BaseCapability
             // Use AIJsonUtilities to generate schema from the method signature
             // This is AOT-compatible and uses the method's actual parameters with their [Description] attributes
             schemaProviderCode += $@"
-    var method = typeof({plugin.Name}).GetMethod(nameof({plugin.Name}.{Name}));
+    var method = typeof({Toolkit.Name}).GetMethod(nameof({Toolkit.Name}.{Name}));
     var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions {{ IncludeSchemaKeyword = false }};
     return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateFunctionJsonSchema(
         method!,
@@ -202,12 +202,12 @@ $@"({asyncKeyword} (arguments, cancellationToken) =>
         options.AppendLine($"                SchemaProvider = {schemaProviderCode},");
         options.AppendLine($"                ParameterDescriptions = {GenerateParameterDescriptions()},");
 
-        // ALWAYS add ParentPlugin metadata (enables PluginReferences to work with any plugin)
-        // Note: Plugins without [Collapse] remain "always visible" by default
-        // Skills can use PluginReferences to Collapse them on-demand
+        // ALWAYS add ParentToolkit metadata (enables ToolkitReferences to work with any Toolkit)
+        // Note: Toolkits without [Collapse] remain "always visible" by default
+        // Skills can use ToolkitReferences to Collapse them on-demand
         options.AppendLine("                AdditionalProperties = new Dictionary<string, object>");
         options.AppendLine("                {");
-        options.AppendLine($"                    [\"ParentPlugin\"] = \"{plugin.Name}\",");
+        options.AppendLine($"                    [\"ParentToolkit\"] = \"{Toolkit.Name}\",");
 
         // Add Kind if it's an output tool (structured output)
         if (Kind == "Output")
@@ -350,7 +350,7 @@ $@"HPDAIFunctionFactory.Create(
 
 /// <summary>
 /// Information about a function parameter discovered during source generation.
-/// This is the same structure as in ToolInfo.cs but duplicated here for Phase 1.
+/// This is the same structure as in ToolkitInfo.cs but duplicated here for Phase 1.
 /// In Phase 2, we'll consolidate to use a single shared ParameterInfo class.
 /// </summary>
 internal class ParameterInfo

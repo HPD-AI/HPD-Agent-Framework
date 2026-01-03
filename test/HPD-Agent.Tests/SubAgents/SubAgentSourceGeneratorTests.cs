@@ -31,10 +31,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentAttribute_OnMethod_CompilesSuccessfully()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act - Call sub-agent method
-        var subAgent = plugin.CategorizedSubAgent();
+        var subAgent = Toolkit.CategorizedSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -48,10 +48,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_Create_GeneratesStatelessSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.StatelessSubAgent();
+        var subAgent = Toolkit.StatelessSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -64,10 +64,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_CreateStateful_GeneratesStatefulSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.StatefulSubAgent();
+        var subAgent = Toolkit.StatefulSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -80,10 +80,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgentFactory_CreatePerSession_GeneratesPerSessionSubAgent()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.PerSessionSubAgent();
+        var subAgent = Toolkit.PerSessionSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -97,10 +97,10 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithProvider()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.SubAgentWithProvider();
+        var subAgent = Toolkit.SubAgentWithProvider();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -114,10 +114,10 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithSystemInstructions()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.SubAgentWithInstructions();
+        var subAgent = Toolkit.SubAgentWithInstructions();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -130,10 +130,10 @@ public class SubAgentSourceGeneratorTests
     public void SourceGenerator_ExtractsAgentConfig_WithIterationLimit()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.SubAgentWithIterationLimit();
+        var subAgent = Toolkit.SubAgentWithIterationLimit();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -147,10 +147,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_HasRequiredMetadata_NameAndDescription()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.ValidSubAgent();
+        var subAgent = Toolkit.ValidSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);
@@ -162,10 +162,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_Description_IsExtractedFromFactory()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.ValidSubAgent();
+        var subAgent = Toolkit.ValidSubAgent();
 
         // Assert
         Assert.Equal("A valid test sub-agent", subAgent.Description);
@@ -177,10 +177,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_DefaultThreadMode_IsStateless()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.StatelessSubAgent();
+        var subAgent = Toolkit.StatelessSubAgent();
 
         // Assert
         Assert.Equal(SubAgentThreadMode.Stateless, subAgent.ThreadMode);
@@ -190,10 +190,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_SharedSession_IsNotNullForStateful()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.StatefulSubAgent();
+        var subAgent = Toolkit.StatefulSubAgent();
 
         // Assert
         Assert.NotNull(subAgent.SharedSession);
@@ -205,10 +205,10 @@ public class SubAgentSourceGeneratorTests
     public void SubAgent_WithFullConfiguration_CompilesSuccessfully()
     {
         // Arrange
-        var plugin = new TestSubAgentTools();
+        var Toolkit = new TestSubAgentTools();
 
         // Act
-        var subAgent = plugin.ComplexSubAgent();
+        var subAgent = Toolkit.ComplexSubAgent();
 
         // Assert
         Assert.NotNull(subAgent);

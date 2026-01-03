@@ -33,34 +33,34 @@ public class SubAgentIntegrationTests
                 {
                     ["IsSubAgent"] = true,
                     ["ThreadMode"] = threadMode,
-                    ["PluginName"] = "TestPlugin"
+                    ["ToolkitName"] = "TestToolkit"
                 }
             });
     }
 
-    // ===== P0: Plugin Registration =====
+    // ===== P0: Toolkit Registration =====
 
     [Fact]
-    public void CrossAssemblyPluginLoading_LoadsRegistryFromPluginAssembly()
+    public void CrossAssemblyToolkitLoading_LoadsRegistryFromToolkitAssembly()
     {
-        // This test verifies that the cross-assembly plugin loading mechanism works.
+        // This test verifies that the cross-assembly Toolkit loading mechanism works.
         // When WithTools<T>() is called, it should load the ToolRegistry from T's assembly
         // if not already loaded.
 
         // Arrange - Create a builder
         var builder = new AgentBuilder();
 
-        // Act - Attempt to load a plugin registry from the test assembly
-        // Even though there's no plugin, it should not throw - just find nothing
+        // Act - Attempt to load a Toolkit registry from the test assembly
+        // Even though there's no Toolkit, it should not throw - just find nothing
         builder.LoadToolRegistryFromAssembly(typeof(TestIntegrationSubAgents).Assembly);
 
-        // Assert - The assembly was tracked as loaded (even if no plugins found)
+        // Assert - The assembly was tracked as loaded (even if no Toolkits found)
         // This verifies the cross-assembly loading mechanism is working
         Assert.Contains(typeof(TestIntegrationSubAgents).Assembly, builder._loadedAssemblies);
     }
 
     [Fact]
-    public void SubAgentPlugin_GeneratesAIFunctions_WithCorrectStructure()
+    public void SubAgentToolkit_GeneratesAIFunctions_WithCorrectStructure()
     {
         // Arrange - Simulate what source generator would create
         var functions = new List<AIFunction>

@@ -23,11 +23,11 @@ namespace HPD.Agent.ClientTools;
 /// <code>
 /// var registrar = new ClientSkillDocumentRegistrar(documentStore, logger);
 ///
-/// // Register all documents from a plugin
-/// await registrar.RegisterPluginDocumentsAsync(ecommercePlugin, ct);
+/// // Register all documents from a Toolkit
+/// await registrar.RegisterToolkitDocumentsAsync(ecommerceToolkit, ct);
 ///
-/// // Later, when plugin is removed
-/// await registrar.UnregisterPluginDocumentsAsync(ecommercePlugin, ct);
+/// // Later, when Toolkit is removed
+/// await registrar.UnregisterToolkitDocumentsAsync(ecommerceToolkit, ct);
 /// </code>
 ///
 /// <para><b>Document Retrieval:</b></para>
@@ -61,24 +61,24 @@ public class ClientSkillDocumentRegistrar
     }
 
     /// <summary>
-    /// Registers all documents from all skills in a plugin.
+    /// Registers all documents from all skills in a Toolkit.
     /// </summary>
-    /// <param name="plugin">The plugin containing skills with documents</param>
+    /// <param name="Toolkit">The Toolkit containing skills with documents</param>
     /// <param name="ct">Cancellation token</param>
     /// <returns>Number of documents registered</returns>
-    public async Task<int> RegisterPluginDocumentsAsync(
-        ClientToolGroupDefinition plugin,
+    public async Task<int> RegisterToolkitDocumentsAsync(
+        ClientToolGroupDefinition Toolkit,
         CancellationToken ct = default)
     {
-        if (plugin.Skills == null || plugin.Skills.Count == 0)
+        if (Toolkit.Skills == null || Toolkit.Skills.Count == 0)
         {
-            _logger.LogDebug("Plugin '{PluginName}' has no skills, skipping document registration", plugin.Name);
+            _logger.LogDebug("Toolkit '{ToolkitName}' has no skills, skipping document registration", Toolkit.Name);
             return 0;
         }
 
         var registeredCount = 0;
 
-        foreach (var skill in plugin.Skills)
+        foreach (var skill in Toolkit.Skills)
         {
             if (skill.Documents == null || skill.Documents.Count == 0)
                 continue;
@@ -87,42 +87,42 @@ public class ClientSkillDocumentRegistrar
             {
                 try
                 {
-                    await RegisterDocumentAsync(plugin.Name, skill.Name, document, ct);
+                    await RegisterDocumentAsync(Toolkit.Name, skill.Name, document, ct);
                     registeredCount++;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex,
-                        "Failed to register document '{DocumentId}' from skill '{SkillName}' in plugin '{PluginName}'",
-                        document.DocumentId, skill.Name, plugin.Name);
+                        "Failed to register document '{DocumentId}' from skill '{SkillName}' in Toolkit '{ToolkitName}'",
+                        document.DocumentId, skill.Name, Toolkit.Name);
                     throw;
                 }
             }
         }
 
         _logger.LogInformation(
-            "Registered {Count} documents from plugin '{PluginName}'",
-            registeredCount, plugin.Name);
+            "Registered {Count} documents from Toolkit '{ToolkitName}'",
+            registeredCount, Toolkit.Name);
 
         return registeredCount;
     }
 
     /// <summary>
-    /// Unregisters all documents from all skills in a plugin.
+    /// Unregisters all documents from all skills in a Toolkit.
     /// </summary>
-    /// <param name="plugin">The plugin containing skills with documents</param>
+    /// <param name="Toolkit">The Toolkit containing skills with documents</param>
     /// <param name="ct">Cancellation token</param>
     /// <returns>Number of documents unregistered</returns>
-    public async Task<int> UnregisterPluginDocumentsAsync(
-        ClientToolGroupDefinition plugin,
+    public async Task<int> UnregisterToolkitDocumentsAsync(
+        ClientToolGroupDefinition Toolkit,
         CancellationToken ct = default)
     {
-        if (plugin.Skills == null || plugin.Skills.Count == 0)
+        if (Toolkit.Skills == null || Toolkit.Skills.Count == 0)
             return 0;
 
         var unregisteredCount = 0;
 
-        foreach (var skill in plugin.Skills)
+        foreach (var skill in Toolkit.Skills)
         {
             if (skill.Documents == null || skill.Documents.Count == 0)
                 continue;
@@ -152,8 +152,8 @@ public class ClientSkillDocumentRegistrar
         }
 
         _logger.LogInformation(
-            "Unregistered {Count} documents from plugin '{PluginName}'",
-            unregisteredCount, plugin.Name);
+            "Unregistered {Count} documents from Toolkit '{ToolkitName}'",
+            unregisteredCount, Toolkit.Name);
 
         return unregisteredCount;
     }
@@ -179,7 +179,7 @@ public class ClientSkillDocumentRegistrar
         await _documentStore.UploadFromContentAsync(storeId, metadata, content, ct);
 
         _logger.LogDebug(
-            "Registered Client document '{StoreId}' from skill '{SkillName}' in plugin '{PluginName}'",
+            "Registered Client document '{StoreId}' from skill '{SkillName}' in Toolkit '{ToolkitName}'",
             storeId, skillName, toolName);
     }
 

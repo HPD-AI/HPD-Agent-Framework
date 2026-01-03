@@ -55,7 +55,7 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
     /// Creates a new ContainerErrorRecoveryMiddleware instance.
     /// </summary>
     /// <param name="allTools">All available tools for the agent</param>
-    /// <param name="explicitlyRegisteredToolGroups">Plugins explicitly registered via WithTools</param>
+    /// <param name="explicitlyRegisteredToolGroups">Toolkits explicitly registered via WithTools</param>
     /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerErrorRecoveryMiddleware(
         IList<AITool> allTools,
@@ -147,9 +147,9 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
                 continue; // Only handle [Collapse] containers, not [Skill] containers
 
             // Get [Collapse] container name
-            var containerName = tool.AdditionalProperties?.TryGetValue("PluginName", out var pn) == true
-                && pn is string pluginName
-                ? pluginName
+            var containerName = tool.AdditionalProperties?.TryGetValue("ToolkitName", out var pn) == true
+                && pn is string ToolkitName
+                ? ToolkitName
                 : tool.Name ?? string.Empty;
 
             // Get items inside this [Collapse] container
@@ -162,7 +162,7 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
             // Map each item to this [Collapse] container
             foreach (var itemRef in referencedItems)
             {
-                // Extract item name from "PluginName.ItemName" format
+                // Extract item name from "ToolkitName.ItemName" format
                 var itemName = itemRef.Contains('.')
                     ? itemRef.Substring(itemRef.LastIndexOf('.') + 1)
                     : itemRef;
@@ -184,8 +184,8 @@ public class ContainerErrorRecoveryMiddleware : IAgentMiddleware
 
         return tools.OfType<AIFunction>().FirstOrDefault(f =>
             f.Name == containerName ||
-            (f.AdditionalProperties?.TryGetValue("PluginName", out var pn) == true
-                && pn is string pluginName && pluginName == containerName));
+            (f.AdditionalProperties?.TryGetValue("ToolkitName", out var pn) == true
+                && pn is string ToolkitName && ToolkitName == containerName));
     }
 
     /// <summary>

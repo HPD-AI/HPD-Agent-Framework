@@ -62,7 +62,7 @@ Level 4: Health Score & Recommendations
 
 ### Step 0: Data Validation (CRITICAL)
 
-**Function Call:** `FinancialAnalysisPlugin.ValidateBalanceSheetEquation(totalAssets, totalLiabilities, totalEquity)`
+**Function Call:** `FinancialAnalysisToolkit.ValidateBalanceSheetEquation(totalAssets, totalLiabilities, totalEquity)`
 
 **Validation:**
 ```
@@ -101,7 +101,7 @@ Proceed to foundation skills
 
 ### Step 1: Run Liquidity Skill
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateCurrentRatio(...), CalculateQuickRatio(...), CalculateWorkingCapital(...)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateCurrentRatio(...), CalculateQuickRatio(...), CalculateWorkingCapital(...)`
 
 **Input:** Current Assets, Current Liabilities, Inventory
 
@@ -129,7 +129,7 @@ Proceed to foundation skills
 
 ### Step 2: Run Capital Structure Skill
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateDebtToEquityRatio(...), CalculateDebtToAssetsRatio(...), CalculateEquityMultiplier(...), EquityToTotalAssetsPercentage(...)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateDebtToEquityRatio(...), CalculateDebtToAssetsRatio(...), CalculateEquityMultiplier(...), EquityToTotalAssetsPercentage(...)`
 
 **Input:** Total Assets, Total Liabilities, Total Equity, Debt
 
@@ -163,7 +163,7 @@ Proceed to foundation skills
 
 ### Step 3: Run Period Change Skill
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateAbsoluteChange(...), CalculatePercentageChange(...), CalculatePercentagePointChange(...)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateAbsoluteChange(...), CalculatePercentageChange(...), CalculatePercentagePointChange(...)`
 
 **Input:** Current Period Values, Prior Period Values (all line items)
 
@@ -199,7 +199,7 @@ Proceed to foundation skills
 
 ### Step 4: Run Common-Size Skill
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateCommonSizePercentage(...), CommonSizeBalanceSheetAssets(...), CommonSizeBalanceSheetLiabilities(...), EquityToTotalAssetsPercentage(...)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateCommonSizePercentage(...), CommonSizeBalanceSheetAssets(...), CommonSizeBalanceSheetLiabilities(...), EquityToTotalAssetsPercentage(...)`
 
 **Input:** All Balance Sheet items
 

@@ -23,7 +23,7 @@ public class FinancialAnalysisSkills
 RECOMMENDED APPROACH:
 For comprehensive multi-period balance sheet analysis, use a single call:
 
-→ FinancialAnalysisPlugin.ComprehensiveBalanceSheetAnalysis(
+→ FinancialAnalysisToolkit.ComprehensiveBalanceSheetAnalysis(
     y1CurrentAssets, y1TotalAssets, y1CurrentLiabilities, y1TotalLiabilities, y1Equity,
     y2CurrentAssets, y2TotalAssets, y2CurrentLiabilities, y2TotalLiabilities, y2Equity)
 
@@ -55,20 +55,20 @@ For interpretation guidance: read_skill_document('05-financialhealthdashboard-so
                 .AddDocumentFromFile(
                     "./Skills/SOPs/05-FinancialHealthDashboard-SOP.md",
                     "Interpretation framework and benchmarks"),
-            "FinancialAnalysisPlugin.ComprehensiveBalanceSheetAnalysis",
-            "FinancialAnalysisPlugin.ValidateBalanceSheetEquation",
-            "FinancialAnalysisPlugin.CalculateCurrentRatio",
-            "FinancialAnalysisPlugin.CalculateQuickRatio",
-            "FinancialAnalysisPlugin.CalculateWorkingCapital",
-            "FinancialAnalysisPlugin.CalculateDebtToEquityRatio",
-            "FinancialAnalysisPlugin.CalculateDebtToAssetsRatio",
-            "FinancialAnalysisPlugin.CalculateEquityMultiplier",
-            "FinancialAnalysisPlugin.CommonSizeBalanceSheetAssets",
-            "FinancialAnalysisPlugin.CommonSizeBalanceSheetLiabilities",
-            "FinancialAnalysisPlugin.EquityToTotalAssetsPercentage",
-            "FinancialAnalysisPlugin.CalculateAbsoluteChange",
-            "FinancialAnalysisPlugin.CalculatePercentageChange",
-            "FinancialAnalysisPlugin.CalculatePercentagePointChange"
+            "FinancialAnalysisToolkit.ComprehensiveBalanceSheetAnalysis",
+            "FinancialAnalysisToolkit.ValidateBalanceSheetEquation",
+            "FinancialAnalysisToolkit.CalculateCurrentRatio",
+            "FinancialAnalysisToolkit.CalculateQuickRatio",
+            "FinancialAnalysisToolkit.CalculateWorkingCapital",
+            "FinancialAnalysisToolkit.CalculateDebtToEquityRatio",
+            "FinancialAnalysisToolkit.CalculateDebtToAssetsRatio",
+            "FinancialAnalysisToolkit.CalculateEquityMultiplier",
+            "FinancialAnalysisToolkit.CommonSizeBalanceSheetAssets",
+            "FinancialAnalysisToolkit.CommonSizeBalanceSheetLiabilities",
+            "FinancialAnalysisToolkit.EquityToTotalAssetsPercentage",
+            "FinancialAnalysisToolkit.CalculateAbsoluteChange",
+            "FinancialAnalysisToolkit.CalculatePercentageChange",
+            "FinancialAnalysisToolkit.CalculatePercentagePointChange"
         );
     }
 
@@ -91,13 +91,13 @@ For comprehensive analysis, use FinancialHealthDashboard instead.
 APPROACH:
 Execute these functions (can be parallel):
 
-→ FinancialAnalysisPlugin.CalculateCurrentRatio(currentAssets, currentLiabilities)
+→ FinancialAnalysisToolkit.CalculateCurrentRatio(currentAssets, currentLiabilities)
   Healthy benchmark: >1.5 for most industries
 
-→ FinancialAnalysisPlugin.CalculateQuickRatio(currentAssets, currentLiabilities, inventory)
+→ FinancialAnalysisToolkit.CalculateQuickRatio(currentAssets, currentLiabilities, inventory)
   Conservative benchmark: >1.0
 
-→ FinancialAnalysisPlugin.CalculateWorkingCapital(currentAssets, currentLiabilities)
+→ FinancialAnalysisToolkit.CalculateWorkingCapital(currentAssets, currentLiabilities)
   Positive = liquidity cushion; Negative may indicate efficiency or stress
 
 SYNTHESIS:
@@ -108,9 +108,9 @@ For benchmarks: read_skill_document('01-quickliquidityanalysis-sop')",
                 .AddDocumentFromFile(
                     "./Skills/SOPs/01-QuickLiquidityAnalysis-SOP.md",
                     "Liquidity benchmarks and interpretation"),
-            "FinancialAnalysisPlugin.CalculateCurrentRatio",
-            "FinancialAnalysisPlugin.CalculateQuickRatio",
-            "FinancialAnalysisPlugin.CalculateWorkingCapital"
+            "FinancialAnalysisToolkit.CalculateCurrentRatio",
+            "FinancialAnalysisToolkit.CalculateQuickRatio",
+            "FinancialAnalysisToolkit.CalculateWorkingCapital"
         );
     }
 
@@ -133,16 +133,16 @@ For comprehensive analysis, use FinancialHealthDashboard instead.
 APPROACH:
 Execute these functions (can be parallel):
 
-→ FinancialAnalysisPlugin.CalculateDebtToEquityRatio(totalLiabilities, stockholdersEquity)
+→ FinancialAnalysisToolkit.CalculateDebtToEquityRatio(totalLiabilities, stockholdersEquity)
   >1.0 = more debt than equity (varies by industry)
 
-→ FinancialAnalysisPlugin.CalculateDebtToAssetsRatio(totalLiabilities, totalAssets)
+→ FinancialAnalysisToolkit.CalculateDebtToAssetsRatio(totalLiabilities, totalAssets)
   Shows % of assets financed by debt
 
-→ FinancialAnalysisPlugin.CalculateEquityMultiplier(totalAssets, stockholdersEquity)
+→ FinancialAnalysisToolkit.CalculateEquityMultiplier(totalAssets, stockholdersEquity)
   Used in DuPont analysis; measures leverage
 
-→ FinancialAnalysisPlugin.EquityToTotalAssetsPercentage(stockholdersEquity, totalAssets)
+→ FinancialAnalysisToolkit.EquityToTotalAssetsPercentage(stockholdersEquity, totalAssets)
   Higher % = more conservative capital structure
 
 SYNTHESIS:
@@ -153,10 +153,10 @@ For benchmarks: read_skill_document('02-capitalstructureanalysis-sop')",
                 .AddDocumentFromFile(
                     "./Skills/SOPs/02-CapitalStructureAnalysis-SOP.md",
                     "Leverage benchmarks and risk assessment"),
-            "FinancialAnalysisPlugin.CalculateDebtToEquityRatio",
-            "FinancialAnalysisPlugin.CalculateDebtToAssetsRatio",
-            "FinancialAnalysisPlugin.CalculateEquityMultiplier",
-            "FinancialAnalysisPlugin.EquityToTotalAssetsPercentage"
+            "FinancialAnalysisToolkit.CalculateDebtToEquityRatio",
+            "FinancialAnalysisToolkit.CalculateDebtToAssetsRatio",
+            "FinancialAnalysisToolkit.CalculateEquityMultiplier",
+            "FinancialAnalysisToolkit.EquityToTotalAssetsPercentage"
         );
     }
 
@@ -179,13 +179,13 @@ For comprehensive analysis, use FinancialHealthDashboard instead.
 APPROACH:
 For each line item you're analyzing, use these functions (can be parallel):
 
-→ FinancialAnalysisPlugin.CalculateAbsoluteChange(currentPeriodValue, priorPeriodValue)
+→ FinancialAnalysisToolkit.CalculateAbsoluteChange(currentPeriodValue, priorPeriodValue)
   Shows raw dollar impact
 
-→ FinancialAnalysisPlugin.CalculatePercentageChange(currentPeriodValue, priorPeriodValue)
+→ FinancialAnalysisToolkit.CalculatePercentageChange(currentPeriodValue, priorPeriodValue)
   Shows growth rate (relative magnitude)
 
-→ FinancialAnalysisPlugin.CalculatePercentagePointChange(currentPercent, priorPercent)
+→ FinancialAnalysisToolkit.CalculatePercentagePointChange(currentPercent, priorPercent)
   Shows change in composition (use with common-size percentages)
 
 WHEN TO USE EACH:
@@ -201,9 +201,9 @@ For examples: read_skill_document('03-periodchangeanalysis-sop')",
                 .AddDocumentFromFile(
                     "./Skills/SOPs/03-PeriodChangeAnalysis-SOP.md",
                     "Change analysis examples and interpretation"),
-            "FinancialAnalysisPlugin.CalculateAbsoluteChange",
-            "FinancialAnalysisPlugin.CalculatePercentageChange",
-            "FinancialAnalysisPlugin.CalculatePercentagePointChange"
+            "FinancialAnalysisToolkit.CalculateAbsoluteChange",
+            "FinancialAnalysisToolkit.CalculatePercentageChange",
+            "FinancialAnalysisToolkit.CalculatePercentagePointChange"
         );
     }
 
@@ -226,13 +226,13 @@ For comprehensive analysis, use FinancialHealthDashboard instead.
 APPROACH:
 Execute these functions (can be parallel):
 
-→ FinancialAnalysisPlugin.CommonSizeBalanceSheetAssets(currentAssets, totalAssets)
+→ FinancialAnalysisToolkit.CommonSizeBalanceSheetAssets(currentAssets, totalAssets)
   Returns: Current Assets % | Non-Current Assets % | Total: 100%
 
-→ FinancialAnalysisPlugin.CommonSizeBalanceSheetLiabilities(currentLiabilities, totalLiabilities)
+→ FinancialAnalysisToolkit.CommonSizeBalanceSheetLiabilities(currentLiabilities, totalLiabilities)
   Returns: Current Liabilities % | Non-Current Liabilities % | Total: 100%
 
-→ FinancialAnalysisPlugin.EquityToTotalAssetsPercentage(stockholdersEquity, totalAssets)
+→ FinancialAnalysisToolkit.EquityToTotalAssetsPercentage(stockholdersEquity, totalAssets)
   Returns: Equity as % of total assets
 
 BENEFITS:
@@ -248,10 +248,10 @@ For interpretation: read_skill_document('04-commonsizebalancesheet-sop')",
                 .AddDocumentFromFile(
                     "./Skills/SOPs/04-CommonSizeBalanceSheet-SOP.md",
                     "Common-size interpretation and comparisons"),
-            "FinancialAnalysisPlugin.CalculateCommonSizePercentage",
-            "FinancialAnalysisPlugin.CommonSizeBalanceSheetAssets",
-            "FinancialAnalysisPlugin.CommonSizeBalanceSheetLiabilities",
-            "FinancialAnalysisPlugin.EquityToTotalAssetsPercentage"
+            "FinancialAnalysisToolkit.CalculateCommonSizePercentage",
+            "FinancialAnalysisToolkit.CommonSizeBalanceSheetAssets",
+            "FinancialAnalysisToolkit.CommonSizeBalanceSheetLiabilities",
+            "FinancialAnalysisToolkit.EquityToTotalAssetsPercentage"
         );
     }
 
@@ -275,7 +275,7 @@ Check the available documents to see URL-based documents marked with 🔗 URL in
                     "https://raw.githubusercontent.com/microsoft/semantic-kernel/main/README.md",
                     "Semantic Kernel README for reference",
                     documentId: "semantic-kernel-readme"),
-            "FinancialAnalysisPlugin.CalculateCurrentRatio"
+            "FinancialAnalysisToolkit.CalculateCurrentRatio"
         );
     }
 }

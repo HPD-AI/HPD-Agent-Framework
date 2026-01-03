@@ -22,7 +22,7 @@ public class SubAgent
     public string Description { get; internal set; } = string.Empty;
 
     /// <summary>
-    /// Agent configuration - defines the sub-agent's behavior, provider, plugins, etc.
+    /// Agent configuration - defines the sub-agent's behavior, provider, Toolkits, etc.
     /// This is used to build the actual Agent instance at runtime.
     /// </summary>
     public AgentConfig AgentConfig { get; internal set; } = null!;
@@ -41,11 +41,11 @@ public class SubAgent
     public AgentSession? SharedSession { get; set; }
 
     /// <summary>
-    /// Plugin types to register with the sub-agent (e.g., typeof(FileSystemPlugin), typeof(WebSearchPlugin)).
-    /// These plugins will be available as tools for the sub-agent to use.
+    /// Toolkit types to register with the sub-agent (e.g., typeof(FileSystemToolkit), typeof(WebSearchToolkit)).
+    /// These Toolkits will be available as tools for the sub-agent to use.
     /// This is a runtime-only property and is not serializable (similar to Skills' References).
     /// </summary>
-    public Type[] PluginTypes { get; set; } = Array.Empty<Type>();
+    public Type[] ToolkitTypes { get; set; } = Array.Empty<Type>();
 }
 
 /// <summary>

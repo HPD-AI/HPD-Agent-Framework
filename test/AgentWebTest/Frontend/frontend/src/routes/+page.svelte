@@ -10,7 +10,7 @@
 	} from '@hpd/hpd-agent-headless-ui';
 	import Artifact from '$lib/artifacts/Artifact.svelte';
 	import { artifactStore, type ArtifactState } from '$lib/artifacts/artifact-store.js';
-	import { artifactTool, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
+	import { artifactTool, handleArtifactTool } from '$lib/artifacts/artifact-Toolkit.js';
 
 	const API_BASE = 'http://localhost:5135';
 

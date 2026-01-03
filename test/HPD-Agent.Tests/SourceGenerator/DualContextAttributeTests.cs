@@ -19,12 +19,13 @@ public class DualContextAttributeTests
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-    FunctionResult: ""Plugin activated with features A, B, C"",
-   SystemPrompt: ""Always validate inputs and show your work""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    FunctionResult = ""Toolkit activated with features A, B, C"",
+    SystemPrompt = ""Always validate inputs and show your work""
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -38,7 +39,7 @@ public class TestPlugin
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
         // Assert - FunctionResult appears in function result
-        Assert.Contains("Plugin activated with features A, B, C", generatedCode!);
+        Assert.Contains("Toolkit activated with features A, B, C", generatedCode!);
 
         // Assert -SystemPrompt appears in AdditionalProperties
         Assert.Contains("[\"SystemPrompt\"]", generatedCode);
@@ -53,11 +54,12 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-   SystemPrompt: ""System-level rules only""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    SystemPrompt = ""System-level rules only""
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -81,11 +83,12 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-    FunctionResult: ""One-time activation message""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    FunctionResult = ""One-time activation message""
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -109,14 +112,15 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Financial Plugin"",
-   SystemPrompt: @""# RULES
+[Toolkit(
+    ""Financial Toolkit"",
+     
+    SystemPrompt = @""# RULES
 - Rule 1: Validate equations
 - Rule 2: Show calculations
 - Rule 3: Use decimal precision""
 )]
-public class FinancialPlugin
+public class FinancialToolkit
 {
     [AIFunction]
     public decimal Calculate(decimal x) => x;
@@ -142,11 +146,12 @@ public class FinancialPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-   SystemPrompt: @""Use """"quotes"""" properly""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    SystemPrompt = @""Use """"quotes"""" properly""
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -176,12 +181,13 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-    FunctionResult: ""Uses $, €, ¥ symbols"",
-   SystemPrompt: ""Math: x > y, a + b = c""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    FunctionResult = ""Uses $, €, ¥ symbols"",
+    SystemPrompt = ""Math: x > y, a + b = c""
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -206,12 +212,13 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-    FunctionResult: """",
-   SystemPrompt: """"
+[Toolkit(
+    ""Test Toolkit"",
+     
+    FunctionResult = """",
+    SystemPrompt = """"
 )]
-public class TestPlugin
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -235,18 +242,19 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-    FunctionResult: ""Plugin activated"",
-   SystemPrompt: ""Plugin rules""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    FunctionResult = ""Toolkit activated"",
+    SystemPrompt = ""Toolkit rules""
 )]
-public partial class TestPlugin
+public partial class TestToolkit
 {
     [AIFunction]
     public string Function1() => ""result1"";
 }
 
-public partial class TestPlugin
+public partial class TestToolkit
 {
     [AIFunction]
     public string Function2() => ""result2"";
@@ -260,8 +268,8 @@ public partial class TestPlugin
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
 
         // Both contexts should be preserved after partial class merging
-        Assert.Contains("Plugin activated", generatedCode!);
-        Assert.Contains("Plugin rules", generatedCode);
+        Assert.Contains("Toolkit activated", generatedCode!);
+        Assert.Contains("Toolkit rules", generatedCode);
         Assert.Contains("[\"SystemPrompt\"]", generatedCode);
         Assert.Contains("[\"FunctionResult\"]", generatedCode);
     }
@@ -269,24 +277,21 @@ public partial class TestPlugin
     [Fact]
     public void Generator_HandlesBackwardCompatibility_LegacyPostExpansionInstructions()
     {
-        // Arrange
+        // Arrange - Note: This tests the legacy FunctionResult property with the new [Toolkit] attribute
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-#pragma warning disable CS0618 // Type or member is obsolete
-
-[Collapse(
-    description: ""Legacy Plugin"",
-    postExpansionInstructions: ""Legacy instructions""
+[Toolkit(
+    ""Legacy Toolkit"",
+     
+    FunctionResult = ""Legacy instructions""
 )]
-public class LegacyPlugin
+public class LegacyToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
 }
-
-#pragma warning restore CS0618
 ";
 
         // Act
@@ -308,11 +313,12 @@ public class LegacyPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Test Plugin"",
-   SystemPrompt: @""{longRules}""
+[Toolkit(
+    ""Test Toolkit"",
+     
+    SystemPrompt = @""{longRules}""
 )]
-public class TestPlugin
+public class TestToolkit
 {{
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -337,8 +343,8 @@ public class TestPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(description: ""Test Plugin"")]
-public class TestPlugin
+[Toolkit(""Test Toolkit"", Collapsed = true)]
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -353,19 +359,19 @@ public class TestPlugin
 
         // When contexts are not specified, they should not appear in AdditionalProperties
         // The container function should still be generated
-        Assert.Contains("TestPlugin", generatedCode!);
+        Assert.Contains("TestToolkit", generatedCode!);
     }
 
     [Fact]
     public void Generator_HandlesMixedPositionalAndNamedArguments()
     {
-        // Arrange - Test positional args (less common but should work)
+        // Arrange - Test positional args with [Toolkit] attribute
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(""Test Plugin"", ""Positional function context"", ""Positional system context"")]
-public class TestPlugin
+[Toolkit(""Test Toolkit"",   FunctionResult = ""Positional function context"", SystemPrompt = ""Positional system context"")]
+public class TestToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -393,7 +399,7 @@ public class TestPlugin
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },

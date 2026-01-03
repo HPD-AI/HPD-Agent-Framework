@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace HPD.Agent;
 
 /// <summary>
-/// Unified middleware for all container operations (plugins and skills).
+/// Unified middleware for all container operations (Toolkits and skills).
 /// Handles tool visibility, instruction injection, expansion detection, and cleanup.
 /// </summary>
 /// <remarks>
@@ -29,7 +29,7 @@ namespace HPD.Agent;
 ///
 /// <para><b>Container Unification (V2):</b></para>
 /// <para>
-/// Treats plugins and skills uniformly as "containers" with dual-context support:
+/// Treats Toolkits and skills uniformly as "containers" with dual-context support:
 /// - <b>FunctionResult</b>: Ephemeral instructions returned in function result
 /// - <b>SystemPrompt</b>: Persistent instructions injected into system prompt
 /// </para>
@@ -76,7 +76,7 @@ public class ContainerMiddleware : IAgentMiddleware
     /// Creates a new ContainerMiddleware instance.
     /// </summary>
     /// <param name="initialTools">All available tools for the agent</param>
-    /// <param name="explicitlyRegisteredToolGroups">Plugins explicitly registered via WithTools (always visible)</param>
+    /// <param name="explicitlyRegisteredToolGroups">Toolkits explicitly registered via WithTools (always visible)</param>
     /// <param name="config">Container configuration (optional, defaults to enabled)</param>
     /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerMiddleware(
@@ -93,10 +93,13 @@ public class ContainerMiddleware : IAgentMiddleware
         // Extract AIFunctions from tools
         var aiFunctions = initialTools.OfType<AIFunction>().ToList();
 
-        // Create ToolVisibilityManager for filtering
-        _visibilityManager = new ToolVisibilityManager(aiFunctions, explicitlyRegisteredToolGroups);
-
         _config = config ?? new CollapsingConfig { Enabled = true };
+
+        // Create ToolVisibilityManager for filtering, passing NeverCollapse config
+        _visibilityManager = new ToolVisibilityManager(
+            aiFunctions,
+            explicitlyRegisteredToolGroups,
+            _config.NeverCollapse);
         _logger = logger;
         _initialTools = initialTools; // V2: Store for container detection
     }
@@ -165,7 +168,7 @@ public class ContainerMiddleware : IAgentMiddleware
         // STEP 2: InjectSystemPrompt for active containers
         //─────────────────────────────────────────────────────────────────────────────────────────────
 
-        // Use ActiveContainerInstructions (supports both plugins and skills)
+        // Use ActiveContainerInstructions (supports both Toolkits and skills)
         var activeContainers = collapsingState.ActiveContainerInstructions;
 
         if (activeContainers.Any() && context.Options != null)
@@ -205,7 +208,7 @@ public class ContainerMiddleware : IAgentMiddleware
         if (!_config.Enabled || context.ToolCalls.Count == 0)
             return Task.CompletedTask;
 
-        // Detect container expansions (unified for plugins and skills)
+        // Detect container expansions (unified for Toolkits and skills)
         // Use the original DetectContainers method with tool calls from context
         var (containerExpansions, containerInstructions) =
             DetectContainers(context.ToolCalls, _initialTools);
@@ -219,7 +222,7 @@ public class ContainerMiddleware : IAgentMiddleware
             _logger?.LogInformation("BeforeToolExecutionAsync: Before expansion - ExpandedContainers count = {Count}",
                 collapsingState.ExpandedContainers.Count);
 
-            // Expand containers (unified - both plugins and skills)
+            // Expand containers (unified - both Toolkits and skills)
             // WithExpandedContainer adds to both ExpandedContainers (session) and ContainersExpandedThisTurn (turn-level)
             foreach (var container in containerExpansions)
             {
@@ -451,7 +454,7 @@ public class ContainerMiddleware : IAgentMiddleware
     //═════════════════════════════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Detects containers from tool calls (unified for plugins and skills).
+    /// Detects containers from tool calls (unified for Toolkits and skills).
     /// Extracts both FunctionResult and SystemPrompt.
     /// </summary>
     private static (
@@ -488,9 +491,9 @@ public class ContainerMiddleware : IAgentMiddleware
             }
             else
             {
-                // Plugin container - use PluginName metadata or function name
+                // Toolkit container - use ToolkitName metadata or function name
                 containerName = function.AdditionalProperties
-                    ?.TryGetValue("PluginName", out var pnVal) == true && pnVal is string pn
+                    ?.TryGetValue("ToolkitName", out var pnVal) == true && pnVal is string pn
                     ? pn
                     : toolCall.Name;
             }
@@ -519,7 +522,7 @@ public class ContainerMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Builds a rich, formatted container protocols section with metadata.
-    /// Injects SystemPrompt for all containers (plugins + skills).
+    /// Injects SystemPrompt for all containers (Toolkits + skills).
     /// </summary>
     private static string BuildContainerProtocolsSection(
         ImmutableDictionary<string, ContainerInstructionSet> activeContainers,
@@ -753,7 +756,7 @@ public class ContainerMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Finds a container function by name in the initial tools list.
-    /// Checks both Name and PluginName metadata.
+    /// Checks both Name and ToolkitName metadata.
     /// </summary>
     private AIFunction? FindContainerInInitialTools(string containerName)
     {
@@ -772,14 +775,14 @@ public class ContainerMiddleware : IAgentMiddleware
             if (!isContainer)
                 continue;
 
-            // Check if name matches (either function name or PluginName)
+            // Check if name matches (either function name or ToolkitName)
             if (af.Name == containerName)
                 return af;
 
-            var pluginName = af.AdditionalProperties?.TryGetValue("PluginName", out var pnVal) == true
+            var ToolkitName = af.AdditionalProperties?.TryGetValue("ToolkitName", out var pnVal) == true
                 && pnVal is string pn ? pn : null;
 
-            if (pluginName == containerName)
+            if (ToolkitName == containerName)
                 return af;
         }
 

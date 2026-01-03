@@ -54,11 +54,11 @@ internal class SubAgentCapability : BaseCapability
     ///
     /// Phase 3: Full implementation migrated from SubAgentCodeGenerator.GenerateSubAgentFunction().
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this sub-agent (ToolInfo).</param>
+    /// <param name="parent">The parent Toolkit that contains this sub-agent (ToolkitInfo).</param>
     /// <returns>The generated registration code as a string.</returns>
     public override string GenerateRegistrationCode(object parent)
     {
-        var plugin = (ToolInfo)parent;
+        var Toolkit = (ToolkitInfo)parent;
         var sb = new StringBuilder();
 
         // PHASE 2A FIX: Return just the factory call (NO local function wrapper, NO functions.Add)
@@ -70,7 +70,7 @@ internal class SubAgentCapability : BaseCapability
 
         if (IsStatic)
         {
-            sb.AppendLine($"        var subAgentDef = {plugin.Name}.{MethodName}();");
+            sb.AppendLine($"        var subAgentDef = {Toolkit.Name}.{MethodName}();");
         }
         else
         {
@@ -89,10 +89,10 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            agentBuilder.WithChatClient(currentAgent.BaseClient);");
         sb.AppendLine("        }");
         sb.AppendLine();
-        sb.AppendLine("        // Register plugins if any are specified (uses AOT-compatible catalog)");
-        sb.AppendLine("        if (subAgentDef.PluginTypes != null && subAgentDef.PluginTypes.Length > 0)");
+        sb.AppendLine("        // Register Toolkits if any are specified (uses AOT-compatible catalog)");
+        sb.AppendLine("        if (subAgentDef.ToolkitTypes != null && subAgentDef.ToolkitTypes.Length > 0)");
         sb.AppendLine("        {");
-        sb.AppendLine("            foreach (var toolType in subAgentDef.PluginTypes)");
+        sb.AppendLine("            foreach (var toolType in subAgentDef.ToolkitTypes)");
         sb.AppendLine("            {");
         sb.AppendLine("                agentBuilder.WithTools(toolType);");
         sb.AppendLine("            }");
@@ -199,11 +199,11 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        SchemaProvider = () =>");
         sb.AppendLine("        {");
         sb.AppendLine("            var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions { IncludeSchemaKeyword = false };");
-        sb.AppendLine($"            var method = typeof({ParentPluginName}).GetMethod(\"{MethodName}\")");
+        sb.AppendLine($"            var method = typeof({ParentToolkitName}).GetMethod(\"{MethodName}\")");
         sb.AppendLine("                ?.GetCustomAttributes(typeof(SubAgentAttribute), false)");
         sb.AppendLine("                ?.FirstOrDefault();");
         sb.AppendLine("            return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateJsonSchema(");
-        sb.AppendLine($"                typeof({plugin.Name}SubAgentQueryArgs),");
+        sb.AppendLine($"                typeof({Toolkit.Name}SubAgentQueryArgs),");
         sb.AppendLine("                serializerOptions: global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions,");
         sb.AppendLine("                inferenceOptions: options");
         sb.AppendLine("            );");
@@ -212,7 +212,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        {");
         sb.AppendLine("            [\"IsSubAgent\"] = true,");
         sb.AppendLine($"            [\"ThreadMode\"] = \"{ThreadMode}\",");
-        sb.AppendLine($"            [\"PluginName\"] = \"{plugin.Name}\"");
+        sb.AppendLine($"            [\"ToolkitName\"] = \"{Toolkit.Name}\"");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine(")");
@@ -243,7 +243,7 @@ internal class SubAgentCapability : BaseCapability
         props["IsContainer"] = false;
         props["IsSubAgent"] = true;
         props["ThreadMode"] = ThreadMode;
-        props["PluginName"] = ParentPluginName;
+        props["ToolkitName"] = ParentToolkitName;
         props["RequiresPermission"] = RequiresPermission;
 
         return props;

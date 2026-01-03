@@ -12,21 +12,21 @@ namespace HPD.Agent.Skills.DocumentStore;
 /// Global document retrieval functions for skills.
 /// Agents can use these functions to retrieve skill documents on-demand.
 /// </summary>
-public class DocumentRetrievalPlugin
+public class DocumentRetrievalToolkit
 {
     private static ILogger _logger = NullLogger.Instance;
 
     /// <summary>
-    /// Parameterless constructor required for plugin registration.
+    /// Parameterless constructor required for Toolkit registration.
     /// </summary>
-    public DocumentRetrievalPlugin()
+    public DocumentRetrievalToolkit()
     {
     }
 
     /// <summary>
     /// Constructor with logger (optional).
     /// </summary>
-    public DocumentRetrievalPlugin(ILogger logger)
+    public DocumentRetrievalToolkit(ILogger logger)
     {
         _logger = logger ?? NullLogger.Instance;
     }

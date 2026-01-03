@@ -11,7 +11,7 @@ import {
 import { artifactStore, type ArtifactType } from './artifact-store.js';
 
 /**
- * Artifact plugin - enables the agent to create and manage visual artifacts
+ * Artifact Toolkit - enables the agent to create and manage visual artifacts
  * like code snippets, markdown documents, diagrams, etc.
  */
 export const artifactTool = createExpandedToolGroup(

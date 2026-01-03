@@ -23,7 +23,7 @@ public class InstanceMethodContextTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
@@ -45,22 +45,24 @@ public class InstanceMethodContextTests
     [Fact]
     public void Generator_SupportsInstanceMethod_InFunctionResult()
     {
-        // Arrange
+        // Arrange - Using an expression (method call) as attribute value
+        // The source generator detects this as an expression rather than a literal string
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Dynamic Plugin"",
-    FunctionResult: GetActivationMessage()
+[Toolkit(
+    ""Dynamic Toolkit"",
+     
+    FunctionResult = GetActivationMessage()
 )]
-public class DynamicPlugin
+public class DynamicToolkit
 {
     private int _version = 1;
 
     public string GetActivationMessage()
     {
-        return $""Plugin v{_version} activated"";
+        return $""Toolkit v{_version} activated"";
     }
 
     [AIFunction]
@@ -76,22 +78,23 @@ public class DynamicPlugin
 
         // Should generate instance.GetActivationMessage() since it's an instance method
         Assert.Contains("instance.GetActivationMessage()", generatedCode!);
-        Assert.DoesNotContain("DynamicPlugin.GetActivationMessage()", generatedCode);
+        Assert.DoesNotContain("DynamicToolkit.GetActivationMessage()", generatedCode);
     }
 
     [Fact]
     public void Generator_SupportsStaticMethod_InFunctionResult()
     {
-        // Arrange
+        // Arrange - Static method expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Static Plugin"",
-    FunctionResult: GetStaticMessage()
+[Toolkit(
+    ""Static Toolkit"",
+     
+    FunctionResult = GetStaticMessage()
 )]
-public class StaticPlugin
+public class StaticToolkit
 {
     public static string GetStaticMessage()
     {
@@ -117,16 +120,17 @@ public class StaticPlugin
     [Fact]
     public void Generator_SupportsInstanceProperty_InSystemPrompt()
     {
-        // Arrange
+        // Arrange - Instance property expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Property Plugin"",
-   SystemPrompt: Rules
+[Toolkit(
+    ""Property Toolkit"",
+     
+    SystemPrompt = Rules
 )]
-public class PropertyPlugin
+public class PropertyToolkit
 {
     public string Rules => ""Instance-specific rules"";
 
@@ -148,16 +152,17 @@ public class PropertyPlugin
     [Fact]
     public void Generator_SupportsStaticProperty_InSystemPrompt()
     {
-        // Arrange
+        // Arrange - Static property expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Static Property Plugin"",
-   SystemPrompt: StaticRules
+[Toolkit(
+    ""Static Property Toolkit"",
+     
+    SystemPrompt = StaticRules
 )]
-public class StaticPropertyPlugin
+public class StaticPropertyToolkit
 {
     public static string StaticRules => ""Static rules for all instances"";
 
@@ -180,19 +185,20 @@ public class StaticPropertyPlugin
     [Fact]
     public void Generator_SupportsMixedStaticAndInstance_InBothContexts()
     {
-        // Arrange
+        // Arrange - Mixed static and instance expressions
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Mixed Plugin"",
-    FunctionResult: GetInstanceMessage(),
-   SystemPrompt: StaticRules
+[Toolkit(
+    ""Mixed Toolkit"",
+     
+    FunctionResult = GetInstanceMessage(),
+    SystemPrompt = StaticRules
 )]
-public class MixedPlugin
+public class MixedToolkit
 {
-    private string _name = ""MixedPlugin"";
+    private string _name = ""MixedToolkit"";
 
     public string GetInstanceMessage()
     {
@@ -223,7 +229,7 @@ public class MixedPlugin
     [Fact]
     public void Generator_SupportsExternalStaticClass_InFunctionResult()
     {
-        // Arrange
+        // Arrange - External static class method expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
@@ -233,11 +239,12 @@ public static class MessageBuilder
     public static string BuildMessage() => ""External static message"";
 }
 
-[Collapse(
-    description: ""External Plugin"",
-    FunctionResult: MessageBuilder.BuildMessage()
+[Toolkit(
+    ""External Toolkit"",
+     
+    FunctionResult = MessageBuilder.BuildMessage()
 )]
-public class ExternalPlugin
+public class ExternalToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -258,21 +265,22 @@ public class ExternalPlugin
     [Fact]
     public void Generator_SupportsComplexInstanceMethod_WithMultipleParameters()
     {
-        // Arrange
+        // Arrange - Complex instance method expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Complex Plugin"",
-    FunctionResult: BuildActivationMessage()
+[Toolkit(
+    ""Complex Toolkit"",
+     
+    FunctionResult = BuildActivationMessage()
 )]
-public class ComplexPlugin
+public class ComplexToolkit
 {
     private readonly string _environment;
     private readonly int _version;
 
-    public ComplexPlugin()
+    public ComplexToolkit()
     {
         _environment = ""Production"";
         _version = 2;
@@ -280,7 +288,7 @@ public class ComplexPlugin
 
     public string BuildActivationMessage()
     {
-        return $""Plugin v{_version} in {_environment} activated"";
+        return $""Toolkit v{_version} in {_environment} activated"";
     }
 
     [AIFunction]
@@ -301,16 +309,17 @@ public class ComplexPlugin
     [Fact]
     public void Generator_SupportsInstanceMethodWithChaining()
     {
-        // Arrange
+        // Arrange - Method chaining expression
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Chained Plugin"",
-   SystemPrompt: GetRules().Trim()
+[Toolkit(
+    ""Chained Toolkit"",
+     
+    SystemPrompt = GetRules().Trim()
 )]
-public class ChainedPlugin
+public class ChainedToolkit
 {
     public string GetRules()
     {
@@ -335,18 +344,17 @@ public class ChainedPlugin
     [Fact]
     public void Generator_HandlesBackwardCompatibility_WithDeprecatedPostExpansionInstructions()
     {
-        // Arrange
+        // Arrange - Instance method expression (legacy equivalent)
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-#pragma warning disable CS0618 // Suppress obsolete warning for test
-[Collapse(
-    description: ""Legacy Plugin"",
-    postExpansionInstructions: GetLegacyInstructions()
+[Toolkit(
+    ""Legacy Toolkit"",
+     
+    FunctionResult = GetLegacyInstructions()
 )]
-#pragma warning restore CS0618
-public class LegacyPlugin
+public class LegacyToolkit
 {
     public string GetLegacyInstructions()
     {
@@ -376,12 +384,13 @@ public class LegacyPlugin
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Literal Plugin"",
-    FunctionResult: ""Literal activation message"",
-   SystemPrompt: ""Literal rules""
+[Toolkit(
+    ""Literal Toolkit"",
+     
+    FunctionResult = ""Literal activation message"",
+    SystemPrompt = ""Literal rules""
 )]
-public class LiteralPlugin
+public class LiteralToolkit
 {
     [AIFunction]
     public string TestFunction() => ""result"";
@@ -405,23 +414,24 @@ public class LiteralPlugin
     [Fact]
     public void Generator_SupportsInstanceMethod_ReturningDynamicContent()
     {
-        // Arrange
+        // Arrange - Instance method returning dynamic content
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 using System;
 
-[Collapse(
-    description: ""Time-based Plugin"",
-    FunctionResult: GetTimeBasedMessage()
+[Toolkit(
+    ""Time-based Toolkit"",
+     
+    FunctionResult = GetTimeBasedMessage()
 )]
-public class TimeBasedPlugin
+public class TimeBasedToolkit
 {
     private DateTime _createdAt = DateTime.UtcNow;
 
     public string GetTimeBasedMessage()
     {
-        return $""Plugin created at {_createdAt:yyyy-MM-dd HH:mm:ss} UTC"";
+        return $""Toolkit created at {_createdAt:yyyy-MM-dd HH:mm:ss} UTC"";
     }
 
     [AIFunction]
@@ -442,16 +452,17 @@ public class TimeBasedPlugin
     [Fact]
     public void Generator_GeneratesCorrectMetadata_ForInstanceContexts()
     {
-        // Arrange
+        // Arrange - Instance method expression in SystemPrompt
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Collapse(
-    description: ""Metadata Plugin"",
-   SystemPrompt: GetDynamicRules()
+[Toolkit(
+    ""Metadata Toolkit"",
+     
+    SystemPrompt = GetDynamicRules()
 )]
-public class MetadataPlugin
+public class MetadataToolkit
 {
     public string GetDynamicRules() => ""Dynamic rules"";
 

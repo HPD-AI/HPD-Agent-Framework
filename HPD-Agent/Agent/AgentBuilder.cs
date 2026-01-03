@@ -44,15 +44,15 @@ public class AgentBuilder
     internal IToolMetadata? _defaulTMetadata;
 
     /// <summary>
-    /// Instance-based registrations for DI-required plugins (e.g., AgentPlanPlugin, DynamicMemoryPlugin).
-    /// These plugins cannot be instantiated via the catalog because they require constructor parameters.
+    /// Instance-based registrations for DI-required Toolkits (e.g., AgentPlanToolkit, DynamicMemoryToolkit).
+    /// These Toolkits cannot be instantiated via the catalog because they require constructor parameters.
     /// </summary>
     public readonly List<ToolInstanceRegistration> _instanceRegistrations = new();
-    // store individual plugin contexts
+    // store individual Toolkit contexts
     internal readonly Dictionary<string, IToolMetadata?> _toolContexts = new();
     // Phase 5: Document store for skill instruction documents
     internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
-    // Track explicitly registered plugins (for Collapsing manager)
+    // Track explicitly registered Toolkits (for Collapsing manager)
     internal readonly HashSet<string> _explicitlyRegisteredTools = new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<Middleware.IAgentMiddleware> _middlewares = new(); // Unified middleware list
     internal readonly HPD.Agent.Permissions.PermissionOverrideRegistry _permissionOverrides = new(); // Permission overrides
@@ -84,36 +84,80 @@ public class AgentBuilder
     public HPD.Agent.TextExtraction.TextExtractionUtility? _textExtractor;
 
     //     
-    // AOT-COMPATIBLE PLUGIN REGISTRY (Phase: AOT Plugin Registry Hybrid)
+    // AOT-COMPATIBLE Toolkit REGISTRY (Phase: AOT Toolkit Registry Hybrid)
     //     
-    // These fields enable reflection-free plugin instantiation in hot paths.
+    // These fields enable reflection-free Toolkit instantiation in hot paths.
     // The source generator creates a ToolRegistry.All array with direct delegates.
 
     /// <summary>
-    /// Plugin catalog loaded from generated ToolRegistry.All.
+    /// Toolkit catalog loaded from generated ToolkitRegistry.All.
     /// Starts with the calling assembly's registry and lazily loads additional assemblies
-    /// when plugins from other assemblies are requested via WithTools&lt;T&gt;().
+    /// when Toolkits from other assemblies are requested via WithToolkit&lt;T&gt;().
     /// </summary>
-    internal readonly Dictionary<string, ToolFactory> _availableTools = new(StringComparer.OrdinalIgnoreCase);
+    internal readonly Dictionary<string, ToolkitFactory> _availableToolkits = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Tracks which assemblies have already been scanned for plugin registries.
+    /// Tracks which assemblies have already been scanned for Toolkit registries.
     /// Used to avoid repeated reflection calls for the same assembly.
     /// </summary>
     internal readonly HashSet<Assembly> _loadedAssemblies = new();
 
     /// <summary>
-    /// Selected plugins for this agent (from WithTools calls).
-    /// Only plugins in this list will have their functions created during Build().
+    /// Selected Toolkits for this agent (from WithToolkit calls).
+    /// Only Toolkits in this list will have their functions created during Build().
     /// </summary>
-    internal readonly List<ToolFactory> _selectedToolFactories = new();
+    internal readonly List<ToolkitFactory> _selectedToolkitFactories = new();
+
+    /// <summary>
+    /// Toolkit overrides from builder calls (takes precedence over config).
+    /// Maps toolkit name -> ToolkitReference with updated config/metadata.
+    /// Used for Config = Base, Builder = Override/Extend pattern.
+    /// </summary>
+    internal readonly Dictionary<string, ToolkitReference> _toolkitOverrides = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Tracks which toolkits were added via builder (not config).
+    /// Used to determine what's an override vs extension.
+    /// </summary>
+    internal readonly HashSet<string> _builderAddedToolkits = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Middleware overrides from builder calls (takes precedence over config).
+    /// Maps middleware type -> middleware instance.
+    /// Used for Config = Base, Builder = Override/Extend pattern.
+    /// </summary>
+    internal readonly Dictionary<Type, IAgentMiddleware> _middlewareOverrides = new();
+
+    /// <summary>
+    /// Tracks middleware types that were resolved from config.
+    /// Used to detect override vs extend scenarios.
+    /// </summary>
+    internal readonly HashSet<Type> _configMiddlewareTypes = new();
 
     /// <summary>
     /// Function filters for Phase 4.5 selective registration.
-    /// Maps plugin name -> array of function names to include.
-    /// When a plugin is auto-registered as a skill dependency, only these functions are included.
+    /// Maps Toolkit name -> array of function names to include.
+    /// When a Toolkit is auto-registered as a skill dependency, only these functions are included.
     /// </summary>
     internal readonly Dictionary<string, string[]> _toolFunctionFilters = new(StringComparer.OrdinalIgnoreCase);
+
+    //
+    // AOT-COMPATIBLE MIDDLEWARE REGISTRY (Phase: Config Serialization)
+    //
+    // These fields enable reflection-free middleware instantiation in hot paths.
+    // The source generator creates a MiddlewareRegistry.All array with direct delegates.
+
+    /// <summary>
+    /// Middleware catalog loaded from generated MiddlewareRegistry.All.
+    /// Starts with the calling assembly's registry and lazily loads additional assemblies.
+    /// </summary>
+    internal readonly Dictionary<string, Middleware.MiddlewareFactory> _availableMiddlewares = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Toolkit configs from config Toolkits list.
+    /// Maps toolkit name -> JsonElement config for CreateFromConfig delegate.
+    /// </summary>
+    internal readonly Dictionary<string, System.Text.Json.JsonElement> _toolkitConfigs = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Creates a new builder with default configuration.
@@ -152,7 +196,7 @@ public class AgentBuilder
 
     /// <summary>
     /// Creates a builder with custom provider registry (for testing).
-    /// Optionally accepts an assembly hint for plugin registry discovery.
+    /// Optionally accepts an assembly hint for Toolkit registry discovery.
     /// </summary>
 #pragma warning disable IL2026
     public AgentBuilder(AgentConfig config, IProviderRegistry providerRegistry)
@@ -187,14 +231,14 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Loads plugins from the generated ToolRegistry.All in the specified assembly
-    /// and merges them into the _availableTools dictionary.
-    /// Uses minimal reflection (one GetType call per assembly) to discover the catalog.
+    /// Loads Toolkits and Middlewares from the generated registries in the specified assembly
+    /// and merges them into the _availableToolkits and _availableMiddlewares dictionaries.
+    /// Uses minimal reflection (GetType calls per assembly) to discover the catalogs.
     /// Thread-safe: tracks loaded assemblies to avoid duplicate processing.
-    /// WARNING: Requires source-generated ToolRegistry type to be preserved in AOT.
+    /// WARNING: Requires source-generated registry types to be preserved in AOT.
     /// </summary>
-    /// <param name="assembly">The assembly to search for the generated ToolRegistry</param>
-    [RequiresUnreferencedCode("Plugin registry lookup via Assembly.GetType requires ToolRegistry type to be preserved during AOT compilation.")]
+    /// <param name="assembly">The assembly to search for the generated registries</param>
+    [RequiresUnreferencedCode("Registry lookup via Assembly.GetType requires ToolkitRegistry and MiddlewareRegistry types to be preserved during AOT compilation.")]
     internal void LoadToolRegistryFromAssembly(Assembly assembly)
     {
         // Skip if already loaded
@@ -203,15 +247,28 @@ public class AgentBuilder
             return;
         }
 
+        // Load Toolkit registry
+        LoadToolkitRegistryFromAssembly(assembly);
+
+        // Load Middleware registry
+        LoadMiddlewareRegistryFromAssembly(assembly);
+    }
+
+    /// <summary>
+    /// Loads Toolkits from the generated ToolkitRegistry.All in the specified assembly.
+    /// </summary>
+    [RequiresUnreferencedCode("Toolkit registry lookup via Assembly.GetType requires ToolkitRegistry type to be preserved during AOT compilation.")]
+    private void LoadToolkitRegistryFromAssembly(Assembly assembly)
+    {
         try
         {
             // ONE reflection call: Look for generated registry in the specified assembly
             // This type name is a constant known at compile time, making it AOT-safe
-            var registryType = assembly.GetType("HPD.Agent.Generated.ToolRegistry");
+            var registryType = assembly.GetType("HPD.Agent.Generated.ToolkitRegistry");
 
             if (registryType == null)
             {
-                // No registry found - no plugins available from this assembly
+                // No registry found - no Toolkits available from this assembly
                 return;
             }
 
@@ -222,53 +279,124 @@ public class AgentBuilder
                 return;
             }
 
-            // Get the ToolFactory array
-            var factories = allField.GetValue(null) as ToolFactory[];
+            // Get the ToolkitFactory array
+            var factories = allField.GetValue(null) as ToolkitFactory[];
             if (factories == null || factories.Length == 0)
             {
                 return;
             }
 
-            // Add to dictionary (new plugins from this assembly)
+            // Add to dictionary (new Toolkits from this assembly)
             foreach (var factory in factories)
             {
-                // Use TryAdd to avoid overwriting if plugin with same name already exists
-                _availableTools.TryAdd(factory.Name, factory);
+                // Use TryAdd to avoid overwriting if Toolkit with same name already exists
+                _availableToolkits.TryAdd(factory.Name, factory);
             }
         }
         catch (Exception ex)
         {
-            // Log warning but don't crash - no plugins from this assembly
+            // Log warning but don't crash - no Toolkits from this assembly
             _logger?.CreateLogger<AgentBuilder>()
-                .LogWarning(ex, "Failed to load ToolRegistry.All from assembly {Assembly}", assembly.FullName);
+                .LogWarning(ex, "Failed to load ToolkitRegistry.All from assembly {Assembly}", assembly.FullName);
         }
     }
 
     /// <summary>
-    /// Creates AIFunctions from selected plugins using the catalog (zero reflection in hot path).
-    /// Also handles instance-based registrations for DI plugins.
+    /// Loads Middlewares from the generated MiddlewareRegistry.All in the specified assembly.
+    /// </summary>
+    [RequiresUnreferencedCode("Middleware registry lookup via Assembly.GetType requires MiddlewareRegistry type to be preserved during AOT compilation.")]
+    private void LoadMiddlewareRegistryFromAssembly(Assembly assembly)
+    {
+        try
+        {
+            // Look for generated middleware registry in the specified assembly
+            var registryType = assembly.GetType("HPD.Agent.Generated.MiddlewareRegistry");
+
+            if (registryType == null)
+            {
+                // No middleware registry found - no middlewares available from this assembly
+                return;
+            }
+
+            // Get the All field (static readonly array)
+            var allField = registryType.GetField("All", BindingFlags.Public | BindingFlags.Static);
+            if (allField == null)
+            {
+                return;
+            }
+
+            // Get the MiddlewareFactory array
+            var factories = allField.GetValue(null) as Middleware.MiddlewareFactory[];
+            if (factories == null || factories.Length == 0)
+            {
+                return;
+            }
+
+            // Add to dictionary (new middlewares from this assembly)
+            foreach (var factory in factories)
+            {
+                // Use TryAdd to avoid overwriting if middleware with same name already exists
+                _availableMiddlewares.TryAdd(factory.Name, factory);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log warning but don't crash - no middlewares from this assembly
+            _logger?.CreateLogger<AgentBuilder>()
+                .LogWarning(ex, "Failed to load MiddlewareRegistry.All from assembly {Assembly}", assembly.FullName);
+        }
+    }
+
+    /// <summary>
+    /// Creates AIFunctions from selected Toolkits using the catalog (zero reflection in hot path).
+    /// Also handles instance-based registrations for DI Toolkits.
     /// Phase 4.5: Applies function filters for selective registration.
     /// </summary>
-    /// <returns>List of AIFunctions from all selected plugins</returns>
-    [RequiresUnreferencedCode("Instance-based registrations for DI plugins use reflection.")]
+    /// <returns>List of AIFunctions from all selected Toolkits</returns>
+    [RequiresUnreferencedCode("Instance-based registrations for DI Toolkits use reflection.")]
     private List<AIFunction> CreateFunctionsFromCatalog()
     {
         var allFunctions = new List<AIFunction>();
 
-        // Process catalog-based plugins (zero reflection in hot path)
-        foreach (var factory in _selectedToolFactories)
+        // Process catalog-based Toolkits (zero reflection in hot path)
+        foreach (var factory in _selectedToolkitFactories)
         {
             try
             {
                 _toolContexts.TryGetValue(factory.Name, out var ctx);
 
-                // Create plugin instance (ZERO REFLECTION - direct delegate call!)
-                var instance = factory.CreateInstance();
+                // Create Toolkit instance using AOT-safe resolution:
+                // 1. Try DI first (if ServiceProvider available)
+                // 2. Try config-based instantiation (if config provided)
+                // 3. Fall back to parameterless constructor
+                object instance;
 
+                // 1. Try DI first
+                if (_serviceProvider != null)
+                {
+                    var diInstance = _serviceProvider.GetService(factory.ToolkitType);
+                    if (diInstance != null)
+                    {
+                        instance = diInstance;
+                        goto HaveInstance;
+                    }
+                }
+
+                // 2. Try config-based instantiation
+                if (_toolkitConfigs.TryGetValue(factory.Name, out var config) && factory.CreateFromConfig != null)
+                {
+                    instance = factory.CreateFromConfig(config);
+                    goto HaveInstance;
+                }
+
+                // 3. Fall back to parameterless constructor (ZERO REFLECTION - direct delegate call!)
+                instance = factory.CreateInstance();
+
+            HaveInstance:
                 // Call CreateFunctions delegate (ZERO REFLECTION!)
                 var functions = factory.CreateFunctions(instance, ctx ?? _defaulTMetadata);
 
-                // Phase 4.5: Apply function filter if this plugin has selective registration
+                // Phase 4.5: Apply function filter if this Toolkit has selective registration
                 if (_toolFunctionFilters.TryGetValue(factory.Name, out var functionFilter))
                 {
                     // Only include functions that are in the filter
@@ -282,11 +410,11 @@ public class AgentBuilder
             catch (Exception ex)
             {
                 _logger?.CreateLogger<AgentBuilder>()
-                    .LogWarning(ex, "Failed to create functions for plugin {PluginName}", factory.Name);
+                    .LogWarning(ex, "Failed to create functions for Toolkit {ToolkitName}", factory.Name);
             }
         }
 
-        // Process instance-based registrations (for DI plugins like AgentPlanPlugin, DynamicMemoryPlugin)
+        // Process instance-based registrations (for DI Toolkits like AgentPlanToolkit, DynamicMemoryToolkit)
         foreach (var registration in _instanceRegistrations)
         {
             try
@@ -307,7 +435,7 @@ public class AgentBuilder
             catch (Exception ex)
             {
                 _logger?.CreateLogger<AgentBuilder>()
-                    .LogWarning(ex, "Failed to create functions for instance plugin {PluginName}", registration.ToolTypeName);
+                    .LogWarning(ex, "Failed to create functions for instance Toolkit {ToolkitName}", registration.ToolTypeName);
             }
         }
 
@@ -315,11 +443,11 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Creates AIFunctions from an instance-based plugin registration.
+    /// Creates AIFunctions from an instance-based Toolkit registration.
     /// Uses the generated Registration class to create functions from the provided instance.
-    /// This is used for DI plugins that cannot be instantiated via the catalog.
+    /// This is used for DI Toolkits that cannot be instantiated via the catalog.
     /// </summary>
-    [RequiresUnreferencedCode("Uses reflection to call generated Registration class for DI plugins.")]
+    [RequiresUnreferencedCode("Uses reflection to call generated Registration class for DI Toolkits.")]
     private List<AIFunction> CreateFunctionsFromInstance(ToolInstanceRegistration registration, IToolMetadata? context)
     {
         var instance = registration.Instance;
@@ -332,33 +460,284 @@ public class AgentBuilder
         if (registrationType == null)
         {
             throw new InvalidOperationException(
-                $"Generated registration class {registrationTypeName} not found for DI plugin. " +
-                $"Ensure the plugin has [Function] or [Skill] attributes and the source generator ran successfully.");
+                $"Generated registration class {registrationTypeName} not found for DI Toolkit. " +
+                $"Ensure the Toolkit has [Function] or [Skill] attributes and the source generator ran successfully.");
         }
 
-        var createPluginMethod = registrationType.GetMethod("CreatePlugin", BindingFlags.Public | BindingFlags.Static);
-        if (createPluginMethod == null)
+        var createToolkitMethod = registrationType.GetMethod("CreateToolkit", BindingFlags.Public | BindingFlags.Static);
+        if (createToolkitMethod == null)
         {
             throw new InvalidOperationException(
-                $"CreatePlugin method not found in {registrationTypeName}.");
+                $"CreateToolkit method not found in {registrationTypeName}.");
         }
 
-        // Invoke CreatePlugin with the instance
-        var parameters = createPluginMethod.GetParameters();
+        // Invoke CreateToolkit with the instance
+        var parameters = createToolkitMethod.GetParameters();
         object? result;
 
         if (parameters.Length == 1)
         {
-            // Skill-only container: CreatePlugin(IToolMetadata? context)
-            result = createPluginMethod.Invoke(null, new object?[] { context });
+            // Skill-only container: CreateToolkit(IToolMetadata? context)
+            result = createToolkitMethod.Invoke(null, new object?[] { context });
         }
         else
         {
-            // Regular plugin: CreatePlugin(TPlugin instance, IToolMetadata? context)
-            result = createPluginMethod.Invoke(null, new object?[] { instance, context });
+            // Regular Toolkit: CreateToolkit(TToolkit instance, IToolMetadata? context)
+            result = createToolkitMethod.Invoke(null, new object?[] { instance, context });
         }
 
         return result as List<AIFunction> ?? new List<AIFunction>();
+    }
+
+    /// <summary>
+    /// Resolves toolkits from config Toolkits list and adds them to _selectedToolkitFactories.
+    /// Implements Config = Base, Builder = Override/Extend pattern:
+    /// - Config toolkits are registered first (in order)
+    /// - Builder calls can override (replace same name) or extend (add new)
+    /// - DI-first resolution: try ServiceProvider first, fall back to CreateInstance
+    /// </summary>
+    [RequiresUnreferencedCode("Config toolkit resolution may load assemblies dynamically.")]
+    private void ResolveConfigToolkits()
+    {
+        if (_config.Toolkits == null || _config.Toolkits.Count == 0)
+            return;
+
+        var logger = _logger?.CreateLogger<AgentBuilder>();
+        logger?.LogDebug("Resolving {Count} toolkits from config", _config.Toolkits.Count);
+
+        foreach (var toolkitRef in _config.Toolkits)
+        {
+            // Check if builder has an override for this toolkit
+            var effectiveRef = _toolkitOverrides.TryGetValue(toolkitRef.Name, out var ovr)
+                ? ovr
+                : toolkitRef;
+
+            // Skip if already added via builder (it will be in _selectedToolkitFactories already)
+            if (_builderAddedToolkits.Contains(effectiveRef.Name))
+            {
+                logger?.LogDebug("Toolkit '{Name}' already registered via builder, skipping config", effectiveRef.Name);
+                continue;
+            }
+
+            // Look up in available toolkits
+            if (!_availableToolkits.TryGetValue(effectiveRef.Name, out var factory))
+            {
+                logger?.LogWarning(
+                    "Toolkit '{Name}' referenced in config not found in registry. " +
+                    "Ensure the class has [AIFunction], [Skill], or [SubAgent] methods and a parameterless constructor.",
+                    effectiveRef.Name);
+                continue;
+            }
+
+            // Check if already selected (avoid duplicates)
+            if (_selectedToolkitFactories.Any(f => f.Name.Equals(factory.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                logger?.LogDebug("Toolkit '{Name}' already selected, skipping duplicate", effectiveRef.Name);
+                continue;
+            }
+
+            // Add to selected factories
+            _selectedToolkitFactories.Add(factory);
+            _explicitlyRegisteredTools.Add(factory.Name);
+
+            // Handle function filtering from config
+            if (effectiveRef.Functions != null && effectiveRef.Functions.Count > 0)
+            {
+                _toolFunctionFilters[factory.Name] = effectiveRef.Functions.ToArray();
+            }
+
+            // Handle config-based instantiation (store config for CreateFunctionsFromCatalog)
+            if (effectiveRef.Config.HasValue && factory.CreateFromConfig != null)
+            {
+                _toolkitConfigs[factory.Name] = effectiveRef.Config.Value;
+            }
+
+            // Handle metadata from config
+            if (effectiveRef.Metadata.HasValue && factory.MetadataType != null)
+            {
+                try
+                {
+                    var metadata = (IToolMetadata?)JsonSerializer.Deserialize(
+                        effectiveRef.Metadata.Value.GetRawText(),
+                        factory.MetadataType);
+                    if (metadata != null)
+                    {
+                        _toolContexts[factory.Name] = metadata;
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    logger?.LogWarning(ex,
+                        "Failed to deserialize metadata for toolkit '{Name}' to type {MetadataType}",
+                        effectiveRef.Name, factory.MetadataType.Name);
+                }
+            }
+
+            logger?.LogDebug("Resolved toolkit '{Name}' from config", effectiveRef.Name);
+        }
+    }
+
+    /// <summary>
+    /// Registers a toolkit override from builder.
+    /// Called by WithToolkit extension methods when using config + builder pattern.
+    /// </summary>
+    public AgentBuilder WithToolkitOverride(ToolkitReference reference)
+    {
+        _toolkitOverrides[reference.Name] = reference;
+        return this;
+    }
+
+    /// <summary>
+    /// Resolves middlewares from config Middlewares list and adds them to _middlewares.
+    /// Implements Config = Base, Builder = Override/Extend pattern:
+    /// - Config middlewares are registered first (in order)
+    /// - Builder calls can override (replace same type) or extend (add new type)
+    /// Uses source-generated MiddlewareRegistry for AOT-compatible resolution.
+    /// </summary>
+    private void ResolveConfigMiddlewares()
+    {
+        if (_config.Middlewares == null || _config.Middlewares.Count == 0)
+            return;
+
+        var logger = _logger?.CreateLogger<AgentBuilder>();
+        logger?.LogDebug("Resolving {Count} middlewares from config", _config.Middlewares.Count);
+
+        foreach (var middlewareRef in _config.Middlewares)
+        {
+            // Try to resolve middleware from source-generated registry (AOT-safe)
+            if (!_availableMiddlewares.TryGetValue(middlewareRef.Name, out var factory))
+            {
+                logger?.LogWarning(
+                    "Middleware '{Name}' referenced in config not found in registry. " +
+                    "Ensure the class has [Middleware] attribute and implements IAgentMiddleware.",
+                    middlewareRef.Name);
+                continue;
+            }
+
+            var middlewareType = factory.MiddlewareType;
+
+            // Check if builder has an override for this type
+            if (_middlewareOverrides.TryGetValue(middlewareType, out var overrideInstance))
+            {
+                // Builder override takes precedence
+                if (!_middlewares.Any(m => m.GetType() == middlewareType))
+                {
+                    _middlewares.Add(overrideInstance);
+                }
+                _configMiddlewareTypes.Add(middlewareType);
+                logger?.LogDebug("Middleware '{Name}' overridden by builder", middlewareRef.Name);
+                continue;
+            }
+
+            // Create middleware instance using AOT-safe resolution
+            try
+            {
+                IAgentMiddleware? instance = null;
+
+                // 1. Try DI first (supports constructor injection for complex middlewares)
+                if (_serviceProvider != null)
+                {
+                    instance = _serviceProvider.GetService(middlewareType) as IAgentMiddleware;
+                    if (instance != null)
+                    {
+                        logger?.LogDebug("Middleware '{Name}' resolved from DI", middlewareRef.Name);
+                    }
+                }
+
+                // 2. Try config-based instantiation (if config provided and factory supports it)
+                if (instance == null && middlewareRef.Config.HasValue && factory.CreateFromConfig != null)
+                {
+                    instance = factory.CreateFromConfig(middlewareRef.Config.Value);
+                    logger?.LogDebug("Middleware '{Name}' instantiated from config", middlewareRef.Name);
+                }
+
+                // 3. Fall back to parameterless constructor (AOT-safe, no Activator.CreateInstance!)
+                if (instance == null && factory.CreateInstance != null)
+                {
+                    instance = factory.CreateInstance();
+                    logger?.LogDebug("Middleware '{Name}' instantiated with parameterless constructor", middlewareRef.Name);
+                }
+
+                if (instance != null)
+                {
+                    _middlewares.Add(instance);
+                    _configMiddlewareTypes.Add(middlewareType);
+                    logger?.LogDebug("Resolved middleware '{Name}' from config", middlewareRef.Name);
+                }
+                else if (factory.RequiresDI)
+                {
+                    logger?.LogWarning(
+                        "Middleware '{Name}' requires DI. Register via services.AddTransient<{Type}>().",
+                        middlewareRef.Name, middlewareType.Name);
+                }
+                else
+                {
+                    logger?.LogWarning("Failed to create instance of middleware '{Name}'", middlewareRef.Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to instantiate middleware '{Name}'", middlewareRef.Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves a middleware factory by name from the source-generated registry.
+    /// Returns the MiddlewareFactory if found, or null if not in registry.
+    /// </summary>
+    private Middleware.MiddlewareFactory? ResolveMiddlewareFactory(string name)
+    {
+        // Try exact match first
+        if (_availableMiddlewares.TryGetValue(name, out var factory))
+            return factory;
+
+        // Try with "Middleware" suffix
+        if (_availableMiddlewares.TryGetValue($"{name}Middleware", out factory))
+            return factory;
+
+        return null;
+    }
+
+    // Legacy reflection-based method removed - now using AOT-compatible MiddlewareRegistry
+    // The old ResolveMiddlewareType method used AppDomain.GetAssemblies() and Activator.CreateInstance
+    // which are not Native AOT compatible.
+
+    #pragma warning disable CS0618 // Preserve for backward compatibility if needed
+    /// <summary>
+    /// [DEPRECATED] Resolves a middleware type by name using reflection.
+    /// Use ResolveMiddlewareFactory instead for AOT-compatible resolution.
+    /// Only used as fallback for middlewares not in the source-generated registry.
+    /// </summary>
+    [Obsolete("Use ResolveMiddlewareFactory for AOT-compatible resolution. This method uses reflection.")]
+    [RequiresUnreferencedCode("Type lookup by name uses reflection.")]
+    private Type? ResolveMiddlewareType(string name)
+    {
+        // Check registry first (AOT-safe)
+        if (_availableMiddlewares.TryGetValue(name, out var factory))
+            return factory.MiddlewareType;
+
+        // Legacy fallback: Try scanning loaded assemblies
+        foreach (var assembly in _loadedAssemblies)
+        {
+            try
+            {
+                var type = assembly.GetTypes()
+                    .FirstOrDefault(t =>
+                        typeof(IAgentMiddleware).IsAssignableFrom(t) &&
+                        !t.IsAbstract &&
+                        (t.Name == name || t.Name == $"{name}Middleware"));
+
+                if (type != null)
+                    return type;
+            }
+            catch
+            {
+                // Ignore assemblies that can't be reflected
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1211,7 +1590,7 @@ public class AgentBuilder
     /// Validation behavior is controlled by the ValidationConfig (see WithValidation()).
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for async operations</param>
-    [RequiresUnreferencedCode("Agent building may use plugin registration methods that require reflection.")]
+    [RequiresUnreferencedCode("Agent building may use Toolkit registration methods that require reflection.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
     /// <summary>
     /// Builds the protocol-agnostic core agent asynchronously.
@@ -1220,6 +1599,11 @@ public class AgentBuilder
     public async Task<Agent> Build(CancellationToken cancellationToken = default)
     {
         var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Resolve config middlewares before auto-middleware registration
+        // This enables Config = Base, Builder = Override/Extend pattern
+        ResolveConfigMiddlewares();
+
         RegisterAutoMiddleware(buildData);
         return CreateAgent(buildData);
     }
@@ -1230,7 +1614,7 @@ public class AgentBuilder
     /// </summary>
     private void RegisterAutoMiddleware(AgentBuildDependencies buildData)
     {
-        // Set explicitly registered plugins in config for Collapsing manager
+        // Set explicitly registered Toolkits in config for Collapsing manager
         _config.ExplicitlyRegisteredTools = _explicitlyRegisteredTools
             .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -1310,7 +1694,7 @@ public class AgentBuilder
 
         // Register ClientToolMiddleware automatically
         // This enables Client-defined tools without explicit configuration.
-        // It's a no-op if no Client plugins are registered via AgentRunInput.
+        // It's a no-op if no Client Toolkits are registered via AgentRunInput.
         // Users can override with WithClientTools() to customize config.
         if (!_middlewares.Any(m => m is ClientTools.ClientToolMiddleware))
         {
@@ -1393,14 +1777,14 @@ public class AgentBuilder
         // See: Comparison with StaticMemory in architecture docs
         await ProcessSkillDocumentsAsync(cancellationToken).ConfigureAwait(false);
 
-        // Auto-register document retrieval plugin if document store is present
+        // Auto-register document retrieval Toolkit if document store is present
         if (_documentStore != null)
         {
-            var toolName = "DocumentRetrievalPlugin";
-            if (_availableTools.TryGetValue(toolName, out var factory) &&
-                !_selectedToolFactories.Any(f => f.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+            var toolName = "DocumentRetrievalToolkit";
+            if (_availableToolkits.TryGetValue(toolName, out var factory) &&
+                !_selectedToolkitFactories.Any(f => f.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
             {
-                _selectedToolFactories.Add(factory);
+                _selectedToolkitFactories.Add(factory);
             }
         }
 
@@ -1639,13 +2023,20 @@ public class AgentBuilder
         var clientToUse = _baseClient;
 
         // Dynamic Memory registration is handled by WithDynamicMemory() extension method
-        // No need to register here in Build() - the extension already adds Middleware and plugin
+        // No need to register here in Build() - the extension already adds Middleware and Toolkit
 
-        //     
-        // CREATE PLUGIN FUNCTIONS (AOT-Compatible - Zero Reflection in Hot Path)
-        //     
-        // All plugins are registered via the catalog (ToolRegistry.All) using direct delegate calls.
-        // Instance-based plugins (requiring DI) use their own direct delegate calls.
+        //
+        // RESOLVE CONFIG TOOLKITS (Phase: Config Serialization)
+        //
+        // Resolve toolkits from config before creating functions.
+        // This enables the Config = Base, Builder = Override/Extend pattern.
+        ResolveConfigToolkits();
+
+        //
+        // CREATE Toolkit FUNCTIONS (AOT-Compatible - Zero Reflection in Hot Path)
+        //
+        // All Toolkits are registered via the catalog (ToolRegistry.All) using direct delegate calls.
+        // Instance-based Toolkits (requiring DI) use their own direct delegate calls.
         // No reflection fallback - the catalog is required.
 
         var toolFunctions = CreateFunctionsFromCatalog();
@@ -1709,7 +2100,7 @@ public class AgentBuilder
         }
 
         // Note: Old SkillDefinition-based skills have been removed in favor of type-safe Skill class.
-        // Skills are now registered via plugins and auto-discovered by the source generator.
+        // Skills are now registered via Toolkits and auto-discovered by the source generator.
 
         var mergedOptions = MergeToolFunctions(_config.Provider?.DefaultChatOptions, toolFunctions);
 
@@ -1751,7 +2142,7 @@ public class AgentBuilder
     /// Extracts document metadata from skill containers and processes them.
     /// If no document store is configured, creates a default FileSystemInstructionStore.
     /// </summary>
-    [RequiresUnreferencedCode("Skill document processing uses reflection-based plugin catalog.")]
+    [RequiresUnreferencedCode("Skill document processing uses reflection-based Toolkit catalog.")]
     private async Task ProcessSkillDocumentsAsync(CancellationToken cancellationToken)
     {
         var logger = _logger?.CreateLogger<AgentBuilder>();
@@ -1825,7 +2216,7 @@ public class AgentBuilder
         if (documentUploads.Count == 0 && documentReferences.Count == 0)
         {
             logger?.LogDebug("No documents found in any skills - document store not needed");
-            // IMPORTANT: Leave _documentStore as null so DocumentRetrievalPlugin is NOT registered
+            // IMPORTANT: Leave _documentStore as null so DocumentRetrievalToolkit is NOT registered
             return;
         }
 
@@ -2075,7 +2466,7 @@ public class AgentBuilder
 
 
     /// <summary>
-    /// Merges plugin functions into chat options.
+    /// Merges Toolkit functions into chat options.
     /// </summary>
     private ChatOptions? MergeToolFunctions(ChatOptions? defaultOptions, List<AIFunction> toolFunctions)
     {
@@ -2084,7 +2475,7 @@ public class AgentBuilder
 
         var options = defaultOptions ?? new ChatOptions();
 
-        // Add plugin functions to existing tools
+        // Add Toolkit functions to existing tools
         var allTools = new List<AITool>(options.Tools ?? []);
         allTools.AddRange(toolFunctions);
 
@@ -2146,7 +2537,7 @@ public class AgentBuilder
 
     /// <summary>
     /// Gets the configuration instance for this builder (if provided).
-    /// Used by extension methods and plugins to access configuration values.
+    /// Used by extension methods and Toolkits to access configuration values.
     /// </summary>
     public IConfiguration? Configuration => _configuration;
 
@@ -2187,7 +2578,7 @@ public class AgentBuilder
     /// </summary>
 
     /// <summary>
-    /// Internal access to default plugin context for extension methods
+    /// Internal access to default Toolkit context for extension methods
     /// </summary>
     internal IToolMetadata? DefaulTMetadata
     {
@@ -2196,9 +2587,9 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Public access to plugin contexts for extension methods and external configuration
+    /// Public access to Toolkit contexts for extension methods and external configuration
     /// </summary>
-    public Dictionary<string, IToolMetadata?> PluginContexts => _toolContexts;
+    public Dictionary<string, IToolMetadata?> ToolkitContexts => _toolContexts;
 
     /// <summary>
     /// Public access to unified middlewares for extension methods and external configuration
@@ -2223,7 +2614,7 @@ public class AgentBuilder
 
     /// <summary>
     /// Adds a native function to the agent (used by FFI layer for Rust, C++, etc.)
-    /// This method is intended primarily for FFI integration with native plugins.
+    /// This method is intended primarily for FFI integration with native Toolkits.
     /// </summary>
     public AgentBuilder WithNativeFunction(AIFunction function)
     {
@@ -2311,7 +2702,7 @@ public static class AgentBuilderMiddlewareExtensions
 {
     /// <summary>
     /// Adds a unified agent middleware instance.
-    /// Supports Collapsing via extension methods (.AsGlobal(), .ForPlugin(), .ForSkill(), .ForFunction()).
+    /// Supports Collapsing via extension methods (.AsGlobal(), .ForToolkit(), .ForSkill(), .ForFunction()).
     /// </summary>
     /// <param name="builder">The agent builder</param>
     /// <param name="middleware">The unified middleware to add</param>
@@ -3018,8 +3409,8 @@ public static class AgentBuilderMiddlewareExtensions
     //      
 
     /// <summary>
-    /// Enables tool Collapsing middleware for plugin collapsing and skills architecture.
-    /// When enabled, plugins and skills are hidden behind container functions,
+    /// Enables tool Collapsing middleware for Toolkit collapsing and skills architecture.
+    /// When enabled, Toolkits and skills are hidden behind container functions,
     /// reducing the initial tool list and cognitive load on the LLM.
     /// </summary>
     /// <param name="builder">The agent builder</param>
@@ -3027,7 +3418,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <remarks>
     /// <para>
     /// Tool Collapsing allows you to organize functions hierarchically:
-    /// - Plugin containers: Hide member functions until plugin is expanded
+    /// - Toolkit containers: Hide member functions until Toolkit is expanded
     /// - Skill containers: Hide skill-specific functions until skill is activated
     /// </para>
     /// <para>
@@ -3042,7 +3433,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <example>
     /// <code>
     /// var agent = new AgentBuilder()
-    ///     .WithTools&lt;FinancialPlugin&gt;()
+    ///     .WithTools&lt;FinancialToolkit&gt;()
     ///     .WithToolCollapsing()  // Enable tool Collapsing
     ///     .Build();
     /// </code>
@@ -3069,7 +3460,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <example>
     /// <code>
     /// var agent = new AgentBuilder()
-    ///     .WithTools&lt;FinancialPlugin&gt;()
+    ///     .WithTools&lt;FinancialToolkit&gt;()
     ///     .WithToolCollapsing(config =>
     ///     {
     ///         config.CollapseClientTools = true;
@@ -3103,7 +3494,7 @@ public static class AgentBuilderMiddlewareExtensions
     /// <example>
     /// <code>
     /// var agent = new AgentBuilder()
-    ///     .WithTools&lt;FinancialPlugin&gt;()
+    ///     .WithTools&lt;FinancialToolkit&gt;()
     ///     .WithoutToolCollapsing()  // All tools always visible
     ///     .Build();
     /// </code>
@@ -3262,52 +3653,52 @@ public static class AgentBuilderMemoryExtensions
 }
 #endregion
 
-#region Plugin Extensions
+#region Toolkit Extensions
 
 
 /// <summary>
-/// Extension methods for configuring plugins for the AgentBuilder.
+/// Extension methods for configuring Toolkits for the AgentBuilder.
 /// </summary>
-public static class AgentBuilderPluginExtensions
+public static class AgentBuilderToolkitExtensions
 {
     /// <summary>
-    /// Registers a plugin by type with optional execution context.
-    /// AOT-Compatible: Uses generated ToolRegistry.All catalog (zero reflection in hot path).
-    /// Automatically loads plugin registry from the assembly where T is defined if not already loaded.
-    /// Auto-registers referenced plugins from skills via GetReferencedTools().
-    /// WARNING: For Native AOT, requires ToolRegistry types in all referenced assemblies to be preserved.
+    /// Registers a toolkit by type with optional execution context.
+    /// AOT-Compatible: Uses generated ToolkitRegistry.All catalog (zero reflection in hot path).
+    /// Automatically loads toolkit registry from the assembly where T is defined if not already loaded.
+    /// Auto-registers referenced toolkits from skills via GetReferencedToolkits().
+    /// WARNING: For Native AOT, requires ToolkitRegistry types in all referenced assemblies to be preserved.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
-    [RequiresUnreferencedCode("Plugin loading via WithTools requires ToolRegistry from assembly where T is defined to be preserved.")]
+    /// <exception cref="InvalidOperationException">Thrown if toolkit is not found in any loaded registry.</exception>
+    [RequiresUnreferencedCode("Toolkit loading via WithToolkit requires ToolkitRegistry from assembly where T is defined to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithTools<T>(this AgentBuilder builder, IToolMetadata? context = null) where T : class, new()
+    public static AgentBuilder WithToolkit<T>(this AgentBuilder builder, IToolMetadata? context = null) where T : class, new()
     {
-        var toolName = typeof(T).Name;
-        var toolAssembly = typeof(T).Assembly;
+        var toolkitName = typeof(T).Name;
+        var toolkitAssembly = typeof(T).Assembly;
 
-        // Try to find in already loaded plugins
-        if (!builder._availableTools.TryGetValue(toolName, out var factory))
+        // Try to find in already loaded toolkits
+        if (!builder._availableToolkits.TryGetValue(toolkitName, out var factory))
         {
             // Not found - try loading the assembly where T is defined
-            builder.LoadToolRegistryFromAssembly(toolAssembly);
+            builder.LoadToolRegistryFromAssembly(toolkitAssembly);
 
             // Try again after loading
-            if (!builder._availableTools.TryGetValue(toolName, out factory))
+            if (!builder._availableToolkits.TryGetValue(toolkitName, out factory))
             {
                 throw new InvalidOperationException(
-                    $"Plugin '{toolName}' not found in ToolRegistry.All. " +
-                    $"Ensure the plugin class has [Function] or [Skill] attributes and the source generator ran successfully.");
+                    $"Toolkit '{toolkitName}' not found in ToolkitRegistry.All. " +
+                    $"Ensure the toolkit class has [AIFunction], [Skill], or [SubAgent] attributes and the source generator ran successfully.");
             }
         }
 
         // AOT-compatible path: Use catalog
-        builder._selectedToolFactories.Add(factory);
+        builder._selectedToolkitFactories.Add(factory);
 
         // Track as explicitly registered (for ToolVisibilityManager)
-        builder._explicitlyRegisteredTools.Add(toolName);
+        builder._explicitlyRegisteredTools.Add(toolkitName);
 
         // Store context
-        builder.PluginContexts[toolName] = context;
+        builder.ToolkitContexts[toolkitName] = context;
 
         // Auto-discover skill dependencies using catalog (zero reflection)
         AutoRegisterDependenciesFromFactory(builder, factory);
@@ -3316,28 +3707,28 @@ public static class AgentBuilderPluginExtensions
     }
 
     /// <summary>
-    /// Registers a plugin using a pre-created instance with optional execution context.
-    /// Used for DI-required plugins (e.g., AgentPlanPlugin, DynamicMemoryPlugin).
+    /// Registers a toolkit using a pre-created instance with optional execution context.
+    /// Used for DI-required toolkits (e.g., AgentPlanToolkit, DynamicMemoryToolkit).
     /// The instance's generated Registration class is used for function creation (AOT-compatible).
-    /// WARNING: For Native AOT, requires ToolRegistry from instance assembly to be preserved.
+    /// WARNING: For Native AOT, requires ToolkitRegistry from instance assembly to be preserved.
     /// </summary>
-    [RequiresUnreferencedCode("Plugin instance registration requires ToolRegistry from instance's assembly to be preserved.")]
+    [RequiresUnreferencedCode("Toolkit instance registration requires ToolkitRegistry from instance's assembly to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithTools<T>(this AgentBuilder builder, T instance, IToolMetadata? context = null) where T : class
+    public static AgentBuilder WithToolkit<T>(this AgentBuilder builder, T instance, IToolMetadata? context = null) where T : class
     {
-        var toolName = typeof(T).Name;
+        var toolkitName = typeof(T).Name;
 
         // Register as instance registration (will use generated Registration class for function creation)
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(instance, toolName));
-        builder.PluginContexts[toolName] = context;
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(instance, toolkitName));
+        builder.ToolkitContexts[toolkitName] = context;
 
         // Track this as explicitly registered
-        builder._explicitlyRegisteredTools.Add(toolName);
+        builder._explicitlyRegisteredTools.Add(toolkitName);
 
-        // Auto-register dependencies if plugin is in catalog (for skill dependencies)
+        // Auto-register dependencies if toolkit is in catalog (for skill dependencies)
         // First try to load the assembly where the instance type is defined
         builder.LoadToolRegistryFromAssembly(instance.GetType().Assembly);
-        if (builder._availableTools.TryGetValue(toolName, out var factory))
+        if (builder._availableToolkits.TryGetValue(toolkitName, out var factory))
         {
             AutoRegisterDependenciesFromFactory(builder, factory);
         }
@@ -3346,43 +3737,43 @@ public static class AgentBuilderPluginExtensions
     }
 
     /// <summary>
-    /// Registers a plugin by Type with optional execution context.
-    /// AOT-Compatible: Uses generated ToolRegistry.All catalog (zero reflection in hot path).
-    /// Automatically loads plugin registry from the assembly where toolType is defined if not already loaded.
-    /// Auto-registers referenced plugins from skills via GetReferencedTools().
-    /// WARNING: For Native AOT, requires ToolRegistry from toolType's assembly to be preserved.
+    /// Registers a toolkit by Type with optional execution context.
+    /// AOT-Compatible: Uses generated ToolkitRegistry.All catalog (zero reflection in hot path).
+    /// Automatically loads toolkit registry from the assembly where toolkitType is defined if not already loaded.
+    /// Auto-registers referenced toolkits from skills via GetReferencedToolkits().
+    /// WARNING: For Native AOT, requires ToolkitRegistry from toolkitType's assembly to be preserved.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown if plugin is not found in any loaded registry.</exception>
-    [RequiresUnreferencedCode("Plugin registration by Type requires ToolRegistry from plugin assembly to be preserved.")]
+    /// <exception cref="InvalidOperationException">Thrown if toolkit is not found in any loaded registry.</exception>
+    [RequiresUnreferencedCode("Toolkit registration by Type requires ToolkitRegistry from toolkit assembly to be preserved.")]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
-    public static AgentBuilder WithTools(this AgentBuilder builder, Type toolType, IToolMetadata? context = null)
+    public static AgentBuilder WithToolkit(this AgentBuilder builder, Type toolkitType, IToolMetadata? context = null)
     {
-        var toolName = toolType.Name;
-        var toolAssembly = toolType.Assembly;
+        var toolkitName = toolkitType.Name;
+        var toolkitAssembly = toolkitType.Assembly;
 
-        // Try to find in already loaded plugins
-        if (!builder._availableTools.TryGetValue(toolName, out var factory))
+        // Try to find in already loaded toolkits
+        if (!builder._availableToolkits.TryGetValue(toolkitName, out var factory))
         {
-            // Not found - try loading the assembly where toolType is defined
-            builder.LoadToolRegistryFromAssembly(toolAssembly);
+            // Not found - try loading the assembly where toolkitType is defined
+            builder.LoadToolRegistryFromAssembly(toolkitAssembly);
 
             // Try again after loading
-            if (!builder._availableTools.TryGetValue(toolName, out factory))
+            if (!builder._availableToolkits.TryGetValue(toolkitName, out factory))
             {
                 throw new InvalidOperationException(
-                    $"Plugin '{toolName}' not found in ToolRegistry.All. " +
-                    $"Ensure the plugin class has [Function] or [Skill] attributes and the source generator ran successfully.");
+                    $"Toolkit '{toolkitName}' not found in ToolkitRegistry.All. " +
+                    $"Ensure the toolkit class has [AIFunction], [Skill], or [SubAgent] attributes and the source generator ran successfully.");
             }
         }
 
         // AOT-compatible path: Use catalog
-        builder._selectedToolFactories.Add(factory);
+        builder._selectedToolkitFactories.Add(factory);
 
         // Track as explicitly registered (for ToolVisibilityManager)
-        builder._explicitlyRegisteredTools.Add(toolName);
+        builder._explicitlyRegisteredTools.Add(toolkitName);
 
         // Store context
-        builder.PluginContexts[toolName] = context;
+        builder.ToolkitContexts[toolkitName] = context;
 
         // Auto-discover skill dependencies using catalog (zero reflection)
         AutoRegisterDependenciesFromFactory(builder, factory);
@@ -3390,13 +3781,38 @@ public static class AgentBuilderPluginExtensions
         return builder;
     }
 
+    // ============================================
+    // DEPRECATED: WithTools methods (use WithToolkit instead)
+    // ============================================
+
+    /// <inheritdoc cref="WithToolkit{T}(AgentBuilder, IToolMetadata?)"/>
+    [Obsolete("Use WithToolkit<T>() instead. WithTools will be removed in a future version.")]
+    [RequiresUnreferencedCode("Toolkit loading via WithTools requires ToolkitRegistry from assembly where T is defined to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithTools<T>(this AgentBuilder builder, IToolMetadata? context = null) where T : class, new()
+        => builder.WithToolkit<T>(context);
+
+    /// <inheritdoc cref="WithToolkit{T}(AgentBuilder, T, IToolMetadata?)"/>
+    [Obsolete("Use WithToolkit<T>() instead. WithTools will be removed in a future version.")]
+    [RequiresUnreferencedCode("Toolkit instance registration requires ToolkitRegistry from instance's assembly to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithTools<T>(this AgentBuilder builder, T instance, IToolMetadata? context = null) where T : class
+        => builder.WithToolkit(instance, context);
+
+    /// <inheritdoc cref="WithToolkit(AgentBuilder, Type, IToolMetadata?)"/>
+    [Obsolete("Use WithToolkit() instead. WithTools will be removed in a future version.")]
+    [RequiresUnreferencedCode("Toolkit registration by Type requires ToolkitRegistry from toolkit assembly to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithTools(this AgentBuilder builder, Type toolkitType, IToolMetadata? context = null)
+        => builder.WithToolkit(toolkitType, context);
+
     /// <summary>
-    /// Auto-registers plugins referenced by skills using the plugin catalog (zero reflection).
+    /// Auto-registers Toolkits referenced by skills using the Toolkit catalog (zero reflection).
     /// Phase 4.5: Also stores function filters for selective registration.
     /// </summary>
-    private static void AutoRegisterDependenciesFromFactory(AgentBuilder builder, ToolFactory factory)
+    private static void AutoRegisterDependenciesFromFactory(AgentBuilder builder, ToolkitFactory factory)
     {
-        var dependencies = factory.GetReferencedTools();
+        var dependencies = factory.GetReferencedToolkits();
 
         // Phase 4.5: Get function-specific references for selective registration
         var referencedFunctions = factory.GetReferencedFunctions();
@@ -3404,13 +3820,13 @@ public static class AgentBuilderPluginExtensions
         foreach (var depName in dependencies)
         {
             // Check if already selected
-            if (builder._selectedToolFactories.Any(f => f.Name.Equals(depName, StringComparison.OrdinalIgnoreCase)))
+            if (builder._selectedToolkitFactories.Any(f => f.Name.Equals(depName, StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             // Look up in catalog
-            if (builder._availableTools!.TryGetValue(depName, out var depFactory))
+            if (builder._availableToolkits!.TryGetValue(depName, out var depFactory))
             {
-                builder._selectedToolFactories.Add(depFactory);
+                builder._selectedToolkitFactories.Add(depFactory);
                 // Note: Dependencies are NOT added to _explicitlyRegisteredTools
                 // This distinction matters for ToolVisibilityManager
 

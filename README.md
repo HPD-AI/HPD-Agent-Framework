@@ -69,9 +69,9 @@ var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithName("ResearchAssistant")
     .WithInstructions("You are a research assistant with access to tools and knowledge.")
-    // Plugins & Tools
-     .WithTool<WebSearchPlugin>()
-     .WithTool<FileSystemPlugin>()
+    // Toolkits & Tools
+     .WithTool<WebSearchToolkit>()
+     .WithTool<FileSystemToolkit>()
     .WithToolCollapsing()                              // Reduces tool context for better performance
     // Middleware
     .WithPermissions()                              // Require approval for sensitive operations

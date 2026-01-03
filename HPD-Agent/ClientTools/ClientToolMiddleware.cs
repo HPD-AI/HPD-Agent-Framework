@@ -41,11 +41,11 @@ public class ClientToolMiddleware : IAgentMiddleware
     // ============================================
 
     /// <summary>
-    /// Process initial plugin registration from AgentRunInput.
-    /// Tools are always inside plugins - this is the only way to register Client tools.
+    /// Process initial Toolkit registration from AgentRunInput.
+    /// Tools are always inside Toolkits - this is the only way to register Client tools.
     ///
-    /// Registration is ATOMIC: if any plugin fails validation (including cross-plugin
-    /// skill references), NO plugins are registered. This prevents partial state.
+    /// Registration is ATOMIC: if any Toolkit fails validation (including cross-Toolkit
+    /// skill references), NO Toolkits are registered. This prevents partial state.
     /// </summary>
     public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken ct)
     {
@@ -62,43 +62,43 @@ public class ClientToolMiddleware : IAgentMiddleware
             : existingState;
 
         // =============================================
-        // PHASE 1: Register all plugins (tools only)
+        // PHASE 1: Register all Toolkits (tools only)
         // Build pending list without committing to state
         // =============================================
-        var pendingPlugins = new List<ClientToolGroupDefinition>();
+        var pendingToolkits = new List<ClientToolGroupDefinition>();
 
         if (runInput.ClientToolGroups != null)
         {
-            foreach (var plugin in runInput.ClientToolGroups)
+            foreach (var Toolkit in runInput.ClientToolGroups)
             {
-                // Validate plugin structure (name, description, tools)
-                plugin.Validate();
+                // Validate Toolkit structure (name, description, tools)
+                Toolkit.Validate();
 
                 // Validate JSON Schema if configured
                 if (_config.ValidateSchemaOnRegistration)
                 {
-                    foreach (var tool in plugin.Tools)
+                    foreach (var tool in Toolkit.Tools)
                     {
                         ValidateToolSchema(tool);
                     }
                 }
 
-                pendingPlugins.Add(plugin);
-                state = state.WithRegisteredPlugin(plugin);
+                pendingToolkits.Add(Toolkit);
+                state = state.WithRegisteredToolkit(Toolkit);
             }
         }
 
         // =============================================
-        // PHASE 2: Validate ALL cross-plugin references
+        // PHASE 2: Validate ALL cross-Toolkit references
         // If any skill references a non-existent tool, fail here
         // =============================================
-        foreach (var plugin in pendingPlugins)
+        foreach (var Toolkit in pendingToolkits)
         {
-            if (plugin.Skills == null) continue;
+            if (Toolkit.Skills == null) continue;
 
-            foreach (var skill in plugin.Skills)
+            foreach (var skill in Toolkit.Skills)
             {
-                skill.ValidateReferences(plugin.Name, state.RegisteredToolGroups);
+                skill.ValidateReferences(Toolkit.Name, state.RegisteredToolGroups);
             }
         }
 
@@ -106,12 +106,12 @@ public class ClientToolMiddleware : IAgentMiddleware
         // PHASE 3: All validations passed - apply settings
         // =============================================
 
-        // Set initial expanded plugins
+        // Set initial expanded Toolkits
         if (runInput.ExpandedContainers != null)
         {
             foreach (var toolName in runInput.ExpandedContainers)
             {
-                state = state.WithExpandedPlugin(toolName);
+                state = state.WithExpandedToolkit(toolName);
             }
         }
 
@@ -205,8 +205,8 @@ public class ClientToolMiddleware : IAgentMiddleware
             });
         }
 
-        // Convert plugins to AIFunctions
-        var visibleAIFunctions = ConvertPluginsToAIFunctions(state);
+        // Convert Toolkits to AIFunctions
+        var visibleAIFunctions = ConvertToolkitsToAIFunctions(state);
 
         // Clone options and add Client tools
         if (context.Options != null)
@@ -247,40 +247,40 @@ public class ClientToolMiddleware : IAgentMiddleware
         var aug = state.PendingAugmentation;
         if (aug == null) return state;
 
-        // Remove plugins
-        if (aug.RemovePlugins != null)
+        // Remove Toolkits
+        if (aug.RemoveToolkits != null)
         {
-            foreach (var toolName in aug.RemovePlugins)
+            foreach (var toolName in aug.RemoveToolkits)
             {
-                state = state.WithoutRegisteredPlugin(toolName);
+                state = state.WithoutRegisteredToolkit(toolName);
             }
         }
 
-        // Inject plugins
-        if (aug.InjectPlugins != null)
+        // Inject Toolkits
+        if (aug.InjectToolkits != null)
         {
-            foreach (var plugin in aug.InjectPlugins)
+            foreach (var Toolkit in aug.InjectToolkits)
             {
-                plugin.Validate();
-                state = state.WithRegisteredPlugin(plugin);
+                Toolkit.Validate();
+                state = state.WithRegisteredToolkit(Toolkit);
             }
         }
 
-        // Expand plugins
-        if (aug.ExpandPlugins != null)
+        // Expand Toolkits
+        if (aug.ExpandToolkits != null)
         {
-            foreach (var toolName in aug.ExpandPlugins)
+            foreach (var toolName in aug.ExpandToolkits)
             {
-                state = state.WithExpandedPlugin(toolName);
+                state = state.WithExpandedToolkit(toolName);
             }
         }
 
-        // Collapse plugins
-        if (aug.CollapsePlugins != null)
+        // Collapse Toolkits
+        if (aug.CollapseToolkits != null)
         {
-            foreach (var toolName in aug.CollapsePlugins)
+            foreach (var toolName in aug.CollapseToolkits)
             {
-                state = state.WithCollapsedPlugin(toolName);
+                state = state.WithCollapsedToolkit(toolName);
             }
         }
 
@@ -333,44 +333,44 @@ public class ClientToolMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Converts Client plugins to AIFunctions using ExternalToolCollapsingWrapper.
+    /// Converts Client Toolkits to AIFunctions using ExternalToolCollapsingWrapper.
     /// </summary>
-    private List<AIFunction> ConvertPluginsToAIFunctions(ClientToolStateData state)
+    private List<AIFunction> ConvertToolkitsToAIFunctions(ClientToolStateData state)
     {
         var allFunctions = new List<AIFunction>();
 
-        foreach (var (toolName, plugin) in state.RegisteredToolGroups)
+        foreach (var (toolName, Toolkit) in state.RegisteredToolGroups)
         {
             // Convert ClientToolDefinitions to AIFunctions
-            var toolAIFunctions = plugin.Tools
+            var toolAIFunctions = Toolkit.Tools
                 .Where(t => !state.HiddenTools.Contains(t.Name))
                 .Select(t => ConvertToolToAIFunction(t, toolName))
                 .ToList();
 
             // Convert skills to AIFunctions (if any)
             var skillAIFunctions = new List<AIFunction>();
-            if (plugin.Skills != null)
+            if (Toolkit.Skills != null)
             {
-                foreach (var skill in plugin.Skills)
+                foreach (var skill in Toolkit.Skills)
                 {
                     var skillFunction = ConvertSkillToAIFunction(skill, toolName);
                     skillAIFunctions.Add(skillFunction);
                 }
             }
 
-            // Determine if this plugin should be collapsed
-            var shouldCollapse = plugin.StartCollapsed && !state.ExpandedPlugins.Contains(toolName);
+            // Determine if this Toolkit should be collapsed
+            var shouldCollapse = Toolkit.StartCollapsed && !state.ExpandedToolkits.Contains(toolName);
 
             if (shouldCollapse)
             {
                 // Use ExternalToolCollapsingWrapper pattern - creates container + Collapsed tools
                 var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapClientToolGroup(
                     toolName,
-                    plugin.Description!,  // Validated to exist for collapsed plugins
+                    Toolkit.Description!,  // Validated to exist for collapsed Toolkits
                     toolAIFunctions,
                     maxFunctionNamesInDescription: 10,
-                    FunctionResult: plugin.FunctionResult,
-                   SystemPrompt: plugin.SystemPrompt);
+                    FunctionResult: Toolkit.FunctionResult,
+                   SystemPrompt: Toolkit.SystemPrompt);
 
                 allFunctions.Add(container);
                 allFunctions.AddRange(CollapsedTools);
@@ -449,27 +449,27 @@ public class ClientToolMiddleware : IAgentMiddleware
 
         // Build referenced function names for ToolVisibilityManager
         var referencedFunctions = Array.Empty<string>();
-        var referencedPlugins = Array.Empty<string>();
+        var referencedToolkits = Array.Empty<string>();
         if (skill.References != null && skill.References.Count > 0)
         {
             var funcList = new List<string>();
-            var pluginSet = new HashSet<string>();
+            var ToolkitSet = new HashSet<string>();
             foreach (var reference in skill.References)
             {
                 // Build qualified function name
                 var qualifiedName = string.IsNullOrEmpty(reference.ToolsetName)
                     ? reference.ToolName  // Local reference
-                    : $"{reference.ToolsetName}.{reference.ToolName}";  // Cross-plugin reference
+                    : $"{reference.ToolsetName}.{reference.ToolName}";  // Cross-Toolkit reference
                 funcList.Add(qualifiedName);
 
-                // Track referenced plugins for visibility
+                // Track referenced Toolkits for visibility
                 if (!string.IsNullOrEmpty(reference.ToolsetName))
                 {
-                    pluginSet.Add(reference.ToolsetName);
+                    ToolkitSet.Add(reference.ToolsetName);
                 }
             }
             referencedFunctions = funcList.ToArray();
-            referencedPlugins = pluginSet.ToArray();
+            referencedToolkits = ToolkitSet.ToArray();
         }
 
         return HPDAIFunctionFactory.Create(
@@ -500,7 +500,7 @@ public class ClientToolMiddleware : IAgentMiddleware
                     ["DocumentReferences"] = documentReferences,
                     // These are used by ToolVisibilityManager for visibility rules
                     ["ReferencedFunctions"] = referencedFunctions,
-                    ["ReferencedPlugins"] = referencedPlugins
+                    ["ReferencedToolkits"] = referencedToolkits
                 }
             });
     }

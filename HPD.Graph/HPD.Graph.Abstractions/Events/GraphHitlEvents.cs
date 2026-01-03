@@ -100,6 +100,49 @@ public sealed record NodeApprovalResponseEvent : GraphEvent, IBidirectionalGraph
     /// <summary>Optional reason for approval/denial</summary>
     public string? Reason { get; init; }
 
+    /// <summary>
+    /// Optional data to pass back to the suspended node on approval.
+    /// Stored in context channel "suspend_response:{nodeId}" for downstream access.
+    /// </summary>
+    public object? ResumeData { get; init; }
+
     /// <summary>Override Kind to Control for priority routing</summary>
     public new EventKind Kind { get; init; } = EventKind.Control;
+}
+
+/// <summary>
+/// Emitted when an approval request times out waiting for response.
+/// Useful for observability, monitoring, and alerting.
+/// </summary>
+/// <remarks>
+/// This event is emitted when:
+/// <list type="bullet">
+/// <item>A node was suspended with ActiveWaitTimeout greater than zero</item>
+/// <item>No NodeApprovalResponseEvent was received within the timeout</item>
+/// <item>The graph is about to halt with GraphSuspendedException</item>
+/// </list>
+///
+/// Subscribe to this event type to:
+/// <list type="bullet">
+/// <item>Log timeout occurrences</item>
+/// <item>Send alerts for stuck approvals</item>
+/// <item>Track approval SLA metrics</item>
+/// </list>
+/// </remarks>
+public sealed record NodeApprovalTimeoutEvent : GraphEvent
+{
+    /// <summary>Unique identifier matching the original request</summary>
+    public required string RequestId { get; init; }
+
+    /// <summary>Source that originally emitted the request</summary>
+    public required string SourceName { get; init; }
+
+    /// <summary>ID of the node that timed out waiting for approval</summary>
+    public required string NodeId { get; init; }
+
+    /// <summary>How long the node waited before timing out</summary>
+    public required TimeSpan WaitedFor { get; init; }
+
+    /// <summary>Override Kind to Diagnostic for observability routing</summary>
+    public new EventKind Kind { get; init; } = EventKind.Diagnostic;
 }

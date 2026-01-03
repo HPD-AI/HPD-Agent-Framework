@@ -84,4 +84,13 @@ public sealed class ReducerChannel<T> : IGraphChannel
             }
         }
     }
+
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _value = default!;
+            Version++;
+        }
+    }
 }

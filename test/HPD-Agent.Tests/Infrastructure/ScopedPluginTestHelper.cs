@@ -3,13 +3,13 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent.Tests.Infrastructure;
 
 /// <summary>
-/// Helper for creating Collapsed plugins and testing container expansion.
-/// Provides utilities for building test plugins with container functions using HPDAIFunctionFactory.
+/// Helper for creating Collapsed Toolkits and testing container expansion.
+/// Provides utilities for building test Toolkits with container functions using HPDAIFunctionFactory.
 /// </summary>
-public static class CollapsedPluginTestHelper
+public static class CollapsedToolkitTestHelper
 {
     /// <summary>
-    /// Creates a container function for a Collapsed plugin.
+    /// Creates a container function for a Collapsed Toolkit.
     /// This simulates what the source generator creates for [Collapse] attributes.
     /// </summary>
     public static AIFunction CreateContainerFunction(
@@ -28,7 +28,7 @@ public static class CollapsedPluginTestHelper
             AdditionalProperties = new Dictionary<string, object?>
             {
                 ["IsContainer"] = true,
-                ["PluginName"] = toolName,
+                ["ToolkitName"] = toolName,
                 ["FunctionNames"] = functionNames,
                 ["FunctionCount"] = functionCount,
                 ["SourceType"] = "CSharp"
@@ -40,16 +40,16 @@ public static class CollapsedPluginTestHelper
             {
                 var funcs = string.Join(", ", functionNames);
                 var instructions = postExpansionInstructions ?? "";
-                return $"Plugin '{toolName}' expanded. Available functions: {funcs}. {instructions}";
+                return $"Toolkit '{toolName}' expanded. Available functions: {funcs}. {instructions}";
             },
             options);
     }
 
     /// <summary>
-    /// Creates a function that belongs to a Collapsed plugin.
-    /// Adds the necessary metadata to mark it as a plugin member.
+    /// Creates a function that belongs to a Collapsed Toolkit.
+    /// Adds the necessary metadata to mark it as a Toolkit member.
     /// </summary>
-    public static AIFunction CreatePluginMemberFunction(
+    public static AIFunction CreateToolkitMemberFunction(
         string name,
         string description,
         Func<AIFunctionArguments, CancellationToken, Task<object?>> invocation,
@@ -61,8 +61,8 @@ public static class CollapsedPluginTestHelper
             Description = description,
             AdditionalProperties = new Dictionary<string, object?>
             {
-                ["ParentPlugin"] = toolName,
-                ["PluginName"] = toolName
+                ["ParentToolkit"] = toolName,
+                ["ToolkitName"] = toolName
             }
         };
 
@@ -70,17 +70,17 @@ public static class CollapsedPluginTestHelper
     }
 
     /// <summary>
-    /// Creates a complete Collapsed plugin with container and member functions.
+    /// Creates a complete Collapsed Toolkit with container and member functions.
     /// Returns (containerFunction, memberFunctions[]).
     /// </summary>
-    public static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
+    public static (AIFunction Container, AIFunction[] Members) CreateCollapsedToolkit(
         string toolName,
         string description,
         params (string name, string desc, Func<AIFunctionArguments, CancellationToken, Task<object?>> func)[] functions)
     {
         // Create member functions
         var memberFunctions = functions.Select(f =>
-            CreatePluginMemberFunction(f.name, f.desc, f.func, toolName)
+            CreateToolkitMemberFunction(f.name, f.desc, f.func, toolName)
         ).ToArray();
 
         // Create container
@@ -118,11 +118,11 @@ public static class CollapsedPluginTestHelper
     }
 
     /// <summary>
-    /// Gets the plugin name from a function's metadata.
+    /// Gets the Toolkit name from a function's metadata.
     /// </summary>
-    public static string? GetPluginName(AIFunction function)
+    public static string? GetToolkitName(AIFunction function)
     {
-        if (function.AdditionalProperties?.TryGetValue("PluginName", out var value) == true)
+        if (function.AdditionalProperties?.TryGetValue("ToolkitName", out var value) == true)
         {
             return value as string;
         }
@@ -130,7 +130,7 @@ public static class CollapsedPluginTestHelper
     }
 
     /// <summary>
-    /// Creates a non-Collapsed function (regular function without plugin Collapsing).
+    /// Creates a non-Collapsed function (regular function without Toolkit Collapsing).
     /// </summary>
     public static AIFunction CreateNonCollapsedFunction(
         string name,
@@ -177,9 +177,9 @@ public static class CollapsedPluginTestHelper
 }
 
 /// <summary>
-/// Extension methods for working with Collapsed plugins in tests.
+/// Extension methods for working with Collapsed Toolkits in tests.
 /// </summary>
-public static class CollapsedPluginExtensions
+public static class CollapsedToolkitExtensions
 {
     /// <summary>
     /// Converts a list of AIFunctions to their names for easy assertion.
@@ -194,7 +194,7 @@ public static class CollapsedPluginExtensions
     /// </summary>
     public static IEnumerable<AIFunction> OnlyContainers(this IEnumerable<AIFunction> functions)
     {
-        return functions.Where(CollapsedPluginTestHelper.IsContainer);
+        return functions.Where(CollapsedToolkitTestHelper.IsContainer);
     }
 
     /// <summary>
@@ -202,14 +202,14 @@ public static class CollapsedPluginExtensions
     /// </summary>
     public static IEnumerable<AIFunction> ExcludeContainers(this IEnumerable<AIFunction> functions)
     {
-        return functions.Where(f => !CollapsedPluginTestHelper.IsContainer(f));
+        return functions.Where(f => !CollapsedToolkitTestHelper.IsContainer(f));
     }
 
     /// <summary>
-    /// Filters functions by plugin name.
+    /// Filters functions by Toolkit name.
     /// </summary>
-    public static IEnumerable<AIFunction> FromPlugin(this IEnumerable<AIFunction> functions, string toolName)
+    public static IEnumerable<AIFunction> FromToolkit(this IEnumerable<AIFunction> functions, string toolName)
     {
-        return functions.Where(f => CollapsedPluginTestHelper.GetPluginName(f) == toolName);
+        return functions.Where(f => CollapsedToolkitTestHelper.GetToolkitName(f) == toolName);
     }
 }

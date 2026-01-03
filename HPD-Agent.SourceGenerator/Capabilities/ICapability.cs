@@ -47,7 +47,7 @@ internal interface ICapability
     /// Generates the registration code for this capability.
     /// This creates the HPDAIFunctionFactory.Create(...) call with all necessary metadata.
     /// </summary>
-    /// <param name="parent">The parent plugin that contains this capability.</param>
+    /// <param name="parent">The parent Toolkit that contains this capability.</param>
     /// <returns>The generated registration code as a string.</returns>
     string GenerateRegistrationCode(object parent);
 
@@ -71,7 +71,7 @@ internal interface ICapability
     /// This is called after all capabilities have been analyzed to allow cross-capability and
     /// cross-assembly reference resolution.
     /// </summary>
-    /// <param name="allCapabilities">All capabilities from all plugins in the compilation.</param>
+    /// <param name="allCapabilities">All capabilities from all Toolkits in the compilation.</param>
     void ResolveReferences(List<ICapability> allCapabilities);
 
     /// <summary>

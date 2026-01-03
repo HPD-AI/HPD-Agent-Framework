@@ -8,37 +8,37 @@ using System.Text;
 internal static class SkillCodeGenerator
 {
     /// <summary>
-    /// Generates the GetReferencedPlugins() method for auto-registration
+    /// Generates the GetReferencedToolkits() method for auto-registration
     /// PHASE 5: Now uses SkillCapabilities (fully populated with resolved references)
     /// </summary>
-    public static string GenerateGetReferencedPluginsMethod(ToolInfo plugin)
+    public static string GenerateGetReferencedToolkitsMethod(ToolkitInfo Toolkit)
     {
-        if (!plugin.SkillCapabilities.Any())
+        if (!Toolkit.SkillCapabilities.Any())
             return string.Empty;
 
-        var allReferencedPlugins = plugin.SkillCapabilities
-            .SelectMany(s => s.ResolvedPluginTypes)
+        var allReferencedToolkits = Toolkit.SkillCapabilities
+            .SelectMany(s => s.ResolvedToolkitTypes)
             .Distinct()
             .OrderBy(p => p)
             .ToList();
 
-        if (!allReferencedPlugins.Any())
+        if (!allReferencedToolkits.Any())
             return string.Empty;
 
         var sb = new StringBuilder();
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine("        /// Gets the list of plugins referenced by skills in this class");
+        sb.AppendLine("        /// Gets the list of Toolkits referenced by skills in this class");
         sb.AppendLine("        /// Used by AgentBuilder for auto-registration");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine("        public static string[] GetReferencedPlugins()");
+        sb.AppendLine("        public static string[] GetReferencedToolkits()");
         sb.AppendLine("        {");
         sb.AppendLine("            return new string[]");
         sb.AppendLine("            {");
 
-        for (int i = 0; i < allReferencedPlugins.Count; i++)
+        for (int i = 0; i < allReferencedToolkits.Count; i++)
         {
-            var comma = i < allReferencedPlugins.Count - 1 ? "," : "";
-            sb.AppendLine($"                \"{allReferencedPlugins[i]}\"{comma}");
+            var comma = i < allReferencedToolkits.Count - 1 ? "," : "";
+            sb.AppendLine($"                \"{allReferencedToolkits[i]}\"{comma}");
         }
 
         sb.AppendLine("            };");
@@ -51,19 +51,19 @@ internal static class SkillCodeGenerator
     /// Generates the GetReferencedFunctions() method for selective function registration
     /// PHASE 5: Now uses SkillCapabilities (fully populated with resolved references)
     /// </summary>
-    public static string GenerateGetReferencedFunctionsMethod(ToolInfo plugin)
+    public static string GenerateGetReferencedFunctionsMethod(ToolkitInfo Toolkit)
     {
-        if (!plugin.SkillCapabilities.Any())
+        if (!Toolkit.SkillCapabilities.Any())
             return string.Empty;
 
-        // Build dictionary: PluginName -> HashSet<FunctionName>
+        // Build dictionary: ToolkitName -> HashSet<FunctionName>
         var toolFunctions = new Dictionary<string, HashSet<string>>();
 
-        foreach (var skill in plugin.SkillCapabilities)
+        foreach (var skill in Toolkit.SkillCapabilities)
         {
             foreach (var funcRef in skill.ResolvedFunctionReferences)
             {
-                // "FileSystemPlugin.ReadFile" -> ("FileSystemPlugin", "ReadFile")
+                // "FileSystemToolkit.ReadFile" -> ("FileSystemToolkit", "ReadFile")
                 var parts = funcRef.Split('.');
                 if (parts.Length == 2)
                 {
@@ -84,7 +84,7 @@ internal static class SkillCodeGenerator
         var sb = new StringBuilder();
         sb.AppendLine("        /// <summary>");
         sb.AppendLine("        /// Gets the specific functions referenced by skills (for selective registration)");
-        sb.AppendLine("        /// Used by AgentBuilder to register only needed functions from each plugin");
+        sb.AppendLine("        /// Used by AgentBuilder to register only needed functions from each Toolkit");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static Dictionary<string, string[]> GetReferencedFunctions()");
         sb.AppendLine("        {");
@@ -106,34 +106,35 @@ internal static class SkillCodeGenerator
     }
 
     /// <summary>
-    /// Generates skill registration code to be added to CreatePlugin() method
-    /// Handles both class-level Collapsing (if [Collapse] on class) and individual skill containers
+    /// Generates skill registration code to be added to CreateToolkit() method
+    /// Handles both class-level collapsing (if [Toolkit] on class with Collapsed=true) and individual skill containers
     /// </summary>
-    public static string GenerateSkillRegistrations(ToolInfo plugin)
+    public static string GenerateSkillRegistrations(ToolkitInfo Toolkit)
     {
-        // Early exit ONLY if no skills AND no collapse attribute
-        // If plugin has [Collapse] attribute, we need to register the container even without skills
-        if (!plugin.SkillCapabilities.Any() && !plugin.HasCollapseAttribute)
+        // Early exit ONLY if no skills AND not collapsed
+        // If Toolkit is collapsed, we need to register the container even without skills
+        if (!Toolkit.SkillCapabilities.Any() && !Toolkit.IsCollapsed)
             return string.Empty;
 
         var sb = new StringBuilder();
         sb.AppendLine();
 
-        // If the plugin (skill class) has [Collapse], create a class-level container first
-        if (plugin.HasCollapseAttribute)
+        // If the Toolkit is collapsed, create a class-level container first
+        if (Toolkit.IsCollapsed)
         {
-            sb.AppendLine("        // Register skill class Collapse container");
-            sb.AppendLine($"        functions.Add(Create{plugin.Name}CollapseContainer(instance));");
+            sb.AppendLine("        // Register toolkit container");
+            // Method name uses ClassName; the container's Name property uses EffectiveName
+            sb.AppendLine($"        functions.Add(Create{Toolkit.ClassName}Container(instance));");
             sb.AppendLine();
         }
 
         // Early exit if no skills to register (but after registering collapse container if needed)
-        if (!plugin.SkillCapabilities.Any())
+        if (!Toolkit.SkillCapabilities.Any())
             return sb.ToString();
 
         sb.AppendLine("        // Register skill containers");
 
-        foreach (var skill in plugin.SkillCapabilities)
+        foreach (var skill in Toolkit.SkillCapabilities)
         {
             // Check if skill has conditional registration (same pattern as Functions/SubAgents)
             var hasConditionalEvaluator = skill.IsConditional &&
@@ -161,7 +162,7 @@ internal static class SkillCodeGenerator
     /// Skills ARE containers - there's only one function per skill.
     /// PHASE 5: Now accepts SkillCapability instead of SkillInfo
     /// </summary>
-    public static string GenerateSkillContainerFunction(HPD.Agent.SourceGenerator.Capabilities.SkillCapability skill, ToolInfo plugin)
+    public static string GenerateSkillContainerFunction(HPD.Agent.SourceGenerator.Capabilities.SkillCapability skill, ToolkitInfo Toolkit)
     {
         var sb = new StringBuilder();
 
@@ -179,7 +180,7 @@ internal static class SkillCodeGenerator
 
         var escapedReturnMessage = returnMessage.Replace("\"", "\"\"");
 
-        // Build description like plugin Collapsing: append function list
+        // Build description like Toolkit Collapsing: append function list
         var functionNames = string.Join(", ", skill.ResolvedFunctionReferences);
 
         // Support dynamic descriptions (like Functions)
@@ -192,9 +193,9 @@ internal static class SkillCodeGenerator
         sb.AppendLine($"        /// <summary>");
         sb.AppendLine($"        /// Container function for {skill.Name} skill.");
         sb.AppendLine($"        /// </summary>");
-        sb.AppendLine($"        /// <param name=\"instance\">Plugin instance</param>");
+        sb.AppendLine($"        /// <param name=\"instance\">Toolkit instance</param>");
         sb.AppendLine($"        /// <param name=\"context\">Execution context for dynamic descriptions</param>");
-        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill({plugin.Name} instance, IToolMetadata? context)");
+        sb.AppendLine($"        private static AIFunction Create{skill.MethodName}Skill({Toolkit.Name} instance, IToolMetadata? context)");
         sb.AppendLine("        {");
 
         // Generate runtime function body that checks configuration
@@ -329,10 +330,10 @@ internal static class SkillCodeGenerator
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
         sb.AppendLine("                        [\"IsSkill\"] = true,");
-        // PHASE 5: SkillCapability uses ParentPluginName instead of ContainingClass
-        sb.AppendLine($"                        [\"ParentSkillContainer\"] = \"{skill.ParentPluginName}\",");
+        // PHASE 5: SkillCapability uses ParentToolkitName instead of ContainingClass
+        sb.AppendLine($"                        [\"ParentSkillContainer\"] = \"{skill.ParentToolkitName}\",");
         sb.AppendLine($"                        [\"ReferencedFunctions\"] = new string[] {{ {string.Join(", ", skill.ResolvedFunctionReferences.Select(f => $"\"{f}\""))} }},");
-        sb.AppendLine($"                        [\"ReferencedPlugins\"] = new string[] {{ {string.Join(", ", skill.ResolvedPluginTypes.Select(p => $"\"{p}\""))} }},");
+        sb.AppendLine($"                        [\"ReferencedToolkits\"] = new string[] {{ {string.Join(", ", skill.ResolvedToolkitTypes.Select(p => $"\"{p}\""))} }},");
 
         // Store instructions separately for prompt Middleware to use
         // Middleware will build complete context from metadata (functions + documents + instructions)
@@ -367,59 +368,61 @@ internal static class SkillCodeGenerator
     }
 
     /// <summary>
-    /// Generates the Collapse container function for a skill class marked with [Collapse].
-    /// This groups all skills in the class under a single collapsible container.
+    /// Generates the container function for a collapsed toolkit marked with [Toolkit("...")].
+    /// This groups all functions/skills in the class under a single container.
     /// </summary>
-    public static string GenerateSkillClassCollapseContainer(ToolInfo plugin)
+    public static string GenerateToolkitContainer(ToolkitInfo Toolkit)
     {
-        if (!plugin.HasCollapseAttribute)
+        if (!Toolkit.IsCollapsed)
             return string.Empty;
 
         // Must have at least one capability (function or skill) to collapse
-        if (!plugin.FunctionCapabilities.Any() && !plugin.SkillCapabilities.Any())
+        if (!Toolkit.FunctionCapabilities.Any() && !Toolkit.SkillCapabilities.Any())
             return string.Empty;
 
         var sb = new StringBuilder();
 
         // Combine both AI functions and skills
-        var allCapabilities = plugin.FunctionCapabilities.Select(f => f.FunctionName)
-            .Concat(plugin.SkillCapabilities.Select(s => s.Name))
+        var allCapabilities = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
+            .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
             .ToList();
         var capabilitiesList = string.Join(", ", allCapabilities);
-        var totalCount = plugin.FunctionCapabilities.Count() + plugin.SkillCapabilities.Count();
+        var totalCount = Toolkit.FunctionCapabilities.Count() + Toolkit.SkillCapabilities.Count();
 
-        var description = !string.IsNullOrEmpty(plugin.CollapseDescription)
-            ? plugin.CollapseDescription
-            : plugin.Description ?? string.Empty;
+        var description = !string.IsNullOrEmpty(Toolkit.ContainerDescription)
+            ? Toolkit.ContainerDescription
+            : Toolkit.Description ?? string.Empty;
 
         // Use shared helper to generate description and return message
-        var fullDescription = CollapseContainerHelper.GenerateContainerDescription(description, plugin.Name, allCapabilities);
-        var returnMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, plugin.FunctionResult);
+        // Use EffectiveName for LLM-visible container name
+        var fullDescription = ToolkitContainerHelper.GenerateContainerDescription(description, Toolkit.EffectiveName, allCapabilities);
+        var returnMessage = ToolkitContainerHelper.GenerateReturnMessage(description, allCapabilities, Toolkit.FunctionResult);
 
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Collapse container for {plugin.Name} skill class.");
+        sb.AppendLine($"        /// Container function for {Toolkit.ClassName} toolkit.");
         sb.AppendLine("        /// </summary>");
-        sb.AppendLine($"        /// <param name=\"instance\">Plugin instance</param>");
-        sb.AppendLine($"        private static AIFunction Create{plugin.Name}CollapseContainer({plugin.Name} instance)");
+        sb.AppendLine($"        /// <param name=\"instance\">Toolkit instance</param>");
+        // Method signature uses ClassName for type references
+        sb.AppendLine($"        private static AIFunction Create{Toolkit.ClassName}Container({Toolkit.ClassName} instance)");
         sb.AppendLine("        {");
         sb.AppendLine("            return HPDAIFunctionFactory.Create(");
         sb.AppendLine("                async (arguments, cancellationToken) =>");
         sb.AppendLine("                {");
 
         // Handle FunctionResult - either static literal or dynamic expression
-        if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
+        if (!string.IsNullOrEmpty(Toolkit.FunctionResultExpression))
         {
             // Using an interpolated string to combine the base message and the dynamic instructions
-            var baseMessage = CollapseContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
+            var baseMessage = ToolkitContainerHelper.GenerateReturnMessage(description, allCapabilities, null);
             // Escape special characters for the interpolated string - we need to convert \n\n to \\n\\n in source code
             baseMessage = baseMessage.Replace("\\", "\\\\").Replace("\n", "\\n").Replace("\"", "\\\"");
             // Add separator between capabilities list and dynamic instructions
             var separator = "\\n\\n";  // This will be two backslash-n sequences in the source code
 
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.FunctionResultIsStatic
-                ? plugin.FunctionResultExpression
-                : $"instance.{plugin.FunctionResultExpression}";
+            var expressionCall = Toolkit.FunctionResultIsStatic
+                ? Toolkit.FunctionResultExpression
+                : $"instance.{Toolkit.FunctionResultExpression}";
 
             sb.AppendLine($"                    var dynamicInstructions = {expressionCall};");
             sb.AppendLine($"                    return $\"{baseMessage}{separator}{{dynamicInstructions}}\";");
@@ -438,29 +441,30 @@ internal static class SkillCodeGenerator
         sb.AppendLine("                },");
         sb.AppendLine("                new HPDAIFunctionFactoryOptions");
         sb.AppendLine("                {");
-        sb.AppendLine($"                    Name = \"{plugin.Name}\",");
+        // Use EffectiveName for LLM-visible container function name
+        sb.AppendLine($"                    Name = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                    Description = \"{fullDescription}\",");
         sb.AppendLine("                    SchemaProvider = () => CreateEmptyContainerSchema(),");
         sb.AppendLine("                    AdditionalProperties = new Dictionary<string, object?>");
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
-        sb.AppendLine("                        [\"IsCollapse\"] = true,");
+        sb.AppendLine("                        [\"IsToolkitContainer\"] = true,");
         sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount},");
 
         // Add FunctionResult if present
-        if (!string.IsNullOrEmpty(plugin.FunctionResult))
+        if (!string.IsNullOrEmpty(Toolkit.FunctionResult))
         {
-            var escapedFuncCtx = plugin.FunctionResult.Replace("\"", "\"\"");
+            var escapedFuncCtx = Toolkit.FunctionResult.Replace("\"", "\"\"");
             sb.AppendLine($"                        [\"FunctionResult\"] = @\"{escapedFuncCtx}\",");
         }
-        else if (!string.IsNullOrEmpty(plugin.FunctionResultExpression))
+        else if (!string.IsNullOrEmpty(Toolkit.FunctionResultExpression))
         {
             // Expression - evaluate at container creation time
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin.FunctionResultIsStatic
-                ? plugin.FunctionResultExpression
-                : $"instance.{plugin.FunctionResultExpression}";
+            var expressionCall = Toolkit.FunctionResultIsStatic
+                ? Toolkit.FunctionResultExpression
+                : $"instance.{Toolkit.FunctionResultExpression}";
 
             sb.AppendLine($"                        [\"FunctionResult\"] = {expressionCall},");
         }
@@ -470,18 +474,18 @@ internal static class SkillCodeGenerator
         }
 
         // AddSystemPrompt if present
-        if (!string.IsNullOrEmpty(plugin.SystemPrompt))
+        if (!string.IsNullOrEmpty(Toolkit.SystemPrompt))
         {
-            var escapedSysCtx = plugin.SystemPrompt.Replace("\"", "\"\"");
+            var escapedSysCtx = Toolkit.SystemPrompt.Replace("\"", "\"\"");
             sb.AppendLine($"                        [\"SystemPrompt\"] = @\"{escapedSysCtx}\"");
         }
-        else if (!string.IsNullOrEmpty(plugin.SystemPromptExpression))
+        else if (!string.IsNullOrEmpty(Toolkit.SystemPromptExpression))
         {
             // Expression - evaluate at container creation time
             // Use instance. prefix for instance methods, nothing for static
-            var expressionCall = plugin. SystemPromptIsStatic
-                ? plugin.SystemPromptExpression
-                : $"instance.{plugin.SystemPromptExpression}";
+            var expressionCall = Toolkit. SystemPromptIsStatic
+                ? Toolkit.SystemPromptExpression
+                : $"instance.{Toolkit.SystemPromptExpression}";
 
             sb.AppendLine($"                        [\"SystemPrompt\"] = {expressionCall}");
         }
@@ -498,33 +502,30 @@ internal static class SkillCodeGenerator
     }
 
     /// <summary>
-    /// Generates skill activation function
+    /// Generates all skill-related code for a Toolkit
     /// </summary>
-    /// <summary>
-    /// Generates all skill-related code for a plugin
-    /// </summary>
-    public static string GenerateAllSkillCode(ToolInfo plugin)
+    public static string GenerateAllSkillCode(ToolkitInfo Toolkit)
     {
-        // Early exit ONLY if no skills AND no collapse attribute
-        // If plugin has [Collapse] attribute, we need to generate the container even without skills
-        if (!plugin.SkillCapabilities.Any() && !plugin.HasCollapseAttribute)
+        // Early exit ONLY if no skills AND not collapsed
+        // If Toolkit is collapsed, we need to generate the container even without skills
+        if (!Toolkit.SkillCapabilities.Any() && !Toolkit.IsCollapsed)
             return string.Empty;
 
         var sb = new StringBuilder();
 
-        // Generate skill class Collapse container if needed (class-level Collapsing)
-        if (plugin.HasCollapseAttribute)
+        // Generate toolkit container if collapsed (class-level collapsing)
+        if (Toolkit.IsCollapsed)
         {
-            sb.AppendLine(GenerateSkillClassCollapseContainer(plugin));
+            sb.AppendLine(GenerateToolkitContainer(Toolkit));
             sb.AppendLine();
         }
 
-        // Early exit if no skills to generate (but after generating collapse container if needed)
-        if (!plugin.SkillCapabilities.Any())
+        // Early exit if no skills to generate (but after generating container if needed)
+        if (!Toolkit.SkillCapabilities.Any())
             return sb.ToString();
 
         // Generate context resolvers for skills (description and conditional)
-        foreach (var skill in plugin.SkillCapabilities)
+        foreach (var skill in Toolkit.SkillCapabilities)
         {
             var resolvers = skill.GenerateContextResolvers();
             if (!string.IsNullOrEmpty(resolvers))
@@ -535,11 +536,11 @@ internal static class SkillCodeGenerator
 
         // Generate skill functions
         // PHASE 5: Now uses SkillCapabilities
-        foreach (var skill in plugin.SkillCapabilities)
+        foreach (var skill in Toolkit.SkillCapabilities)
         {
             sb.AppendLine();
             // Skills ARE containers - only one function per skill
-            sb.AppendLine(GenerateSkillContainerFunction(skill, plugin));
+            sb.AppendLine(GenerateSkillContainerFunction(skill, Toolkit));
         }
 
         return sb.ToString();
@@ -560,11 +561,11 @@ internal static class SkillCodeGenerator
     }
 
     /// <summary>
-    /// Updates the plugin metadata to include skills
+    /// Updates the Toolkit metadata to include skills
     /// </summary>
-    public static string UpdateToolMetadataWithSkills(ToolInfo plugin, string originalMetadataCode)
+    public static string UpdateToolMetadataWithSkills(ToolkitInfo Toolkit, string originalMetadataCode)
     {
-        if (!plugin.SkillCapabilities.Any())
+        if (!Toolkit.SkillCapabilities.Any())
             return originalMetadataCode;
 
         // Add skill information to metadata
@@ -572,28 +573,29 @@ internal static class SkillCodeGenerator
         sb.AppendLine("        private static ToolMetadata? _cachedMetadata;");
         sb.AppendLine();
         sb.AppendLine("        /// <summary>");
-        sb.AppendLine($"        /// Gets metadata for the {plugin.Name} plugin (used for Collapsing).");
+        sb.AppendLine($"        /// Gets metadata for the {Toolkit.ClassName} Toolkit (used for Collapsing).");
         sb.AppendLine("        /// </summary>");
         sb.AppendLine("        public static ToolMetadata GetToolMetadata()");
         sb.AppendLine("        {");
         sb.AppendLine("            return _cachedMetadata ??= new ToolMetadata");
         sb.AppendLine("            {");
-        sb.AppendLine($"                Name = \"{plugin.Name}\",");
+        // Use EffectiveName for LLM-visible metadata name
+        sb.AppendLine($"                Name = \"{Toolkit.EffectiveName}\",");
 
-        var description = plugin.HasCollapseAttribute && !string.IsNullOrEmpty(plugin.CollapseDescription)
-            ? plugin.CollapseDescription
-            : plugin.Description;
+        var description = Toolkit.IsCollapsed && !string.IsNullOrEmpty(Toolkit.ContainerDescription)
+            ? Toolkit.ContainerDescription
+            : Toolkit.Description;
         sb.AppendLine($"                Description = \"{description}\",");
 
         // Include both functions and skills
-        var allFunctionNames = plugin.FunctionCapabilities.Select(f => f.FunctionName)
-            .Concat(plugin.SkillCapabilities.Select(s => s.Name))
+        var allFunctionNames = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
+            .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
             .ToList();
         var functionNamesArray = string.Join(", ", allFunctionNames.Select(n => $"\"{n}\""));
 
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
         sb.AppendLine($"                FunctionCount = {allFunctionNames.Count},");
-        sb.AppendLine($"                HasCollapseAttribute = {plugin.HasCollapseAttribute.ToString().ToLower()}");
+        sb.AppendLine($"                IsCollapsed = {Toolkit.IsCollapsed.ToString().ToLower()}");
         sb.AppendLine("            };");
         sb.AppendLine("        }");
 

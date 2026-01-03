@@ -333,7 +333,7 @@ public class AgentUIRenderer
         AnsiConsole.Write(tool.Render());
         AnsiConsole.WriteLine();
         
-        // Smart content-based rendering (plugin-agnostic)
+        // Smart content-based rendering (Toolkit-agnostic)
         if (!isError)
         {
             RenderResultByType(evt.Result);
@@ -344,7 +344,7 @@ public class AgentUIRenderer
     
     /// <summary>
     /// Smart content-based rendering. Detects result type and renders accordingly.
-    /// This is plugin-agnostic: any tool outputting a diff gets diff rendering, etc.
+    /// This is Toolkit-agnostic: any tool outputting a diff gets diff rendering, etc.
     /// </summary>
     private void RenderResultByType(string result)
     {

@@ -26,7 +26,7 @@ public class ClientToolStateDataTests
         // Assert
         Assert.NotNull(state);
         Assert.Empty(state.RegisteredToolGroups);
-        Assert.Empty(state.ExpandedPlugins);
+        Assert.Empty(state.ExpandedToolkits);
         Assert.Empty(state.HiddenTools);
         Assert.Empty(state.Context);
         Assert.Null(state.State);
@@ -34,142 +34,142 @@ public class ClientToolStateDataTests
     }
 
     // ============================================
-    // Plugin Registration Tests
+    // Toolkit Registration Tests
     // ============================================
 
     [Fact]
-    public void WithRegisteredPlugin_AddsPlugin()
+    public void WithRegisteredToolkit_AddsToolkit()
     {
         // Arrange
         var state = new ClientToolStateData();
-        var plugin = CreateTestPlugin("TestPlugin");
+        var Toolkit = CreateTestToolkit("TestToolkit");
 
         // Act
-        var updated = state.WithRegisteredPlugin(plugin);
+        var updated = state.WithRegisteredToolkit(Toolkit);
 
         // Assert
         Assert.NotSame(state, updated);
         Assert.Single(updated.RegisteredToolGroups);
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("TestPlugin"));
-        Assert.Equal(plugin, updated.RegisteredToolGroups["TestPlugin"]);
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("TestToolkit"));
+        Assert.Equal(Toolkit, updated.RegisteredToolGroups["TestToolkit"]);
     }
 
     [Fact]
-    public void WithRegisteredPlugin_MultipleCalls_AddsAllPlugins()
+    public void WithRegisteredToolkit_MultipleCalls_AddsAllToolkits()
     {
         // Arrange
         var state = new ClientToolStateData();
-        var plugin1 = CreateTestPlugin("Plugin1");
-        var plugin2 = CreateTestPlugin("Plugin2");
+        var Toolkit1 = CreateTestToolkit("Toolkit1");
+        var Toolkit2 = CreateTestToolkit("Toolkit2");
 
         // Act
         var updated = state
-            .WithRegisteredPlugin(plugin1)
-            .WithRegisteredPlugin(plugin2);
+            .WithRegisteredToolkit(Toolkit1)
+            .WithRegisteredToolkit(Toolkit2);
 
         // Assert
         Assert.Equal(2, updated.RegisteredToolGroups.Count);
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin1"));
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin2"));
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit1"));
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit2"));
     }
 
     [Fact]
-    public void WithRegisteredPlugin_SameName_ReplacesPlugin()
+    public void WithRegisteredToolkit_SameName_ReplacesToolkit()
     {
         // Arrange
         var state = new ClientToolStateData();
-        var plugin1 = CreateTestPlugin("TestPlugin", tools: new[] { CreateTestTool("Tool1") });
-        var plugin2 = CreateTestPlugin("TestPlugin", tools: new[] { CreateTestTool("Tool2") });
+        var Toolkit1 = CreateTestToolkit("TestToolkit", tools: new[] { CreateTestTool("Tool1") });
+        var Toolkit2 = CreateTestToolkit("TestToolkit", tools: new[] { CreateTestTool("Tool2") });
 
         // Act
         var updated = state
-            .WithRegisteredPlugin(plugin1)
-            .WithRegisteredPlugin(plugin2);
+            .WithRegisteredToolkit(Toolkit1)
+            .WithRegisteredToolkit(Toolkit2);
 
         // Assert
         Assert.Single(updated.RegisteredToolGroups);
-        Assert.Equal("Tool2", updated.RegisteredToolGroups["TestPlugin"].Tools[0].Name);
+        Assert.Equal("Tool2", updated.RegisteredToolGroups["TestToolkit"].Tools[0].Name);
     }
 
     [Fact]
-    public void WithoutRegisteredPlugin_RemovesPlugin()
+    public void WithoutRegisteredToolkit_RemovesToolkit()
     {
         // Arrange
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1"))
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin2"));
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1"))
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit2"));
 
         // Act
-        var updated = state.WithoutRegisteredPlugin("Plugin1");
+        var updated = state.WithoutRegisteredToolkit("Toolkit1");
 
         // Assert
         Assert.Single(updated.RegisteredToolGroups);
-        Assert.False(updated.RegisteredToolGroups.ContainsKey("Plugin1"));
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Plugin2"));
+        Assert.False(updated.RegisteredToolGroups.ContainsKey("Toolkit1"));
+        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit2"));
     }
 
     [Fact]
-    public void WithoutRegisteredPlugin_NonExistent_ReturnsUnchanged()
+    public void WithoutRegisteredToolkit_NonExistent_ReturnsUnchanged()
     {
         // Arrange
         var state = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1"));
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1"));
 
         // Act
-        var updated = state.WithoutRegisteredPlugin("NonExistent");
+        var updated = state.WithoutRegisteredToolkit("NonExistent");
 
         // Assert
         Assert.Single(updated.RegisteredToolGroups);
     }
 
     // ============================================
-    // Expanded Plugins Tests
+    // Expanded Toolkits Tests
     // ============================================
 
     [Fact]
-    public void WithExpandedPlugin_AddsToSet()
+    public void WithExpandedToolkit_AddsToSet()
     {
         // Arrange
         var state = new ClientToolStateData();
 
         // Act
-        var updated = state.WithExpandedPlugin("Plugin1");
+        var updated = state.WithExpandedToolkit("Toolkit1");
 
         // Assert
         Assert.NotSame(state, updated);
-        Assert.Single(updated.ExpandedPlugins);
-        Assert.Contains("Plugin1", updated.ExpandedPlugins);
+        Assert.Single(updated.ExpandedToolkits);
+        Assert.Contains("Toolkit1", updated.ExpandedToolkits);
     }
 
     [Fact]
-    public void WithExpandedPlugin_Duplicate_NoEffect()
+    public void WithExpandedToolkit_Duplicate_NoEffect()
     {
         // Arrange
         var state = new ClientToolStateData()
-            .WithExpandedPlugin("Plugin1");
+            .WithExpandedToolkit("Toolkit1");
 
         // Act
-        var updated = state.WithExpandedPlugin("Plugin1");
+        var updated = state.WithExpandedToolkit("Toolkit1");
 
         // Assert
-        Assert.Single(updated.ExpandedPlugins);
+        Assert.Single(updated.ExpandedToolkits);
     }
 
     [Fact]
-    public void WithCollapsedPlugin_RemovesFromSet()
+    public void WithCollapsedToolkit_RemovesFromSet()
     {
         // Arrange
         var state = new ClientToolStateData()
-            .WithExpandedPlugin("Plugin1")
-            .WithExpandedPlugin("Plugin2");
+            .WithExpandedToolkit("Toolkit1")
+            .WithExpandedToolkit("Toolkit2");
 
         // Act
-        var updated = state.WithCollapsedPlugin("Plugin1");
+        var updated = state.WithCollapsedToolkit("Toolkit1");
 
         // Assert
-        Assert.Single(updated.ExpandedPlugins);
-        Assert.DoesNotContain("Plugin1", updated.ExpandedPlugins);
-        Assert.Contains("Plugin2", updated.ExpandedPlugins);
+        Assert.Single(updated.ExpandedToolkits);
+        Assert.DoesNotContain("Toolkit1", updated.ExpandedToolkits);
+        Assert.Contains("Toolkit2", updated.ExpandedToolkits);
     }
 
     // ============================================
@@ -290,7 +290,7 @@ public class ClientToolStateDataTests
         var state = new ClientToolStateData();
         var augmentation = new ClientToolAugmentation
         {
-            ExpandPlugins = new HashSet<string> { "Plugin1" }
+            ExpandToolkits = new HashSet<string> { "Toolkit1" }
         };
 
         // Act
@@ -299,7 +299,7 @@ public class ClientToolStateDataTests
         // Assert
         Assert.NotSame(state, updated);
         Assert.NotNull(updated.PendingAugmentation);
-        Assert.Contains("Plugin1", updated.PendingAugmentation.ExpandPlugins!);
+        Assert.Contains("Toolkit1", updated.PendingAugmentation.ExpandToolkits!);
     }
 
     [Fact]
@@ -307,7 +307,7 @@ public class ClientToolStateDataTests
     {
         // Arrange
         var state = new ClientToolStateData()
-            .WithPendingAugmentation(new ClientToolAugmentation { ExpandPlugins = new HashSet<string> { "Plugin1" } });
+            .WithPendingAugmentation(new ClientToolAugmentation { ExpandToolkits = new HashSet<string> { "Toolkit1" } });
 
         // Act
         var updated = state.ClearPendingAugmentation();
@@ -339,7 +339,7 @@ public class ClientToolStateDataTests
         // Arrange
         var container = new MiddlewareState();
         var testState = new ClientToolStateData()
-            .WithRegisteredPlugin(CreateTestPlugin("TestPlugin"));
+            .WithRegisteredToolkit(CreateTestToolkit("TestToolkit"));
 
         // Act
         var updated = container.WithClientTool(testState);
@@ -358,17 +358,17 @@ public class ClientToolStateDataTests
 
         // Act
         var updated = original
-            .WithRegisteredPlugin(CreateTestPlugin("Plugin1"))
-            .WithExpandedPlugin("Plugin1")
+            .WithRegisteredToolkit(CreateTestToolkit("Toolkit1"))
+            .WithExpandedToolkit("Toolkit1")
             .WithHiddenTool("Tool1");
 
         // Assert
         Assert.Empty(original.RegisteredToolGroups);
-        Assert.Empty(original.ExpandedPlugins);
+        Assert.Empty(original.ExpandedToolkits);
         Assert.Empty(original.HiddenTools);
 
         Assert.Single(updated.RegisteredToolGroups);
-        Assert.Single(updated.ExpandedPlugins);
+        Assert.Single(updated.ExpandedToolkits);
         Assert.Single(updated.HiddenTools);
     }
 
@@ -376,13 +376,13 @@ public class ClientToolStateDataTests
     // Helper Methods
     // ============================================
 
-    private static ClientToolGroupDefinition CreateTestPlugin(
+    private static ClientToolGroupDefinition CreateTestToolkit(
         string name,
         ClientToolDefinition[]? tools = null)
     {
         return new ClientToolGroupDefinition(
             Name: name,
-            Description: $"Test plugin {name}",
+            Description: $"Test Toolkit {name}",
             Tools: tools ?? new[] { CreateTestTool($"{name}_Tool") }
         );
     }

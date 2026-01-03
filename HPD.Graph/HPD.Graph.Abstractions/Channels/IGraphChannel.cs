@@ -48,4 +48,10 @@ public interface IGraphChannel
     /// <typeparam name="T">Type of the values</typeparam>
     /// <param name="values">Values to update with</param>
     void Update<T>(IEnumerable<T> values);
+
+    /// <summary>
+    /// Clears the channel value, resetting to unset state.
+    /// Used during iteration to invalidate stale outputs before re-execution.
+    /// </summary>
+    void Clear();
 }

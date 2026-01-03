@@ -43,7 +43,7 @@ Analyze a company's ability to pay short-term obligations with liquid assets.
 
 ### Step 2: Calculate Current Ratio
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateCurrentRatio(currentAssets, currentLiabilities)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateCurrentRatio(currentAssets, currentLiabilities)`
 
 **Calculation:**
 ```
@@ -70,7 +70,7 @@ Current Ratio = $250,000 ÷ $140,000 = 1.79
 
 ### Step 3: Calculate Quick Ratio
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateQuickRatio(currentAssets, inventory, prepaidExpenses, currentLiabilities)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateQuickRatio(currentAssets, inventory, prepaidExpenses, currentLiabilities)`
 
 **Calculation:**
 ```
@@ -99,7 +99,7 @@ Quick Ratio = $160,000 ÷ $140,000 = 1.14
 
 ### Step 4: Calculate Working Capital
 
-**Function Call:** `FinancialAnalysisPlugin.CalculateWorkingCapital(currentAssets, currentLiabilities)`
+**Function Call:** `FinancialAnalysisToolkit.CalculateWorkingCapital(currentAssets, currentLiabilities)`
 
 **Calculation:**
 ```

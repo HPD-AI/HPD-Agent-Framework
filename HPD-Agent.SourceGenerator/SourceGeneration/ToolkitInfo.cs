@@ -1,16 +1,39 @@
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using HPD.Agent.SourceGenerator.Capabilities;
 
 /// <summary>
-/// Information about a plugin discovered during source generation.
+/// Information about a Toolkit discovered during source generation.
 /// </summary>
-internal class ToolInfo
+internal class ToolkitInfo
 {
-    public string Name { get; set; } = string.Empty;
+    /// <summary>
+    /// The class name (always set from ClassDeclarationSyntax.Identifier).
+    /// Used for file names and type references.
+    /// </summary>
+    public string ClassName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Custom name from [Toolkit(Name = "...")] attribute, if provided.
+    /// Allows overriding the default class name for registry lookup, container names, etc.
+    /// </summary>
+    public string? CustomName { get; set; }
+
+    /// <summary>
+    /// The effective name used in registry, container functions, and skill references.
+    /// Returns CustomName if set, otherwise falls back to ClassName.
+    /// </summary>
+    public string EffectiveName => CustomName ?? ClassName;
+
+    /// <summary>
+    /// Description of the toolkit capabilities.
+    /// </summary>
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Namespace where the toolkit is defined.
+    /// </summary>
     public string Namespace { get; set; } = string.Empty;
 
     // ========== UNIFIED DATA STRUCTURE (Phase 5: Complete) ==========
@@ -48,7 +71,7 @@ internal class ToolInfo
     public int CapabilityCount => Capabilities.Count;
 
     /// <summary>
-    /// Whether this plugin requires an instance parameter in CreatePlugin().
+    /// Whether this Toolkit requires an instance parameter in CreateToolkit().
     /// All capability types (Functions, Skills, SubAgents) can access instance state.
     /// This enables dynamic container instructions via instance methods.
     /// Phase 4: Uses only unified Capabilities list.
@@ -64,36 +87,67 @@ internal class ToolInfo
         Capabilities.Any(c => c.IsConditional || c.HasDynamicDescription);
 
     /// <summary>
-    /// Whether this plugin has a parameterless constructor.
-    /// Only plugins with parameterless constructors can be included in the ToolRegistry.All catalog.
-    /// Plugins without parameterless constructors (e.g., those requiring DI) must be registered through
+    /// Whether this Toolkit has a parameterless constructor.
+    /// Only Toolkits with parameterless constructors can be included in the ToolkitRegistry.All catalog.
+    /// Toolkits without parameterless constructors (e.g., those requiring DI) must be registered through
     /// special extension methods like WithDynamicMemory() or WithPlanMode().
     /// </summary>
     public bool HasParameterlessConstructor { get; set; } = true;
 
     /// <summary>
-    /// Whether this plugin class is publicly accessible.
-    /// Only publicly accessible classes can be included in the ToolRegistry.All catalog.
+    /// Whether this Toolkit class is publicly accessible.
+    /// Only publicly accessible classes can be included in the ToolkitRegistry.All catalog.
     /// Private/internal classes (e.g., test fixtures) are still processed for individual Registration files
     /// but are excluded from the registry.
     /// </summary>
     public bool IsPubliclyAccessible { get; set; } = true;
 
     /// <summary>
-    /// Diagnostics collected during plugin analysis (e.g., dual-context validation errors).
+    /// Diagnostics collected during Toolkit analysis (e.g., dual-context validation errors).
     /// These are reported during source generation in GenerateToolRegistrations.
     /// </summary>
     public List<Diagnostic> Diagnostics { get; set; } = new();
 
-    /// <summary>
-    /// Whether this container has the [Collapse] attribute
-    /// </summary>
-    public bool HasCollapseAttribute { get; set; }
+    // ========== CONFIG SERIALIZATION PROPERTIES (Phase: Config Serialization) ==========
 
     /// <summary>
-    /// Description from [Collapse] attribute (if present)
+    /// Fully qualified type name of the config constructor parameter, if detected.
+    /// Example: "MyApp.Config.SearchToolkitConfig" for SearchToolkit(SearchToolkitConfig config).
+    /// Null if toolkit has no config constructor.
+    /// Used by source generator to emit CreateFromConfig delegate.
     /// </summary>
-    public string? CollapseDescription { get; set; }
+    public string? ConfigConstructorTypeName { get; set; }
+
+    /// <summary>
+    /// Metadata type name from [AIFunction&lt;TMetadata&gt;] on toolkit methods.
+    /// Example: "MyApp.Context.SearchContext" for [AIFunction&lt;SearchContext&gt;].
+    /// Null if toolkit methods don't use typed metadata.
+    /// Used by source generator to emit MetadataType in ToolkitFactory.
+    /// </summary>
+    public string? MetadataTypeName { get; set; }
+
+    /// <summary>
+    /// All function names in this toolkit.
+    /// Example: ["WebSearch", "ImageSearch", "NewsSearch"]
+    /// Used for selective function registration via ToolkitReference.Functions.
+    /// Populated during capability analysis.
+    /// </summary>
+    public List<string> FunctionNames { get; set; } = new();
+
+    // ========== TOOLKIT ATTRIBUTE PROPERTIES ==========
+
+    /// <summary>
+    /// Whether this toolkit should be collapsed (has description).
+    /// When true, functions are hidden behind a container that must be expanded.
+    /// Runtime override available via CollapsingConfig.NeverCollapse.
+    /// </summary>
+    public bool IsCollapsed { get; set; }
+
+    /// <summary>
+    /// Description from [Toolkit] attribute (if present).
+    /// Used for the container function description when collapsed.
+    /// </summary>
+    public string? ContainerDescription { get; set; }
 
     /// <summary>
     /// Instructions returned as FUNCTION RESULT when container is activated (literal value).
@@ -113,17 +167,29 @@ internal class ToolInfo
     /// <summary>
     /// Instructions injected into SYSTEM PROMPT persistently after activation (literal value).
     /// </summary>
-    public string?SystemPrompt { get; set; }
+    public string? SystemPrompt { get; set; }
 
     /// <summary>
     /// Instructions injected into SYSTEM PROMPT persistently after activation (expression/method call).
     /// </summary>
-    public string?SystemPromptExpression { get; set; }
+    public string? SystemPromptExpression { get; set; }
 
     /// <summary>
-    /// WhetherSystemPromptExpression is a static member (true) or instance member (false).
+    /// Whether SystemPromptExpression is a static member (true) or instance member (false).
     /// </summary>
     public bool SystemPromptIsStatic { get; set; } = true;
+
+    // ========== BACKWARD COMPATIBILITY ==========
+
+    /// <summary>
+    /// Alias for ClassName to maintain backward compatibility.
+    /// New code should use ClassName or EffectiveName instead.
+    /// </summary>
+    public string Name
+    {
+        get => ClassName;
+        set => ClassName = value;
+    }
 }
 
 // ========== OLD CLASSES REMOVED (Phase 4) ==========
@@ -132,3 +198,7 @@ internal class ToolInfo
 // - HPD.Agent.SourceGenerator.Capabilities.FunctionCapability (replaces FunctionInfo)
 // - HPD.Agent.SourceGenerator.Capabilities.ParameterInfo (shared by all capabilities)
 // - HPD.Agent.SourceGenerator.Capabilities.ValidationData (part of FunctionCapability)
+
+// ========== RENAMED (Phase: Toolkit Consolidation) ==========
+// ToolInfo has been renamed to ToolkitInfo.
+// The Name property is now ClassName, with CustomName and EffectiveName for [Toolkit(Name = "...")] support.

@@ -26,7 +26,7 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from the specified manifest file
     /// </summary>
     /// <param name="manifestPath">Path to the MCP manifest file</param>
-    /// <param name="enableCollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
+    /// <param name="enableCollapsing">Enable Toolkit Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestAsync(
@@ -102,7 +102,7 @@ public class MCPClientManager : IDisposable
     /// Loads MCP tools from manifest content
     /// </summary>
     /// <param name="manifestContent">JSON content of the MCP manifest</param>
-    /// <param name="enableCollapsing">Enable plugin Collapsing (groups tools by server behind containers)</param>
+    /// <param name="enableCollapsing">Enable Toolkit Collapsing (groups tools by server behind containers)</param>
     /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
     /// <param name="cancellationToken">Cancellation token</param>
     public async Task<List<AIFunction>> LoadToolsFromManifestContentAsync(
@@ -268,7 +268,7 @@ public class MCPClientManager : IDisposable
                 // Note: Reflection-based schema extraction removed for Native AOT compatibility
                 // Tools should provide schema through standard AIFunction properties
 
-                // Create an adapted AIFunction via our factory so it's compatible with generated plugins
+                // Create an adapted AIFunction via our factory so it's compatible with generated Toolkits
                 var adapted = HPDAIFunctionFactory.Create(invocationWrapper, options);
                 adaptedTools.Add(adapted);
             }

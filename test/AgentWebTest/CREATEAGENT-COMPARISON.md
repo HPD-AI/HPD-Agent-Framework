@@ -190,7 +190,7 @@ This document shows the dramatic simplification achieved by the `createAgent()` 
 ```svelte
 <script lang="ts">
     import { createAgent, Message, type Agent } from '@hpd/hpd-agent-headless-ui';
-    import { artifactTool, handleArtifactTool } from '$lib/artifacts/artifact-plugin.js';
+    import { artifactTool, handleArtifactTool } from '$lib/artifacts/artifact-Toolkit.js';
 
     const API_BASE = 'http://localhost:5135';
 

@@ -26,7 +26,7 @@ public class SlashCommand
     /// <summary>Hide from help and suggestions (for internal commands)</summary>
     public bool Hidden { get; set; } = false;
     
-    /// <summary>Category for grouping (Built-in, Plugin, MCP, etc.)</summary>
+    /// <summary>Category for grouping (Built-in, Toolkit, MCP, etc.)</summary>
     public string Category { get; set; } = "Built-in";
     
     /// <summary>Sub-commands nested under this command</summary>

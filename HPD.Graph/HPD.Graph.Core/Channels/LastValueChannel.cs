@@ -54,4 +54,13 @@ public sealed class LastValueChannel : IGraphChannel
         throw new NotSupportedException(
             $"LastValueChannel does not support Update with multiple values. Use Set instead.");
     }
+
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _value = default;
+            Version++;
+        }
+    }
 }

@@ -12,11 +12,11 @@ public class ViewDiagnostics
 
         if (diagnosticType != null)
         {
-            var pluginsFound = diagnosticType.GetField("PluginsFound")?.GetValue(null);
+            var ToolkitsFound = diagnosticType.GetField("ToolkitsFound")?.GetValue(null);
             var report = diagnosticType.GetField("DetailedReport")?.GetValue(null);
 
             Console.WriteLine("=== SOURCE GENERATOR DIAGNOSTIC REPORT ===\n");
-            Console.WriteLine($"Plugins Found: {pluginsFound}\n");
+            Console.WriteLine($"Toolkits Found: {ToolkitsFound}\n");
             Console.WriteLine("Detailed Report:");
             Console.WriteLine(report);
         }

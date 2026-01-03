@@ -50,6 +50,13 @@ using HPD.Agent;
 [JsonSerializable(typeof(ProviderConfig))]
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(McpConfig))]
+[JsonSerializable(typeof(CollapsingConfig))]
+
+// --- Toolkit and Middleware reference types (Config Serialization) ---
+[JsonSerializable(typeof(ToolkitReference))]
+[JsonSerializable(typeof(List<ToolkitReference>))]
+[JsonSerializable(typeof(MiddlewareReference))]
+[JsonSerializable(typeof(List<MiddlewareReference>))]
 
 // --- Per-invocation run options (AgentRunOptions) ---
 [JsonSerializable(typeof(AgentRunOptions))]

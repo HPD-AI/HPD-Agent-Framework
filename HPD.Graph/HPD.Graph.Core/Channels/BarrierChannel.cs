@@ -129,4 +129,10 @@ public class BarrierChannel<T> : IGraphChannel
             Version++;
         }
     }
+
+    public void Clear()
+    {
+        // Clear is equivalent to Reset for barrier channels
+        Reset();
+    }
 }

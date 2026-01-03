@@ -22,7 +22,7 @@ public class ContainerMiddlewareTests
     public async Task BeforeIteration_WhenDisabled_DoesNotFilterTools()
     {
         // Arrange
-        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedToolkit("TestToolkit", "Test Toolkit", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
         var middleware = new ContainerMiddleware(
@@ -43,7 +43,7 @@ public class ContainerMiddlewareTests
     public async Task BeforeIteration_WhenEnabled_FiltersToVisibleTools()
     {
         // Arrange
-        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedToolkit("TestToolkit", "Test Toolkit", "Add", "Subtract");
         var nonCollapsed = CreateNonCollapsedFunction("Echo");
         var allTools = new List<AITool> { container, members[0], members[1], nonCollapsed };
 
@@ -59,17 +59,17 @@ public class ContainerMiddlewareTests
 
         // Assert - only container and non-Collapsed functions visible (members hidden)
         var toolNames = context.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
-        Assert.Contains("TestPlugin", toolNames);
+        Assert.Contains("TestToolkit", toolNames);
         Assert.Contains("Echo", toolNames);
         Assert.DoesNotContain("Add", toolNames);
         Assert.DoesNotContain("Subtract", toolNames);
     }
 
     [Fact]
-    public async Task BeforeIteration_WhenPluginExpanded_ShowsMemberFunctions()
+    public async Task BeforeIteration_WhenToolkitExpanded_ShowsMemberFunctions()
     {
         // Arrange
-        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedToolkit("TestToolkit", "Test Toolkit", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
         var middleware = new ContainerMiddleware(
@@ -77,9 +77,9 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty,
             new CollapsingConfig { Enabled = true });
 
-        // State with expanded plugin
+        // State with expanded Toolkit
         var state = CreateEmptyState();
-        var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestPlugin");
+        var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestToolkit");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState) };
 
         var context = CreateContext(state: state, options: new ChatOptions { Tools = allTools });
@@ -87,7 +87,7 @@ public class ContainerMiddlewareTests
         // Act
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
-        // Assert - all functions visible when plugin is expanded
+        // Assert - all functions visible when Toolkit is expanded
         var toolNames = context.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
         Assert.Contains("Add", toolNames);
         Assert.Contains("Subtract", toolNames);
@@ -148,7 +148,7 @@ public class ContainerMiddlewareTests
     public async Task BeforeToolExecution_WhenDisabled_DoesNotDetectContainers()
     {
         // Arrange
-        var (container, _) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add");
+        var (container, _) = CreateCollapsedToolkit("TestToolkit", "Test Toolkit", "Add");
         var allTools = new List<AITool> { container };
 
         var middleware = new ContainerMiddleware(
@@ -156,7 +156,7 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty,
             new CollapsingConfig { Enabled = false });
 
-        var toolCalls = new List<FunctionCallContent> { CreateToolCall("TestPlugin") };
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("TestToolkit") };
         var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
@@ -187,10 +187,10 @@ public class ContainerMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeToolExecution_DetectsPluginContainer_UpdatesState()
+    public async Task BeforeToolExecution_DetectsToolkitContainer_UpdatesState()
     {
         // Arrange
-        var (container, members) = CreateCollapsedPlugin("FinancialPlugin", "Financial tools", "Add", "Subtract");
+        var (container, members) = CreateCollapsedToolkit("FinancialToolkit", "Financial tools", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
         var middleware = new ContainerMiddleware(
@@ -198,19 +198,19 @@ public class ContainerMiddlewareTests
             ImmutableHashSet<string>.Empty);
 
         // Create tool calls that invoke the container
-        var toolCalls = new List<FunctionCallContent> { CreateToolCall("FinancialPlugin") };
+        var toolCalls = new List<FunctionCallContent> { CreateToolCall("FinancialToolkit") };
         var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
 
         // Act
         await middleware.BeforeToolExecutionAsync(context, CancellationToken.None);
 
-        // Assert - state updated with expanded plugin
+        // Assert - state updated with expanded Toolkit
         // State is immediately updated in V2
         var pendingState = context.State;
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
-        Assert.Contains("FinancialPlugin", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
+        Assert.Contains("FinancialToolkit", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -298,10 +298,10 @@ public class ContainerMiddlewareTests
     public async Task BeforeToolExecution_MultipleContainers_ExpandsAll()
     {
         // Arrange
-        var (plugin1, _) = CreateCollapsedPlugin("Plugin1", "First plugin", "A");
-        var (plugin2, _) = CreateCollapsedPlugin("Plugin2", "Second plugin", "B");
+        var (Toolkit1, _) = CreateCollapsedToolkit("Toolkit1", "First Toolkit", "A");
+        var (Toolkit2, _) = CreateCollapsedToolkit("Toolkit2", "Second Toolkit", "B");
         var skill = CreateSkillContainer("Skill1", "First skill");
-        var allTools = new List<AITool> { plugin1, plugin2, skill };
+        var allTools = new List<AITool> { Toolkit1, Toolkit2, skill };
 
         var middleware = new ContainerMiddleware(
             allTools,
@@ -310,8 +310,8 @@ public class ContainerMiddlewareTests
         // Create tool calls that invoke all three containers
         var toolCalls = new List<FunctionCallContent>
         {
-            CreateToolCall("Plugin1"),
-            CreateToolCall("Plugin2"),
+            CreateToolCall("Toolkit1"),
+            CreateToolCall("Toolkit2"),
             CreateToolCall("Skill1")
         };
         var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);
@@ -325,8 +325,8 @@ public class ContainerMiddlewareTests
 
         var CollapsingState = pendingState.MiddlewareState.Collapsing;
         Assert.NotNull(CollapsingState);
-        Assert.Contains("Plugin1", CollapsingState!.ExpandedContainers);
-        Assert.Contains("Plugin2", CollapsingState.ExpandedContainers);
+        Assert.Contains("Toolkit1", CollapsingState!.ExpandedContainers);
+        Assert.Contains("Toolkit2", CollapsingState.ExpandedContainers);
         Assert.Contains("Skill1", CollapsingState.ExpandedContainers);
     }
 
@@ -335,32 +335,32 @@ public class ContainerMiddlewareTests
     //      
 
     [Fact]
-    public async Task FullLifecycle_ExpandPlugin_NextIterationShowsFunctions()
+    public async Task FullLifecycle_ExpandToolkit_NextIterationShowsFunctions()
     {
         // Arrange
-        var (container, members) = CreateCollapsedPlugin("TestPlugin", "Test plugin", "Add", "Subtract");
+        var (container, members) = CreateCollapsedToolkit("TestToolkit", "Test Toolkit", "Add", "Subtract");
         var allTools = new List<AITool> { container, members[0], members[1] };
 
         var middleware = new ContainerMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty);
 
-        // Iteration 1: Plugin not expanded
+        // Iteration 1: Toolkit not expanded
         var beforeIter1 = CreateIterationContext(options: new ChatOptions { Tools = allTools });
 
         await middleware.BeforeIterationAsync(beforeIter1, CancellationToken.None);
 
         var visibleIter1 = beforeIter1.Options.Tools.OfType<AIFunction>().Select(f => f.Name).ToList();
-        Assert.Contains("TestPlugin", visibleIter1);
+        Assert.Contains("TestToolkit", visibleIter1);
         Assert.DoesNotContain("Add", visibleIter1);
 
         // Simulate LLM calling the container
         var toolExecContext = CreateBeforeToolExecutionContext(
-            toolCalls: new List<FunctionCallContent> { CreateToolCall("TestPlugin") },
+            toolCalls: new List<FunctionCallContent> { CreateToolCall("TestToolkit") },
             state: beforeIter1.State);
         await middleware.BeforeToolExecutionAsync(toolExecContext, CancellationToken.None);
 
-        // Iteration 2: Plugin now expanded
+        // Iteration 2: Toolkit now expanded
         var expandedState = toolExecContext.State!;
         var beforeIter2 = CreateIterationContext(state: expandedState, options: new ChatOptions { Tools = allTools });
 
@@ -381,10 +381,10 @@ public class ContainerMiddlewareTests
     {
         var state = new CollapsingStateData();
 
-        var updated = state.WithExpandedContainer("Plugin1");
+        var updated = state.WithExpandedContainer("Toolkit1");
 
-        Assert.Contains("Plugin1", updated.ExpandedContainers);
-        Assert.DoesNotContain("Plugin1", state.ExpandedContainers); // Original unchanged
+        Assert.Contains("Toolkit1", updated.ExpandedContainers);
+        Assert.DoesNotContain("Toolkit1", state.ExpandedContainers); // Original unchanged
     }
 
     [Fact]
@@ -486,8 +486,8 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = "ExpandPlugin",
-                Description = "Expands plugin",
+                Name = "ExpandToolkit",
+                Description = "Expands Toolkit",
                 AdditionalProperties = new Dictionary<string, object?> { ["IsContainer"] = true }
             });
 
@@ -507,22 +507,22 @@ public class ContainerMiddlewareTests
             // Assistant message with function calls
             new(ChatRole.Assistant, new List<AIContent>
             {
-                new FunctionCallContent("call1", "ExpandPlugin"),  // Container call
+                new FunctionCallContent("call1", "ExpandToolkit"),  // Container call
                 new FunctionCallContent("call2", "Calculate"),     // Regular call
                 new FunctionCallContent("call3", "GetGreeting")    // Regular call
             }),
             // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
-                new FunctionResultContent("call1", result: "PluginExpanded"),  // Container
+                new FunctionResultContent("call1", result: "ToolkitExpanded"),  // Container
                 new FunctionResultContent("call2", result: "42"),              // Regular
                 new FunctionResultContent("call3", result: "Hello")            // Regular
             })
         };
 
-        // Create state with ExpandPlugin in ContainersExpandedThisTurn
+        // Create state with ExpandToolkit in ContainersExpandedThisTurn
         var state = CreateEmptyState();
-        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandPlugin");
+        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandToolkit");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
@@ -604,7 +604,7 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = "ExpandPluginA",
+                Name = "ExpandToolkitA",
                 Description = "Expands A",
                 AdditionalProperties = new Dictionary<string, object?> { ["IsContainer"] = true }
             });
@@ -613,7 +613,7 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = "ExpandPluginB",
+                Name = "ExpandToolkitB",
                 Description = "Expands B",
                 AdditionalProperties = new Dictionary<string, object?> { ["IsContainer"] = true }
             });
@@ -630,15 +630,15 @@ public class ContainerMiddlewareTests
             // Assistant message with function calls
             new(ChatRole.Assistant, new List<AIContent>
             {
-                new FunctionCallContent("call1", "ExpandPluginA"),
-                new FunctionCallContent("call2", "ExpandPluginB"),
+                new FunctionCallContent("call1", "ExpandToolkitA"),
+                new FunctionCallContent("call2", "ExpandToolkitB"),
                 new FunctionCallContent("call3", "DoWork")
             }),
             // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
-                new FunctionResultContent("call1", "PluginA expanded"),
-                new FunctionResultContent("call2", "PluginB expanded"),
+                new FunctionResultContent("call1", "ToolkitA expanded"),
+                new FunctionResultContent("call2", "ToolkitB expanded"),
                 new FunctionResultContent("call3", "Actual result")
             })
         };
@@ -646,8 +646,8 @@ public class ContainerMiddlewareTests
         // Create state with both containers in ContainersExpandedThisTurn
         var state = CreateEmptyState();
         var collapsingState = new CollapsingStateData()
-            .WithExpandedContainer("ExpandPluginA")
-            .WithExpandedContainer("ExpandPluginB");
+            .WithExpandedContainer("ExpandToolkitA")
+            .WithExpandedContainer("ExpandToolkitB");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
@@ -677,7 +677,7 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("expanded"),
             new AIFunctionFactoryOptions
             {
-                Name = "ExpandPlugin",
+                Name = "ExpandToolkit",
                 Description = "Expands",
                 AdditionalProperties = new Dictionary<string, object?> { ["IsContainer"] = true }
             });
@@ -689,15 +689,15 @@ public class ContainerMiddlewareTests
         {
             new(ChatRole.User, new List<AIContent> { new TextContent("Hello") }),
             // Assistant message with only container call
-            new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("call1", "ExpandPlugin") }),
+            new(ChatRole.Assistant, new List<AIContent> { new FunctionCallContent("call1", "ExpandToolkit") }),
             // Tool message with only container result
             new(ChatRole.Tool, new List<AIContent> { new FunctionResultContent("call1", "Container expanded") }),
             new(ChatRole.Assistant, new List<AIContent> { new TextContent("Done") })
         };
 
-        // Create state with ExpandPlugin in ContainersExpandedThisTurn
+        // Create state with ExpandToolkit in ContainersExpandedThisTurn
         var state = CreateEmptyState();
-        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandPlugin");
+        var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandToolkit");
         state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
@@ -717,15 +717,15 @@ public class ContainerMiddlewareTests
     }
 
     [Fact]
-    public async Task AfterMessageTurn_MixedSkillAndPluginContainers()
+    public async Task AfterMessageTurn_MixedSkillAndToolkitContainers()
     {
         // Arrange
-        var CollapsedPluginContainer = AIFunctionFactory.Create(
-            (object? args, CancellationToken ct) => Task.FromResult<object?>("Plugin expanded"),
+        var CollapsedToolkitContainer = AIFunctionFactory.Create(
+            (object? args, CancellationToken ct) => Task.FromResult<object?>("Toolkit expanded"),
             new AIFunctionFactoryOptions
             {
                 Name = "MathTools",
-                Description = "Math plugin",
+                Description = "Math Toolkit",
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["IsContainer"] = true
@@ -749,7 +749,7 @@ public class ContainerMiddlewareTests
             (object? args, CancellationToken ct) => Task.FromResult<object?>("Result"),
             new AIFunctionFactoryOptions { Name = "Calculate", Description = "Calculates" });
 
-        var allTools = new List<AITool> { CollapsedPluginContainer, skillContainer, regularFunc };
+        var allTools = new List<AITool> { CollapsedToolkitContainer, skillContainer, regularFunc };
         var middleware = new ContainerMiddleware(allTools, ImmutableHashSet<string>.Empty);
 
         var turnHistory = new List<ChatMessage>
@@ -764,7 +764,7 @@ public class ContainerMiddlewareTests
             // Tool message with results
             new(ChatRole.Tool, new List<AIContent>
             {
-                new FunctionResultContent("call1", "Plugin expanded"),
+                new FunctionResultContent("call1", "Toolkit expanded"),
                 new FunctionResultContent("call2", "Skill expanded"),
                 new FunctionResultContent("call3", "Result")
             })
@@ -896,27 +896,27 @@ public class ContainerMiddlewareTests
         return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
     }
 
-    private static (AIFunction Container, AIFunction[] Members) CreateCollapsedPlugin(
+    private static (AIFunction Container, AIFunction[] Members) CreateCollapsedToolkit(
         string toolName,
         string description,
         params string[] memberNames)
     {
         var members = memberNames.Select(name =>
-            CollapsedPluginTestHelper.CreatePluginMemberFunction(
+            CollapsedToolkitTestHelper.CreateToolkitMemberFunction(
                 name,
                 $"{name} function",
                 (args, ct) => Task.FromResult<object?>($"{name} result"),
                 toolName)
         ).ToArray();
 
-        var container = CollapsedPluginTestHelper.CreateContainerFunction(toolName, description, members);
+        var container = CollapsedToolkitTestHelper.CreateContainerFunction(toolName, description, members);
 
         return (container, members);
     }
 
     private static AIFunction CreateNonCollapsedFunction(string name)
     {
-        return CollapsedPluginTestHelper.CreateNonCollapsedFunction(
+        return CollapsedToolkitTestHelper.CreateNonCollapsedFunction(
             name,
             $"{name} function",
             (args, ct) => Task.FromResult<object?>($"{name} result"));

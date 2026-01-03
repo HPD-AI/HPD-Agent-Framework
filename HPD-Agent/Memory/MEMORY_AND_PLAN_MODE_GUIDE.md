@@ -511,8 +511,8 @@ var executionContext = new ConversationExecutionContext(Id);
 // Again, Id = _thread.Id
 ConversationContext.Set(executionContext);
 
-// When plugin executes:
-// AgentPlanPlugin.cs
+// When Toolkit executes:
+// AgentPlanToolkit.cs
 var conversationId = ConversationContext.CurrentConversationId;
 // This is the thread ID
 
@@ -804,7 +804,7 @@ ConversationContext.Clear()               ← Cleanup
 2. **Pluggable Storage**: All systems support custom backends via abstract store classes
 3. **Collapsed Context**: Each system has appropriate Collapsing (user, agent, conversation)
 4. **Serializable**: All stores can snapshot/restore state for backup/migration
-5. **AsyncLocal Context**: ConversationId flows through async calls for plugins to access
+5. **AsyncLocal Context**: ConversationId flows through async calls for Toolkits to access
 
 ---
 

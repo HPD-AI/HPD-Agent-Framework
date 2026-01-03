@@ -27,6 +27,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     private readonly INodeFingerprintCalculator? _fingerprintCalculator;
     private readonly Abstractions.Checkpointing.IGraphCheckpointStore? _checkpointStore;
 
+    // Default suspension options for nodes that don't specify their own
+    private readonly Abstractions.Execution.SuspensionOptions _defaultSuspensionOptions;
+
     // Track fingerprints for current execution (for incremental execution)
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, string> _currentFingerprints = new();
@@ -39,12 +42,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         IServiceProvider serviceProvider,
         INodeCacheStore? cacheStore = null,
         INodeFingerprintCalculator? fingerprintCalculator = null,
-        Abstractions.Checkpointing.IGraphCheckpointStore? checkpointStore = null)
+        Abstractions.Checkpointing.IGraphCheckpointStore? checkpointStore = null,
+        Abstractions.Execution.SuspensionOptions? defaultSuspensionOptions = null)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _cacheStore = cacheStore;
         _fingerprintCalculator = fingerprintCalculator;
         _checkpointStore = checkpointStore;
+        _defaultSuspensionOptions = defaultSuspensionOptions ?? Abstractions.Execution.SuspensionOptions.Default;
     }
 
     public async Task<TContext> ExecuteAsync(TContext context, CancellationToken cancellationToken = default)
@@ -55,148 +60,702 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         try
         {
-            // Get execution layers (topological sort)
-            var layers = context.Graph.GetExecutionLayers();
+            // Detect back-edges to determine execution mode
+            var backEdges = context.Graph.GetBackEdges();
 
-            if (context is Context.GraphContext graphContext)
+            if (backEdges.Count > 0)
             {
-                graphContext.SetTotalLayers(layers.Count);
+                context.Log("Orchestrator",
+                    $"Graph has {backEdges.Count} back-edge(s), enabling iteration mode",
+                    LogLevel.Information);
+
+                return await ExecuteIterativeAsync(context, backEdges, executionStartTime, cancellationToken);
             }
-
-            context.Log("Orchestrator", $"Graph has {layers.Count} execution layers", LogLevel.Debug);
-
-            // Emit graph started event
-            context.EventCoordinator?.Emit(new Abstractions.Events.GraphExecutionStartedEvent
+            else
             {
-                NodeCount = context.Graph.Nodes.Count,
-                LayerCount = layers.Count,
-                GraphContext = new Abstractions.Events.GraphExecutionContext
-                {
-                    GraphId = context.Graph.Id,
-                    TotalNodes = context.Graph.Nodes.Count,
-                    CompletedNodes = 0,
-                    CurrentLayer = null
-                },
-                Kind = HPD.Events.EventKind.Lifecycle,
-                Priority = HPD.Events.EventPriority.Normal
-            });
-
-            // Execute each layer
-            for (int i = 0; i < layers.Count; i++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var layer = layers[i];
-                context.CurrentLayerIndex = i;
-
-                context.Log("Orchestrator", $"Executing layer {i} with {layer.NodeIds.Count} node(s)", LogLevel.Debug);
-
-                await ExecuteLayerAsync(context, layer, cancellationToken);
-
-                // Update managed context
-                if (context.Managed is ManagedContext managed)
-                {
-                    managed.IncrementStep();
-                }
-
-                // Save checkpoint after layer completion (fire-and-forget, non-blocking)
-                if (_checkpointStore != null && context is Context.GraphContext ctxGraph)
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await SaveCheckpointAsync(ctxGraph, i, Abstractions.Checkpointing.CheckpointTrigger.LayerCompleted, CancellationToken.None);
-                        }
-                        catch (Exception ex)
-                        {
-                            // Log but don't fail execution
-                            context.Log("Orchestrator", $"Failed to save checkpoint: {ex.Message}", LogLevel.Warning, exception: ex);
-                        }
-                    });
-                }
+                // Fast path: no back-edges, use original single-pass execution
+                return await ExecuteAcyclicAsync(context, executionStartTime, cancellationToken);
             }
-
-            if (context is Context.GraphContext gc)
-            {
-                gc.MarkComplete();
-            }
-
-            context.Log("Orchestrator", "Graph execution completed successfully", LogLevel.Information);
-
-            // Emit graph completed event (success)
-            context.EventCoordinator?.Emit(new Abstractions.Events.GraphExecutionCompletedEvent
-            {
-                Duration = DateTimeOffset.UtcNow - executionStartTime,
-                SuccessfulNodes = context.CompletedNodes.Count,
-                FailedNodes = 0,
-                SkippedNodes = 0,
-                GraphContext = new Abstractions.Events.GraphExecutionContext
-                {
-                    GraphId = context.Graph.Id,
-                    TotalNodes = context.Graph.Nodes.Count,
-                    CompletedNodes = context.CompletedNodes.Count,
-                    CurrentLayer = null
-                },
-                Kind = HPD.Events.EventKind.Lifecycle,
-                Priority = HPD.Events.EventPriority.Normal
-            });
         }
         catch (OperationCanceledException)
         {
-            if (context is Context.GraphContext gc)
-            {
-                gc.MarkCancelled();
-            }
-            context.Log("Orchestrator", "Graph execution cancelled", LogLevel.Warning);
-
-            // Emit graph completed event (cancelled)
-            context.EventCoordinator?.Emit(new Abstractions.Events.GraphExecutionCompletedEvent
-            {
-                Duration = DateTimeOffset.UtcNow - executionStartTime,
-                SuccessfulNodes = context.CompletedNodes.Count,
-                FailedNodes = 0,
-                SkippedNodes = 0,
-                GraphContext = new Abstractions.Events.GraphExecutionContext
-                {
-                    GraphId = context.Graph.Id,
-                    TotalNodes = context.Graph.Nodes.Count,
-                    CompletedNodes = context.CompletedNodes.Count,
-                    CurrentLayer = null
-                },
-                Kind = HPD.Events.EventKind.Lifecycle,
-                Priority = HPD.Events.EventPriority.Normal
-            });
-
+            HandleCancellation(context, executionStartTime);
             throw;
         }
         catch (Exception ex)
         {
-            context.Log("Orchestrator", $"Graph execution failed: {ex.Message}", LogLevel.Error, exception: ex);
-
-            // Emit graph completed event (failure)
-            context.EventCoordinator?.Emit(new Abstractions.Events.GraphExecutionCompletedEvent
-            {
-                Duration = DateTimeOffset.UtcNow - executionStartTime,
-                SuccessfulNodes = context.CompletedNodes.Count,
-                FailedNodes = 1,
-                SkippedNodes = 0,
-                GraphContext = new Abstractions.Events.GraphExecutionContext
-                {
-                    GraphId = context.Graph.Id,
-                    TotalNodes = context.Graph.Nodes.Count,
-                    CompletedNodes = context.CompletedNodes.Count,
-                    CurrentLayer = null
-                },
-                Kind = HPD.Events.EventKind.Lifecycle,
-                Priority = HPD.Events.EventPriority.Normal
-            });
-
+            HandleException(context, ex, executionStartTime);
             throw;
         }
+    }
 
+    /// <summary>
+    /// Original single-pass execution for acyclic graphs (DAGs).
+    /// Zero overhead - identical to previous implementation.
+    /// </summary>
+    private async Task<TContext> ExecuteAcyclicAsync(
+        TContext context,
+        DateTimeOffset executionStartTime,
+        CancellationToken cancellationToken)
+    {
+        // Get execution layers (topological sort)
+        var layers = context.Graph.GetExecutionLayers();
+
+        if (context is Context.GraphContext graphContext)
+        {
+            graphContext.SetTotalLayers(layers.Count);
+        }
+
+        context.Log("Orchestrator", $"Graph has {layers.Count} execution layers", LogLevel.Debug);
+
+        // Emit graph started event
+        EmitGraphStartedEvent(context, layers.Count);
+
+        // Execute each layer
+        for (int i = 0; i < layers.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var layer = layers[i];
+            context.CurrentLayerIndex = i;
+
+            context.Log("Orchestrator", $"Executing layer {i} with {layer.NodeIds.Count} node(s)", LogLevel.Debug);
+
+            await ExecuteLayerAsync(context, layer, cancellationToken);
+
+            // Update managed context
+            if (context.Managed is ManagedContext managed)
+            {
+                managed.IncrementStep();
+            }
+
+            // Save checkpoint after layer completion (fire-and-forget, non-blocking)
+            if (_checkpointStore != null && context is Context.GraphContext ctxGraph)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await SaveCheckpointAsync(ctxGraph, i, Abstractions.Checkpointing.CheckpointTrigger.LayerCompleted, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log but don't fail execution
+                        context.Log("Orchestrator", $"Failed to save checkpoint: {ex.Message}", LogLevel.Warning, exception: ex);
+                    }
+                });
+            }
+        }
+
+        FinalizeExecution(context, executionStartTime, totalIterations: 1);
         return context;
     }
+
+    /// <summary>
+    /// Iterative execution for cyclic graphs.
+    /// Evaluates back-edges after each pass and re-executes dirty nodes.
+    /// </summary>
+    private async Task<TContext> ExecuteIterativeAsync(
+        TContext context,
+        IReadOnlyList<BackEdge> backEdges,
+        DateTimeOffset executionStartTime,
+        CancellationToken cancellationToken)
+    {
+        var maxIterations = context.Graph.MaxIterations;
+        var iteration = 0;
+
+        // Initial dirty set = all executable nodes
+        var dirtyNodes = GetExecutableNodeIds(context.Graph);
+
+        // Emit graph started event
+        EmitGraphStartedEvent(context, layerCount: 0); // Updated per-iteration
+
+        while (dirtyNodes.Count > 0 && iteration < maxIterations)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Execute one iteration
+            var iterationResult = await ExecuteIterationAsync(
+                context,
+                dirtyNodes,
+                backEdges,
+                iteration,
+                cancellationToken);
+
+            dirtyNodes = iterationResult.NextDirtyNodes;
+
+            if (dirtyNodes.Count > 0)
+            {
+                iteration++;
+
+                if (context is Context.GraphContext gc)
+                {
+                    gc.IncrementIteration();
+                }
+            }
+        }
+
+        // Handle max iterations reached
+        if (iteration >= maxIterations && dirtyNodes.Count > 0)
+        {
+            HandleMaxIterationsReached(context, maxIterations, dirtyNodes, backEdges);
+        }
+
+        FinalizeExecution(context, executionStartTime, iteration + 1);
+        return context;
+    }
+
+    /// <summary>
+    /// Executes a single iteration of the graph.
+    /// Returns information about which nodes need re-execution.
+    /// </summary>
+    private async Task<IterationResult> ExecuteIterationAsync(
+        TContext context,
+        HashSet<string> dirtyNodes,
+        IReadOnlyList<BackEdge> backEdges,
+        int iteration,
+        CancellationToken cancellationToken)
+    {
+        var iterationStart = DateTimeOffset.UtcNow;
+
+        // Clear ephemeral channels between iterations (not on first)
+        if (iteration > 0)
+        {
+            ClearEphemeralChannels(context);
+        }
+
+        // Invalidate output channels for dirty nodes
+        InvalidateOutputChannels(context, dirtyNodes);
+
+        // Compute layers from dirty nodes only
+        var layers = ComputeLayersFromDirtyNodes(dirtyNodes, context.Graph, backEdges);
+
+        if (context is Context.GraphContext gc)
+        {
+            gc.SetTotalLayers(layers.Count);
+        }
+
+        // Emit iteration started event
+        context.EventCoordinator?.Emit(new IterationStartedEvent
+        {
+            IterationIndex = iteration,
+            DirtyNodeCount = dirtyNodes.Count,
+            DirtyNodeIds = dirtyNodes.ToList(),
+            LayerCount = layers.Count,
+            GraphContext = CreateGraphExecutionContext(context)
+        });
+
+        context.Log("Orchestrator",
+            $"Iteration {iteration}: {layers.Count} layer(s), {dirtyNodes.Count} node(s)",
+            LogLevel.Debug);
+
+        // Execute all layers
+        for (int i = 0; i < layers.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            context.CurrentLayerIndex = i;
+            await ExecuteLayerAsync(context, layers[i], cancellationToken);
+
+            // Update managed context
+            if (context.Managed is ManagedContext managed)
+            {
+                managed.IncrementStep();
+            }
+        }
+
+        var executedNodes = new HashSet<string>(dirtyNodes);
+
+        // Evaluate back-edges to find triggered nodes
+        var (triggeredNodes, triggeredBackEdges) =
+            EvaluateBackEdges(context, backEdges, iteration);
+
+        // Compute next dirty set
+        HashSet<string> nextDirtyNodes;
+        if (triggeredNodes.Count > 0)
+        {
+            nextDirtyNodes = GetAllForwardDependents(triggeredNodes, context.Graph, backEdges);
+
+            // Un-mark dirty nodes as complete so they can re-execute
+            context.UnmarkNodesComplete(nextDirtyNodes);
+
+            context.Log("Orchestrator",
+                $"Back-edges triggered: [{string.Join(", ", triggeredNodes)}] → " +
+                $"re-executing {nextDirtyNodes.Count} node(s)",
+                LogLevel.Information);
+        }
+        else
+        {
+            nextDirtyNodes = new HashSet<string>();
+        }
+
+        // Emit iteration completed event
+        context.EventCoordinator?.Emit(new IterationCompletedEvent
+        {
+            IterationIndex = iteration,
+            Duration = DateTimeOffset.UtcNow - iterationStart,
+            ExecutedNodes = executedNodes.ToList(),
+            BackEdgesTriggered = triggeredBackEdges.Count,
+            NodesToReExecute = nextDirtyNodes.ToList(),
+            GraphContext = CreateGraphExecutionContext(context)
+        });
+
+        // Save checkpoint after iteration (fire-and-forget)
+        if (_checkpointStore != null && context is Context.GraphContext ctxGraph)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await SaveIterationCheckpointAsync(ctxGraph, iteration, nextDirtyNodes, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    context.Log("Orchestrator", $"Failed to save iteration checkpoint: {ex.Message}", LogLevel.Warning, exception: ex);
+                }
+            });
+        }
+
+        return new IterationResult
+        {
+            ExecutedNodes = executedNodes,
+            TriggeredBackEdges = triggeredBackEdges,
+            NextDirtyNodes = nextDirtyNodes
+        };
+    }
+
+    #region Back-Edge Evaluation
+
+    /// <summary>
+    /// Evaluates all back-edges and returns which target nodes should be re-executed.
+    /// </summary>
+    private (HashSet<string> TriggeredNodes, List<BackEdge> TriggeredEdges) EvaluateBackEdges(
+        TContext context,
+        IReadOnlyList<BackEdge> backEdges,
+        int iteration)
+    {
+        var triggeredNodes = new HashSet<string>();
+        var triggeredEdges = new List<BackEdge>();
+
+        foreach (var backEdge in backEdges)
+        {
+            var channelName = $"node_output:{backEdge.SourceNodeId}";
+
+            if (!context.Channels.Contains(channelName))
+                continue;
+
+            var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+
+            if (outputs == null)
+                continue;
+
+            // Evaluate condition (null condition = unconditional back-edge)
+            var conditionMet = backEdge.Condition == null ||
+                ConditionEvaluator.Evaluate(backEdge.Condition, outputs);
+
+            if (conditionMet)
+            {
+                triggeredNodes.Add(backEdge.TargetNodeId);
+                triggeredEdges.Add(backEdge);
+
+                // Emit back-edge triggered event
+                context.EventCoordinator?.Emit(new BackEdgeTriggeredEvent
+                {
+                    SourceNodeId = backEdge.SourceNodeId,
+                    TargetNodeId = backEdge.TargetNodeId,
+                    ConditionDescription = backEdge.Condition?.GetDescription(),
+                    TriggerValue = GetTriggerValue(backEdge.Condition, outputs),
+                    IterationIndex = iteration,
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
+
+                context.Log("Orchestrator",
+                    $"Back-edge triggered: {backEdge.SourceNodeId} → {backEdge.TargetNodeId}",
+                    LogLevel.Debug);
+            }
+        }
+
+        return (triggeredNodes, triggeredEdges);
+    }
+
+    private static object? GetTriggerValue(EdgeCondition? condition, Dictionary<string, object> outputs)
+    {
+        if (condition?.Field == null)
+            return null;
+
+        outputs.TryGetValue(condition.Field, out var value);
+        return value;
+    }
+
+    #endregion
+
+    #region Dependency Propagation
+
+    /// <summary>
+    /// Gets all nodes that depend on the triggered nodes (forward edges only).
+    /// Back-edges are excluded to prevent infinite propagation.
+    /// </summary>
+    private static HashSet<string> GetAllForwardDependents(
+        HashSet<string> triggeredNodes,
+        Abstractions.Graph.Graph graph,
+        IReadOnlyList<BackEdge> backEdges)
+    {
+        var backEdgeSet = backEdges
+            .Select(b => (b.SourceNodeId, b.TargetNodeId))
+            .ToHashSet();
+
+        var allDirty = new HashSet<string>(triggeredNodes);
+        var queue = new Queue<string>(triggeredNodes);
+
+        while (queue.Count > 0)
+        {
+            var nodeId = queue.Dequeue();
+
+            foreach (var edge in graph.GetOutgoingEdges(nodeId))
+            {
+                // Skip back-edges (they point backwards, not forward)
+                if (backEdgeSet.Contains((edge.From, edge.To)))
+                    continue;
+
+                if (allDirty.Add(edge.To))
+                {
+                    queue.Enqueue(edge.To);
+                }
+            }
+        }
+
+        return allDirty;
+    }
+
+    #endregion
+
+    #region Layer Computation for Iteration
+
+    /// <summary>
+    /// Computes execution layers from dirty nodes only.
+    /// Respects dependencies between dirty nodes, excludes back-edges.
+    /// </summary>
+    private static IReadOnlyList<ExecutionLayer> ComputeLayersFromDirtyNodes(
+        HashSet<string> dirtyNodes,
+        Abstractions.Graph.Graph graph,
+        IReadOnlyList<BackEdge> backEdges)
+    {
+        if (dirtyNodes.Count == 0)
+            return Array.Empty<ExecutionLayer>();
+
+        var backEdgeSet = backEdges
+            .Select(b => (b.SourceNodeId, b.TargetNodeId))
+            .ToHashSet();
+
+        // Initialize in-degree for dirty nodes only
+        var inDegree = new Dictionary<string, int>();
+        var outgoing = new Dictionary<string, List<string>>();
+
+        foreach (var nodeId in dirtyNodes)
+        {
+            inDegree[nodeId] = 0;
+            outgoing[nodeId] = new List<string>();
+        }
+
+        // Count in-degrees (forward edges only, between dirty nodes only)
+        foreach (var edge in graph.Edges)
+        {
+            // Skip back-edges
+            if (backEdgeSet.Contains((edge.From, edge.To)))
+                continue;
+
+            // Only consider edges between dirty nodes
+            if (!dirtyNodes.Contains(edge.From) || !dirtyNodes.Contains(edge.To))
+                continue;
+
+            inDegree[edge.To]++;
+            outgoing[edge.From].Add(edge.To);
+        }
+
+        // Kahn's algorithm
+        var layers = new List<ExecutionLayer>();
+        var level = 0;
+
+        while (inDegree.Count > 0)
+        {
+            var ready = inDegree
+                .Where(kvp => kvp.Value == 0)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            if (ready.Count == 0)
+            {
+                // Remaining nodes form a cycle among themselves
+                // (shouldn't happen if back-edges correctly identified)
+                break;
+            }
+
+            layers.Add(new ExecutionLayer
+            {
+                Level = level++,
+                NodeIds = ready
+            });
+
+            foreach (var nodeId in ready)
+            {
+                inDegree.Remove(nodeId);
+
+                foreach (var dep in outgoing[nodeId])
+                {
+                    if (inDegree.ContainsKey(dep))
+                    {
+                        inDegree[dep]--;
+                    }
+                }
+            }
+        }
+
+        return layers;
+    }
+
+    #endregion
+
+    #region Channel Invalidation
+
+    /// <summary>
+    /// Clears output channels for dirty nodes before re-execution.
+    /// Ensures downstream nodes receive fresh outputs.
+    /// </summary>
+    private static void InvalidateOutputChannels(TContext context, HashSet<string> dirtyNodes)
+    {
+        foreach (var nodeId in dirtyNodes)
+        {
+            var channelName = $"node_output:{nodeId}";
+
+            if (context.Channels.Contains(channelName))
+            {
+                context.Channels[channelName].Clear();
+            }
+        }
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static HashSet<string> GetExecutableNodeIds(Abstractions.Graph.Graph graph)
+    {
+        return graph.Nodes
+            .Where(n => n.Type is NodeType.Handler
+                               or NodeType.Router
+                               or NodeType.SubGraph
+                               or NodeType.Map)
+            .Select(n => n.Id)
+            .ToHashSet();
+    }
+
+    private void EmitGraphStartedEvent(TContext context, int layerCount)
+    {
+        context.EventCoordinator?.Emit(new GraphExecutionStartedEvent
+        {
+            NodeCount = context.Graph.Nodes.Count,
+            LayerCount = layerCount,
+            GraphContext = CreateGraphExecutionContext(context),
+            Kind = EventKind.Lifecycle,
+            Priority = EventPriority.Normal
+        });
+    }
+
+    private void HandleMaxIterationsReached(
+        TContext context,
+        int maxIterations,
+        HashSet<string> dirtyNodes,
+        IReadOnlyList<BackEdge> backEdges)
+    {
+        var activeBackEdges = backEdges
+            .Where(b => dirtyNodes.Contains(b.TargetNodeId))
+            .Select(b => $"{b.SourceNodeId}->{b.TargetNodeId}")
+            .ToList();
+
+        context.Log("Orchestrator",
+            $"Max iterations ({maxIterations}) reached. " +
+            $"{dirtyNodes.Count} nodes still dirty: [{string.Join(", ", dirtyNodes)}]",
+            LogLevel.Warning);
+
+        context.EventCoordinator?.Emit(new MaxIterationsReachedEvent
+        {
+            MaxIterations = maxIterations,
+            RemainingDirtyNodes = dirtyNodes.ToList(),
+            ActiveBackEdges = activeBackEdges,
+            GraphContext = CreateGraphExecutionContext(context)
+        });
+    }
+
+    private void FinalizeExecution(
+        TContext context,
+        DateTimeOffset startTime,
+        int totalIterations)
+    {
+        if (context is Context.GraphContext gc)
+        {
+            gc.MarkComplete();
+        }
+
+        context.Log("Orchestrator",
+            $"Graph completed in {totalIterations} iteration(s)",
+            LogLevel.Information);
+
+        context.EventCoordinator?.Emit(new GraphExecutionCompletedEvent
+        {
+            Duration = DateTimeOffset.UtcNow - startTime,
+            SuccessfulNodes = context.CompletedNodes.Count,
+            FailedNodes = 0,
+            SkippedNodes = 0,
+            GraphContext = CreateGraphExecutionContext(context),
+            Kind = EventKind.Lifecycle,
+            Priority = EventPriority.Normal
+        });
+    }
+
+    private void HandleCancellation(TContext context, DateTimeOffset executionStartTime)
+    {
+        if (context is Context.GraphContext gc)
+        {
+            gc.MarkCancelled();
+        }
+        context.Log("Orchestrator", "Graph execution cancelled", LogLevel.Warning);
+
+        context.EventCoordinator?.Emit(new GraphExecutionCompletedEvent
+        {
+            Duration = DateTimeOffset.UtcNow - executionStartTime,
+            SuccessfulNodes = context.CompletedNodes.Count,
+            FailedNodes = 0,
+            SkippedNodes = 0,
+            GraphContext = CreateGraphExecutionContext(context),
+            Kind = EventKind.Lifecycle,
+            Priority = EventPriority.Normal
+        });
+    }
+
+    private void HandleException(TContext context, Exception ex, DateTimeOffset executionStartTime)
+    {
+        context.Log("Orchestrator", $"Graph execution failed: {ex.Message}", LogLevel.Error, exception: ex);
+
+        context.EventCoordinator?.Emit(new GraphExecutionCompletedEvent
+        {
+            Duration = DateTimeOffset.UtcNow - executionStartTime,
+            SuccessfulNodes = context.CompletedNodes.Count,
+            FailedNodes = 1,
+            SkippedNodes = 0,
+            GraphContext = CreateGraphExecutionContext(context),
+            Kind = EventKind.Lifecycle,
+            Priority = EventPriority.Normal
+        });
+    }
+
+    private static GraphExecutionContext CreateGraphExecutionContext(TContext context)
+    {
+        return new GraphExecutionContext
+        {
+            GraphId = context.Graph.Id,
+            TotalNodes = context.Graph.Nodes.Count,
+            CompletedNodes = context.CompletedNodes.Count,
+            CurrentLayer = context.CurrentLayerIndex
+        };
+    }
+
+    /// <summary>
+    /// Saves checkpoint with iteration state information.
+    /// </summary>
+    private async Task SaveIterationCheckpointAsync(
+        Context.GraphContext context,
+        int iteration,
+        HashSet<string> pendingDirtyNodes,
+        CancellationToken cancellationToken)
+    {
+        if (_checkpointStore == null)
+            return;
+
+        // Extract all node outputs from channels for checkpoint restoration
+        var nodeOutputs = new Dictionary<string, object>();
+        var nodeStateMetadata = new Dictionary<string, Abstractions.Checkpointing.NodeStateMetadata>();
+
+        foreach (var channelName in context.Channels.ChannelNames)
+        {
+            if (channelName.StartsWith("node_output:"))
+            {
+                var nodeId = channelName.Substring("node_output:".Length);
+
+                // Only include outputs from completed nodes
+                if (context.CompletedNodes.Contains(nodeId))
+                {
+                    try
+                    {
+                        var output = context.Channels[channelName].Get<object>();
+                        if (output != null)
+                        {
+                            nodeOutputs[channelName] = output;
+
+                            // Capture node version for compatibility checking
+                            var node = context.Graph.GetNode(nodeId);
+                            if (node != null)
+                            {
+                                nodeStateMetadata[nodeId] = new Abstractions.Checkpointing.NodeStateMetadata
+                                {
+                                    NodeId = nodeId,
+                                    Version = node.Version,
+                                    StateJson = System.Text.Json.JsonSerializer.Serialize(output),
+                                    CapturedAt = DateTimeOffset.UtcNow
+                                };
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Skip channels that can't be retrieved as object
+                    }
+                }
+            }
+        }
+
+        var checkpoint = new Abstractions.Checkpointing.GraphCheckpoint
+        {
+            CheckpointId = Guid.NewGuid().ToString("N"),
+            ExecutionId = context.ExecutionId,
+            GraphId = context.Graph.Id,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedNodes = context.CompletedNodes,
+            NodeOutputs = nodeOutputs,
+            NodeStateMetadata = nodeStateMetadata,
+            CurrentIteration = iteration,
+            PendingDirtyNodes = pendingDirtyNodes,
+            ContextJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                ExecutionId = context.ExecutionId,
+                CompletedNodes = context.CompletedNodes,
+                CurrentLayerIndex = context.CurrentLayerIndex,
+                CurrentIteration = iteration,
+                PendingDirtyNodes = pendingDirtyNodes.ToList()
+            }),
+            Metadata = new Abstractions.Checkpointing.CheckpointMetadata
+            {
+                Trigger = Abstractions.Checkpointing.CheckpointTrigger.IterationCompleted,
+                CompletedLayer = context.CurrentLayerIndex,
+                IterationIndex = iteration
+            }
+        };
+
+        await _checkpointStore.SaveCheckpointAsync(checkpoint, cancellationToken);
+
+        context.Log("Orchestrator", $"Iteration checkpoint saved after iteration {iteration}", LogLevel.Debug);
+    }
+
+    #endregion
+
+    #region Supporting Types
+
+    private sealed record IterationResult
+    {
+        public required HashSet<string> ExecutedNodes { get; init; }
+        public required List<BackEdge> TriggeredBackEdges { get; init; }
+        public required HashSet<string> NextDirtyNodes { get; init; }
+    }
+
+    #endregion
 
     public async Task<TContext> ResumeAsync(TContext context, CancellationToken cancellationToken = default)
     {
@@ -419,17 +978,35 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             return;
         }
 
-        // Check max executions (loop protection)
-        if (node.MaxExecutions.HasValue)
+        // Check max executions (loop/cycle protection)
+        // Use per-node MaxExecutions if set, otherwise fall back to graph-level MaxIterations
+        var maxExecutions = node.MaxExecutions ?? context.Graph.MaxIterations;
+        var executionCount = context.GetNodeExecutionCount(node.Id);
+        if (executionCount >= maxExecutions)
         {
-            var executionCount = context.GetNodeExecutionCount(node.Id);
-            if (executionCount >= node.MaxExecutions.Value)
-            {
-                context.Log("Orchestrator",
-                    $"Node {node.Id} exceeded max executions ({node.MaxExecutions.Value})",
-                    LogLevel.Warning, nodeId: node.Id);
-                return;
-            }
+            context.Log("Orchestrator",
+                $"Node {node.Id} exceeded max executions ({maxExecutions})",
+                LogLevel.Warning, nodeId: node.Id);
+            return;
+        }
+
+        // NEW: Pre-execution condition check - skip if no incoming edge conditions are met
+        var (shouldSkip, skipDetails) = EvaluateSkipConditions(context, node);
+        if (shouldSkip)
+        {
+            context.Log("Orchestrator",
+                $"Skipping {node.Id}: conditions not met. Evaluated edges: {skipDetails}",
+                LogLevel.Information,
+                nodeId: node.Id);
+
+            HandleSkipped(context, node, new NodeExecutionResult.Skipped(
+                Reason: SkipReason.ConditionNotMet,
+                Message: $"All incoming edge conditions evaluated to false. {skipDetails}"
+            ));
+
+            // Record skip reason for checkpoint/resume
+            context.Channels[$"skip_reason:{node.Id}"].Set(SkipReason.ConditionNotMet);
+            return;
         }
 
         context.SetCurrentNode(node.Id);
@@ -553,7 +1130,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                     break;
 
                 case NodeExecutionResult.Suspended suspended:
-                    HandleSuspended(context, node, suspended);
+                    // New: async handling with potential continuation
+                    var shouldContinue = await HandleSuspendedAsync(context, node, suspended, cancellationToken);
+                    if (!shouldContinue)
+                    {
+                        // Halt execution - throw exception so caller knows graph is suspended
+                        throw new GraphSuspendedException(node.Id, suspended.SuspendToken, suspended.Message);
+                    }
+                    // If shouldContinue is true, node is marked complete and execution continues to next node
                     break;
 
                 case NodeExecutionResult.Cancelled cancelled:
@@ -691,6 +1275,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         // Group edges by source node for default edge handling
         var edgesBySource = incomingEdges.GroupBy(e => e.From);
 
+        // Track which sources contributed to each non-prefixed key (for ambiguity warnings)
+        var keySourceMap = new Dictionary<string, List<string>>();
+
         foreach (var sourceGroup in edgesBySource)
         {
             var sourceNodeId = sourceGroup.Key;
@@ -715,11 +1302,8 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         {
                             if (ConditionEvaluator.Evaluate(edge.Condition, outputs))
                             {
-                                // Condition met - include these outputs
-                                foreach (var kvp in outputs)
-                                {
-                                    inputs.Add(kvp.Key, kvp.Value);
-                                }
+                                // Condition met - include these outputs with namespace
+                                AddOutputsWithNamespace(inputs, sourceNodeId, outputs, keySourceMap);
                                 anyRegularEdgeMatched = true;
                                 break; // Only use outputs from first matching edge per source
                             }
@@ -739,18 +1323,56 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                 $"Using default edge: {defaultEdge.From} -> {defaultEdge.To}",
                                 LogLevel.Debug, nodeId: node.Id);
 
-                            // Include outputs from default edge
-                            foreach (var kvp in outputs)
-                            {
-                                inputs.Add(kvp.Key, kvp.Value);
-                            }
+                            // Include outputs from default edge with namespace
+                            AddOutputsWithNamespace(inputs, sourceNodeId, outputs, keySourceMap);
                         }
                     }
                 }
             }
         }
 
+        // Log warnings for ambiguous non-prefixed keys (multiple sources for same key)
+        foreach (var kvp in keySourceMap.Where(k => k.Value.Count > 1))
+        {
+            context.Log("Orchestrator",
+                $"Warning: Key '{kvp.Key}' has multiple sources: [{string.Join(", ", kvp.Value)}]. " +
+                $"Using value from '{kvp.Value.First()}'. Consider using namespaced access: '{kvp.Value.First()}.{kvp.Key}'",
+                LogLevel.Warning,
+                nodeId: node.Id);
+        }
+
         return inputs;
+    }
+
+    /// <summary>
+    /// Adds outputs to inputs with namespace prefix for source attribution.
+    /// Also adds non-prefixed keys for backward compatibility (first source wins).
+    /// </summary>
+    private void AddOutputsWithNamespace(
+        HandlerInputs inputs,
+        string sourceNodeId,
+        Dictionary<string, object> outputs,
+        Dictionary<string, List<string>> keySourceMap)
+    {
+        foreach (var kvp in outputs)
+        {
+            // Always add with namespace prefix (e.g., "solver1.answer")
+            inputs.Add($"{sourceNodeId}.{kvp.Key}", kvp.Value);
+
+            // Track sources for non-prefixed key (for ambiguity detection)
+            if (!keySourceMap.TryGetValue(kvp.Key, out var sources))
+            {
+                sources = new List<string>();
+                keySourceMap[kvp.Key] = sources;
+            }
+            sources.Add(sourceNodeId);
+
+            // Add non-prefixed for backward compatibility (first source wins)
+            if (!inputs.Contains(kvp.Key))
+            {
+                inputs.Add(kvp.Key, kvp.Value);
+            }
+        }
     }
 
     private void HandleSuccess(TContext context, Node node, NodeExecutionResult.Success success)
@@ -952,30 +1574,260 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             LogLevel.Information, nodeId: node.Id);
     }
 
-    private void HandleSuspended(TContext context, Node node, NodeExecutionResult.Suspended suspended)
+    /// <summary>
+    /// Handles node suspension with layered suspension pattern:
+    /// 1. Durability: Save checkpoint (if store available)
+    /// 2. Reactivity: Emit bidirectional event (if coordinator available)
+    /// 3. Waiting: Await response with timeout
+    /// 4. Fallback: On timeout/denial, return false to halt cleanly
+    /// </summary>
+    /// <returns>True if approved and should continue, false if should halt</returns>
+    private async Task<bool> HandleSuspendedAsync(
+        TContext context,
+        Node node,
+        NodeExecutionResult.Suspended suspended,
+        CancellationToken ct)
     {
+        var options = node.SuspensionOptions ?? _defaultSuspensionOptions;
+
         context.Log("Orchestrator",
             $"Node {node.Id} suspended for external input: {suspended.Message}",
             LogLevel.Information, nodeId: node.Id);
 
-        // Store suspension info in context for later resume
+        // Store suspension info in context (always, for resume capability)
         context.AddTag("suspended_nodes", node.Id);
         context.AddTag($"suspend_token:{node.Id}", suspended.SuspendToken);
+        context.AddTag($"suspend_outcome:{node.Id}", Abstractions.Execution.SuspensionOutcome.Pending.ToString());
 
         if (suspended.ResumeValue != null)
         {
-            // Store the resume value for when execution resumes
-            var channelName = $"suspend_resume:{node.Id}";
-            context.Channels[channelName].Set(suspended.ResumeValue);
+            context.Channels[$"suspend_resume:{node.Id}"].Set(suspended.ResumeValue);
         }
 
-        // Log suspension details
-        context.Log("Orchestrator",
-            $"Suspend token for {node.Id}: {suspended.SuspendToken}",
-            LogLevel.Debug, nodeId: node.Id);
+        // LAYER 1: Durability - Save checkpoint first (if store available)
+        if (options.SaveCheckpointFirst && _checkpointStore != null)
+        {
+            try
+            {
+                await SaveSuspensionCheckpointAsync(context, node, suspended, ct);
+                context.Log("Orchestrator",
+                    $"Checkpoint saved for suspended node {node.Id}",
+                    LogLevel.Information, nodeId: node.Id);
+            }
+            catch (Exception ex)
+            {
+                // Log but don't fail - suspension should still work
+                context.Log("Orchestrator",
+                    $"Failed to save checkpoint for suspended node {node.Id}: {ex.Message}",
+                    LogLevel.Warning, nodeId: node.Id, exception: ex);
+            }
+        }
+        else if (options.SaveCheckpointFirst && _checkpointStore == null)
+        {
+            context.Log("Orchestrator",
+                $"No checkpoint store configured; skipping checkpoint for suspended node {node.Id}",
+                LogLevel.Debug, nodeId: node.Id);
+        }
 
-        // Throw exception to halt execution (caller should save checkpoint)
-        throw new GraphSuspendedException(node.Id, suspended.SuspendToken, suspended.Message);
+        // LAYER 2 & 3: Reactivity and Waiting (if coordinator available)
+        if (options.EmitEvents && context.EventCoordinator != null)
+        {
+            // REUSE EXISTING EVENT TYPE - map SuspendToken to RequestId
+            var requestEvent = new Abstractions.Events.NodeApprovalRequestEvent
+            {
+                RequestId = suspended.SuspendToken,
+                SourceName = $"GraphOrchestrator:{context.ExecutionId}",
+                NodeId = node.Id,
+                Message = suspended.Message ?? $"Node {node.Id} requires approval",
+                Description = $"Suspended at {DateTimeOffset.UtcNow:O}",
+                Metadata = suspended.ResumeValue != null
+                    ? new Dictionary<string, object?> { ["ResumeValue"] = suspended.ResumeValue }
+                    : null
+            };
+
+            if (options.ActiveWaitTimeout > TimeSpan.Zero)
+            {
+                // CRITICAL: Register waiter BEFORE emitting to avoid race condition
+                // WaitForResponseAsync registers immediately when called, not when awaited
+                var waitTask = context.EventCoordinator.WaitForResponseAsync<Abstractions.Events.NodeApprovalResponseEvent>(
+                    suspended.SuspendToken,
+                    options.ActiveWaitTimeout,
+                    ct
+                );
+
+                // Now emit the event (waiter is already registered)
+                context.EventCoordinator.Emit(requestEvent);
+
+                try
+                {
+                    var response = await waitTask;
+
+                    if (response.Approved)
+                    {
+                        context.Log("Orchestrator",
+                            $"Node {node.Id} suspension approved",
+                            LogLevel.Information, nodeId: node.Id);
+
+                        // Update outcome
+                        context.AddTag($"suspend_outcome:{node.Id}", Abstractions.Execution.SuspensionOutcome.Approved.ToString());
+
+                        // Store resume data if provided
+                        if (response.ResumeData != null)
+                        {
+                            context.Channels[$"suspend_response:{node.Id}"].Set(response.ResumeData);
+                        }
+
+                        // Clear suspension token (use empty string since RemoveTag may not exist)
+                        context.AddTag($"suspend_token:{node.Id}", "");
+
+                        // Mark node complete so execution continues to NEXT node
+                        context.MarkNodeComplete(node.Id);
+
+                        return true; // Continue to next node
+                    }
+                    else
+                    {
+                        context.Log("Orchestrator",
+                            $"Node {node.Id} suspension denied: {response.Reason}",
+                            LogLevel.Warning, nodeId: node.Id);
+
+                        // Update outcome
+                        context.AddTag($"suspend_outcome:{node.Id}", Abstractions.Execution.SuspensionOutcome.Denied.ToString());
+
+                        return false; // Halt execution
+                    }
+                }
+                catch (TimeoutException)
+                {
+                    context.Log("Orchestrator",
+                        $"Node {node.Id} suspension timed out after {options.ActiveWaitTimeout}",
+                        LogLevel.Information, nodeId: node.Id);
+
+                    // Update outcome
+                    context.AddTag($"suspend_outcome:{node.Id}", Abstractions.Execution.SuspensionOutcome.TimedOut.ToString());
+
+                    // Emit timeout event for observability
+                    context.EventCoordinator.Emit(new Abstractions.Events.NodeApprovalTimeoutEvent
+                    {
+                        RequestId = suspended.SuspendToken,
+                        SourceName = $"GraphOrchestrator:{context.ExecutionId}",
+                        NodeId = node.Id,
+                        WaitedFor = options.ActiveWaitTimeout
+                    });
+
+                    // LAYER 4: Fallback - checkpoint already saved, halt cleanly
+                    return false;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // External cancellation - different from timeout
+                    context.Log("Orchestrator",
+                        $"Node {node.Id} suspension wait cancelled",
+                        LogLevel.Information, nodeId: node.Id);
+
+                    // Keep as Pending - can be resumed
+                    throw; // Re-throw cancellation
+                }
+            }
+            else
+            {
+                // No active wait - just emit and halt immediately
+                context.EventCoordinator.Emit(requestEvent);
+            }
+        }
+        else if (options.EmitEvents && context.EventCoordinator == null)
+        {
+            context.Log("Orchestrator",
+                $"No EventCoordinator available; cannot emit suspension event for node {node.Id}",
+                LogLevel.Warning, nodeId: node.Id);
+        }
+
+        // Halt execution
+        return false;
+    }
+
+    /// <summary>
+    /// Saves checkpoint specifically for suspension with suspension-related metadata.
+    /// </summary>
+    private async Task SaveSuspensionCheckpointAsync(
+        TContext context,
+        Node node,
+        NodeExecutionResult.Suspended suspended,
+        CancellationToken cancellationToken)
+    {
+        if (_checkpointStore == null || context is not Context.GraphContext graphContext)
+            return;
+
+        // Extract all node outputs from channels for checkpoint restoration
+        var nodeOutputs = new Dictionary<string, object>();
+        var nodeStateMetadata = new Dictionary<string, Abstractions.Checkpointing.NodeStateMetadata>();
+
+        foreach (var channelName in context.Channels.ChannelNames)
+        {
+            if (channelName.StartsWith("node_output:"))
+            {
+                var nodeId = channelName.Substring("node_output:".Length);
+
+                // Only include outputs from completed nodes
+                if (context.CompletedNodes.Contains(nodeId))
+                {
+                    try
+                    {
+                        var output = context.Channels[channelName].Get<object>();
+                        if (output != null)
+                        {
+                            nodeOutputs[channelName] = output;
+
+                            // Capture node version for compatibility checking
+                            var completedNode = context.Graph.GetNode(nodeId);
+                            if (completedNode != null)
+                            {
+                                nodeStateMetadata[nodeId] = new Abstractions.Checkpointing.NodeStateMetadata
+                                {
+                                    NodeId = nodeId,
+                                    Version = completedNode.Version,
+                                    StateJson = System.Text.Json.JsonSerializer.Serialize(output),
+                                    CapturedAt = DateTimeOffset.UtcNow
+                                };
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Skip channels that can't be retrieved as object
+                    }
+                }
+            }
+        }
+
+        var checkpoint = new Abstractions.Checkpointing.GraphCheckpoint
+        {
+            CheckpointId = Guid.NewGuid().ToString("N"),
+            ExecutionId = context.ExecutionId,
+            GraphId = context.Graph.Id,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedNodes = context.CompletedNodes,
+            NodeOutputs = nodeOutputs,
+            NodeStateMetadata = nodeStateMetadata,
+            ContextJson = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                ExecutionId = context.ExecutionId,
+                CompletedNodes = context.CompletedNodes,
+                CurrentLayerIndex = graphContext.CurrentLayerIndex,
+                SuspendedNodeId = node.Id,
+                SuspendToken = suspended.SuspendToken
+            }),
+            Metadata = new Abstractions.Checkpointing.CheckpointMetadata
+            {
+                Trigger = Abstractions.Checkpointing.CheckpointTrigger.Suspension,
+                CompletedLayer = graphContext.CurrentLayerIndex,
+                SuspendedNodeId = node.Id,
+                SuspendToken = suspended.SuspendToken,
+                SuspensionOutcome = Abstractions.Execution.SuspensionOutcome.Pending
+            }
+        };
+
+        await _checkpointStore.SaveCheckpointAsync(checkpoint, cancellationToken);
     }
 
     private void HandleCancelled(TContext context, Node node, NodeExecutionResult.Cancelled cancelled)
@@ -1030,6 +1882,88 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Evaluates whether a node should be skipped based on incoming edge conditions.
+    /// Returns (shouldSkip, detailsForLogging).
+    /// </summary>
+    /// <remarks>
+    /// A node should be skipped if ALL of the following are true:
+    /// - It has incoming edges (not a START node)
+    /// - All source nodes have completed
+    /// - No incoming edge conditions evaluate to true (including unconditional and default edges)
+    /// </remarks>
+    private (bool ShouldSkip, string Details) EvaluateSkipConditions(TContext context, Node node)
+    {
+        // Get all incoming edges
+        var incomingEdges = context.Graph.GetIncomingEdges(node.Id);
+
+        // No incoming edges = always execute (START node or explicit entry point)
+        if (incomingEdges.Count == 0)
+            return (false, "No incoming edges");
+
+        var evaluatedEdges = new List<string>();
+        var hasAnyCompletedSource = false;
+
+        foreach (var edge in incomingEdges)
+        {
+            // Skip edges from incomplete nodes (they haven't run yet - topology will handle scheduling)
+            if (!context.IsNodeComplete(edge.From))
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: source incomplete");
+                continue;
+            }
+
+            hasAnyCompletedSource = true;
+
+            // Get source node outputs
+            var channelName = $"node_output:{edge.From}";
+            if (!context.Channels.Contains(channelName))
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: no outputs");
+                continue;
+            }
+
+            var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+
+            // Unconditional edge (no condition) = active path exists
+            if (edge.Condition == null)
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: unconditional (ACTIVE)");
+                return (false, string.Join("; ", evaluatedEdges));
+            }
+
+            // Default edge = active (fallback path)
+            if (edge.Condition.Type == ConditionType.Default)
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: default edge (ACTIVE)");
+                return (false, string.Join("; ", evaluatedEdges));
+            }
+
+            // Evaluate the condition
+            var conditionMet = ConditionEvaluator.Evaluate(edge.Condition, outputs);
+            var conditionDesc = edge.Condition.GetDescription() ?? edge.Condition.Type.ToString();
+
+            if (conditionMet)
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: {conditionDesc} (ACTIVE)");
+                return (false, string.Join("; ", evaluatedEdges));
+            }
+            else
+            {
+                evaluatedEdges.Add($"{edge.From}→{edge.To}: {conditionDesc} (not met)");
+            }
+        }
+
+        // If no source nodes have completed yet, don't skip - wait for topology
+        if (!hasAnyCompletedSource)
+        {
+            return (false, "No completed source nodes yet");
+        }
+
+        // No active paths found from any completed source → skip this node
+        return (true, string.Join("; ", evaluatedEdges));
     }
 
     /// <summary>

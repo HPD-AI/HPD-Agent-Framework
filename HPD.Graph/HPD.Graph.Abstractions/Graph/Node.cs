@@ -1,3 +1,5 @@
+using HPDAgent.Graph.Abstractions.Execution;
+
 namespace HPDAgent.Graph.Abstractions.Graph;
 
 /// <summary>
@@ -210,4 +212,13 @@ public sealed record Node
     /// - ContinueOmitFailures: Skips item silently
     /// </summary>
     public Graph? MapDefaultGraph { get; init; }
+
+    // ===== SUSPENSION OPTIONS (Layered Suspension) =====
+
+    /// <summary>
+    /// Options for suspension behavior when this node returns Suspended.
+    /// Controls checkpointing, event emission, and active waiting.
+    /// Null = use orchestrator defaults (30s active wait, events enabled, checkpoint first).
+    /// </summary>
+    public SuspensionOptions? SuspensionOptions { get; init; }
 }

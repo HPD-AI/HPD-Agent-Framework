@@ -12,7 +12,7 @@ public class HPDAIFunctionFactory
 
     /// <summary>
     /// Creates an AIFunction using a pre-compiled invocation delegate.
-    /// This is the preferred method for source-generated plugins and adapters.
+    /// This is the preferred method for source-generated Toolkits and adapters.
     /// </summary>
     public static AIFunction Create(
         Func<AIFunctionArguments, CancellationToken, Task<object?>> invocation, 
@@ -156,7 +156,7 @@ public class HPDAIFunctionFactoryOptions
     // Type-safe skill documents (Phase 2 - Native Content Types)
     public SkillDocumentContent[]? SkillDocuments { get; set; }
 
-    // Additional metadata properties for plugin Collapsing and other features
+    // Additional metadata properties for Toolkit Collapsing and other features
     public Dictionary<string, object?>? AdditionalProperties { get; set; }
 }
 

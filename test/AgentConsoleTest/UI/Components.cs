@@ -293,7 +293,7 @@ public enum ResultType
 /// <summary>
 /// Detects the content type of tool results for smart UI rendering.
 ///
-/// This enables plugin-agnostic UI: instead of checking tool names,
+/// This enables Toolkit-agnostic UI: instead of checking tool names,
 /// we detect what the content IS and render accordingly.
 ///
 /// To add a new result type:

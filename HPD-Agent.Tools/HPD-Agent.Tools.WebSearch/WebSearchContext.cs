@@ -4,7 +4,7 @@ using System.Linq;
 using HPD.Agent;
 
 /// <summary>
-/// The complete and corrected context for the WebSearch plugin.
+/// The complete and corrected context for the WebSearch Toolkit.
 /// </summary>
 public class WebSearchContext : IToolMetadata
 {

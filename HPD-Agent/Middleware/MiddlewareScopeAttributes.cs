@@ -9,8 +9,8 @@ public enum MiddlewareScope
     /// <summary>Middleware applies to all functions globally</summary>
     Global = 0,
 
-    /// <summary>Middleware applies to all functions from a specific plugin</summary>
-    Plugin = 1,
+    /// <summary>Middleware applies to all functions from a specific Toolkit</summary>
+    Toolkit = 1,
 
     /// <summary>Middleware applies to skill container and functions called by a specific skill</summary>
     Skill = 2,
@@ -26,7 +26,7 @@ public enum MiddlewareScope
 internal class MiddlewareScopeMetadata
 {
     public MiddlewareScope Scope { get; init; } = MiddlewareScope.Global;
-    public string? Target { get; init; } // Plugin type name, skill name, or function name
+    public string? Target { get; init; } // Toolkit type name, skill name, or function name
 
     public MiddlewareScopeMetadata(MiddlewareScope scope, string? target = null)
     {
@@ -41,7 +41,7 @@ internal class MiddlewareScopeMetadata
     {
         // Handle unknown functions (Function can be null)
         var functionName = context.Function?.Name;
-        var toolName = context.PluginName;
+        var toolName = context.ToolkitName;
         var skillName = context.SkillName;
 
         // Check if this is a skill container by looking at AdditionalProperties
@@ -52,7 +52,7 @@ internal class MiddlewareScopeMetadata
         {
             MiddlewareScope.Global => true,
 
-            MiddlewareScope.Plugin => !string.IsNullOrEmpty(toolName) &&
+            MiddlewareScope.Toolkit => !string.IsNullOrEmpty(toolName) &&
                                        string.Equals(Target, toolName, StringComparison.Ordinal),
 
             MiddlewareScope.Skill =>
@@ -74,7 +74,7 @@ internal class MiddlewareScopeMetadata
     {
         // Handle unknown functions (Function can be null)
         var functionName = context.Function?.Name;
-        var toolName = context.PluginName;
+        var toolName = context.ToolkitName;
         var skillName = context.SkillName;
 
         // Check if this is a skill container by looking at AdditionalProperties
@@ -85,7 +85,7 @@ internal class MiddlewareScopeMetadata
         {
             MiddlewareScope.Global => true,
 
-            MiddlewareScope.Plugin => !string.IsNullOrEmpty(toolName) &&
+            MiddlewareScope.Toolkit => !string.IsNullOrEmpty(toolName) &&
                                        string.Equals(Target, toolName, StringComparison.Ordinal),
 
             MiddlewareScope.Skill =>
@@ -122,16 +122,16 @@ public static class MiddlewareScopeExtensions
     }
 
     /// <summary>
-    /// Marks this middleware as plugin-scoped (applies only to functions from the specified plugin).
+    /// Marks this middleware as Toolkit-scoped (applies only to functions from the specified Toolkit).
     /// </summary>
     /// <param name="middleware">The middleware instance</param>
-    /// <param name="toolTypeName">The plugin type name (e.g., "FileSystemPlugin")</param>
-    public static IAgentMiddleware ForPlugin(this IAgentMiddleware middleware, string toolTypeName)
+    /// <param name="toolTypeName">The Toolkit type name (e.g., "FileSystemToolkit")</param>
+    public static IAgentMiddleware ForToolkit(this IAgentMiddleware middleware, string toolTypeName)
     {
         if (string.IsNullOrWhiteSpace(toolTypeName))
-            throw new ArgumentException("Plugin type name cannot be null or empty", nameof(toolTypeName));
+            throw new ArgumentException("Toolkit type name cannot be null or empty", nameof(toolTypeName));
 
-        _scopeMetadata.AddOrUpdate(middleware, new MiddlewareScopeMetadata(MiddlewareScope.Plugin, toolTypeName));
+        _scopeMetadata.AddOrUpdate(middleware, new MiddlewareScopeMetadata(MiddlewareScope.Toolkit, toolTypeName));
         return middleware;
     }
 

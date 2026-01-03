@@ -42,8 +42,8 @@ public class NativeFunctionInfo
     [JsonPropertyName("requiredPermissions")]
     public List<string> RequiredPermissions { get; set; } = new();
     
-    [JsonPropertyName("plugin_name")]
-    public string PluginName { get; set; } = string.Empty;
+    [JsonPropertyName("Toolkit_name")]
+    public string ToolkitName { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -100,15 +100,15 @@ public static partial class NativeExports
     }
 
     /// <summary>
-    /// Creates an agent with the given configuration and plugins.
+    /// Creates an agent with the given configuration and Toolkits.
     /// </summary>
     /// <param name="configJsonPtr">Pointer to JSON string containing AgentConfig</param>
-    /// <param name="pluginsJsonPtr">Pointer to JSON string containing plugin definitions</param>
+    /// <param name="ToolkitsJsonPtr">Pointer to JSON string containing Toolkit definitions</param>
     /// <returns>Handle to the created Agent, or IntPtr.Zero on failure</returns>
-    [UnmanagedCallersOnly(EntryPoint = "create_agent_with_plugins")]
-    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "FFI boundary - AgentBuilder uses reflection for C# plugin discovery, but FFI only adds native functions manually")]
-    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "FFI boundary - AgentBuilder uses reflection for C# plugin discovery, but FFI only adds native functions manually")]
-    public static IntPtr CreateAgentWithPlugins(IntPtr configJsonPtr, IntPtr pluginsJsonPtr)
+    [UnmanagedCallersOnly(EntryPoint = "create_agent_with_Toolkits")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "FFI boundary - AgentBuilder uses reflection for C# Toolkit discovery, but FFI only adds native functions manually")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "FFI boundary - AgentBuilder uses reflection for C# Toolkit discovery, but FFI only adds native functions manually")]
+    public static IntPtr CreateAgentWithToolkits(IntPtr configJsonPtr, IntPtr ToolkitsJsonPtr)
     {
         try
         {
@@ -120,21 +120,21 @@ public static partial class NativeExports
 
             var builder = new AgentBuilder(agentConfig);
 
-            // Parse and add native plugins (Rust, C++, Zig, Go, etc.)
-            string? pluginsJson = Marshal.PtrToStringUTF8(pluginsJsonPtr);
-            Console.WriteLine($"[FFI] Received plugins JSON: {pluginsJson}");
+            // Parse and add native Toolkits (Rust, C++, Zig, Go, etc.)
+            string? ToolkitsJson = Marshal.PtrToStringUTF8(ToolkitsJsonPtr);
+            Console.WriteLine($"[FFI] Received Toolkits JSON: {ToolkitsJson}");
 
-            if (!string.IsNullOrEmpty(pluginsJson))
+            if (!string.IsNullOrEmpty(ToolkitsJson))
             {
                 try
                 {
-                    var nativeFunctions = JsonSerializer.Deserialize(pluginsJson, HPDFFIJsonContext.Default.ListNativeFunctionInfo);
+                    var nativeFunctions = JsonSerializer.Deserialize(ToolkitsJson, HPDFFIJsonContext.Default.ListNativeFunctionInfo);
                     Console.WriteLine($"[FFI] Deserialized {nativeFunctions?.Count ?? 0} native functions");
 
                     if (nativeFunctions != null && nativeFunctions.Count > 0)
                     {
-                        // Track unique plugin names
-                        var pluginNames = new HashSet<string>();
+                        // Track unique Toolkit names
+                        var ToolkitNames = new HashSet<string>();
 
                         foreach (var nativeFunc in nativeFunctions)
                         {
@@ -142,19 +142,19 @@ public static partial class NativeExports
                             var aiFunction = CreateNativeFunctionWrapper(nativeFunc);
                             builder.WithNativeFunction(aiFunction);
 
-                            // Track plugin name for registration
-                            if (!string.IsNullOrEmpty(nativeFunc.PluginName))
+                            // Track Toolkit name for registration
+                            if (!string.IsNullOrEmpty(nativeFunc.ToolkitName))
                             {
-                                pluginNames.Add(nativeFunc.PluginName);
+                                ToolkitNames.Add(nativeFunc.ToolkitName);
                             }
                         }
 
-                        // Register plugin executors in native runtime
-                        foreach (var pluginName in pluginNames)
+                        // Register Toolkit executors in native runtime
+                        foreach (var ToolkitName in ToolkitNames)
                         {
-                            Console.WriteLine($"[FFI] Registering executors for plugin: {pluginName}");
-                            bool success = NativePluginFFI.RegisterPluginExecutors(pluginName);
-                            Console.WriteLine($"[FFI] Registration result for {pluginName}: {success}");
+                            Console.WriteLine($"[FFI] Registering executors for Toolkit: {ToolkitName}");
+                            bool success = NativeToolkitFFI.RegisterToolkitExecutors(ToolkitName);
+                            Console.WriteLine($"[FFI] Registration result for {ToolkitName}: {success}");
                         }
 
                         Console.WriteLine($"[FFI] Successfully added {nativeFunctions.Count} native functions to agent");
@@ -162,8 +162,8 @@ public static partial class NativeExports
                 }
                 catch (Exception ex)
                 {
-                    // Log but don't fail - agent can still work without native plugins
-                    Console.WriteLine($"Failed to parse native plugins: {ex.Message}");
+                    // Log but don't fail - agent can still work without native Toolkits
+                    Console.WriteLine($"Failed to parse native Toolkits: {ex.Message}");
                     Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 }
             }
@@ -181,7 +181,7 @@ public static partial class NativeExports
 
     /// <summary>
     /// Creates an AIFunction wrapper that calls back to native code via FFI.
-    /// Supports plugins written in Rust, C++, Zig, Go, Swift, or any C-compatible language.
+    /// Supports Toolkits written in Rust, C++, Zig, Go, Swift, or any C-compatible language.
     /// </summary>
     private static AIFunction CreateNativeFunctionWrapper(NativeFunctionInfo nativeFunc)
     {
@@ -199,7 +199,7 @@ public static partial class NativeExports
                 }
 
                 // Execute the native function via FFI
-                var result = NativePluginFFI.ExecuteFunction(nativeFunc.Name, argsDict);
+                var result = NativeToolkitFFI.ExecuteFunction(nativeFunc.Name, argsDict);
                 
                 if (!result.Success)
                 {

@@ -7,16 +7,16 @@ using HPD.Agent;
 namespace HPD.Agent.Memory;
 
 /// <summary>
-/// HPD-Agent AI plugin for Plan Mode management.
+/// HPD-Agent AI Toolkit for Plan Mode management.
 /// Provides functions for agents to create and manage execution plans.
 /// Uses Agent.CurrentFunctionContext.RunContext.ConversationId to identify which conversation's plan to manipulate.
 /// </summary>
-public class AgentPlanPlugin
+public class AgentPlanToolkit
 {
     private readonly AgentPlanStore _store;
-    private readonly ILogger<AgentPlanPlugin>? _logger;
+    private readonly ILogger<AgentPlanToolkit>? _logger;
 
-    public AgentPlanPlugin(AgentPlanStore store, ILogger<AgentPlanPlugin>? logger = null)
+    public AgentPlanToolkit(AgentPlanStore store, ILogger<AgentPlanToolkit>? logger = null)
     {
         _store = store;
         _logger = logger;

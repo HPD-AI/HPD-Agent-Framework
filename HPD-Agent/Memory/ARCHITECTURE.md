@@ -51,10 +51,10 @@ This document explains the internal architecture of HPD-Agent's memory systems f
                   │
                   ▼
          ┌────────────────────────┐
-         │  Memory Plugins        │
+         │  Memory Toolkits        │
          ├────────────────────────┤
-         │ DynamicMemoryPlugin    │──┐
-         │ AgentPlanPlugin        │  │ Access stores via
+         │ DynamicMemoryToolkit    │──┐
+         │ AgentPlanToolkit        │  │ Access stores via
          └────────┬───────────────┘  │ ConversationContext
                   │◄─────────────────┘
                   │
@@ -106,14 +106,14 @@ Each system has appropriate Collapsing:
 `ConversationContext` uses `AsyncLocal<T>` to flow conversation metadata through async calls:
 - Set once at conversation level
 - Flows through all async operations
-- Accessible to plugins without parameter passing
+- Accessible to Toolkits without parameter passing
 - Cleaned up after each turn
 
 ### 5. Separation of Concerns
 
 - **Stores**: Handle persistence logic
 - **Filters**: Handle prompt injection logic
-- **Plugins**: Handle agent interaction logic (AIFunctions)
+- **Toolkits**: Handle agent interaction logic (AIFunctions)
 - **Options**: Handle configuration
 
 ---
@@ -138,7 +138,7 @@ Each system has appropriate Collapsing:
           │            │            │                  │
           ▼            ▼            ▼                  ▼
     ┌─────────┐  ┌─────────┐  ┌─────────┐      ┌─────────┐
-    │  Store  │  │ Filter  │  │ Plugin  │      │ Options │
+    │  Store  │  │ Filter  │  │ Toolkit  │      │ Options │
     └─────────┘  └─────────┘  └─────────┘      └─────────┘
           │            │            │                  │
           │            │            │                  │
@@ -153,7 +153,7 @@ HPD-Agent/Memory/Agent/
 │   ├── DynamicMemoryStore.cs              # Abstract base
 │   ├── InMemoryDynamicMemoryStore.cs      # In-memory impl
 │   ├── JsonDynamicMemoryStore.cs          # JSON file impl
-│   ├── DynamicMemoryPlugin.cs             # AIFunctions
+│   ├── DynamicMemoryToolkit.cs             # AIFunctions
 │   ├── DynamicMemoryFilter.cs             # Prompt injection
 │   └── DynamicMemoryOptions.cs            # Configuration
 │
@@ -169,7 +169,7 @@ HPD-Agent/Memory/Agent/
     ├── InMemoryAgentPlanStore.cs          # In-memory impl
     ├── JsonAgentPlanStore.cs              # JSON file impl
     ├── AgentPlan.cs                       # Data model
-    ├── AgentPlanPlugin.cs                 # AIFunctions
+    ├── AgentPlanToolkit.cs                 # AIFunctions
     ├── AgentPlanFilter.cs                 # Prompt injection
     └── PlanModeOptions.cs                 # Configuration
 ```
@@ -213,9 +213,9 @@ HPD-Agent/Memory/Agent/
    AgentBuilder.WithDynamicMemory()
       │
       ├─> Creates DynamicMemoryStore (JSON or InMemory)
-      ├─> Creates DynamicMemoryPlugin(store)
+      ├─> Creates DynamicMemoryToolkit(store)
       ├─> Creates DynamicMemoryFilter(store, options)
-      ├─> Registers plugin to PluginManager
+      ├─> Registers Toolkit to ToolkitManager
       └─> Registers filter to PromptMiddlewares
 
 
@@ -237,7 +237,7 @@ HPD-Agent/Memory/Agent/
    ─────────────────────
    Agent calls create_memory(title, content)
       │
-      └─> DynamicMemoryPlugin.CreateMemoryAsync()
+      └─> DynamicMemoryToolkit.CreateMemoryAsync()
             │
             ├─> storageKey = options.MemoryId ?? context.AgentName
             └─> await _store.CreateMemoryAsync(storageKey, title, content)
@@ -317,7 +317,7 @@ public record DynamicMemoryStoreSnapshot
       ├─> Creates StaticMemoryStore (JSON or InMemory)
       ├─> If documents specified, add them to store
       ├─> Creates StaticMemoryFilter(store, agentName, maxTokens)
-      └─> Registers filter to PromptMiddlewares (NO PLUGIN)
+      └─> Registers filter to PromptMiddlewares (NO Toolkit)
 
 
 2. Prompt Injection (Every Request)
@@ -459,9 +459,9 @@ StaticMemoryFilter.InvokeAsync()
    AgentBuilder.WithPlanMode()
       │
       ├─> Creates AgentPlanStore (InMemory, JSON, or custom)
-      ├─> Creates AgentPlanPlugin(store)
+      ├─> Creates AgentPlanToolkit(store)
       ├─> Creates AgentPlanFilter(store)
-      ├─> Registers plugin to PluginManager
+      ├─> Registers Toolkit to ToolkitManager
       └─> Registers filter to PromptMiddlewares
 
 
@@ -483,7 +483,7 @@ StaticMemoryFilter.InvokeAsync()
    ───────────────────
    Agent calls create_plan(goal, steps[])
       │
-      └─> AgentPlanPlugin.CreatePlanAsync()
+      └─> AgentPlanToolkit.CreatePlanAsync()
             │
             ├─> conversationId = ConversationContext.CurrentConversationId
             └─> await _store.CreatePlanAsync(conversationId, goal, steps)
@@ -499,7 +499,7 @@ StaticMemoryFilter.InvokeAsync()
    ──────────────────
    Agent calls update_plan_step(stepId, status, notes)
       │
-      └─> AgentPlanPlugin.UpdatePlanStepAsync()
+      └─> AgentPlanToolkit.UpdatePlanStepAsync()
             │
             ├─> conversationId = ConversationContext.CurrentConversationId
             └─> await _store.UpdateStepAsync(conversationId, stepId, status, notes)
@@ -661,10 +661,10 @@ public override async IAsyncEnumerable<AgentRunResponseUpdate> RunStreamingAsync
 }
 ```
 
-### Usage in Plugins
+### Usage in Toolkits
 
 ```csharp
-// AgentPlanPlugin.cs
+// AgentPlanToolkit.cs
 public async Task<string> CreatePlanAsync(string goal, string[] steps)
 {
     // Access conversation ID from AsyncLocal context
@@ -703,7 +703,7 @@ public async Task<string> CreatePlanAsync(string goal, string[] steps)
              │
              ▼
 ┌────────────────────────────────────────┐
-│ AgentPlanPlugin.CreatePlanAsync()      │
+│ AgentPlanToolkit.CreatePlanAsync()      │
 │                                        │
 │ conversationId = ConversationContext  │
 │   .CurrentConversationId  <─────────  │ ✓ Works!
@@ -1015,9 +1015,9 @@ public class EpisodicMemoryFilter : IPromptMiddleware
 }
 ```
 
-5. **Create plugin** (if agent needs to modify):
+5. **Create Toolkit** (if agent needs to modify):
 ```csharp
-public class EpisodicMemoryPlugin
+public class EpisodicMemoryToolkit
 {
     private readonly EpisodicMemoryStore _store;
 
@@ -1056,10 +1056,10 @@ public static AgentBuilder WithEpisodicMemory(
     configure(options);
 
     var store = options.Store ?? new InMemoryEpisodicMemoryStore();
-    var plugin = new EpisodicMemoryPlugin(store);
+    var Toolkit = new EpisodicMemoryToolkit(store);
     var filter = new EpisodicMemoryFilter(store, options);
 
-    builder.PluginManager.RegisterPlugin(plugin);
+    builder.ToolkitManager.RegisterToolkit(Toolkit);
     builder.PromptMiddlewares.Add(filter);
 
     return builder;
@@ -1273,6 +1273,6 @@ When modifying the memory architecture:
 
 The memory architecture follows a consistent, pluggable design inspired by Microsoft's agent abstractions. The AsyncLocal context pattern provides clean access to conversation metadata without parameter threading. The filter pipeline enables automatic injection of context into prompts, making the agent experience seamless.
 
-When extending the system, follow the established patterns and maintain the separation of concerns between stores, filters, plugins, and options.
+When extending the system, follow the established patterns and maintain the separation of concerns between stores, filters, Toolkits, and options.
 
 For usage examples and user-facing documentation, see [MEMORY_AND_PLAN_MODE_GUIDE.md](./MEMORY_AND_PLAN_MODE_GUIDE.md).

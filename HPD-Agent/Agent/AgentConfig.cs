@@ -89,8 +89,63 @@ public class AgentConfig
     public CollapsingConfig Collapsing { get; set; } = new CollapsingConfig { Enabled = true };
 
     /// <summary>
-    /// Internal: Set of explicitly registered plugin names (for Collapsing manager).
-    /// This is set by the builder and used to distinguish explicit vs implicit plugin registration.
+    /// Toolkits to include. Supports both simple string names and rich references.
+    /// Resolved via source-generated registry at Build() time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Simple syntax:</b>
+    /// <code>
+    /// { "toolkits": ["MathToolkit", "SearchToolkit"] }
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Rich syntax:</b>
+    /// <code>
+    /// {
+    ///   "toolkits": [
+    ///     "MathToolkit",
+    ///     { "name": "FileToolkit", "functions": ["ReadFile", "WriteFile"] },
+    ///     { "name": "ApiToolkit", "config": { "apiKey": "${API_KEY}" } }
+    ///   ]
+    /// }
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public List<ToolkitReference> Toolkits { get; set; } = new();
+
+    /// <summary>
+    /// Middleware names to include (in order). Supports both simple string names and rich references.
+    /// Resolved via source-generated registry at Build() time.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Middlewares execute in the order listed. This list contains user-defined middleware only.
+    /// Internal middleware (Container, Retry, Timeout, etc.) are controlled by their respective config sections.
+    /// </para>
+    /// <para>
+    /// <b>Simple syntax:</b>
+    /// <code>
+    /// { "middlewares": ["LoggingMiddleware", "RetryMiddleware"] }
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Rich syntax:</b>
+    /// <code>
+    /// {
+    ///   "middlewares": [
+    ///     "LoggingMiddleware",
+    ///     { "name": "RateLimitMiddleware", "config": { "requestsPerMinute": 60 } }
+    ///   ]
+    /// }
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public List<MiddlewareReference> Middlewares { get; set; } = new();
+
+    /// <summary>
+    /// Internal: Set of explicitly registered Toolkit names (for Collapsing manager).
+    /// This is set by the builder and used to distinguish explicit vs implicit Toolkit registration.
     /// </summary>
     [JsonIgnore]
     public ImmutableHashSet<string> ExplicitlyRegisteredTools { get; set; } = ImmutableHashSet<string>.Empty;
@@ -934,8 +989,8 @@ public enum SkillInstructionMode
 public class CollapsingConfig
 {
     /// <summary>
-    /// Enable Collapsing for C# plugins. When true, plugin functions are hidden behind container functions.
-    /// Default: true (enabled - plugins with [Collapse] attribute are collapsed).
+    /// Enable Collapsing for C# Toolkits. When true, Toolkit functions are hidden behind container functions.
+    /// Default: true (enabled - Toolkits with [Collapse] attribute are collapsed).
     /// </summary>
     public bool Enabled { get; set; } = true;
 
@@ -993,6 +1048,14 @@ public class CollapsingConfig
     /// Example: "These tools interact with the user. Use ConfirmAction for destructive operations."
     /// </summary>
     public string? ClientToolsInstructions { get; set; }
+
+    /// <summary>
+    /// List of toolkit names that should never be collapsed, even if they have containers.
+    /// This is a runtime override that works even if the toolkit was compiled with collapse support.
+    /// Use this to force specific toolkits to always show their functions directly.
+    /// Example: new HashSet&lt;string&gt; { "MathToolkit", "CoreTools" }
+    /// </summary>
+    public HashSet<string>? NeverCollapse { get; set; }
 
 }
 /// <summary>

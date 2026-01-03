@@ -111,13 +111,13 @@ public class AgentContextTests
             "call123",
             args,
             new AgentRunOptions(),
-            "TestPlugin",
+            "TestToolkit",
             "TestSkill");
 
         // Assert
         Assert.Equal("TestFunc", funcContext.Function.Name);
         Assert.Equal("call123", funcContext.FunctionCallId);
-        Assert.Equal("TestPlugin", funcContext.PluginName);
+        Assert.Equal("TestToolkit", funcContext.ToolkitName);
         Assert.Equal("TestSkill", funcContext.SkillName);
         Assert.Equal("value1", funcContext.Arguments["arg1"]);
     }

@@ -9,11 +9,12 @@ public class ToolVisibilityManager
     private readonly ILogger<ToolVisibilityManager>? _logger;
     private readonly Dictionary<string, AIFunction> _allFunctionsByReference;
     private readonly ImmutableHashSet<string> _explicitlyRegisteredTools;
+    private readonly ImmutableHashSet<string> _neverCollapseToolkits;
 
     public ToolVisibilityManager(
         IEnumerable<AIFunction> allFunctions,
         ILogger<ToolVisibilityManager>? logger = null)
-        : this(allFunctions, ImmutableHashSet<string>.Empty, logger)
+        : this(allFunctions, ImmutableHashSet<string>.Empty, null, logger)
     {
     }
 
@@ -21,56 +22,68 @@ public class ToolVisibilityManager
         IEnumerable<AIFunction> allFunctions,
         ImmutableHashSet<string> explicitlyRegisteredTools,
         ILogger<ToolVisibilityManager>? logger = null)
+        : this(allFunctions, explicitlyRegisteredTools, null, logger)
+    {
+    }
+
+    public ToolVisibilityManager(
+        IEnumerable<AIFunction> allFunctions,
+        ImmutableHashSet<string> explicitlyRegisteredTools,
+        HashSet<string>? neverCollapseToolkits,
+        ILogger<ToolVisibilityManager>? logger = null)
     {
         _logger = logger;
         _explicitlyRegisteredTools = explicitlyRegisteredTools ?? ImmutableHashSet<string>.Empty;
+        _neverCollapseToolkits = neverCollapseToolkits != null
+            ? ImmutableHashSet.CreateRange(StringComparer.OrdinalIgnoreCase, neverCollapseToolkits)
+            : ImmutableHashSet<string>.Empty;
         _allFunctionsByReference = BuildFunctionLookup(allFunctions);
     }
 
     /// <summary>
     /// Gets tools visible for the current agent turn based on expansion state.
-    /// Handles plugin containers and type-safe Skill containers.
+    /// Handles Toolkit containers and type-safe Skill containers.
     ///
     /// Ordering strategy:
     /// 1. Collapse containers (skill class containers with [Collapse])
-    /// 2. Plugin containers (Collapse plugins with [Collapse])
+    /// 2. Toolkit containers (Collapse Toolkits with [Collapse])
     /// 3. Skill containers (type-safe Skills with IsContainer=true)
     /// 4. Non-Collapsed functions (always visible)
-    /// 5. Expanded plugin functions
+    /// 5. Expanded Toolkit functions
     /// 6. Expanded skill functions
     ///
-    /// Key insight: Functions in plugins that are ONLY referenced by Collapsed skills
+    /// Key insight: Functions in Toolkits that are ONLY referenced by Collapsed skills
     /// are hidden until their parent skill is expanded. This prevents "orphan" functions
     /// from appearing when the skill class Collapse is not expanded.
     /// </summary>
     /// <param name="allTools">All available tools</param>
-    /// <param name="expandedContainers">Unified set of expanded containers (both plugins and skills)</param>
+    /// <param name="expandedContainers">Unified set of expanded containers (both Toolkits and skills)</param>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
         ImmutableHashSet<string> expandedContainers)
     {
-        // Use the same set for both plugins and skills (unified container tracking)
+        // Use the same set for both Toolkits and skills (unified container tracking)
         return GetToolsForAgentTurn(allTools, expandedContainers, expandedContainers);
     }
 
     /// <summary>
     /// Gets tools visible for the current agent turn based on expansion state.
-    /// Handles plugin containers and type-safe Skill containers.
+    /// Handles Toolkit containers and type-safe Skill containers.
     ///
     /// Ordering strategy:
     /// 1. Collapse containers (skill class containers with [Collapse])
-    /// 2. Plugin containers (Collapse plugins with [Collapse])
+    /// 2. Toolkit containers (Collapse Toolkits with [Collapse])
     /// 3. Skill containers (type-safe Skills with IsContainer=true)
     /// 4. Non-Collapsed functions (always visible)
-    /// 5. Expanded plugin functions
+    /// 5. Expanded Toolkit functions
     /// 6. Expanded skill functions
     ///
-    /// Key insight: Functions in plugins that are ONLY referenced by Collapsed skills
+    /// Key insight: Functions in Toolkits that are ONLY referenced by Collapsed skills
     /// are hidden until their parent skill is expanded. This prevents "orphan" functions
     /// from appearing when the skill class Collapse is not expanded.
     /// </summary>
     /// <param name="allTools">All available tools</param>
-    /// <param name="expandedCollapsedPluginContainers">Set of expanded plugin containers</param>
+    /// <param name="expandedCollapsedToolkitContainers">Set of expanded Toolkit containers</param>
     /// <param name="expandedSkillContainers">Set of expanded skill containers</param>
     /// <remarks>
     /// This overload is maintained for backward compatibility. Prefer using the single-parameter
@@ -78,16 +91,16 @@ public class ToolVisibilityManager
     /// </remarks>
     public List<AIFunction> GetToolsForAgentTurn(
         List<AIFunction> allTools,
-        ImmutableHashSet<string> expandedCollapsedPluginContainers,
+        ImmutableHashSet<string> expandedCollapsedToolkitContainers,
         ImmutableHashSet<string> expandedSkillContainers)
     {
         // Phase 1: Build context (first pass - identify relationships)
-        var context = BuildVisibilityContext(allTools, expandedCollapsedPluginContainers, expandedSkillContainers);
+        var context = BuildVisibilityContext(allTools, expandedCollapsedToolkitContainers, expandedSkillContainers);
 
         var CollapseContainers = new List<AIFunction>();
         var skillContainers = new List<AIFunction>();
         var nonCollapsedFunctions = new List<AIFunction>();
-        var expandedPluginFunctions = new List<AIFunction>();
+        var expandedToolkitFunctions = new List<AIFunction>();
         var expandedSkillFunctions = new List<AIFunction>();
 
         // Phase 2: Categorize tools using visibility rules (second pass)
@@ -98,8 +111,8 @@ public class ToolVisibilityManager
             switch (containerType)
             {
                 case ContainerType.CollapseAttributeContainer:
-                case ContainerType.CollapsedPluginContainer:
-                    // Both types are Collapse/plugin containers - treat identically
+                case ContainerType.CollapsedToolkitContainer:
+                    // Both types are Collapse/Toolkit containers - treat identically
                     if (IsCollapseContainerVisible(tool, context))
                     {
                         CollapseContainers.Add(tool);
@@ -114,6 +127,15 @@ public class ToolVisibilityManager
                     break;
 
                 case ContainerType.NotAContainer:
+                    // Check if this is a container that was classified as NotAContainer
+                    // due to NeverCollapse - if so, skip it (hide the container)
+                    if (IsContainer(tool))
+                    {
+                        // Container in NeverCollapse list - hide the container itself
+                        // (Functions will be shown directly)
+                        break;
+                    }
+
                     // Not a container - check if it's a skill or regular function
                     if (IsSkill(tool))
                     {
@@ -133,8 +155,8 @@ public class ToolVisibilityManager
                                 nonCollapsedFunctions.Add(tool);
                                 break;
 
-                            case FunctionVisibility.ExpandedPlugin:
-                                expandedPluginFunctions.Add(tool);
+                            case FunctionVisibility.ExpandedToolkit:
+                                expandedToolkitFunctions.Add(tool);
                                 break;
 
                             case FunctionVisibility.ExpandedSkill:
@@ -155,7 +177,7 @@ public class ToolVisibilityManager
         var result = CollapseContainers.OrderBy(c => c.Name)
             .Concat(skillContainers.OrderBy(c => c.Name))
             .Concat(nonCollapsedFunctions.OrderBy(f => f.Name))
-            .Concat(expandedPluginFunctions.OrderBy(f => f.Name))
+            .Concat(expandedToolkitFunctions.OrderBy(f => f.Name))
             .Concat(expandedSkillFunctions.OrderBy(f => f.Name))
             .DistinctBy(f => f.Name)
             .ToList();
@@ -178,11 +200,11 @@ public class ToolVisibilityManager
             // Add by function name
             lookup[function.Name] = function;
 
-            // Add by qualified name if parent plugin exists
-            var parentPlugin = GetParentPlugin(function);
-            if (!string.IsNullOrEmpty(parentPlugin))
+            // Add by qualified name if parent Toolkit exists
+            var parentToolkit = GetParentToolkit(function);
+            if (!string.IsNullOrEmpty(parentToolkit))
             {
-                var qualifiedName = $"{parentPlugin}.{function.Name}";
+                var qualifiedName = $"{parentToolkit}.{function.Name}";
                 lookup[qualifiedName] = function;
             }
         }
@@ -199,14 +221,14 @@ public class ToolVisibilityManager
         function.AdditionalProperties?.TryGetValue("IsSkill", out var v) == true && v is bool b && b &&
         !IsContainer(function);
 
-    private string GetPluginName(AIFunction function) =>
-        function.AdditionalProperties?.TryGetValue("PluginName", out var v) == true && v is string s ? s : function.Name ?? string.Empty;
+    private string GetToolkitName(AIFunction function) =>
+        function.AdditionalProperties?.TryGetValue("ToolkitName", out var v) == true && v is string s ? s : function.Name ?? string.Empty;
 
     private string GetSkillName(AIFunction function) =>
         function.Name ?? string.Empty;
 
-    private string? GetParentPlugin(AIFunction function) =>
-        function.AdditionalProperties?.TryGetValue("ParentPlugin", out var v) == true && v is string s ? s : null;
+    private string? GetParentToolkit(AIFunction function) =>
+        function.AdditionalProperties?.TryGetValue("ParentToolkit", out var v) == true && v is string s ? s : null;
 
     private string? GetParentSkillContainer(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
@@ -223,8 +245,8 @@ public class ToolVisibilityManager
 
     private string[] GetReferencedTools(AIFunction skillContainer)
     {
-        if (skillContainer.AdditionalProperties?.TryGetValue("ReferencedPlugins", out var v) == true && v is string[] plugins)
-            return plugins;
+        if (skillContainer.AdditionalProperties?.TryGetValue("ReferencedToolkits", out var v) == true && v is string[] Toolkits)
+            return Toolkits;
         return Array.Empty<string>();
     }
 
@@ -255,7 +277,7 @@ public class ToolVisibilityManager
 
     private string ExtractFunctionName(string reference)
     {
-        // "PluginName.FunctionName" -> "FunctionName"
+        // "ToolkitName.FunctionName" -> "FunctionName"
         var lastDot = reference.LastIndexOf('.');
         return lastDot >= 0 ? reference.Substring(lastDot + 1) : reference;
     }
@@ -269,9 +291,16 @@ public class ToolVisibilityManager
         if (!IsContainer(function))
             return ContainerType.NotAContainer;
 
-        // Check for IsCollapse flag (highest priority - [Collapse] attribute)
-        if (function.AdditionalProperties?.TryGetValue("IsCollapse", out var CollapseVal) == true &&
-            CollapseVal is bool CollapseFlag && CollapseFlag)
+        // Check if this toolkit is in the NeverCollapse list (runtime override)
+        // If so, treat it as not a container - functions will be visible directly
+        if (_neverCollapseToolkits.Contains(function.Name))
+            return ContainerType.NotAContainer;
+
+        // Check for IsToolkitContainer flag (new [Toolkit] attribute) or IsCollapse flag (legacy [Collapse] attribute)
+        if ((function.AdditionalProperties?.TryGetValue("IsToolkitContainer", out var toolkitVal) == true &&
+            toolkitVal is bool toolkitFlag && toolkitFlag) ||
+            (function.AdditionalProperties?.TryGetValue("IsCollapse", out var CollapseVal) == true &&
+            CollapseVal is bool CollapseFlag && CollapseFlag))
         {
             return ContainerType.CollapseAttributeContainer;
         }
@@ -283,8 +312,8 @@ public class ToolVisibilityManager
             return ContainerType.SkillMethodContainer;
         }
 
-        // Container with no special flags = legacy Collapsed plugin
-        return ContainerType.CollapsedPluginContainer;
+        // Container with no special flags = legacy Collapsed Toolkit
+        return ContainerType.CollapsedToolkitContainer;
     }
 
     // ============================================
@@ -308,13 +337,13 @@ public class ToolVisibilityManager
         CollapseAttributeContainer,
 
         /// <summary>
-        /// Container for a Collapsed plugin WITHOUT skills (plugin-level Collapsing only).
-        /// Example: [Collapse("Math")] on MathPlugin class with only [AIFunction] methods
+        /// Container for a Collapsed Toolkit WITHOUT skills (Toolkit-level Collapsing only).
+        /// Example: [Collapse("Math")] on MathToolkit class with only [AIFunction] methods
         /// Metadata: IsContainer=true, no IsSkill/IsCollapse flags
-        /// Generated by HPDPluginSourceGenerator.GeneratePluginContainer()
-        /// Note: Both CollapseAttributeContainer and CollapsedPluginContainer are treated identically at runtime.
+        /// Generated by HPDToolkitSourceGenerator.GenerateToolkitContainer()
+        /// Note: Both CollapseAttributeContainer and CollapsedToolkitContainer are treated identically at runtime.
         /// </summary>
-        CollapsedPluginContainer,
+        CollapsedToolkitContainer,
 
         /// <summary>
         /// Container created by [Skill] method.
@@ -332,7 +361,7 @@ public class ToolVisibilityManager
     {
         Hidden,           // Not visible
         NonCollapsed,        // Always visible (goes into nonCollapsedFunctions list)
-        ExpandedPlugin,   // Visible because parent plugin expanded (goes into expandedPluginFunctions list)
+        ExpandedToolkit,   // Visible because parent Toolkit expanded (goes into expandedToolkitFunctions list)
         ExpandedSkill     // Visible because skill expanded (goes into expandedSkillFunctions list)
     }
 
@@ -340,21 +369,21 @@ public class ToolVisibilityManager
     /// Rule: Collapse container is visible IFF:
     /// 1. It is NOT expanded, AND
     /// 2. It is NOT implicitly registered via skills (unless explicitly registered)
-    /// Collapse containers can be tracked in either expandedCollapsedPluginContainers or ExpandedSkillContainers.
+    /// Collapse containers can be tracked in either expandedCollapsedToolkitContainers or ExpandedSkillContainers.
     /// </summary>
     private bool IsCollapseContainerVisible(AIFunction container, VisibilityContext context)
     {
-        // For CollapsedPluginContainer, use PluginName. For CollapseAttributeContainer, use Name.
+        // For CollapsedToolkitContainer, use ToolkitName. For CollapseAttributeContainer, use Name.
         // Both should work with the same string since they represent the same Collapse.
-        var CollapseName = GetPluginName(container);
+        var CollapseName = GetToolkitName(container);
         if (string.IsNullOrEmpty(CollapseName))
         {
             CollapseName = container.Name ?? string.Empty;
         }
 
-        // Hide Collapse containers for plugins that were ONLY implicitly registered via skills
+        // Hide Collapse containers for Toolkits that were ONLY implicitly registered via skills
         // (i.e., referenced by skills but NOT explicitly registered by the user)
-        if (context.PluginsWithCollapsedSkills.Contains(CollapseName) &&
+        if (context.ToolkitsWithCollapsedSkills.Contains(CollapseName) &&
             !_explicitlyRegisteredTools.Contains(CollapseName))
         {
             _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (implicitly registered via skills)");
@@ -362,7 +391,7 @@ public class ToolVisibilityManager
         }
 
         // Hide if expanded (in either set)
-        if (context.ExpandedCollapsedPluginContainers.Contains(CollapseName) ||
+        if (context.ExpandedCollapsedToolkitContainers.Contains(CollapseName) ||
             context.ExpandedSkillContainers.Contains(CollapseName))
         {
             _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (expanded)");
@@ -407,7 +436,7 @@ public class ToolVisibilityManager
 
         // Case 3: Parent Collapse exists - must be expanded
         if (context.ExpandedSkillContainers.Contains(parentCollapse) ||
-            context.ExpandedCollapsedPluginContainers.Contains(parentCollapse))
+            context.ExpandedCollapsedToolkitContainers.Contains(parentCollapse))
         {
             _logger?.LogDebug($"[VISIBILITY] Skill container {skillName}: VISIBLE (parent Collapse {parentCollapse} expanded)");
             return true;
@@ -446,25 +475,32 @@ public class ToolVisibilityManager
     /// Determines visibility and categorization for a function.
     /// Returns the visibility reason, which determines which list the function goes into.
     ///
-    /// PRIORITY 1: Parent plugin Collapse check with skill bypass
-    ///   - If plugin has [Collapse] container AND function is referenced by an expanded skill → VISIBLE (skill bypass)
-    ///   - If plugin has [Collapse] container AND parent plugin is expanded → VISIBLE
-    ///   - If plugin has [Collapse] container AND not expanded → HIDDEN
+    /// PRIORITY 1: Parent Toolkit Collapse check with skill bypass
+    ///   - If Toolkit has [Collapse] container AND function is referenced by an expanded skill → VISIBLE (skill bypass)
+    ///   - If Toolkit has [Collapse] container AND parent Toolkit is expanded → VISIBLE
+    ///   - If Toolkit has [Collapse] container AND not expanded → HIDDEN
     /// PRIORITY 2: Explicit registration check (always show if explicitly registered)
     /// PRIORITY 3: Skill reference check (show if any referencing skill is expanded)
     /// PRIORITY 4: Special case - read_skill_document
-    /// PRIORITY 5: Orphan check (hide functions in implicitly-registered plugins that aren't referenced)
+    /// PRIORITY 5: Orphan check (hide functions in implicitly-registered Toolkits that aren't referenced)
     /// DEFAULT: Non-Collapsed, non-referenced, non-orphan functions are always visible
     /// </summary>
     private FunctionVisibility GetFunctionVisibility(AIFunction function, VisibilityContext context)
     {
         var functionName = function.Name ?? string.Empty;
-        var parentPlugin = GetParentPlugin(function);
+        var parentToolkit = GetParentToolkit(function);
 
-        // PRIORITY 1: If plugin has [Collapse] container, check skill bypass first
-        if (parentPlugin != null && context.PluginsWithContainers.Contains(parentPlugin))
+        // PRIORITY 0: If Toolkit is in NeverCollapse, treat as non-collapsed
+        if (parentToolkit != null && _neverCollapseToolkits.Contains(parentToolkit))
         {
-            // Check if this function is referenced by an expanded skill (skill bypass for Collapsed plugins)
+            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (parent {parentToolkit} in NeverCollapse)");
+            return FunctionVisibility.NonCollapsed;
+        }
+
+        // PRIORITY 1: If Toolkit has [Collapse] container, check skill bypass first
+        if (parentToolkit != null && context.ToolkitsWithContainers.Contains(parentToolkit))
+        {
+            // Check if this function is referenced by an expanded skill (skill bypass for Collapsed Toolkits)
             if (context.FunctionsReferencedBySkills.Contains(functionName))
             {
                 var referencingSkills = context.SkillsReferencingFunction.GetValueOrDefault(functionName, new List<string>());
@@ -472,28 +508,28 @@ public class ToolVisibilityManager
 
                 if (anySkillExpanded)
                 {
-                    _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (skill bypass for Collapsed plugin {parentPlugin})");
+                    _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (skill bypass for Collapsed Toolkit {parentToolkit})");
                     return FunctionVisibility.ExpandedSkill;
                 }
             }
 
-            // Otherwise, Collapsed plugin function - only show if parent expanded
-            if (context.ExpandedCollapsedPluginContainers.Contains(parentPlugin))
+            // Otherwise, Collapsed Toolkit function - only show if parent expanded
+            if (context.ExpandedCollapsedToolkitContainers.Contains(parentToolkit))
             {
-                _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (Collapsed parent {parentPlugin} expanded)");
-                return FunctionVisibility.ExpandedPlugin;
+                _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (Collapsed parent {parentToolkit} expanded)");
+                return FunctionVisibility.ExpandedToolkit;
             }
 
-            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (Collapsed parent {parentPlugin} not expanded)");
+            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (Collapsed parent {parentToolkit} not expanded)");
             return FunctionVisibility.Hidden;
         }
 
-        // PRIORITY 2: If plugin is explicitly registered (and NOT Collapsed), show all its functions
+        // PRIORITY 2: If Toolkit is explicitly registered (and NOT Collapsed), show all its functions
         // (Explicit registration takes precedence over skill references)
-        if (parentPlugin != null && _explicitlyRegisteredTools.Contains(parentPlugin))
+        if (parentToolkit != null && _explicitlyRegisteredTools.Contains(parentToolkit))
         {
-            // Explicitly registered plugin - always show functions
-            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (explicitly registered plugin)");
+            // Explicitly registered Toolkit - always show functions
+            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (explicitly registered Toolkit)");
             return FunctionVisibility.NonCollapsed;
         }
 
@@ -546,12 +582,12 @@ public class ToolVisibilityManager
         }
 
         // PRIORITY 5: Orphan check
-        if (parentPlugin != null && context.PluginsWithCollapsedSkills.Contains(parentPlugin))
+        if (parentToolkit != null && context.ToolkitsWithCollapsedSkills.Contains(parentToolkit))
         {
-            // This function is in a plugin that was auto-registered via Collapsed skills
+            // This function is in a Toolkit that was auto-registered via Collapsed skills
             // BUT this function is NOT referenced by any skill (it's an orphan)
             // Hide it - don't add to any list
-            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (orphan in implicitly-registered plugin {parentPlugin})");
+            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (orphan in implicitly-registered Toolkit {parentToolkit})");
             return FunctionVisibility.Hidden;
         }
 
@@ -566,19 +602,19 @@ public class ToolVisibilityManager
     /// </summary>
     private VisibilityContext BuildVisibilityContext(
         List<AIFunction> allTools,
-        ImmutableHashSet<string> expandedCollapsedPluginContainers,
+        ImmutableHashSet<string> expandedCollapsedToolkitContainers,
         ImmutableHashSet<string> expandedSkillContainers)
     {
         var context = new VisibilityContext
         {
             AllTools = allTools,
-            ExpandedCollapsedPluginContainers = expandedCollapsedPluginContainers,
+            ExpandedCollapsedToolkitContainers = expandedCollapsedToolkitContainers,
             ExpandedSkillContainers = expandedSkillContainers,
-            PluginsWithContainers = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            ToolkitsWithContainers = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             SkillClassesWithCollapse = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             FunctionsReferencedBySkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             SkillsReferencingFunction = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase),
-            PluginsWithCollapsedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            ToolkitsWithCollapsedSkills = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         };
 
         foreach (var tool in allTools)
@@ -588,39 +624,39 @@ public class ToolVisibilityManager
             switch (containerType)
             {
                 case ContainerType.CollapseAttributeContainer:
-                    // Collapse container (can be class-level or plugin-level)
+                    // Collapse container (can be class-level or Toolkit-level)
                     var CollapseName = tool.Name ?? string.Empty;
                     context.SkillClassesWithCollapse.Add(CollapseName);
-                    // Also track as a plugin with container so functions get hidden/shown properly
-                    context.PluginsWithContainers.Add(CollapseName);
+                    // Also track as a Toolkit with container so functions get hidden/shown properly
+                    context.ToolkitsWithContainers.Add(CollapseName);
                     break;
 
-                case ContainerType.CollapsedPluginContainer:
-                    var toolName = GetPluginName(tool);
-                    context.PluginsWithContainers.Add(toolName);
+                case ContainerType.CollapsedToolkitContainer:
+                    var toolName = GetToolkitName(tool);
+                    context.ToolkitsWithContainers.Add(toolName);
                     break;
 
                 case ContainerType.SkillMethodContainer:
                     // Track which functions this skill references
                     var skillName = GetSkillName(tool);
                     var referencedFunctions = GetReferencedFunctions(tool);
-                    var referencedPlugins = GetReferencedTools(tool);
+                    var referencedToolkits = GetReferencedTools(tool);
                     var parentSkillContainer = GetParentSkillContainer(tool);
 
-                    // Mark plugins as having Collapsed skills ONLY if they are from a DIFFERENT plugin
-                    // (i.e., skills referencing functions from external plugins)
-                    foreach (var referencedPlugin in referencedPlugins)
+                    // Mark Toolkits as having Collapsed skills ONLY if they are from a DIFFERENT Toolkit
+                    // (i.e., skills referencing functions from external Toolkits)
+                    foreach (var referencedToolkit in referencedToolkits)
                     {
-                        // Only add if the referenced plugin is different from the skill's parent container
-                        if (!string.Equals(referencedPlugin, parentSkillContainer, StringComparison.OrdinalIgnoreCase))
+                        // Only add if the referenced Toolkit is different from the skill's parent container
+                        if (!string.Equals(referencedToolkit, parentSkillContainer, StringComparison.OrdinalIgnoreCase))
                         {
-                            context.PluginsWithCollapsedSkills.Add(referencedPlugin);
+                            context.ToolkitsWithCollapsedSkills.Add(referencedToolkit);
                         }
                     }
 
                     foreach (var funcRef in referencedFunctions)
                     {
-                        // Extract function name from "PluginName.FunctionName" format
+                        // Extract function name from "ToolkitName.FunctionName" format
                         var funcName = ExtractFunctionName(funcRef);
                         context.FunctionsReferencedBySkills.Add(funcName);
 
@@ -647,12 +683,12 @@ public class ToolVisibilityManager
     private class VisibilityContext
     {
         public required List<AIFunction> AllTools { get; init; }
-        public required ImmutableHashSet<string> ExpandedCollapsedPluginContainers { get; init; }
+        public required ImmutableHashSet<string> ExpandedCollapsedToolkitContainers { get; init; }
         public required ImmutableHashSet<string> ExpandedSkillContainers { get; init; }
-        public required HashSet<string> PluginsWithContainers { get; init; }
+        public required HashSet<string> ToolkitsWithContainers { get; init; }
         public required HashSet<string> SkillClassesWithCollapse { get; init; }
         public required HashSet<string> FunctionsReferencedBySkills { get; init; }
         public required Dictionary<string, List<string>> SkillsReferencingFunction { get; init; }
-        public required HashSet<string> PluginsWithCollapsedSkills { get; init; }
+        public required HashSet<string> ToolkitsWithCollapsedSkills { get; init; }
     }
 }

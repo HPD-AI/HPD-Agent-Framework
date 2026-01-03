@@ -17,7 +17,7 @@ public class StaticMemoryOptions
     public MemoryStrategy Strategy { get; set; } = MemoryStrategy.FullTextInjection;
 
     /// <summary>
-    /// Enable agent-controlled retrieval plugin.
+    /// Enable agent-controlled retrieval Toolkit.
     /// When true, agent gets a search_knowledge() function to manually search when needed.
     /// Default: false (only automatic retrieval via filter)
     /// </summary>

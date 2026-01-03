@@ -76,4 +76,13 @@ public sealed class AppendChannel<T> : IGraphChannel
             Version++;
         }
     }
+
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _values.Clear();
+            Version++;
+        }
+    }
 }

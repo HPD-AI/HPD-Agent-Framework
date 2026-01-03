@@ -80,7 +80,7 @@ public static class MiddlewareTestHelpers
         AIFunction? function = null,
         string callId = "test-call",
         IReadOnlyDictionary<string, object?>? arguments = null,
-        string? pluginName = null,
+        string? ToolkitName = null,
         string? skillName = null,
         AgentLoopState? state = null,
         string agentName = "TestAgent")
@@ -89,7 +89,7 @@ public static class MiddlewareTestHelpers
         function ??= AIFunctionFactory.Create(() => "test", "TestFunction");
         arguments ??= new Dictionary<string, object?>();
 
-        return context.AsBeforeFunction(function, callId, arguments, CreateDefaultRunOptions(), pluginName, skillName);
+        return context.AsBeforeFunction(function, callId, arguments, CreateDefaultRunOptions(), ToolkitName, skillName);
     }
 
     /// <summary>

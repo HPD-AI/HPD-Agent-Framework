@@ -6,6 +6,7 @@ using HPD.Agent.Audio.ElevenLabs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
+using AgentConsoleTest;
 
 // Print banner
 var logo = @"            ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
@@ -37,7 +38,8 @@ Directory.CreateDirectory(sessionsPath);
 
 var sessionStore = new JsonSessionStore(sessionsPath);
 
-// Create agent configuration - generic base, specialized personas come from plugins
+// Create agent configuration - generic base, specialized personas come from Toolkits
+// NEW: Toolkits are now registered via config instead of builder calls
 var config = new AgentConfig
 {
     Name = "HPD Agent",
@@ -46,7 +48,13 @@ var config = new AgentConfig
     SystemInstructions = @"You are a helpful assistant with access to specialized capabilities.
 Use the appropriate tools based on the user's request.
 Be concise and direct.",
-    Collapsing = new CollapsingConfig { Enabled = true }
+    Collapsing = new CollapsingConfig { Enabled = true },
+    // Toolkits resolved from source-generated registry at Build() time
+    Toolkits = new List<ToolkitReference>
+    {
+        "CodingToolkit",
+        "MathToolkit"
+    }
 };
 
 // Configure logging to show Information level logs
@@ -56,41 +64,15 @@ var loggerFactory = LoggerFactory.Create(builder =>
     builder.AddConsole();
 });
 
-// Configure audio providers (optional - reads from appsettings.json or environment)
-ITextToSpeechClient? ttsClient = null;
-Microsoft.Extensions.AI.ISpeechToTextClient? sttClient = null;
 
-var elevenLabsApiKey = configuration["ElevenLabs:ApiKey"] ?? Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY");
-if (!string.IsNullOrEmpty(elevenLabsApiKey))
-{
-    var audioConfig = new ElevenLabsAudioConfig
-    {
-        ApiKey = elevenLabsApiKey
-    };
-
-    ttsClient = new ElevenLabsTextToSpeechClient(audioConfig);
-    sttClient = new ElevenLabsSpeechToTextClient(audioConfig);
-
-    AnsiConsole.MarkupLine("[green]✓[/] ElevenLabs audio providers configured");
-}
-else
-{
-    AnsiConsole.MarkupLine("[yellow]ℹ[/] ElevenLabs:ApiKey not set in appsettings.json - audio features disabled");
-}
 
 var agentBuilder = new AgentBuilder(config)
     .WithProvider("openrouter", "z-ai/glm-4.7")
-    .WithTools<CodingPlugin>()
-    .WithTools<MathTools>()
-    .WithMiddleware(new EnvironmentContextMiddleware())
+    // Toolkits now come from config.Toolkits - no need for .WithToolkit<>() calls
+    .WithLogging()
     .WithSessionStore(sessionStore, persistAfterTurn: true);
 
 // Add audio pipeline if providers are available
-if (ttsClient != null || sttClient != null)
-{
-    agentBuilder = agentBuilder.UseAudioPipeline(ttsClient, sttClient);
-}
-
 var agent = await agentBuilder.Build();
 
 // Generate a unique session ID for this run
@@ -190,23 +172,74 @@ while (true)
         continue;
     }
 
-    // Check if it's a slash command
+    // Smart workflow with classifier (routes to math or general)
+    if (userInput.StartsWith("/ask ", StringComparison.OrdinalIgnoreCase))
+    {
+        var question = userInput[5..].Trim();
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            AnsiConsole.MarkupLine("[yellow]Usage: /ask <your question>[/]");
+            AnsiConsole.MarkupLine("[dim]Math questions → 3-agent consensus, General questions → single agent[/]");
+        }
+        else
+        {
+            var answer = await SmartQuantWorkflow.RunAsync(question);
+        }
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    // Quant workflows - multi-agent consensus (stateless, no session needed)
+    // Check these BEFORE the generic command processor to avoid "unknown command" error
+    if (userInput.StartsWith("/quant-graph ", StringComparison.OrdinalIgnoreCase))
+    {
+        var question = userInput.Substring(13).Trim();
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            AnsiConsole.MarkupLine("[yellow]Usage: /quant-graph <your question>[/]");
+            AnsiConsole.MarkupLine("[dim]Example: /quant-graph What is the expected value of rolling two dice?[/]");
+        }
+        else
+        {
+            var answer = await GraphQuantWorkflow.RunAsync(question);
+        }
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    if (userInput.StartsWith("/quant ", StringComparison.OrdinalIgnoreCase))
+    {
+        var question = userInput.Substring(7).Trim();
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            AnsiConsole.MarkupLine("[yellow]Usage: /quant <your question>[/]");
+            AnsiConsole.MarkupLine("[dim]Example: /quant What is 15% of 240?[/]");
+        }
+        else
+        {
+            var answer = await SimpleQuantWorkflow.RunAsync(question);
+        }
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    // Check if it's a slash command (AFTER custom commands like /quant)
     if (commandProcessor.IsCommand(userInput))
     {
         var result = await commandProcessor.ExecuteAsync(userInput);
-        
+
         if (result.ShouldExit)
         {
             AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
             break;
         }
-        
+
         if (result.ShouldClearHistory)
         {
             // History cleared, reload thread
             thread = await agent.LoadSessionAsync(sessionId);
         }
-        
+
         AnsiConsole.WriteLine();
         continue;
     }

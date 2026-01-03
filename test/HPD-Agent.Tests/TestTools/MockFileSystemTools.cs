@@ -1,8 +1,8 @@
-namespace HPD.Agent.Tests.TestPlugins;
+namespace HPD.Agent.Tests.TestToolkits;
 
 /// <summary>
-/// Mock plugin with multiple functions for testing selective registration
-/// This plugin must be in its own file so the source generator can process it
+/// Mock Toolkit with multiple functions for testing selective registration
+/// This Toolkit must be in its own file so the source generator can process it
 /// </summary>
 public class MockFileSystemTools
 {
@@ -23,9 +23,9 @@ public class MockFileSystemTools
 }
 
 /// <summary>
-/// Mock debugging plugin with skills that reference MockFileSystemTools functions
+/// Mock debugging Toolkit with skills that reference MockFileSystemTools functions
 /// </summary>
-public class MockDebuggingPlugin
+public class MockDebuggingToolkit
 {
     [Skill]
     public static Skill FileDebugging() => SkillFactory.Create(

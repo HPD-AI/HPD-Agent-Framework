@@ -63,7 +63,7 @@ public record ClientToolInvokeResponseEvent(
 }
 
 /// <summary>
-/// Emitted after Client plugins are successfully registered.
+/// Emitted after Client Toolkits are successfully registered.
 /// Useful for debugging and observability.
 /// </summary>
 /// <param name="RegisteredToolGroups">Names of all registered tool groups</param>

@@ -46,15 +46,15 @@ public class Phase5DocumentLinkingTests : IDisposable
         var testDocPath = Path.Combine(_testDocumentsPath, "test-guide.md");
         await File.WriteAllTextAsync(testDocPath, "# Test Guide\nThis is a test document.");
 
-        // Create a mock plugin with a skill that uploads a document
-        var testPlugin = new TestPluginWithDocumentUpload(testDocPath);
+        // Create a mock Toolkit with a skill that uploads a document
+        var testToolkit = new TestToolkitWithDocumentUpload(testDocPath);
 
         // Act: Build agent without providing document store
         var builder = new AgentBuilder()
             .WithProvider("openai", "gpt-4");
 
-        // Register plugin via instance registration
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(testPlugin, "TestPluginWithDocumentUpload"));
+        // Register Toolkit via instance registration
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(testToolkit, "TestToolkitWithDocumentUpload"));
 
         // Note: We can't fully test Build() without a real provider,
         // but we can verify the document store field gets set
@@ -100,7 +100,7 @@ public class Phase5DocumentLinkingTests : IDisposable
             systemPrompt: "Instructions",
             options: new SkillOptions()
                 .AddDocumentFromFile(testDocPath, "Test upload document", "upload-test"),
-            "MockPlugin.TestFunction"
+            "MockToolkit.TestFunction"
         );
 
         // Simulate what the source generator would create
@@ -229,10 +229,10 @@ public class Phase5DocumentLinkingTests : IDisposable
         {
             Description = "Skill-specific description"
         };
-        await store.LinkDocumentToSkillAsync("TestPlugin", "linked-doc", skillMetadata);
+        await store.LinkDocumentToSkillAsync("TestToolkit", "linked-doc", skillMetadata);
 
         // Assert: Document should be linked to skill
-        var skillDocs = await store.GetSkillDocumentsAsync("TestPlugin");
+        var skillDocs = await store.GetSkillDocumentsAsync("TestToolkit");
         Assert.Single(skillDocs);
         Assert.Equal("linked-doc", skillDocs[0].DocumentId);
         Assert.Equal("Skill-specific description", skillDocs[0].Description);
@@ -389,19 +389,19 @@ public class Phase5DocumentLinkingTests : IDisposable
                 {
                     ["IsSkill"] = true,
                     ["SkillName"] = skillName,
-                    ["ParentSkillContainer"] = "TestPlugin",
+                    ["ParentSkillContainer"] = "TestToolkit",
                     ["DocumentUploads"] = documentUploads,
                     ["DocumentReferences"] = documentReferences
                 }
             });
     }
 
-    // Mock plugin for testing
-    private class TestPluginWithDocumentUpload
+    // Mock Toolkit for testing
+    private class TestToolkitWithDocumentUpload
     {
         private readonly string _documentPath;
 
-        public TestPluginWithDocumentUpload(string documentPath)
+        public TestToolkitWithDocumentUpload(string documentPath)
         {
             _documentPath = documentPath;
         }
@@ -416,7 +416,7 @@ public class Phase5DocumentLinkingTests : IDisposable
                 systemPrompt: "Instructions",
                 options: new SkillOptions()
                     .AddDocumentFromFile(_documentPath, "Test document", "test-doc"),
-                "MockPlugin.TestFunction"
+                "MockToolkit.TestFunction"
             );
         }
     }

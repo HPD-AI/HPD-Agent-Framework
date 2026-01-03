@@ -242,10 +242,10 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
         Console.WriteLine($"[ENDPOINT] Starting agent.RunAsync for conversation {conversationId}");
         if (runInput?.ClientToolGroups?.Count > 0)
         {
-            Console.WriteLine($"[ENDPOINT] Registered {runInput.ClientToolGroups.Count} Client plugin(s)");
-            foreach (var plugin in runInput.ClientToolGroups)
+            Console.WriteLine($"[ENDPOINT] Registered {runInput.ClientToolGroups.Count} Client Toolkit(s)");
+            foreach (var Toolkit in runInput.ClientToolGroups)
             {
-                Console.WriteLine($"[ENDPOINT]   - {plugin.Name}: {plugin.Tools.Count} tools");
+                Console.WriteLine($"[ENDPOINT]   - {Toolkit.Name}: {Toolkit.Tools.Count} tools");
             }
         }
 
@@ -458,7 +458,7 @@ internal class ConversationManager
             .WithDynamicMemory(opts => opts
                 .WithStorageDirectory("./agent-memory-storage")
                 .WithMaxTokens(6000))
-            .WithTools<MathTools>()
+            .WithToolkit<MathTools>()
             .WithPermissions(); // ← Enable permission system! (Automatic per-session persistence)
 
         if (eventHandler != null)

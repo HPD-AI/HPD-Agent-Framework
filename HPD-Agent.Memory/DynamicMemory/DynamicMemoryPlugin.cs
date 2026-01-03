@@ -3,15 +3,15 @@ using System.ComponentModel; // For [Description]
 using System.Threading.Tasks;
 namespace HPD.Agent.Memory;
 /// <summary>
-/// HPD-Agent AI plugin for Dynamic Memory management
+/// HPD-Agent AI Toolkit for Dynamic Memory management
 /// </summary>
-public class DynamicMemoryPlugin
+public class DynamicMemoryToolkit
 {
     private readonly DynamicMemoryStore _store;
     private readonly string _memoryId;
-    private readonly ILogger<DynamicMemoryPlugin>? _logger;
+    private readonly ILogger<DynamicMemoryToolkit>? _logger;
 
-    public DynamicMemoryPlugin(DynamicMemoryStore store, string memoryId, ILogger<DynamicMemoryPlugin>? logger = null)
+    public DynamicMemoryToolkit(DynamicMemoryStore store, string memoryId, ILogger<DynamicMemoryToolkit>? logger = null)
     {
         _store = store;
         _memoryId = memoryId;

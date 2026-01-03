@@ -120,7 +120,7 @@ public class MyProgressMiddleware : IAIFunctionMiddleware
 ```csharp
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4", apiKey)
-     .WithTool<FileSystemPlugin>()
+     .WithTool<FileSystemToolkit>()
     .WithMiddleware(new MyProgressMiddleware())  // Add your Middleware!
     .Build();
 ```

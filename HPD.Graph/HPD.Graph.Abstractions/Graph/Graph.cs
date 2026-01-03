@@ -180,6 +180,128 @@ public sealed record Graph
     }
 
     /// <summary>
+    /// Gets back-edges in this graph (edges pointing backwards in topological order).
+    /// Back-edges create cycles and enable iterative execution patterns.
+    /// Note: Not cached internally - the orchestrator caches the result at execution start.
+    /// </summary>
+    /// <returns>List of back-edges sorted by jump distance (largest first)</returns>
+    public IReadOnlyList<BackEdge> GetBackEdges()
+    {
+        return ComputeBackEdges();
+    }
+
+    /// <summary>
+    /// True if this graph contains cycles (has back-edges).
+    /// Cyclic graphs require iterative execution mode.
+    /// </summary>
+    public bool HasCycles => GetBackEdges().Count > 0;
+
+    /// <summary>
+    /// Computes back-edges using DFS traversal.
+    /// A back-edge points from a node to an ancestor in the DFS tree.
+    /// </summary>
+    private IReadOnlyList<BackEdge> ComputeBackEdges()
+    {
+        var backEdges = new List<BackEdge>();
+
+        // Build adjacency list for non-START/END nodes
+        var excludedNodes = new HashSet<string>(
+            Nodes.Where(n => n.Type is NodeType.Start or NodeType.End)
+                 .Select(n => n.Id)
+        );
+
+        var adjacency = new Dictionary<string, List<Edge>>();
+        foreach (var node in Nodes.Where(n => !excludedNodes.Contains(n.Id)))
+        {
+            adjacency[node.Id] = new List<Edge>();
+        }
+
+        foreach (var edge in Edges)
+        {
+            if (excludedNodes.Contains(edge.From) || excludedNodes.Contains(edge.To))
+                continue;
+
+            if (adjacency.ContainsKey(edge.From))
+            {
+                adjacency[edge.From].Add(edge);
+            }
+        }
+
+        // DFS state: 0 = unvisited, 1 = in current path (gray), 2 = finished (black)
+        var state = new Dictionary<string, int>();
+        var discoveryOrder = new Dictionary<string, int>();
+        var currentOrder = 0;
+
+        foreach (var nodeId in adjacency.Keys)
+        {
+            state[nodeId] = 0;
+        }
+
+        void Dfs(string nodeId)
+        {
+            state[nodeId] = 1; // Mark as being visited
+            discoveryOrder[nodeId] = currentOrder++;
+
+            if (adjacency.TryGetValue(nodeId, out var edges))
+            {
+                foreach (var edge in edges)
+                {
+                    if (!state.ContainsKey(edge.To))
+                        continue;
+
+                    if (state[edge.To] == 1) // Back-edge: points to an ancestor in current path
+                    {
+                        backEdges.Add(new BackEdge
+                        {
+                            Edge = edge,
+                            SourceOrder = discoveryOrder[nodeId],
+                            TargetOrder = discoveryOrder[edge.To],
+                            JumpDistance = discoveryOrder[nodeId] - discoveryOrder[edge.To]
+                        });
+                    }
+                    else if (state[edge.To] == 0) // Unvisited
+                    {
+                        Dfs(edge.To);
+                    }
+                    // state[edge.To] == 2 means cross/forward edge, not a back-edge
+                }
+            }
+
+            state[nodeId] = 2; // Mark as finished
+        }
+
+        // Find entry points (nodes reachable from START)
+        var entryPoints = Edges
+            .Where(e => e.From == EntryNodeId && adjacency.ContainsKey(e.To))
+            .Select(e => e.To)
+            .ToList();
+
+        // Start DFS from entry points
+        foreach (var entry in entryPoints)
+        {
+            if (state.TryGetValue(entry, out var s) && s == 0)
+            {
+                Dfs(entry);
+            }
+        }
+
+        // Also process any unvisited nodes (disconnected components)
+        foreach (var nodeId in adjacency.Keys)
+        {
+            if (state[nodeId] == 0)
+            {
+                Dfs(nodeId);
+            }
+        }
+
+        // Sort by jump distance descending: evaluate long-range back-edges first
+        // This provides deterministic behavior when multiple back-edges share nodes
+        return backEdges
+            .OrderByDescending(b => b.JumpDistance)
+            .ToList();
+    }
+
+    /// <summary>
     /// Generate Mermaid flowchart diagram for visualization.
     /// Output can be rendered at https://mermaid.live or in Markdown.
     /// </summary>

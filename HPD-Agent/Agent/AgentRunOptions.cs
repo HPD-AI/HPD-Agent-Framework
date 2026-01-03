@@ -126,7 +126,7 @@ public class AgentRunOptions
 
     /// <summary>
     /// Client tool configuration for this run.
-    /// Allows dynamic plugin/tool registration without rebuilding agent.
+    /// Allows dynamic Toolkit/tool registration without rebuilding agent.
     /// </summary>
     public ClientTools.AgentRunInput? ClientToolInput { get; set; }
 
@@ -294,6 +294,14 @@ public class AgentRunOptions
     /// </summary>
     [JsonIgnore]
     internal List<AITool>? RuntimeTools { get; set; }
+
+    /// <summary>
+    /// Tool mode override for this run only.
+    /// Used internally by structured output tool/union modes to force tool calling.
+    /// When set, overrides the agent's configured ToolMode.
+    /// </summary>
+    [JsonIgnore]
+    internal ChatToolMode? RuntimeToolMode { get; set; }
 
     #endregion
 }

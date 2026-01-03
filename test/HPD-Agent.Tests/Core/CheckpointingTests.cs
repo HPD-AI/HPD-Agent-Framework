@@ -86,7 +86,7 @@ public class CheckpointingTests : AgentTestBase
             "ConversationId": "test",
             "AgentName": "test",
             "CurrentMessages": [],
-            "ExpandedPlugins": [],
+            "ExpandedToolkits": [],
             "CompletedFunctions": []
         }
         """;

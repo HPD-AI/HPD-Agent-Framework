@@ -96,6 +96,18 @@ public interface IGraphContext
     void MarkNodeComplete(string nodeId);
 
     /// <summary>
+    /// Unmark a node as complete, allowing re-execution.
+    /// Used during iteration when back-edge conditions trigger.
+    /// </summary>
+    void UnmarkNodeComplete(string nodeId);
+
+    /// <summary>
+    /// Unmark multiple nodes as complete.
+    /// More efficient than calling UnmarkNodeComplete repeatedly.
+    /// </summary>
+    void UnmarkNodesComplete(IEnumerable<string> nodeIds);
+
+    /// <summary>
     /// Check if a node is complete.
     /// </summary>
     bool IsNodeComplete(string nodeId);
@@ -266,6 +278,17 @@ public interface IGraphContext
     /// Overall progress (0.0 to 1.0).
     /// </summary>
     float Progress { get; }
+
+    // ========================================
+    // Iteration Tracking (Cyclic Graphs)
+    // ========================================
+
+    /// <summary>
+    /// Current iteration index for cyclic graph execution (0-based).
+    /// Returns 0 for acyclic graphs or first iteration.
+    /// Increments when back-edge conditions trigger re-execution.
+    /// </summary>
+    int CurrentIteration { get; }
 }
 
 /// <summary>

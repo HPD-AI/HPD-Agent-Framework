@@ -12,7 +12,7 @@ using Ude;
 namespace HPD.Agent.Tools.FileSystem;
 
 /// <summary>
-/// File system operations plugin for HPD-Agent.
+/// File system operations Toolkit for HPD-Agent.
 /// Provides AI functions for reading, writing, editing, searching, and discovering files.
 /// Inspired by Gemini CLI's file system tools.
 /// </summary>

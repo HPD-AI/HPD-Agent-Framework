@@ -115,9 +115,9 @@ And provide the NuGet API key when prompted.
 ### .NET - Core Framework
 - **HPD.Agent.Framework** - Main agentic AI framework with middleware pipeline
 
-### Plugins
-- **HPD.Agent.Plugins.FileSystem** - File system operations plugin
-- **HPD.Agent.Plugins.WebSearch** - Web search capabilities plugin
+### Toolkits
+- **HPD.Agent.Toolkits.FileSystem** - File system operations Toolkit
+- **HPD.Agent.Toolkits.WebSearch** - Web search capabilities Toolkit
 
 ### Extensions
 - **HPD.Agent.Memory** - Dynamic memory system for agents

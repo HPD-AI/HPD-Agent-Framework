@@ -244,10 +244,10 @@ public class SkillInstructionMiddlewareTests
             description: "Dummy function for testing");
 
         var tools = new List<AITool> { dummyFunction };
-        var emptyPlugins = ImmutableHashSet<string>.Empty;
+        var emptyToolkits = ImmutableHashSet<string>.Empty;
         var config = new CollapsingConfig { Enabled = true };
 
-        return new ContainerMiddleware(tools, emptyPlugins, config);
+        return new ContainerMiddleware(tools, emptyToolkits, config);
     }
 
     private static BeforeIterationContext CreateContext(ImmutableDictionary<string, ContainerInstructionSet> activeContainers)

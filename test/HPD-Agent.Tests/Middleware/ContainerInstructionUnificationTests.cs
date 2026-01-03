@@ -20,8 +20,8 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResult: "Plugin activated",
+            .Add("FinancialToolkit", new ContainerInstructionSet(
+                FunctionResult: "Toolkit activated",
                SystemPrompt: "Always validate calculations"));
         var context = CreateContext(containerInstructions);
 
@@ -30,7 +30,7 @@ public class ContainerInstructionUnificationTests
 
         // Assert
         Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
-        Assert.Contains("FinancialPlugin", context.Options.Instructions);
+        Assert.Contains("FinancialToolkit", context.Options.Instructions);
         Assert.Contains("Always validate calculations", context.Options.Instructions);
     }
 
@@ -40,8 +40,8 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
-                FunctionResult: "Plugin activated",
+            .Add("TestToolkit", new ContainerInstructionSet(
+                FunctionResult: "Toolkit activated",
                SystemPrompt: null)); // Only FunctionResult
         var context = CreateContext(containerInstructions);
 
@@ -51,9 +51,9 @@ public class ContainerInstructionUnificationTests
         // Assert - Header is emitted but container content is skipped sinceSystemPrompt is null
         Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
 
-        // But the plugin name and FunctionResult should NOT be in system prompt
-        Assert.DoesNotContain("TestPlugin", context.Options.Instructions!);
-        Assert.DoesNotContain("Plugin activated", context.Options.Instructions);
+        // But the Toolkit name and FunctionResult should NOT be in system prompt
+        Assert.DoesNotContain("TestToolkit", context.Options.Instructions!);
+        Assert.DoesNotContain("Toolkit activated", context.Options.Instructions);
     }
 
     [Fact]
@@ -62,11 +62,11 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResult: "Financial plugin activated",
+            .Add("FinancialToolkit", new ContainerInstructionSet(
+                FunctionResult: "Financial Toolkit activated",
                SystemPrompt: "Financial rules: Always validate equations"))
-            .Add("WeatherPlugin", new ContainerInstructionSet(
-                FunctionResult: "Weather plugin activated",
+            .Add("WeatherToolkit", new ContainerInstructionSet(
+                FunctionResult: "Weather Toolkit activated",
                SystemPrompt: "Weather rules: Use metric units"));
         var context = CreateContext(containerInstructions);
 
@@ -74,9 +74,9 @@ public class ContainerInstructionUnificationTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Contains("FinancialPlugin", context.Options!.Instructions!);
+        Assert.Contains("FinancialToolkit", context.Options!.Instructions!);
         Assert.Contains("Financial rules: Always validate equations", context.Options.Instructions);
-        Assert.Contains("WeatherPlugin", context.Options.Instructions);
+        Assert.Contains("WeatherToolkit", context.Options.Instructions);
         Assert.Contains("Weather rules: Use metric units", context.Options.Instructions);
     }
 
@@ -86,9 +86,9 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
-               SystemPrompt: "Plugin-specific rules"));
+               SystemPrompt: "Toolkit-specific rules"));
         var context = CreateContext(containerInstructions);
         var originalInstructions = "You are a helpful AI assistant.";
         context.Options!.Instructions = originalInstructions;
@@ -98,7 +98,7 @@ public class ContainerInstructionUnificationTests
 
         // Assert - Original instructions should be preserved
         Assert.StartsWith(originalInstructions, context.Options.Instructions!);
-        Assert.Contains("Plugin-specific rules", context.Options.Instructions);
+        Assert.Contains("Toolkit-specific rules", context.Options.Instructions);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: "Test rules"));
         var context = CreateContext(containerInstructions);
@@ -133,7 +133,7 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: "This should appear in function result",
                SystemPrompt: null));
         var context = CreateContext(containerInstructions);
@@ -155,8 +155,8 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("FinancialPlugin", new ContainerInstructionSet(
-                FunctionResult: "Plugin activated with capabilities X, Y, Z",
+            .Add("FinancialToolkit", new ContainerInstructionSet(
+                FunctionResult: "Toolkit activated with capabilities X, Y, Z",
                SystemPrompt: "# FINANCIAL RULES\n- Always validate\n- Show work"));
         var context = CreateContext(containerInstructions);
 
@@ -169,7 +169,7 @@ public class ContainerInstructionUnificationTests
         Assert.Contains("Always validate", context.Options.Instructions);
 
         // FunctionResult should NOT be in system instructions (it goes in function result)
-        Assert.DoesNotContain("Plugin activated with capabilities", context.Options.Instructions);
+        Assert.DoesNotContain("Toolkit activated with capabilities", context.Options.Instructions);
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: "",
                SystemPrompt: ""));
         var context = CreateContext(containerInstructions);
@@ -188,7 +188,7 @@ public class ContainerInstructionUnificationTests
 
         // Assert - Header is emitted but container is skipped (empty string is IsNullOrEmpty)
         Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
-        Assert.DoesNotContain("TestPlugin", context.Options.Instructions); // Container is skipped
+        Assert.DoesNotContain("TestToolkit", context.Options.Instructions); // Container is skipped
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public class ContainerInstructionUnificationTests
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: "   ",
                SystemPrompt: "\n\t  ")); // Whitespace-only (not null or empty)
         var context = CreateContext(containerInstructions);
@@ -208,7 +208,7 @@ public class ContainerInstructionUnificationTests
         // Assert - Header is injected, but whitespace-only content is still added
         // (IsNullOrEmpty returns false for whitespace)
         Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
-        Assert.Contains("TestPlugin", context.Options.Instructions); // Container name is added
+        Assert.Contains("TestToolkit", context.Options.Instructions); // Container name is added
         // The whitespace itself will be in the output but isn't meaningful
     }
 
@@ -226,7 +226,7 @@ public class ContainerInstructionUnificationTests
 - Rule 2
 - Rule 3";
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: multilineRules));
         var context = CreateContext(containerInstructions);
@@ -256,7 +256,7 @@ public class ContainerInstructionUnificationTests
 Use `decimal` type for precision.";
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("FinancialPlugin", new ContainerInstructionSet(
+            .Add("FinancialToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: markdownRules));
         var context = CreateContext(containerInstructions);
@@ -278,7 +278,7 @@ Use `decimal` type for precision.";
         var rulesWithSpecialChars = @"Rules: Use $, €, ¥ symbols. Math: 2 + 2 = 4. Comparison: x > y.";
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: rulesWithSpecialChars));
         var context = CreateContext(containerInstructions);
@@ -302,7 +302,7 @@ Use `decimal` type for precision.";
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: "Activated",
                SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
@@ -327,7 +327,7 @@ Use `decimal` type for precision.";
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: "Activated",
                SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
@@ -366,9 +366,9 @@ Use `decimal` type for precision.";
         var middleware = CreateContainerMiddleware();
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("FinancialPlugin", new ContainerInstructionSet(
+            .Add("FinancialToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
-                SystemPrompt: "Financial plugin rules"));
+                SystemPrompt: "Financial Toolkit rules"));
 
         var context = CreateContext(containerInstructions);
 
@@ -377,7 +377,7 @@ Use `decimal` type for precision.";
 
         // Assert - Unified containers inject system prompt
         Assert.Contains("ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
-        Assert.Contains("Financial plugin rules", context.Options.Instructions);
+        Assert.Contains("Financial Toolkit rules", context.Options.Instructions);
     }
 
     #endregion
@@ -390,7 +390,7 @@ Use `decimal` type for precision.";
         // Arrange
         var middleware = CreateContainerMiddleware();
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: "Rules"));
         var context = CreateContext(containerInstructions);
@@ -426,7 +426,7 @@ Use `decimal` type for precision.";
         var longRules = string.Join("\n", Enumerable.Range(1, 100).Select(i => $"Rule {i}: This is rule number {i}"));
 
         var containerInstructions = ImmutableDictionary<string, ContainerInstructionSet>.Empty
-            .Add("TestPlugin", new ContainerInstructionSet(
+            .Add("TestToolkit", new ContainerInstructionSet(
                 FunctionResult: null,
                SystemPrompt: longRules));
         var context = CreateContext(containerInstructions);
@@ -491,10 +491,10 @@ Use `decimal` type for precision.";
             description: "Dummy function for testing");
 
         var tools = new List<AITool> { dummyFunction };
-        var emptyPlugins = ImmutableHashSet<string>.Empty;
+        var emptyToolkits = ImmutableHashSet<string>.Empty;
         var config = new CollapsingConfig { Enabled = true };
 
-        return new ContainerMiddleware(tools, emptyPlugins, config);
+        return new ContainerMiddleware(tools, emptyToolkits, config);
     }
 
     #endregion

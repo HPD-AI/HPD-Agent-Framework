@@ -75,7 +75,7 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
 
         _containerExpansions = _meter.CreateCounter<int>(
             "agent.container_expansions",
-            description: "Number of plugin/skill container expansions");
+            description: "Number of Toolkit/skill container expansions");
 
         _retryAttempts = _meter.CreateCounter<int>(
             "agent.retry_attempts",

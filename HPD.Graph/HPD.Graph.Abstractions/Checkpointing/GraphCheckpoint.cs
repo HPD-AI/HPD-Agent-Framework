@@ -1,3 +1,5 @@
+using HPDAgent.Graph.Abstractions.Execution;
+
 namespace HPDAgent.Graph.Abstractions.Checkpointing;
 
 /// <summary>
@@ -62,6 +64,21 @@ public sealed record GraphCheckpoint
     /// Schema version for forward/backward compatibility.
     /// </summary>
     public string SchemaVersion { get; init; } = "1.0";
+
+    // ===== ITERATION STATE (Cyclic Graphs) =====
+
+    /// <summary>
+    /// Current iteration index at checkpoint time (0-based).
+    /// 0 for acyclic graphs or first iteration.
+    /// </summary>
+    public int CurrentIteration { get; init; } = 0;
+
+    /// <summary>
+    /// Nodes pending re-execution when checkpoint was taken.
+    /// Empty for acyclic graphs or when iteration completed cleanly.
+    /// Used for resuming mid-iteration.
+    /// </summary>
+    public IReadOnlySet<string> PendingDirtyNodes { get; init; } = new HashSet<string>();
 }
 
 /// <summary>
@@ -88,6 +105,40 @@ public sealed record CheckpointMetadata
     /// Custom metadata (e.g., cost tracking, performance metrics).
     /// </summary>
     public IReadOnlyDictionary<string, object>? CustomMetadata { get; init; }
+
+    // ===== ITERATION TRACKING (Cyclic Graphs) =====
+
+    /// <summary>
+    /// Iteration index when checkpoint was created (for cyclic graphs).
+    /// Null for acyclic graphs or non-iteration checkpoints.
+    /// </summary>
+    public int? IterationIndex { get; init; }
+
+    /// <summary>
+    /// True if checkpoint was taken mid-iteration (between back-edge evaluation).
+    /// </summary>
+    public bool IsMidIteration =>
+        IterationIndex.HasValue && Trigger == CheckpointTrigger.Suspension;
+
+    // ===== SUSPENSION TRACKING (Layered Suspension) =====
+
+    /// <summary>
+    /// ID of the node that triggered suspension (if Trigger = Suspension).
+    /// </summary>
+    public string? SuspendedNodeId { get; init; }
+
+    /// <summary>
+    /// Token for matching suspend/resume operations.
+    /// Used to correlate checkpoint with approval response.
+    /// </summary>
+    public string? SuspendToken { get; init; }
+
+    /// <summary>
+    /// Current outcome of the suspension.
+    /// Pending = waiting for response.
+    /// Approved/Denied/TimedOut = terminal states.
+    /// </summary>
+    public SuspensionOutcome? SuspensionOutcome { get; init; }
 }
 
 /// <summary>
@@ -115,5 +166,23 @@ public enum CheckpointTrigger
     /// <summary>
     /// Triggered during graceful shutdown.
     /// </summary>
-    Shutdown
+    Shutdown,
+
+    /// <summary>
+    /// Triggered when a node suspends for human-in-the-loop approval.
+    /// Checkpoint saved before waiting for response.
+    /// </summary>
+    Suspension,
+
+    /// <summary>
+    /// Triggered after an iteration completes in cyclic graph execution.
+    /// Includes iteration state for potential resume.
+    /// </summary>
+    IterationCompleted,
+
+    /// <summary>
+    /// Triggered when max iterations is reached with dirty nodes remaining.
+    /// Graph did not converge within iteration limit.
+    /// </summary>
+    MaxIterationsReached
 }

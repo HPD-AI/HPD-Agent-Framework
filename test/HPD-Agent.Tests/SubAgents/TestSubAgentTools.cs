@@ -2,7 +2,7 @@ using HPD.Agent;
 using HPD.Agent;
 
 /// <summary>
-/// Test plugin with various sub-agent patterns for validation
+/// Test Toolkit with various sub-agent patterns for validation
 /// Mirrors Microsoft's AsAIFunction() but with HPD-Agent compile-time validation
 /// </summary>
 public class TestSubAgentTools
@@ -167,11 +167,11 @@ public class TestSubAgentTools
     {
         return SubAgentFactory.Create(
             "SubAgentWithToolss",
-            "Sub-agent with plugins registered",
+            "Sub-agent with Toolkits registered",
             new AgentConfig
             {
-                Name = "With Plugins",
-                SystemInstructions = "Test agent with plugin access",
+                Name = "With Toolkits",
+                SystemInstructions = "Test agent with Toolkit access",
                 Provider = new ProviderConfig { ProviderKey = "openrouter", ModelName = "test" }
             },
             typeof(HPD.Agent.Tools.FileSystem.FileSystemTools));
