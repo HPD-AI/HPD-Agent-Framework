@@ -20,6 +20,7 @@ public class GraphContext : IGraphContext
     private readonly ConcurrentDictionary<string, int> _nodeExecutionCounts = new();
     private readonly ConcurrentBag<GraphLogEntry> _logEntries = new();
     private readonly ConcurrentDictionary<string, ConcurrentBag<string>> _tags = new();
+    private readonly ConcurrentDictionary<string, object>? _sharedData;
 
     // Iteration tracking for cyclic graphs
     private int _currentIteration;
@@ -38,6 +39,7 @@ public class GraphContext : IGraphContext
     public IServiceProvider Services { get; init; }
     public HPD.Events.IEventCoordinator? EventCoordinator { get; init; }
     public IDictionary<string, List<string>> Tags => _tags.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.Distinct().ToList());
+    public IDictionary<string, object>? SharedData => _sharedData;
     public int CurrentLayerIndex { get; set; }
     public int TotalLayers { get; private set; }
     public int CurrentIteration => _currentIteration;
@@ -56,13 +58,15 @@ public class GraphContext : IGraphContext
         GraphDefinition graph,
         IServiceProvider services,
         IGraphChannelSet? channels = null,
-        IManagedContext? managed = null)
+        IManagedContext? managed = null,
+        bool enableSharedData = false)
     {
         ExecutionId = executionId ?? throw new ArgumentNullException(nameof(executionId));
         Graph = graph ?? throw new ArgumentNullException(nameof(graph));
         Services = services ?? throw new ArgumentNullException(nameof(services));
         Channels = channels ?? new GraphChannelSet();
         Managed = managed ?? new ManagedContext();
+        _sharedData = enableSharedData ? new ConcurrentDictionary<string, object>() : null;
         StartedAt = DateTimeOffset.UtcNow;
         LastUpdatedAt = DateTimeOffset.UtcNow;
     }
@@ -180,7 +184,9 @@ public class GraphContext : IGraphContext
 
     public virtual IGraphContext CreateIsolatedCopy()
     {
-        var copy = new GraphContext(ExecutionId, Graph, Services, CloneChannels(), Managed)
+        var copy = new GraphContext(
+            ExecutionId, Graph, Services, CloneChannels(), Managed,
+            enableSharedData: _sharedData != null)
         {
             StartedAt = StartedAt,
             LastUpdatedAt = DateTimeOffset.UtcNow,
@@ -194,6 +200,15 @@ public class GraphContext : IGraphContext
         foreach (var nodeId in CompletedNodes)
         {
             copy.MarkNodeComplete(nodeId);
+        }
+
+        // Copy shared data (read-only reference is fine - SharedData is for global context)
+        if (_sharedData != null && copy._sharedData != null)
+        {
+            foreach (var kvp in _sharedData)
+            {
+                copy._sharedData[kvp.Key] = kvp.Value;
+            }
         }
 
         return copy;

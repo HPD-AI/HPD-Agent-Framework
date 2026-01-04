@@ -21,5 +21,11 @@ internal enum CapabilityType
     /// A sub-agent capability that delegates to another agent.
     /// Decorated with [SubAgent] attribute. SubAgents are wrappers (not containers).
     /// </summary>
-    SubAgent
+    SubAgent,
+
+    /// <summary>
+    /// A multi-agent workflow capability that orchestrates multiple agents.
+    /// Decorated with [MultiAgent] attribute. MultiAgents are containers that execute graph workflows.
+    /// </summary>
+    MultiAgent
 }

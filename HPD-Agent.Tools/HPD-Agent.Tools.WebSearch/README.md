@@ -1,4 +1,3 @@
-# WebSearch Toolkit for HPD-Agent
 
 The WebSearch Toolkit provides intelligent web search capabilities to HPD-Agent with support for multiple search providers, type-safe configuration, and AOT-compatible implementation.
 

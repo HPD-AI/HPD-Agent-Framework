@@ -1,0 +1,29 @@
+{
+  "sessionId": "console-2026-01-04-002132-f066b34e",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "I\u0027m a helpful AI assistant with access to specialized capabilities including coding tools and mathematical operations. I\u0027m here to assist you with various tasks like file operations, code search, shell commands, and mathematical calculations. How can I help you today?"
+        }
+      ],
+      "messageId": "gen-1767507696-ibW2HdfgQx6KAardZnuj"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2026-01-04T06:21:36.324109Z",
+  "lastActivity": "2026-01-04T06:21:40.315483Z",
+  "conversationId": "7eab2cd9-378e-4255-8667-dc121d27a553",
+  "version": 1
+}

@@ -10,6 +10,7 @@ using HPDAgent.Graph.Abstractions.Handlers;
 using HPDAgent.Graph.Abstractions.Orchestration;
 using HPDAgent.Graph.Core.Channels;
 using HPDAgent.Graph.Core.State;
+using HPDAgent.Graph.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HPDAgent.Graph.Core.Orchestration;
@@ -37,6 +38,11 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     // Track failed nodes for error propagation
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, Exception> _failedNodes = new();
+
+    // Track output hashes for change-aware iteration (Proposal 005)
+    // Stores hash of each node's outputs to detect changes between iterations
+    // Thread-safe for parallel node execution
+    private readonly ConcurrentDictionary<string, string> _outputHashes = new();
 
     public GraphOrchestrator(
         IServiceProvider serviceProvider,
@@ -154,6 +160,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// <summary>
     /// Iterative execution for cyclic graphs.
     /// Evaluates back-edges after each pass and re-executes dirty nodes.
+    /// Supports change-aware iteration with automatic convergence detection.
     /// </summary>
     private async Task<TContext> ExecuteIterativeAsync(
         TContext context,
@@ -161,8 +168,11 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         DateTimeOffset executionStartTime,
         CancellationToken cancellationToken)
     {
-        var maxIterations = context.Graph.MaxIterations;
+        // Use IterationOptions.MaxIterations if available, otherwise fall back to Graph.MaxIterations
+        var options = context.Graph.IterationOptions;
+        var maxIterations = options?.MaxIterations ?? context.Graph.MaxIterations;
         var iteration = 0;
+        var converged = false;
 
         // Initial dirty set = all executable nodes
         var dirtyNodes = GetExecutableNodeIds(context.Graph);
@@ -184,6 +194,13 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             dirtyNodes = iterationResult.NextDirtyNodes;
 
+            // Check if graph converged (all outputs unchanged)
+            if (iterationResult.Converged)
+            {
+                converged = true;
+                break;
+            }
+
             if (dirtyNodes.Count > 0)
             {
                 iteration++;
@@ -195,8 +212,8 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
-        // Handle max iterations reached
-        if (iteration >= maxIterations && dirtyNodes.Count > 0)
+        // Handle max iterations reached (only if not converged)
+        if (!converged && iteration >= maxIterations && dirtyNodes.Count > 0)
         {
             HandleMaxIterationsReached(context, maxIterations, dirtyNodes, backEdges);
         }
@@ -217,6 +234,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         CancellationToken cancellationToken)
     {
         var iterationStart = DateTimeOffset.UtcNow;
+        var options = context.Graph.IterationOptions;
+
+        // Snapshot output hashes before execution (for convergence detection)
+        var preIterationHashes = _outputHashes.ToDictionary(x => x.Key, x => x.Value);
 
         // Clear ephemeral channels between iterations (not on first)
         if (iteration > 0)
@@ -265,23 +286,75 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         var executedNodes = new HashSet<string>(dirtyNodes);
 
+        // Check for convergence (when enabled) - do this BEFORE evaluating back-edges
+        if (options?.UseChangeAwareIteration == true &&
+            options?.EnableAutoConvergence == true &&
+            HasConverged(preIterationHashes, executedNodes, context))
+        {
+            context.Log("Orchestrator",
+                $"Graph converged at iteration {iteration}: no output changes detected",
+                LogLevel.Information);
+
+            context.EventCoordinator?.Emit(new GraphConvergedEvent
+            {
+                IterationIndex = iteration,
+                TotalIterations = iteration + 1,
+                ConvergenceReason = "all_outputs_unchanged",
+                GraphContext = CreateGraphExecutionContext(context)
+            });
+
+            // Emit iteration completed event (with convergence)
+            context.EventCoordinator?.Emit(new IterationCompletedEvent
+            {
+                IterationIndex = iteration,
+                Duration = DateTimeOffset.UtcNow - iterationStart,
+                ExecutedNodes = executedNodes.ToList(),
+                BackEdgesTriggered = 0,
+                NodesToReExecute = new List<string>(),
+                GraphContext = CreateGraphExecutionContext(context)
+            });
+
+            return new IterationResult
+            {
+                ExecutedNodes = executedNodes,
+                TriggeredBackEdges = new List<BackEdge>(),
+                NextDirtyNodes = new HashSet<string>(),
+                Converged = true
+            };
+        }
+
         // Evaluate back-edges to find triggered nodes
+        // Pass pre-iteration hashes for change detection
         var (triggeredNodes, triggeredBackEdges) =
-            EvaluateBackEdges(context, backEdges, iteration);
+            EvaluateBackEdges(context, backEdges, iteration, preIterationHashes);
 
         // Compute next dirty set
         HashSet<string> nextDirtyNodes;
         if (triggeredNodes.Count > 0)
         {
-            nextDirtyNodes = GetAllForwardDependents(triggeredNodes, context.Graph, backEdges);
+            // Use change-aware or eager propagation based on options
+            if (options?.UseChangeAwareIteration == true)
+            {
+                nextDirtyNodes = ComputeNextDirtyNodes(context, triggeredNodes, backEdges, iteration);
+
+                context.Log("Orchestrator",
+                    $"Back-edges triggered: [{string.Join(", ", triggeredNodes)}] → " +
+                    $"re-executing {nextDirtyNodes.Count} node(s) (change-aware)",
+                    LogLevel.Information);
+            }
+            else
+            {
+                // Legacy behavior: eager propagation
+                nextDirtyNodes = GetAllForwardDependents(triggeredNodes, context.Graph, backEdges);
+
+                context.Log("Orchestrator",
+                    $"Back-edges triggered: [{string.Join(", ", triggeredNodes)}] → " +
+                    $"re-executing {nextDirtyNodes.Count} node(s)",
+                    LogLevel.Information);
+            }
 
             // Un-mark dirty nodes as complete so they can re-execute
             context.UnmarkNodesComplete(nextDirtyNodes);
-
-            context.Log("Orchestrator",
-                $"Back-edges triggered: [{string.Join(", ", triggeredNodes)}] → " +
-                $"re-executing {nextDirtyNodes.Count} node(s)",
-                LogLevel.Information);
         }
         else
         {
@@ -327,14 +400,20 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
     /// <summary>
     /// Evaluates all back-edges and returns which target nodes should be re-executed.
+    /// When change-aware iteration is enabled, skips back-edges whose source output hasn't changed.
     /// </summary>
+    /// <param name="preIterationHashes">Hash snapshot from BEFORE the iteration executed (for change detection)</param>
     private (HashSet<string> TriggeredNodes, List<BackEdge> TriggeredEdges) EvaluateBackEdges(
         TContext context,
         IReadOnlyList<BackEdge> backEdges,
-        int iteration)
+        int iteration,
+        Dictionary<string, string>? preIterationHashes = null)
     {
         var triggeredNodes = new HashSet<string>();
         var triggeredEdges = new List<BackEdge>();
+        var options = context.Graph.IterationOptions;
+        var excludeFields = options?.IgnoreFieldsForChangeDetection;
+        var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
 
         foreach (var backEdge in backEdges)
         {
@@ -347,6 +426,34 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             if (outputs == null)
                 continue;
+
+            // Check if source output actually changed (when change-aware iteration enabled)
+            if (options?.UseChangeAwareIteration == true && preIterationHashes != null)
+            {
+                // Compare current output hash against PRE-iteration hash
+                var currentHash = ComputeOutputHash(outputs, excludeFields, algorithm);
+                preIterationHashes.TryGetValue(backEdge.SourceNodeId, out var previousHash);
+
+                // If hash is same as before iteration, output didn't change
+                if (currentHash == previousHash)
+                {
+                    context.Log("Orchestrator",
+                        $"Back-edge {backEdge.SourceNodeId}→{backEdge.TargetNodeId} skipped: output unchanged",
+                        LogLevel.Debug);
+
+                    // Emit skip event for observability
+                    context.EventCoordinator?.Emit(new BackEdgeSkippedEvent
+                    {
+                        SourceNodeId = backEdge.SourceNodeId,
+                        TargetNodeId = backEdge.TargetNodeId,
+                        Reason = "output_unchanged",
+                        IterationIndex = iteration,
+                        GraphContext = CreateGraphExecutionContext(context)
+                    });
+
+                    continue;
+                }
+            }
 
             // Evaluate condition (null condition = unconditional back-edge)
             var conditionMet = backEdge.Condition == null ||
@@ -531,6 +638,254 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 context.Channels[channelName].Clear();
             }
         }
+    }
+
+    #endregion
+
+    #region Output Hash Tracking (Change-Aware Iteration)
+
+    /// <summary>
+    /// Compute hash of node outputs for change detection.
+    /// Uses fast hashing (XxHash64) for within-iteration comparison.
+    /// </summary>
+    /// <param name="outputs">Node outputs to hash</param>
+    /// <param name="excludeFields">Fields to exclude (for non-deterministic values)</param>
+    /// <param name="algorithm">Hashing algorithm to use</param>
+    private static string ComputeOutputHash(
+        Dictionary<string, object>? outputs,
+        HashSet<string>? excludeFields = null,
+        Abstractions.Graph.OutputHashAlgorithm algorithm = Abstractions.Graph.OutputHashAlgorithm.XxHash64)
+    {
+        if (outputs == null || outputs.Count == 0)
+            return string.Empty;
+
+        var builder = new System.Text.StringBuilder();
+        foreach (var (key, value) in outputs.OrderBy(kv => kv.Key))
+        {
+            // Skip excluded fields (timestamps, request IDs, etc.)
+            if (excludeFields?.Contains(key) == true)
+                continue;
+
+            builder.Append(key).Append('=');
+            builder.Append(HashValue(value)).Append(';');
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(builder.ToString());
+
+        return algorithm switch
+        {
+            Abstractions.Graph.OutputHashAlgorithm.SHA256 =>
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant(),
+            _ => // XxHash64 (default)
+                System.IO.Hashing.XxHash64.HashToUInt64(bytes).ToString("x16")
+        };
+    }
+
+    /// <summary>
+    /// Hash a single value. Handles: primitives, collections, complex objects (via JSON).
+    /// </summary>
+    private static string HashValue(object? value)
+    {
+        if (value == null)
+            return "null";
+
+        // Primitive types - direct conversion
+        if (value is string str)
+            return str;
+
+        if (value is int || value is long || value is double ||
+            value is float || value is decimal || value is bool)
+            return value.ToString() ?? "null";
+
+        // Collections - hash each element recursively
+        if (value is System.Collections.IEnumerable enumerable and not string)
+        {
+            var sb = new System.Text.StringBuilder("[");
+            bool first = true;
+            foreach (var item in enumerable)
+            {
+                if (!first) sb.Append(',');
+                sb.Append(HashValue(item));
+                first = false;
+            }
+            sb.Append(']');
+            return sb.ToString();
+        }
+
+        // Complex objects - JSON serialize
+        // Note: May fail on circular references, falls back to ToString
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(value, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+            return json;
+        }
+        catch
+        {
+            return value.ToString() ?? "object";
+        }
+    }
+
+    /// <summary>
+    /// Check if node's output changed since last check.
+    /// Updates stored hash and returns change status.
+    /// </summary>
+    private bool NodeOutputChanged(
+        string nodeId,
+        Dictionary<string, object>? outputs,
+        HashSet<string>? excludeFields = null,
+        Abstractions.Graph.OutputHashAlgorithm algorithm = Abstractions.Graph.OutputHashAlgorithm.XxHash64)
+    {
+        var currentHash = ComputeOutputHash(outputs, excludeFields, algorithm);
+        var changed = !_outputHashes.TryGetValue(nodeId, out var previousHash)
+                      || previousHash != currentHash;
+
+        _outputHashes[nodeId] = currentHash;
+        return changed;
+    }
+
+    /// <summary>
+    /// Check if any input to this node changed since last iteration.
+    /// Compares current upstream output hashes with stored hashes.
+    /// </summary>
+    private bool HasChangedInputs(
+        TContext context,
+        string nodeId,
+        HashSet<string>? excludeFields = null,
+        Abstractions.Graph.OutputHashAlgorithm algorithm = Abstractions.Graph.OutputHashAlgorithm.XxHash64)
+    {
+        foreach (var edge in context.Graph.GetIncomingEdges(nodeId))
+        {
+            var sourceNodeId = edge.From;
+
+            // Skip START node
+            var sourceNode = context.Graph.GetNode(sourceNodeId);
+            if (sourceNode?.Type == NodeType.Start)
+                continue;
+
+            // Get the hash we stored when this upstream node last executed
+            if (!_outputHashes.TryGetValue(sourceNodeId, out var storedHash))
+                continue; // No previous execution, can't compare
+
+            // Get current output from channel
+            var channelName = $"node_output:{sourceNodeId}";
+            if (!context.Channels.Contains(channelName))
+                continue;
+
+            var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+            var currentHash = ComputeOutputHash(outputs, excludeFields, algorithm);
+
+            // Compare: if different, this node's input changed
+            if (currentHash != storedHash)
+                return true;
+        }
+
+        return false; // All inputs unchanged
+    }
+
+    /// <summary>
+    /// Check if all node outputs are unchanged from previous iteration (convergence).
+    /// </summary>
+    private bool HasConverged(
+        Dictionary<string, string> preIterationHashes,
+        HashSet<string> executedNodes,
+        TContext context)
+    {
+        var options = context.Graph.IterationOptions;
+        var excludeFields = options?.IgnoreFieldsForChangeDetection;
+        var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
+
+        // Check all executed nodes in this iteration
+        foreach (var nodeId in executedNodes)
+        {
+            var channelName = $"node_output:{nodeId}";
+            if (!context.Channels.Contains(channelName))
+                continue;
+
+            var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+            var currentHash = ComputeOutputHash(outputs, excludeFields, algorithm);
+
+            if (!preIterationHashes.TryGetValue(nodeId, out var previousHash)
+                || previousHash != currentHash)
+            {
+                return false; // At least one output changed
+            }
+        }
+
+        return true; // All outputs unchanged = converged
+    }
+
+    /// <summary>
+    /// Compute next dirty set by checking which nodes have changed inputs.
+    /// Only nodes whose upstream outputs changed are marked dirty.
+    /// </summary>
+    private HashSet<string> ComputeNextDirtyNodes(
+        TContext context,
+        HashSet<string> triggeredNodes,
+        IReadOnlyList<BackEdge> backEdges,
+        int iteration)
+    {
+        if (triggeredNodes.Count == 0)
+            return new HashSet<string>();
+
+        var options = context.Graph.IterationOptions;
+        var excludeFields = options?.IgnoreFieldsForChangeDetection;
+        var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
+        var alwaysDirty = options?.AlwaysDirtyNodes ?? new HashSet<string>();
+
+        var backEdgeSet = backEdges
+            .Select(b => (b.SourceNodeId, b.TargetNodeId))
+            .ToHashSet();
+
+        var dirtyNodes = new HashSet<string>();
+        var visited = new HashSet<string>();
+        var queue = new Queue<string>(triggeredNodes);
+
+        // BFS through potential candidates
+        while (queue.Count > 0)
+        {
+            var nodeId = queue.Dequeue();
+            if (!visited.Add(nodeId))
+                continue;
+
+            // Check if this node should be dirty
+            bool shouldBeDirty =
+                triggeredNodes.Contains(nodeId) ||      // Directly triggered
+                alwaysDirty.Contains(nodeId) ||         // Forced dirty (escape hatch)
+                HasChangedInputs(context, nodeId, excludeFields, algorithm);  // Inputs changed
+
+            if (shouldBeDirty)
+            {
+                dirtyNodes.Add(nodeId);
+
+                // Add downstream nodes as candidates (but don't mark dirty yet)
+                foreach (var edge in context.Graph.GetOutgoingEdges(nodeId))
+                {
+                    // Skip back-edges
+                    if (backEdgeSet.Contains((edge.From, edge.To)))
+                        continue;
+
+                    queue.Enqueue(edge.To);
+                }
+            }
+            else
+            {
+                // Emit skip event
+                context.EventCoordinator?.Emit(new NodeSkippedUnchangedEvent
+                {
+                    NodeId = nodeId,
+                    IterationIndex = iteration,
+                    Reason = "inputs_unchanged",
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
+            }
+            // If not dirty, don't propagate - downstream can't be affected
+        }
+
+        return dirtyNodes;
     }
 
     #endregion
@@ -753,6 +1108,12 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         public required HashSet<string> ExecutedNodes { get; init; }
         public required List<BackEdge> TriggeredBackEdges { get; init; }
         public required HashSet<string> NextDirtyNodes { get; init; }
+
+        /// <summary>
+        /// True if the graph converged (all outputs unchanged) during this iteration.
+        /// Only set when change-aware iteration with auto-convergence is enabled.
+        /// </summary>
+        public bool Converged { get; init; } = false;
     }
 
     #endregion
@@ -1341,6 +1702,22 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 nodeId: node.Id);
         }
 
+        // Include SharedData if available (prefixed with "shared.")
+        if (context.SharedData != null)
+        {
+            foreach (var kvp in context.SharedData)
+            {
+                // Add with "shared." prefix for clear namespacing
+                inputs.Add($"shared.{kvp.Key}", kvp.Value);
+
+                // Also add without prefix if not already present (convenience)
+                if (!inputs.Contains(kvp.Key))
+                {
+                    inputs.Add(kvp.Key, kvp.Value);
+                }
+            }
+        }
+
         return inputs;
     }
 
@@ -1387,6 +1764,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var channelName = $"node_output:{node.Id}";
         context.Channels[channelName].Set(success.Outputs);
 
+        // Track output hash for change-aware iteration (always track, even if not enabled)
+        // This ensures hashes are available if the feature is enabled mid-execution
+        var options = context.Graph.IterationOptions;
+        var excludeFields = options?.IgnoreFieldsForChangeDetection;
+        var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
+        var outputHash = ComputeOutputHash(success.Outputs, excludeFields, algorithm);
+        _outputHashes[node.Id] = outputHash;
+
         // Cache the result if caching is enabled and this wasn't a cache hit
         if (!isCacheHit && _cacheStore != null && _currentFingerprints.TryGetValue(node.Id, out var fingerprint))
         {
@@ -1423,7 +1808,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             HandlerName = node.HandlerName ?? node.Type.ToString(),
             LayerIndex = context.CurrentLayerIndex,
             Progress = (float)context.CompletedNodes.Count / context.Graph.Nodes.Count,
-            Outputs = null, // Don't include outputs by default for performance
+            Outputs = success.Outputs, // Include outputs for downstream consumers
             Duration = success.Duration,
             Result = success,
             GraphContext = new Abstractions.Events.GraphExecutionContext
@@ -1899,12 +2284,18 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         // Get all incoming edges
         var incomingEdges = context.Graph.GetIncomingEdges(node.Id);
 
+        // Emit diagnostic for skip condition evaluation
+        context.EmitDebug("EvaluateSkipConditions",
+            $"Evaluating {node.Id}: CompletedNodes=[{string.Join(",", context.CompletedNodes)}], Channels=[{string.Join(",", context.Channels.ChannelNames)}]",
+            nodeId: node.Id);
+
         // No incoming edges = always execute (START node or explicit entry point)
         if (incomingEdges.Count == 0)
             return (false, "No incoming edges");
 
         var evaluatedEdges = new List<string>();
         var hasAnyCompletedSource = false;
+        var failedEdgeSources = new List<string>();
 
         foreach (var edge in incomingEdges)
         {
@@ -1912,6 +2303,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             if (!context.IsNodeComplete(edge.From))
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: source incomplete");
+                context.EmitTrace("EvaluateSkipConditions", $"Edge {edge.From}→{edge.To}: source NOT complete", nodeId: node.Id);
                 continue;
             }
 
@@ -1922,15 +2314,30 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             if (!context.Channels.Contains(channelName))
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: no outputs");
+                failedEdgeSources.Add(edge.From);
+                context.EmitDebug("EvaluateSkipConditions", $"Edge {edge.From}→{edge.To}: channel {channelName} NOT found", nodeId: node.Id);
                 continue;
             }
 
             var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+            context.EmitDebug("EvaluateSkipConditions",
+                $"Edge {edge.From}→{edge.To}: outputs={outputs?.Count ?? -1} keys=[{(outputs != null ? string.Join(",", outputs.Keys) : "null")}]",
+                nodeId: node.Id);
 
             // Unconditional edge (no condition) = active path exists
             if (edge.Condition == null)
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: unconditional (ACTIVE)");
+
+                // Emit edge traversed event
+                context.EventCoordinator?.Emit(new Abstractions.Events.EdgeTraversedEvent
+                {
+                    FromNodeId = edge.From,
+                    ToNodeId = edge.To,
+                    HasCondition = false,
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
+
                 return (false, string.Join("; ", evaluatedEdges));
             }
 
@@ -1938,6 +2345,17 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             if (edge.Condition.Type == ConditionType.Default)
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: default edge (ACTIVE)");
+
+                // Emit edge traversed event
+                context.EventCoordinator?.Emit(new Abstractions.Events.EdgeTraversedEvent
+                {
+                    FromNodeId = edge.From,
+                    ToNodeId = edge.To,
+                    HasCondition = true,
+                    ConditionDescription = "default",
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
+
                 return (false, string.Join("; ", evaluatedEdges));
             }
 
@@ -1945,14 +2363,51 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             var conditionMet = ConditionEvaluator.Evaluate(edge.Condition, outputs);
             var conditionDesc = edge.Condition.GetDescription() ?? edge.Condition.Type.ToString();
 
+            // Emit condition evaluation diagnostic
+            var actualVal = outputs != null && edge.Condition?.Field != null && outputs.TryGetValue(edge.Condition.Field, out var fv) ? fv?.ToString() : "(not found)";
+            context.EmitDebug("EvaluateSkipConditions",
+                $"Condition {conditionDesc}: field={edge.Condition?.Field}, actual='{actualVal}', expected='{edge.Condition?.Value}', result={conditionMet}",
+                nodeId: node.Id);
+
             if (conditionMet)
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: {conditionDesc} (ACTIVE)");
+
+                // Emit edge traversed event
+                context.EventCoordinator?.Emit(new Abstractions.Events.EdgeTraversedEvent
+                {
+                    FromNodeId = edge.From,
+                    ToNodeId = edge.To,
+                    HasCondition = true,
+                    ConditionDescription = conditionDesc,
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
+
                 return (false, string.Join("; ", evaluatedEdges));
             }
             else
             {
                 evaluatedEdges.Add($"{edge.From}→{edge.To}: {conditionDesc} (not met)");
+                failedEdgeSources.Add(edge.From);
+
+                // Get actual value for debugging
+                string? actualValue = null;
+                if (edge.Condition.Field != null && outputs != null &&
+                    outputs.TryGetValue(edge.Condition.Field, out var fieldValue))
+                {
+                    actualValue = fieldValue?.ToString();
+                }
+
+                // Emit edge condition failed event
+                context.EventCoordinator?.Emit(new Abstractions.Events.EdgeConditionFailedEvent
+                {
+                    FromNodeId = edge.From,
+                    ToNodeId = edge.To,
+                    ConditionDescription = conditionDesc,
+                    ActualValue = actualValue,
+                    ExpectedValue = edge.Condition.Value?.ToString(),
+                    GraphContext = CreateGraphExecutionContext(context)
+                });
             }
         }
 
@@ -1963,6 +2418,15 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         }
 
         // No active paths found from any completed source → skip this node
+        // Emit node skipped event
+        context.EventCoordinator?.Emit(new Abstractions.Events.NodeSkippedEvent
+        {
+            NodeId = node.Id,
+            Reason = "All incoming edge conditions evaluated to false",
+            PotentialSourceNodes = failedEdgeSources.Distinct().ToList(),
+            GraphContext = CreateGraphExecutionContext(context)
+        });
+
         return (true, string.Join("; ", evaluatedEdges));
     }
 

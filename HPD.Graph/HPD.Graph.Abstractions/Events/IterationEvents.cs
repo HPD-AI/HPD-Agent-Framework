@@ -135,3 +135,80 @@ public sealed record MaxIterationsReachedEvent : GraphEvent
     /// </summary>
     public new EventPriority Priority { get; init; } = EventPriority.Control;
 }
+
+/// <summary>
+/// Event emitted when graph execution converges (no output changes detected).
+/// Only emitted when change-aware iteration is enabled with auto-convergence.
+/// </summary>
+public sealed record GraphConvergedEvent : GraphEvent
+{
+    /// <summary>
+    /// The iteration index when convergence was detected.
+    /// </summary>
+    public required int IterationIndex { get; init; }
+
+    /// <summary>
+    /// Total number of iterations executed (IterationIndex + 1).
+    /// </summary>
+    public required int TotalIterations { get; init; }
+
+    /// <summary>
+    /// Reason for convergence detection.
+    /// </summary>
+    public required string ConvergenceReason { get; init; }
+
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}
+
+/// <summary>
+/// Event emitted when a node is skipped due to unchanged inputs during change-aware iteration.
+/// Provides visibility into optimization decisions.
+/// </summary>
+public sealed record NodeSkippedUnchangedEvent : GraphEvent
+{
+    /// <summary>
+    /// ID of the node that was skipped.
+    /// </summary>
+    public required string NodeId { get; init; }
+
+    /// <summary>
+    /// The iteration index when the skip occurred.
+    /// </summary>
+    public required int IterationIndex { get; init; }
+
+    /// <summary>
+    /// Reason for skipping (e.g., "inputs_unchanged").
+    /// </summary>
+    public required string Reason { get; init; }
+
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}
+
+/// <summary>
+/// Event emitted when a back-edge is skipped due to unchanged source output.
+/// Only emitted when change-aware iteration is enabled.
+/// </summary>
+public sealed record BackEdgeSkippedEvent : GraphEvent
+{
+    /// <summary>
+    /// ID of the source node (where the back-edge originates).
+    /// </summary>
+    public required string SourceNodeId { get; init; }
+
+    /// <summary>
+    /// ID of the target node (would have been re-executed).
+    /// </summary>
+    public required string TargetNodeId { get; init; }
+
+    /// <summary>
+    /// Reason for skipping (e.g., "output_unchanged").
+    /// </summary>
+    public required string Reason { get; init; }
+
+    /// <summary>
+    /// The iteration index when the skip occurred.
+    /// </summary>
+    public required int IterationIndex { get; init; }
+
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}

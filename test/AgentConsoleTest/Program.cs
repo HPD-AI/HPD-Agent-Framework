@@ -189,6 +189,23 @@ while (true)
         continue;
     }
 
+    // Smart workflow V2 using HPD.MultiAgent (same as /ask but using the new API)
+    if (userInput.StartsWith("/askv2 ", StringComparison.OrdinalIgnoreCase))
+    {
+        var question = userInput[7..].Trim();
+        if (string.IsNullOrWhiteSpace(question))
+        {
+            AnsiConsole.MarkupLine("[yellow]Usage: /askv2 <your question>[/]");
+            AnsiConsole.MarkupLine("[dim]Same as /ask but using HPD.MultiAgent fluent API[/]");
+        }
+        else
+        {
+            var answer = await SmartQuantWorkflowV2.RunAsync(question);
+        }
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
     // Quant workflows - multi-agent consensus (stateless, no session needed)
     // Check these BEFORE the generic command processor to avoid "unknown command" error
     if (userInput.StartsWith("/quant-graph ", StringComparison.OrdinalIgnoreCase))

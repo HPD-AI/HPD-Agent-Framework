@@ -37,6 +37,7 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\..\HPD-Agent.Tools\HPD-Agent.Tools.FileSystem\HPD-Agent.Tools.FileSystem.csproj" />
+    <ProjectReference Include="..\..\HPD.MultiAgent\HPD.MultiAgent.csproj" />
   </ItemGroup>
 
 </Project>

@@ -50,8 +50,15 @@ public sealed record Graph
 
     /// <summary>
     /// Maximum iterations for cyclic graphs (cycle protection).
+    /// Note: When IterationOptions is set, IterationOptions.MaxIterations takes precedence.
     /// </summary>
     public int MaxIterations { get; init; } = 10;
+
+    /// <summary>
+    /// Advanced iteration options for change-aware execution.
+    /// When null, uses default behavior (eager propagation).
+    /// </summary>
+    public IterationOptions? IterationOptions { get; init; }
 
     /// <summary>
     /// Global execution timeout for the entire graph.

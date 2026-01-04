@@ -19,6 +19,7 @@
     <ProjectReference Include="../../HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj" />
     <ProjectReference Include="../../HPD.Graph/HPD.Graph.Abstractions/HPD.Graph.Abstractions.csproj" />
     <ProjectReference Include="../../HPD.Graph/HPD.Graph.Core/HPD.Graph.Core.csproj" />
+    <ProjectReference Include="../../HPD.MultiAgent/HPD.MultiAgent.csproj" />
 
   </ItemGroup>
 

@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HPD.Events\HPD.Events.csproj" />
+    <ProjectReference Include="..\..\HPD.Events\HPD.Events.csproj" />
   </ItemGroup>
 
 </Project>

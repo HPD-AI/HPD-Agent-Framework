@@ -66,6 +66,12 @@ internal class ToolkitInfo
         Capabilities.OfType<SubAgentCapability>();
 
     /// <summary>
+    /// Gets all multi-agent capabilities from the unified Capabilities list.
+    /// </summary>
+    public IEnumerable<MultiAgentCapability> MultiAgentCapabilities =>
+        Capabilities.OfType<MultiAgentCapability>();
+
+    /// <summary>
     /// Total count of all capabilities.
     /// </summary>
     public int CapabilityCount => Capabilities.Count;

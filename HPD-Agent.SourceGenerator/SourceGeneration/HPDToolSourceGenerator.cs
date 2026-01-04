@@ -97,15 +97,24 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         var className = classDecl.Identifier.ValueText;
         var namespaceName = GetNamespace(classDecl);
 
-        // PHASE 5: Unified analysis for ALL capability types (Functions, Skills, SubAgents)
+        // PHASE 5: Unified analysis for ALL capability types (Functions, Skills, SubAgents, MultiAgents)
         // Use CapabilityAnalyzer to discover all capabilities
 
-        var capabilities = classDecl.Members
-            .OfType<MethodDeclarationSyntax>()
-            .Select(method => HPD.Agent.SourceGenerator.Capabilities.CapabilityAnalyzer.AnalyzeMethod(
-                method, semanticModel, context, className, namespaceName))
-            .Where(cap => cap != null)
-            .ToList();
+        var capabilityDiagnostics = new List<Microsoft.CodeAnalysis.Diagnostic>();
+        var capabilities = new List<HPD.Agent.SourceGenerator.Capabilities.ICapability>();
+
+        foreach (var method in classDecl.Members.OfType<MethodDeclarationSyntax>())
+        {
+            var capability = HPD.Agent.SourceGenerator.Capabilities.CapabilityAnalyzer.AnalyzeMethod(
+                method, semanticModel, context, className, namespaceName, out var methodDiagnostics);
+
+            capabilityDiagnostics.AddRange(methodDiagnostics);
+
+            if (capability != null)
+            {
+                capabilities.Add(capability);
+            }
+        }
 
         // Must have at least one capability
         if (!capabilities.Any())
@@ -113,6 +122,9 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
 
         // Check for [Toolkit] attribute and validate dual-context configuration
         var (isCollapsed, containerDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics, customName) = GetToolkitAttribute(classDecl, semanticModel);
+
+        // Merge capability diagnostics with toolkit diagnostics
+        diagnostics.AddRange(capabilityDiagnostics);
 
         // Diagnostics will be stored in ToolkitInfo and reported in GenerateToolRegistrations
 
@@ -962,6 +974,23 @@ $@"    /// <summary>
         [System.Text.Json.Serialization.JsonPropertyName(""query"")]
         [System.ComponentModel.Description(""Query for the sub-agent"")]
         public string Query {{ get; set; }} = string.Empty;
+    }}
+");
+        }
+
+        // Generate MultiAgentInputArgs if there are multi-agents (Collapsed per Toolkit to avoid conflicts)
+        if (Toolkit.MultiAgentCapabilities.Any())
+        {
+            sb.AppendLine(
+$@"    /// <summary>
+    /// Represents the arguments for multi-agent workflow invocations, generated at compile-time.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCodeAttribute(""HPDToolSourceGenerator"", ""1.0.0.0"")]
+    public class {Toolkit.Name}MultiAgentInputArgs
+    {{
+        [System.Text.Json.Serialization.JsonPropertyName(""input"")]
+        [System.ComponentModel.Description(""Input for the multi-agent workflow"")]
+        public string Input {{ get; set; }} = string.Empty;
     }}
 ");
         }

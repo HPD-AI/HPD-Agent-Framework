@@ -288,6 +288,46 @@ public class AgentRunOptions
     public StructuredOutputOptions? StructuredOutput { get; set; }
 
     /// <summary>
+    /// Additional tools to add for this run only.
+    /// These are merged with the agent's configured tools during RunAsync.
+    /// Useful for injecting dynamic tools like handoff functions in multi-agent workflows.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Use Cases:</b>
+    /// - Multi-agent handoffs: Inject handoff_to_X() tools dynamically
+    /// - Per-request tools: Add user-specific or context-specific tools
+    /// - Testing: Inject mock tools for testing agent behavior
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// var handoffTool = AIFunctionFactory.Create(() => "solver", "handoff_to_solver", "Route to math solver");
+    /// var options = new AgentRunOptions
+    /// {
+    ///     AdditionalTools = new List&lt;AIFunction&gt; { handoffTool }
+    /// };
+    /// await agent.RunAsync(messages, options: options);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    public IReadOnlyList<AIFunction>? AdditionalTools { get; set; }
+
+    /// <summary>
+    /// Tool mode override for this run only.
+    /// When set, overrides the agent's configured ToolMode.
+    /// </summary>
+    /// <remarks>
+    /// Common values:
+    /// - <c>ChatToolMode.Auto</c>: Model decides whether to use tools
+    /// - <c>ChatToolMode.RequireAny</c>: Model must call at least one tool
+    /// - <c>ChatToolMode.RequireTool("name")</c>: Model must call specific tool
+    /// </remarks>
+    [JsonIgnore]
+    public ChatToolMode? ToolModeOverride { get; set; }
+
+    /// <summary>
     /// Runtime tools to add for this run only.
     /// Used internally by structured output tool mode.
     /// These are merged with the agent's configured tools during RunAsync.

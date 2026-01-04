@@ -6,8 +6,76 @@ using System.Linq;
 
 namespace HPD.Agent.SourceGenerator.Capabilities;
 
+// ========== MultiAgent Diagnostics ==========
+// These diagnostics are specific to [MultiAgent] capability analysis
+
 /// <summary>
-/// Unified analyzer for all capability types (Functions, Skills, SubAgents).
+/// Result of capability analysis containing the capability (if valid) and any diagnostics.
+/// </summary>
+internal readonly struct CapabilityAnalysisResult
+{
+    public ICapability? Capability { get; }
+    public IReadOnlyList<Diagnostic> Diagnostics { get; }
+
+    public CapabilityAnalysisResult(ICapability? capability, IReadOnlyList<Diagnostic>? diagnostics = null)
+    {
+        Capability = capability;
+        Diagnostics = diagnostics ?? System.Array.Empty<Diagnostic>();
+    }
+
+    public static CapabilityAnalysisResult None => new(null);
+    public static CapabilityAnalysisResult Success(ICapability capability) => new(capability);
+    public static CapabilityAnalysisResult WithDiagnostic(Diagnostic diagnostic) => new(null, new[] { diagnostic });
+    public static CapabilityAnalysisResult WithDiagnostics(ICapability? capability, params Diagnostic[] diagnostics) => new(capability, diagnostics);
+}
+
+internal static class MultiAgentDiagnostics
+{
+    /// <summary>
+    /// HPDAG0201: [MultiAgent] method has invalid return type.
+    /// Must return AgentWorkflowInstance or Task&lt;AgentWorkflowInstance&gt;.
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidReturnType = new(
+        id: "HPDAG0201",
+        title: "Invalid MultiAgent return type",
+        messageFormat: "[MultiAgent] method '{0}' must return AgentWorkflowInstance or Task<AgentWorkflowInstance>, but returns '{1}'",
+        category: "HPDAgent.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Methods marked with [MultiAgent] must return AgentWorkflowInstance (sync) or Task<AgentWorkflowInstance> (async). " +
+                    "The source generator needs this return type to generate the proper workflow execution wrapper.");
+
+    /// <summary>
+    /// HPDAG0202: [MultiAgent] method has conflicting capability attributes.
+    /// Cannot combine with [AIFunction], [Skill], or [SubAgent].
+    /// </summary>
+    public static readonly DiagnosticDescriptor ConflictingAttributes = new(
+        id: "HPDAG0202",
+        title: "Conflicting capability attributes",
+        messageFormat: "[MultiAgent] method '{0}' cannot be combined with [{1}]. Use only one capability attribute per method.",
+        category: "HPDAgent.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A method can only have one capability attribute. [MultiAgent] cannot be combined with [AIFunction], [Skill], or [SubAgent]. " +
+                    "Each capability type has different execution semantics and return type requirements.");
+
+    /// <summary>
+    /// HPDAG0203: [MultiAgent] method has no description.
+    /// A description helps the LLM understand when to use this workflow.
+    /// </summary>
+    public static readonly DiagnosticDescriptor MissingDescription = new(
+        id: "HPDAG0203",
+        title: "Missing MultiAgent description",
+        messageFormat: "[MultiAgent] method '{0}' has no description. Consider adding one to help the LLM understand when to use this workflow.",
+        category: "HPDAgent.SourceGenerator",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "While not required, providing a description for [MultiAgent] methods helps the LLM understand when to invoke the workflow. " +
+                    "Use [MultiAgent(\"description\")] or [AIDescription(\"description\")] to add one.");
+}
+
+/// <summary>
+/// Unified analyzer for all capability types (Functions, Skills, SubAgents, MultiAgents).
 /// Provides attribute-based dispatch to the appropriate capability analyzer.
 /// This replaces the fragmented analysis approach (inline functions, SkillAnalyzer, SubAgentAnalyzer).
 /// </summary>
@@ -15,13 +83,13 @@ internal static class CapabilityAnalyzer
 {
     /// <summary>
     /// Analyzes a method and returns the appropriate ICapability implementation
-    /// based on which attribute it has ([AIFunction], [Skill], or [SubAgent]).
+    /// based on which attribute it has ([AIFunction], [Skill], [SubAgent], or [MultiAgent]).
     ///
     /// This is the single entry point for all capability analysis, enabling polymorphic processing.
     /// </summary>
     /// <param name="method">The method declaration to analyze</param>
     /// <param name="semanticModel">The semantic model for symbol resolution</param>
-    /// <param name="context">The generator syntax context</param>
+    /// <param name="context">The generator syntax context (not used for diagnostics - use out parameter)</param>
     /// <param name="className">The name of the containing class</param>
     /// <param name="namespaceName">The namespace of the containing class</param>
     /// <returns>An ICapability instance, or null if the method is not a valid capability</returns>
@@ -32,6 +100,25 @@ internal static class CapabilityAnalyzer
         string className,
         string namespaceName)
     {
+        // Call the overload with diagnostics out parameter, but discard the diagnostics
+        // This maintains backward compatibility
+        return AnalyzeMethod(method, semanticModel, context, className, namespaceName, out _);
+    }
+
+    /// <summary>
+    /// Analyzes a method and returns the appropriate ICapability implementation,
+    /// also outputting any diagnostics generated during analysis.
+    /// </summary>
+    public static ICapability? AnalyzeMethod(
+        MethodDeclarationSyntax method,
+        SemanticModel semanticModel,
+        GeneratorSyntaxContext context,
+        string className,
+        string namespaceName,
+        out List<Diagnostic> diagnostics)
+    {
+        diagnostics = new List<Diagnostic>();
+
         // Must be public
         if (!method.Modifiers.Any(SyntaxKind.PublicKeyword))
             return null;
@@ -55,7 +142,25 @@ internal static class CapabilityAnalyzer
             return AnalyzeSubAgentCapability(method, attrs, semanticModel, context, className, namespaceName);
         }
 
-        // 3. Check for [AIFunction] attribute
+        // 3. Check for [MultiAgent] attribute
+        if (HasAttribute(attrs, "MultiAgent"))
+        {
+            // Check for conflicting attributes (HPDAG0202)
+            var conflictingAttr = GetConflictingCapabilityAttribute(attrs, "MultiAgent");
+            if (conflictingAttr != null)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    MultiAgentDiagnostics.ConflictingAttributes,
+                    method.Identifier.GetLocation(),
+                    method.Identifier.ValueText,
+                    conflictingAttr));
+                return null;
+            }
+
+            return AnalyzeMultiAgentCapability(method, attrs, semanticModel, className, namespaceName, diagnostics);
+        }
+
+        // 4. Check for [AIFunction] attribute
         if (HasAttribute(attrs, "AIFunction"))
         {
             return AnalyzeFunctionCapability(method, attrs, semanticModel, context, className, namespaceName);
@@ -389,6 +494,146 @@ internal static class CapabilityAnalyzer
         return (name, description, threadMode);
     }
 
+    // ========== MultiAgent Analysis ==========
+
+    /// <summary>
+    /// Analyzes a method with [MultiAgent] attribute and creates a MultiAgentCapability.
+    /// The method must return AgentWorkflowInstance or Task&lt;AgentWorkflowInstance&gt;.
+    /// </summary>
+    private static MultiAgentCapability? AnalyzeMultiAgentCapability(
+        MethodDeclarationSyntax method,
+        List<AttributeSyntax> attrs,
+        SemanticModel semanticModel,
+        string className,
+        string namespaceName,
+        List<Diagnostic> diagnostics)
+    {
+        // Validate return type is AgentWorkflowInstance or Task<AgentWorkflowInstance>
+        var returnType = semanticModel.GetTypeInfo(method.ReturnType).Type;
+        if (returnType == null)
+        {
+            return null;
+        }
+
+        bool isAsync = false;
+        string? workflowTypeName = null;
+
+        // Check for AgentWorkflowInstance directly
+        if (returnType.Name == "AgentWorkflowInstance")
+        {
+            workflowTypeName = returnType.Name;
+        }
+        // Check for Task<AgentWorkflowInstance>
+        else if (returnType.Name == "Task" && returnType is INamedTypeSymbol namedType && namedType.TypeArguments.Length == 1)
+        {
+            var innerType = namedType.TypeArguments[0];
+            if (innerType.Name == "AgentWorkflowInstance")
+            {
+                isAsync = true;
+                workflowTypeName = innerType.Name;
+            }
+        }
+
+        if (workflowTypeName == null)
+        {
+            // Report HPDAG0201: Invalid return type
+            diagnostics.Add(Diagnostic.Create(
+                MultiAgentDiagnostics.InvalidReturnType,
+                method.ReturnType.GetLocation(),
+                method.Identifier.ValueText,
+                returnType.ToDisplayString()));
+            return null;
+        }
+
+        var methodName = method.Identifier.ValueText;
+        var isStatic = method.Modifiers.Any(SyntaxKind.StaticKeyword);
+
+        // Extract attribute properties
+        var multiAgentAttr = attrs.FirstOrDefault(a => a.Name.ToString().Contains("MultiAgent"));
+        string? description = null;
+        string? customName = null;
+        bool streamEvents = true;
+        int timeoutSeconds = 300;
+
+        if (multiAgentAttr?.ArgumentList != null)
+        {
+            var arguments = multiAgentAttr.ArgumentList.Arguments;
+
+            // First positional argument is description
+            if (arguments.Count > 0 && arguments[0].NameEquals == null)
+            {
+                // Use ExtractStringLiteral to handle literals, concatenation, and const expressions
+                description = ExtractStringLiteral(arguments[0].Expression, semanticModel);
+            }
+
+            // Check for named arguments
+            foreach (var arg in arguments)
+            {
+                if (arg.NameEquals != null)
+                {
+                    var propName = arg.NameEquals.Name.Identifier.ValueText;
+                    switch (propName)
+                    {
+                        case "Description":
+                            description = ExtractStringLiteral(arg.Expression, semanticModel);
+                            break;
+                        case "Name":
+                            customName = ExtractStringLiteral(arg.Expression, semanticModel);
+                            break;
+                        case "StreamEvents":
+                            if (arg.Expression is LiteralExpressionSyntax streamLit)
+                                streamEvents = streamLit.Token.ValueText == "true";
+                            break;
+                        case "TimeoutSeconds":
+                            if (arg.Expression is LiteralExpressionSyntax timeoutLit && int.TryParse(timeoutLit.Token.ValueText, out var timeout))
+                                timeoutSeconds = timeout;
+                            break;
+                    }
+                }
+            }
+        }
+
+        // Fall back to [AIDescription] attribute if no description in [MultiAgent]
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            description = GetDescription(attrs);
+        }
+
+        // Report HPDAG0203: Missing description warning
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            diagnostics.Add(Diagnostic.Create(
+                MultiAgentDiagnostics.MissingDescription,
+                method.Identifier.GetLocation(),
+                methodName));
+        }
+
+        // Extract conditional and context metadata (same as other capabilities)
+        var conditionalExpression = GetConditionalExpression(attrs);
+        var contextTypeName = GetMetadataTypeName(method, semanticModel);
+        var requiresPermission = true; // MultiAgents require permission by default
+
+        System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Analyzed MultiAgent: {methodName}, Description={description}, IsAsync={isAsync}");
+
+        return new MultiAgentCapability
+        {
+            Name = customName ?? methodName,
+            MethodName = methodName,
+            Description = description ?? $"Execute {methodName} multi-agent workflow",
+            ParentToolkitName = className,
+            ParentNamespace = namespaceName,
+            IsStatic = isStatic,
+            IsAsync = isAsync,
+            StreamEvents = streamEvents,
+            TimeoutSeconds = timeoutSeconds,
+            RequiresPermission = requiresPermission,
+
+            // Context and conditionals (feature parity!)
+            ContextTypeName = contextTypeName,
+            ConditionalExpression = conditionalExpression,
+        };
+    }
+
     // ========== Function Analysis ==========
 
     /// <summary>
@@ -477,6 +722,32 @@ internal static class CapabilityAnalyzer
     private static bool HasAttribute(List<AttributeSyntax> attrs, string name)
     {
         return attrs.Any(attr => attr.Name.ToString().Contains(name));
+    }
+
+    /// <summary>
+    /// Gets the name of a conflicting capability attribute, if any.
+    /// Used to detect when [MultiAgent] is combined with other capability attributes.
+    /// </summary>
+    private static string? GetConflictingCapabilityAttribute(List<AttributeSyntax> attrs, string currentAttr)
+    {
+        var capabilityAttributes = new[] { "AIFunction", "Skill", "SubAgent", "MultiAgent" };
+
+        foreach (var attr in attrs)
+        {
+            var attrName = attr.Name.ToString();
+            foreach (var capAttr in capabilityAttributes)
+            {
+                // Skip the current attribute we're checking from
+                if (capAttr == currentAttr) continue;
+
+                if (attrName.Contains(capAttr))
+                {
+                    return capAttr;
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

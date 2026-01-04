@@ -246,6 +246,32 @@ public interface IGraphContext
     void MergeFrom(IGraphContext isolatedContext);
 
     // ========================================
+    // Shared Data (Available to All Nodes)
+    // ========================================
+
+    /// <summary>
+    /// Optional shared data available to all nodes in the graph.
+    /// Unlike node outputs (which flow through edges), SharedData is globally accessible.
+    ///
+    /// Use cases:
+    /// - Original workflow input that should be available to all nodes (not just the first)
+    /// - Configuration or context that multiple nodes need
+    /// - Routing patterns where upstream output is for branching, not for downstream processing
+    ///
+    /// When SharedData is set, the orchestrator includes it in HandlerInputs for every node.
+    /// Keys are prefixed with "shared." to distinguish from upstream node outputs.
+    /// </summary>
+    /// <example>
+    /// // Set shared data at workflow start
+    /// context.SharedData["input"] = userQuestion;
+    /// context.SharedData["config"] = pipelineConfig;
+    ///
+    /// // In any handler, access via inputs
+    /// var question = inputs.Get&lt;string&gt;("shared.input");
+    /// </example>
+    IDictionary<string, object>? SharedData { get; }
+
+    // ========================================
     // Metadata & Tags
     // ========================================
 

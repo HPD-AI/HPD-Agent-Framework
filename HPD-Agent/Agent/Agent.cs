@@ -864,7 +864,10 @@ public sealed class Agent
                     // Must happen BEFORE BeforeIterationAsync so middleware sees the output tool
                     // Only merge once - subsequent iterations reuse the merged options
                     // ═══════════════════════════════════════════════════════════════
-                    if (runOptions?.RuntimeTools?.Count > 0 && state.Iteration == 0)
+                    var hasRuntimeTools = runOptions?.RuntimeTools?.Count > 0;
+                    var hasAdditionalTools = runOptions?.AdditionalTools?.Count > 0;
+
+                    if ((hasRuntimeTools || hasAdditionalTools) && state.Iteration == 0)
                     {
                         // Clone options to avoid mutating shared instances
                         effectiveOptions = effectiveOptions?.Clone() ?? new ChatOptions();
@@ -873,7 +876,14 @@ public sealed class Agent
                         var allTools = new List<AITool>();
                         if (effectiveOptions.Tools != null)
                             allTools.AddRange(effectiveOptions.Tools);
-                        allTools.AddRange(runOptions.RuntimeTools);
+
+                        // Add internal runtime tools (from structured output)
+                        if (hasRuntimeTools)
+                            allTools.AddRange(runOptions!.RuntimeTools!);
+
+                        // Add user-provided additional tools
+                        if (hasAdditionalTools)
+                            allTools.AddRange(runOptions!.AdditionalTools!);
 
                         effectiveOptions.Tools = allTools;
                     }
@@ -883,10 +893,12 @@ public sealed class Agent
                     // Forces LLM to call a tool - provider-enforced, not prompt-based
                     // Only apply on first iteration - subsequent iterations follow same mode
                     // ═══════════════════════════════════════════════════════════════
-                    if (runOptions?.RuntimeToolMode != null && state.Iteration == 0)
+                    // Public ToolModeOverride takes precedence over internal RuntimeToolMode
+                    var toolModeOverride = runOptions?.ToolModeOverride ?? runOptions?.RuntimeToolMode;
+                    if (toolModeOverride != null && state.Iteration == 0)
                     {
                         effectiveOptions = effectiveOptions?.Clone() ?? new ChatOptions();
-                        effectiveOptions.ToolMode = runOptions.RuntimeToolMode;
+                        effectiveOptions.ToolMode = toolModeOverride;
                     }
 
                     // UPDATE AGENT CONTEXT STATE (sync state changes from previous iteration)

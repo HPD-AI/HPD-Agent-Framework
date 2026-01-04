@@ -1,4 +1,5 @@
 using HPD.Agent;
+using HPD.MultiAgent;
 using System;
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
@@ -38,7 +39,7 @@ public class MathToolMetadataContext : IToolMetadata
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
 
-[Toolkit("Math Toolkit")]
+
 public class MathToolkit
 {
     [AIFunction<MathToolMetadataContext>]
@@ -102,5 +103,82 @@ public class MathToolkit
             "MathTools.Add",
             "MathTools.Subtract"
         );
+    }
+
+    // ========== Multi-Agent Workflow ==========
+
+    /// <summary>
+    /// Multi-agent consensus workflow for solving math problems.
+    /// Routes to 3 solver agents in parallel, then a verifier determines consensus.
+    /// </summary>
+    [MultiAgent("Solve complex math problems using multiple AI solvers and consensus verification. " +
+                "Uses 3 parallel solvers (Claude, GPT, Gemini) followed by a verifier.")]
+    public async Task<AgentWorkflowInstance> MathConsensusWorkflow()
+    {
+        // Create solver agents with different models
+        var solver1 = await CreateSolverAgent("Solver-Claude", "anthropic/claude-sonnet-4.5");
+        var solver2 = await CreateSolverAgent("Solver-GPT", "openai/gpt-4o");
+        var solver3 = await CreateSolverAgent("Solver-Gemini", "google/gemini-2.0-flash-exp");
+        var verifier = await CreateVerifierAgent();
+
+        // Build workflow: 3 solvers in parallel → verifier
+        return await AgentWorkflow.Create()
+            .WithName("MathConsensus")
+
+            // Add all agents
+            .AddAgent("solver1", solver1)
+            .AddAgent("solver2", solver2)
+            .AddAgent("solver3", solver3)
+            .AddAgent("verifier", verifier)
+
+            // Parallel entry: START → all 3 solvers
+            .From("START").To("solver1")
+            .From("START").To("solver2")
+            .From("START").To("solver3")
+
+            // All solvers converge to verifier
+            .From("solver1", "solver2", "solver3").To("verifier")
+
+            // Verifier → END
+            .From("verifier").To("END")
+
+            .BuildAsync();
+    }
+
+    private static readonly string SolverPrompt = @"You are a quantitative analyst and mathematician.
+Solve the given problem step-by-step, showing your work clearly.
+Provide a precise, numerical final answer when applicable.";
+
+    private static async Task<Agent> CreateSolverAgent(string name, string model)
+    {
+        var config = new AgentConfig
+        {
+            Name = name,
+            MaxAgenticIterations = 10,
+            SystemInstructions = SolverPrompt,
+        };
+
+        return await new AgentBuilder(config)
+            .WithProvider("openrouter", model)
+            .Build();
+    }
+
+    private static readonly string VerifierPrompt = @"You are a mathematical verifier.
+Compare the solver answers provided and determine the correct consensus answer.
+If solvers disagree, analyze each approach and determine which is correct.
+Return only the final verified answer.";
+
+    private static async Task<Agent> CreateVerifierAgent()
+    {
+        var config = new AgentConfig
+        {
+            Name = "Verifier",
+            MaxAgenticIterations = 5,
+            SystemInstructions = VerifierPrompt,
+        };
+
+        return await new AgentBuilder(config)
+            .WithProvider("openrouter", "anthropic/claude-3.5-haiku")
+            .Build();
     }
 }
