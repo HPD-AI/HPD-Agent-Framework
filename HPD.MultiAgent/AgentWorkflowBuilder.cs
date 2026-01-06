@@ -216,24 +216,33 @@ public class AgentWorkflowBuilder
     /// <summary>
     /// Build the workflow.
     /// </summary>
-    public async Task<AgentWorkflowInstance> BuildAsync(CancellationToken cancellationToken = default)
+    public Task<AgentWorkflowInstance> BuildAsync(CancellationToken cancellationToken = default)
     {
-        // Build any agents from configs
-        foreach (var (id, _) in _agentConfigs)
+        // Create agent factories for deferred building (agents are built at execution time
+        // so they can inherit the parent's chat client when no provider is configured)
+        var factories = new Dictionary<string, AgentFactory>();
+
+        // Wrap pre-built agents
+        foreach (var (id, agent) in _agents)
         {
-            if (_agents.ContainsKey(id))
+            factories[id] = new PrebuiltAgentFactory(agent);
+        }
+
+        // Create factories for agents from configs (not yet in _agents)
+        foreach (var (id, config) in _agentConfigs)
+        {
+            if (factories.ContainsKey(id))
                 continue;
 
             if (_builderActions.TryGetValue(id, out var builderAction))
             {
-                var builder = new AgentBuilder();
-                builderAction(builder);
-                _agents[id] = await builder.Build(cancellationToken);
+                // Agent with custom builder action
+                factories[id] = new ConfigAgentFactory(config, builderAction);
             }
             else
             {
-                var config = _agentConfigs[id];
-                _agents[id] = await config.Build(cancellationToken);
+                // Agent from config only
+                factories[id] = new ConfigAgentFactory(config);
             }
         }
 
@@ -288,7 +297,7 @@ public class AgentWorkflowBuilder
             services.AddSingleton<HPDAgent.Graph.Abstractions.Handlers.IGraphNodeHandler<AgentGraphContext>>(handler);
         }
 
-        return new AgentWorkflowInstance(graph, _agents, _options, services.BuildServiceProvider());
+        return Task.FromResult(new AgentWorkflowInstance(graph, factories, _options, services.BuildServiceProvider(), _workflowName));
     }
 
     /// <summary>

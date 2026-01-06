@@ -735,7 +735,8 @@ public sealed class Agent
                 conversationId: conversationId,
                 initialState: state,
                 eventCoordinator: _eventCoordinator,
-                cancellationToken: effectiveCancellationToken);
+                cancellationToken: effectiveCancellationToken,
+                parentChatClient: _baseClient);  // Pass chat client for SubAgent inheritance
 
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             var beforeTurnContext = agentContext.AsBeforeMessageTurn(
@@ -4519,6 +4520,8 @@ internal class FunctionCallProcessor
         }
 
         // Create V2 AgentContext for parallel batch hook
+        // Note: parentChatClient is not needed here since this is just for the batch hook,
+        // not for SubAgent creation (which happens via agentContext passed to this method)
         var batchAgentContext = new Middleware.AgentContext(
             agentName: agentLoopState.AgentName,
             conversationId: agentLoopState.ConversationId,
@@ -5386,7 +5389,7 @@ internal static class ErrorFormatter
 /// Provides backward-compatible API with domain-specific features (SetExecutionContext, AgentEvent typing).
 /// Delegates all core coordination logic to the shared HPD.Events.EventCoordinator.
 /// </summary>
-public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
+public class BidirectionalEventCoordinator : IEventCoordinator, HPD.Events.IEventCoordinator, IDisposable
 {
     private readonly HPD.Events.Core.EventCoordinator _inner;
     private AgentExecutionContext? _executionContext;
@@ -5482,6 +5485,20 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     }
 
     /// <summary>
+    /// Sets the parent coordinator for hierarchical event bubbling.
+    /// Accepts HPD.Events.IEventCoordinator for cross-library compatibility.
+    /// Used by source-generated SubAgent and MultiAgent wrappers.
+    /// </summary>
+    public void SetParent(HPD.Events.IEventCoordinator parent)
+    {
+        if (parent == null)
+            throw new ArgumentNullException(nameof(parent));
+
+        // Delegate directly to the inner coordinator
+        _inner.SetParent(parent);
+    }
+
+    /// <summary>
     /// Emits an event downstream with automatic context enrichment.
     /// </summary>
     public void Emit(AgentEvent evt)
@@ -5535,6 +5552,28 @@ public class BidirectionalEventCoordinator : IEventCoordinator, IDisposable
     {
         _inner.Dispose();
     }
+
+    //
+    // HPD.Events.IEventCoordinator EXPLICIT IMPLEMENTATIONS
+    // (For workflow/graph compatibility - accepts base Event type)
+    //
+
+    void HPD.Events.IEventCoordinator.Emit(HPD.Events.Event evt) => _inner.Emit(evt);
+
+    void HPD.Events.IEventCoordinator.EmitUpstream(HPD.Events.Event evt) => _inner.EmitUpstream(evt);
+
+    bool HPD.Events.IEventCoordinator.TryRead([NotNullWhen(true)] out HPD.Events.Event? evt) => _inner.TryRead(out evt);
+
+    IAsyncEnumerable<HPD.Events.Event> HPD.Events.IEventCoordinator.ReadAllAsync(CancellationToken ct) => _inner.ReadAllAsync(ct);
+
+    void HPD.Events.IEventCoordinator.SetParent(HPD.Events.IEventCoordinator parent) => _inner.SetParent(parent);
+
+    Task<TResponse> HPD.Events.IEventCoordinator.WaitForResponseAsync<TResponse>(
+        string requestId, TimeSpan timeout, CancellationToken ct) => _inner.WaitForResponseAsync<TResponse>(requestId, timeout, ct);
+
+    void HPD.Events.IEventCoordinator.SendResponse(string requestId, HPD.Events.Event response) => _inner.SendResponse(requestId, response);
+
+    IStreamRegistry HPD.Events.IEventCoordinator.Streams => _inner.Streams;
 
     //
     // PRIVATE HELPERS

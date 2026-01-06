@@ -70,6 +70,7 @@ var agentBuilder = new AgentBuilder(config)
     .WithProvider("openrouter", "z-ai/glm-4.7")
     // Toolkits now come from config.Toolkits - no need for .WithToolkit<>() calls
     .WithLogging()
+    .WithPermissions()
     .WithSessionStore(sessionStore, persistAfterTurn: true);
 
 // Add audio pipeline if providers are available
@@ -81,6 +82,7 @@ var thread = await agent.LoadSessionAsync(sessionId);
 
 // Initialize UI with slash command support
 var ui = new AgentUIRenderer();
+ui.SetAgent(agent);
 
 // Prepare context data for commands (sessions browsing, etc.)
 var commandContextData = new Dictionary<string, object>

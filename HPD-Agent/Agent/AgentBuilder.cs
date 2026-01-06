@@ -42,6 +42,7 @@ public class AgentBuilder
     internal IChatClient? _baseClient;
     internal IConfiguration? _configuration;
     internal IToolMetadata? _defaulTMetadata;
+    internal bool _deferredProvider; // Skip provider validation - chat client will be provided at runtime
 
     /// <summary>
     /// Instance-based registrations for DI-required Toolkits (e.g., AgentPlanToolkit, DynamicMemoryToolkit).
@@ -1548,6 +1549,21 @@ public class AgentBuilder
     }
 
     /// <summary>
+    /// Marks this agent as using a deferred provider - the chat client will be provided at runtime
+    /// via AgentRunOptions.OverrideChatClient (typically inherited from a parent agent in workflows).
+    /// This skips provider validation during Build() and allows building agents without configuring a provider.
+    /// </summary>
+    /// <remarks>
+    /// Use this for agents that will run inside multi-agent workflows where the chat client
+    /// is inherited from the parent agent at execution time.
+    /// </remarks>
+    public AgentBuilder WithDeferredProvider()
+    {
+        _deferredProvider = true;
+        return this;
+    }
+
+    /// <summary>
     /// Sets the agent name
     /// </summary>
     public AgentBuilder WithName(string name)
@@ -1799,6 +1815,18 @@ public class AgentBuilder
                 _baseClient,
                 _config.Provider?.DefaultChatOptions,
                 testErrorHandler);
+        }
+
+        // === DEFERRED PROVIDER: Skip validation when chat client will be provided at runtime ===
+        // Used for agents in multi-agent workflows that inherit the parent's chat client
+        if (_deferredProvider)
+        {
+            // Return null client - will be provided via AgentRunOptions.OverrideChatClient at runtime
+            var deferredErrorHandler = new HPD.Agent.ErrorHandling.GenericErrorHandler();
+            return new AgentBuildDependencies(
+                null!, // Client will be provided at runtime via OverrideChatClient
+                _config.Provider?.DefaultChatOptions,
+                deferredErrorHandler);
         }
 
         // === START: VALIDATION LOGIC ===

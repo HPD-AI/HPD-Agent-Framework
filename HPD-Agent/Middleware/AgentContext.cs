@@ -33,6 +33,7 @@ public sealed class AgentContext
     private int _stateGeneration = 0;
     private readonly IEventCoordinator _events;
     private readonly CancellationToken _cancellationToken;
+    private readonly IChatClient? _parentChatClient;
 
     //
     // INTERNAL ACCESS (for adapters)
@@ -42,6 +43,11 @@ public sealed class AgentContext
     /// Event coordinator (internal access for adapters).
     /// </summary>
     internal IEventCoordinator EventCoordinator => _events;
+
+    /// <summary>
+    /// Parent agent's chat client (for SubAgent inheritance).
+    /// </summary>
+    internal IChatClient? ParentChatClient => _parentChatClient;
 
     //
     // IDENTITY (immutable)
@@ -277,13 +283,15 @@ public sealed class AgentContext
         string? conversationId,
         AgentLoopState initialState,
         IEventCoordinator eventCoordinator,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IChatClient? parentChatClient = null)
     {
         AgentName = agentName ?? throw new ArgumentNullException(nameof(agentName));
         ConversationId = conversationId;
         _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
         _events = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
         _cancellationToken = cancellationToken;
+        _parentChatClient = parentChatClient;
     }
 
     //

@@ -214,8 +214,8 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         var response = new StringBuilder();
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
 
-        // Build per-invocation options
-        var runOptions = BuildRunOptions(options);
+        // Build per-invocation options (with fallback chat client from parent)
+        var runOptions = BuildRunOptions(options, context);
 
         await foreach (var evt in agent.RunAsync(
             messages: messages,
@@ -252,7 +252,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         }
 
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
-        var runOptions = BuildRunOptions(options);
+        var runOptions = BuildRunOptions(options, context);
 
         // Configure structured output
         runOptions.StructuredOutput = new StructuredOutputOptions
@@ -307,7 +307,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         }
 
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
-        var runOptions = BuildRunOptions(options);
+        var runOptions = BuildRunOptions(options, context);
 
         // Configure union output
         runOptions.StructuredOutput = new StructuredOutputOptions
@@ -375,7 +375,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         string? selectedHandoff = null;
         var responseText = new StringBuilder();
 
-        var runOptions = BuildRunOptions(options);
+        var runOptions = BuildRunOptions(options, context);
 
         // Generate and inject handoff tools via public AdditionalTools API
         var handoffTools = HandoffToolGenerator.CreateHandoffTools(options.HandoffTargets);
@@ -438,7 +438,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         return outputs;
     }
 
-    private static AgentRunOptions BuildRunOptions(AgentNodeOptions options)
+    private static AgentRunOptions BuildRunOptions(AgentNodeOptions options, AgentGraphContext? graphContext = null)
     {
         var runOptions = new AgentRunOptions();
 
@@ -462,6 +462,12 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         if (options.Timeout.HasValue)
         {
             runOptions.RunTimeout = options.Timeout.Value;
+        }
+
+        // Use fallback chat client from parent agent if available
+        if (graphContext?.FallbackChatClient != null)
+        {
+            runOptions.OverrideChatClient = graphContext.FallbackChatClient;
         }
 
         return runOptions;

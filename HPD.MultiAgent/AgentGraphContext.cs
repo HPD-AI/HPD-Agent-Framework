@@ -3,6 +3,7 @@ using HPDAgent.Graph.Abstractions.Channels;
 using HPDAgent.Graph.Abstractions.Context;
 using HPDAgent.Graph.Abstractions.State;
 using HPDAgent.Graph.Core.Context;
+using Microsoft.Extensions.AI;
 using GraphDefinition = HPDAgent.Graph.Abstractions.Graph.Graph;
 
 namespace HPD.MultiAgent;
@@ -24,6 +25,12 @@ public class AgentGraphContext : GraphContext
     public string? OriginalInput => SharedData?.TryGetValue("input", out var input) == true
         ? input as string
         : null;
+
+    /// <summary>
+    /// Fallback chat client for agents that don't have their own provider configured.
+    /// Inherited from parent agent when workflow is invoked as a tool.
+    /// </summary>
+    public IChatClient? FallbackChatClient { get; set; }
 
     /// <summary>
     /// Additional context data available to all agents in the workflow.

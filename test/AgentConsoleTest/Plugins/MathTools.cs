@@ -105,6 +105,45 @@ public class MathToolkit
         );
     }
 
+    // ========== Sub-Agent ==========
+
+    /// <summary>
+    /// Sub-agent specialized in solving differentiation problems.
+    /// </summary>
+    [SubAgent]
+    public SubAgent DifferentiationSolver()
+    {
+        return SubAgentFactory.Create(
+            name: "DifferentiationSolver",
+            description: "Specialized agent for solving calculus differentiation problems. " +
+                        "Finds derivatives of functions using rules like power rule, chain rule, " +
+                        "product rule, quotient rule, and implicit differentiation.",
+            agentConfig: new AgentConfig
+            {
+                Name = "DifferentiationSolver",
+                MaxAgenticIterations = 5,
+                SystemInstructions = @"You are an expert calculus tutor specializing in differentiation.
+
+When given a function to differentiate:
+1. Identify the type of function (polynomial, trigonometric, exponential, logarithmic, composite, etc.)
+2. State which differentiation rule(s) apply (power rule, chain rule, product rule, quotient rule, etc.)
+3. Show each step of the differentiation clearly
+4. Simplify the final answer
+5. Optionally verify by checking special cases or using implicit differentiation
+
+Common rules to apply:
+- Power Rule: d/dx[x^n] = n·x^(n-1)
+- Chain Rule: d/dx[f(g(x))] = f'(g(x))·g'(x)
+- Product Rule: d/dx[f·g] = f'·g + f·g'
+- Quotient Rule: d/dx[f/g] = (f'·g - f·g')/g²
+- Trig: d/dx[sin(x)] = cos(x), d/dx[cos(x)] = -sin(x), etc.
+- Exponential: d/dx[e^x] = e^x, d/dx[a^x] = a^x·ln(a)
+- Logarithmic: d/dx[ln(x)] = 1/x
+
+Always provide the final derivative in simplified form."
+            });
+    }
+
     // ========== Multi-Agent Workflow ==========
 
     /// <summary>
@@ -115,21 +154,15 @@ public class MathToolkit
                 "Uses 3 parallel solvers (Claude, GPT, Gemini) followed by a verifier.")]
     public async Task<AgentWorkflowInstance> MathConsensusWorkflow()
     {
-        // Create solver agents with different models
-        var solver1 = await CreateSolverAgent("Solver-Claude", "anthropic/claude-sonnet-4.5");
-        var solver2 = await CreateSolverAgent("Solver-GPT", "openai/gpt-4o");
-        var solver3 = await CreateSolverAgent("Solver-Gemini", "google/gemini-2.0-flash-exp");
-        var verifier = await CreateVerifierAgent();
-
-        // Build workflow: 3 solvers in parallel → verifier
+        // Build workflow with agent configs (deferred building with chat client inheritance)
         return await AgentWorkflow.Create()
             .WithName("MathConsensus")
 
-            // Add all agents
-            .AddAgent("solver1", solver1)
-            .AddAgent("solver2", solver2)
-            .AddAgent("solver3", solver3)
-            .AddAgent("verifier", verifier)
+            // Add solver agents via config (no provider = inherit from parent at runtime)
+            .AddAgent("solver1", CreateSolverConfig("Solver-1"))
+            .AddAgent("solver2", CreateSolverConfig("Solver-2"))
+            .AddAgent("solver3", CreateSolverConfig("Solver-3"))
+            .AddAgent("verifier", CreateVerifierConfig())
 
             // Parallel entry: START → all 3 solvers
             .From("START").To("solver1")
@@ -149,36 +182,24 @@ public class MathToolkit
 Solve the given problem step-by-step, showing your work clearly.
 Provide a precise, numerical final answer when applicable.";
 
-    private static async Task<Agent> CreateSolverAgent(string name, string model)
+    private static AgentConfig CreateSolverConfig(string name) => new()
     {
-        var config = new AgentConfig
-        {
-            Name = name,
-            MaxAgenticIterations = 10,
-            SystemInstructions = SolverPrompt,
-        };
-
-        return await new AgentBuilder(config)
-            .WithProvider("openrouter", model)
-            .Build();
-    }
+        Name = name,
+        MaxAgenticIterations = 10,
+        SystemInstructions = SolverPrompt,
+        // No Provider = will inherit from parent agent at execution time
+    };
 
     private static readonly string VerifierPrompt = @"You are a mathematical verifier.
 Compare the solver answers provided and determine the correct consensus answer.
 If solvers disagree, analyze each approach and determine which is correct.
 Return only the final verified answer.";
 
-    private static async Task<Agent> CreateVerifierAgent()
+    private static AgentConfig CreateVerifierConfig() => new()
     {
-        var config = new AgentConfig
-        {
-            Name = "Verifier",
-            MaxAgenticIterations = 5,
-            SystemInstructions = VerifierPrompt,
-        };
-
-        return await new AgentBuilder(config)
-            .WithProvider("openrouter", "anthropic/claude-3.5-haiku")
-            .Build();
-    }
+        Name = "Verifier",
+        MaxAgenticIterations = 5,
+        SystemInstructions = VerifierPrompt,
+        // No Provider = will inherit from parent agent at execution time
+    };
 }

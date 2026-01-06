@@ -989,7 +989,7 @@ $@"    /// <summary>
     public class {Toolkit.Name}MultiAgentInputArgs
     {{
         [System.Text.Json.Serialization.JsonPropertyName(""input"")]
-        [System.ComponentModel.Description(""Input for the multi-agent workflow"")]
+        [System.ComponentModel.Description(""The user's question or task to process through the multi-agent workflow. Pass the full user message here."")]
         public string Input {{ get; set; }} = string.Empty;
     }}
 ");

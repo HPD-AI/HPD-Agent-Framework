@@ -209,6 +209,59 @@ public abstract record HookContext
     /// </remarks>
     public IStreamRegistry? Streams => Base.Streams;
 
+    /// <summary>
+    /// Gets the event coordinator for hierarchical event bubbling in nested workflows.
+    /// Used by source-generated MultiAgent and SubAgent wrappers to propagate events to parent.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>For source-generated code only.</b></para>
+    /// <para>
+    /// External code should use <see cref="Emit"/> and <see cref="WaitForResponseAsync{T}"/> instead.
+    /// This property is public (not internal) because source-generated code runs in consumer assemblies.
+    /// </para>
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public HPD.Events.IEventCoordinator? GetParentEventCoordinator()
+    {
+        // BidirectionalEventCoordinator now implements HPD.Events.IEventCoordinator
+        return Base.EventCoordinator as HPD.Events.IEventCoordinator;
+    }
+
+    /// <summary>
+    /// Gets the parent agent's chat client for SubAgent inheritance.
+    /// Used by source-generated SubAgent wrappers when no provider is specified.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>For source-generated code only.</b></para>
+    /// <para>
+    /// This property is public (not internal) because source-generated code runs in consumer assemblies.
+    /// </para>
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public Microsoft.Extensions.AI.IChatClient? GetParentChatClient()
+    {
+        return Base.ParentChatClient;
+    }
+
+    /// <summary>
+    /// Gets the parent agent's execution context for hierarchical event attribution.
+    /// Used by source-generated SubAgent and MultiAgent wrappers.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>For source-generated code only.</b></para>
+    /// <para>
+    /// Returns the ExecutionContext from RootAgent, which contains:
+    /// - AgentName, AgentId, ParentAgentId
+    /// - AgentChain (full hierarchy path)
+    /// - Depth (nesting level)
+    /// </para>
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public AgentExecutionContext? GetParentExecutionContext()
+    {
+        return Agent.RootAgent?.ExecutionContext;
+    }
+
     //
     // CONSTRUCTOR
     //

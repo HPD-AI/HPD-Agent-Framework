@@ -90,27 +90,37 @@ internal class MultiAgentCapability : BaseCapability
         }
         sb.AppendLine();
 
-        // Get input from arguments
-        sb.AppendLine("        // Extract input from arguments");
+        // Get parent context for event bubbling, execution hierarchy, and chat client inheritance
+        // V2: Use CurrentFunctionContext which IS set during function execution (unlike RootAgent which uses AsyncLocal)
+        sb.AppendLine("        // Get parent context from CurrentFunctionContext (set during function execution)");
+        sb.AppendLine("        var functionContext = HPD.Agent.Agent.CurrentFunctionContext;");
+        sb.AppendLine("        var parentCoordinator = functionContext?.GetParentEventCoordinator();");
+        sb.AppendLine("        var parentExecutionContext = functionContext?.GetParentExecutionContext();");
+        sb.AppendLine("        var parentChatClient = functionContext?.GetParentChatClient();");
+        sb.AppendLine();
+
+        // Get input from arguments OR fall back to last user message from conversation
+        sb.AppendLine("        // Extract input from arguments, fall back to last user message if not provided");
         sb.AppendLine("        var jsonArgs = arguments.GetJson();");
         sb.AppendLine("        var input = jsonArgs.TryGetProperty(\"input\", out var inputProp)");
         sb.AppendLine("            ? inputProp.GetString() ?? string.Empty");
         sb.AppendLine("            : string.Empty;");
         sb.AppendLine();
-
-        // Get parent agent for event bubbling
-        sb.AppendLine("        // Get parent agent from AsyncLocal context (same pattern as SubAgent)");
-        sb.AppendLine("        var currentAgent = HPD.Agent.Agent.RootAgent;");
-        sb.AppendLine("        // Cast to IEventCoordinator interface for workflow compatibility");
-        sb.AppendLine("        HPD.Events.IEventCoordinator? parentCoordinator = (HPD.Events.IEventCoordinator?)currentAgent?.EventCoordinator;");
+        sb.AppendLine("        // If LLM didn't pass input, get last user message from conversation context");
+        sb.AppendLine("        if (string.IsNullOrEmpty(input) && functionContext != null)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var messages = functionContext.Analyze(s => s.CurrentMessages);");
+        sb.AppendLine("            var lastUserMsg = messages?.LastOrDefault(m => m.Role == ChatRole.User);");
+        sb.AppendLine("            input = lastUserMsg?.Text ?? string.Empty;");
+        sb.AppendLine("        }");
         sb.AppendLine();
 
         if (StreamEvents)
         {
-            // Streaming execution
+            // Streaming execution with full hierarchical context and chat client inheritance
             sb.AppendLine("        // Execute with streaming, capturing text output");
             sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
-            sb.AppendLine("        await foreach (var evt in workflow.ExecuteStreamingAsync(input, parentCoordinator, cancellationToken))");
+            sb.AppendLine("        await foreach (var evt in workflow.ExecuteStreamingAsync(input, parentCoordinator, parentExecutionContext, parentChatClient, cancellationToken))");
             sb.AppendLine("        {");
             sb.AppendLine("            // TextDeltaEvent is in HPD.Agent namespace");
             sb.AppendLine("            if (evt is HPD.Agent.TextDeltaEvent textDelta)");

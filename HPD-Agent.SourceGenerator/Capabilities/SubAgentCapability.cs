@@ -77,16 +77,18 @@ internal class SubAgentCapability : BaseCapability
             sb.AppendLine($"        var subAgentDef = instance.{MethodName}();");
         }
         sb.AppendLine();
+        sb.AppendLine("        // Get parent context from CurrentFunctionContext (set during function execution)");
+        sb.AppendLine("        var functionContext = HPD.Agent.Agent.CurrentFunctionContext;");
+        sb.AppendLine("        var parentCoordinator = functionContext?.GetParentEventCoordinator();");
+        sb.AppendLine();
         sb.AppendLine("        // Build agent from config");
         sb.AppendLine("        var agentBuilder = new AgentBuilder(subAgentDef.AgentConfig);");
         sb.AppendLine();
-        sb.AppendLine("        // Get the current agent (parent) from AsyncLocal context");
-        sb.AppendLine("        var currentAgent = HPD.Agent.Agent.RootAgent;");
-        sb.AppendLine();
         sb.AppendLine("        // If no provider specified in SubAgent config, inherit parent's chat client");
-        sb.AppendLine("        if (subAgentDef.AgentConfig.Provider == null && currentAgent != null)");
+        sb.AppendLine("        var parentChatClient = functionContext?.GetParentChatClient();");
+        sb.AppendLine("        if (subAgentDef.AgentConfig.Provider == null && parentChatClient != null)");
         sb.AppendLine("        {");
-        sb.AppendLine("            agentBuilder.WithChatClient(currentAgent.BaseClient);");
+        sb.AppendLine("            agentBuilder.WithChatClient(parentChatClient);");
         sb.AppendLine("        }");
         sb.AppendLine();
         sb.AppendLine("        // Register Toolkits if any are specified (uses AOT-compatible catalog)");
@@ -102,23 +104,17 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine();
 
         // Set up event bubbling via parent-child linking
-        sb.AppendLine("        //     ");
-        sb.AppendLine("        // SET UP EVENT BUBBLING (Parent-Child Linking)");
-        sb.AppendLine("        //     ");
-        sb.AppendLine("        // currentAgent was already retrieved above for client inheritance");
-        sb.AppendLine("        if (currentAgent != null)");
+        sb.AppendLine("        // Set up event bubbling (use parentCoordinator from CurrentFunctionContext)");
+        sb.AppendLine("        if (parentCoordinator != null)");
         sb.AppendLine("        {");
-        sb.AppendLine("            // Establish explicit parent-child relationship");
-        sb.AppendLine("            // Events from this sub-agent will bubble to parent via _parentCoordinator");
-        sb.AppendLine("            agent.EventCoordinator.SetParent(currentAgent.EventCoordinator);");
+        sb.AppendLine("            agent.EventCoordinator.SetParent(parentCoordinator);");
         sb.AppendLine("        }");
         sb.AppendLine();
 
         // Build execution context for event attribution
-        sb.AppendLine("        //     ");
-        sb.AppendLine("        // BUILD EXECUTION CONTEXT (Event Attribution)");
-        sb.AppendLine("        //     ");
         sb.AppendLine("        // Build hierarchical execution context for event attribution");
+        sb.AppendLine("        // Note: RootAgent is used here for execution context hierarchy (not for chat client)");
+        sb.AppendLine("        var currentAgent = HPD.Agent.Agent.RootAgent;");
         sb.AppendLine("        var parenTMetadata = currentAgent?.ExecutionContext;");
         sb.AppendLine("        var randomId = System.Guid.NewGuid().ToString(\"N\")[..8];");
         sb.AppendLine("        var sanitizedAgentName = System.Text.RegularExpressions.Regex.Replace(");
@@ -171,21 +167,34 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            ? queryProp.GetString() ?? string.Empty");
         sb.AppendLine("            : string.Empty;");
         sb.AppendLine();
-        sb.AppendLine("        // Create user message and run agent");
+        sb.AppendLine("        // Create user message and run agent with event streaming");
         sb.AppendLine("        var message = new ChatMessage(ChatRole.User, query);");
-        sb.AppendLine("        var responseMessages = new System.Collections.Generic.List<ChatMessage>();");
+        sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
         sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
         sb.AppendLine("            new[] { message },");
         sb.AppendLine("            options: null,");
         sb.AppendLine("            session: session,");
         sb.AppendLine("            cancellationToken: cancellationToken))");
         sb.AppendLine("        {");
-        sb.AppendLine("            // We don't need to process events here, just let it run");
+        sb.AppendLine("            // Stream events to parent coordinator for real-time rendering");
+        sb.AppendLine("            if (parentCoordinator != null)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                parentCoordinator.Emit(evt);");
+        sb.AppendLine("            }");
+        sb.AppendLine("            // Capture text for final result");
+        sb.AppendLine("            if (evt is HPD.Agent.TextDeltaEvent textDelta)");
+        sb.AppendLine("            {");
+        sb.AppendLine("                textResult.Append(textDelta.Text);");
+        sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();
 
-        // Return response
-        sb.AppendLine("        // Return last assistant message from session");
+        // Return response - prefer captured text, fall back to session
+        sb.AppendLine("        // Return captured text or fall back to last assistant message from session");
+        sb.AppendLine("        if (textResult.Length > 0)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            return textResult.ToString();");
+        sb.AppendLine("        }");
         sb.AppendLine("        var messages = await session.GetMessagesAsync(cancellationToken);");
         sb.AppendLine("        return messages");
         sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");

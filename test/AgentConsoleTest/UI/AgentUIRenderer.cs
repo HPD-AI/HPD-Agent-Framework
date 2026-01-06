@@ -1,4 +1,6 @@
 using HPD.Agent;
+using HPD.Events;
+using HPD.MultiAgent;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using StreamingMarkdown.Core;
@@ -31,7 +33,10 @@ public class AgentUIRenderer
 
     // Command system - slash commands with autocomplete
     private readonly CommandRegistry _commandRegistry = new();
-    
+
+    // Agent reference for sending permission responses
+    private Agent? _agent;
+
     public UIStateManager StateManager => _stateManager;
     public CommandRegistry CommandRegistry => _commandRegistry;
 
@@ -58,10 +63,15 @@ public class AgentUIRenderer
     public AgentUIRenderer()
     {
         _stateManager = new UIStateManager();
-        
+
         // Register built-in slash commands
         BuiltInCommands.RegisterAll(_commandRegistry);
     }
+
+    /// <summary>
+    /// Sets the agent reference for handling bidirectional events like permissions.
+    /// </summary>
+    public void SetAgent(Agent agent) => _agent = agent;
     
     /// <summary>
     /// Display the app header on startup.
@@ -116,15 +126,27 @@ public class AgentUIRenderer
     }
     
     /// <summary>
+    /// Process and render any HPD event (AgentEvent, including workflow events).
+    /// </summary>
+    public void RenderEvent(Event evt)
+    {
+        // All events are now AgentEvent-derived (workflow events wrap graph events)
+        if (evt is AgentEvent agentEvt)
+        {
+            RenderAgentEvent(agentEvt);
+        }
+    }
+
+    /// <summary>
     /// Process and render an agent event using components.
     /// </summary>
-    public void RenderEvent(AgentEvent evt)
+    public void RenderAgentEvent(AgentEvent evt)
     {
         lock (_lock)
         {
             // Update state
             _stateManager.ProcessEvent(evt);
-            
+
             // Render based on event type
             switch (evt)
             {
@@ -171,6 +193,43 @@ public class AgentUIRenderer
 
                 case ReasoningMessageEndEvent:
                     AnsiConsole.WriteLine();
+                    break;
+
+                // Workflow events (multi-agent)
+                case WorkflowStartedEvent workflowStart:
+                    RenderWorkflowStarted(workflowStart);
+                    break;
+
+                case WorkflowCompletedEvent workflowComplete:
+                    RenderWorkflowCompleted(workflowComplete);
+                    break;
+
+                case WorkflowNodeStartedEvent nodeStart:
+                    RenderWorkflowNodeStarted(nodeStart);
+                    break;
+
+                case WorkflowNodeCompletedEvent nodeComplete:
+                    RenderWorkflowNodeCompleted(nodeComplete);
+                    break;
+
+                case WorkflowNodeSkippedEvent nodeSkipped:
+                    RenderWorkflowNodeSkipped(nodeSkipped);
+                    break;
+
+                case WorkflowEdgeTraversedEvent edge:
+                    RenderWorkflowEdgeTraversed(edge);
+                    break;
+
+                case WorkflowLayerStartedEvent layerStart:
+                    RenderWorkflowLayerStarted(layerStart);
+                    break;
+
+                case WorkflowLayerCompletedEvent layerComplete:
+                    RenderWorkflowLayerCompleted(layerComplete);
+                    break;
+
+                case WorkflowDiagnosticEvent diagnostic:
+                    RenderWorkflowDiagnostic(diagnostic);
                     break;
             }
         }
@@ -427,7 +486,130 @@ public class AgentUIRenderer
         .Header("[yellow]🔒 Permission Required[/]")
         .Border(BoxBorder.Double)
         .BorderColor(Color.Yellow);
-        
+
         AnsiConsole.Write(panel);
+
+        // Prompt user for permission decision
+        var choice = AnsiConsole.Prompt(
+            new SelectionPrompt<string>()
+                .Title("[yellow]Grant permission?[/]")
+                .AddChoices("Allow once", "Allow always", "Deny once", "Deny always"));
+
+        var (approved, permChoice) = choice switch
+        {
+            "Allow once" => (true, PermissionChoice.Ask),
+            "Allow always" => (true, PermissionChoice.AlwaysAllow),
+            "Deny once" => (false, PermissionChoice.Ask),
+            "Deny always" => (false, PermissionChoice.AlwaysDeny),
+            _ => (false, PermissionChoice.Ask)
+        };
+
+        // Send response to unblock the middleware
+        _agent?.SendMiddlewareResponse(
+            evt.PermissionId,
+            new PermissionResponseEvent(
+                evt.PermissionId,
+                "ConsoleUI",
+                approved,
+                approved ? null : "User denied permission",
+                permChoice));
+
+        AnsiConsole.MarkupLine(approved
+            ? "[green]✓ Permission granted[/]"
+            : "[red]✗ Permission denied[/]");
+    }
+
+    //
+    // Workflow Event Renderers (multi-agent)
+    //
+
+    private void RenderWorkflowStarted(WorkflowStartedEvent evt)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(
+            new Rule($"[bold cyan]Workflow: {Markup.Escape(evt.WorkflowName)}[/]")
+                .LeftJustified()
+                .RuleStyle("cyan"));
+        AnsiConsole.MarkupLine($"[dim]Nodes: {evt.NodeCount}" +
+            (evt.LayerCount.HasValue ? $", Layers: {evt.LayerCount}" : "") + "[/]");
+    }
+
+    private void RenderWorkflowCompleted(WorkflowCompletedEvent evt)
+    {
+        AnsiConsole.WriteLine();
+        var statusIcon = evt.Success ? "✓" : "✗";
+        var statusColor = evt.Success ? "green" : "red";
+        AnsiConsole.MarkupLine($"[{statusColor}]{statusIcon} Workflow '{Markup.Escape(evt.WorkflowName)}' completed in {evt.Duration.TotalSeconds:F2}s[/]");
+        AnsiConsole.MarkupLine($"[dim]  Successful: {evt.SuccessfulNodes}, Failed: {evt.FailedNodes}, Skipped: {evt.SkippedNodes}[/]");
+    }
+
+    private void RenderWorkflowNodeStarted(WorkflowNodeStartedEvent evt)
+    {
+        AnsiConsole.WriteLine();
+        var agentInfo = evt.AgentName != null ? $" ({Markup.Escape(evt.AgentName)})" : "";
+        AnsiConsole.MarkupLine($"[yellow]▶ Starting:[/] [bold]{Markup.Escape(evt.NodeId)}[/]{agentInfo}" +
+            (evt.LayerIndex.HasValue ? $" [dim](layer {evt.LayerIndex})[/]" : ""));
+    }
+
+    private void RenderWorkflowNodeCompleted(WorkflowNodeCompletedEvent evt)
+    {
+        var statusColor = evt.Success ? "green" : "red";
+        var statusIcon = evt.Success ? "✓" : "✗";
+        AnsiConsole.MarkupLine($"[{statusColor}]{statusIcon} Completed:[/] [bold]{Markup.Escape(evt.NodeId)}[/] [dim]({evt.Duration.TotalSeconds:F2}s)[/]");
+
+        // Show error if failed
+        if (!evt.Success && evt.ErrorMessage != null)
+        {
+            AnsiConsole.MarkupLine($"[red]  Error: {Markup.Escape(evt.ErrorMessage)}[/]");
+        }
+
+        // Show outputs if available
+        if (evt.Outputs != null && evt.Outputs.Count > 0)
+        {
+            foreach (var kvp in evt.Outputs)
+            {
+                var displayValue = kvp.Value?.ToString() ?? "(null)";
+                if (displayValue.Length > 100)
+                    displayValue = displayValue[..100] + "...";
+                AnsiConsole.MarkupLine($"[dim]  {Markup.Escape(kvp.Key)}: {Markup.Escape(displayValue)}[/]");
+            }
+        }
+    }
+
+    private void RenderWorkflowNodeSkipped(WorkflowNodeSkippedEvent evt)
+    {
+        AnsiConsole.MarkupLine($"[dim]⊘ Skipped:[/] {Markup.Escape(evt.NodeId)} - {Markup.Escape(evt.Reason)}");
+    }
+
+    private void RenderWorkflowEdgeTraversed(WorkflowEdgeTraversedEvent evt)
+    {
+        AnsiConsole.MarkupLine($"[blue]→ Edge:[/] {Markup.Escape(evt.FromNodeId)} → {Markup.Escape(evt.ToNodeId)}" +
+            (evt.HasCondition ? $" [dim]({Markup.Escape(evt.ConditionDescription ?? "")})[/]" : ""));
+    }
+
+    private void RenderWorkflowLayerStarted(WorkflowLayerStartedEvent evt)
+    {
+        AnsiConsole.MarkupLine($"[cyan]◆ Layer {evt.LayerIndex}:[/] {evt.NodeCount} nodes");
+    }
+
+    private void RenderWorkflowLayerCompleted(WorkflowLayerCompletedEvent evt)
+    {
+        AnsiConsole.MarkupLine($"[dim]  Layer {evt.LayerIndex} completed in {evt.Duration.TotalSeconds:F2}s[/]");
+    }
+
+    private void RenderWorkflowDiagnostic(WorkflowDiagnosticEvent evt)
+    {
+        // Only show warnings and errors by default
+        if (evt.Level >= LogLevel.Warning)
+        {
+            var color = evt.Level switch
+            {
+                LogLevel.Warning => "yellow",
+                LogLevel.Error => "red",
+                LogLevel.Critical => "red bold",
+                _ => "dim"
+            };
+            AnsiConsole.MarkupLine($"[{color}][{Markup.Escape(evt.Source)}] {Markup.Escape(evt.Message)}[/]");
+        }
     }
 }
