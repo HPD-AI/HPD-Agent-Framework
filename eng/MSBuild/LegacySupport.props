@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    LegacySupport.props - Polyfill Injection Rules
+
+    This file is a placeholder for future legacy support.
+    When EnableLegacySupport is set to 'true' in Directory.Build.props,
+    this file will inject polyfills for older frameworks.
+
+    See InternalDocs/HPD.Agent/Proposals/Compatibility/03-LegacySupportProps.md
+    for the full implementation when needed.
+  -->
+
+  <!-- Polyfill injection rules will go here -->
+
+</Project>

@@ -43,6 +43,48 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
+  <!-- ============================================== -->
+  <!-- Multi-Targeting Configuration                  -->
+  <!-- ============================================== -->
+  <PropertyGroup>
+    <!-- Modern .NET versions -->
+    <TargetFrameworksModern>net10.0;net9.0;net8.0</TargetFrameworksModern>
+
+    <!-- Legacy frameworks (disabled by default) -->
+    <TargetFrameworksLegacy>netstandard2.0;net472</TargetFrameworksLegacy>
+
+    <!-- Toggle: Set to 'true' to enable legacy support -->
+    <EnableLegacySupport>false</EnableLegacySupport>
+
+    <!-- Computed target frameworks -->
+    <TargetFrameworks Condition="'$(EnableLegacySupport)' != 'true'">$(TargetFrameworksModern)</TargetFrameworks>
+    <TargetFrameworks Condition="'$(EnableLegacySupport)' == 'true'">$(TargetFrameworksModern);$(TargetFrameworksLegacy)</TargetFrameworks>
+
+    <!-- AOT compatibility for modern frameworks -->
+    <IsAotCompatible Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net7.0'))">true</IsAotCompatible>
+  </PropertyGroup>
+
+  <!-- ============================================== -->
+  <!-- Legacy Framework Adjustments (when enabled)    -->
+  <!-- ============================================== -->
+  <PropertyGroup Condition="'$(EnableLegacySupport)' == 'true' AND
+                            ('$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net472')">
+    <NoWarn>$(NoWarn);nullable</NoWarn>
+  </PropertyGroup>
+
+  <!-- ============================================== -->
+  <!-- Repo Root Detection                            -->
+  <!-- ============================================== -->
+  <PropertyGroup>
+    <RepoRoot>$([System.IO.Path]::GetDirectoryName($([MSBuild]::GetPathOfFileAbove('HPD-Agent.sln', '$(MSBuildThisFileDirectory)'))))</RepoRoot>
+  </PropertyGroup>
+
+  <!-- ============================================== -->
+  <!-- Import LegacySupport (when enabled)            -->
+  <!-- ============================================== -->
+  <Import Project="$(RepoRoot)/eng/MSBuild/LegacySupport.props"
+          Condition="'$(EnableLegacySupport)' == 'true' AND Exists('$(RepoRoot)/eng/MSBuild/LegacySupport.props')" />
+
   <!-- Include LICENSE and README in all packages (projects can override) -->
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="" Visible="false" Condition="Exists('$(MSBuildThisFileDirectory)LICENSE')" />

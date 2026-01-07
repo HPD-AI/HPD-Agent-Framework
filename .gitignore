@@ -11,3 +11,5 @@ appsettings.*.json
 /target
 **/target
 /.nupkg
+**/test/AgentConsoleTest/sessions/sessions
+**/test/AgentWebTest/sessions/sessions

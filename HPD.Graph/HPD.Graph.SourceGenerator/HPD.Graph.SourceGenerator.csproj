@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- Source generators must target netstandard2.0 for Roslyn compatibility -->
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Clear the multi-targeting from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <RootNamespace>HPDAgent.Graph.SourceGenerator</RootNamespace>
     <AssemblyName>HPDAgent.Graph.SourceGenerator</AssemblyName>

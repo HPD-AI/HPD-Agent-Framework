@@ -2,7 +2,10 @@
 
   <PropertyGroup>
     <PackageId>HPD-Agent.SourceGenerator</PackageId>
+    <!-- Source generators must target netstandard2.0 for Roslyn compatibility -->
     <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- Clear the multi-targeting from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
     <RootNamespace>HPD.Agent.SourceGenerator</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

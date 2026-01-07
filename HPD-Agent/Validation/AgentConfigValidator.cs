@@ -1,176 +1,254 @@
-using FluentValidation;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using HPD.Agent;
 
-public class AgentConfigValidator : AbstractValidator<AgentConfig>
+namespace HPD.Agent.Validation;
+
+/// <summary>
+/// Validates AgentConfig objects and throws ValidationException if invalid.
+/// </summary>
+public static class AgentConfigValidator
 {
-    public AgentConfigValidator()
+    /// <summary>
+    /// Validates the configuration and throws if invalid.
+    /// </summary>
+    public static void ValidateAndThrow(AgentConfig config)
     {
-        // Basic configuration validation
-        RuleFor(config => config.Name)
-            .NotEmpty()
-            .WithMessage("Agent name must not be empty.")
-            .Length(1, 100)
-            .WithMessage("Agent name must be between 1 and 100 characters.");
-
-        RuleFor(config => config.MaxAgenticIterations)
-            .GreaterThan(0)
-            .LessThanOrEqualTo(50)
-            .WithMessage("MaxFunctionCallTurns must be between 1 and 50.");
-
-        // Provider validation - ensure a provider is configured
-        RuleFor(config => config.Provider)
-            .NotNull()
-            .WithMessage("A provider must be configured for the agent.")
-            .DependentRules(() =>
-            {
-                RuleFor(config => config.Provider!.ModelName)
-                    .NotEmpty()
-                    .WithMessage("Provider model name must be specified.");
-
-                // Provider-specific validation
-                When(config => config.Provider!.ProviderKey?.ToLowerInvariant() == "azureopenai", () =>
-                {
-                    RuleFor(config => config.Provider!.Endpoint)
-                        .NotEmpty()
-                        .WithMessage("Azure OpenAI requires an endpoint URL.")
-                        .Must(BeValidUri)
-                        .WithMessage("Azure OpenAI endpoint must be a valid URI.");
-                });
-
-                When(config => config.Provider!.ProviderKey?.ToLowerInvariant() == "ollama", () =>
-                {
-                    RuleFor(config => config.Provider!.ModelName)
-                        .Must(modelName => !string.IsNullOrEmpty(modelName) && !modelName.Contains("/"))
-                        .WithMessage("Ollama model name should not contain '/' characters.");
-                });
-
-                When(config => config.Provider!.Endpoint != null, () =>
-                {
-                    RuleFor(config => config.Provider!.Endpoint)
-                        .Must(BeValidUri)
-                        .WithMessage("Provider endpoint must be a valid URI.");
-                });
-            });
-
-        // MCP configuration validation
-        When(config => config.Mcp != null && !string.IsNullOrEmpty(config.Mcp.ManifestPath), () =>
+        var errors = Validate(config);
+        if (errors.Count > 0)
         {
-            RuleFor(config => config.Mcp!.ManifestPath)
-                .Must(BeValidPath)
-                .WithMessage("MCP ManifestPath must be a valid file path.");
-        });
-
-        // Error handling configuration validation
-        When(config => config.ErrorHandling != null, () =>
-        {
-            RuleFor(config => config.ErrorHandling!.MaxRetries)
-                .InclusiveBetween(0, 10)
-                .WithMessage("ErrorHandling MaxRetries must be between 0 and 10.");
-        });
-
-        // History reduction validation
-        When(config => config.HistoryReduction?.Enabled == true, () =>
-        {
-            // Percentage-based validation
-            When(config => config.HistoryReduction!.TokenBudgetTriggerPercentage.HasValue, () =>
-            {
-                RuleFor(config => config.HistoryReduction!.ContextWindowSize)
-                    .NotNull()
-                    .WithMessage("ContextWindowSize must be set when using TokenBudgetTriggerPercentage.");
-
-                RuleFor(config => config.HistoryReduction!.TokenBudgetTriggerPercentage!.Value)
-                    .GreaterThan(0)
-                    .LessThan(1)
-                    .WithMessage("TokenBudgetTriggerPercentage must be between 0 and 1 (e.g., 0.7 for 70%).");
-
-                RuleFor(config => config.HistoryReduction!.TokenBudgetPreservePercentage)
-                    .GreaterThan(0)
-                    .LessThan(1)
-                    .WithMessage("TokenBudgetPreservePercentage must be between 0 and 1 (e.g., 0.3 for 30%).");
-
-                RuleFor(config => config.HistoryReduction!.ContextWindowSize!.Value)
-                    .GreaterThan(1000)
-                    .LessThanOrEqualTo(2000000)
-                    .WithMessage("ContextWindowSize must be between 1,000 and 2,000,000 tokens.");
-
-                // Ensure trigger percentage is larger than preserve percentage
-                RuleFor(config => config.HistoryReduction!)
-                    .Must(hr => hr.TokenBudgetTriggerPercentage > hr.TokenBudgetPreservePercentage)
-                    .WithMessage("TokenBudgetTriggerPercentage must be larger than TokenBudgetPreservePercentage.");
-            });
-
-            // Token budget validation
-            When(config => config.HistoryReduction!.MaxTokenBudget.HasValue, () =>
-            {
-                RuleFor(config => config.HistoryReduction!.MaxTokenBudget!.Value)
-                    .GreaterThan(100)
-                    .LessThanOrEqualTo(2000000)
-                    .WithMessage("MaxTokenBudget must be between 100 and 2,000,000 tokens.");
-
-                RuleFor(config => config.HistoryReduction!.TargetTokenBudget)
-                    .GreaterThan(0)
-                    .LessThan(config => config.HistoryReduction!.MaxTokenBudget!.Value)
-                    .WithMessage("TargetTokenBudget must be positive and less than MaxTokenBudget.");
-
-                RuleFor(config => config.HistoryReduction!.TokenBudgetThreshold)
-                    .GreaterThanOrEqualTo(0)
-                    .WithMessage("TokenBudgetThreshold must be non-negative.");
-            });
-
-            // Message count validation
-            RuleFor(config => config.HistoryReduction!.TargetMessageCount)
-                .GreaterThan(1)
-                .LessThanOrEqualTo(1000)
-                .WithMessage("TargetMessageCount must be between 2 and 1,000 messages.");
-
-            When(config => config.HistoryReduction!.SummarizationThreshold.HasValue, () =>
-            {
-                RuleFor(config => config.HistoryReduction!.SummarizationThreshold!.Value)
-                    .GreaterThanOrEqualTo(0)
-                    .LessThanOrEqualTo(100)
-                    .WithMessage("SummarizationThreshold must be between 0 and 100.");
-            });
-        });
-
-        // Observability configuration validation
-        // Note: Telemetry and Logging observers are created internally by AgentBuilder
-        // No validation needed for removed TelemetryConfig/LoggingConfig classes
-
-        When(config => config.Caching?.Enabled == true, () =>
-        {
-            RuleFor(config => config.Caching!.CacheExpiration)
-                .NotNull()
-                .WithMessage("CachingConfig.CacheExpiration must be set when caching is enabled.")
-                .GreaterThan(TimeSpan.Zero)
-                .WithMessage("CachingConfig.CacheExpiration must be greater than zero.");
-
-            RuleFor(config => config.Caching!.CacheExpiration)
-                .LessThan(TimeSpan.FromDays(7))
-                .WithMessage("CachingConfig.CacheExpiration should not exceed 7 days (prevents stale cache).");
-        });
-
-        // Cross-configuration validation rules
-        RuleFor(config => config)
-            .Must(HaveValidProviderModelCombination)
-            .WithMessage("The specified model is not supported by the selected provider.")
-            .Must(HaveReasonableResourceLimits)
-            .WithMessage("Resource limits (MaxTokens, MaxFunctionCallTurns) may be too high for stable operation.");
+            throw new ValidationException(errors);
+        }
     }
 
-    private static bool BeValidUri(string? uri)
+    /// <summary>
+    /// Validates the configuration and returns a list of error messages.
+    /// </summary>
+    public static List<string> Validate(AgentConfig config)
+    {
+        var errors = new List<string>();
+
+        // Basic configuration validation
+        ValidateName(config, errors);
+        ValidateMaxAgenticIterations(config, errors);
+        ValidateProvider(config, errors);
+        ValidateMcp(config, errors);
+        ValidateErrorHandling(config, errors);
+        ValidateHistoryReduction(config, errors);
+        ValidateCaching(config, errors);
+        ValidateCrossConfiguration(config, errors);
+
+        return errors;
+    }
+
+    private static void ValidateName(AgentConfig config, List<string> errors)
+    {
+        if (string.IsNullOrEmpty(config.Name))
+        {
+            errors.Add("Agent name must not be empty.");
+        }
+        else if (config.Name.Length < 1 || config.Name.Length > 100)
+        {
+            errors.Add("Agent name must be between 1 and 100 characters.");
+        }
+    }
+
+    private static void ValidateMaxAgenticIterations(AgentConfig config, List<string> errors)
+    {
+        if (config.MaxAgenticIterations <= 0 || config.MaxAgenticIterations > 50)
+        {
+            errors.Add("MaxFunctionCallTurns must be between 1 and 50.");
+        }
+    }
+
+    private static void ValidateProvider(AgentConfig config, List<string> errors)
+    {
+        if (config.Provider == null)
+        {
+            errors.Add("A provider must be configured for the agent.");
+            return;
+        }
+
+        // Model name validation
+        if (string.IsNullOrEmpty(config.Provider.ModelName))
+        {
+            errors.Add("Provider model name must be specified.");
+        }
+
+        // Provider-specific validation
+        var providerKey = config.Provider.ProviderKey?.ToLowerInvariant();
+
+        if (providerKey == "azureopenai")
+        {
+            if (string.IsNullOrEmpty(config.Provider.Endpoint))
+            {
+                errors.Add("Azure OpenAI requires an endpoint URL.");
+            }
+            else if (!IsValidUri(config.Provider.Endpoint))
+            {
+                errors.Add("Azure OpenAI endpoint must be a valid URI.");
+            }
+        }
+
+        if (providerKey == "ollama")
+        {
+            if (!string.IsNullOrEmpty(config.Provider.ModelName) && config.Provider.ModelName.Contains('/'))
+            {
+                errors.Add("Ollama model name should not contain '/' characters.");
+            }
+        }
+
+        // Generic endpoint validation
+        if (!string.IsNullOrEmpty(config.Provider.Endpoint) && !IsValidUri(config.Provider.Endpoint))
+        {
+            errors.Add("Provider endpoint must be a valid URI.");
+        }
+
+        // Model combination validation
+        if (!IsValidProviderModelCombination(config))
+        {
+            errors.Add("The specified model is not supported by the selected provider.");
+        }
+    }
+
+    private static void ValidateMcp(AgentConfig config, List<string> errors)
+    {
+        if (config.Mcp != null && !string.IsNullOrEmpty(config.Mcp.ManifestPath))
+        {
+            if (!IsValidPath(config.Mcp.ManifestPath))
+            {
+                errors.Add("MCP ManifestPath must be a valid file path.");
+            }
+        }
+    }
+
+    private static void ValidateErrorHandling(AgentConfig config, List<string> errors)
+    {
+        if (config.ErrorHandling != null)
+        {
+            if (config.ErrorHandling.MaxRetries < 0 || config.ErrorHandling.MaxRetries > 10)
+            {
+                errors.Add("ErrorHandling MaxRetries must be between 0 and 10.");
+            }
+        }
+    }
+
+    private static void ValidateHistoryReduction(AgentConfig config, List<string> errors)
+    {
+        if (config.HistoryReduction?.Enabled != true)
+            return;
+
+        var hr = config.HistoryReduction;
+
+        // Percentage-based validation
+        if (hr.TokenBudgetTriggerPercentage.HasValue)
+        {
+            if (hr.ContextWindowSize == null)
+            {
+                errors.Add("ContextWindowSize must be set when using TokenBudgetTriggerPercentage.");
+            }
+
+            if (hr.TokenBudgetTriggerPercentage.Value <= 0 || hr.TokenBudgetTriggerPercentage.Value >= 1)
+            {
+                errors.Add("TokenBudgetTriggerPercentage must be between 0 and 1 (e.g., 0.7 for 70%).");
+            }
+
+            if (hr.TokenBudgetPreservePercentage <= 0 || hr.TokenBudgetPreservePercentage >= 1)
+            {
+                errors.Add("TokenBudgetPreservePercentage must be between 0 and 1 (e.g., 0.3 for 30%).");
+            }
+
+            if (hr.ContextWindowSize.HasValue)
+            {
+                if (hr.ContextWindowSize.Value <= 1000 || hr.ContextWindowSize.Value > 2000000)
+                {
+                    errors.Add("ContextWindowSize must be between 1,000 and 2,000,000 tokens.");
+                }
+            }
+
+            // Ensure trigger percentage is larger than preserve percentage
+            if (hr.TokenBudgetTriggerPercentage <= hr.TokenBudgetPreservePercentage)
+            {
+                errors.Add("TokenBudgetTriggerPercentage must be larger than TokenBudgetPreservePercentage.");
+            }
+        }
+
+        // Token budget validation
+        if (hr.MaxTokenBudget.HasValue)
+        {
+            if (hr.MaxTokenBudget.Value <= 100 || hr.MaxTokenBudget.Value > 2000000)
+            {
+                errors.Add("MaxTokenBudget must be between 100 and 2,000,000 tokens.");
+            }
+
+            if (hr.TargetTokenBudget <= 0 || hr.TargetTokenBudget >= hr.MaxTokenBudget.Value)
+            {
+                errors.Add("TargetTokenBudget must be positive and less than MaxTokenBudget.");
+            }
+
+            if (hr.TokenBudgetThreshold < 0)
+            {
+                errors.Add("TokenBudgetThreshold must be non-negative.");
+            }
+        }
+
+        // Message count validation
+        if (hr.TargetMessageCount <= 1 || hr.TargetMessageCount > 1000)
+        {
+            errors.Add("TargetMessageCount must be between 2 and 1,000 messages.");
+        }
+
+        if (hr.SummarizationThreshold.HasValue)
+        {
+            if (hr.SummarizationThreshold.Value < 0 || hr.SummarizationThreshold.Value > 100)
+            {
+                errors.Add("SummarizationThreshold must be between 0 and 100.");
+            }
+        }
+    }
+
+    private static void ValidateCaching(AgentConfig config, List<string> errors)
+    {
+        if (config.Caching?.Enabled != true)
+            return;
+
+        if (config.Caching.CacheExpiration == null)
+        {
+            errors.Add("CachingConfig.CacheExpiration must be set when caching is enabled.");
+        }
+        else if (config.Caching.CacheExpiration <= TimeSpan.Zero)
+        {
+            errors.Add("CachingConfig.CacheExpiration must be greater than zero.");
+        }
+        else if (config.Caching.CacheExpiration >= TimeSpan.FromDays(7))
+        {
+            errors.Add("CachingConfig.CacheExpiration should not exceed 7 days (prevents stale cache).");
+        }
+    }
+
+    private static void ValidateCrossConfiguration(AgentConfig config, List<string> errors)
+    {
+        if (!HasReasonableResourceLimits(config))
+        {
+            errors.Add("Resource limits (MaxTokens, MaxFunctionCallTurns) may be too high for stable operation.");
+        }
+    }
+
+    #region Helper Methods
+
+    private static bool IsValidUri(string? uri)
     {
         return !string.IsNullOrEmpty(uri) && Uri.TryCreate(uri, UriKind.Absolute, out _);
     }
 
-    private static bool BeValidPath(string path)
+    private static bool IsValidPath(string path)
     {
         try
         {
             // Basic path validation - avoid path traversal and null characters
             return !string.IsNullOrWhiteSpace(path) &&
-                   path.IndexOfAny(System.IO.Path.GetInvalidPathChars()) == -1 &&
+                   path.IndexOfAny(Path.GetInvalidPathChars()) == -1 &&
                    !path.Contains("..") &&
                    path.Length < 260; // Windows path limit
         }
@@ -180,9 +258,9 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
         }
     }
 
-    private static bool HaveValidProviderModelCombination(AgentConfig config)
+    private static bool IsValidProviderModelCombination(AgentConfig config)
     {
-        if (config.Provider == null) return true; // Already validated above
+        if (config.Provider == null) return true;
 
         return config.Provider.ProviderKey?.ToLowerInvariant() switch
         {
@@ -194,31 +272,32 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
         };
     }
 
-    private static bool IsValidOpenAIModel(string modelName)
+    private static bool IsValidOpenAIModel(string? modelName)
     {
-    // OpenAI now has many models; accept any non-empty model name
-    return !string.IsNullOrEmpty(modelName);
+        // OpenAI now has many models; accept any non-empty model name
+        return !string.IsNullOrEmpty(modelName);
     }
 
-    private static bool IsValidOpenRouterModel(string modelName)
+    private static bool IsValidOpenRouterModel(string? modelName)
     {
-    // OpenRouter accepts many model formats, be more lenient
-    return !string.IsNullOrEmpty(modelName) && modelName.Length > 3;
+        // OpenRouter accepts many model formats, be more lenient
+        return !string.IsNullOrEmpty(modelName) && modelName.Length > 3;
     }
 
-    private static bool IsValidAzureModel(string modelName)
+    private static bool IsValidAzureModel(string? modelName)
     {
-    // Azure model names are deployment names, can be anything
-    return !string.IsNullOrEmpty(modelName);
+        // Azure model names are deployment names, can be anything
+        return !string.IsNullOrEmpty(modelName);
     }
 
-    private static bool IsValidOllamaModel(string modelName)
+    private static bool IsValidOllamaModel(string? modelName)
     {
-    // Ollama models typically don't have slashes in local names
-    return !string.IsNullOrEmpty(modelName) && modelName.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.');
+        // Ollama models typically don't have slashes in local names
+        return !string.IsNullOrEmpty(modelName) &&
+               modelName.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.');
     }
 
-    private static bool HaveReasonableResourceLimits(AgentConfig config)
+    private static bool HasReasonableResourceLimits(AgentConfig config)
     {
         // Check if the combination of settings might cause issues
         var maxFunctionCalls = config.MaxAgenticIterations;
@@ -227,5 +306,27 @@ public class AgentConfigValidator : AbstractValidator<AgentConfig>
         // Warn if total potential token usage is very high
         var estimatedMaxTokens = (maxHistory * 500) + (maxFunctionCalls * 200);
         return estimatedMaxTokens < 200000; // Reasonable upper limit
+    }
+
+    #endregion
+}
+
+/// <summary>
+/// Exception thrown when validation fails.
+/// </summary>
+public class ValidationException : Exception
+{
+    public IReadOnlyList<string> Errors { get; }
+
+    public ValidationException(IReadOnlyList<string> errors)
+        : base(FormatMessage(errors))
+    {
+        Errors = errors;
+    }
+
+    private static string FormatMessage(IReadOnlyList<string> errors)
+    {
+        return $"Validation failed with {errors.Count} error(s):{Environment.NewLine}" +
+               string.Join(Environment.NewLine, errors.Select(e => $"  - {e}"));
     }
 }

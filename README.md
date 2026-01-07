@@ -107,8 +107,8 @@ await foreach (var evt in agent.RunAsync("Research the latest AI trends"))
 
 ## Requirements
 
-- .NET 10.0+
-- Microsoft.Extensions.AI 10.0.0+
+- .NET 8.0, 9.0, or 10.0
+- Microsoft.Extensions.AI 9.0.0+
 
 ## License
 

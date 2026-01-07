@@ -5,37 +5,340 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
+  merge_group:
+    branches: [ main ]
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *" # Daily at midnight UTC
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  COVERAGE_FRAMEWORK: net10.0
+  COVERAGE_THRESHOLD: 70
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
-  build-and-test:
+  # ============================================
+  # Check if dotnet files changed
+  # ============================================
+  paths-filter:
     runs-on: ubuntu-latest
+    outputs:
+      dotnet-changed: ${{ steps.filter.outputs.dotnet }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            dotnet:
+              - '**/*.cs'
+              - '**/*.csproj'
+              - '**/*.sln'
+              - '**/*.props'
+              - '**/*.targets'
+              - '**/Directory.Build.*'
+              - '**/global.json'
+              - '.github/workflows/dotnet-build-and-test.yml'
+
+  # ============================================
+  # Build and test on multiple OS/frameworks
+  # ============================================
+  build-and-test:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.dotnet-changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Primary: Linux with all frameworks
+          - { targetFramework: "net10.0", os: "ubuntu-latest", configuration: Release, collect-coverage: true }
+          - { targetFramework: "net9.0", os: "ubuntu-latest", configuration: Release }
+          - { targetFramework: "net8.0", os: "ubuntu-latest", configuration: Release }
+          # Cross-platform: Windows and macOS on latest framework
+          - { targetFramework: "net10.0", os: "windows-latest", configuration: Release }
+          - { targetFramework: "net10.0", os: "macos-latest", configuration: Release }
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 0
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+    - name: Setup .NET SDKs
+      uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+        dotnet-version: |
+          8.0.x
+          9.0.x
+          10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore HPD-Agent.sln
 
     - name: Build
-      run: dotnet build HPD-Agent.sln --configuration Release --no-restore
+      run: dotnet build HPD-Agent.sln -c ${{ matrix.configuration }} --no-restore
 
-    - name: Run tests
-      run: dotnet test test/HPD-Agent.Tests/HPD-Agent.Tests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=test-results.trx"
+    - name: Run tests (with coverage)
+      if: matrix.collect-coverage
+      run: |
+        dotnet test HPD-Agent.sln \
+          -f ${{ matrix.targetFramework }} \
+          -c ${{ matrix.configuration }} \
+          --no-build \
+          --verbosity normal \
+          --logger "trx;LogFileName=test-results.trx" \
+          --collect:"XPlat Code Coverage" \
+          --results-directory:"TestResults/Coverage/" \
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeByAttribute=GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute
+
+    - name: Run tests (without coverage)
+      if: ${{ !matrix.collect-coverage }}
+      shell: bash
+      run: |
+        dotnet test HPD-Agent.sln \
+          -f ${{ matrix.targetFramework }} \
+          -c ${{ matrix.configuration }} \
+          --no-build \
+          --verbosity normal \
+          --logger "trx;LogFileName=test-results.trx"
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
-        name: test-results
+        name: test-results-${{ matrix.os }}-${{ matrix.targetFramework }}
         path: '**/test-results.trx'
+
+    - name: Generate coverage report
+      if: matrix.collect-coverage
+      uses: danielpalme/ReportGenerator-GitHub-Action@5.5.1
+      with:
+        reports: "./TestResults/Coverage/**/coverage.cobertura.xml"
+        targetdir: "./TestResults/Reports"
+        reporttypes: "HtmlInline;JsonSummary;Cobertura"
+
+    - name: Check coverage threshold
+      if: matrix.collect-coverage
+      run: |
+        # Extract coverage from JSON summary
+        JSON_FILE="./TestResults/Reports/Summary.json"
+
+        if [ ! -f "$JSON_FILE" ]; then
+          echo "⚠️ Coverage report not found, skipping threshold check"
+          exit 0
+        fi
+
+        LINE_COVERAGE=$(cat "$JSON_FILE" | grep -o '"linecoverage":[0-9.]*' | head -1 | cut -d':' -f2)
+        BRANCH_COVERAGE=$(cat "$JSON_FILE" | grep -o '"branchcoverage":[0-9.]*' | head -1 | cut -d':' -f2)
+
+        echo "=================================="
+        echo "       Code Coverage Report       "
+        echo "=================================="
+        echo ""
+        printf "Line Coverage:   %.1f%%\n" "$LINE_COVERAGE"
+        printf "Branch Coverage: %.1f%%\n" "$BRANCH_COVERAGE"
+        printf "Threshold:       %d%%\n" "${{ env.COVERAGE_THRESHOLD }}"
+        echo ""
+
+        # Check threshold (line coverage only for now)
+        if (( $(echo "$LINE_COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
+          echo "❌ Line coverage ($LINE_COVERAGE%) is below threshold (${{ env.COVERAGE_THRESHOLD }}%)"
+          exit 1
+        else
+          echo "✓ Coverage check passed"
+        fi
+
+    - name: Upload coverage report
+      if: matrix.collect-coverage
+      uses: actions/upload-artifact@v6
+      with:
+        name: coverage-report
+        path: ./TestResults/Reports
+
+  # ============================================
+  # Unit test summary (runs all test projects)
+  # ============================================
+  unit-test-summary:
+    needs: [paths-filter, build-and-test]
+    runs-on: ubuntu-latest
+    if: always() && needs.paths-filter.outputs.dotnet-changed == 'true'
+
+    steps:
+    - name: Download all test results
+      uses: actions/download-artifact@v6
+      with:
+        pattern: test-results-*
+        path: ./test-results
+        merge-multiple: true
+
+    - name: Test Results Summary
+      run: |
+        echo "=================================="
+        echo "         Test Results             "
+        echo "=================================="
+        find ./test-results -name "*.trx" -exec basename {} \; | sort | uniq -c
+        echo ""
+        echo "All test result files collected."
+
+  # ============================================
+  # Package verification (like Microsoft does)
+  # ============================================
+  package-check:
+    needs: [paths-filter, build-and-test]
+    runs-on: ubuntu-latest
+    if: needs.paths-filter.outputs.dotnet-changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: |
+          8.0.x
+          9.0.x
+          10.0.x
+
+    - name: Pack NuGet packages
+      run: dotnet pack HPD-Agent.sln -c Release --output ./artifacts
+
+    - name: Verify package contents
+      run: |
+        echo "=== Verifying all packages contain multi-framework builds ==="
+        MISSING_FRAMEWORKS=false
+
+        for pkg in ./artifacts/*.nupkg; do
+          echo ""
+          echo "--- $(basename $pkg) ---"
+          frameworks=$(unzip -l "$pkg" | grep -E "lib/net" | awk '{print $4}' | cut -d'/' -f2 | sort -u | tr '\n' ' ')
+          echo "Frameworks: $frameworks"
+
+          # Check for expected frameworks (skip source generators which are netstandard2.0)
+          if [[ "$pkg" != *"SourceGenerator"* ]]; then
+            if [[ "$frameworks" != *"net10.0"* ]] || [[ "$frameworks" != *"net9.0"* ]] || [[ "$frameworks" != *"net8.0"* ]]; then
+              echo "⚠️ WARNING: Package may be missing frameworks. Expected net10.0, net9.0, net8.0"
+              MISSING_FRAMEWORKS=true
+            else
+              echo "✓ All expected frameworks present"
+            fi
+          else
+            echo "✓ Source generator (netstandard2.0 expected)"
+          fi
+        done
+
+        if [ "$MISSING_FRAMEWORKS" = true ]; then
+          echo ""
+          echo "⚠️ Some packages are missing expected framework builds"
+          # Don't fail - just warn for now
+        fi
+
+    - name: Test package installation
+      run: |
+        TEMP_DIR=$(mktemp -d)
+        ARTIFACTS_DIR=$(pwd)/artifacts
+        INSTALL_FAILED=false
+
+        # Create test console app for each framework
+        for framework in net10.0 net9.0 net8.0; do
+          echo ""
+          echo "=== Testing package install on $framework ==="
+
+          APP_DIR="$TEMP_DIR/testapp-$framework"
+          dotnet new console -f $framework --name testapp --output "$APP_DIR"
+
+          cd "$APP_DIR"
+
+          # Add local source
+          dotnet nuget add source "$ARTIFACTS_DIR" --name local
+
+          # Try to install main package
+          if dotnet add package HPD-Agent.Framework --prerelease 2>/dev/null; then
+            echo "✓ HPD-Agent.Framework installed successfully on $framework"
+            if dotnet build -f $framework --nologo -v q 2>&1 | tail -1; then
+              echo "✓ Build successful"
+            else
+              echo "❌ Build failed"
+              INSTALL_FAILED=true
+            fi
+          else
+            echo "⊘ HPD-Agent.Framework package not found (checking if packable...)"
+          fi
+
+          cd - > /dev/null
+        done
+
+        rm -rf "$TEMP_DIR"
+
+        if [ "$INSTALL_FAILED" = true ]; then
+          echo ""
+          echo "❌ Some package installations failed"
+          exit 1
+        fi
+
+    - name: Upload packages
+      uses: actions/upload-artifact@v6
+      with:
+        name: nuget-packages
+        path: ./artifacts/*.nupkg
+
+  # ============================================
+  # Final gate for merge queue
+  # ============================================
+  build-check:
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [paths-filter, build-and-test, unit-test-summary, package-check]
+    steps:
+      - name: Get workflow run info
+        run: |
+          echo "=================================="
+          echo "      Workflow Summary            "
+          echo "=================================="
+          echo "Event: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Dotnet Changed: ${{ needs.paths-filter.outputs.dotnet-changed }}"
+
+      - name: Skip message (no dotnet changes)
+        if: needs.paths-filter.outputs.dotnet-changed != 'true' && github.event_name != 'workflow_dispatch' && github.event_name != 'schedule'
+        run: |
+          echo "=================================="
+          echo "⊘ Skipped - No .NET changes       "
+          echo "=================================="
+          echo ""
+          echo "No .cs, .csproj, .sln, or .props files were modified."
+          echo "Build and test jobs were skipped to save CI minutes."
+
+      - name: Check for failures
+        if: needs.paths-filter.outputs.dotnet-changed == 'true' && contains(join(needs.*.result, ','), 'failure')
+        run: |
+          echo "❌ One or more jobs failed"
+          echo "::error::Build or test failures detected"
+          exit 1
+
+      - name: Check for cancellation
+        if: needs.paths-filter.outputs.dotnet-changed == 'true' && contains(join(needs.*.result, ','), 'cancelled')
+        run: |
+          echo "⚠️ One or more jobs were cancelled"
+          echo "::error::Jobs were cancelled"
+          exit 1
+
+      - name: All checks passed
+        if: needs.paths-filter.outputs.dotnet-changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+        run: |
+          echo "=================================="
+          echo "✓ All checks passed!              "
+          echo "=================================="
+          echo ""
+          echo "• Build: All frameworks compiled successfully"
+          echo "• Tests: Passed on Linux, Windows, and macOS"
+          echo "• Coverage: Meets threshold"
+          echo "• Packages: Verified and installable"

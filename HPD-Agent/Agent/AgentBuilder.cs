@@ -9,7 +9,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Immutable;
 using System.Reflection;
-using FluentValidation;
+using HPD.Agent.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
@@ -1830,8 +1830,7 @@ public class AgentBuilder
         }
 
         // === START: VALIDATION LOGIC ===
-        var agentConfigValidator = new AgentConfigValidator();
-        agentConfigValidator.ValidateAndThrow(_config);
+        AgentConfigValidator.ValidateAndThrow(_config);
 
         if (_config.Provider == null)
             throw new InvalidOperationException("Provider configuration is required.");

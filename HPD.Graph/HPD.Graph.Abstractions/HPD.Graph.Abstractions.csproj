@@ -5,7 +5,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Inherits TargetFrameworks from Directory.Build.props: net10.0;net9.0;net8.0 -->
     <RootNamespace>HPDAgent.Graph.Abstractions</RootNamespace>
     <AssemblyName>HPDAgent.Graph.Abstractions</AssemblyName>
     <IsPackable>true</IsPackable>
