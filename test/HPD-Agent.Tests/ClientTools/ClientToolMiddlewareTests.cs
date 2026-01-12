@@ -744,7 +744,8 @@ public class ClientToolMiddlewareTests
             "TestAgent",
             "test-conv-id",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         var userMessage = new ChatMessage(ChatRole.User, "test");
@@ -762,7 +763,8 @@ public class ClientToolMiddlewareTests
             "TestAgent",
             "test-conv-id",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(
@@ -815,7 +817,8 @@ public class ClientToolMiddlewareTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

@@ -9,12 +9,17 @@
     <Description>Anthropic (Claude) provider for HPD-Agent</Description>
     <PackageTags>ai;agent;anthropic;claude;llm</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent.Providers.Tests" />
+  </ItemGroup>
   
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent/HPD-Agent.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Anthropic.SDK" Version="5.8.0" />
+    <!-- Using NuGet package with AnthropicSchemaFixingChatClient wrapper to fix schema bug -->
+    <PackageReference Include="Anthropic" Version="12.*" />
   </ItemGroup>
 </Project>

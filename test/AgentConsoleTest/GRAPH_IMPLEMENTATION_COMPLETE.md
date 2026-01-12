@@ -1,4 +1,4 @@
-# ✅ REAL Graph-Based Multi-Agent Workflow - COMPLETE
+#  REAL Graph-Based Multi-Agent Workflow - COMPLETE
 
 ## You Now Have TWO Implementations
 
@@ -6,7 +6,7 @@
 - Uses basic `Task.WhenAll()` for parallelism
 - Manual retry loop
 - ~150 lines of code
-- ✅ Good for: Simple use cases, learning, quick testing
+-  Good for: Simple use cases, learning, quick testing
 
 ### 2. **[GraphQuantWorkflow.cs](GraphQuantWorkflow.cs)** - REAL Graph Version
 - Uses **HPD.Graph** orchestration engine
@@ -15,7 +15,7 @@
 - Cyclic graph for feedback loops
 - Channel-based state management
 - ~420 lines of code
-- ✅ Good for: Production, complex workflows, extensibility
+-  Good for: Production, complex workflows, extensibility
 
 ---
 
@@ -201,7 +201,7 @@ Answers received:
 
 Verifying consensus...
 
-✅ CONSENSUS REACHED (Round 1)!
+ CONSENSUS REACHED (Round 1)!
 
 Final Answer: 36
 ```
@@ -210,13 +210,13 @@ Final Answer: 36
 
 ## What Makes This a REAL Graph Implementation
 
-### ✅ Uses HPD.Graph Orchestrator
+###  Uses HPD.Graph Orchestrator
 ```csharp
 var orchestrator = new GraphOrchestrator<GraphContext>(services);
 await orchestrator.ExecuteAsync(context);
 ```
 
-### ✅ Declarative Graph Building
+###  Declarative Graph Building
 ```csharp
 var graph = new GraphBuilder()
     .AddStartNode()
@@ -225,7 +225,7 @@ var graph = new GraphBuilder()
     .Build();
 ```
 
-### ✅ Proper Node Handlers
+###  Proper Node Handlers
 ```csharp
 public class Solver1Handler : IGraphNodeHandler<GraphContext>
 {
@@ -242,20 +242,20 @@ public class Solver1Handler : IGraphNodeHandler<GraphContext>
 }
 ```
 
-### ✅ Channel-Based State
+###  Channel-Based State
 ```csharp
 context.Channels["question"].Set(question);
 var answer = context.Channels["final_answer"].Get<string>();
 ```
 
-### ✅ Dependency Injection
+###  Dependency Injection
 ```csharp
 var services = new ServiceCollection()
     .AddTransient<IGraphNodeHandler<GraphContext>>(sp => new Solver1Handler(solver1))
     .BuildServiceProvider();
 ```
 
-### ✅ Conditional Edges
+###  Conditional Edges
 ```csharp
 builder.AddEdge("router", "return", edge =>
 {
@@ -268,7 +268,7 @@ builder.AddEdge("router", "return", edge =>
 });
 ```
 
-### ✅ Cyclic Graph Support
+###  Cyclic Graph Support
 ```csharp
 builder.AddEdge("feedback", "solver1");  // Creates cycle back to Layer 1
 ```
@@ -364,7 +364,7 @@ var orchestrator = new GraphOrchestrator<GraphContext>(
 
 ## Summary
 
-✅ **You now have a REAL graph-based multi-agent workflow** that:
+ **You now have a REAL graph-based multi-agent workflow** that:
 - Uses HPD.Graph orchestration engine
 - Automatically parallelizes solver execution
 - Routes conditionally based on consensus

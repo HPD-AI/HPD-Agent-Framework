@@ -16,14 +16,14 @@ namespace HPD.Agent.Audio;
 public partial class AudioPipelineMiddleware : IAgentMiddleware
 {
     //
-    // CONFIGURATION (uses AudioPipelineConfig for all settings)
+    // CONFIGURATION (uses AudioConfig for all settings)
     //
 
     /// <summary>
     /// Middleware-level default configuration.
-    /// Per-request overrides via AudioRunOptions are merged with these defaults.
+    /// Per-request overrides via AudioConfig are merged with these defaults.
     /// </summary>
-    private readonly AudioPipelineConfig _config = new();
+    private readonly AudioConfig _config = new();
 
     //
     // PROCESSING MODE (HOW audio is processed)
@@ -73,39 +73,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     public ITurnDetector? TurnDetector { get; set; }
 
     //
-    // VAD CONFIGURATION (delegates to AudioPipelineConfig)
-    //
-
-    /// <summary>Minimum speech duration to confirm speech start. Default: 50ms.</summary>
-    public float VadMinSpeechDuration
-    {
-        get => _config.VadMinSpeechDuration ?? 0.05f;
-        set => _config.VadMinSpeechDuration = value;
-    }
-
-    /// <summary>Minimum silence duration to confirm speech end. Default: 550ms.</summary>
-    public float VadMinSilenceDuration
-    {
-        get => _config.VadMinSilenceDuration ?? 0.55f;
-        set => _config.VadMinSilenceDuration = value;
-    }
-
-    /// <summary>Audio to buffer before speech confirmed. Default: 500ms.</summary>
-    public float VadPrefixPaddingDuration
-    {
-        get => _config.VadPrefixPaddingDuration ?? 0.5f;
-        set => _config.VadPrefixPaddingDuration = value;
-    }
-
-    /// <summary>Speech probability threshold. Default: 0.5.</summary>
-    public float VadActivationThreshold
-    {
-        get => _config.VadActivationThreshold ?? 0.5f;
-        set => _config.VadActivationThreshold = value;
-    }
-
-    //
-    // TURN DETECTION CONFIGURATION (delegates to AudioPipelineConfig)
+    // TURN DETECTION CONFIGURATION (delegates to AudioConfig)
     //
 
     /// <summary>Turn detection strategy for silence. Default: FastPath.</summary>
@@ -313,35 +281,51 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     }
 
     //
-    // TTS DEFAULTS (delegates to AudioPipelineConfig)
+    // TTS DEFAULTS (delegates to AudioConfig.Tts)
     //
 
     /// <summary>Default TTS voice.</summary>
     public string? DefaultVoice
     {
-        get => _config.Voice;
-        set => _config.Voice = value;
+        get => _config.Tts?.Voice;
+        set
+        {
+            _config.Tts ??= new Tts.TtsConfig();
+            _config.Tts.Voice = value;
+        }
     }
 
     /// <summary>Default TTS model.</summary>
     public string? DefaultModel
     {
-        get => _config.Model;
-        set => _config.Model = value;
+        get => _config.Tts?.ModelId;
+        set
+        {
+            _config.Tts ??= new Tts.TtsConfig();
+            _config.Tts.ModelId = value;
+        }
     }
 
     /// <summary>Default TTS output format.</summary>
     public string? DefaultOutputFormat
     {
-        get => _config.OutputFormat;
-        set => _config.OutputFormat = value;
+        get => _config.Tts?.OutputFormat;
+        set
+        {
+            _config.Tts ??= new Tts.TtsConfig();
+            _config.Tts.OutputFormat = value;
+        }
     }
 
     /// <summary>Default TTS sample rate.</summary>
     public int? DefaultSampleRate
     {
-        get => _config.SampleRate;
-        set => _config.SampleRate = value;
+        get => _config.Tts?.SampleRate;
+        set
+        {
+            _config.Tts ??= new Tts.TtsConfig();
+            _config.Tts.SampleRate = value;
+        }
     }
 
     //
@@ -350,9 +334,9 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Gets the effective configuration by merging per-request overrides with middleware defaults.
-    /// Per-request values from AudioRunOptions take precedence over middleware defaults.
+    /// Per-request values from AudioConfig take precedence over middleware defaults.
     /// </summary>
-    private AudioPipelineConfig GetEffectiveConfig(AudioRunOptions? audioOptions)
+    private AudioConfig GetEffectiveConfig(AudioConfig? audioOptions)
     {
         // If no per-request overrides, return middleware defaults
         if (audioOptions == null)
@@ -369,13 +353,71 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// <summary>
     /// Processes audio input before LLM call (STT conversion).
     /// Converts audio DataContent in messages to text transcriptions.
+    /// Uses role-based discovery to create audio clients dynamically.
     /// </summary>
     public async Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
-        var audioOptions = context.RunOptions?.Audio as AudioRunOptions;
+        // Support both AudioRunOptions (new slim API) and AudioConfig (legacy full API)
+        AudioConfig? audioOptions = context.RunOptions?.Audio switch
+        {
+            AudioRunOptions runOpts => runOpts.ToFullConfig(),
+            AudioConfig cfg => cfg,
+            _ => null
+        };
+
+        // Merge run-time overrides with middleware defaults
+        var effectiveConfig = GetEffectiveConfig(audioOptions);
+
+        // Validate merged configuration
+        effectiveConfig.Validate();
+
+        // Check if audio processing is disabled
+        if (effectiveConfig.Disabled == true)
+            return;
+
+        // Create clients from role-based configuration if not already injected
+        // This implements the V3 role-based discovery pattern
+        if (SpeechToTextClient == null && effectiveConfig.Stt != null && HasAudioInput)
+        {
+            try
+            {
+                var sttFactory = Stt.SttProviderDiscovery.GetFactory(effectiveConfig.Stt.Provider);
+                SpeechToTextClient = sttFactory.CreateClient(effectiveConfig.Stt, context.Services);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to create STT client: {ex.Message}");
+            }
+        }
+
+        if (TextToSpeechClient == null && effectiveConfig.Tts != null && HasAudioOutput)
+        {
+            try
+            {
+                var ttsFactory = Tts.TtsProviderDiscovery.GetFactory(effectiveConfig.Tts.Provider);
+                TextToSpeechClient = ttsFactory.CreateClient(effectiveConfig.Tts, context.Services);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to create TTS client: {ex.Message}");
+            }
+        }
+
+        if (Vad == null && effectiveConfig.Vad != null && HasAudioInput)
+        {
+            try
+            {
+                var vadFactory = Audio.Vad.VadProviderDiscovery.GetFactory(effectiveConfig.Vad.Provider);
+                Vad = vadFactory.CreateDetector(effectiveConfig.Vad, context.Services);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to create VAD: {ex.Message}");
+            }
+        }
 
         // Check if audio input processing is needed
-        if (audioOptions?.Disabled == true || !HasAudioInput || SpeechToTextClient == null)
+        if (!HasAudioInput || SpeechToTextClient == null)
             return;
 
         if (context.Messages == null || context.Messages.Count == 0)
@@ -521,7 +563,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         [EnumeratorCancellation] CancellationToken ct)
     {
         // Resolve audio options from request
-        var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
+        var audioOptions = request.RunOptions?.Audio as AudioConfig;
 
         // Check if audio is disabled for this request
         if (audioOptions?.Disabled == true || TextToSpeechClient == null || !HasAudioOutput)
@@ -542,7 +584,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
+        var audioOptions = request.RunOptions?.Audio as AudioConfig;
 
         // Create stream handle for interruption support (from Priority Streaming)
         var stream = request.Streams?.Create();
@@ -551,9 +593,9 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         var synthesisState = new SynthesisState();
 
         // Resolve TTS settings (per-request overrides > middleware defaults)
-        var voice = audioOptions?.Voice ?? DefaultVoice;
-        var model = audioOptions?.Model ?? DefaultModel;
-        var speed = audioOptions?.Speed;
+        var voice = audioOptions?.Tts?.Voice ?? DefaultVoice;
+        var model = audioOptions?.Tts?.ModelId ?? DefaultModel;
+        var speed = audioOptions?.Tts?.Speed;
 
         // Initialize metrics if not already set by BeforeIterationAsync
         _turnMetrics ??= new TurnMetrics { TurnStartTime = DateTime.UtcNow };
@@ -1012,9 +1054,9 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                     phrase,
                     new TextToSpeechOptions
                     {
-                        Voice = DefaultVoice,
+                        Voice = _config.FillerVoice ?? DefaultVoice,
                         ModelId = DefaultModel,
-                        Speed = 0.95f // Slightly slower for "thinking" effect
+                        Speed = _config.FillerSpeed ?? 0.95f
                     },
                     ct);
 

@@ -28,8 +28,8 @@ Return  Retry (max 3x)
 2. **Solvers** → Each solves the problem independently
 3. **Verifier** → Compares all 3 answers
 4. **Consensus?**
-   - ✅ **YES** → Return the agreed answer
-   - ❌ **NO** → Provide feedback and retry (up to 3 attempts)
+   -  **YES** → Return the agreed answer
+   - **NO** → Provide feedback and retry (up to 3 attempts)
 
 ## Usage
 
@@ -97,7 +97,7 @@ Answers received:
 Verifying consensus...
   ✓ Verifier completed
 
-✅ CONSENSUS REACHED (Round 1)!
+ CONSENSUS REACHED (Round 1)!
 
 Final Answer: The expected value is 7
 ```
@@ -122,7 +122,7 @@ Answers received:
 Verifying consensus...
   ✓ Verifier completed
 
-⚠️  Disagreement detected (Attempt 1/3)
+ Disagreement detected (Attempt 1/3)
 Feedback: Solver 2 calculated 24 (10% instead of 15%), while Solvers 1 and 3 correctly got 36
 
 Retrying with feedback...
@@ -140,7 +140,7 @@ Answers received:
 Verifying consensus...
   ✓ Verifier completed
 
-✅ CONSENSUS REACHED (Round 2)!
+ CONSENSUS REACHED (Round 2)!
 
 Final Answer: 36
 ```

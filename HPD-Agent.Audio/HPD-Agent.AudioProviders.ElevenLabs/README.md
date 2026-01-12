@@ -281,7 +281,7 @@ Console.WriteLine($"Languages: {string.Join(", ", features.SupportedLanguages)}"
 | **Voice Quality** | ⭐⭐⭐⭐⭐ (Best) | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | **Latency (Turbo)** | <100ms | ~500ms | ~300ms |
 | **Languages** | 32 | 57 | 100+ |
-| **Voice Cloning** |   Yes | ❌ No | ⚠️ Neural only |
+| **Voice Cloning** |   Yes | No | Neural only |
 | **Pricing (1M chars)** | ~$300 | ~$15 | ~$16 |
 | **STT Quality** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | **Real-time** |   WebRTC |   Realtime API |   WebSocket |

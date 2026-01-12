@@ -4,6 +4,7 @@ using static HPD.Agent.Tests.Middleware.V2.MiddlewareTestHelpers;
 using HPD.Agent.ErrorHandling;
 using HPD.Agent.Middleware;
 using HPD.Agent.Middleware.Function;
+using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Xunit;
 
@@ -25,7 +26,7 @@ public class FunctionRetryMiddlewareTests
         {
             MaxRetries = 3
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -52,7 +53,7 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 3,
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -78,7 +79,7 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 3,
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -116,7 +117,7 @@ public class FunctionRetryMiddlewareTests
                 return TimeSpan.FromMilliseconds(100); // Custom delay
             }
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -151,7 +152,7 @@ public class FunctionRetryMiddlewareTests
                 return null; // Don't retry
             }
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -190,7 +191,7 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 3,
             UseProviderRetryDelays = true
         };
-        var middleware = new FunctionRetryMiddleware(config, providerHandler);
+        var middleware = new RetryMiddleware(config, providerHandler);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -230,7 +231,7 @@ public class FunctionRetryMiddlewareTests
         {
             MaxRetries = 3
         };
-        var middleware = new FunctionRetryMiddleware(config, providerHandler);
+        var middleware = new RetryMiddleware(config, providerHandler);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -268,7 +269,7 @@ public class FunctionRetryMiddlewareTests
             },
             RetryDelay = TimeSpan.FromMilliseconds(10)
         };
-        var middleware = new FunctionRetryMiddleware(config, providerHandler);
+        var middleware = new RetryMiddleware(config, providerHandler);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -299,7 +300,7 @@ public class FunctionRetryMiddlewareTests
             RetryDelay = TimeSpan.FromMilliseconds(100),
             BackoffMultiplier = 2.0
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -342,7 +343,7 @@ public class FunctionRetryMiddlewareTests
             BackoffMultiplier = 10.0, // Huge multiplier
             MaxRetryDelay = TimeSpan.FromMilliseconds(200) // Cap at 200ms
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -379,7 +380,7 @@ public class FunctionRetryMiddlewareTests
         {
             MaxRetries = 0 // No retries allowed
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         int attempts = 0;
@@ -405,7 +406,7 @@ public class FunctionRetryMiddlewareTests
             MaxRetries = 10,
             RetryDelay = TimeSpan.FromMilliseconds(100)
         };
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         var request = CreateFunctionRequest();
 
         var cts = new CancellationTokenSource();
@@ -423,6 +424,259 @@ public class FunctionRetryMiddlewareTests
             await middleware.WrapFunctionCallAsync(request, handler, cts.Token));
 
         Assert.True(attempts <= 3); // Should stop quickly after cancellation
+    }
+
+    #endregion
+
+    #region Model Call Retry Tests
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_SuccessOnFirstAttempt_NoRetry()
+    {
+        // Arrange
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 3
+        };
+        var middleware = new RetryMiddleware(config);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            yield return new ChatResponseUpdate
+            {
+                Contents = new List<AIContent> { new TextContent("Success") }
+            };
+        }
+
+        // Act
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+        {
+            updates.Add(update);
+        }
+
+        // Assert
+        Assert.Single(updates);
+        Assert.Equal("Success", ((TextContent)updates[0].Contents[0]).Text);
+        Assert.Equal(1, attempts); // No retry
+    }
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_FailsOnce_RetriesSuccessfully()
+    {
+        // Arrange
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 3,
+            RetryDelay = TimeSpan.FromMilliseconds(10)
+        };
+        var middleware = new RetryMiddleware(config);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            if (attempts == 1)
+                throw new InvalidOperationException("Transient error");
+
+            yield return new ChatResponseUpdate
+            {
+                Contents = new List<AIContent> { new TextContent("Success") }
+            };
+        }
+
+        // Act
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+        {
+            updates.Add(update);
+        }
+
+        // Assert
+        Assert.Single(updates);
+        Assert.Equal("Success", ((TextContent)updates[0].Contents[0]).Text);
+        Assert.Equal(2, attempts); // Initial + 1 retry
+    }
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_ClientError_DoesNotRetry()
+    {
+        // Arrange
+        var providerHandler = new TestProviderErrorHandler
+        {
+            ErrorDetails = new ProviderErrorDetails
+            {
+                Category = ErrorCategory.ClientError // Don't retry
+            },
+            ShouldRetry = false
+        };
+
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 3
+        };
+        var middleware = new RetryMiddleware(config, providerHandler);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            throw new InvalidOperationException("Client error");
+            yield break; // Never reached
+        }
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+            {
+                // Should never reach here
+            }
+        });
+
+        Assert.Equal(1, attempts); // No retry for client errors
+    }
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_RateLimitError_RespectsRetryAfter()
+    {
+        // Arrange
+        var providerHandler = new TestProviderErrorHandler
+        {
+            ErrorDetails = new ProviderErrorDetails
+            {
+                Category = ErrorCategory.RateLimitRetryable,
+                RetryAfter = TimeSpan.FromMilliseconds(200)
+            }
+        };
+
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 3,
+            UseProviderRetryDelays = true
+        };
+        var middleware = new RetryMiddleware(config, providerHandler);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        var startTime = DateTime.UtcNow;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            if (attempts == 1)
+                throw new InvalidOperationException("Rate limit");
+
+            yield return new ChatResponseUpdate
+            {
+                Contents = new List<AIContent> { new TextContent("Success") }
+            };
+        }
+
+        // Act
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+        {
+            updates.Add(update);
+        }
+        var elapsed = DateTime.UtcNow - startTime;
+
+        // Assert
+        Assert.Single(updates);
+        Assert.Equal(2, attempts);
+        Assert.True(elapsed >= TimeSpan.FromMilliseconds(180)); // Respects Retry-After
+    }
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_FailsDuringStreaming_Retries()
+    {
+        // Arrange
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 3,
+            RetryDelay = TimeSpan.FromMilliseconds(10)
+        };
+        var middleware = new RetryMiddleware(config);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            if (attempts == 1)
+            {
+                // Fail during streaming
+                yield return new ChatResponseUpdate
+                {
+                    Contents = new List<AIContent> { new TextContent("Partial") }
+                };
+                throw new InvalidOperationException("Streaming error");
+            }
+
+            yield return new ChatResponseUpdate
+            {
+                Contents = new List<AIContent> { new TextContent("Success") }
+            };
+        }
+
+        // Act
+        var updates = new List<ChatResponseUpdate>();
+        await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+        {
+            updates.Add(update);
+        }
+
+        // Assert
+        // Progressive streaming behavior: Both tokens are yielded immediately (no buffering).
+        // The "Partial" token streams first, then error occurs, then retry streams "Success".
+        // Consumers should listen for ModelCallRetryEvent to clear partial content from UI.
+        // This follows the Gemini CLI pattern: show partial response, then clear on retry.
+        Assert.Equal(2, updates.Count); // "Partial" from failed attempt + "Success" from retry
+        Assert.Equal("Success", ((TextContent)updates[1].Contents[0]).Text);
+        Assert.Equal(2, attempts); // Initial + 1 retry
+    }
+
+    [Fact]
+    public async Task WrapModelCallStreamingAsync_ExhaustsRetries_ThrowsException()
+    {
+        // Arrange
+        var config = new ErrorHandlingConfig
+        {
+            MaxRetries = 2,
+            RetryDelay = TimeSpan.FromMilliseconds(10)
+        };
+        var middleware = new RetryMiddleware(config);
+        var mockClient = new FakeChatClient();
+        var request = CreateModelRequest(mockClient);
+
+        int attempts = 0;
+        async IAsyncEnumerable<ChatResponseUpdate> Handler(ModelRequest req)
+        {
+            attempts++;
+            throw new InvalidOperationException($"Persistent error (attempt {attempts})");
+            yield break; // Never reached
+        }
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await foreach (var update in middleware.WrapModelCallStreamingAsync(request, Handler, CancellationToken.None)!)
+            {
+                // Should never reach here
+            }
+        });
+
+        Assert.Equal(3, attempts); // Initial + 2 retries
+        Assert.Contains("attempt 3", exception.Message); // Last attempt's error
     }
 
     #endregion
@@ -479,7 +733,8 @@ public class FunctionRetryMiddlewareTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 
@@ -502,6 +757,27 @@ public class FunctionRetryMiddlewareTests
         var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
         return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+    }
+
+    private static ModelRequest CreateModelRequest(IChatClient? client = null)
+    {
+        client ??= new FakeChatClient();
+        var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "Test") };
+        var options = new ChatOptions();
+        var state = AgentLoopState.Initial(
+            messages: messages,
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        return new ModelRequest
+        {
+            Model = client,
+            Messages = messages,
+            Options = options,
+            State = state,
+            Iteration = 0
+        };
     }
 
 }

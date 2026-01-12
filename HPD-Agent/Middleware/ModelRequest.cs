@@ -5,7 +5,6 @@ namespace HPD.Agent.Middleware;
 
 /// <summary>
 /// Immutable request object for LLM model calls.
-/// Follows LangChain's pattern for request modification.
 /// </summary>
 /// <remarks>
 /// <para><b>Design Philosophy:</b></para>
@@ -146,7 +145,7 @@ public sealed record ModelRequest
     /// });
     /// </code>
     /// </remarks>
-    public IEventCoordinator? EventCoordinator { get; init; }
+    public HPD.Events.IEventCoordinator? EventCoordinator { get; init; }
 
     /// <summary>
     /// Creates a modified copy of this request.

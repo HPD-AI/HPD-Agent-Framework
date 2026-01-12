@@ -30,7 +30,7 @@ public class PriorityStreamingTests
     public async Task PriorityEvents_ProcessedBeforeNormalEvents()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Emit 100 normal events first
         for (int i = 0; i < 100; i++)
@@ -53,7 +53,7 @@ public class PriorityStreamingTests
 
         await foreach (var evt in coordinator.ReadAllAsync(cts.Token))
         {
-            firstEvent = evt;
+            firstEvent = (AgentEvent)evt;
             break;
         }
 
@@ -66,7 +66,7 @@ public class PriorityStreamingTests
     public async Task ControlEvents_ProcessedBeforeNormalEvents()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Emit normal events
         for (int i = 0; i < 50; i++)
@@ -89,7 +89,7 @@ public class PriorityStreamingTests
 
         await foreach (var evt in coordinator.ReadAllAsync(cts.Token))
         {
-            firstEvent = evt;
+            firstEvent = (AgentEvent)evt;
             break;
         }
 
@@ -102,7 +102,7 @@ public class PriorityStreamingTests
     public async Task NormalAndBackgroundEvents_BothGoToStandardChannel()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Both Normal and Background go to the standard channel
         // They are read in FIFO order within the same channel
@@ -122,7 +122,7 @@ public class PriorityStreamingTests
 
         await foreach (var evt in coordinator.ReadAllAsync(cts.Token))
         {
-            events.Add(evt);
+            events.Add((AgentEvent)evt);
             if (events.Count >= 2) break;
         }
 
@@ -157,7 +157,7 @@ public class PriorityStreamingTests
     public void SequenceNumber_AssignedByCoordinator()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Act
         coordinator.Emit(new TextDeltaEvent("first", "msg1"));
@@ -179,7 +179,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_CreateStream_ReturnsHandle()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Act
         var handle = coordinator.Streams.Create();
@@ -197,7 +197,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_CreateStream_WithCustomId()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         const string customId = "my-custom-stream-id";
 
         // Act
@@ -211,7 +211,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_CreateStream_DuplicateIdThrows()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         const string streamId = "duplicate-id";
 
         coordinator.Streams.Create(streamId);
@@ -224,7 +224,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_Get_ReturnsExistingStream()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var created = coordinator.Streams.Create("test-stream");
 
         // Act
@@ -239,7 +239,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_Get_ReturnsNullForUnknown()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Act
         var result = coordinator.Streams.Get("nonexistent");
@@ -252,7 +252,7 @@ public class PriorityStreamingTests
     public void StreamHandle_Interrupt_SetsFlags()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var handle = coordinator.Streams.Create();
 
         // Act
@@ -267,7 +267,7 @@ public class PriorityStreamingTests
     public void StreamHandle_Complete_SetsCompletedFlag()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var handle = coordinator.Streams.Create();
 
         // Act
@@ -282,7 +282,7 @@ public class PriorityStreamingTests
     public async Task StreamHandle_WaitAsync_CompletesOnInterrupt()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var handle = coordinator.Streams.Create();
 
         // Act
@@ -298,7 +298,7 @@ public class PriorityStreamingTests
     public void StreamHandle_OnInterrupted_RaisesEvent()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var handle = coordinator.Streams.Create();
         var wasRaised = false;
 
@@ -315,7 +315,7 @@ public class PriorityStreamingTests
     public void StreamHandle_OnCompleted_RaisesEvent()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var handle = coordinator.Streams.Create();
         var wasRaised = false;
 
@@ -332,7 +332,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_InterruptAll_InterruptsAllStreams()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream1 = coordinator.Streams.Create();
         var stream2 = coordinator.Streams.Create();
         var stream3 = coordinator.Streams.Create();
@@ -350,7 +350,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_InterruptWhere_SelectivelyInterrupts()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream1 = coordinator.Streams.Create("keep-1");
         var stream2 = coordinator.Streams.Create("interrupt-2");
         var stream3 = coordinator.Streams.Create("interrupt-3");
@@ -368,7 +368,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_ActiveStreams_ReturnsOnlyActive()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var active1 = coordinator.Streams.Create();
         var active2 = coordinator.Streams.Create();
         var completed = coordinator.Streams.Create();
@@ -387,7 +387,7 @@ public class PriorityStreamingTests
     public void StreamRegistry_ActiveCount_ReturnsCorrectCount()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         coordinator.Streams.Create();
         coordinator.Streams.Create();
         var toComplete = coordinator.Streams.Create();
@@ -405,7 +405,7 @@ public class PriorityStreamingTests
     public void Emit_DropsCanInterruptEvents_WhenStreamInterrupted()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream = coordinator.Streams.Create();
         var streamId = stream.StreamId;
 
@@ -430,7 +430,7 @@ public class PriorityStreamingTests
         var events = new List<AgentEvent>();
         while (coordinator.TryRead(out var evt))
         {
-            events.Add(evt);
+            events.Add((AgentEvent)evt);
         }
 
         // Assert - Only first event should be present (second was dropped)
@@ -447,7 +447,7 @@ public class PriorityStreamingTests
     public void Emit_DoesNotDropCanInterruptFalseEvents_WhenStreamInterrupted()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream = coordinator.Streams.Create();
 
         // Interrupt immediately
@@ -464,7 +464,7 @@ public class PriorityStreamingTests
         var events = new List<AgentEvent>();
         while (coordinator.TryRead(out var evt))
         {
-            events.Add(evt);
+            events.Add((AgentEvent)evt);
         }
 
         // Assert - End event should be delivered
@@ -476,7 +476,7 @@ public class PriorityStreamingTests
     public void StreamHandle_TracksEmittedAndDroppedCounts()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream = coordinator.Streams.Create();
         var streamId = stream.StreamId;
 
@@ -514,7 +514,7 @@ public class PriorityStreamingTests
     public void EmitUpstream_SetsDirectionToUpstream()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Act
         coordinator.EmitUpstream(new InterruptionRequestEvent(null, "test", InterruptionSource.User)
@@ -531,8 +531,8 @@ public class PriorityStreamingTests
     public void EmitUpstream_BubblesToParent()
     {
         // Arrange
-        var parent = new BidirectionalEventCoordinator();
-        var child = new BidirectionalEventCoordinator();
+        var parent = new HPD.Events.Core.EventCoordinator();
+        var child = new HPD.Events.Core.EventCoordinator();
         child.SetParent(parent);
 
         // Act
@@ -644,7 +644,7 @@ public class PriorityStreamingTests
     public async Task FullInterruptionFlow_Works()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
         var stream = coordinator.Streams.Create("response-stream");
         var streamId = stream.StreamId;
 
@@ -683,7 +683,7 @@ public class PriorityStreamingTests
         var events = new List<AgentEvent>();
         while (coordinator.TryRead(out var evt))
         {
-            events.Add(evt);
+            events.Add((AgentEvent)evt);
         }
 
         // Assert
@@ -704,7 +704,7 @@ public class PriorityStreamingTests
     public async Task PriorityCancellation_BypassesQueuedEvents()
     {
         // Arrange
-        var coordinator = new BidirectionalEventCoordinator();
+        var coordinator = new HPD.Events.Core.EventCoordinator();
 
         // Queue many normal events
         for (int i = 0; i < 1000; i++)
@@ -727,7 +727,7 @@ public class PriorityStreamingTests
 
         await foreach (var evt in coordinator.ReadAllAsync(cts.Token))
         {
-            firstEvent = evt;
+            firstEvent = (AgentEvent)evt;
             break;
         }
 

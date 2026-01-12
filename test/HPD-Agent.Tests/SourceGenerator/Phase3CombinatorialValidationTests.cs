@@ -133,10 +133,10 @@ public class Phase3CombinatorialValidationTests
             Assert.True(hasThreadMode, $"SubAgent {subAgent.Name} should have ThreadMode");
             Assert.True(threadMode is string);
 
-            // Should have ToolkitName
+            // Should have ParentToolkit
             object? toolName = null;
-            var hasToolkitName = subAgent.AdditionalProperties?.TryGetValue("ToolkitName", out toolName) == true;
-            Assert.True(hasToolkitName, $"SubAgent {subAgent.Name} should have ToolkitName");
+            var hasParentToolkit = subAgent.AdditionalProperties?.TryGetValue("ParentToolkit", out toolName) == true;
+            Assert.True(hasParentToolkit, $"SubAgent {subAgent.Name} should have ParentToolkit");
             Assert.Equal("CombinedCapabilitiesTools", toolName as string);
         }
     }

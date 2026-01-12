@@ -6,7 +6,7 @@ JSON_REPORT=$1
 THRESHOLD=$2
 
 if [ ! -f "$JSON_REPORT" ]; then
-    echo "❌ Coverage report not found: $JSON_REPORT"
+    echo "Coverage report not found: $JSON_REPORT"
     exit 1
 fi
 
@@ -27,14 +27,14 @@ echo ""
 PASSED=true
 
 if (( $(echo "$LINE_COVERAGE < $THRESHOLD" | bc -l) )); then
-    echo "❌ Line coverage ($LINE_COVERAGE%) is below threshold ($THRESHOLD%)"
+    echo "Line coverage ($LINE_COVERAGE%) is below threshold ($THRESHOLD%)"
     PASSED=false
 else
     echo "✓ Line coverage meets threshold"
 fi
 
 if (( $(echo "$BRANCH_COVERAGE < $THRESHOLD" | bc -l) )); then
-    echo "❌ Branch coverage ($BRANCH_COVERAGE%) is below threshold ($THRESHOLD%)"
+    echo "Branch coverage ($BRANCH_COVERAGE%) is below threshold ($THRESHOLD%)"
     PASSED=false
 else
     echo "✓ Branch coverage meets threshold"

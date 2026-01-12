@@ -82,6 +82,35 @@ public sealed record FunctionRequest
     /// </summary>
     public string? SkillName { get; init; }
 
+    //
+    // MIDDLEWARE CAPABILITIES
+    //
+
+    /// <summary>
+    /// Event coordinator for emitting events during function execution.
+    /// Middleware can emit retry events, timeout warnings, etc.
+    ///   May be NULL in test scenarios
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Middleware can use this to emit observability events during function execution.
+    /// For example, RetryMiddleware emits <c>FunctionRetryEvent</c> when retrying failed functions.
+    /// </para>
+    /// <para><b>Example (RetryMiddleware):</b></para>
+    /// <code>
+    /// request.EventCoordinator?.Emit(new FunctionRetryEvent(
+    ///     FunctionName: request.FunctionName,
+    ///     Attempt: attempt,
+    ///     MaxRetries: maxRetries,
+    ///     Delay: delay,
+    ///     Exception: ex,
+    ///     ExceptionType: ex.GetType().Name,
+    ///     ErrorMessage: ex.Message
+    /// ));
+    /// </code>
+    /// </remarks>
+    public HPD.Events.IEventCoordinator? EventCoordinator { get; init; }
+
     /// <summary>
     /// Creates a modified copy of this request.
     /// Follows the LangChain pattern for immutable request modification.

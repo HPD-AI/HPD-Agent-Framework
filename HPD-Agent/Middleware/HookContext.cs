@@ -44,6 +44,43 @@ public abstract record HookContext
     public string? ConversationId => Base.ConversationId;
 
     /// <summary>
+    /// The agent session being executed.
+    /// Access session.Store for infrastructure operations (asset upload, etc.).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Example - Asset Upload:</b></para>
+    /// <code>
+    /// public async Task BeforeIterationAsync(BeforeIterationContext context, ...)
+    /// {
+    ///     var assetStore = context.Session.Store?.AssetStore;
+    ///     if (assetStore != null)
+    ///     {
+    ///         var assetId = await assetStore.UploadAssetAsync(bytes, "image/jpeg");
+    ///     }
+    /// }
+    /// </code>
+    /// </remarks>
+    public AgentSession Session => Base.Session;
+
+    /// <summary>
+    /// Service provider for dependency injection (may be null if not configured).
+    /// Use to access services like HttpClient, ILogger, IDistributedCache, etc.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Example - HttpClient for Audio Provider:</b></para>
+    /// <code>
+    /// var httpClient = context.Services?.GetService(typeof(HttpClient)) as HttpClient;
+    /// var ttsClient = new OpenAITextToSpeechClient(config, httpClient);
+    /// </code>
+    /// <para><b>Example - Logging:</b></para>
+    /// <code>
+    /// var logger = context.Services?.GetService(typeof(ILogger&lt;MyMiddleware&gt;)) as ILogger;
+    /// logger?.LogInformation("Processing audio...");
+    /// </code>
+    /// </remarks>
+    public IServiceProvider? Services => Base.Services;
+
+    /// <summary>
     /// Current agent loop state. Reflects any updates from earlier middlewares.
     /// Internal access only - use <see cref="Analyze{T}"/> or read inside <see cref="UpdateState"/> for safe state access.
     /// </summary>

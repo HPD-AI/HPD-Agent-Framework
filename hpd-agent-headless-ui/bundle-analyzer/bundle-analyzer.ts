@@ -70,7 +70,7 @@ async function analyzeComponent(component: ComponentSizeLimit): Promise<{
 
 	// Check if component exists
 	if (!existsSync(entryPath)) {
-		console.warn(`⚠️  Component not found: ${component.name} (${entryPath})`);
+		console.warn(` Component not found: ${component.name} (${entryPath})`);
 		return {
 			name: component.name,
 			size: 0,
@@ -150,7 +150,7 @@ async function analyzeAllComponents() {
 
 			if (!result.withinLimit) {
 				const overage = result.gzipped - result.limit;
-				console.log(`   ⚠️  EXCEEDS LIMIT by ${formatBytes(overage)}`);
+				console.log(`    EXCEEDS LIMIT by ${formatBytes(overage)}`);
 				hasFailures = true;
 			}
 

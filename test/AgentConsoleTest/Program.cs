@@ -3,6 +3,8 @@
 using HPD.Agent;
 using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
+using HPD.Agent.Providers.Anthropic;
+using HPD.Agent.Providers.AzureAI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
@@ -45,32 +47,46 @@ var config = new AgentConfig
     Name = "HPD Agent",
     MaxAgenticIterations = 50,
     // Generic base prompt - specialized personas are injected via [Collapse] postExpansionInstructions
-    SystemInstructions = @"You are a helpful assistant with access to specialized capabilities.
-Use the appropriate tools based on the user's request.
-Be concise and direct.",
+    SystemInstructions = @"You are a helpful AI assistant with access to specialized tools and capabilities.
+
+When the user asks you something:
+1. Think carefully about what they're asking
+2. Use the appropriate tools if needed
+3. Provide clear, complete, and helpful responses
+4. Explain your reasoning when relevant
+5. Never respond with just 'Yes' or single words - always provide useful information
+
+Be helpful, thorough, and conversational.",
     Collapsing = new CollapsingConfig { Enabled = true },
     // Toolkits resolved from source-generated registry at Build() time
     Toolkits = new List<ToolkitReference>
     {
         "CodingToolkit",
         "MathToolkit"
+    },
+    // Provider configuration - Claude 3.5 Sonnet works well with OpenRouter
+    Provider = new ProviderConfig
+    {
+        ProviderKey = "openrouter",
+        ModelName = "anthropic/claude-3-5-sonnet",  // Switched from Mistral to Claude - avoids chat_template issue
     }
 };
-
-// Configure logging to show Information level logs
+// Configure logging to show Information level logs including HTTP details
 var loggerFactory = LoggerFactory.Create(builder =>
 {
-    builder.SetMinimumLevel(LogLevel.Information);
+    builder.SetMinimumLevel(LogLevel.Debug);  // Show debug logs
     builder.AddConsole();
+    // Enable HTTP client logging to see exact requests/responses
+    builder.AddFilter("System.Net.Http", LogLevel.Debug);
+    builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Debug);
+    builder.AddFilter("Microsoft.Extensions.AI", LogLevel.Debug);
 });
 
 
 
 var agentBuilder = new AgentBuilder(config)
-    .WithProvider("openrouter", "z-ai/glm-4.7")
-    // Toolkits now come from config.Toolkits - no need for .WithToolkit<>() calls
-    .WithLogging()
-    .WithPermissions()
+    .WithLogging(loggerFactory)
+    // Toolkits and Provider now come from config - no need for .WithToolkit<>() or .WithProvider() calls
     .WithSessionStore(sessionStore, persistAfterTurn: true);
 
 // Add audio pipeline if providers are available
@@ -281,4 +297,46 @@ while (true)
     thread = await agent.LoadSessionAsync(sessionId);
     AnsiConsole.MarkupLine($"[dim]💾 Session saved ({thread.Messages.Count} messages)[/]");
     AnsiConsole.WriteLine();
+}
+
+// Helper class to log HTTP requests/responses
+public class DebugHttpHandler : HttpClientHandler
+{
+    private readonly ILogger _logger;
+
+    public DebugHttpHandler(ILogger logger)
+    {
+        _logger = logger;
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("=== HTTP REQUEST ===");
+        _logger.LogInformation($"Method: {request.Method} {request.RequestUri}");
+        _logger.LogInformation($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}={string.Join(",", h.Value)}"))}");
+        
+        if (request.Content != null)
+        {
+            var body = await request.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogInformation($"Body: {body}");
+        }
+
+        var response = await base.SendAsync(request, cancellationToken);
+
+        _logger.LogInformation("=== HTTP RESPONSE ===");
+        _logger.LogInformation($"Status: {response.StatusCode}");
+        _logger.LogInformation($"Headers: {string.Join(", ", response.Headers.Select(h => $"{h.Key}={string.Join(",", h.Value)}"))}");
+
+        if (response.Content != null)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogInformation($"Body: {body}");
+            // Reset content stream since we read it
+            response.Content = new StringContent(body, response.Content.Headers.ContentEncoding.FirstOrDefault() != null 
+                ? new System.Text.UTF8Encoding() 
+                : System.Text.Encoding.UTF8);
+        }
+
+        return response;
+    }
 }

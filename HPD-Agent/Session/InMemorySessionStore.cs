@@ -36,6 +36,7 @@ public class InMemorySessionStore : ISessionStore
 
     private readonly bool _enableHistory;
     private readonly bool _enablePendingWrites;
+    private readonly InMemoryAssetStore _assetStore;
 
     /// <inheritdoc />
     public bool SupportsHistory => _enableHistory;
@@ -52,6 +53,19 @@ public class InMemorySessionStore : ISessionStore
     {
         _enableHistory = enableHistory;
         _enablePendingWrites = enablePendingWrites;
+
+        // Initialize InMemoryAssetStore for testing (shared across all sessions in memory)
+        _assetStore = new InMemoryAssetStore();
+    }
+
+    /// <inheritdoc />
+    public IAssetStore? GetAssetStore(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        // In-memory store shares the same asset store across all sessions
+        // This is acceptable for testing, but real stores should isolate per session
+        return _assetStore;
     }
 
     // ═══════════════════════════════════════════════════════════════════

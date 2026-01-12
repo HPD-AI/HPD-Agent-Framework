@@ -221,7 +221,7 @@
 		<ToolExecution.Root {toolCall} child={customChild} class="custom-tool-root" />
 	
 		<div class="info-box">
-			<h4>💡 Key Benefits:</h4>
+			<h4> Key Benefits:</h4>
 			<ul>
 				<li>  Each tool has completely custom UI</li>
 				<li>  Still gets state management from component</li>
@@ -392,7 +392,7 @@
 		<ToolExecution.Root {toolCall} child={simpleChild} />
 	
 		<div class="info-note">
-			<strong>💡 Custom Rendering Pattern:</strong>
+			<strong> Custom Rendering Pattern:</strong>
 			<ul>
 				<li>Simple inline styles (no CSS classes needed)</li>
 				<li>Status-based background colors (executing vs complete)</li>

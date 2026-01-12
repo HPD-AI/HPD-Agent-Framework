@@ -295,7 +295,7 @@ public class CodingToolkit
     [AIFunction]
     [AIDescription("List directory contents with file metadata. Respects .gitignore patterns.")]
     public string ListDirectory(
-        [AIDescription("Absolute path to the directory to list. If empty, uses current working directory.")] string? directoryPath = null,
+        [AIDescription("Absolute path to the directory to list. If empty, uses current working directory.")] string directoryPath = "",
         [AIDescription("Include hidden files/directories. Default: false")] bool showHidden = false,
         [AIDescription("Respect .gitignore patterns. Default: true")] bool respectGitIgnore = true)
     {
@@ -432,7 +432,7 @@ public class CodingToolkit
     public string Grep(
         [AIDescription("Root directory to search in.")] string rootPath,
         [AIDescription("Regex pattern to search for.")] string pattern,
-        [AIDescription("File glob pattern to filter (e.g., '*.cs'). Default: all files")] string? includeFiles = null,
+        [AIDescription("File glob pattern to filter (e.g., '*.cs'). Default: all files")] string includeFiles = "",
         [AIDescription("Case-insensitive search. Default: true")] bool ignoreCase = true,
         [AIDescription("Maximum results. Default: 50")] int maxResults = 50)
     {
@@ -446,7 +446,7 @@ public class CodingToolkit
 
             // Get files to search
             var matcher = new Matcher();
-            matcher.AddInclude(includeFiles ?? "**/*");
+            matcher.AddInclude(string.IsNullOrWhiteSpace(includeFiles) ? "**/*" : includeFiles);
             foreach (var dir in DefaultIgnoreDirs)
                 matcher.AddExclude($"**/{dir}/**");
             // Exclude binary files
@@ -756,7 +756,7 @@ public class CodingToolkit
     [AIDescription("Execute a shell command and return its output. Use for build, test, package management, and running scripts.")]
     public async Task<string> ExecuteCommand(
         [AIDescription("Command to execute (e.g., 'dotnet build', 'npm test', 'git status')")] string command,
-        [AIDescription("Working directory for command execution. Default: current directory")] string? workingDirectory = null,
+        [AIDescription("Working directory for command execution. Default: current directory")] string workingDirectory = "",
         [AIDescription("Timeout in milliseconds. Default: 120000 (2 minutes)")] int timeout = 120000)
     {
         if (string.IsNullOrWhiteSpace(command))

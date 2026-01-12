@@ -92,7 +92,7 @@ Solver 3: {answers[2]}";
             if (verification.StartsWith("CONSENSUS:", StringComparison.OrdinalIgnoreCase))
             {
                 var finalAnswer = verification.Substring("CONSENSUS:".Length).Trim();
-                AnsiConsole.MarkupLine($"\n[green]✅ CONSENSUS REACHED (Round {retryCount + 1})![/]");
+                AnsiConsole.MarkupLine($"\n[green] CONSENSUS REACHED (Round {retryCount + 1})![/]");
                 AnsiConsole.WriteLine();
                 AnsiConsole.MarkupLine($"[cyan bold]Final Answer:[/] {Markup.Escape(finalAnswer)}");
                 return finalAnswer;
@@ -104,7 +104,7 @@ Solver 3: {answers[2]}";
                 ? verification.Substring("DISAGREEMENT:".Length).Trim()
                 : verification;
 
-            AnsiConsole.MarkupLine($"\n[yellow]⚠️  Disagreement detected (Attempt {retryCount}/{MAX_RETRIES})[/]");
+            AnsiConsole.MarkupLine($"\n[yellow] Disagreement detected (Attempt {retryCount}/{MAX_RETRIES})[/]");
             AnsiConsole.MarkupLine($"[dim]Feedback: {Markup.Escape(feedbackMessage)}[/]");
 
             if (retryCount < MAX_RETRIES)
@@ -113,7 +113,7 @@ Solver 3: {answers[2]}";
             }
         }
 
-        AnsiConsole.MarkupLine($"\n[red]❌ Failed to reach consensus after {MAX_RETRIES} attempts[/]");
+        AnsiConsole.MarkupLine($"\n[red]Failed to reach consensus after {MAX_RETRIES} attempts[/]");
         return "Unable to reach consensus among agents.";
     }
 

@@ -26,11 +26,6 @@ namespace HPD.Agent;
 [JsonSerializable(typeof(CheckpointMetadata))]
 [JsonSerializable(typeof(CheckpointTuple))]
 
-// Legacy types (deprecated, kept for backward compatibility)
-#pragma warning disable CS0618 // Suppress obsolete warning
-[JsonSerializable(typeof(SessionCheckpoint))]
-#pragma warning restore CS0618
-
 // HPD-specific types
 [JsonSerializable(typeof(AgentLoopState))]
 [JsonSerializable(typeof(ValidationErrorResponse))]

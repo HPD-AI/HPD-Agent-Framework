@@ -34,6 +34,8 @@ public sealed class AgentContext
     private readonly IEventCoordinator _events;
     private readonly CancellationToken _cancellationToken;
     private readonly IChatClient? _parentChatClient;
+    private readonly AgentSession? _session;
+    private readonly IServiceProvider? _services;
 
     //
     // INTERNAL ACCESS (for adapters)
@@ -64,19 +66,60 @@ public sealed class AgentContext
     /// </summary>
     public string? ConversationId { get; }
 
+    /// <summary>
+    /// The agent session being executed.
+    /// Provides access to session.Store for middleware infrastructure operations.
+    /// May be null if no session was provided.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Middleware can access session?.Store.GetAssetStore(sessionId) for binary asset storage operations.
+    /// This enables multi-tenant scenarios where each session knows its own store.
+    /// </para>
+    /// <para><b>Example:</b></para>
+    /// <code>
+    /// public async Task BeforeIterationAsync(BeforeIterationContext context, ...)
+    /// {
+    ///     var assetStore = context.Session?.Store?.GetAssetStore(context.Session.Id);
+    ///     if (assetStore != null)
+    ///     {
+    ///         // Upload assets, retrieve assets, etc.
+    ///     }
+    /// }
+    /// </code>
+    /// </remarks>
+    public AgentSession? Session => _session;
+
+    /// <summary>
+    /// Service provider for dependency injection (may be null if not configured).
+    /// Use to access services like HttpClient, ILogger, IDistributedCache, etc.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Enables middleware to access registered services for HttpClient pooling,
+    /// logging, caching, and other infrastructure concerns.
+    /// </para>
+    /// <para><b>Example - Audio Provider with HttpClient:</b></para>
+    /// <code>
+    /// var httpClient = context.Services?.GetService(typeof(HttpClient)) as HttpClient;
+    /// var ttsFactory = TtsProviderDiscovery.GetFactory("openai");
+    /// var ttsClient = ttsFactory.CreateClient(config, context.Services);
+    /// </code>
+    /// </remarks>
+    public IServiceProvider? Services => _services;
+
     //
     // STREAM MANAGEMENT (always available, may be null if not configured)
     //
 
     /// <summary>
     /// Stream registry for managing interruptible audio/streaming operations.
-    /// Available when EventCoordinator is a BidirectionalEventCoordinator.
+    /// Provides stream lifecycle management for audio and streaming operations.
     /// </summary>
     /// <remarks>
     /// Used by audio middleware for stream interruption and priority streaming.
-    /// Returns null if event coordination is not configured with stream support.
     /// </remarks>
-    public IStreamRegistry? Streams => (_events as BidirectionalEventCoordinator)?.Streams;
+    public IStreamRegistry Streams => _events.Streams;
 
     //
     // STATE ACCESS (always available)
@@ -134,7 +177,7 @@ public sealed class AgentContext
     /// context.UpdateState(s => s with { CurrentIteration = s.CurrentIteration + 1 });
     /// </code>
     ///
-    /// <para><b>⚠️ DANGEROUS (will throw at runtime):</b></para>
+    /// <para><b>DANGEROUS (will throw at runtime):</b></para>
     /// <code>
     /// //   DANGEROUS: Reading state outside lambda
     /// var state = context.State.MiddlewareState.ErrorTracking ?? new();
@@ -147,7 +190,7 @@ public sealed class AgentContext
     /// {
     ///     MiddlewareState = s.MiddlewareState.WithErrorTracking(updated)  // Uses stale 'updated'
     /// });
-    /// // ⚠️ This WILL throw: "State was modified before UpdateState was called"
+    /// // This WILL throw: "State was modified before UpdateState was called"
     /// // The generation counter detects that SyncState() was called between read and update
     /// </code>
     ///
@@ -278,20 +321,35 @@ public sealed class AgentContext
     // CONSTRUCTOR (internal - created by Agent.cs)
     //
 
-    internal AgentContext(
+    /// <summary>
+    /// Creates a new agent context for middleware execution.
+    /// </summary>
+    /// <param name="agentName">Name of the agent</param>
+    /// <param name="conversationId">Unique identifier for the conversation</param>
+    /// <param name="initialState">Initial agent loop state</param>
+    /// <param name="eventCoordinator">Event coordinator for event emission</param>
+    /// <param name="session">Agent session (may be null)</param>
+    /// <param name="cancellationToken">Cancellation token for the operation</param>
+    /// <param name="parentChatClient">Parent agent's chat client (for SubAgent inheritance)</param>
+    /// <param name="services">Service provider for dependency injection (may be null)</param>
+    public AgentContext(
         string agentName,
         string? conversationId,
         AgentLoopState initialState,
         IEventCoordinator eventCoordinator,
+        AgentSession? session,
         CancellationToken cancellationToken,
-        IChatClient? parentChatClient = null)
+        IChatClient? parentChatClient = null,
+        IServiceProvider? services = null)
     {
         AgentName = agentName ?? throw new ArgumentNullException(nameof(agentName));
         ConversationId = conversationId;
         _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
         _events = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
+        _session = session;
         _cancellationToken = cancellationToken;
         _parentChatClient = parentChatClient;
+        _services = services;
     }
 
     //

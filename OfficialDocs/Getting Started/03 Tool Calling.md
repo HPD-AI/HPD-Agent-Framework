@@ -1,14 +1,14 @@
 # Tool Calling
 
-Tools are functions that the agent can call to interact with the world. HPD-Agent supports multiple sources of tools, all unified under a common system with shared features like collapsing and instructions.
+Toolkit are functions that the agent can call to interact with the world. HPD-Agent supports multiple sources of Toolkit, all unified under a common system with shared features like collapsing and instructions.
 
 ## Tool Sources
 
 | Source | Description | Defined By |
 |--------|-------------|------------|
-| **C# Tools** | Native tools with full feature support | Developer (code) |
-| **MCP Servers** | External tools via Model Context Protocol | MCP server configs |
-| **Client Tools** | Tools provided by the client/UI | Client application |
+| **C# Toolkit** | Native Toolkit with full feature support | Developer (code) |
+| **MCP Servers** | External Toolkit via Model Context Protocol | MCP server configs |
+| **Client Toolkit** | Toolkit provided by the client/UI | Client application |
 | **OpenAPI** | Auto-generated from API specs | OpenAPI/Swagger files |
 
 ```
@@ -16,7 +16,7 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
                         │
         ┌───────────────┼───────────────┐───────────────┐
         ▼               ▼               ▼               ▼
-   C# Tools      MCP Servers    Client Tools      OpenAPI
+   C# Toolkit      MCP Servers    Client Toolkit      OpenAPI
    [AIFunction]    filesystem      OpenFile         GET /users
    [Skill]         github          ShowDialog       POST /orders
    [SubAgent]      database        GetSelection     ...
@@ -24,9 +24,9 @@ Tools are functions that the agent can call to interact with the world. HPD-Agen
 
 ---
 
-## C# Tools
+## C# Toolkit
 
-The most powerful option. Define tools directly in C# with full access to:
+The most powerful option. Define Toolkit directly in C# with full access to:
 - **AIFunctions** - Single operations
 - **Skills** - Multi-function workflows with instructions
 - **SubAgents** - Delegated child agents
@@ -35,7 +35,7 @@ The most powerful option. Define tools directly in C# with full access to:
 
 ```csharp
 [Collapse("File operations")]
-public class FileTools
+public class FileToolkit
 {
     [AIFunction]
     [AIDescription("Read a file")]
@@ -47,13 +47,13 @@ public class FileTools
 }
 ```
 
-→ See [02.1 C# Tools Overview.md](02.1%20C%23%20Tools%20Overview.md) for the full guide.
+→ See [02.1 C# Toolkit Overview.md](02.1%20C%23%20Toolkit%20Overview.md) for the full guide.
 
 ---
 
 ## MCP Servers
 
-Connect external tool servers using the Model Context Protocol. MCP servers run as separate processes and expose tools over a standardized protocol.
+Connect external tool servers using the Model Context Protocol. MCP servers run as separate processes and expose Toolkit over a standardized protocol.
 
 ```csharp
 var agent = new AgentBuilder()
@@ -62,7 +62,7 @@ var agent = new AgentBuilder()
     .Build();
 ```
 
-MCP tools support:
+MCP Toolkit support:
 - Collapsing (grouped by server)
 - Custom instructions per server
 - Automatic tool discovery
@@ -71,11 +71,11 @@ MCP tools support:
 
 ---
 
-## Client Tools
+## Client Toolkit
 
-Tools provided by the client application (IDE extension, web UI, etc.). These are injected at runtime and allow the agent to interact with the user's environment.
+Toolkit provided by the client application (IDE extension, web UI, etc.). These are injected at runtime and allow the agent to interact with the user's environment.
 
-Common client tools:
+Common client Toolkit:
 - `OpenFile` - Open a file in the editor
 - `ShowDialog` - Display a dialog to the user
 - `GetSelection` - Get the user's current selection
@@ -85,19 +85,19 @@ var config = new AgentConfig
 {
     Collapsing = new CollapsingConfig
     {
-        CollapseClientTools = true,
-        ClientToolsInstructions = "These tools interact with the user's IDE."
+        CollapseClientToolkit = true,
+        ClientToolkitInstructions = "These Toolkit interact with the user's IDE."
     }
 };
 ```
 
-→ See [02.3 Client Tools.md](02.3%20Client%20Tools.md) for integration details.
+→ See [02.3 Client Toolkit.md](02.3%20Client%20Toolkit.md) for integration details.
 
 ---
 
 ## OpenAPI (Coming Soon)
 
-Auto-generate tools from OpenAPI/Swagger specifications. Point to an API spec and get tools for each endpoint.
+Auto-generate Toolkit from OpenAPI/Swagger specifications. Point to an API spec and get Toolkit for each endpoint.
 
 ```csharp
 // Future API
@@ -114,15 +114,15 @@ All tool sources share these capabilities:
 
 ### Collapsing
 
-Group tools into expandable containers to reduce context clutter:
+Group Toolkit into expandable containers to reduce context clutter:
 
 ```csharp
 var config = new AgentConfig
 {
     Collapsing = new CollapsingConfig
     {
-        Enabled = true,                    // C# tools
-        CollapseClientTools = true,        // Client tools
+        Enabled = true,                    // C# Toolkit
+        CollapseClientToolkit = true,        // Client Toolkit
         // MCP servers are collapsed by server name automatically
     }
 };
@@ -144,13 +144,13 @@ var config = new AgentConfig
             ["github"] = "Prefer GraphQL API for bulk operations."
         },
 
-        // Client tools instructions
-        ClientToolsInstructions = "These tools interact with the user's IDE."
+        // Client Toolkit instructions
+        ClientToolkitInstructions = "These Toolkit interact with the user's IDE."
     }
 };
 ```
 
-For C# tools, instructions are defined via `[Collapse]` attributes and skill instructions.
+For C# Toolkit, instructions are defined via `[Collapse]` attributes and skill instructions.
 
 ---
 
@@ -158,20 +158,20 @@ For C# tools, instructions are defined via `[Collapse]` attributes and skill ins
 
 | Need | Best Choice |
 |------|-------------|
-| Full control, type safety, compile-time validation | C# Tools |
+| Full control, type safety, compile-time validation | C# Toolkit |
 | Use existing MCP-compatible servers | MCP Servers |
-| Interact with user's environment (IDE, UI) | Client Tools |
+| Interact with user's environment (IDE, UI) | Client Toolkit |
 | Integrate with REST APIs quickly | OpenAPI |
 
 Most applications use a combination:
-- **C# Tools** for core business logic
+- **C# Toolkit** for core business logic
 - **MCP Servers** for standard capabilities (filesystem, git, etc.)
-- **Client Tools** for UI interaction
+- **Client Toolkit** for UI interaction
 
 ---
 
 ## Next Steps
 
-- [02.1 C# Tools Overview.md](02.1%20C%23%20Tools%20Overview.md) - Native tool development
+- [02.1 C# Toolkit Overview.md](02.1%20C%23%20Toolkit%20Overview.md) - Native tool development
 - [02.2 MCP Servers.md](02.2%20MCP%20Servers.md) - Model Context Protocol integration
-- [02.3 Client Tools.md](02.3%20Client%20Tools.md) - Client-provided tools
+- [02.3 Client Toolkit.md](02.3%20Client%20Toolkit.md) - Client-provided Toolkit

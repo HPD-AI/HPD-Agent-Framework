@@ -8,8 +8,20 @@ appsettings.*.json
 **/appsettings.*.json
 **/node_modules
 **/dist
+OfficialDocs/.vitepress/cache
+OfficialDocs/.vitepress/dist
 /target
 **/target
 /.nupkg
 **/test/AgentConsoleTest/sessions/sessions
 **/test/AgentWebTest/sessions/sessions
+
+# CrossIntelligence build artifacts
+.build/
+/native/
+# Native build outputs (but NOT the HPDIntelligence source code)
+HPD-Agent.Providers/HPD-Agent.Providers.AppleIntelligence/native/apple/CrossIntelligence.xcframework/
+HPD-Agent.Providers/HPD-Agent.Providers.AppleIntelligence/native/apple/macos/
+HPD-Agent.Providers/HPD-Agent.Providers.AppleIntelligence/native/apple/ios/
+HPD-Agent.Providers/HPD-Agent.Providers.AppleIntelligence/native/apple/maccatalyst/
+HPD-Agent.Providers/HPD-Agent.Providers.AppleIntelligence/native/apple/HPDIntelligence/.build/

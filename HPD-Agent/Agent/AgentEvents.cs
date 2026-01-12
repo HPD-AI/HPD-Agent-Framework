@@ -634,6 +634,36 @@ public record HistoryReductionCacheEvent(
 ) : AgentEvent, IObservabilityEvent;
 
 /// <summary>
+/// Emitted when an asset is successfully uploaded to AssetStore.
+/// Provides observability for binary asset storage operations.
+/// </summary>
+public record AssetUploadedEvent(
+    string AssetId,
+    string MediaType,
+    int SizeBytes
+) : AgentEvent, IObservabilityEvent;
+
+/// <summary>
+/// Emitted when an asset upload fails.
+/// Provides observability for asset storage failures.
+/// </summary>
+public record AssetUploadFailedEvent(
+    string MediaType,
+    string Error
+) : AgentEvent, IObservabilityEvent, IErrorEvent
+{
+    /// <summary>
+    /// Human-readable error message describing what went wrong.
+    /// </summary>
+    string IErrorEvent.ErrorMessage => Error;
+
+    /// <summary>
+    /// The underlying exception, if available.
+    /// </summary>
+    Exception? IErrorEvent.Exception => null;
+}
+
+/// <summary>
 /// Checkpoint operation type.
 /// </summary>
 public enum CheckpointOperation
@@ -753,6 +783,59 @@ public record FunctionRetryEvent(
 {
     /// <inheritdoc />
     Exception? IErrorEvent.Exception => Exception;
+}
+
+/// <summary>
+/// Emitted when a model call (LLM streaming) is being retried due to an error.
+/// Signals to consumers (like UI) that partial content should be discarded.
+/// Emitted by RetryMiddleware for observability and progressive streaming support.
+/// </summary>
+/// <remarks>
+/// <para><b>Progressive Streaming Pattern:</b></para>
+/// <para>
+/// This event follows the Gemini CLI pattern for handling streaming retries.
+/// When consumers receive this event, they should:
+/// </para>
+/// <list type="bullet">
+/// <item>Clear any partial response text displayed to the user</item>
+/// <item>Show a retry indicator (optional)</item>
+/// <item>Prepare to receive fresh content from the retry attempt</item>
+/// </list>
+/// <para>
+/// Unlike buffered retry where users see nothing until success, this pattern
+/// allows users to see partial responses immediately, then a brief retry indicator,
+/// followed by the successful response. This provides better UX than a frozen screen.
+/// </para>
+/// <para><b>Example (UI Handler):</b></para>
+/// <code>
+/// case ModelCallRetryEvent retry:
+///     // Clear partial response buffer
+///     responseBuffer.Clear();
+///
+///     // Optional: Show retry indicator
+///     Console.WriteLine($"⟳ Retrying (attempt {retry.Attempt}/{retry.MaxRetries})...");
+///     break;
+/// </code>
+/// </remarks>
+/// <param name="Attempt">The current retry attempt number (1-based)</param>
+/// <param name="MaxRetries">Maximum number of retries allowed</param>
+/// <param name="Delay">Time to wait before retrying</param>
+/// <param name="Exception">The exception that caused the retry</param>
+/// <param name="ExceptionType">The type name of the exception</param>
+/// <param name="ErrorMessage">The error message from the exception</param>
+public record ModelCallRetryEvent(
+    int Attempt,
+    int MaxRetries,
+    TimeSpan Delay,
+    Exception Exception,
+    string ExceptionType,
+    string ErrorMessage
+) : AgentEvent, IObservabilityEvent, IErrorEvent
+{
+    /// <inheritdoc />
+    Exception? IErrorEvent.Exception => Exception;
+
+    public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
 }
 
 /// <summary>
@@ -997,83 +1080,4 @@ public record EventDroppedEvent(
 /// can emit events concurrently.
 /// </para>
 /// <para>
-/// <b>Event Bubbling:</b> Implementations should support event bubbling
-/// for nested agent scenarios (child agent events visible to parent).
-/// </para>
-/// </remarks>
-public interface IEventCoordinator
-{
-    /// <summary>
-    /// Emits an event to handlers. Fire-and-forget.
-    /// Events bubble to parent coordinators in nested agent scenarios.
-    /// </summary>
-    /// <param name="evt">The event to emit</param>
-    /// <exception cref="ArgumentNullException">If event is null</exception>
-    /// <remarks>
-    /// <para>
-    /// This is the primary way for middlewares to communicate with external handlers.
-    /// Events are written to a channel and processed asynchronously.
-    /// </para>
-    /// <para>
-    /// <b>Thread-safe:</b> Can be called from any thread.
-    /// </para>
-    /// <para>
-    /// <b>Non-blocking:</b> Returns immediately (unbounded channel).
-    /// </para>
-    /// </remarks>
-    void Emit(AgentEvent evt);
 
-    /// <summary>
-    /// Sends a response to a waiting request.
-    /// Called by handlers when user provides input.
-    /// </summary>
-    /// <param name="requestId">The unique identifier for the request</param>
-    /// <param name="response">The response event to deliver</param>
-    /// <exception cref="ArgumentNullException">If response is null</exception>
-    /// <remarks>
-    /// <para>
-    /// If requestId is not found (e.g., timeout already occurred),
-    /// the call is silently ignored. This is intentional to avoid
-    /// race conditions between timeout and response.
-    /// </para>
-    /// <para>
-    /// <b>Thread-safe:</b> Can be called from any thread.
-    /// </para>
-    /// </remarks>
-    void SendResponse(string requestId, AgentEvent response);
-
-    /// <summary>
-    /// Waits for a response to a previously emitted request.
-    /// Used for request/response patterns (permissions, clarifications).
-    /// </summary>
-    /// <typeparam name="T">Expected response event type</typeparam>
-    /// <param name="requestId">Unique identifier matching the request event</param>
-    /// <param name="timeout">Maximum time to wait for response</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The typed response event</returns>
-    /// <exception cref="TimeoutException">No response received within timeout</exception>
-    /// <exception cref="OperationCanceledException">Operation was cancelled</exception>
-    /// <exception cref="InvalidOperationException">Response type mismatch</exception>
-    /// <remarks>
-    /// <para>
-    /// This method is used by middlewares that need bidirectional communication:
-    /// </para>
-    /// <list type="number">
-    /// <item>Middleware emits request event (e.g., PermissionRequestEvent)</item>
-    /// <item>Middleware calls WaitForResponseAsync() - BLOCKS HERE</item>
-    /// <item>Handler receives request event (via agent's event loop)</item>
-    /// <item>User provides input</item>
-    /// <item>Handler calls SendResponse()</item>
-    /// <item>Middleware receives response and continues</item>
-    /// </list>
-    /// <para>
-    /// <b>Timeout vs. Cancellation:</b>
-    /// - TimeoutException: No response received within the specified timeout
-    /// - OperationCanceledException: External cancellation (e.g., user stopped agent)
-    /// </para>
-    /// </remarks>
-    Task<T> WaitForResponseAsync<T>(
-        string requestId,
-        TimeSpan timeout,
-        CancellationToken cancellationToken) where T : AgentEvent;
-}

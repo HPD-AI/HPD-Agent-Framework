@@ -12,8 +12,6 @@ namespace HPD.Agent.Providers.Anthropic;
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AnthropicProviderConfig))]
-[JsonSerializable(typeof(AnthropicMCPServerConfig))]
-[JsonSerializable(typeof(List<AnthropicMCPServerConfig>))]
 [JsonSerializable(typeof(List<string>))]
 public partial class AnthropicJsonContext : JsonSerializerContext
 {

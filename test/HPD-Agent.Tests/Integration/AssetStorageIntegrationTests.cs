@@ -1,0 +1,431 @@
+using HPD.Agent;
+using HPD.Agent.Middleware;
+using HPD.Agent.Tests.Infrastructure;
+using Microsoft.Extensions.AI;
+using Xunit;
+
+namespace HPD.Agent.Tests.Integration;
+
+/// <summary>
+/// End-to-end integration tests demonstrating the complete asset storage workflow.
+/// Tests the full pipeline: DataContent → Upload → UriContent → Storage → Retrieval.
+/// </summary>
+public class AssetStorageIntegrationTests
+{
+    [Fact]
+    public async Task EndToEnd_ImageUpload_WithJsonSessionStore()
+    {
+        // Arrange: Create a temporary directory for test storage
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hpd-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            // Create store with asset support
+            var store = new JsonSessionStore(tempDir);
+            Assert.NotNull(store.GetAssetStore("test-session"));
+
+            // Create fake chat client and enqueue a response
+            var chatClient = new FakeChatClient();
+            chatClient.EnqueueTextResponse("I see the image.");
+
+            // Create agent with vision model (asset middleware auto-registered)
+            var agent = await new AgentBuilder()
+                .WithName("TestAgent")
+                .WithChatClient(chatClient)
+                .Build();
+
+            // Load session (sets session.Store automatically)
+            var session = await store.LoadOrCreateSessionAsync("test-session");
+            Assert.NotNull(session.Store);
+            Assert.Same(store, session.Store);
+
+            // Create a test image (PNG header + some data)
+            var imageBytes = new byte[]
+            {
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG header
+                0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08  // Sample data
+            };
+
+            // Add multimodal message using MEAI types
+            var userMessage = new ChatMessage(ChatRole.User,
+            [
+                new TextContent("What's in this image?"),
+                new DataContent(imageBytes, "image/png")
+            ]);
+
+            session.AddMessage(userMessage);
+
+            // Track events emitted during execution
+            var events = new List<AgentEvent>();
+            await foreach (var evt in agent.RunAsync([], session))
+            {
+                events.Add(evt);
+            }
+
+            // Assert: Verify AssetUploadedEvent was emitted
+            var uploadEvent = events.OfType<AssetUploadedEvent>().FirstOrDefault();
+            Assert.NotNull(uploadEvent);
+            Assert.Equal("image/png", uploadEvent.MediaType);
+            Assert.Equal(imageBytes.Length, uploadEvent.SizeBytes);
+
+            // Assert: Verify message was transformed (DataContent → UriContent)
+            var messages = session.Messages;
+            var transformedMessage = messages.First(m => m.Role == ChatRole.User);
+
+            // Should have 2 contents: TextContent + UriContent
+            Assert.Equal(2, transformedMessage.Contents.Count);
+
+            var textContent = transformedMessage.Contents[0] as TextContent;
+            Assert.NotNull(textContent);
+            Assert.Equal("What's in this image?", textContent.Text);
+
+            var uriContent = transformedMessage.Contents[1] as UriContent;
+            Assert.NotNull(uriContent);
+            Assert.StartsWith("asset://", uriContent.Uri.ToString());
+            Assert.Equal("image/png", uriContent.MediaType);
+
+            // Assert: Verify asset was stored and is retrievable
+            var assetId = uriContent.Uri.Host;
+            var assetStore = store.GetAssetStore(session.Id)!;
+            var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+            Assert.NotNull(retrievedAsset);
+            Assert.Equal(imageBytes, retrievedAsset.Data);
+            Assert.Equal("image/png", retrievedAsset.ContentType);
+            Assert.Equal(assetId, retrievedAsset.AssetId);
+
+            // Assert: Verify asset file exists on disk
+            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id, "assets"), $"{assetId}.*");
+            Assert.Single(assetFiles);
+            Assert.EndsWith(".png", assetFiles[0]);
+
+            // Save session (uses session.Store)
+            await session.SaveAsync();
+
+            // Assert: Verify session was saved with URI reference (not bytes)
+            var sessionFile = Path.Combine(tempDir, session.Id, "session.json");
+            Assert.True(File.Exists(sessionFile));
+            var sessionJson = await File.ReadAllTextAsync(sessionFile);
+            Assert.Contains($"asset://{assetId}", sessionJson);
+            Assert.DoesNotContain("\"Data\":", sessionJson); // Binary data NOT in session JSON
+        }
+        finally
+        {
+            // Cleanup
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EndToEnd_MultipleAssets_DifferentTypes()
+    {
+        // Arrange
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hpd-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var store = new JsonSessionStore(tempDir);
+
+            // Create fake chat client and enqueue a response
+            var chatClient = new FakeChatClient();
+            chatClient.EnqueueTextResponse("I see multiple files.");
+
+            var agent = await new AgentBuilder()
+                .WithName("TestAgent")
+                .WithChatClient(chatClient)
+                .Build();
+
+            var session = await store.LoadOrCreateSessionAsync("multi-asset-session");
+
+            // Create different asset types
+            var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG
+            var jpegBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }; // JPEG
+            var pdfBytes = new byte[] { 0x25, 0x50, 0x44, 0x46 }; // PDF
+
+            // Add message with multiple assets
+            var message = new ChatMessage(ChatRole.User,
+            [
+                new TextContent("Analyze these files:"),
+                new DataContent(pngBytes, "image/png"),
+                new TextContent("and"),
+                new DataContent(jpegBytes, "image/jpeg"),
+                new TextContent("plus"),
+                new DataContent(pdfBytes, "application/pdf")
+            ]);
+
+            session.AddMessage(message);
+
+            // Act
+            var events = new List<AgentEvent>();
+            await foreach (var evt in agent.RunAsync([], session))
+            {
+                events.Add(evt);
+            }
+
+            // Assert: 3 upload events
+            var uploadEvents = events.OfType<AssetUploadedEvent>().ToList();
+            Assert.Equal(3, uploadEvents.Count);
+            Assert.Contains(uploadEvents, e => e.MediaType == "image/png");
+            Assert.Contains(uploadEvents, e => e.MediaType == "image/jpeg");
+            Assert.Contains(uploadEvents, e => e.MediaType == "application/pdf");
+
+            // Assert: Message transformed correctly
+            var transformedMessage = session.Messages.First(m => m.Role == ChatRole.User);
+            Assert.Equal(6, transformedMessage.Contents.Count); // 3 text + 3 URI
+
+            var uriContents = transformedMessage.Contents.OfType<UriContent>().ToList();
+            Assert.Equal(3, uriContents.Count);
+
+            // Assert: All assets retrievable
+            var assetStore = store.GetAssetStore(session.Id)!;
+            foreach (var uriContent in uriContents)
+            {
+                var assetId = uriContent.Uri.Host;
+                var asset = await assetStore.DownloadAssetAsync(assetId);
+                Assert.NotNull(asset);
+                Assert.Equal(uriContent.MediaType, asset.ContentType);
+            }
+
+            // Assert: Correct file extensions on disk
+            var assetDir = Path.Combine(tempDir, session.Id, "assets");
+            Assert.True(Directory.GetFiles(assetDir, "*.png").Length >= 1);
+            Assert.True(Directory.GetFiles(assetDir, "*.jpg").Length >= 1);
+            Assert.True(Directory.GetFiles(assetDir, "*.pdf").Length >= 1);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EndToEnd_NoAssetStore_SkipsUpload()
+    {
+        // Arrange: Use InMemorySessionStore WITHOUT AssetStore
+        var store = new TestSessionStoreWithoutAssets();
+
+        // Create fake chat client and enqueue a response
+        var chatClient = new FakeChatClient();
+        chatClient.EnqueueTextResponse("Response.");
+
+        var agent = await new AgentBuilder()
+            .WithName("TestAgent")
+            .WithChatClient(chatClient)
+            .Build();
+
+        var session = await store.LoadOrCreateSessionAsync("no-asset-session");
+
+        var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
+        var message = new ChatMessage(ChatRole.User,
+        [
+            new TextContent("Image:"),
+            new DataContent(imageBytes, "image/png")
+        ]);
+
+        session.AddMessage(message);
+
+        // Act
+        var events = new List<AgentEvent>();
+        await foreach (var evt in agent.RunAsync([], session))
+        {
+            events.Add(evt);
+        }
+
+        // Assert: NO upload events (middleware skipped)
+        var uploadEvents = events.OfType<AssetUploadedEvent>().ToList();
+        Assert.Empty(uploadEvents);
+
+        // Assert: DataContent still present (not transformed)
+        var userMessage = session.Messages.First(m => m.Role == ChatRole.User);
+        var dataContent = userMessage.Contents.OfType<DataContent>().FirstOrDefault();
+        Assert.NotNull(dataContent);
+        Assert.Equal(imageBytes, dataContent.Data.ToArray());
+    }
+
+    [Fact]
+    public async Task EndToEnd_SessionRoundtrip_PreservesAssetReferences()
+    {
+        // Tests: Save session → Load session → Asset still retrievable
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hpd-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var store = new JsonSessionStore(tempDir);
+
+            // Create fake chat client and enqueue a response
+            var chatClient = new FakeChatClient();
+            chatClient.EnqueueTextResponse("Image processed.");
+
+            var agent = await new AgentBuilder()
+                .WithName("TestAgent")
+                .WithChatClient(chatClient)
+                .Build();
+
+            // First run: Upload asset
+            var session1 = await store.LoadOrCreateSessionAsync("roundtrip-session");
+            var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x01, 0x02, 0x03 };
+
+            session1.AddMessage(new ChatMessage(ChatRole.User,
+            [
+                new TextContent("Process image"),
+                new DataContent(imageBytes, "image/png")
+            ]));
+
+            await foreach (var _ in agent.RunAsync([], session1)) { }
+            await session1.SaveAsync();
+
+            // Get asset ID from first session
+            var msg1 = session1.Messages.First(m => m.Role == ChatRole.User);
+            var uri1 = msg1.Contents.OfType<UriContent>().First();
+            var assetId = uri1.Uri.Host;
+
+            // Second run: Load session and verify asset still accessible
+            var session2 = await store.LoadOrCreateSessionAsync("roundtrip-session");
+            Assert.NotNull(session2);
+
+            var msg2 = session2.Messages.First(m => m.Role == ChatRole.User);
+            var uri2 = msg2.Contents.OfType<UriContent>().FirstOrDefault();
+            Assert.NotNull(uri2);
+            Assert.Equal(assetId, uri2.Uri.Host);
+
+            // Assert: Asset still retrievable after roundtrip
+            var assetStore = store.GetAssetStore(session2.Id)!;
+            var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+            Assert.NotNull(retrievedAsset);
+            Assert.Equal(imageBytes, retrievedAsset.Data);
+            Assert.Equal("image/png", retrievedAsset.ContentType);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EndToEnd_ConvenienceMethod_SaveAsync()
+    {
+        // Tests: session.SaveAsync() convenience method
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hpd-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var store = new JsonSessionStore(tempDir);
+            var session = await store.LoadOrCreateSessionAsync("convenience-session");
+
+            session.AddMessage(new ChatMessage(ChatRole.User, "Test message"));
+
+            // Act: Use convenience method
+            await session.SaveAsync();
+
+            // Assert: Session saved
+            var sessionFile = Path.Combine(tempDir, session.Id, "session.json");
+            Assert.True(File.Exists(sessionFile));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task EndToEnd_SessionWithoutStore_SaveAsyncThrows()
+    {
+        // Tests: session.SaveAsync() throws when Store is null
+        var session = new AgentSession("no-store-session");
+        Assert.Null(session.Store);
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await session.SaveAsync());
+
+        Assert.Contains("no associated store", ex.Message);
+        Assert.Contains("LoadOrCreateSessionAsync", ex.Message);
+    }
+
+    // Test helper: Session store without asset support
+    private class TestSessionStoreWithoutAssets : ISessionStore
+    {
+        private readonly Dictionary<string, AgentSession> _sessions = new();
+
+        public bool SupportsHistory => false;
+        public bool SupportsPendingWrites => false;
+
+        public IAssetStore? GetAssetStore(string sessionId) => null; // No asset store
+
+        public Task<AgentSession?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        {
+            _sessions.TryGetValue(sessionId, out var session);
+            return Task.FromResult(session);
+        }
+
+        public Task SaveSessionAsync(AgentSession session, CancellationToken cancellationToken = default)
+        {
+            _sessions[session.Id] = session;
+            return Task.CompletedTask;
+        }
+
+        public Task<List<string>> ListSessionIdsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(_sessions.Keys.ToList());
+
+        public Task DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        {
+            _sessions.Remove(sessionId);
+            return Task.CompletedTask;
+        }
+
+        public Task<ExecutionCheckpoint?> LoadCheckpointAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<ExecutionCheckpoint?>(null);
+
+        public Task SaveCheckpointAsync(ExecutionCheckpoint checkpoint, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task DeleteAllCheckpointsAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task SavePendingWritesAsync(string sessionId, string executionCheckpointId, IEnumerable<PendingWrite> writes, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<List<PendingWrite>> LoadPendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<PendingWrite>());
+
+        public Task DeletePendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<ExecutionCheckpoint?> LoadCheckpointAtAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
+            => Task.FromResult<ExecutionCheckpoint?>(null);
+
+        public Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(string sessionId, int? limit = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<CheckpointManifestEntry>());
+
+        public Task PruneCheckpointsAsync(string sessionId, int keepLatest = 10, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task DeleteOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<int> DeleteInactiveSessionsAsync(TimeSpan inactivityThreshold, bool dryRun = false, CancellationToken cancellationToken = default)
+            => Task.FromResult(0);
+
+        public Task DeleteCheckpointsAsync(string sessionId, IEnumerable<string> checkpointIds, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        [Obsolete]
+        public Task<AgentSession?> LoadSessionAtCheckpointAsync(string sessionId, string checkpointId, CancellationToken cancellationToken = default)
+            => Task.FromResult<AgentSession?>(null);
+
+        [Obsolete]
+        public Task SaveSessionAtCheckpointAsync(AgentSession session, string checkpointId, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        [Obsolete]
+        public Task UpdateCheckpointManifestEntryAsync(string sessionId, string checkpointId, Action<CheckpointManifestEntry> update, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+}

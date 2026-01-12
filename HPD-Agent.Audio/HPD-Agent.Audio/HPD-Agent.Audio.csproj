@@ -25,9 +25,10 @@
         <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
   </ItemGroup>
 
-  <!-- Expose internals to test project -->
+  <!-- Expose internals to test projects -->
   <ItemGroup>
     <InternalsVisibleTo Include="HPD-Agent.Tests" />
+    <InternalsVisibleTo Include="HPD-Agent.Audio.Tests" />
   </ItemGroup>
 
 </Project>

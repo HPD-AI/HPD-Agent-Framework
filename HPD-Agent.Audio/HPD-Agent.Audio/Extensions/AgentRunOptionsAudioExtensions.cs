@@ -4,14 +4,15 @@ namespace HPD.Agent.Audio;
 
 /// <summary>
 /// Extension methods for configuring audio options on AgentRunOptions.
+/// Uses the slim AudioRunOptions API for common runtime customizations.
 /// </summary>
 public static class AgentRunOptionsAudioExtensions
 {
     /// <summary>
-    /// Configures audio options for this run.
+    /// Configures audio options for this run using AudioRunOptions (slim API).
     /// </summary>
     /// <param name="options">The agent run options.</param>
-    /// <param name="audio">The audio run options.</param>
+    /// <param name="audio">The audio runtime options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithAudio(this AgentRunOptions options, AudioRunOptions audio)
     {
@@ -27,7 +28,7 @@ public static class AgentRunOptionsAudioExtensions
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithAudio(this AgentRunOptions options, Action<AudioRunOptions> configure)
     {
-        var audio = GetOrCreateAudioOptions(options);
+        var audio = GetOrCreateAudioRunOptions(options);
         configure(audio);
         return options;
     }
@@ -36,47 +37,47 @@ public static class AgentRunOptionsAudioExtensions
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithVoiceConversation(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.VoiceConversation());
+        => options.WithAudio(new AudioRunOptions { IOMode = AudioIOMode.AudioToAudioAndText });
 
     /// <summary>Voice input only, text output.</summary>
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithVoiceInput(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.VoiceInput());
+        => options.WithAudio(new AudioRunOptions { IOMode = AudioIOMode.AudioToText });
 
     /// <summary>Text input, voice + text output.</summary>
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithVoiceOutput(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.VoiceOutput());
+        => options.WithAudio(new AudioRunOptions { IOMode = AudioIOMode.TextToAudioAndText });
 
     /// <summary>Disable audio for this request.</summary>
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithTextOnly(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.TextOnly());
+        => options.WithAudio(new AudioRunOptions { Disabled = true });
 
     /// <summary>Full voice conversation without captions.</summary>
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithFullVoice(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.FullVoice());
+        => options.WithAudio(new AudioRunOptions { IOMode = AudioIOMode.AudioToAudio });
 
     /// <summary>Native processing with captions (GPT-4o Realtime, Gemini Live).</summary>
     /// <param name="options">The agent run options.</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithNativeAudio(this AgentRunOptions options)
-        => options.WithAudio(AudioRunOptions.NativeWithCaptions());
+        => options.WithAudio(new AudioRunOptions { ProcessingMode = AudioProcessingMode.Native, IOMode = AudioIOMode.AudioToAudioAndText });
 
     /// <summary>
     /// Sets the TTS voice for this request.
     /// </summary>
     /// <param name="options">The agent run options.</param>
-    /// <param name="voice">The voice to use (e.g., "nova", "alloy").</param>
+    /// <param name="voice">The voice to use (e.g., "nova", "alloy", "shimmer").</param>
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithVoice(this AgentRunOptions options, string voice)
     {
-        var audio = GetOrCreateAudioOptions(options);
+        var audio = GetOrCreateAudioRunOptions(options);
         audio.Voice = voice;
         return options;
     }
@@ -89,8 +90,8 @@ public static class AgentRunOptionsAudioExtensions
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithTtsModel(this AgentRunOptions options, string model)
     {
-        var audio = GetOrCreateAudioOptions(options);
-        audio.Model = model;
+        var audio = GetOrCreateAudioRunOptions(options);
+        audio.TtsModel = model;
         return options;
     }
 
@@ -102,20 +103,20 @@ public static class AgentRunOptionsAudioExtensions
     /// <returns>The agent run options for chaining.</returns>
     public static AgentRunOptions WithTtsSpeed(this AgentRunOptions options, float speed)
     {
-        var audio = GetOrCreateAudioOptions(options);
-        audio.Speed = speed;
+        var audio = GetOrCreateAudioRunOptions(options);
+        audio.TtsSpeed = speed;
         return options;
     }
 
     /// <summary>
-    /// Gets the audio options from the run options, or null if not set.
+    /// Gets the audio runtime options from the run options, or null if not set.
     /// </summary>
     /// <param name="options">The agent run options.</param>
-    /// <returns>The audio run options, or null.</returns>
-    public static AudioRunOptions? GetAudioOptions(this AgentRunOptions options)
+    /// <returns>The audio runtime options, or null.</returns>
+    public static AudioRunOptions? GetAudioRunOptions(this AgentRunOptions options)
         => options.Audio as AudioRunOptions;
 
-    private static AudioRunOptions GetOrCreateAudioOptions(AgentRunOptions options)
+    private static AudioRunOptions GetOrCreateAudioRunOptions(AgentRunOptions options)
     {
         if (options.Audio is AudioRunOptions existing)
             return existing;

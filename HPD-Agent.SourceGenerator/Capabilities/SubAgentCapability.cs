@@ -221,7 +221,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        {");
         sb.AppendLine("            [\"IsSubAgent\"] = true,");
         sb.AppendLine($"            [\"ThreadMode\"] = \"{ThreadMode}\",");
-        sb.AppendLine($"            [\"ToolkitName\"] = \"{Toolkit.Name}\"");
+        sb.AppendLine($"            [\"ParentToolkit\"] = \"{Toolkit.Name}\"");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine(")");
@@ -252,7 +252,7 @@ internal class SubAgentCapability : BaseCapability
         props["IsContainer"] = false;
         props["IsSubAgent"] = true;
         props["ThreadMode"] = ThreadMode;
-        props["ToolkitName"] = ParentToolkitName;
+        props["ParentToolkit"] = ParentToolkitName;
         props["RequiresPermission"] = RequiresPermission;
 
         return props;

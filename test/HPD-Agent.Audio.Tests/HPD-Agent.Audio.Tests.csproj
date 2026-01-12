@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net9.0;net8.0</TargetFrameworks>
+    <RootNamespace>HPD.Agent.Audio.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core Audio project -->
+    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />
+
+    <!-- Audio providers for integration testing -->
+    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.AudioProviders.ElevenLabs\HPD-Agent.AudioProviders.ElevenLabs.csproj" />
+
+    <!-- Main HPD-Agent project for integration -->
+    <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
+  </ItemGroup>
+
+</Project>

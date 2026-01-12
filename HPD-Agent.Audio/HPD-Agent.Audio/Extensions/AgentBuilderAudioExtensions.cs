@@ -1,5 +1,10 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
+using System.Text.Json;
+using HPD.Agent.Audio.Tts;
+using HPD.Agent.Audio.Stt;
+using HPD.Agent.Audio.Vad;
+
 namespace HPD.Agent.Audio;
 
 /// <summary>
@@ -79,5 +84,127 @@ public static class AgentBuilderAudioExtensions
         };
         configure?.Invoke(middleware);
         return builder.WithMiddleware(middleware);
+    }
+
+    /// <summary>
+    /// Quick setup: Configure audio with a builder action using the new role-based AudioConfig.
+    /// </summary>
+    public static AgentBuilder WithAudio(this AgentBuilder builder, Action<AudioConfig> configure)
+    {
+        var config = new AudioConfig();
+        configure(config);
+
+        // Create middleware and set configuration
+        var middleware = new AudioPipelineMiddleware();
+
+        // Create clients from configuration
+        if (config.Tts != null)
+        {
+            var ttsFactory = TtsProviderDiscovery.GetFactory(config.Tts.Provider);
+            middleware.TextToSpeechClient = ttsFactory.CreateClient(config.Tts);
+        }
+
+        if (config.Stt != null)
+        {
+            var sttFactory = SttProviderDiscovery.GetFactory(config.Stt.Provider);
+            middleware.SpeechToTextClient = sttFactory.CreateClient(config.Stt);
+        }
+
+        if (config.Vad != null)
+        {
+            var vadFactory = VadProviderDiscovery.GetFactory(config.Vad.Provider);
+            middleware.Vad = vadFactory.CreateDetector(config.Vad);
+        }
+
+        return builder.WithMiddleware(middleware);
+    }
+
+    /// <summary>
+    /// Quick setup: Configure audio with a pre-built AudioConfig instance.
+    /// </summary>
+    public static AgentBuilder WithAudio(this AgentBuilder builder, AudioConfig config)
+    {
+        return builder.WithAudio(c => {
+            c.Tts = config.Tts;
+            c.Stt = config.Stt;
+            c.Vad = config.Vad;
+            c.ProcessingMode = config.ProcessingMode;
+            c.IOMode = config.IOMode;
+            c.Language = config.Language;
+            c.Disabled = config.Disabled;
+        });
+    }
+
+    /// <summary>
+    /// Quick setup: OpenAI TTS + STT with default settings.
+    /// </summary>
+    public static AgentBuilder WithOpenAIAudio(
+        this AgentBuilder builder,
+        string? apiKey = null,
+        string? ttsVoice = "alloy",
+        string? ttsModel = "tts-1",
+        string? sttModel = "whisper-1")
+    {
+        var resolvedApiKey = apiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+
+        return builder.WithAudio(audio =>
+        {
+            audio.Tts = new TtsConfig
+            {
+                Provider = "openai-audio",
+                Voice = ttsVoice,
+                ModelId = ttsModel,
+                ProviderOptionsJson = JsonSerializer.Serialize(new { apiKey = resolvedApiKey })
+            };
+
+            audio.Stt = new SttConfig
+            {
+                Provider = "openai-audio",
+                ModelId = sttModel,
+                ProviderOptionsJson = JsonSerializer.Serialize(new { apiKey = resolvedApiKey })
+            };
+
+            audio.Vad = new VadConfig
+            {
+                Provider = "silero-vad"
+            };
+        });
+    }
+
+    /// <summary>
+    /// Quick setup: ElevenLabs TTS + OpenAI STT + Silero VAD.
+    /// </summary>
+    public static AgentBuilder WithElevenLabsTts(
+        this AgentBuilder builder,
+        string elevenLabsApiKey,
+        string? voice = "21m00Tcm4TlvDq8ikWAM",
+        string? openAiApiKey = null)
+    {
+        var resolvedOpenAiKey = openAiApiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+
+        return builder.WithAudio(audio =>
+        {
+            audio.Tts = new TtsConfig
+            {
+                Provider = "elevenlabs",
+                Voice = voice,
+                ModelId = "eleven_turbo_v2_5",
+                ProviderOptionsJson = JsonSerializer.Serialize(new
+                {
+                    apiKey = elevenLabsApiKey,
+                    stability = 0.5f,
+                    similarityBoost = 0.75f
+                })
+            };
+
+            audio.Stt = new SttConfig
+            {
+                Provider = "openai-audio",
+                ModelId = "whisper-1",
+                ProviderOptionsJson = JsonSerializer.Serialize(new { apiKey = resolvedOpenAiKey })
+            };
+
+            audio.Vad = new VadConfig { Provider = "silero-vad" };
+        });
     }
 }

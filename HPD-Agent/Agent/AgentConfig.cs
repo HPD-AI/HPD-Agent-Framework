@@ -201,6 +201,36 @@ public class AgentConfig
     public bool PreserveReasoningInHistory { get; set; } = false;
 
     /// <summary>
+    /// When true, coalesces streaming text and reasoning deltas into single complete events.
+    /// - Without: Emits multiple TextDeltaEvent for each chunk ("Hello", " ", "world")
+    /// - With: Emits single TextDeltaEvent with complete text ("Hello world")
+    /// Reduces event count and simplifies processing at the cost of increased latency.
+    /// Can be overridden per-run via AgentRunOptions.CoalesceDeltas.
+    /// Default: false (immediate streaming for progressive rendering)
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Trade-offs:</b>
+    /// - false (default): Lower latency, progressive rendering - events stream as they arrive
+    /// - true: Higher latency, complete events - all deltas buffered until completion
+    /// </para>
+    /// <para>
+    /// <b>When to enable:</b>
+    /// - UIs that prefer complete responses over progressive rendering
+    /// - Testing scenarios where complete text is easier to assert
+    /// - Batch processing where event count matters more than latency
+    /// - Logging/analytics where complete messages are cleaner
+    /// </para>
+    /// <para>
+    /// <b>What gets coalesced:</b>
+    /// - Text deltas: Multiple TextDeltaEvent → Single complete TextDeltaEvent
+    /// - Reasoning deltas: Multiple ReasoningDeltaEvent → Single complete ReasoningDeltaEvent
+    /// - Tool calls, message boundaries, and other events are unaffected
+    /// </para>
+    /// </remarks>
+    public bool CoalesceDeltas { get; set; } = false;
+
+    /// <summary>
     /// Configuration for the DurableExecutionService.
     /// When set via WithDurableExecution(frequency, retention), enables the service layer.
     /// </summary>
@@ -611,7 +641,7 @@ public class ValidationConfig
     /// - true: Validates API keys and credits via network calls (2-5+ seconds)
     /// - false: Skip network validation for instant builds (recommended for development)
     /// 
-    /// 💡 Recommended Usage:
+    ///  Recommended Usage:
     /// - Development/Testing: false (fast iteration)
     /// - Production/CI: true (catch issues early)
     /// </summary>
@@ -1234,57 +1264,18 @@ public class BackgroundResponsesConfig
 }
 
 /// <summary>
-/// Configuration for audio providers (TTS/STT/VAD).
-/// Supports multiple providers with different capabilities.
+/// Lightweight proxy for HPD.Agent.Audio.AudioConfig to avoid circular dependency.
+/// This class lives in the core HPD-Agent package and is used by AgentConfig.
+/// The actual AudioConfig with full V3 role-based architecture (TtsConfig, SttConfig, VadConfig)
+/// lives in HPD-Agent.Audio package and is referenced by the audio middleware.
+///
+/// Module initializers in audio provider packages (HPD-Agent.AudioProviders.*)
+/// register their factories with TtsProviderDiscovery, SttProviderDiscovery, VadProviderDiscovery.
 /// </summary>
 public class AudioConfig
 {
-    /// <summary>
-    /// TTS (Text-to-Speech) provider configuration.
-    /// Provider identifier (e.g., "openai-audio", "elevenlabs").
-    /// </summary>
-    public string? TtsProvider { get; set; }
-
-    /// <summary>
-    /// STT (Speech-to-Text) provider configuration.
-    /// Provider identifier (e.g., "openai-audio", "deepgram").
-    /// </summary>
-    public string? SttProvider { get; set; }
-
-    /// <summary>
-    /// VAD (Voice Activity Detection) provider configuration.
-    /// Provider identifier (e.g., "silero-vad", "webrtc-vad").
-    /// </summary>
-    public string? VadProvider { get; set; }
-
-    /// <summary>
-    /// TTS provider-specific configuration as raw JSON string.
-    /// This is the preferred way for FFI/JSON configuration.
-    /// The JSON is deserialized using the provider's registered deserializer.
-    ///
-    /// Example JSON config for OpenAI:
-    /// <code>
-    /// {
-    ///   "Audio": {
-    ///     "TtsProvider": "openai-audio",
-    ///     "TtsProviderOptionsJson": "{\"apiKey\":\"sk-...\",\"model\":\"tts-1-hd\",\"voice\":\"nova\"}"
-    ///   }
-    /// }
-    /// </code>
-    /// </summary>
-    public string? TtsProviderOptionsJson { get; set; }
-
-    /// <summary>
-    /// STT provider-specific configuration as raw JSON string.
-    /// See TtsProviderOptionsJson for usage pattern.
-    /// </summary>
-    public string? SttProviderOptionsJson { get; set; }
-
-    /// <summary>
-    /// VAD provider-specific configuration as raw JSON string.
-    /// See TtsProviderOptionsJson for usage pattern.
-    /// </summary>
-    public string? VadProviderOptionsJson { get; set; }
+    // This is intentionally minimal - just enough for serialization/FFI
+    // The HPD.Agent.Audio.AudioConfig class contains the full V3 implementation
 }
 
 #endregion

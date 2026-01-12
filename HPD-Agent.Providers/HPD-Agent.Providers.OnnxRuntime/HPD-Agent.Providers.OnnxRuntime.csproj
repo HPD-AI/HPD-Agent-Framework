@@ -10,7 +10,11 @@
     <Description>ONNX Runtime provider for HPD-Agent</Description>
     <PackageTags>ai;agent;onnx;local;llm</PackageTags>
   </PropertyGroup>
-  
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HPD-Agent.Providers.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent/HPD-Agent.csproj" />
   </ItemGroup>

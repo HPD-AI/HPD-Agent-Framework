@@ -39,7 +39,7 @@ public sealed class Agent
     private readonly MessageProcessor _messageProcessor;
     private readonly FunctionCallProcessor _functionCallProcessor;
     private readonly AgentTurn _agentTurn;
-    private readonly BidirectionalEventCoordinator _eventCoordinator;
+    private readonly HPD.Events.IEventCoordinator _eventCoordinator;
     // Unified middleware pipeline
     private readonly AgentMiddlewarePipeline _middlewarePipeline;
     // Observer pattern for event-driven observability
@@ -135,53 +135,37 @@ public sealed class Agent
     public AgentExecutionContext? ExecutionContext
     {
         get => _executionContextValue;
-        set
-        {
-            _executionContextValue = value;
-            // Sync with event coordinator so it can auto-attach context to events
-            if (value != null)
-            {
-                _eventCoordinator.SetExecutionContext(value);
-            }
-        }
+        set { _executionContextValue = value; }
     }
 
     /// <summary>
     /// Internal access to event coordinator for context setup and nested agent configuration.
     /// </summary>
-    public BidirectionalEventCoordinator EventCoordinator => _eventCoordinator;
+    public HPD.Events.IEventCoordinator EventCoordinator => _eventCoordinator;
 
     /// <summary>
     /// Internal access to event coordinator for middleware event emission.
     /// Use Emit() method for priority-aware routing.
     /// </summary>
-    internal BidirectionalEventCoordinator MiddlewareEventCoordinator => _eventCoordinator;
+    internal HPD.Events.IEventCoordinator MiddlewareEventCoordinator => _eventCoordinator;
 
     /// <summary>
-    /// Sends a response to a Middleware waiting for a specific request.
-    /// Called by external handlers when user provides input.
-    /// Delegates to the event coordinator.
+    /// Sends a response to a pending middleware request (e.g., permission response, clarification).
+    /// Convenience method that delegates to the underlying event coordinator.
     /// </summary>
-    /// <param name="requestId">The unique identifier for the request</param>
-    /// <param name="response">The response event to deliver</param>
-    /// <exception cref="ArgumentNullException">If response is null</exception>
+    /// <param name="requestId">The request ID to respond to</param>
+    /// <param name="response">The response event</param>
     public void SendMiddlewareResponse(string requestId, AgentEvent response)
     {
         _eventCoordinator.SendResponse(requestId, response);
     }
 
     /// <summary>
-    /// Internal method for Middlewares to wait for responses.
-    /// Called by AiFunctionContext.WaitForResponseAsync().
-    /// Delegates to the event coordinator.
+    /// Sets the execution context for event attribution.
+    /// Called when the execution context is lazily initialized (e.g., on first RunAsync).
+    /// Thread-safe: Can be called from any session.
     /// </summary>
-    internal async Task<T> WaitForMiddlewareResponseAsync<T>(
-        string requestId,
-        TimeSpan timeout,
-        CancellationToken cancellationToken) where T : AgentEvent
-    {
-        return await _eventCoordinator.WaitForResponseAsync<T>(requestId, timeout, cancellationToken);
-    }
+    /// <param name="executionContext">The execution context to attach to events</param>
 
     /// <summary>
     /// Extracts and merges ChatOptions from AgentRunOptions (for workflow compatibility).
@@ -226,9 +210,9 @@ public sealed class Agent
         // Initialize unified middleware pipeline
         _middlewarePipeline = new AgentMiddlewarePipeline(middlewares ?? Array.Empty<IAgentMiddleware>());
 
-        // Create bidirectional event coordinator for Middleware events and human-in-the-loop
-        // ExecutionContext is set lazily on first RunAsync via SetExecutionContext()
-        _eventCoordinator = new BidirectionalEventCoordinator(config: Config);
+        // Create event coordinator for Middleware events and human-in-the-loop
+        // Direct use of HPD.Events.EventCoordinator (no wrapper)
+        _eventCoordinator = new HPD.Events.Core.EventCoordinator();
 
         // Plan mode instructions now injected by AgentPlanAgentMiddleware (middleware-based)
         _messageProcessor = new MessageProcessor(
@@ -533,8 +517,6 @@ public sealed class Agent
                 AgentChain = new[] { _name },
                 Depth = 0
             };
-            // Update coordinator with the lazily-initialized execution context
-            _eventCoordinator.SetExecutionContext(ExecutionContext);
         }
 
         IReadOnlyList<ChatMessage> messages = turn.MessagesForLLM;
@@ -734,8 +716,10 @@ public sealed class Agent
                 conversationId: conversationId,
                 initialState: state,
                 eventCoordinator: _eventCoordinator,
+                session: session,
                 cancellationToken: effectiveCancellationToken,
-                parentChatClient: _baseClient);  // Pass chat client for SubAgent inheritance
+                parentChatClient: _baseClient,  // Pass chat client for SubAgent inheritance
+                services: _serviceProvider);  // Pass service provider for DI
 
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             var beforeTurnContext = agentContext.AsBeforeMessageTurn(
@@ -750,7 +734,7 @@ public sealed class Agent
 
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
-                yield return middlewareEvt;
+                yield return (AgentEvent)middlewareEvt;
 
 
             // MAIN AGENTIC LOOP (Hybrid: Pure Decisions + Inline Execution)
@@ -778,7 +762,7 @@ public sealed class Agent
 
                 // Drain middleware events before decision
                 while (_eventCoordinator.TryRead(out var MiddlewareEvt))
-                    yield return MiddlewareEvt;
+                    yield return (AgentEvent)MiddlewareEvt;
 
                 //      
                 // FUNCTIONAL CORE: Pure Decision (No I/O)
@@ -814,7 +798,7 @@ public sealed class Agent
                 // Drain middleware events after decision-making, before execution
                 // CRITICAL: Ensures events emitted during decision logic are yielded before LLM streaming starts
                 while (_eventCoordinator.TryRead(out var MiddlewareEvt))
-                    yield return MiddlewareEvt;
+                    yield return (AgentEvent)MiddlewareEvt;
 
                 //     
                 // ARCHITECTURAL DECISION: Inline Execution for Zero-Latency Streaming
@@ -927,7 +911,7 @@ public sealed class Agent
 
                         while (_eventCoordinator.TryRead(out var middlewareEvt))
                         {
-                            yield return middlewareEvt;
+                            yield return (AgentEvent)middlewareEvt;
                         }
                     }
 
@@ -937,7 +921,7 @@ public sealed class Agent
                     // Final drain of events from middleware
                     while (_eventCoordinator.TryRead(out var middlewareEvt))
                     {
-                        yield return middlewareEvt;
+                        yield return (AgentEvent)middlewareEvt;
                     }
 
                     // V2: State updates are immediate - no GetPendingState() needed!
@@ -1027,50 +1011,82 @@ public sealed class Agent
                             EventCoordinator = _eventCoordinator
                         };
 
-                        // Stream LLM response through middleware pipeline with IMMEDIATE event yielding
-                        // V2: Uses ExecuteModelCallStreamingAsync with ModelRequest
-                        await foreach (var update in _middlewarePipeline.ExecuteModelCallStreamingAsync(
-                            modelRequest,
-                            (req) => _agentTurn.RunAsync(req.Messages, req.Options, req.Model as IChatClient, effectiveCancellationToken),
-                            effectiveCancellationToken))
-                    {
-                        // Store update for building final history
-                        responseUpdates.Add(update);
+                        // Check if we should coalesce deltas (run options override config default)
+                        bool coalesceDeltas = runOptions?.CoalesceDeltas ?? Config?.CoalesceDeltas ?? false;
 
-                        // Check for background operation continuation token (M.E.AI 10.1.1+ strongly-typed)
-#pragma warning disable MEAI001 // Experimental API - Background Responses
-                        var continuationToken = update.ContinuationToken;
-                        if (continuationToken != null)
+                        if (coalesceDeltas)
                         {
-                            lastContinuationToken = continuationToken;
-
-                            // Emit background operation started event on first token
-                            if (!backgroundOperationEventEmitted && allowBackgroundResponses)
+                            // COALESCE MODE: Buffer all updates, then emit coalesced events
+                            await foreach (var update in _middlewarePipeline.ExecuteModelCallStreamingAsync(
+                                modelRequest,
+                                (req) => _agentTurn.RunAsync(req.Messages, req.Options, req.Model as IChatClient, effectiveCancellationToken),
+                                effectiveCancellationToken))
                             {
-                                backgroundOperationEventEmitted = true;
-                                yield return new BackgroundOperationStartedEvent(
-                                    ContinuationToken: continuationToken,
-                                    Status: OperationStatus.InProgress,
-                                    OperationId: assistantMessageId);
+                                // Store update for building final history
+                                responseUpdates.Add(update);
 
-                                // Track in agent loop state for crash recovery
-                                state = state.WithBackgroundOperation(new BackgroundOperationInfo
+                                // Check for background operation continuation token (M.E.AI 10.1.1+ strongly-typed)
+#pragma warning disable MEAI001 // Experimental API - Background Responses
+                                var continuationToken = update.ContinuationToken;
+                                if (continuationToken != null)
                                 {
-                                    TokenData = Convert.ToBase64String(continuationToken.ToBytes().Span),
-                                    Iteration = state.Iteration,
-                                    StartedAt = DateTimeOffset.UtcNow,
-                                    LastKnownStatus = OperationStatus.InProgress
-                                });
-                            }
-                        }
+                                    lastContinuationToken = continuationToken;
+
+                                    // Emit background operation started event on first token
+                                    if (!backgroundOperationEventEmitted && allowBackgroundResponses)
+                                    {
+                                        backgroundOperationEventEmitted = true;
+                                        yield return new BackgroundOperationStartedEvent(
+                                            ContinuationToken: continuationToken,
+                                            Status: OperationStatus.InProgress,
+                                            OperationId: assistantMessageId);
+
+                                        // Track in agent loop state for crash recovery
+                                        state = state.WithBackgroundOperation(new BackgroundOperationInfo
+                                        {
+                                            TokenData = Convert.ToBase64String(continuationToken.ToBytes().Span),
+                                            Iteration = state.Iteration,
+                                            StartedAt = DateTimeOffset.UtcNow,
+                                            LastKnownStatus = OperationStatus.InProgress
+                                        });
+                                    }
+                                }
 #pragma warning restore MEAI001
 
-                        // Process contents and emit internal events
-                        if (update.Contents != null)
-                        {
-                            foreach (var content in update.Contents)
+                                // Accumulate content without emitting events yet
+                                if (update.Contents != null)
+                                {
+                                    foreach (var content in update.Contents)
+                                    {
+                                        if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                                        {
+                                            assistantContents.Add(reasoning);
+                                        }
+                                        else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                                        {
+                                            assistantContents.Add(textContent);
+                                        }
+                                        else if (content is FunctionCallContent functionCall)
+                                        {
+                                            toolRequests.Add(functionCall);
+                                            assistantContents.Add(functionCall);
+                                        }
+                                    }
+                                }
+
+                                // Still emit middleware events immediately
+                                while (_eventCoordinator.TryRead(out var MiddlewareEvt))
+                                {
+                                    yield return (AgentEvent)MiddlewareEvt;
+                                }
+                            }
+
+                            // Now coalesce and emit events
+                            var coalescedContents = CoalesceTextContents(assistantContents);
+
+                            foreach (var content in coalescedContents)
                             {
-                                if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                                if (content is TextReasoningContent reasoning)
                                 {
                                     if (!reasoningMessageStarted)
                                     {
@@ -1079,13 +1095,11 @@ public sealed class Agent
                                             Role: "assistant");
                                         reasoningMessageStarted = true;
                                     }
-
                                     yield return new ReasoningDeltaEvent(
                                         Text: reasoning.Text,
                                         MessageId: assistantMessageId);
-                                    assistantContents.Add(reasoning);
                                 }
-                                else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                                else if (content is TextContent textContent)
                                 {
                                     if (reasoningMessageStarted)
                                     {
@@ -1093,18 +1107,21 @@ public sealed class Agent
                                             MessageId: assistantMessageId);
                                         reasoningMessageStarted = false;
                                     }
-
                                     if (!messageStarted)
                                     {
                                         yield return new TextMessageStartEvent(assistantMessageId, "assistant");
                                         messageStarted = true;
                                     }
-
-                                    assistantContents.Add(textContent);
                                     yield return new TextDeltaEvent(textContent.Text, assistantMessageId);
                                 }
                                 else if (content is FunctionCallContent functionCall)
                                 {
+                                    if (reasoningMessageStarted)
+                                    {
+                                        yield return new ReasoningMessageEndEvent(
+                                            MessageId: assistantMessageId);
+                                        reasoningMessageStarted = false;
+                                    }
                                     if (!messageStarted)
                                     {
                                         yield return new TextMessageStartEvent(assistantMessageId, "assistant");
@@ -1120,26 +1137,13 @@ public sealed class Agent
                                     {
                                         var argsJson = JsonSerializer.Serialize(
                                             functionCall.Arguments,
-                                             HPDJsonContext.Default.DictionaryStringObject);
+                                            HPDJsonContext.Default.DictionaryStringObject);
 
                                         yield return new ToolCallArgsEvent(functionCall.CallId, argsJson);
                                     }
-
-                                    toolRequests.Add(functionCall);
-                                    assistantContents.Add(functionCall);
                                 }
                             }
-                        }
 
-                        // Periodically yield Middleware events during LLM streaming
-                        while (_eventCoordinator.TryRead(out var MiddlewareEvt))
-                        {
-                            yield return MiddlewareEvt;
-                        }
-
-                        // Check for stream completion
-                        if (update.FinishReason != null)
-                        {
                             if (reasoningMessageStarted)
                             {
                                 yield return new ReasoningMessageEndEvent(
@@ -1147,7 +1151,129 @@ public sealed class Agent
                                 reasoningMessageStarted = false;
                             }
                         }
-                    }
+                        else
+                        {
+                            // STREAMING MODE: Emit immediately (existing behavior)
+                            await foreach (var update in _middlewarePipeline.ExecuteModelCallStreamingAsync(
+                                modelRequest,
+                                (req) => _agentTurn.RunAsync(req.Messages, req.Options, req.Model as IChatClient, effectiveCancellationToken),
+                                effectiveCancellationToken))
+                            {
+                                // Store update for building final history
+                                responseUpdates.Add(update);
+
+                                // Check for background operation continuation token (M.E.AI 10.1.1+ strongly-typed)
+#pragma warning disable MEAI001 // Experimental API - Background Responses
+                                var continuationToken = update.ContinuationToken;
+                                if (continuationToken != null)
+                                {
+                                    lastContinuationToken = continuationToken;
+
+                                    // Emit background operation started event on first token
+                                    if (!backgroundOperationEventEmitted && allowBackgroundResponses)
+                                    {
+                                        backgroundOperationEventEmitted = true;
+                                        yield return new BackgroundOperationStartedEvent(
+                                            ContinuationToken: continuationToken,
+                                            Status: OperationStatus.InProgress,
+                                            OperationId: assistantMessageId);
+
+                                        // Track in agent loop state for crash recovery
+                                        state = state.WithBackgroundOperation(new BackgroundOperationInfo
+                                        {
+                                            TokenData = Convert.ToBase64String(continuationToken.ToBytes().Span),
+                                            Iteration = state.Iteration,
+                                            StartedAt = DateTimeOffset.UtcNow,
+                                            LastKnownStatus = OperationStatus.InProgress
+                                        });
+                                    }
+                                }
+#pragma warning restore MEAI001
+
+                                // Process contents and emit internal events
+                                if (update.Contents != null)
+                                {
+                                    foreach (var content in update.Contents)
+                                    {
+                                        if (content is TextReasoningContent reasoning && !string.IsNullOrEmpty(reasoning.Text))
+                                        {
+                                            if (!reasoningMessageStarted)
+                                            {
+                                                yield return new ReasoningMessageStartEvent(
+                                                    MessageId: assistantMessageId,
+                                                    Role: "assistant");
+                                                reasoningMessageStarted = true;
+                                            }
+
+                                            yield return new ReasoningDeltaEvent(
+                                                Text: reasoning.Text,
+                                                MessageId: assistantMessageId);
+                                            assistantContents.Add(reasoning);
+                                        }
+                                        else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
+                                        {
+                                            if (reasoningMessageStarted)
+                                            {
+                                                yield return new ReasoningMessageEndEvent(
+                                                    MessageId: assistantMessageId);
+                                                reasoningMessageStarted = false;
+                                            }
+
+                                            if (!messageStarted)
+                                            {
+                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                                messageStarted = true;
+                                            }
+
+                                            assistantContents.Add(textContent);
+                                            yield return new TextDeltaEvent(textContent.Text, assistantMessageId);
+                                        }
+                                        else if (content is FunctionCallContent functionCall)
+                                        {
+                                            if (!messageStarted)
+                                            {
+                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                                messageStarted = true;
+                                            }
+
+                                            yield return new ToolCallStartEvent(
+                                                functionCall.CallId,
+                                                functionCall.Name ?? string.Empty,
+                                                assistantMessageId);
+
+                                            if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
+                                            {
+                                                var argsJson = JsonSerializer.Serialize(
+                                                    functionCall.Arguments,
+                                                     HPDJsonContext.Default.DictionaryStringObject);
+
+                                                yield return new ToolCallArgsEvent(functionCall.CallId, argsJson);
+                                            }
+
+                                            toolRequests.Add(functionCall);
+                                            assistantContents.Add(functionCall);
+                                        }
+                                    }
+                                }
+
+                                // Periodically yield Middleware events during LLM streaming
+                                while (_eventCoordinator.TryRead(out var MiddlewareEvt))
+                                {
+                                    yield return (AgentEvent)MiddlewareEvt;
+                                }
+
+                                // Check for stream completion
+                                if (update.FinishReason != null)
+                                {
+                                    if (reasoningMessageStarted)
+                                    {
+                                        yield return new ReasoningMessageEndEvent(
+                                            MessageId: assistantMessageId);
+                                        reasoningMessageStarted = false;
+                                    }
+                                }
+                            }
+                        }
 
                         // Capture ConversationId from the agent turn response and update session
                         if (_agentTurn.LastResponseConversationId != null)
@@ -1231,7 +1357,7 @@ public sealed class Agent
                         // Yield Middleware events before tool execution
                         while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                         {
-                            yield return MiddlewareEvt;
+                            yield return (AgentEvent)MiddlewareEvt;
                         }
 
                         // UPDATE AGENT CONTEXT STATE before tool execution hook
@@ -1253,7 +1379,7 @@ public sealed class Agent
                         // Drain events from middleware
                         while (_eventCoordinator.TryRead(out var middlewareEvt))
                         {
-                            yield return middlewareEvt;
+                            yield return (AgentEvent)middlewareEvt;
                         }
 
                         // V2: Sync state after middleware
@@ -1268,7 +1394,7 @@ public sealed class Agent
                                 // Drain any final events from middleware (e.g., TextDeltaEvent from circuit breaker)
                                 while (_eventCoordinator.TryRead(out var terminationEvt))
                                 {
-                                    yield return terminationEvt;
+                                    yield return (AgentEvent)terminationEvt;
                                 }
                                 break; // Exit the main loop WITHOUT executing tools
                             }
@@ -1295,7 +1421,7 @@ public sealed class Agent
 
                             while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                             {
-                                yield return MiddlewareEvt;
+                                yield return (AgentEvent)MiddlewareEvt;
                             }
                         }
 
@@ -1308,7 +1434,7 @@ public sealed class Agent
                         // Final drain
                         while (_eventCoordinator.TryRead(out var MiddlewareEvt))
                         {
-                            yield return MiddlewareEvt;
+                            yield return (AgentEvent)MiddlewareEvt;
                         }
 
                         // ═══════════════════════════════════════════════════════════════
@@ -1356,7 +1482,7 @@ public sealed class Agent
                             // Drain any events emitted during termination (e.g., StateSnapshotEvent from ErrorTrackingMiddleware)
                             while (_eventCoordinator.TryRead(out var terminationEvt))
                             {
-                                yield return terminationEvt;
+                                yield return (AgentEvent)terminationEvt;
                             }
                             break;
                         }
@@ -1552,7 +1678,7 @@ public sealed class Agent
 
             // Final drain of middleware events after loop
             while (_eventCoordinator.TryRead(out var MiddlewareEvt))
-                yield return MiddlewareEvt;
+                yield return (AgentEvent)MiddlewareEvt;
 
             // Emit MESSAGE TURN finished event
             turnStopwatch.Stop();
@@ -1640,7 +1766,7 @@ public sealed class Agent
 
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
-                yield return middlewareEvt;
+                yield return (AgentEvent)middlewareEvt;
 
             // PERSISTENCE: Save complete turn history to session
             if (session != null && turnHistory.Count > 0)
@@ -1870,7 +1996,7 @@ public sealed class Agent
     public void Dispose()
     {
         _baseClient?.Dispose();
-        _eventCoordinator?.Dispose();
+        (_eventCoordinator as IDisposable)?.Dispose();
     }
 
     /// <summary>
@@ -4299,14 +4425,14 @@ internal static class ContentExtractor
 /// </summary>
 internal class FunctionCallProcessor
 {
-    private readonly IEventCoordinator _eventCoordinator;
+    private readonly HPD.Events.IEventCoordinator _eventCoordinator;
     private readonly AgentMiddlewarePipeline _middlewarePipeline;
     private readonly ErrorHandlingConfig? _errorHandlingConfig;
     private readonly IList<AITool>? _serverConfiguredTools;
     private readonly AgenticLoopConfig? _agenticLoopConfig;
 
     public FunctionCallProcessor(
-        IEventCoordinator eventCoordinator,
+        HPD.Events.IEventCoordinator eventCoordinator,
         AgentMiddlewarePipeline middlewarePipeline,
         int maxFunctionCalls,
         ErrorHandlingConfig? errorHandlingConfig = null,
@@ -4526,7 +4652,9 @@ internal class FunctionCallProcessor
             conversationId: agentLoopState.ConversationId,
             initialState: agentLoopState,
             eventCoordinator: _eventCoordinator,
-            cancellationToken: cancellationToken);
+            session: agentContext.Session,
+            cancellationToken: cancellationToken,
+            services: agentContext.Services);
 
         var batchContext = batchAgentContext.AsBeforeParallelBatch(
             parallelFunctions,
@@ -4891,9 +5019,10 @@ internal class FunctionCallProcessor
 
             // Note: Function completion tracking is handled by caller using state updates
 
-            var functionResult = new FunctionResultContent(functionCall.CallId, executionResult)
+            // CRITICAL: Use afterFunctionContext.Result (middleware may have transformed it)
+            var functionResult = new FunctionResultContent(functionCall.CallId, afterFunctionContext.Result)
             {
-                Exception = executionException
+                Exception = afterFunctionContext.Exception
             };
             var functionMessage = new ChatMessage(ChatRole.Tool, new AIContent[] { functionResult });
             resultMessages.Add(functionMessage);
@@ -5381,219 +5510,6 @@ internal static class ErrorFormatter
 }
 
 #endregion
-
-#region BidirectionalEventCoordinator
-/// <summary>
-/// Agent-specific event coordinator wrapper around HPD.Events.EventCoordinator.
-/// Provides backward-compatible API with domain-specific features (SetExecutionContext, AgentEvent typing).
-/// Delegates all core coordination logic to the shared HPD.Events.EventCoordinator.
-/// </summary>
-public class BidirectionalEventCoordinator : IEventCoordinator, HPD.Events.IEventCoordinator, IDisposable
-{
-    private readonly HPD.Events.Core.EventCoordinator _inner;
-    private AgentExecutionContext? _executionContext;
-    private readonly AgentConfig? _config;
-    private BidirectionalEventCoordinator? _parent;
-
-    /// <summary>
-    /// Creates a new bidirectional event coordinator with priority-based routing.
-    /// </summary>
-    /// <param name="executionContext">The execution context for event attribution (optional)</param>
-    /// <param name="config">The agent configuration for observability settings (optional)</param>
-    public BidirectionalEventCoordinator(AgentExecutionContext? executionContext = null, AgentConfig? config = null)
-    {
-        _executionContext = executionContext;
-        _config = config;
-
-        _inner = new HPD.Events.Core.EventCoordinator(
-            eventEnricher: EnrichWithAgentContext
-        );
-    }
-
-    /// <summary>
-    /// Gets the stream registry for managing interruptible streams.
-    /// </summary>
-    public IStreamRegistry Streams => _inner.Streams;
-
-    /// <summary>
-    /// Sets the execution context for event attribution.
-    /// Called when the execution context is lazily initialized (e.g., on first RunAsync).
-    /// Thread-safe: Can be called from any session.
-    /// </summary>
-    /// <param name="executionContext">The execution context to attach to events</param>
-    public void SetExecutionContext(AgentExecutionContext executionContext)
-    {
-        _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
-    }
-
-    /// <summary>
-    /// Attempts to read an event synchronously using priority ordering.
-    /// </summary>
-    /// <param name="event">The event if one was available</param>
-    /// <returns>True if an event was read, false otherwise</returns>
-    public bool TryRead([NotNullWhen(true)] out AgentEvent? @event)
-    {
-        while (_inner.TryRead(out var evt))
-        {
-            // Skip universal events (e.g., EventDroppedEvent) that aren't AgentEvents
-            if (evt is AgentEvent agentEvt)
-            {
-                @event = agentEvt;
-                return true;
-            }
-            // Universal events are silently dropped from Agent-specific streams
-        }
-        @event = null;
-        return false;
-    }
-
-    /// <summary>
-    /// Sets the parent coordinator for hierarchical event bubbling.
-    /// </summary>
-    public void SetParent(BidirectionalEventCoordinator parent)
-    {
-        if (parent == null)
-            throw new ArgumentNullException(nameof(parent));
-
-        // Check for self-reference
-        if (parent == this)
-            throw new InvalidOperationException(
-                "Cannot set coordinator as its own parent. This would create an infinite loop during event emission.");
-
-        // Check for cycles by traversing the parent chain
-        var current = parent;
-        var visited = new HashSet<BidirectionalEventCoordinator>();
-        while (current != null)
-        {
-            if (current == this)
-                throw new InvalidOperationException(
-                    "Cycle detected in coordinator hierarchy. Cannot set parent: this would cause infinite loops during event emission.");
-
-            if (!visited.Add(current))
-            {
-                // We've seen this coordinator before - there's already a cycle in the parent chain
-                break;
-            }
-
-            // Traverse to the next parent in the chain
-            current = current._parent;
-        }
-
-        _parent = parent;
-        _inner.SetParent(parent._inner);
-    }
-
-    /// <summary>
-    /// Sets the parent coordinator for hierarchical event bubbling.
-    /// Accepts HPD.Events.IEventCoordinator for cross-library compatibility.
-    /// Used by source-generated SubAgent and MultiAgent wrappers.
-    /// </summary>
-    public void SetParent(HPD.Events.IEventCoordinator parent)
-    {
-        if (parent == null)
-            throw new ArgumentNullException(nameof(parent));
-
-        // Delegate directly to the inner coordinator
-        _inner.SetParent(parent);
-    }
-
-    /// <summary>
-    /// Emits an event downstream with automatic context enrichment.
-    /// </summary>
-    public void Emit(AgentEvent evt)
-    {
-        _inner.Emit(evt);
-    }
-
-    /// <summary>
-    /// Emits an event upstream for interruption propagation.
-    /// </summary>
-    public void EmitUpstream(AgentEvent evt)
-    {
-        _inner.EmitUpstream(evt);
-    }
-
-    /// <summary>
-    /// Reads events with priority ordering.
-    /// </summary>
-    public async IAsyncEnumerable<AgentEvent> ReadAllAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        await foreach (var evt in _inner.ReadAllAsync(cancellationToken))
-        {
-            yield return (AgentEvent)evt;
-        }
-    }
-
-    /// <summary>
-    /// Sends a response event to complete a waiting request.
-    /// </summary>
-    public void SendResponse(string requestId, AgentEvent response)
-    {
-        _inner.SendResponse(requestId, response);
-    }
-
-    /// <summary>
-    /// Waits for a response event matching the given request ID.
-    /// </summary>
-    public async Task<T> WaitForResponseAsync<T>(
-        string requestId,
-        TimeSpan timeout,
-        CancellationToken cancellationToken = default) where T : AgentEvent
-    {
-        return await _inner.WaitForResponseAsync<T>(requestId, timeout, cancellationToken);
-    }
-
-    /// <summary>
-    /// Dispose coordinator and complete all channels.
-    /// </summary>
-    public void Dispose()
-    {
-        _inner.Dispose();
-    }
-
-    //
-    // HPD.Events.IEventCoordinator EXPLICIT IMPLEMENTATIONS
-    // (For workflow/graph compatibility - accepts base Event type)
-    //
-
-    void HPD.Events.IEventCoordinator.Emit(HPD.Events.Event evt) => _inner.Emit(evt);
-
-    void HPD.Events.IEventCoordinator.EmitUpstream(HPD.Events.Event evt) => _inner.EmitUpstream(evt);
-
-    bool HPD.Events.IEventCoordinator.TryRead([NotNullWhen(true)] out HPD.Events.Event? evt) => _inner.TryRead(out evt);
-
-    IAsyncEnumerable<HPD.Events.Event> HPD.Events.IEventCoordinator.ReadAllAsync(CancellationToken ct) => _inner.ReadAllAsync(ct);
-
-    void HPD.Events.IEventCoordinator.SetParent(HPD.Events.IEventCoordinator parent) => _inner.SetParent(parent);
-
-    Task<TResponse> HPD.Events.IEventCoordinator.WaitForResponseAsync<TResponse>(
-        string requestId, TimeSpan timeout, CancellationToken ct) => _inner.WaitForResponseAsync<TResponse>(requestId, timeout, ct);
-
-    void HPD.Events.IEventCoordinator.SendResponse(string requestId, HPD.Events.Event response) => _inner.SendResponse(requestId, response);
-
-    IStreamRegistry HPD.Events.IEventCoordinator.Streams => _inner.Streams;
-
-    //
-    // PRIVATE HELPERS
-    //
-
-    /// <summary>
-    /// Enriches events with AgentExecutionContext if not already present.
-    /// </summary>
-    private HPD.Events.Event EnrichWithAgentContext(HPD.Events.Event evt)
-    {
-        if (evt is AgentEvent agentEvt && agentEvt.ExecutionContext == null && _executionContext != null)
-        {
-            return agentEvt with { ExecutionContext = _executionContext };
-        }
-        return evt;
-    }
-
-}
-
-#endregion
-
 
 #region Tool Execution Result Types
 /// <summary>

@@ -8,10 +8,10 @@ namespace HPD.MultiAgent.Routing;
 /// </summary>
 public class EdgeBuilder
 {
-    private readonly AgentWorkflowBuilder _workflowBuilder;
+    private readonly MultiAgent _workflowBuilder;
     private readonly string[] _sourceNodes;
 
-    internal EdgeBuilder(AgentWorkflowBuilder workflowBuilder, string[] sourceNodes)
+    internal EdgeBuilder(MultiAgent workflowBuilder, string[] sourceNodes)
     {
         _workflowBuilder = workflowBuilder;
         _sourceNodes = sourceNodes;
@@ -44,13 +44,13 @@ public class EdgeBuilder
 /// </summary>
 public class EdgeTargetBuilder
 {
-    private readonly AgentWorkflowBuilder _workflowBuilder;
+    private readonly MultiAgent _workflowBuilder;
     private readonly string[] _sourceNodes;
     private readonly string[] _targetNodes;
     private EdgeCondition? _condition;
 
     internal EdgeTargetBuilder(
-        AgentWorkflowBuilder workflowBuilder,
+        MultiAgent workflowBuilder,
         string[] sourceNodes,
         string[] targetNodes)
     {
@@ -268,11 +268,11 @@ public class EdgeConditionContext
 /// </summary>
 public class TypeRouteBuilder
 {
-    private readonly AgentWorkflowBuilder _workflowBuilder;
+    private readonly MultiAgent _workflowBuilder;
     private readonly string _sourceNode;
     private readonly List<(Type Type, string Target)> _routes = new();
 
-    internal TypeRouteBuilder(AgentWorkflowBuilder workflowBuilder, string sourceNode)
+    internal TypeRouteBuilder(MultiAgent workflowBuilder, string sourceNode)
     {
         _workflowBuilder = workflowBuilder;
         _sourceNode = sourceNode;

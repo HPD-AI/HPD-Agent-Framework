@@ -1,6 +1,7 @@
 using Microsoft.Extensions.AI;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace HPD.Agent;
 
@@ -38,7 +39,6 @@ public class AgentSession
     private readonly List<ChatMessage> _messages = new();
     private readonly Dictionary<string, object> _metadata = new();
     private readonly Dictionary<string, string> _middlewarePersistentState = new();
-    private string? _serviceThreadId;
     private string? _lastSnapshotId;
 
     /// <summary>
@@ -80,28 +80,6 @@ public class AgentSession
     public IReadOnlyDictionary<string, object> Metadata => _metadata.AsReadOnly();
 
     /// <summary>
-    /// Optional service thread ID for hybrid scenarios.
-    /// Enables syncing to OpenAI Assistants, Azure AI, etc.
-    /// This is stored separately from the local message history.
-    /// </summary>
-    public string? ServiceThreadId
-    {
-        get => _serviceThreadId;
-        set
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                _serviceThreadId = value;
-                LastActivity = DateTime.UtcNow;
-            }
-            else
-            {
-                _serviceThreadId = null;
-            }
-        }
-    }
-
-    /// <summary>
     /// Conversation identifier for server-side history tracking optimization.
     /// Used by LLM services that manage conversation state server-side (e.g., OpenAI Assistants).
     /// When set, enables delta message sending - only new messages are sent to the LLM on subsequent turns.
@@ -123,6 +101,25 @@ public class AgentSession
         get => _lastSnapshotId;
         set => _lastSnapshotId = value;
     }
+
+    /// <summary>
+    /// Internal reference to the store that manages this session.
+    /// Set by LoadOrCreateSessionAsync() extension method.
+    /// Used by framework for automatic asset upload and checkpointing.
+    /// </summary>
+    /// <remarks>
+    /// <para><strong>Lifecycle:</strong></para>
+    /// <list type="bullet">
+    /// <item>Set by: store.LoadOrCreateSessionAsync()</item>
+    /// <item>Used by: AssetUploadMiddleware to access session.Store.GetAssetStore(sessionId)</item>
+    /// <item>Serialization: [JsonIgnore] - not persisted to storage</item>
+    /// </list>
+    /// <para>
+    /// This follows the same pattern as Microsoft.Agents.AI's thread.MessageStore.
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]
+    internal ISessionStore? Store { get; set; }
 
     /// <summary>
     /// Persistent state for middlewares that need to cache data across runs.
@@ -239,6 +236,23 @@ public class AgentSession
     }
 
     /// <summary>
+    /// Internal method to replace a message in the session.
+    /// Used by middlewares like AssetUploadMiddleware to transform DataContent → UriContent.
+    /// </summary>
+    internal void ReplaceMessage(ChatMessage oldMessage, ChatMessage newMessage)
+    {
+        for (int i = 0; i < _messages.Count; i++)
+        {
+            if (ReferenceEquals(_messages[i], oldMessage))
+            {
+                _messages[i] = newMessage;
+                LastActivity = DateTime.UtcNow;
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// Gets the number of messages (async for API consistency).
     /// </summary>
     public Task<int> GetMessageCountAsync(CancellationToken cancellationToken = default)
@@ -283,6 +297,26 @@ public class AgentSession
 
     #endregion
 
+    #region Save Operations
+
+    /// <summary>
+    /// Convenience method to save this session to its associated store.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when Store is null. Use store.LoadOrCreateSessionAsync() to set the store reference.
+    /// </exception>
+    public async Task SaveAsync(CancellationToken cancellationToken = default)
+    {
+        if (Store == null)
+            throw new InvalidOperationException(
+                "Session has no associated store. " +
+                "Load the session using store.LoadOrCreateSessionAsync() to set the store reference.");
+
+        await Store.SaveSessionAsync(this, cancellationToken);
+    }
+
+    #endregion
+
     /// <summary>
     /// Get a display name for this session based on first user message.
     /// Useful for UI display in conversation lists.
@@ -321,7 +355,7 @@ public class AgentSession
     /// </summary>
     /// <remarks>
     /// Use this for normal session persistence after a turn completes.
-    /// For crash recovery during execution, use <see cref="ToCheckpoint"/> instead.
+    /// For crash recovery during execution, use <see cref="ToExecutionCheckpoint"/> instead.
     /// </remarks>
     public SessionSnapshot ToSnapshot()
     {
@@ -336,7 +370,6 @@ public class AgentSession
                 : null,
             CreatedAt = CreatedAt,
             LastActivity = LastActivity,
-            ServiceThreadId = ServiceThreadId,
             ConversationId = ConversationId,
         };
     }
@@ -373,32 +406,6 @@ public class AgentSession
         };
     }
 
-    /// <summary>
-    /// [DEPRECATED] Use <see cref="ToExecutionCheckpoint"/> instead.
-    /// </summary>
-    [Obsolete("Use ToExecutionCheckpoint() for crash recovery or ToSnapshot() for persistence")]
-    public SessionCheckpoint ToCheckpoint()
-    {
-        if (ExecutionState == null)
-            throw new InvalidOperationException(
-                "Cannot create SessionCheckpoint without ExecutionState. " +
-                "Use ToSnapshot() for saving session state after completion.");
-
-        return new SessionCheckpoint
-        {
-            SessionId = Id,
-            Messages = _messages.ToList(),
-            Metadata = _metadata.ToDictionary(kv => kv.Key, kv => kv.Value),
-            MiddlewarePersistentState = _middlewarePersistentState.Count > 0
-                ? _middlewarePersistentState.ToDictionary(kv => kv.Key, kv => kv.Value)
-                : null,
-            ExecutionState = ExecutionState,
-            CreatedAt = CreatedAt,
-            LastActivity = LastActivity,
-            ServiceThreadId = ServiceThreadId,
-            ConversationId = ConversationId,
-        };
-    }
 
     /// <summary>
     /// Create an AgentSession from a snapshot (messages + metadata only).
@@ -422,7 +429,6 @@ public class AgentSession
                 session._metadata[key] = value;
         }
 
-        session._serviceThreadId = snapshot.ServiceThreadId;
         session.ConversationId = snapshot.ConversationId;
         session._lastSnapshotId = snapshot.SessionSnapshotId;
 
@@ -461,21 +467,6 @@ public class AgentSession
         return session;
     }
 
-    /// <summary>
-    /// [DEPRECATED] Use <see cref="FromExecutionCheckpoint"/> instead.
-    /// </summary>
-    [Obsolete("Use FromExecutionCheckpoint() for crash recovery or FromSnapshot() for persistence")]
-    public static AgentSession FromCheckpoint(SessionCheckpoint checkpoint)
-    {
-        ArgumentNullException.ThrowIfNull(checkpoint);
-
-        // Use FromSnapshot for the base properties
-        var session = FromSnapshot(checkpoint);
-
-        // Add ExecutionState from checkpoint
-        session.ExecutionState = checkpoint.ExecutionState;
-        return session;
-    }
 }
 
 //──────────────────────────────────────────────────────────────────
@@ -536,11 +527,6 @@ public record SessionSnapshot
     /// Gets the UTC date/time of the last activity recorded in this snapshot.
     /// </summary>
     public required DateTime LastActivity { get; init; }
-
-    /// <summary>
-    /// Gets an optional service-specific thread identifier. May be <c>null</c>.
-    /// </summary>
-    public string? ServiceThreadId { get; init; }
 
     /// <summary>
     /// Gets an optional conversation identifier associated with this snapshot.
@@ -611,23 +597,3 @@ public record ExecutionCheckpoint
     public int Version { get; init; } = 1;
 }
 
-//──────────────────────────────────────────────────────────────────
-// LEGACY: SessionCheckpoint (deprecated, kept for backward compat)
-//──────────────────────────────────────────────────────────────────
-
-/// <summary>
-/// [DEPRECATED] Use <see cref="ExecutionCheckpoint"/> for crash recovery
-/// or <see cref="SessionSnapshot"/> for conversation persistence.
-/// </summary>
-/// <remarks>
-/// This type is kept temporarily for migration purposes.
-/// It will be removed in a future version.
-/// </remarks>
-[Obsolete("Use ExecutionCheckpoint for crash recovery or SessionSnapshot for persistence")]
-public record SessionCheckpoint : SessionSnapshot
-{
-    /// <summary>
-    /// Agent execution state (iteration, middleware runtime state, etc.).
-    /// </summary>
-    public required AgentLoopState ExecutionState { get; init; }
-}

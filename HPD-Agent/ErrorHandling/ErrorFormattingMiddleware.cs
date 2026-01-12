@@ -1,7 +1,11 @@
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+using Microsoft.Extensions.AI;
+
 namespace HPD.Agent.Middleware.Function;
 
 /// <summary>
-/// Middleware that formats function execution errors for LLM consumption.
+/// Middleware that formats function execution and model call errors for LLM consumption.
 /// Provides security-aware error message formatting to prevent exposing sensitive information.
 /// </summary>
 /// <remarks>
@@ -106,37 +110,121 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Wraps function execution and formats any errors according to security settings.
+    /// Wraps function execution. Errors are allowed to propagate naturally
+    /// and are formatted in AfterFunctionAsync hook instead.
     /// </summary>
     public async Task<object?> WrapFunctionCallAsync(
         FunctionRequest request,
         Func<FunctionRequest, Task<object?>> handler,
         CancellationToken cancellationToken)
     {
-        try
+        // V2: Let exceptions propagate naturally through the pipeline
+        // Error formatting happens in AfterFunctionAsync where we have proper context
+        // This allows OnErrorAsync to be called and error tracking to work correctly
+        return await handler(request);
+    }
+
+    /// <summary>
+    /// Formats error messages for LLM after function execution completes.
+    /// Acts as a security boundary between raw exceptions and the LLM.
+    /// </summary>
+    /// <remarks>
+    /// This is the proper place to format errors - after the exception has been
+    /// caught by Agent and OnErrorAsync has been called for error tracking.
+    /// The formatted message is sent to the LLM, while the original exception
+    /// remains intact in context.Exception for error tracking middleware.
+    /// </remarks>
+    public Task AfterFunctionAsync(
+        AfterFunctionContext context,
+        CancellationToken cancellationToken)
+    {
+        // If function threw an exception, format the result message for LLM
+        // The exception itself remains intact in context.Exception for error tracking
+        if (context.Exception != null)
         {
-            // Execute next handler in chain
-            return await handler(request);
+            var functionName = context.Function?.Name ?? "Unknown";
+
+            // Format message based on security settings
+            var formattedMessage = _includeDetailedErrors
+                ? $"Error invoking function '{functionName}': {context.Exception.Message}"
+                : $"Error: Function '{functionName}' failed.";
+
+            // Set the sanitized error message that will be sent to the LLM
+            // context.Result is mutable, so we can transform it here
+            // The original exception stays in context.Exception for error tracking
+            context.Result = formattedMessage;
         }
-        catch (Exception ex)
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Wraps model call streaming and formats any errors according to security settings.
+    /// Uses Channel-based approach to catch errors during streaming while maintaining progressive streaming.
+    /// </summary>
+    public IAsyncEnumerable<ChatResponseUpdate>? WrapModelCallStreamingAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
+        CancellationToken cancellationToken)
+    {
+        return FormatModelCallErrorsAsync(request, handler, cancellationToken);
+    }
+
+    /// <summary>
+    /// Internal implementation that catches and formats model call errors during streaming.
+    /// Separate method enables yield return outside of try-catch (C# compiler requirement).
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> FormatModelCallErrorsAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var channel = Channel.CreateUnbounded<ChatResponseUpdate>();
+        Exception? capturedException = null;
+
+        // Producer task: Stream with error capture
+        var producerTask = Task.Run(async () =>
         {
-            // V2 TODO: Store exception somewhere for observability
-            // In V1 this was context.FunctionException, but FunctionRequest doesn't have that
-            // For now, we'll just re-throw the formatted error
+            try
+            {
+                await foreach (var update in handler(request).WithCancellation(cancellationToken))
+                {
+                    await channel.Writer.WriteAsync(update, cancellationToken);
+                }
+                channel.Writer.Complete();
+            }
+            catch (Exception ex)
+            {
+                capturedException = ex;
+                channel.Writer.Complete();  // Complete normally, error handled separately
+            }
+        }, cancellationToken);
 
-            // Format error message based on security settings
-            var functionName = request.Function?.Name ?? "Unknown";
+        // Consumer: Yield updates as they arrive
+        await foreach (var update in channel.Reader.ReadAllAsync(cancellationToken))
+        {
+            yield return update;  // Progressive streaming
+        }
 
+        // Wait for producer to finish
+        await producerTask;
+
+        // Format and re-throw error if one occurred
+        if (capturedException != null)
+        {
             if (_includeDetailedErrors)
             {
                 // Include full exception details (potential security risk)
-                // Use this only in trusted environments or for debugging
-                return $"Error invoking function '{functionName}': {ex.Message}";
+                throw new InvalidOperationException(
+                    $"Model API call failed: {capturedException.Message}",
+                    capturedException);
             }
             else
             {
-                // Return sanitized error message (secure by default)
-                return $"Error: Function '{functionName}' failed.";
+                // Throw sanitized error message (secure by default)
+                throw new InvalidOperationException(
+                    "Error: Model API call failed. Enable detailed errors for more information.",
+                    capturedException);
             }
         }
     }

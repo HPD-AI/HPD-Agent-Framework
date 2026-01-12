@@ -1,62 +1,105 @@
 # HPD-Agent.Providers.AzureAIInference
 
-This package provides an integration with [Azure AI Inference](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/deploy-models-inference), allowing you to use models deployed in your Azure AI environment.
+> **DEPRECATION NOTICE**: This provider is deprecated. Use `HPD-Agent.Providers.AzureAI` instead.
+
+Azure AI Inference provider for HPD-Agent.
+
+## Overview
+
+This NuGet package provides an `IChatClient` implementation for Azure AI Inference endpoints, compatible with Microsoft.Extensions.AI. It wraps the official [Azure AI Inference SDK](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/deploy-models-inference).
+
+## Getting Started
+
+```csharp
+using HPD.Agent;
+using HPD.Agent.Providers.AzureAIInference;
+
+var agent = await new AgentBuilder()
+    .WithAzureAIInference(
+        endpoint: "https://your-resource.inference.ai.azure.com",
+        model: "llama-3-8b",
+        apiKey: "your-api-key",
+        configure: opts =>
+        {
+            opts.MaxTokens = 2048;
+            opts.Temperature = 0.7f;
+        })
+    .Build();
+
+var response = await agent.ChatAsync("Your prompt here");
+```
 
 ## Configuration
 
-To use the Azure AI Inference provider, you must provide an endpoint and an API key.
+### Environment Variables
 
-### C# Configuration
-
-```csharp
-var config = new AgentConfig
-{
-    Provider = new ProviderConfig
-    {
-        ProviderKey = "azure-ai-inference",
-        ModelName = "YOUR_DEPLOYMENT_NAME", // e.g., "llama-3-8b"
-        Endpoint = "https://<your-resource-name>.inference.ai.azure.com", // Can also be set in AdditionalProperties
-        ApiKey = "YOUR_AZURE_AI_API_KEY" // Can also be set in AdditionalProperties
-    }
-};
-
-// Alternatively, using AdditionalProperties:
-var configWithAdditionalProps = new AgentConfig
-{
-    Provider = new ProviderConfig
-    {
-        ProviderKey = "azure-ai-inference",
-        ModelName = "YOUR_DEPLOYMENT_NAME",
-        AdditionalProperties = new()
-        {
-            ["Endpoint"] = "https://<your-resource-name>.inference.ai.azure.com",
-            ["ApiKey"] = "YOUR_AZURE_AI_API_KEY"
-        }
-    }
-};
+```bash
+export AZURE_AI_INFERENCE_ENDPOINT="https://your-resource.inference.ai.azure.com"
+export AZURE_AI_INFERENCE_API_KEY="your-api-key"
 ```
 
-### JSON Configuration (`appsettings.json`)
+### appsettings.json
 
 ```json
 {
   "Agent": {
     "Provider": {
       "ProviderKey": "azure-ai-inference",
-      "ModelName": "YOUR_DEPLOYMENT_NAME",
-      "Endpoint": "https://<your-resource-name>.inference.ai.azure.com",
-      "ApiKey": "YOUR_AZURE_AI_API_KEY"
+      "ModelName": "llama-3-8b",
+      "Endpoint": "https://your-resource.inference.ai.azure.com",
+      "ApiKey": "your-api-key"
     }
   }
 }
 ```
-*Note: You can also place `Endpoint` and `ApiKey` inside an `AdditionalProperties` object in the JSON file.*
 
-### Configuration Options
+## Features
 
-The following properties can be set. The primary properties on `ProviderConfig` (`Endpoint`, `ApiKey`) are checked first, followed by `AdditionalProperties`, and finally environment variables.
+- Streaming and non-streaming completions
+- Function calling (tools)
+- JSON mode and structured outputs
+- Deterministic generation with seed
+- Sampling parameter control
+- Comprehensive error handling with retry logic
 
-| Key         | Type   | Description                                                                                                |
-|-------------|--------|------------------------------------------------------------------------------------------------------------|
-| `Endpoint`  | string | **Required.** The unified endpoint for the Azure AI resource. Can also be set via the `AZURE_AI_INFERENCE_ENDPOINT` environment variable. |
-| `ApiKey`    | string | **Required.** The API key for the Azure AI resource. Can also be set via the `AZURE_AI_INFERENCE_API_KEY` environment variable. |
+## Configuration Options
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithAzureAIInference(
+        endpoint: "https://your-resource.inference.ai.azure.com",
+        model: "llama-3-8b",
+        apiKey: "your-api-key",
+        configure: opts =>
+        {
+            opts.MaxTokens = 2048;
+            opts.Temperature = 0.7f;
+            opts.TopP = 0.9f;
+            opts.Seed = 12345;
+        })
+    .Build();
+```
+
+## Limitations
+
+- Not compatible with Native AOT deployments (SDK limitation)
+
+## Migration
+
+For Azure AI Foundry endpoints, migrate to `HPD-Agent.Providers.AzureAI`:
+
+```csharp
+using HPD.Agent.Providers.AzureAI;
+
+var agent = await new AgentBuilder()
+    .WithAzureAI(
+        endpoint: "https://your-account.services.ai.azure.com/api/projects/your-project",
+        model: "gpt-4",
+        configure: opts => opts.UseDefaultAzureCredential = true)
+    .Build();
+```
+
+## Documentation
+
+- [Azure AI Inference Documentation](https://learn.microsoft.com/en-us/azure/ai-studio/how-to/deploy-models-inference)
+- [HPD-Agent Documentation](../../README.md)

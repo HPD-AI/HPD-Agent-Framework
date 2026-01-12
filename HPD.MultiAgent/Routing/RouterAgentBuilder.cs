@@ -7,11 +7,11 @@ namespace HPD.MultiAgent.Routing;
 /// </summary>
 public class RouterAgentBuilder
 {
-    private readonly AgentWorkflowBuilder _workflowBuilder;
+    private readonly MultiAgent _workflowBuilder;
     private readonly string _routerNodeId;
     private readonly Dictionary<string, string> _handoffTargets = new();
 
-    internal RouterAgentBuilder(AgentWorkflowBuilder workflowBuilder, string routerNodeId)
+    internal RouterAgentBuilder(MultiAgent workflowBuilder, string routerNodeId)
     {
         _workflowBuilder = workflowBuilder;
         _routerNodeId = routerNodeId;
@@ -94,7 +94,7 @@ public class RouterAgentBuilder
     /// <summary>
     /// Add another agent to the workflow.
     /// </summary>
-    public AgentWorkflowBuilder AddAgent(
+    public MultiAgent AddAgent(
         string id,
         HPD.Agent.AgentConfig config,
         Action<AgentNodeOptions>? configure = null)

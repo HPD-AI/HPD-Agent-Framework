@@ -1,6 +1,6 @@
 # Multi-Agent Quant Workflow - Usage Guide
 
-## ✅ You're All Set!
+##  You're All Set!
 
 The multi-agent consensus workflow is now integrated into your console app.
 
@@ -41,7 +41,7 @@ Answers received:
 
 Verifying consensus...
 
-✅ CONSENSUS REACHED (Round 1)!
+ CONSENSUS REACHED (Round 1)!
 
 Final Answer: The expected value is 7
 ```
@@ -68,7 +68,7 @@ Answers received:
 
 Verifying consensus...
 
-✅ CONSENSUS REACHED (Round 1)!
+ CONSENSUS REACHED (Round 1)!
 
 Final Answer: 36
 ```
@@ -77,7 +77,7 @@ Final Answer: 36
 
 | Feature | `/quant` (Simple) | `/quant-graph` (Graph) |
 |---------|-------------------|------------------------|
-| Uses HPD.Graph | ❌ | ✅ |
+| Uses HPD.Graph | |  |
 | Parallel Execution | Manual `Task.WhenAll()` | Automatic graph layers |
 | Conditional Routing | `if/else` | `EdgeCondition` |
 | Feedback Loop | `while` loop | Cyclic graph edges |
@@ -134,43 +134,43 @@ Final Answer: 36
 ## ⚡ Features
 
 ### Consensus Detection
-- ✅ All 3 agents must agree on the final answer
-- ✅ Strict verification (same numerical result required)
-- ✅ Minor wording differences are OK
+-  All 3 agents must agree on the final answer
+-  Strict verification (same numerical result required)
+-  Minor wording differences are OK
 
 ### Automatic Retry
-- ✅ Up to 3 retry attempts on disagreement
-- ✅ Feedback includes specific differences found
-- ✅ Agents reconsider their approach based on feedback
+-  Up to 3 retry attempts on disagreement
+-  Feedback includes specific differences found
+-  Agents reconsider their approach based on feedback
 
 ### No Session Required
-- ✅ Completely stateless - each run is independent
-- ✅ No session persistence needed
-- ✅ No cleanup required
+-  Completely stateless - each run is independent
+-  No session persistence needed
+-  No cleanup required
 
 ## 🎨 Output Examples
 
 ### Successful Consensus (Round 1)
 ```
-✅ CONSENSUS REACHED (Round 1)!
+ CONSENSUS REACHED (Round 1)!
 Final Answer: 7
 ```
 
 ### Disagreement with Retry
 ```
-⚠️  Disagreement detected (Attempt 1/3)
+ Disagreement detected (Attempt 1/3)
 Feedback: Solver 2 calculated 24 while others got 36
 Retrying with feedback...
 
 [Retry happens automatically]
 
-✅ CONSENSUS REACHED (Round 2)!
+ CONSENSUS REACHED (Round 2)!
 Final Answer: 36
 ```
 
 ### Max Retries Exceeded
 ```
-❌ Max retries (3) exceeded - no consensus
+Max retries (3) exceeded - no consensus
 Final Answer: Unable to reach consensus after 3 attempts
 ```
 
@@ -189,14 +189,14 @@ To change these, edit the workflow files:
 ## 📝 Notes
 
 ### Events
-- ✅ Graph automatically emits events via HPD.Events
-- ✅ No event handling required (console output is enough)
-- ✅ Can add event observers if you want progress tracking
+-  Graph automatically emits events via HPD.Events
+-  No event handling required (console output is enough)
+-  Can add event observers if you want progress tracking
 
 ### Sessions
-- ✅ Both workflows are **stateless**
-- ✅ No session needed - each run is independent
-- ✅ Your main agent still uses sessions normally
+-  Both workflows are **stateless**
+-  No session needed - each run is independent
+-  Your main agent still uses sessions normally
 
 ### Performance
 - ⚡ 3 solvers run **in parallel** (not sequential)

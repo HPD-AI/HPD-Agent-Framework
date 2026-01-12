@@ -201,13 +201,14 @@ public class TypedContextTests
             "conv123",
             "TestAgent");
 
-        var eventCoordinator = new BidirectionalEventCoordinator();
+        var eventCoordinator = new HPD.Events.Core.EventCoordinator();
 
         return new AgentContext(
             "TestAgent",
             "conv123",
             state,
             eventCoordinator,
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 }

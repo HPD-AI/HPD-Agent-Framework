@@ -1,15 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Anthropic.SDK;
-using Anthropic.SDK.Messaging;
+using Anthropic;
+using Anthropic.Models.Messages;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
-
-// Aliases to avoid namespace conflicts
-using AnthropicChatOptionsExtensions = Anthropic.SDK.Extensions.ChatOptionsExtensions;
-using AnthropicSkill = Anthropic.SDK.Messaging.Skill;
 
 namespace HPD.Agent.Providers.Anthropic;
 
@@ -23,127 +19,40 @@ internal class AnthropicProvider : IProviderFeatures
         if (string.IsNullOrEmpty(config.ApiKey))
             throw new ArgumentException("Anthropic requires an API key");
 
-        var anthropicClient = new AnthropicClient(config.ApiKey);
-        var chatClient = anthropicClient.Messages;
-
-        // Apply provider-specific configuration if present
-        var anthropicConfig = config.GetTypedProviderConfig<AnthropicProviderConfig>();
-        if (anthropicConfig != null)
+        // Create the official Anthropic client
+        var anthropicClient = new AnthropicClient
         {
-            ApplyProviderConfig(config, anthropicConfig);
+            APIKey = config.ApiKey,
+            BaseUrl = config.Endpoint ?? "https://api.anthropic.com"
+        };
+
+        // Get config for max tokens
+        var anthropicConfig = config.GetTypedProviderConfig<AnthropicProviderConfig>();
+        var maxTokens = anthropicConfig?.MaxTokens ?? 4096;
+
+        // Use the SDK's built-in AsIChatClient extension method
+        IChatClient chatClient = anthropicClient.AsIChatClient(config.ModelName, maxTokens);
+
+        // Wrap with schema-fixing client to work around Anthropic SDK bug
+        // The SDK has a bug where tool schemas are malformed (properties at top level
+        // instead of nested under "properties" key). Our wrapper intercepts tools and
+        // creates properly formatted Tool objects that bypass the buggy transformation.
+        // See AnthropicSchemaFixingChatClient.cs for details.
+        chatClient = new AnthropicSchemaFixingChatClient(chatClient);
+
+        // Note: Most configuration (temperature, topP, thinking, etc.) is applied
+        // via ChatOptions when calling CompleteAsync/CompleteChatAsync.
+        // The AnthropicProviderConfig is stored and can be accessed to build ChatOptions
+        // with RawRepresentationFactory for advanced features.
+
+        // Apply client factory middleware if provided
+        if (config.AdditionalProperties?.TryGetValue("ClientFactory", out var factoryObj) == true &&
+            factoryObj is Func<IChatClient, IChatClient> clientFactory)
+        {
+            chatClient = clientFactory(chatClient);
         }
 
         return chatClient;
-    }
-
-    /// <summary>
-    /// Applies AnthropicProviderConfig to the ProviderConfig's DefaultChatOptions.
-    /// This is called during CreateChatClient to configure Anthropic-specific features.
-    /// </summary>
-    private void ApplyProviderConfig(ProviderConfig config, AnthropicProviderConfig anthropicConfig)
-    {
-        var chatOptions = config.DefaultChatOptions ?? new ChatOptions();
-
-        // Apply sampling parameters
-        if (anthropicConfig.MaxTokens > 0)
-            chatOptions.MaxOutputTokens = anthropicConfig.MaxTokens;
-
-        if (anthropicConfig.Temperature.HasValue)
-            chatOptions.Temperature = anthropicConfig.Temperature.Value;
-
-        if (anthropicConfig.TopP.HasValue)
-            chatOptions.TopP = anthropicConfig.TopP.Value;
-
-        if (anthropicConfig.StopSequences is { Count: > 0 })
-            chatOptions.StopSequences = anthropicConfig.StopSequences;
-
-        // Apply extended thinking if configured
-        if (anthropicConfig.ThinkingBudgetTokens.HasValue)
-        {
-            var thinkingParams = new ThinkingParameters
-            {
-                BudgetTokens = anthropicConfig.ThinkingBudgetTokens.Value,
-                UseInterleavedThinking = anthropicConfig.UseInterleavedThinking
-            };
-
-            chatOptions = anthropicConfig.UseInterleavedThinking
-                ? AnthropicChatOptionsExtensions.WithInterleavedThinking(chatOptions, thinkingParams)
-                : AnthropicChatOptionsExtensions.WithThinking(chatOptions, thinkingParams);
-        }
-
-        // Build additional properties for Anthropic-specific features
-        var additionalProps = config.AdditionalProperties ?? new Dictionary<string, object>();
-
-        // Prompt caching
-        if (anthropicConfig.EnablePromptCaching)
-        {
-            additionalProps["PromptCachingType"] = anthropicConfig.PromptCacheType;
-        }
-
-        // Top-K (Anthropic-specific)
-        if (anthropicConfig.TopK.HasValue)
-        {
-            additionalProps["TopK"] = anthropicConfig.TopK.Value;
-        }
-
-        // Service tier
-        if (!string.IsNullOrEmpty(anthropicConfig.ServiceTier))
-        {
-            additionalProps["ServiceTier"] = anthropicConfig.ServiceTier;
-        }
-
-        // Claude Skills (Anthropic's document processing)
-        if (anthropicConfig.ClaudeSkills is { Count: > 0 })
-        {
-            var container = new Container
-            {
-                Id = anthropicConfig.ContainerId,
-                Skills = new List<AnthropicSkill>()
-            };
-
-            foreach (var skillId in anthropicConfig.ClaudeSkills)
-            {
-                container.Skills.Add(new AnthropicSkill
-                {
-                    Type = "anthropic",
-                    SkillId = skillId,
-                    Version = "latest"
-                });
-            }
-
-            additionalProps["Container"] = container;
-        }
-        else if (!string.IsNullOrEmpty(anthropicConfig.ContainerId))
-        {
-            // Reuse existing container without skills
-            additionalProps["Container"] = new Container { Id = anthropicConfig.ContainerId };
-        }
-
-        // MCP Servers
-        if (anthropicConfig.MCPServers is { Count: > 0 })
-        {
-            var mcpServers = new List<MCPServer>();
-            foreach (var serverConfig in anthropicConfig.MCPServers)
-            {
-                mcpServers.Add(new MCPServer
-                {
-                    Url = serverConfig.Url,
-                    Name = serverConfig.Name,
-                    AuthorizationToken = serverConfig.AuthorizationToken,
-                    ToolConfiguration = serverConfig.AllowedTools is { Count: > 0 }
-                        ? new MCPToolConfiguration { Enabled = true, AllowedTools = serverConfig.AllowedTools }
-                        : null
-                });
-            }
-            additionalProps["MCPServers"] = mcpServers;
-        }
-
-        // Update the config
-        config.DefaultChatOptions = chatOptions;
-        if (additionalProps.Count > 0)
-        {
-            config.AdditionalProperties = additionalProps;
-        }
     }
 
     public IProviderErrorHandler CreateErrorHandler()
@@ -172,6 +81,29 @@ internal class AnthropicProvider : IProviderFeatures
 
         if (string.IsNullOrEmpty(config.ModelName))
             return ProviderValidationResult.Failure("Model name is required");
+
+        // Validate Anthropic-specific config if present
+        var anthropicConfig = config.GetTypedProviderConfig<AnthropicProviderConfig>();
+        if (anthropicConfig != null)
+        {
+            if (anthropicConfig.ThinkingBudgetTokens.HasValue && anthropicConfig.ThinkingBudgetTokens.Value < 1024)
+            {
+                return ProviderValidationResult.Failure("Thinking budget tokens must be at least 1024");
+            }
+
+            if (anthropicConfig.MaxTokens <= 0)
+            {
+                return ProviderValidationResult.Failure("MaxTokens must be greater than 0");
+            }
+
+            if (anthropicConfig.EnablePromptCaching && anthropicConfig.PromptCacheTTLMinutes.HasValue)
+            {
+                if (anthropicConfig.PromptCacheTTLMinutes < 1 || anthropicConfig.PromptCacheTTLMinutes > 60)
+                {
+                    return ProviderValidationResult.Failure("PromptCacheTTLMinutes must be between 1 and 60 minutes");
+                }
+            }
+        }
 
         return ProviderValidationResult.Success();
     }

@@ -747,3 +747,34 @@ public static partial class NativeExports
     // - Provider discovery and management
     //    
 }
+
+/// <summary>
+/// Native P/Invoke declarations for Apple Intelligence advanced features.
+/// These map to Swift functions in HPDIntelligence framework.
+/// </summary>
+public static partial class AppleIntelligenceFFI
+{
+    private const string NativeDll = "HPDIntelligence";
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    public static extern int AppleIntelligenceSupportsUseCase(string useCase);
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.LPStr)]
+    public static extern string AppleIntelligenceAvailableUseCases();
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.LPStr)]
+    public static extern string AppleIntelligenceAvailableGuardrailCategories();
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.LPStr)]
+    public static extern string AppleIntelligenceCreateGuardrailsConfig(string disallowedCategory);
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    [return: MarshalAs(UnmanagedType.LPStr)]
+    public static extern string AppleIntelligenceAvailableAdapters();
+
+    [DllImport(NativeDll, CharSet = CharSet.Ansi)]
+    public static extern int AppleIntelligenceAdapterIsAvailable(string adapterId);
+}

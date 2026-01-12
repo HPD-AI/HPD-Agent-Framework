@@ -1,10 +1,12 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using HPD.Agent.Providers;
 
 namespace HPD.Agent.Providers.OpenAI;
 
 /// <summary>
 /// Auto-discovers and registers OpenAI providers on assembly load.
+/// Also registers the provider-specific config type for FFI/JSON serialization.
 /// </summary>
 public static class OpenAIProviderModule
 {
@@ -13,8 +15,20 @@ public static class OpenAIProviderModule
 #pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     public static void Initialize()
     {
-        // Register with the global discovery registry
+        // Register provider factories
         ProviderDiscovery.RegisterProviderFactory(() => new OpenAIProvider());
         ProviderDiscovery.RegisterProviderFactory(() => new AzureOpenAIProvider());
+
+        // Register config type for FFI/JSON serialization (AOT-compatible)
+        // Both OpenAI and Azure OpenAI use the same config type
+        ProviderDiscovery.RegisterProviderConfigType<OpenAIProviderConfig>(
+            "openai",
+            json => JsonSerializer.Deserialize(json, OpenAIJsonContext.Default.OpenAIProviderConfig),
+            config => JsonSerializer.Serialize(config, OpenAIJsonContext.Default.OpenAIProviderConfig));
+
+        ProviderDiscovery.RegisterProviderConfigType<OpenAIProviderConfig>(
+            "azure-openai",
+            json => JsonSerializer.Deserialize(json, OpenAIJsonContext.Default.OpenAIProviderConfig),
+            config => JsonSerializer.Serialize(config, OpenAIJsonContext.Default.OpenAIProviderConfig));
     }
 }

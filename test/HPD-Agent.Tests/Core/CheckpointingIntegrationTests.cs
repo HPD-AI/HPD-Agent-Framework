@@ -3,6 +3,7 @@ using Xunit;
 using HPD.Agent;
 using HPD.Agent;
 using HPD.Agent.Tests.Infrastructure;
+using CollapsingStateData = HPD.Agent.ContainerMiddlewareState;
 
 namespace HPD.Agent.Tests.Core;
 
@@ -127,7 +128,9 @@ public class CheckpointingIntegrationTests : AgentTestBase
             "TestAgent")
             .NextIteration() with
             {
-                MiddlewareState = new MiddlewareState().WithCollapsing(CollapsingState)
+                MiddlewareState = new MiddlewareState().SetState(
+                    "HPD.Agent.ContainerMiddlewareState",
+                    CollapsingState)
             };
         thread.ExecutionState = state;
 

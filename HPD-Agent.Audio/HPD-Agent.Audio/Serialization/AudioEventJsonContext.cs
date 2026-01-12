@@ -51,8 +51,8 @@ namespace HPD.Agent.Audio.Serialization;
 [JsonSerializable(typeof(TurnDetectionStrategy))]
 [JsonSerializable(typeof(BackchannelStrategy))]
 
-// Audio Options
-[JsonSerializable(typeof(AudioRunOptions))]
+// Audio Configuration
+[JsonSerializable(typeof(AudioConfig))]
 
 // Common types
 [JsonSerializable(typeof(TimeSpan))]

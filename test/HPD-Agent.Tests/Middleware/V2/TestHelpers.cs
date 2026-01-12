@@ -23,7 +23,8 @@ public static class MiddlewareTestHelpers
         string agentName = "TestAgent",
         string? conversationId = "test-conv",
         AgentLoopState? state = null,
-        IEventCoordinator? eventCoordinator = null,
+        HPD.Events.IEventCoordinator? eventCoordinator = null,
+        AgentSession? session = null,
         CancellationToken cancellationToken = default)
     {
         state ??= AgentLoopState.Initial(
@@ -32,13 +33,15 @@ public static class MiddlewareTestHelpers
             conversationId ?? "test-conv",
             agentName);
 
-        eventCoordinator ??= new BidirectionalEventCoordinator();
+        eventCoordinator ??= new HPD.Events.Core.EventCoordinator();
+        session ??= new AgentSession(conversationId ?? "test-session");
 
         return new AgentContext(
             agentName,
             conversationId,
             state,
             eventCoordinator,
+            session,
             cancellationToken);
     }
 

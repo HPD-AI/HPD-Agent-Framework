@@ -4,8 +4,8 @@ using System.Text.Json.Serialization;
 namespace HPD.Agent.Providers.Anthropic;
 
 /// <summary>
-/// Anthropic-specific provider configuration.
-/// Used for FFI/JSON configuration and C# builder extensions.
+/// Anthropic-specific provider configuration based on the official Anthropic SDK.
+/// These options map directly to MessageCreateParams in the official SDK.
 ///
 /// JSON Example:
 /// <code>
@@ -14,157 +14,114 @@ namespace HPD.Agent.Providers.Anthropic;
 ///     "ProviderKey": "anthropic",
 ///     "ModelName": "claude-sonnet-4-5-20250929",
 ///     "ApiKey": "sk-ant-...",
-///     "ProviderOptionsJson": "{\"ThinkingBudgetTokens\":4096,\"EnablePromptCaching\":true,\"ClaudeSkills\":[\"pdf\",\"xlsx\"]}"
+///     "ProviderOptionsJson": "{\"thinkingBudgetTokens\":4096,\"serviceTier\":\"auto\"}"
 ///   }
 /// }
 /// </code>
 /// </summary>
 public class AnthropicProviderConfig
 {
-    //     
-    // SAMPLING PARAMETERS
-    //     
+    //
+    // CORE PARAMETERS
+    //
 
     /// <summary>
-    /// Maximum output tokens. Default: 4096.
+    /// Maximum number of tokens to generate. Default: 4096.
+    /// Different models have different maximum values.
+    /// See https://docs.anthropic.com/en/docs/models-overview for details.
     /// </summary>
     [JsonPropertyName("maxTokens")]
     public int MaxTokens { get; set; } = 4096;
 
+    //
+    // SAMPLING PARAMETERS
+    //
+
     /// <summary>
-    /// Sampling temperature (0.0 to 1.0). Lower = more deterministic.
+    /// Amount of randomness injected into the response.
+    /// Ranges from 0.0 to 1.0. Defaults to 1.0.
+    /// Use temperature closer to 0.0 for analytical tasks, and closer to 1.0 for creative tasks.
+    /// Maps to MessageCreateParams.Temperature.
     /// </summary>
     [JsonPropertyName("temperature")]
-    public float? Temperature { get; set; }
+    public double? Temperature { get; set; }
 
     /// <summary>
-    /// Nucleus sampling parameter. Alternative to temperature.
+    /// Use nucleus sampling. Compute the cumulative distribution over all options
+    /// for each subsequent token in decreasing probability order and cut it off
+    /// once it reaches a particular probability specified by top_p.
+    /// You should either alter temperature or top_p, but not both.
+    /// Maps to MessageCreateParams.TopP.
     /// </summary>
     [JsonPropertyName("topP")]
-    public float? TopP { get; set; }
+    public double? TopP { get; set; }
 
     /// <summary>
-    /// Top-K sampling parameter (Anthropic-specific). Only sample from top K tokens.
+    /// Only sample from the top K options for each subsequent token.
+    /// Used to remove "long tail" low probability responses.
+    /// Anthropic-specific parameter.
+    /// Maps to MessageCreateParams.TopK.
     /// </summary>
     [JsonPropertyName("topK")]
-    public int? TopK { get; set; }
+    public long? TopK { get; set; }
 
     /// <summary>
-    /// Stop sequences that will halt generation.
+    /// Custom text sequences that will cause the model to stop generating.
+    /// If the model encounters one of these sequences, the response stop_reason
+    /// will be "stop_sequence".
+    /// Maps to MessageCreateParams.StopSequences.
     /// </summary>
     [JsonPropertyName("stopSequences")]
     public List<string>? StopSequences { get; set; }
 
-    //     
+    //
     // EXTENDED THINKING
-    //     
+    //
 
     /// <summary>
     /// Enable extended thinking mode by setting the token budget.
-    /// Extended thinking allows Claude to "think" before responding, improving reasoning quality.
-    /// Beneficial for complex reasoning, math problems, multi-step planning, and code analysis.
-    /// Note: Thinking tokens count toward your token usage and billing.
+    /// When enabled, responses include thinking content blocks showing Claude's
+    /// thinking process before the final answer.
+    /// Must be >= 1024 and less than max_tokens.
+    /// Maps to MessageCreateParams.Thinking with ThinkingConfigEnabled.
+    /// See https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
     /// </summary>
     [JsonPropertyName("thinkingBudgetTokens")]
-    public int? ThinkingBudgetTokens { get; set; }
+    public long? ThinkingBudgetTokens { get; set; }
+
+    //
+    // SERVICE TIER
+    //
 
     /// <summary>
-    /// Use interleaved thinking mode (allows thinking tokens to exceed max_tokens).
-    /// Only works with Claude 4+ models on direct API or supported platforms.
-    /// Requires ThinkingBudgetTokens to be set.
+    /// Service tier for request prioritization.
+    /// Values: "auto" (default), "standard_only"
+    /// - auto: Use priority capacity if available, otherwise standard
+    /// - standard_only: Only use standard capacity
+    /// Maps to MessageCreateParams.ServiceTier.
+    /// See https://docs.anthropic.com/en/api/service-tiers
     /// </summary>
-    [JsonPropertyName("useInterleavedThinking")]
-    public bool UseInterleavedThinking { get; set; }
+    [JsonPropertyName("serviceTier")]
+    public string? ServiceTier { get; set; }
 
-    //     
+    //
     // PROMPT CACHING
-    //     
+    //
 
     /// <summary>
-    /// Enable prompt caching to reduce costs on repeated prompts (up to 90% savings).
+    /// Enable prompt caching to reduce costs on repeated prompts.
+    /// Prompt caching allows you to cache large contexts (like long documents or extensive code)
+    /// and reuse them across multiple API calls, reducing costs by up to 90% for cached content.
+    /// See https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
     /// </summary>
     [JsonPropertyName("enablePromptCaching")]
     public bool EnablePromptCaching { get; set; }
 
     /// <summary>
-    /// Type of prompt caching when EnablePromptCaching is true.
-    /// Values: "AutomaticToolsAndSystem", "FineGrained"
-    /// Default: "AutomaticToolsAndSystem" (caches system prompts and tool definitions).
+    /// Cache time-to-live in minutes. Default is 5 minutes.
+    /// Cached content expires after this duration of inactivity.
+    /// Valid range: 1-60 minutes.
     /// </summary>
-    [JsonPropertyName("promptCacheType")]
-    public string PromptCacheType { get; set; } = "AutomaticToolsAndSystem";
-
-    //     
-    // CLAUDE SKILLS (Anthropic's built-in document processing)
-    //     
-
-    /// <summary>
-    /// Claude Skills to enable (Anthropic's built-in server-side document processing).
-    /// Available skills: "pdf", "xlsx", "pptx", "docx".
-    /// Note: This is different from HPD-Agent's skill system.
-    /// </summary>
-    [JsonPropertyName("claudeSkills")]
-    public List<string>? ClaudeSkills { get; set; }
-
-    /// <summary>
-    /// Container ID to reuse an existing container from a previous request.
-    /// Containers maintain state across requests.
-    /// </summary>
-    [JsonPropertyName("containerId")]
-    public string? ContainerId { get; set; }
-
-    //     
-    // MCP SERVERS (Anthropic's native MCP support)
-    //     
-
-    /// <summary>
-    /// MCP (Model Context Protocol) servers for Claude to use.
-    /// Anthropic natively supports MCP servers via API integration.
-    /// </summary>
-    [JsonPropertyName("mcpServers")]
-    public List<AnthropicMCPServerConfig>? MCPServers { get; set; }
-
-    //     
-    // SERVICE TIER
-    //     
-
-    /// <summary>
-    /// Service tier for request prioritization.
-    /// Values: "Standard", "Priority", "Batch"
-    /// - Standard: Default tier, fair queuing
-    /// - Priority: Higher priority, lower latency (may have additional cost)
-    /// - Batch: For non-time-sensitive requests (lower cost)
-    /// </summary>
-    [JsonPropertyName("serviceTier")]
-    public string? ServiceTier { get; set; }
-}
-
-/// <summary>
-/// Configuration for an MCP server to connect to Claude (FFI-serializable).
-/// </summary>
-public class AnthropicMCPServerConfig
-{
-    /// <summary>
-    /// URL of the MCP server. Required.
-    /// </summary>
-    [JsonPropertyName("url")]
-    public string Url { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Name identifier for the server. Required.
-    /// </summary>
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional authorization token for the MCP server.
-    /// </summary>
-    [JsonPropertyName("authorizationToken")]
-    public string? AuthorizationToken { get; set; }
-
-    /// <summary>
-    /// Optional list of allowed tool names. If null, all tools are allowed.
-    /// </summary>
-    [JsonPropertyName("allowedTools")]
-    public List<string>? AllowedTools { get; set; }
+    [JsonPropertyName("promptCacheTTLMinutes")]
+    public int? PromptCacheTTLMinutes { get; set; }
 }

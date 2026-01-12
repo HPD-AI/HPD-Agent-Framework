@@ -76,3 +76,18 @@ public enum BackchannelStrategy
     /// <summary>Ignore known backchannels ("uh-huh", "yeah", etc.).</summary>
     IgnoreKnownBackchannels
 }
+
+/// <summary>
+/// Strategy for selecting filler audio phrases.
+/// </summary>
+public enum FillerStrategy
+{
+    /// <summary>Random selection from available phrases.</summary>
+    Random,
+
+    /// <summary>Round-robin through phrases in order.</summary>
+    RoundRobin,
+
+    /// <summary>Select based on duration (shortest first for quick responses).</summary>
+    ShortestFirst
+}

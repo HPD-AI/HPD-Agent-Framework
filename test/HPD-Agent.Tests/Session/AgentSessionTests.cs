@@ -234,37 +234,6 @@ public class AgentSessionTests : AgentTestBase
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - SERVICE THREAD ID
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AgentSession_ServiceThreadId_GetSet()
-    {
-        // Arrange
-        var session = new AgentSession();
-
-        // Act
-        session.ServiceThreadId = "thread_abc123";
-
-        // Assert
-        Assert.Equal("thread_abc123", session.ServiceThreadId);
-    }
-
-    [Fact]
-    public void AgentSession_ServiceThreadId_NullOrWhitespace_SetsNull()
-    {
-        // Arrange
-        var session = new AgentSession();
-        session.ServiceThreadId = "thread_abc123";
-
-        // Act
-        session.ServiceThreadId = "";
-
-        // Assert
-        Assert.Null(session.ServiceThreadId);
-    }
-
-    //──────────────────────────────────────────────────────────────────
     // AGENTSESSION - EXECUTION STATE
     //──────────────────────────────────────────────────────────────────
 
@@ -402,7 +371,6 @@ public class AgentSessionTests : AgentTestBase
         var original = new AgentSession("original-session");
         original.AddMessage(UserMessage("Test message"));
         original.AddMetadata("testKey", "testValue");
-        original.ServiceThreadId = "thread_123";
         original.ConversationId = "conv_456";
 
         var snapshot = original.ToSnapshot();
@@ -414,60 +382,8 @@ public class AgentSessionTests : AgentTestBase
         Assert.Equal("original-session", restored.Id);
         Assert.Single(restored.Messages);
         Assert.Equal("testValue", restored.Metadata["testKey"]);
-        Assert.Equal("thread_123", restored.ServiceThreadId);
         Assert.Equal("conv_456", restored.ConversationId);
         Assert.Null(restored.ExecutionState); // Snapshots don't include ExecutionState
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - LEGACY CHECKPOINT CONVERSION (DEPRECATED)
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AgentSession_ToCheckpoint_Legacy_StillWorks()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMetadata("key", "value");
-        session.ExecutionState = AgentLoopState.Initial(
-            session.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        // Act
-        #pragma warning disable CS0618 // Suppress obsolete warning for testing
-        var checkpoint = session.ToCheckpoint();
-        #pragma warning restore CS0618
-
-        // Assert
-        Assert.Equal("session-123", checkpoint.SessionId);
-        Assert.Single(checkpoint.Messages);
-        Assert.Equal("value", checkpoint.Metadata["key"]);
-        Assert.NotNull(checkpoint.ExecutionState);
-    }
-
-    [Fact]
-    public void AgentSession_FromCheckpoint_Legacy_RestoresSession()
-    {
-        // Arrange
-        var original = new AgentSession("original-session");
-        original.AddMessage(UserMessage("Test message"));
-        original.AddMetadata("testKey", "testValue");
-        original.ServiceThreadId = "thread_123";
-        original.ConversationId = "conv_456";
-        original.ExecutionState = AgentLoopState.Initial(
-            original.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        #pragma warning disable CS0618 // Suppress obsolete warning for testing
-        var checkpoint = original.ToCheckpoint();
-
-        // Act
-        var restored = AgentSession.FromCheckpoint(checkpoint);
-        #pragma warning restore CS0618
-
-        // Assert
-        Assert.Equal("original-session", restored.Id);
-        Assert.Single(restored.Messages);
-        Assert.NotNull(restored.ExecutionState);
     }
 
     //──────────────────────────────────────────────────────────────────
@@ -529,6 +445,92 @@ public class AgentSessionTests : AgentTestBase
         // Assert: Messages exist ONLY in ExecutionState.CurrentMessages
         // There's no separate Messages property on ExecutionCheckpoint
         Assert.Equal(2, checkpoint.ExecutionState.CurrentMessages.Count);
+    }
+
+    //──────────────────────────────────────────────────────────────────
+    // SESSION.STORE PROPERTY
+    //──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AgentSession_Store_DefaultsToNull()
+    {
+        // Arrange & Act
+        var session = new AgentSession();
+
+        // Assert
+        Assert.Null(session.Store);
+    }
+
+    [Fact]
+    public void AgentSession_Store_CanBeSet()
+    {
+        // Arrange
+        var session = new AgentSession();
+        var store = new InMemorySessionStore();
+
+        // Act
+        session.Store = store;
+
+        // Assert
+        Assert.Same(store, session.Store);
+    }
+
+    [Fact]
+    public void AgentSession_Store_NotSerializedToJson()
+    {
+        // Arrange
+        var session = new AgentSession("test-session");
+        session.AddMessage(UserMessage("Hello"));
+        session.AddMetadata("key", "value");
+
+        // Set a store reference
+        var store = new InMemorySessionStore();
+        session.Store = store;
+
+        // Act - Convert to snapshot and serialize
+        var snapshot = session.ToSnapshot();
+        var json = System.Text.Json.JsonSerializer.Serialize(snapshot);
+
+        // Assert - JSON should NOT contain "Store" property
+        Assert.DoesNotContain("\"Store\"", json);
+        Assert.DoesNotContain("\"store\"", json, StringComparison.OrdinalIgnoreCase);
+
+        // Deserialize and verify
+        var deserialized = System.Text.Json.JsonSerializer.Deserialize<SessionSnapshot>(json);
+        Assert.NotNull(deserialized);
+        Assert.Equal("test-session", deserialized.SessionId);
+    }
+
+    [Fact]
+    public async Task AgentSession_SaveAsync_ThrowsWhenStoreIsNull()
+    {
+        // Arrange
+        var session = new AgentSession();
+
+        // Act & Assert
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await session.SaveAsync());
+
+        Assert.Contains("no associated store", exception.Message);
+    }
+
+    [Fact]
+    public async Task AgentSession_SaveAsync_CallsStoreWhenSet()
+    {
+        // Arrange
+        var session = new AgentSession("test-session");
+        session.AddMessage(UserMessage("Test"));
+
+        var store = new InMemorySessionStore();
+        session.Store = store;
+
+        // Act
+        await session.SaveAsync();
+
+        // Assert - Session should be saved to store
+        var loaded = await store.LoadSessionAsync("test-session");
+        Assert.NotNull(loaded);
+        Assert.Single(loaded.Messages);
     }
 
 }

@@ -328,8 +328,8 @@ public class ThreadSafetyTests
     private static AgentContext CreateTestContext()
     {
         var initialState = CreateTestState();
-        var eventCoordinator = new BidirectionalEventCoordinator();
-        return new AgentContext("TestAgent", null, initialState, eventCoordinator, CancellationToken.None);
+        var eventCoordinator = new HPD.Events.Core.EventCoordinator();
+        return new AgentContext("TestAgent", null, initialState, eventCoordinator, new AgentSession("test-session"), CancellationToken.None);
     }
 
     private static AgentLoopState CreateTestState()

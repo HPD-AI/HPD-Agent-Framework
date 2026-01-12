@@ -520,7 +520,8 @@ public class AgentMiddlewarePipelineTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

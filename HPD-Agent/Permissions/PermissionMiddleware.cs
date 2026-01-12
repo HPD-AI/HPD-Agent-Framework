@@ -158,6 +158,11 @@ public class PermissionMiddleware : IAgentMiddleware
         CancellationToken cancellationToken)
     {
         var function = context.Function;
+        
+        // Guard against null function
+        if (function == null)
+            return;
+        
         var functionName = function.Name;
 
         // Check if permission is required (attribute + overrides)

@@ -94,7 +94,7 @@ public class ErrorHandlingConvenienceMethodTest
 
         // Assert
         Assert.Single(builder.Middlewares);
-        Assert.IsType<HPD.Agent.Middleware.Function.FunctionRetryMiddleware>(builder.Middlewares[0]);
+        Assert.IsType<HPD.Agent.Middleware.Function.RetryMiddleware>(builder.Middlewares[0]);
     }
 
     [Fact]
@@ -152,7 +152,7 @@ public class ErrorHandlingConvenienceMethodTest
         Assert.IsType<TotalErrorThresholdMiddleware>(builder.Middlewares[2]);
 
         // Function-level middleware (last 3 - onion pattern)
-        Assert.IsType<HPD.Agent.Middleware.Function.FunctionRetryMiddleware>(builder.Middlewares[3]);
+        Assert.IsType<HPD.Agent.Middleware.Function.RetryMiddleware>(builder.Middlewares[3]);
         Assert.IsType<HPD.Agent.Middleware.Function.FunctionTimeoutMiddleware>(builder.Middlewares[4]);
         Assert.IsType<HPD.Agent.Middleware.Function.ErrorFormattingMiddleware>(builder.Middlewares[5]);
     }

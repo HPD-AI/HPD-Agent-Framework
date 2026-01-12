@@ -12,13 +12,14 @@ namespace HPD.Agent;
 /// <strong>Directory Structure:</strong>
 /// <code>
 /// {basePath}/
-/// ├── sessions/
-/// │   └── {sessionId}.json            # SessionSnapshot (~20KB)
-/// ├── checkpoints/
-/// │   └── {sessionId}/
-/// │       └── {checkpointId}.json     # ExecutionCheckpoint (~100KB)
-/// └── pending/
-///     └── {sessionId}_{checkpointId}.json
+/// ├── {sessionId}/
+/// │   ├── session.json                # SessionSnapshot (~20KB)
+/// │   ├── checkpoints/
+/// │   │   └── {checkpointId}.json     # ExecutionCheckpoint (~100KB)
+/// │   ├── pending/
+/// │   │   └── {checkpointId}.json     # PendingWrites
+/// │   └── assets/
+/// │       └── {assetId}.ext           # Binary assets
 /// </code>
 /// </para>
 /// <para>
@@ -30,9 +31,6 @@ namespace HPD.Agent;
 public class JsonSessionStore : ISessionStore
 {
     private readonly string _basePath;
-    private readonly string _sessionsPath;
-    private readonly string _checkpointsPath;
-    private readonly string _pendingPath;
     private readonly object _lock = new();
 
     /// <inheritdoc />
@@ -48,14 +46,7 @@ public class JsonSessionStore : ISessionStore
     public JsonSessionStore(string basePath)
     {
         _basePath = basePath ?? throw new ArgumentNullException(nameof(basePath));
-
-        _sessionsPath = Path.Combine(_basePath, "sessions");
-        _checkpointsPath = Path.Combine(_basePath, "checkpoints");
-        _pendingPath = Path.Combine(_basePath, "pending");
-
-        Directory.CreateDirectory(_sessionsPath);
-        Directory.CreateDirectory(_checkpointsPath);
-        Directory.CreateDirectory(_pendingPath);
+        Directory.CreateDirectory(_basePath);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -106,10 +97,11 @@ public class JsonSessionStore : ISessionStore
     {
         var sessionIds = new List<string>();
 
-        if (Directory.Exists(_sessionsPath))
+        if (Directory.Exists(_basePath))
         {
-            var files = Directory.GetFiles(_sessionsPath, "*.json");
-            sessionIds.AddRange(files.Select(f => Path.GetFileNameWithoutExtension(f)));
+            // Each session is now a directory
+            var sessionDirs = Directory.GetDirectories(_basePath);
+            sessionIds.AddRange(sessionDirs.Select(d => Path.GetFileName(d)!));
         }
 
         return Task.FromResult(sessionIds);
@@ -121,11 +113,12 @@ public class JsonSessionStore : ISessionStore
 
         lock (_lock)
         {
-            var sessionPath = GetSessionFilePath(sessionId);
-            if (File.Exists(sessionPath))
-                File.Delete(sessionPath);
-
-            CleanupPendingWritesForSession(sessionId);
+            var sessionDir = GetSessionDirectoryPath(sessionId);
+            if (Directory.Exists(sessionDir))
+            {
+                // Delete entire session directory (includes session.json, checkpoints, pending, assets)
+                Directory.Delete(sessionDir, recursive: true);
+            }
         }
 
         return Task.CompletedTask;
@@ -364,46 +357,17 @@ public class JsonSessionStore : ISessionStore
     {
         lock (_lock)
         {
-            if (!Directory.Exists(_sessionsPath))
+            if (!Directory.Exists(_basePath))
                 return Task.CompletedTask;
 
-            // Delete old session files
-            var sessionFiles = Directory.GetFiles(_sessionsPath, "*.json");
-            foreach (var sessionFile in sessionFiles)
+            // Delete old session directories
+            var sessionDirs = Directory.GetDirectories(_basePath);
+            foreach (var sessionDir in sessionDirs)
             {
-                var fileInfo = new FileInfo(sessionFile);
-                if (fileInfo.LastWriteTimeUtc < cutoff)
+                var dirInfo = new DirectoryInfo(sessionDir);
+                if (dirInfo.LastWriteTimeUtc < cutoff)
                 {
-                    fileInfo.Delete();
-                    var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
-                    CleanupPendingWritesForSession(sessionId);
-                }
-            }
-
-            // Delete old checkpoints
-            if (Directory.Exists(_checkpointsPath))
-            {
-                foreach (var sessionDir in Directory.GetDirectories(_checkpointsPath))
-                {
-                    var sessionId = Path.GetFileName(sessionDir);
-                    var checkpointFiles = Directory.GetFiles(sessionDir, "*.json");
-                    
-                    foreach (var checkpointFile in checkpointFiles)
-                    {
-                        var fileInfo = new FileInfo(checkpointFile);
-                        if (fileInfo.LastWriteTimeUtc < cutoff)
-                        {
-                            fileInfo.Delete();
-                            var checkpointId = Path.GetFileNameWithoutExtension(checkpointFile);
-                            var pendingPath = GetPendingWritesFilePath(sessionId, checkpointId);
-                            if (File.Exists(pendingPath))
-                                File.Delete(pendingPath);
-                        }
-                    }
-
-                    // Delete empty checkpoint directories
-                    if (!Directory.EnumerateFileSystemEntries(sessionDir).Any())
-                        Directory.Delete(sessionDir);
+                    Directory.Delete(sessionDir, recursive: true);
                 }
             }
         }
@@ -421,31 +385,24 @@ public class JsonSessionStore : ISessionStore
 
         lock (_lock)
         {
-            if (!Directory.Exists(_sessionsPath))
+            if (!Directory.Exists(_basePath))
                 return Task.FromResult(0);
 
-            var sessionFiles = Directory.GetFiles(_sessionsPath, "*.json");
-            foreach (var sessionFile in sessionFiles)
+            var sessionDirs = Directory.GetDirectories(_basePath);
+            foreach (var sessionDir in sessionDirs)
             {
-                var fileInfo = new FileInfo(sessionFile);
-                if (fileInfo.LastWriteTimeUtc < cutoff)
+                var dirInfo = new DirectoryInfo(sessionDir);
+                if (dirInfo.LastWriteTimeUtc < cutoff)
                 {
-                    toDelete.Add(sessionFile);
+                    toDelete.Add(sessionDir);
                 }
             }
 
             if (!dryRun)
             {
-                foreach (var sessionFile in toDelete)
+                foreach (var sessionDir in toDelete)
                 {
-                    var sessionId = Path.GetFileNameWithoutExtension(sessionFile);
-                    File.Delete(sessionFile);
-                    CleanupPendingWritesForSession(sessionId);
-                    
-                    // Also delete checkpoint directory if it exists
-                    var checkpointDir = GetCheckpointDirectoryPath(sessionId);
-                    if (Directory.Exists(checkpointDir))
-                        Directory.Delete(checkpointDir, recursive: true);
+                    Directory.Delete(sessionDir, recursive: true);
                 }
             }
         }
@@ -525,20 +482,39 @@ public class JsonSessionStore : ISessionStore
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // ASSET STORAGE (Binary Content)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public IAssetStore? GetAssetStore(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var sessionPath = GetSessionDirectoryPath(sessionId);
+        return new LocalFileAssetStore(sessionPath);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // PRIVATE HELPER METHODS
     // ═══════════════════════════════════════════════════════════════════
 
+    private string GetSessionDirectoryPath(string sessionId)
+        => Path.Combine(_basePath, sessionId);
+
     private string GetSessionFilePath(string sessionId)
-        => Path.Combine(_sessionsPath, $"{sessionId}.json");
+        => Path.Combine(GetSessionDirectoryPath(sessionId), "session.json");
 
     private string GetCheckpointDirectoryPath(string sessionId)
-        => Path.Combine(_checkpointsPath, sessionId);
+        => Path.Combine(GetSessionDirectoryPath(sessionId), "checkpoints");
 
     private string GetCheckpointFilePath(string sessionId, string checkpointId)
         => Path.Combine(GetCheckpointDirectoryPath(sessionId), $"{checkpointId}.json");
 
+    private string GetPendingWritesDirectoryPath(string sessionId)
+        => Path.Combine(GetSessionDirectoryPath(sessionId), "pending");
+
     private string GetPendingWritesFilePath(string sessionId, string checkpointId)
-        => Path.Combine(_pendingPath, $"{sessionId}_{checkpointId}.json");
+        => Path.Combine(GetPendingWritesDirectoryPath(sessionId), $"{checkpointId}.json");
 
     private void WriteAtomically(string filePath, string content)
     {
@@ -553,13 +529,10 @@ public class JsonSessionStore : ISessionStore
 
     private void CleanupPendingWritesForSession(string sessionId)
     {
-        if (!Directory.Exists(_pendingPath))
-            return;
-
-        var pattern = $"{sessionId}_*.json";
-        foreach (var file in Directory.GetFiles(_pendingPath, pattern))
+        var pendingDir = GetPendingWritesDirectoryPath(sessionId);
+        if (Directory.Exists(pendingDir))
         {
-            File.Delete(file);
+            Directory.Delete(pendingDir, recursive: true);
         }
     }
 }

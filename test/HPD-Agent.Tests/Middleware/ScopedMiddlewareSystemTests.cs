@@ -402,7 +402,8 @@ public class CollapsedMiddlewareSystemTests
             "TestAgent",
             "test-conv",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeFunction(
@@ -426,7 +427,8 @@ public class CollapsedMiddlewareSystemTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

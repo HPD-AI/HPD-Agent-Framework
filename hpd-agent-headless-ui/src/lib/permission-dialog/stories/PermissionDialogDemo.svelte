@@ -101,7 +101,7 @@
 				{#snippet child({ props, request, status, approve, deny })}
 					<section {...props} class="custom-card-content">
 						<header class="card-header">
-							<h2 class="card-title">⚠️ Action Required</h2>
+							<h2 class="card-title">Action Required</h2>
 							{#if status === 'complete'}
 								<span class="badge badge-processing">Processing...</span>
 							{:else if status === 'executing'}

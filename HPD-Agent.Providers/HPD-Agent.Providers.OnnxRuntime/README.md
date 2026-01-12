@@ -1,6 +1,14 @@
 # HPD-Agent.Providers.OnnxRuntime
 
-This package provides an integration with [ONNX Runtime](https://onnxruntime.ai/) for local model inference.
+ONNX Runtime provider for HPD-Agent for local model inference.
+
+## Overview
+
+This package provides an integration with [ONNX Runtime](https://onnxruntime.ai/) for running models locally on your machine, compatible with Microsoft.Extensions.AI.
+
+## Limitations
+
+**Function calling (tool use) is not supported** with this provider. ONNX Runtime models do not have built-in support for structured tool calling. Use cloud-based providers (OpenAI, Anthropic, Azure AI, etc.) for function calling support.
 
 ## Configuration
 
@@ -9,17 +17,12 @@ To use the OnnxRuntime provider, you must specify the path to your local model.
 ### C# Configuration
 
 ```csharp
-var config = new AgentConfig
-{
-    Provider = new ProviderConfig
-    {
-        ProviderKey = "onnx-runtime",
-        AdditionalProperties = new()
-        {
-            ["ModelPath"] = "path/to/your/onnx/model/directory"
-        }
-    }
-};
+var agent = await new AgentBuilder()
+    .WithOnnxRuntime(
+        modelPath: "path/to/your/onnx/model/directory")
+    .Build();
+
+var response = await agent.ChatAsync("Hello!");
 ```
 
 ### JSON Configuration (`appsettings.json`)
@@ -37,13 +40,29 @@ var config = new AgentConfig
 }
 ```
 
-### Configuration Options
+### Environment Variables
 
-The following properties can be set via the `AdditionalProperties` dictionary:
+```bash
+export ONNX_MODEL_PATH="path/to/your/onnx/model/directory"
+```
 
-| Key               | Type                                                  | Description                                                                                                |
-|-------------------|-------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
-| `ModelPath`       | string                                                | **Required.** The file path to the ONNX model directory. Can also be set via the `ONNX_MODEL_PATH` environment variable. |
-| `StopSequences`   | `IList<string>`                                       | Optional. A list of strings that will stop the generation of tokens.                                       |
-| `EnableCaching`   | bool                                                  | Optional. Whether to enable conversation caching for better performance. Defaults to `false`.                  |
-| `PromptFormatter` | `Func<IEnumerable<ChatMessage>, ChatOptions?, string>` | Optional. A custom function for advanced prompt engineering to format the prompt sent to the model.        |
+## Configuration Options
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `ModelPath` | string | **Required.** Path to the ONNX model directory. Can also use `ONNX_MODEL_PATH` environment variable. |
+| `StopSequences` | `IList<string>` | Optional. Sequences that stop generation. |
+| `EnableCaching` | bool | Optional. Enable conversation caching. Defaults to `false`. |
+| `PromptFormatter` | function | Optional. Custom prompt formatting function. |
+
+## Features
+
+- Local model inference
+- No API key required
+- Privacy-focused (models run locally)
+- Cross-platform support
+
+## Documentation
+
+- [ONNX Runtime Documentation](https://onnxruntime.ai/)
+- [HPD-Agent Documentation](../../README.md)

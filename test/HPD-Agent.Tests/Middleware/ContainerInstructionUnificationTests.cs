@@ -3,6 +3,7 @@ using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
 using Xunit;
+using CollapsingStateData = HPD.Agent.ContainerMiddlewareState;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -316,7 +317,7 @@ Use `decimal` type for precision.";
         // Assert - Instructions should be cleared at end of message turn
         var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
-        var collapsingState = pendingState!.MiddlewareState.Collapsing;
+        var collapsingState = pendingState!.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState") as ContainerMiddlewareState;
         Assert.NotNull(collapsingState);
         Assert.Empty(collapsingState!.ActiveContainerInstructions);
     }
@@ -349,7 +350,7 @@ Use `decimal` type for precision.";
         // State should not be modified (no clearing)
         if (pendingState != null)
         {
-            var collapsingState = pendingState.MiddlewareState.Collapsing;
+            var collapsingState = pendingState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState") as ContainerMiddlewareState;
             // Either state is null (not modified) or still has the container
             Assert.True(collapsingState == null || collapsingState.ActiveContainerInstructions.Count > 0);
         }
@@ -454,7 +455,8 @@ Use `decimal` type for precision.";
             agentName: "TestAgent")
             with
             {
-                MiddlewareState = new MiddlewareState().WithCollapsing(
+                MiddlewareState = new MiddlewareState().SetState(
+                    "HPD.Agent.ContainerMiddlewareState",
                     new CollapsingStateData { ActiveContainerInstructions = containerInstructions })
             };
 
@@ -475,7 +477,8 @@ Use `decimal` type for precision.";
             "TestAgent",
             "test-conv-id",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
@@ -511,7 +514,8 @@ Use `decimal` type for precision.";
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

@@ -92,7 +92,7 @@ public interface ISessionStore
     /// ExecutionState.CurrentMessages, eliminating duplication.
     /// </para>
     /// <para>
-    /// Size: ~100KB (vs ~120KB with old SessionCheckpoint that duplicated messages).
+    /// Size: ~100KB (optimized to avoid message duplication).
     /// </para>
     /// </remarks>
     Task SaveCheckpointAsync(
@@ -122,6 +122,39 @@ public interface ISessionStore
     /// Whether this store supports pending writes for partial failure recovery.
     /// </summary>
     bool SupportsPendingWrites { get; }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ASSET STORAGE (Binary Content)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Get the asset store for a specific session.
+    /// Returns null if this store doesn't support asset storage.
+    /// </summary>
+    /// <param name="sessionId">The session ID to get the asset store for</param>
+    /// <returns>An IAssetStore scoped to the specified session, or null if not supported</returns>
+    /// <remarks>
+    /// <para>
+    /// When null, AssetUploadMiddleware will skip asset upload operations (zero cost).
+    /// When non-null, DataContent in messages will be automatically uploaded to this store
+    /// and replaced with UriContent references (asset:// URIs).
+    /// </para>
+    /// <para>
+    /// Assets are stored per-session, allowing for clean isolation and easy cleanup.
+    /// When a session is deleted, its assets are automatically removed.
+    /// </para>
+    /// <para><b>Example usage:</b></para>
+    /// <code>
+    /// var store = new JsonSessionStore("./data");
+    /// var assetStore = store.GetAssetStore(sessionId); // May be null
+    /// if (assetStore != null)
+    /// {
+    ///     var assetId = await assetStore.UploadAssetAsync(bytes, mediaType);
+    ///     var uri = new Uri($"asset://{assetId}");
+    /// }
+    /// </code>
+    /// </remarks>
+    IAssetStore? GetAssetStore(string sessionId);
 
     // ═══════════════════════════════════════════════════════════════════
     // PENDING WRITES (Partial Iteration Recovery)

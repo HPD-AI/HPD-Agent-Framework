@@ -668,13 +668,21 @@ internal sealed class OpenRouterChatClient : IChatClient
         {
             Model = _modelName,
             Messages = requestMessages,
-            Stream = stream,
-            Reasoning = new OpenRouterReasoningConfig
+            Stream = stream
+        };
+
+        // ✨ FIX: Only enable reasoning for models that support it
+        // Models that support reasoning typically have "reasoning" or "o1"/"o3" in the name
+        // or are explicitly configured to support it
+        if (SupportsReasoning(_modelName) || 
+            (options?.AdditionalProperties?.TryGetValue("reasoning_effort", out _) == true))
+        {
+            request.Reasoning = new OpenRouterReasoningConfig
             {
                 Enabled = true,  // Enable reasoning for the model
                 Exclude = false  // Include reasoning in responses so users can see thinking
-            }
-        };
+            };
+        }
 
         // ✨ PERFORMANCE: Add stream options if streaming
         if (stream)
@@ -863,8 +871,8 @@ internal sealed class OpenRouterChatClient : IChatClient
                     }
                 }
 
-                // Support reasoning configuration
-                if (options.AdditionalProperties.TryGetValue("reasoning_effort", out var effort) && effort is string effortVal)
+                // Support reasoning configuration - only for models that support it
+                if (options.AdditionalProperties.TryGetValue("reasoning_effort", out var effort) && effort is string effortVal && SupportsReasoning(_modelName))
                 {
                     request.Reasoning = new OpenRouterReasoningConfig
                     {
@@ -955,6 +963,25 @@ internal sealed class OpenRouterChatClient : IChatClient
             Type t when t.IsInstanceOfType(this) => this,
             _ => null
         };
+    }
+
+    /// <summary>
+    /// ✨ FIX: Determines if a model supports the reasoning parameter.
+    /// Only certain models like o1, o3, and extended thinking models support reasoning.
+    /// Sending reasoning to models that don't support it causes errors.
+    /// </summary>
+    private static bool SupportsReasoning(string modelName)
+    {
+        // Normalize model name for comparison
+        var lower = modelName.ToLowerInvariant();
+        
+        // List of reasoning-capable models
+        return lower.Contains("o1") || 
+               lower.Contains("o3") || 
+               lower.Contains("reasoning") ||
+               lower.Contains("thinking") ||
+               lower.Contains("r1") ||
+               lower.Contains("ext");
     }
 
     public void Dispose()

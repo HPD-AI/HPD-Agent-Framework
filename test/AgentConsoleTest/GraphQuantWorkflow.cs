@@ -442,7 +442,7 @@ public class RouterHandler : IGraphNodeHandler<GraphContext>
         // Check max retries
         if (!hasConsensus && retryCount >= 3)
         {
-            AnsiConsole.MarkupLine("[red]❌ Max retries (3) exceeded - no consensus[/]");
+            AnsiConsole.MarkupLine("[red]Max retries (3) exceeded - no consensus[/]");
             context.Channels["final_answer"].Set("Unable to reach consensus after 3 attempts");
             hasConsensus = true; // Force to return path
         }
@@ -471,7 +471,7 @@ public class ReturnAnswerHandler : IGraphNodeHandler<GraphContext>
         var answer = context.Channels["final_answer"].Get<string>();
         var retryCount = context.Channels["retry_count"].Get<int>();
 
-        AnsiConsole.MarkupLine($"\n[green]✅ CONSENSUS REACHED (Round {retryCount + 1})![/]");
+        AnsiConsole.MarkupLine($"\n[green] CONSENSUS REACHED (Round {retryCount + 1})![/]");
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan bold]Final Answer:[/] {Markup.Escape(answer)}");
 
@@ -497,7 +497,7 @@ public class FeedbackHandler : IGraphNodeHandler<GraphContext>
         // Increment retry count
         context.Channels["retry_count"].Set(retryCount + 1);
 
-        AnsiConsole.MarkupLine($"\n[yellow]⚠️  Disagreement detected (Attempt {retryCount + 1}/3)[/]");
+        AnsiConsole.MarkupLine($"\n[yellow] Disagreement detected (Attempt {retryCount + 1}/3)[/]");
         AnsiConsole.MarkupLine($"[dim]Feedback: {Markup.Escape(feedbackMessage)}[/]");
         AnsiConsole.MarkupLine("[yellow]Retrying with feedback...[/]\n");
 

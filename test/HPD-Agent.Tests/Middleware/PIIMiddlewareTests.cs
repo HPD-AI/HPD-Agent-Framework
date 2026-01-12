@@ -471,7 +471,8 @@ public class PIIMiddlewareTests
             agentName: "TestAgent",
             conversationId: "test-conversation",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         // PIIMiddleware uses BeforeMessageTurnAsync, so create the appropriate context
@@ -506,7 +507,8 @@ public class PIIMiddlewareTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

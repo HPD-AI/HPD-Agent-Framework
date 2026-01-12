@@ -21,8 +21,8 @@ namespace HPD.Agent.Middleware;
 /// <item>  Simple middleware state updates (90% of cases)</item>
 /// <item>  Single state type updates</item>
 /// <item>  Quick reads of middleware state</item>
-/// <item>❌ Complex atomic updates (use <see cref="HookContext.UpdateState"/> instead)</item>
-/// <item>❌ Core state updates (IsTerminated, TerminationReason)</item>
+/// <item>Complex atomic updates (use <see cref="HookContext.UpdateState"/> instead)</item>
+/// <item>Core state updates (IsTerminated, TerminationReason)</item>
 /// </list>
 ///
 /// <para><b>Safety guarantees:</b></para>

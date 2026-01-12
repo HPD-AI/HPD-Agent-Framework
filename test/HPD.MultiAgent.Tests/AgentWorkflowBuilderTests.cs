@@ -12,7 +12,7 @@ public class AgentWorkflowBuilderTests
         var builder = AgentWorkflow.Create();
 
         builder.Should().NotBeNull();
-        builder.Should().BeOfType<AgentWorkflowBuilder>();
+        builder.Should().BeOfType<MultiAgent>();
     }
 
     [Fact]

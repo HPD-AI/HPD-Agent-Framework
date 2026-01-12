@@ -108,6 +108,15 @@ public class AgentRunOptions
     public bool SkipTools { get; set; } = false;
 
     /// <summary>
+    /// When true, coalesces streaming deltas into single complete events.
+    /// - Text: Multiple TextDeltaEvent("Hello"), TextDeltaEvent(" world") → Single TextDeltaEvent("Hello world")
+    /// - Reasoning: Multiple ReasoningDeltaEvent chunks → Single ReasoningDeltaEvent with complete reasoning
+    /// Reduces event count and simplifies processing at the cost of increased latency.
+    /// When null, uses the agent's config default (AgentConfig.CoalesceDeltas).
+    /// </summary>
+    public bool? CoalesceDeltas { get; set; }
+
+    /// <summary>
     /// Runtime middleware to inject only for this run.
     /// Applied AFTER agent's configured middleware.
     /// Not JSON-serializable (for direct C# usage).
@@ -232,23 +241,45 @@ public class AgentRunOptions
     /// <remarks>
     /// <para>
     /// Audio options control how voice is processed for this specific run:
-    /// - Processing mode: Pipeline (STT → LLM → TTS) or Native (single model)
+    /// - Voice switching: Change TTS voice per-request
+    /// - Provider switching: Switch TTS/STT providers dynamically
     /// - I/O mode: What input/output modalities to use
-    /// - Voice/model: Override TTS voice and model
+    /// - Language: Override language for multilingual conversations
     /// </para>
     /// <para>
-    /// <b>Example:</b>
+    /// <b>Example - Voice Switching:</b>
+    /// <code>
+    /// var options = new AgentRunOptions
+    /// {
+    ///     Audio = new AudioRunOptions { Voice = "alloy" }
+    /// };
+    /// await agent.RunAsync(messages, options);
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Example - Provider Switching:</b>
     /// <code>
     /// var options = new AgentRunOptions
     /// {
     ///     Audio = new AudioRunOptions
     ///     {
-    ///         IOMode = AudioIOMode.AudioToAudioAndText,
-    ///         Voice = "nova"
+    ///         Tts = new TtsConfig { Provider = "elevenlabs", Voice = "Rachel" }
     ///     }
     /// };
-    /// await agent.RunAsync(messages, options);
     /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Example - Extension Methods:</b>
+    /// <code>
+    /// var options = new AgentRunOptions()
+    ///     .WithVoice("nova")
+    ///     .WithTtsSpeed(1.2f);
+    /// </code>
+    /// </para>
+    /// <para>
+    /// Supports both AudioRunOptions (slim runtime API) and AudioConfig (legacy full API).
+    /// AudioRunOptions is recommended for runtime customization as it exposes only
+    /// commonly-changed settings (voice, provider, language, I/O mode).
     /// </para>
     /// </remarks>
     public object? Audio { get; set; }

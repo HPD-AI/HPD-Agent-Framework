@@ -51,7 +51,7 @@ public static class SmartQuantWorkflowV2
         // Build workflow using the fluent API
         AnsiConsole.MarkupLine("[dim]Building workflow graph...[/]");
 
-        var workflow = await new AgentWorkflowBuilder()
+        var workflow = await new MultiAgent()
             .WithName("SmartQuantV2")
 
             // Add all agents

@@ -195,7 +195,8 @@ public class ErrorTrackingMiddlewareTests
             "TestAgent",
             "conv123",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         return agentContext.AsError(
@@ -216,7 +217,8 @@ public class ErrorTrackingMiddlewareTests
             "TestAgent",
             "conv123",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         if (allSucceeded)

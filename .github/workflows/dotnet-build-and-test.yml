@@ -132,7 +132,7 @@ jobs:
         JSON_FILE="./TestResults/Reports/Summary.json"
 
         if [ ! -f "$JSON_FILE" ]; then
-          echo "⚠️ Coverage report not found, skipping threshold check"
+          echo "Coverage report not found, skipping threshold check"
           exit 0
         fi
 
@@ -150,7 +150,7 @@ jobs:
 
         # Check threshold (line coverage only for now)
         if (( $(echo "$LINE_COVERAGE < ${{ env.COVERAGE_THRESHOLD }}" | bc -l) )); then
-          echo "❌ Line coverage ($LINE_COVERAGE%) is below threshold (${{ env.COVERAGE_THRESHOLD }}%)"
+          echo "Line coverage ($LINE_COVERAGE%) is below threshold (${{ env.COVERAGE_THRESHOLD }}%)"
           exit 1
         else
           echo "✓ Coverage check passed"
@@ -224,7 +224,7 @@ jobs:
           # Check for expected frameworks (skip source generators which are netstandard2.0)
           if [[ "$pkg" != *"SourceGenerator"* ]]; then
             if [[ "$frameworks" != *"net10.0"* ]] || [[ "$frameworks" != *"net9.0"* ]] || [[ "$frameworks" != *"net8.0"* ]]; then
-              echo "⚠️ WARNING: Package may be missing frameworks. Expected net10.0, net9.0, net8.0"
+              echo "WARNING: Package may be missing frameworks. Expected net10.0, net9.0, net8.0"
               MISSING_FRAMEWORKS=true
             else
               echo "✓ All expected frameworks present"
@@ -236,7 +236,7 @@ jobs:
 
         if [ "$MISSING_FRAMEWORKS" = true ]; then
           echo ""
-          echo "⚠️ Some packages are missing expected framework builds"
+          echo "Some packages are missing expected framework builds"
           # Don't fail - just warn for now
         fi
 
@@ -265,7 +265,7 @@ jobs:
             if dotnet build -f $framework --nologo -v q 2>&1 | tail -1; then
               echo "✓ Build successful"
             else
-              echo "❌ Build failed"
+              echo "Build failed"
               INSTALL_FAILED=true
             fi
           else
@@ -279,7 +279,7 @@ jobs:
 
         if [ "$INSTALL_FAILED" = true ]; then
           echo ""
-          echo "❌ Some package installations failed"
+          echo "Some package installations failed"
           exit 1
         fi
 
@@ -320,14 +320,14 @@ jobs:
       - name: Check for failures
         if: needs.paths-filter.outputs.dotnet-changed == 'true' && contains(join(needs.*.result, ','), 'failure')
         run: |
-          echo "❌ One or more jobs failed"
+          echo "One or more jobs failed"
           echo "::error::Build or test failures detected"
           exit 1
 
       - name: Check for cancellation
         if: needs.paths-filter.outputs.dotnet-changed == 'true' && contains(join(needs.*.result, ','), 'cancelled')
         run: |
-          echo "⚠️ One or more jobs were cancelled"
+          echo "One or more jobs were cancelled"
           echo "::error::Jobs were cancelled"
           exit 1
 

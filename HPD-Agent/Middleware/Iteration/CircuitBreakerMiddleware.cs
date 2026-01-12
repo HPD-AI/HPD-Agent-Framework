@@ -75,6 +75,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
     /// <summary>
     /// Called AFTER LLM returns tool calls but BEFORE tools execute.
     /// Checks if executing these tools would exceed the threshold.
+    /// Also updates state to track the tool calls (V2 fix).
     /// </summary>
     public Task BeforeToolExecutionAsync(
         BeforeToolExecutionContext context,
@@ -104,6 +105,22 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
                 return Task.CompletedTask;
             }
         }
+
+        // V2 FIX: Update state here since AfterIterationContext doesn't have ToolCalls
+        // Record all tool calls that we're about to execute
+        context.UpdateMiddlewareState<CircuitBreakerStateData>(currentState =>
+        {
+            var updatedState = currentState;
+
+            foreach (var toolCall in context.ToolCalls)
+            {
+                var toolName = toolCall.Name ?? "_unknown";
+                var signature = ComputeFunctionSignature(toolCall);
+                updatedState = updatedState.RecordToolCall(toolName, signature);
+            }
+
+            return updatedState;
+        });
 
         return Task.CompletedTask;
     }

@@ -1609,4 +1609,248 @@ public class ToolVisibilityManagerTests
     }
 
     #endregion
+
+    #region SubAgent Visibility Tests
+
+    /// <summary>
+    /// Regression test: SubAgents should use ParentToolkit metadata, not ToolkitName.
+    /// This ensures SubAgents follow the same collapsing rules as Functions and Skills.
+    /// </summary>
+    [Fact]
+    public void SubAgent_UsesParentToolkit_NotToolkitName()
+    {
+        // Arrange: Create a SubAgent with ParentToolkit metadata (correct)
+        var subAgent = CreateSubAgentFunction(
+            "ResearchAgent",
+            "Specialized research agent",
+            "MathToolkit");
+
+        // Assert: Should have ParentToolkit, not ToolkitName
+        subAgent.AdditionalProperties.Should().ContainKey("ParentToolkit");
+        subAgent.AdditionalProperties.Should().NotContainKey("ToolkitName");
+        subAgent.AdditionalProperties?["ParentToolkit"].Should().Be("MathToolkit");
+    }
+
+    [Fact]
+    public void SubAgent_InsideCollapsedToolkit_HiddenUntilToolkitExpanded()
+    {
+        // Arrange: Collapsed Toolkit with functions and a SubAgent
+        var tools = new List<AIFunction>();
+
+        // Toolkit container (collapsed)
+        tools.Add(CreateToolkitContainerWithNewFlag(
+            "MathToolkit",
+            "Math operations with research capabilities"));
+
+        // Regular functions
+        tools.Add(CreateToolkitFunction("Add", "MathToolkit", "Adds two numbers"));
+        tools.Add(CreateToolkitFunction("Multiply", "MathToolkit", "Multiplies two numbers"));
+
+        // SubAgent inside the toolkit
+        tools.Add(CreateSubAgentFunction(
+            "ResearchAgent",
+            "Specialized research agent for math problems",
+            "MathToolkit"));
+
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
+
+        // Act: Initial state (no expansions)
+        var initialTools = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet<string>.Empty,
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: Only container visible, SubAgent hidden
+        initialTools.Should().Contain(t => t.Name == "MathToolkit");
+        initialTools.Should().NotContain(t => t.Name == "Add");
+        initialTools.Should().NotContain(t => t.Name == "ResearchAgent",
+            "SubAgent should be hidden when parent toolkit is collapsed");
+        initialTools.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void SubAgent_InsideCollapsedToolkit_VisibleAfterToolkitExpanded()
+    {
+        // Arrange: Collapsed Toolkit with SubAgent
+        var tools = new List<AIFunction>();
+
+        tools.Add(CreateToolkitContainerWithNewFlag(
+            "MathToolkit",
+            "Math operations with research capabilities"));
+
+        tools.Add(CreateToolkitFunction("Add", "MathToolkit", "Adds two numbers"));
+        tools.Add(CreateSubAgentFunction(
+            "ResearchAgent",
+            "Specialized research agent",
+            "MathToolkit"));
+
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
+
+        // Act: Expand the toolkit
+        var expandedTools = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "MathToolkit"),
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: Container hidden, contents visible (including SubAgent)
+        expandedTools.Should().NotContain(t => t.Name == "MathToolkit");
+        expandedTools.Should().Contain(t => t.Name == "Add");
+        expandedTools.Should().Contain(t => t.Name == "ResearchAgent",
+            "SubAgent should be visible when parent toolkit is expanded");
+    }
+
+    [Fact]
+    public void SubAgent_WithoutParentToolkit_AlwaysVisible()
+    {
+        // Arrange: SubAgent without ParentToolkit (standalone)
+        var tools = new List<AIFunction>();
+
+        // SubAgent without ParentToolkit
+        var subAgent = AIFunctionFactory.Create(
+            async (AIFunctionArguments args, CancellationToken ct) => "Result",
+            new AIFunctionFactoryOptions
+            {
+                Name = "StandaloneAgent",
+                Description = "Standalone agent not in a toolkit",
+                AdditionalProperties = new Dictionary<string, object>
+                {
+                    ["IsSubAgent"] = true,
+                    ["ThreadMode"] = "Stateless"
+                    // No ParentToolkit!
+                }
+            });
+
+        tools.Add(subAgent);
+
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
+
+        // Act
+        var visibleTools = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet<string>.Empty,
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: SubAgent should be visible (no parent to collapse it)
+        visibleTools.Should().Contain(t => t.Name == "StandaloneAgent");
+    }
+
+    [Fact]
+    public void SubAgent_MultipleInSameToolkit_AllHiddenAndShownTogether()
+    {
+        // Arrange: Multiple SubAgents in the same collapsed toolkit
+        var tools = new List<AIFunction>();
+
+        tools.Add(CreateToolkitContainerWithNewFlag(
+            "ResearchToolkit",
+            "Research toolkit with multiple specialized agents"));
+
+        tools.Add(CreateSubAgentFunction("WebSearchAgent", "Web search specialist", "ResearchToolkit"));
+        tools.Add(CreateSubAgentFunction("DataAnalysisAgent", "Data analysis specialist", "ResearchToolkit"));
+        tools.Add(CreateSubAgentFunction("SummaryAgent", "Summary specialist", "ResearchToolkit"));
+
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
+
+        // Act: Before expansion
+        var beforeExpansion = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet<string>.Empty,
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: All SubAgents hidden
+        beforeExpansion.Should().Contain(t => t.Name == "ResearchToolkit");
+        beforeExpansion.Should().NotContain(t => t.Name == "WebSearchAgent");
+        beforeExpansion.Should().NotContain(t => t.Name == "DataAnalysisAgent");
+        beforeExpansion.Should().NotContain(t => t.Name == "SummaryAgent");
+
+        // Act: After expansion
+        var afterExpansion = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "ResearchToolkit"),
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: All SubAgents visible
+        afterExpansion.Should().NotContain(t => t.Name == "ResearchToolkit");
+        afterExpansion.Should().Contain(t => t.Name == "WebSearchAgent");
+        afterExpansion.Should().Contain(t => t.Name == "DataAnalysisAgent");
+        afterExpansion.Should().Contain(t => t.Name == "SummaryAgent");
+    }
+
+    [Fact]
+    public void SubAgent_MixedWithFunctionsAndSkills_AllFollowSameCollapsingRules()
+    {
+        // Arrange: Toolkit with functions, skills, AND SubAgents
+        var tools = new List<AIFunction>();
+
+        tools.Add(CreateToolkitContainerWithNewFlag(
+            "ComprehensiveToolkit",
+            "Toolkit with functions, skills, and sub-agents"));
+
+        // Regular function
+        tools.Add(CreateToolkitFunction("Calculate", "ComprehensiveToolkit", "Calculation function"));
+
+        // Skill inside toolkit
+        tools.Add(CreateSkillInsideCollapsedToolkit(
+            "AnalysisSkill",
+            "Analysis skill",
+            "ComprehensiveToolkit"));
+
+        // SubAgent inside toolkit
+        tools.Add(CreateSubAgentFunction(
+            "ExpertAgent",
+            "Expert agent",
+            "ComprehensiveToolkit"));
+
+        var manager = new ToolVisibilityManager(tools, ImmutableHashSet<string>.Empty);
+
+        // Act: Before expansion
+        var beforeExpansion = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet<string>.Empty,
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: Only container visible
+        beforeExpansion.Should().Contain(t => t.Name == "ComprehensiveToolkit");
+        beforeExpansion.Should().NotContain(t => t.Name == "Calculate");
+        beforeExpansion.Should().NotContain(t => t.Name == "AnalysisSkill");
+        beforeExpansion.Should().NotContain(t => t.Name == "ExpertAgent");
+        beforeExpansion.Should().HaveCount(1);
+
+        // Act: After expansion
+        var afterExpansion = manager.GetToolsForAgentTurn(
+            tools.ToList(),
+            ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "ComprehensiveToolkit"),
+            ImmutableHashSet<string>.Empty);
+
+        // Assert: All contents visible (function, skill, SubAgent)
+        afterExpansion.Should().NotContain(t => t.Name == "ComprehensiveToolkit");
+        afterExpansion.Should().Contain(t => t.Name == "Calculate");
+        afterExpansion.Should().Contain(t => t.Name == "AnalysisSkill");
+        afterExpansion.Should().Contain(t => t.Name == "ExpertAgent");
+    }
+
+    /// <summary>
+    /// Creates a SubAgent AIFunction with correct ParentToolkit metadata.
+    /// This simulates what the source generator produces after the fix.
+    /// </summary>
+    private AIFunction CreateSubAgentFunction(
+        string name,
+        string description,
+        string parentToolkit)
+    {
+        return AIFunctionFactory.Create(
+            async (AIFunctionArguments args, CancellationToken ct) => $"{name} result",
+            new AIFunctionFactoryOptions
+            {
+                Name = name,
+                Description = description,
+                AdditionalProperties = new Dictionary<string, object>
+                {
+                    ["IsSubAgent"] = true,
+                    ["ThreadMode"] = "Stateless",
+                    ["ParentToolkit"] = parentToolkit  //  Correct key (not ToolkitName)
+                }
+            });
+    }
+
+    #endregion
 }

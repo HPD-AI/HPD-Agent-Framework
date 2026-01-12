@@ -1,85 +1,191 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
-using System.Text.Json.Serialization;
+using HPD.Agent.Audio.Stt;
+using HPD.Agent.Audio.Tts;
+using HPD.Agent.Audio.Vad;
 
 namespace HPD.Agent.Audio;
 
 /// <summary>
-/// Per-request audio configuration for AgentRunOptions.
-/// Inherits from AudioPipelineConfig for full configuration control.
-/// JSON-serializable for FFI compatibility.
+/// Per-request audio configuration overrides.
+/// Slim runtime API exposing only commonly-changed settings.
 /// </summary>
-public class AudioRunOptions : AudioPipelineConfig
+/// <remarks>
+/// <para><b>Design Philosophy:</b></para>
+/// <para>
+/// AudioRunOptions provides per-request audio customization for common scenarios:
+/// - Voice switching (per-user preferences, multi-voice narratives)
+/// - Provider switching (multi-tenant SaaS with different TTS budgets)
+/// - Language switching (multilingual conversations)
+/// - I/O mode switching (voice-only vs. voice+captions)
+/// </para>
+/// <para>
+/// Pipeline tuning settings (turn detection, filler audio, interruption behavior)
+/// are intentionally NOT exposed here - they should be configured at agent-level
+/// via AudioPipelineMiddleware or AgentBuilder for UX consistency.
+/// </para>
+/// <para><b>Common Use Cases:</b></para>
+/// <code>
+/// // Voice switching for different users
+/// var options = new AgentRunOptions
+/// {
+///     Audio = new AudioRunOptions { Voice = "alloy" }
+/// };
+///
+/// // Provider switching for multilingual
+/// var options = new AgentRunOptions
+/// {
+///     Audio = new AudioRunOptions
+///     {
+///         Tts = new TtsConfig { Provider = "elevenlabs", Voice = "Rachel" }
+///     }
+/// };
+///
+/// // Disable audio for specific request
+/// var options = new AgentRunOptions
+/// {
+///     Audio = new AudioRunOptions { Disabled = true }
+/// };
+/// </code>
+/// </remarks>
+public class AudioRunOptions
 {
+    //
+    // ROLE-BASED PROVIDER SWITCHING (most common)
+    //
+
     /// <summary>
-    /// How audio is processed internally. Null = use middleware default.
+    /// TTS configuration override (provider, voice, model).
+    /// Null = use middleware defaults.
     /// </summary>
-    [JsonPropertyName("processingMode")]
+    public TtsConfig? Tts { get; set; }
+
+    /// <summary>
+    /// STT configuration override (provider, language, model).
+    /// Null = use middleware defaults.
+    /// </summary>
+    public SttConfig? Stt { get; set; }
+
+    /// <summary>
+    /// VAD configuration override (provider, sensitivity).
+    /// Null = use middleware defaults.
+    /// </summary>
+    public VadConfig? Vad { get; set; }
+
+    //
+    // I/O CONTROL (common for multi-modal switching)
+    //
+
+    /// <summary>
+    /// Audio processing mode override.
+    /// - Pipeline: STT → LLM → TTS (default)
+    /// - Native: Single model (GPT-4o Realtime, Gemini Live)
+    /// Null = use middleware defaults.
+    /// </summary>
     public AudioProcessingMode? ProcessingMode { get; set; }
 
     /// <summary>
-    /// What input/output modalities to use. Null = use middleware default.
+    /// Audio I/O mode override.
+    /// - AudioToText: Voice input, text output
+    /// - TextToAudio: Text input, voice output
+    /// - AudioToAudio: Full voice (no captions)
+    /// - AudioToAudioAndText: Full voice with captions (default)
+    /// - TextToAudioAndText: Text input, voice + text output
+    /// Null = use middleware defaults.
     /// </summary>
-    [JsonPropertyName("ioMode")]
     public AudioIOMode? IOMode { get; set; }
 
     /// <summary>
-    /// Override language for STT/TTS for this request. Null = use middleware default.
+    /// Language override (ISO 639-1 code: "en", "es", "fr", "de", etc.).
+    /// Overrides language settings in Tts.Language and Stt.Language.
+    /// Null = use middleware defaults.
     /// </summary>
-    [JsonPropertyName("language")]
     public string? Language { get; set; }
 
+    /// <summary>
+    /// Disable audio processing for this request.
+    /// Useful for text-only requests in audio-enabled agents.
+    /// Null = use middleware defaults.
+    /// </summary>
+    public bool? Disabled { get; set; }
+
     //
-    // Static factory methods for common configurations
+    // CONVENIENCE SHORTCUTS (for common overrides)
     //
-
-    /// <summary>Voice conversation with captions (most common).</summary>
-    public static AudioRunOptions VoiceConversation() => new() { IOMode = AudioIOMode.AudioToAudioAndText };
-
-    /// <summary>Voice input only, text output.</summary>
-    public static AudioRunOptions VoiceInput() => new() { IOMode = AudioIOMode.AudioToText };
-
-    /// <summary>Text input, voice + text output.</summary>
-    public static AudioRunOptions VoiceOutput() => new() { IOMode = AudioIOMode.TextToAudioAndText };
-
-    /// <summary>Disable audio for this request.</summary>
-    public static AudioRunOptions TextOnly() => new() { Disabled = true };
-
-    /// <summary>Native processing (GPT-4o Realtime, Gemini Live) with captions.</summary>
-    public static AudioRunOptions NativeWithCaptions() => new()
-    {
-        ProcessingMode = AudioProcessingMode.Native,
-        IOMode = AudioIOMode.AudioToAudioAndText
-    };
-
-    /// <summary>Full voice conversation without captions.</summary>
-    public static AudioRunOptions FullVoice() => new() { IOMode = AudioIOMode.AudioToAudio };
-
-    /// <summary>Text input with voice output only (no text).</summary>
-    public static AudioRunOptions TextToVoice() => new() { IOMode = AudioIOMode.TextToAudio };
 
     /// <summary>
-    /// Quick Answer only (low latency, minimal features).
+    /// Voice override (shortcut for Tts.Voice).
+    /// Examples: "nova", "alloy", "shimmer" (OpenAI), "21m00Tcm4TlvDq8ikWAM" (ElevenLabs).
+    /// Null = use middleware defaults.
     /// </summary>
-    public static AudioRunOptions QuickAnswer() => new()
-    {
-        EnableQuickAnswer = true,
-        EnableSpeedAdaptation = false,
-        EnableFalseInterruptionRecovery = false,
-        EnableFillerAudio = false,
-        EnableTextFiltering = true
-    };
+    public string? Voice { get; set; }
 
     /// <summary>
-    /// Full feature set (all enhancements enabled).
+    /// TTS model override (shortcut for Tts.ModelId).
+    /// Examples: "tts-1", "tts-1-hd" (OpenAI), "eleven_turbo_v2_5" (ElevenLabs).
+    /// Null = use middleware defaults.
     /// </summary>
-    public static AudioRunOptions FullFeatures() => new()
+    public string? TtsModel { get; set; }
+
+    /// <summary>
+    /// TTS speed override (shortcut for Tts.Speed).
+    /// Range: 0.25 to 4.0 (1.0 = normal speed).
+    /// Null = use middleware defaults.
+    /// </summary>
+    public float? TtsSpeed { get; set; }
+
+    //
+    // CONVERSION TO FULL CONFIG
+    //
+
+    /// <summary>
+    /// Converts runtime options to full AudioConfig for middleware consumption.
+    /// Merges convenience shortcuts (Voice, TtsModel, TtsSpeed) into Tts config.
+    /// </summary>
+    /// <returns>AudioConfig with runtime overrides applied</returns>
+    internal AudioConfig ToFullConfig()
     {
-        EnableQuickAnswer = true,
-        EnableSpeedAdaptation = true,
-        EnableFalseInterruptionRecovery = true,
-        EnableFillerAudio = true,
-        EnableTextFiltering = true,
-        UseCombinedProbability = true
-    };
+        var config = new AudioConfig
+        {
+            Tts = Tts,
+            Stt = Stt,
+            Vad = Vad,
+            Language = Language,
+            Disabled = Disabled
+        };
+
+        // Apply processing/IO mode if specified
+        if (ProcessingMode.HasValue)
+            config.ProcessingMode = ProcessingMode.Value;
+
+        if (IOMode.HasValue)
+            config.IOMode = IOMode.Value;
+
+        // Apply convenience shortcuts to Tts config
+        if (Voice != null || TtsModel != null || TtsSpeed != null)
+        {
+            config.Tts ??= new TtsConfig();
+            config.Tts.Voice ??= Voice;
+            config.Tts.ModelId ??= TtsModel;
+            if (TtsSpeed.HasValue)
+                config.Tts.Speed ??= TtsSpeed.Value;
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Validates runtime options.
+    /// </summary>
+    public void Validate()
+    {
+        // Validate role configs
+        Tts?.Validate();
+        Stt?.Validate();
+        Vad?.Validate();
+
+        // Validate TTS speed
+        if (TtsSpeed is < 0.25f or > 4.0f)
+            throw new ArgumentException("TtsSpeed must be between 0.25 and 4.0");
+    }
 }

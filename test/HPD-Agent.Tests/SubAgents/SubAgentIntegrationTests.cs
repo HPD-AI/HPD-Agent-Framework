@@ -17,8 +17,21 @@ public class SubAgentIntegrationTests
     private static AIFunction CreateSubAgentFunction(
         string name,
         string description,
-        string threadMode = "Stateless")
+        string threadMode = "Stateless",
+        string? parentToolkit = null)
     {
+        var additionalProps = new Dictionary<string, object>
+        {
+            ["IsSubAgent"] = true,
+            ["ThreadMode"] = threadMode
+        };
+
+        // Add ParentToolkit if specified (not ToolkitName - that was the bug!)
+        if (parentToolkit != null)
+        {
+            additionalProps["ParentToolkit"] = parentToolkit;
+        }
+
         return AIFunctionFactory.Create(
             async (string query, CancellationToken ct) =>
             {
@@ -29,12 +42,7 @@ public class SubAgentIntegrationTests
             {
                 Name = name,
                 Description = description,
-                AdditionalProperties = new Dictionary<string, object>
-                {
-                    ["IsSubAgent"] = true,
-                    ["ThreadMode"] = threadMode,
-                    ["ToolkitName"] = "TestToolkit"
-                }
+                AdditionalProperties = additionalProps
             });
     }
 

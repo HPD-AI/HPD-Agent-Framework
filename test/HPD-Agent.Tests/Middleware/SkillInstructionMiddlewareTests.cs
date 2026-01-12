@@ -4,6 +4,7 @@ using HPD.Agent.Collapsing;
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
 using Xunit;
+using CollapsingStateData = HPD.Agent.ContainerMiddlewareState;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -89,7 +90,7 @@ public class SkillInstructionMiddlewareTests
 
         var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
-        var CollapsingState = pendingState!.MiddlewareState.Collapsing;
+        var CollapsingState = pendingState!.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
         Assert.NotNull(CollapsingState);
         Assert.Empty(CollapsingState!.ActiveContainerInstructions);
     }
@@ -211,7 +212,7 @@ public class SkillInstructionMiddlewareTests
 
         var pendingState = afterContext.State;
         Assert.NotNull(pendingState);
-        var CollapsingState = pendingState!.MiddlewareState.Collapsing;
+        var CollapsingState = pendingState!.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
         Assert.NotNull(CollapsingState);
         Assert.Empty(CollapsingState!.ActiveContainerInstructions);
     }
@@ -265,7 +266,8 @@ public class SkillInstructionMiddlewareTests
             agentName: "TestAgent")
             with
             {
-                MiddlewareState = new MiddlewareState().WithCollapsing(
+                MiddlewareState = new MiddlewareState().SetState(
+                    "HPD.Agent.ContainerMiddlewareState",
                     new CollapsingStateData { ActiveContainerInstructions = activeContainers })
             };
 
@@ -281,7 +283,8 @@ public class SkillInstructionMiddlewareTests
             "TestAgent",
             "test-conv-id",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
@@ -299,7 +302,8 @@ public class SkillInstructionMiddlewareTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

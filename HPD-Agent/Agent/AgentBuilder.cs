@@ -1660,7 +1660,12 @@ public class AgentBuilder
             });
         }
 
-        //     
+        // Register AssetUploadMiddleware ALWAYS (before iteration)
+        // This transforms DataContent → UriContent for efficient storage
+        // Safe because it checks session.Store.GetAssetStore(sessionId) at runtime (zero cost if null)
+        _middlewares.Add(new Middleware.AssetUploadMiddleware());
+
+        //
         // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
         //     
         // These are registered in execution order (first = outermost):
@@ -1670,7 +1675,7 @@ public class AgentBuilder
         // Register FunctionRetryMiddleware if retry is enabled
         if (_config.ErrorHandling?.MaxRetries > 0)
         {
-            _middlewares.Add(new Middleware.Function.FunctionRetryMiddleware(_config.ErrorHandling, buildData.ErrorHandler));
+            _middlewares.Add(new Middleware.Function.RetryMiddleware(_config.ErrorHandling, buildData.ErrorHandler));
         }
 
         // Register FunctionTimeoutMiddleware if timeout is configured
@@ -1678,6 +1683,11 @@ public class AgentBuilder
         {
             _middlewares.Add(new Middleware.Function.FunctionTimeoutMiddleware(_config.ErrorHandling.SingleFunctionTimeout.Value));
         }
+
+        // Register ErrorFormattingMiddleware ALWAYS (security boundary)
+        // This sanitizes error messages to prevent exposing sensitive information to LLM
+        // Even if ErrorHandling config is null, use default (secure) settings
+        _middlewares.Add(new Middleware.Function.ErrorFormattingMiddleware(_config.ErrorHandling ?? new ErrorHandlingConfig()));
 
         // Register ContainerMiddleware if enabled
         // This unified middleware handles all container operations:
@@ -1695,17 +1705,9 @@ public class AgentBuilder
                 containerLogger);
             _middlewares.Add(containerMiddleware);
 
-            // Register ContainerErrorRecoveryMiddleware if enabled (CHANGE 2 - Container Transparency V2)
-            // This middleware automatically expands containers when agents call hidden functions
-            if (_config.Collapsing.EnableErrorRecovery)
-            {
-                var recoveryLogger = _logger?.CreateLogger<ContainerErrorRecoveryMiddleware>();
-                var errorRecoveryMiddleware = new ContainerErrorRecoveryMiddleware(
-                    buildData.MergedOptions.Tools,
-                    _explicitlyRegisteredTools.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
-                    recoveryLogger);
-                _middlewares.Add(errorRecoveryMiddleware);
-            }
+            // NOTE: ContainerErrorRecoveryMiddleware has been consolidated into ContainerMiddleware.
+            // The Smart Recovery functionality (hidden items, qualified names) is now integrated
+            // directly into ContainerMiddleware's BeforeToolExecutionAsync method.
         }
 
         // Register ClientToolMiddleware automatically
@@ -1908,32 +1910,39 @@ public class AgentBuilder
         }
 
         // ✨ PRIORITY 3: Resolve from individual configuration keys (backward compatibility)
-        if (string.IsNullOrEmpty(_config.Provider.ApiKey) && _configuration != null)
+        if (string.IsNullOrEmpty(_config.Provider.ApiKey))
         {
             var providerKeyForConfig = _config.Provider.ProviderKey;
             if (string.IsNullOrEmpty(providerKeyForConfig))
                 providerKeyForConfig = "openai"; // fallback default
 
-            // Try multiple configuration patterns
-            var apiKey = _configuration[$"{providerKeyForConfig}:ApiKey"]
-                      ?? _configuration[$"{Capitalize(providerKeyForConfig)}:ApiKey"]
-                      ?? Environment.GetEnvironmentVariable($"{providerKeyForConfig.ToUpperInvariant()}_API_KEY");
+            // Use centralized helper to resolve API key
+            var apiKey = ProviderConfigurationHelper.ResolveApiKey(
+                _config.Provider.ApiKey,
+                providerKeyForConfig,
+                _configuration);
 
             if (!string.IsNullOrEmpty(apiKey))
             {
                 _config.Provider.ApiKey = apiKey;
             }
+        }
 
-            // Also try to resolve endpoint if not set
-            if (string.IsNullOrEmpty(_config.Provider.Endpoint))
+        // Also try to resolve endpoint if not set
+        if (string.IsNullOrEmpty(_config.Provider.Endpoint))
+        {
+            var providerKeyForConfig = _config.Provider.ProviderKey;
+            if (string.IsNullOrEmpty(providerKeyForConfig))
+                providerKeyForConfig = "openai"; // fallback default
+
+            var endpoint = ProviderConfigurationHelper.ResolveEndpoint(
+                _config.Provider.Endpoint,
+                providerKeyForConfig,
+                _configuration);
+
+            if (!string.IsNullOrEmpty(endpoint))
             {
-                var endpoint = _configuration[$"{providerKeyForConfig}:Endpoint"]
-                            ?? _configuration[$"{Capitalize(providerKeyForConfig)}:Endpoint"];
-
-                if (!string.IsNullOrEmpty(endpoint))
-                {
-                    _config.Provider.Endpoint = endpoint;
-                }
+                _config.Provider.Endpoint = endpoint;
             }
         }
 
@@ -2009,8 +2018,8 @@ public class AgentBuilder
                 var providerUpper = providerKey.ToUpperInvariant();
                 var providerCapitalized = Capitalize(providerKey);
 
-                errorMessage += $"\n\n💡 Configure your API key using any of these methods:\n\n" +
-                    $"1️⃣  PROVIDERS SECTION (recommended for multiple providers):\n" +
+                errorMessage += $"\n\n Configure your API key using any of these methods:\n\n" +
+                    $" PROVIDERS SECTION (recommended for multiple providers):\n" +
                     $"   appsettings.json → \"Providers\": {{\n" +
                     $"     \"{providerCapitalized}\": {{\n" +
                     $"       \"ProviderKey\": \"{providerKey}\",\n" +
@@ -2018,15 +2027,15 @@ public class AgentBuilder
                     $"       \"ApiKey\": \"your-api-key\"\n" +
                     $"     }}\n" +
                     $"   }}\n\n" +
-                    $"2️⃣  CONNECTION STRING (legacy, single provider):\n" +
+                    $" CONNECTION STRING (legacy, single provider):\n" +
                     $"   appsettings.json → \"ConnectionStrings\": {{\n" +
                     $"     \"Agent\": \"Provider={providerKey};AccessKey=your-api-key;Model=your-model\"\n" +
                     $"   }}\n\n" +
-                    $"3️⃣  ENVIRONMENT VARIABLE:\n" +
+                    $"  ENVIRONMENT VARIABLE:\n" +
                     $"   {providerUpper}_API_KEY=your-api-key\n\n" +
-                    $"4️⃣  USER SECRETS (development only):\n" +
+                    $" USER SECRETS (development only):\n" +
                     $"   dotnet user-secrets set \"Providers:{providerCapitalized}:ApiKey\" \"your-api-key\"\n\n" +
-                    $"5️⃣  CODE (for testing only, not recommended):\n" +
+                    $" CODE (for testing only, not recommended):\n" +
                     $"   Provider = new ProviderConfig {{ ApiKey = \"your-api-key\", ... }}";
             }            throw new InvalidOperationException(errorMessage);
         }
@@ -2997,7 +3006,7 @@ public static class AgentBuilderMiddlewareExtensions
         // Note: When manually adding via extension method, no provider-specific error handler is available.
         // The middleware will use GenericErrorHandler. If provider-specific handling is needed,
         // use the automatic registration in Build() which has access to the provider.
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         builder.Middlewares.Add(middleware);
         return builder;
     }
@@ -3031,7 +3040,7 @@ public static class AgentBuilderMiddlewareExtensions
         // Note: When manually adding via extension method, no provider-specific error handler is available.
         // The middleware will use GenericErrorHandler. If provider-specific handling is needed,
         // use the automatic registration in Build() which has access to the provider.
-        var middleware = new FunctionRetryMiddleware(config);
+        var middleware = new RetryMiddleware(config);
         builder.Middlewares.Add(middleware);
         return builder;
     }
@@ -3886,7 +3895,7 @@ public static class AgentBuilderConfigExtensions
     ///    - Environment variables
     ///    - User secrets (development only)
     ///
-    /// 💡 Only use this method if you need to:
+    ///  Only use this method if you need to:
     ///    - Load from a non-standard location
     ///    - Use custom configuration sources
     ///    - Override the default configuration behavior
@@ -3916,7 +3925,7 @@ public static class AgentBuilderConfigExtensions
     ///
     ///   OPTIONAL: AgentBuilder automatically loads appsettings.json from the current directory.
     ///
-    /// 💡 Only use this method if you need to load from a different file or location.
+    ///  Only use this method if you need to load from a different file or location.
     ///
     /// Example:
     /// <code>

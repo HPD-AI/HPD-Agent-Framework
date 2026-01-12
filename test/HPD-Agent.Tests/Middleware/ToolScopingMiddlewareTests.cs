@@ -5,6 +5,7 @@ using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using System.Collections.Immutable;
 using Xunit;
+using CollapsingStateData = HPD.Agent.ContainerMiddlewareState;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -80,7 +81,7 @@ public class ContainerMiddlewareTests
         // State with expanded Toolkit
         var state = CreateEmptyState();
         var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestToolkit");
-        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(CollapsingState) };
+        state = state with { MiddlewareState = state.MiddlewareState.SetState("HPD.Agent.ContainerMiddlewareState", CollapsingState) };
 
         var context = CreateContext(state: state, options: new ChatOptions { Tools = allTools });
 
@@ -164,7 +165,8 @@ public class ContainerMiddlewareTests
 
         // Assert - container detection happens but we check state instead
         // When disabled, no containers should be expanded
-        Assert.Empty(context.Analyze(s => s.MiddlewareState.Collapsing)?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
+        var containerState = context.Analyze(s => s.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState"));
+        Assert.Empty(containerState?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -210,7 +212,8 @@ public class ContainerMiddlewareTests
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
-        Assert.Contains("FinancialToolkit", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
+        var containerState = pendingState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
+        Assert.Contains("FinancialToolkit", containerState?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -239,7 +242,8 @@ public class ContainerMiddlewareTests
         Assert.NotNull(pendingState);
 
         // Check Collapsing state
-        Assert.Contains("TestSkill", pendingState.MiddlewareState.Collapsing?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
+        var containerState = pendingState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
+        Assert.Contains("TestSkill", containerState?.ExpandedContainers ?? ImmutableHashSet<string>.Empty);
     }
 
     [Fact]
@@ -266,7 +270,7 @@ public class ContainerMiddlewareTests
         Assert.NotNull(pendingState);
 
         // Check instructions in Collapsing state
-        var CollapsingState = pendingState.MiddlewareState.Collapsing;
+        var CollapsingState = pendingState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
         Assert.NotNull(CollapsingState);
         Assert.True(CollapsingState!.ActiveContainerInstructions.ContainsKey("MetricSkill"));
         Assert.Equal(instructions, CollapsingState.ActiveContainerInstructions["MetricSkill"].SystemPrompt);
@@ -323,7 +327,7 @@ public class ContainerMiddlewareTests
         var pendingState = context.State;
         Assert.NotNull(pendingState);
 
-        var CollapsingState = pendingState.MiddlewareState.Collapsing;
+        var CollapsingState = pendingState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
         Assert.NotNull(CollapsingState);
         Assert.Contains("Toolkit1", CollapsingState!.ExpandedContainers);
         Assert.Contains("Toolkit2", CollapsingState.ExpandedContainers);
@@ -523,29 +527,29 @@ public class ContainerMiddlewareTests
         // Create state with ExpandToolkit in ContainersExpandedThisTurn
         var state = CreateEmptyState();
         var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandToolkit");
-        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+        state = state with { MiddlewareState = state.MiddlewareState.SetState("HPD.Agent.ContainerMiddlewareState", collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert - Both messages remain, but with container calls/results removed
+        // Assert - Both messages remain with all calls/results (containers stay in history for cross-turn context)
         Assert.Equal(2, turnHistory.Count);
 
-        // Check Assistant message - should have only 2 function calls (container removed)
+        // Check Assistant message - should have all 3 function calls
         var assistantMsg = turnHistory[0];
         Assert.Equal(ChatRole.Assistant, assistantMsg.Role);
-        Assert.Equal(2, assistantMsg.Contents.Count);
-        Assert.DoesNotContain(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call1");
+        Assert.Equal(3, assistantMsg.Contents.Count);
+        Assert.Contains(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call1");
         Assert.Contains(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call2");
         Assert.Contains(assistantMsg.Contents, c => c is FunctionCallContent fcc && fcc.CallId == "call3");
 
-        // Check Tool message - should have only 2 results (container result removed)
+        // Check Tool message - should have all 3 results
         var toolMsg = turnHistory[1];
         Assert.Equal(ChatRole.Tool, toolMsg.Role);
-        Assert.Equal(2, toolMsg.Contents.Count);
-        Assert.DoesNotContain(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call1");
+        Assert.Equal(3, toolMsg.Contents.Count);
+        Assert.Contains(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call1");
         Assert.Contains(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call2");
         Assert.Contains(toolMsg.Contents, c => c is FunctionResultContent frc && frc.CallId == "call3");
     }
@@ -648,25 +652,31 @@ public class ContainerMiddlewareTests
         var collapsingState = new CollapsingStateData()
             .WithExpandedContainer("ExpandToolkitA")
             .WithExpandedContainer("ExpandToolkitB");
-        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+        state = state with { MiddlewareState = state.MiddlewareState.SetState("HPD.Agent.ContainerMiddlewareState", collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert: Both messages remain with only regular function call/result
+        // Assert: Both messages remain with all container and regular calls (containers stay in history for cross-turn context)
         Assert.Equal(2, turnHistory.Count);
 
         var assistantMsg = turnHistory[0];
-        Assert.Single(assistantMsg.Contents);
-        var call = Assert.IsType<FunctionCallContent>(assistantMsg.Contents[0]);
-        Assert.Equal("call3", call.CallId);
+        Assert.Equal(3, assistantMsg.Contents.Count);
+        var calls = assistantMsg.Contents.OfType<FunctionCallContent>().ToList();
+        Assert.Equal(3, calls.Count);
+        Assert.Contains(calls, c => c.CallId == "call1");
+        Assert.Contains(calls, c => c.CallId == "call2");
+        Assert.Contains(calls, c => c.CallId == "call3");
 
         var toolMsg = turnHistory[1];
-        Assert.Single(toolMsg.Contents);
-        var result = Assert.IsType<FunctionResultContent>(toolMsg.Contents[0]);
-        Assert.Equal("call3", result.CallId);
+        Assert.Equal(3, toolMsg.Contents.Count);
+        var results = toolMsg.Contents.OfType<FunctionResultContent>().ToList();
+        Assert.Equal(3, results.Count);
+        Assert.Contains(results, r => r.CallId == "call1");
+        Assert.Contains(results, r => r.CallId == "call2");
+        Assert.Contains(results, r => r.CallId == "call3");
     }
 
     [Fact]
@@ -698,22 +708,31 @@ public class ContainerMiddlewareTests
         // Create state with ExpandToolkit in ContainersExpandedThisTurn
         var state = CreateEmptyState();
         var collapsingState = new CollapsingStateData().WithExpandedContainer("ExpandToolkit");
-        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+        state = state with { MiddlewareState = state.MiddlewareState.SetState("HPD.Agent.ContainerMiddlewareState", collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert: Assistant message with only container calls AND Tool message with only ephemeral results should be removed
-        Assert.Equal(2, turnHistory.Count);
-        Assert.DoesNotContain(turnHistory, m => m.Role == ChatRole.Tool);
-        Assert.Contains(turnHistory, m => m.Role == ChatRole.User);
-        Assert.Equal(1, turnHistory.Count(m => m.Role == ChatRole.Assistant));
-        // The remaining assistant message should be the text-only one
-        var remainingAssistant = turnHistory.First(m => m.Role == ChatRole.Assistant);
-        Assert.Single(remainingAssistant.Contents);
-        Assert.IsType<TextContent>(remainingAssistant.Contents[0]);
+        // Assert: All messages remain (containers stay in history for cross-turn context)
+        Assert.Equal(4, turnHistory.Count);
+        var userMsg = Assert.Single(turnHistory.Where(m => m.Role == ChatRole.User));
+        var assistantMsgs = turnHistory.Where(m => m.Role == ChatRole.Assistant).ToList();
+        Assert.Equal(2, assistantMsgs.Count);
+        var toolMsg = Assert.Single(turnHistory.Where(m => m.Role == ChatRole.Tool));
+        
+        // First assistant message should have the container call
+        Assert.Single(assistantMsgs[0].Contents);
+        Assert.IsType<FunctionCallContent>(assistantMsgs[0].Contents[0]);
+        
+        // Tool message should have the container result
+        Assert.Single(toolMsg.Contents);
+        Assert.IsType<FunctionResultContent>(toolMsg.Contents[0]);
+        
+        // Second assistant message should be the text-only one
+        Assert.Single(assistantMsgs[1].Contents);
+        Assert.IsType<TextContent>(assistantMsgs[1].Contents[0]);
     }
 
     [Fact]
@@ -775,25 +794,31 @@ public class ContainerMiddlewareTests
         var collapsingState = new CollapsingStateData()
             .WithExpandedContainer("MathTools")
             .WithExpandedContainer("QuickAnalysis");
-        state = state with { MiddlewareState = state.MiddlewareState.WithCollapsing(collapsingState) };
+        state = state with { MiddlewareState = state.MiddlewareState.SetState("HPD.Agent.ContainerMiddlewareState", collapsingState) };
 
         var context = CreateAfterMessageTurnContext(state: state, turnHistory: turnHistory);
 
         // Act
         await middleware.AfterMessageTurnAsync(context, CancellationToken.None);
 
-        // Assert: Both containers filtered, only regular function remains
+        // Assert: All calls remain (containers stay in history for cross-turn context)
         Assert.Equal(2, turnHistory.Count);
 
         var assistantMsg = turnHistory[0];
-        Assert.Single(assistantMsg.Contents);
-        var call = Assert.IsType<FunctionCallContent>(assistantMsg.Contents[0]);
-        Assert.Equal("call3", call.CallId);
+        Assert.Equal(3, assistantMsg.Contents.Count);
+        var calls = assistantMsg.Contents.OfType<FunctionCallContent>().ToList();
+        Assert.Equal(3, calls.Count);
+        Assert.Contains(calls, c => c.CallId == "call1");
+        Assert.Contains(calls, c => c.CallId == "call2");
+        Assert.Contains(calls, c => c.CallId == "call3");
 
         var toolMsg = turnHistory[1];
-        Assert.Single(toolMsg.Contents);
-        var result = Assert.IsType<FunctionResultContent>(toolMsg.Contents[0]);
-        Assert.Equal("call3", result.CallId);
+        Assert.Equal(3, toolMsg.Contents.Count);
+        var results = toolMsg.Contents.OfType<FunctionResultContent>().ToList();
+        Assert.Equal(3, results.Count);
+        Assert.Contains(results, r => r.CallId == "call1");
+        Assert.Contains(results, r => r.CallId == "call2");
+        Assert.Contains(results, r => r.CallId == "call3");
     }
 
     [Fact]
@@ -849,7 +874,8 @@ public class ContainerMiddlewareTests
             "TestAgent",
             "test-conversation",
             agentState,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

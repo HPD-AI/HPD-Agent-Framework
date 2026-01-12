@@ -1,16 +1,26 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
-using HPD.Agent.Audio.Providers;
+using System.Runtime.CompilerServices;
+using HPD.Agent.Audio.Tts;
+using HPD.Agent.AudioProviders.ElevenLabs.Tts;
 
-namespace HPD.Agent.Audio.ElevenLabs;
+namespace HPD.Agent.AudioProviders.ElevenLabs;
 
 /// <summary>
-/// Module for registering ElevenLabs audio provider features.
+/// Auto-registers ElevenLabs audio provider on assembly load.
+/// ElevenLabs supports TTS only (no STT or VAD).
 /// </summary>
-public static class ElevenLabsAudioProviderModule
+public static class ElevenLabsProviderModule
 {
-    /// <summary>
-    /// Gets the ElevenLabs audio provider features implementation.
-    /// </summary>
-    public static IAudioProviderFeatures GetFeatures() => new ElevenLabsAudioProviderFeatures();
+#pragma warning disable CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
+    [ModuleInitializer]
+#pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
+    internal static void Initialize()
+    {
+        // Register TTS factory only (ElevenLabs is TTS-only)
+        TtsProviderDiscovery.RegisterFactory("elevenlabs", () => new ElevenLabsTtsProviderFactory());
+        TtsProviderDiscovery.RegisterConfigType<ElevenLabsTtsConfig>("elevenlabs");
+
+        // No STT or VAD registration (not supported)
+    }
 }

@@ -300,7 +300,7 @@ public void ModelRequest_ImmutableOverride()
 3. **Deprecated IChatClient methods** - Old `ChatCompletion` → new `ChatResponse`
 4. **Manual review needed** - Can't fully automate due to context-specific logic
 
-### Recommendations 💡
+### Recommendations 
 1. **Use bulk find/replace** - Automate mechanical changes first
 2. **Migrate in priority order** - Fix helpers first, then core tests
 3. **One file at a time** - Commit after each successful migration

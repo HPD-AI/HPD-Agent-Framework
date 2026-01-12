@@ -543,7 +543,8 @@ public class LoggingMiddlewareTests
             "TestAgent",
             "test-conversation",
             state,
-            new BidirectionalEventCoordinator(),
+            new HPD.Events.Core.EventCoordinator(),
+            new AgentSession("test-session"),
             CancellationToken.None);
     }
 

@@ -4,6 +4,7 @@ using HPD.Agent;
 using HPD.Agent;
 using HPD.Agent.Tests.Infrastructure;
 using System.Text.Json;
+using CollapsingStateData = HPD.Agent.ContainerMiddlewareState;
 
 namespace HPD.Agent.Tests.Core;
 
@@ -162,10 +163,7 @@ public class CheckpointingTests : AgentTestBase
             "TestAgent");
         thread.ExecutionState = state;
 
-        // Act: Save checkpoint (for crash recovery, use the internal checkpoint method)
-        // For LatestOnly mode with history disabled, we store as a SessionCheckpoint
-        var checkpoint = thread.ToCheckpoint();
-        // Save as checkpoint by storing directly
+        // Act: Save session (lightweight snapshot without ExecutionState)
         await checkpointer.SaveSessionAsync(thread);
         var loadedThread = await checkpointer.LoadSessionAsync(thread.Id);
 
@@ -365,7 +363,7 @@ public class CheckpointingTests : AgentTestBase
         Assert.NotNull(loadedThread);
         Assert.NotNull(loadedThread.ExecutionState);
         Assert.Equal(0, loadedThread.ExecutionState.Iteration);
-        var CollapsingState = loadedThread.ExecutionState.MiddlewareState.Collapsing;
+        var CollapsingState = loadedThread.ExecutionState.MiddlewareState.GetState<ContainerMiddlewareState>("HPD.Agent.ContainerMiddlewareState");
         Assert.True(CollapsingState == null || CollapsingState.ExpandedContainers.Count == 0);
     }
 

@@ -1,29 +1,32 @@
 // Copyright (c) 2025 Einstein Essibu. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using System.Text.Json;
-using HPD.Agent.Audio.Providers;
+using HPD.Agent.Audio.Tts;
+using HPD.Agent.Audio.Stt;
+using HPD.Agent.AudioProviders.OpenAI.Tts;
+using HPD.Agent.AudioProviders.OpenAI.Stt;
 
 namespace HPD.Agent.AudioProviders.OpenAI;
 
 /// <summary>
-/// Auto-discovers and registers OpenAI audio provider on assembly load.
+/// Auto-registers OpenAI audio provider on assembly load.
+/// OpenAI supports both TTS and STT (but not VAD).
 /// </summary>
 public static class OpenAIAudioProviderModule
 {
 #pragma warning disable CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
     [ModuleInitializer]
 #pragma warning restore CA2255 // The 'ModuleInitializer' attribute should not be used in libraries
-    public static void Initialize()
+    internal static void Initialize()
     {
-        // Register provider factory
-        AudioProviderDiscovery.RegisterProviderFactory(() => new OpenAIAudioProvider());
+        // Register TTS factory
+        TtsProviderDiscovery.RegisterFactory("openai-audio", () => new OpenAITtsProviderFactory());
+        TtsProviderDiscovery.RegisterConfigType<OpenAITtsConfig>("openai-audio");
 
-        // Register config type for FFI/JSON serialization
-        AudioProviderDiscovery.RegisterProviderConfigType<OpenAIAudioConfig>(
-            "openai-audio",
-            json => JsonSerializer.Deserialize<OpenAIAudioConfig>(json),
-            config => JsonSerializer.Serialize(config)
-        );
+        // Register STT factory
+        SttProviderDiscovery.RegisterFactory("openai-audio", () => new OpenAISttProviderFactory());
+        SttProviderDiscovery.RegisterConfigType<OpenAISttConfig>("openai-audio");
+
+        // Note: OpenAI does not provide VAD, so no VadProviderDiscovery registration
     }
 }
