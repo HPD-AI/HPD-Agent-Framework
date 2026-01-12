@@ -11,9 +11,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.TextExtraction", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.MCP", "HPD-Agent.MCP\HPD-Agent.MCP.csproj", "{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Tools", "HPD-Agent.Tools", "{DA053773-4718-BBFE-4AB7-9E4FCE55BF84}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Toolkit", "HPD-Agent.Toolkit", "{DA053773-4718-BBFE-4AB7-9E4FCE55BF84}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Tools.FileSystem", "HPD-Agent.Tools\HPD-Agent.Tools.FileSystem\HPD-Agent.Tools.FileSystem.csproj", "{DB341036-1919-4305-A8D1-0BFC4FDB945C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.FileSystem", "HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj", "{DB341036-1919-4305-A8D1-0BFC4FDB945C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Providers", "HPD-Agent.Providers", "{8BC2D7F8-375B-160C-ABF4-2068149162CA}"
 EndProject
@@ -47,7 +47,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AgentWebTest", "AgentWebTes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAPI", "test\AgentWebTest\AgentAPI\AgentAPI.csproj", "{CCF66A9F-8C83-45EB-A9B1-A926EC0901EC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Tools.WebSearch", "HPD-Agent.Tools\HPD-Agent.Tools.WebSearch\HPD-Agent.Tools.WebSearch.csproj", "{B479B926-7F13-4AED-8B88-90658DD8F0F9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.WebSearch", "HPD-Agent.Toolkit\HPD-Agent.Toolkit.WebSearch\HPD-Agent.Toolkit.WebSearch.csproj", "{B479B926-7F13-4AED-8B88-90658DD8F0F9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.FFI", "HPD-Agent.FFI\HPD-Agent.FFI.csproj", "{FA199B73-7082-4F26-AD52-F33BD1BAE9ED}"
 EndProject
