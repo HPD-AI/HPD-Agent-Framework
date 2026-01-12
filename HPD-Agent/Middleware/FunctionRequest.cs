@@ -113,7 +113,6 @@ public sealed record FunctionRequest
 
     /// <summary>
     /// Creates a modified copy of this request.
-    /// Follows the LangChain pattern for immutable request modification.
     /// </summary>
     /// <param name="function">Optional new function (null = keep original)</param>
     /// <param name="arguments">Optional new arguments (null = keep original)</param>

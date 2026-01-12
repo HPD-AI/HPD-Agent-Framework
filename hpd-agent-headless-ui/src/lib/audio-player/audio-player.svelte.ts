@@ -10,7 +10,7 @@
  * - Volume control (Web Audio mode only)
  * - Progress tracking
  *
- * Based on LiveKit patterns adapted for Svelte runes + headless design.
+ * Based on  patterns adapted for Svelte runes + headless design.
  *
  * @see AUDIO_COMPONENTS.md proposal
  */

@@ -39,7 +39,6 @@ The single philosophy driving this library: ***"Make Simple Things Simple, Make 
 > [!WARNING]
 > **HPD.Agent.Framework is currently in an early development phase.**
 >
-> This software is not ready for production environments. 
 > Until the release of version **1.0**, the API, inner mechanisms and naming are subject to significant changes without notice.
 
 

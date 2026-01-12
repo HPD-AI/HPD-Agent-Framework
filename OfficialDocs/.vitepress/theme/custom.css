@@ -180,3 +180,276 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #4B5563;
 }
+
+/**
+ * Home Page Feature Cards - Color-coded with icon backgrounds
+ */
+.VPFeatures .VPFeature {
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+/* Make all feature icons smaller and light colored */
+.VPFeatures .VPFeature .VPImage {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.VPFeatures .VPFeature .icon img,
+.VPFeatures .VPFeature .icon svg {
+  width: 20px !important;
+  height: 20px !important;
+  filter: brightness(0) invert(1);
+}
+
+/* Crash Recovery - Teal */
+.VPFeatures .VPFeature:nth-child(1) {
+  background: rgba(20, 184, 166, 0.05);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(1):hover {
+  border-color: rgba(20, 184, 166, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(1) .icon {
+  background: rgba(20, 184, 166, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Multi-Agent Workflows - Purple */
+.VPFeatures .VPFeature:nth-child(2) {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(2):hover {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(2) .icon {
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Voice Agents - Pink */
+.VPFeatures .VPFeature:nth-child(3) {
+  background: rgba(236, 72, 153, 0.05);
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(3):hover {
+  border-color: rgba(236, 72, 153, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(3) .icon {
+  background: rgba(236, 72, 153, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Event Streaming - Teal */
+.VPFeatures .VPFeature:nth-child(4) {
+  background: rgba(20, 184, 166, 0.05);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(4):hover {
+  border-color: rgba(20, 184, 166, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(4) .icon {
+  background: rgba(20, 184, 166, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Human-in-the-Loop - Green */
+.VPFeatures .VPFeature:nth-child(5) {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(5):hover {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(5) .icon {
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Native AOT - Pink */
+.VPFeatures .VPFeature:nth-child(6) {
+  background: rgba(236, 72, 153, 0.05);
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(6):hover {
+  border-color: rgba(236, 72, 153, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(6) .icon {
+  background: rgba(236, 72, 153, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Structured Output - Purple */
+.VPFeatures .VPFeature:nth-child(7) {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(7):hover {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(7) .icon {
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Provider Agnostic - Blue */
+.VPFeatures .VPFeature:nth-child(8) {
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(8):hover {
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(8) .icon {
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* MCP Protocol - Teal */
+.VPFeatures .VPFeature:nth-child(9) {
+  background: rgba(20, 184, 166, 0.05);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(9):hover {
+  border-color: rgba(20, 184, 166, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(9) .icon {
+  background: rgba(20, 184, 166, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Extensible Middleware - Purple */
+.VPFeatures .VPFeature:nth-child(10) {
+  background: rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(10):hover {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(10) .icon {
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Full Observability - Green */
+.VPFeatures .VPFeature:nth-child(11) {
+  background: rgba(34, 197, 94, 0.05);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(11):hover {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(11) .icon {
+  background: rgba(34, 197, 94, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Modular Toolkits - Pink */
+.VPFeatures .VPFeature:nth-child(12) {
+  background: rgba(236, 72, 153, 0.05);
+  border: 1px solid rgba(236, 72, 153, 0.3);
+}
+
+.VPFeatures .VPFeature:nth-child(12):hover {
+  border-color: rgba(236, 72, 153, 0.5);
+}
+
+.VPFeatures .VPFeature:nth-child(12) .icon {
+  background: rgba(236, 72, 153, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

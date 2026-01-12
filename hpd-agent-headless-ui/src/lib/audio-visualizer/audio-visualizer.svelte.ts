@@ -157,7 +157,7 @@ export class AudioVisualizerState {
 	}
 
 	// ============================================================================
-	// Frequency Analysis (LiveKit pattern)
+	// Frequency Analysis ( pattern)
 	// ============================================================================
 
 	/**
@@ -172,7 +172,7 @@ export class AudioVisualizerState {
 		// Get frequency data
 		analyserNode.getByteFrequencyData(dataArray);
 
-		// Split into bands (like LiveKit's multiband)
+		// Split into bands (like 's multiband)
 		const bandSize = Math.floor(bufferLength / bands);
 		const volumes: number[] = [];
 

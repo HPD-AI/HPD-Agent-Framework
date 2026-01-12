@@ -211,5 +211,5 @@ This covers the essentials for building responsive agent applications. For more 
 - [**Streaming & Cancellation**](../Events/05.5%20Streaming%20%26%20Cancellation.md) - Interruption, graceful shutdown
 
 ### Platform-Specific Guides
-- [**Console Apps**](../Platform%20Guides/Console%20Apps/) - Console patterns, user prompts, Ctrl+C handling
-- [**Web Apps**](../Platform%20Guides/Web%20Apps/) - SSE setup, React patterns, TypeScript client
+- [**Building Console Apps**](07%20Building%20Console%20Apps.md) - Console patterns, user prompts, Ctrl+C handling
+- [**Building Web Apps**](08%20Building%20Web%20Apps.md) - SSE setup, React patterns, TypeScript client

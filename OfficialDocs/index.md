@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "HPD-Agent"
-  text: "Production-Ready Multi-Agent Framework"
-  tagline: Build AI agents in .NET without the complexity. Configure once. Scale forever. Deploy anywhere.
+  text: "Stop Wrestling. Start Building."
+  tagline: The Only .NET Agent Framework You'll Ever Need. Build production-ready AI agents in .NET without the complexity. Configure once. Scale forever. Deploy anywhere.
   image:
     src: /logo.svg
     alt: HPD-Agent
@@ -17,51 +17,63 @@ hero:
       link: https://github.com/HPD-AI/HPD-Agent
 
 features:
-  - icon: 🛡️
+  - icon:
+      src: /icons/shield.svg
     title: Crash Recovery
     details: Checkpoints save your progress. Resume exactly where you left off after crashes or restarts.
 
-  - icon: 🔀
+  - icon:
+      src: /icons/git-branch.svg
     title: Multi-Agent Workflows
     details: Orchestrate teams of agents. Conditional routing. Sub-agent hierarchies. Event bubbling.
 
-  - icon: 🎙️
+  - icon:
+      src: /icons/mic.svg
     title: Voice Agents
     details: Real-time voice with turn detection, interruption handling, and filler audio. Production-ready.
 
-  - icon: 📡
+  - icon:
+      src: /icons/radio.svg
     title: Event Streaming
     details: Real-time events. Priority channels. Bidirectional communication. Full observability.
 
-  - icon: ✅
+  - icon:
+      src: /icons/user-check.svg
     title: Human-in-the-Loop
     details: Pause for approval. Tool-level permissions. Security that doesn't get in the way.
 
-  - icon: ⚡
+  - icon:
+      src: /icons/zap.svg
     title: Native AOT
     details: Native compilation. Instant startup. Minimal memory. Serverless perfection.
 
-  - icon: 📋
+  - icon:
+      src: /icons/layout-template.svg
     title: Structured Output
     details: Type-safe JSON extraction. Schema validation. Works across all providers.
 
-  - icon: 🔌
+  - icon:
+      src: /icons/plug.svg
     title: Provider Agnostic
     details: 9 LLM providers - OpenAI, Anthropic, Gemini, Bedrock, Ollama, and more. One API. Zero lock-in.
 
-  - icon: 🔗
+  - icon:
+      src: /icons/link.svg
     title: MCP Protocol
     details: Native Model Context Protocol support. Connect external tool servers instantly.
 
-  - icon: 📚
+  - icon:
+      src: /icons/layers.svg
     title: Extensible Middleware
     details: Hook into every step - message, iteration, function. Fully extensible pipeline architecture.
 
-  - icon: 📊
+  - icon:
+      src: /icons/activity.svg
     title: Full Observability
     details: 50+ event types. OpenTelemetry support. Real-time metrics. Complete visibility.
 
-  - icon: 🔧
+  - icon:
+      src: /icons/wrench.svg
     title: Modular Toolkits
     details: Organize capabilities in C# classes. Collapsible containers reduce context usage. Type-safe and AOT-ready.
 ---

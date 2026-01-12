@@ -5,7 +5,7 @@
  *
  * ## Features
  *
- * - **Multiband frequency analysis** - 5-7 frequency bands (LiveKit pattern)
+ * - **Multiband frequency analysis** - 5-7 frequency bands ( pattern)
  * - **Multiple modes** - Bar, waveform, radial visualizations
  * - **Real-time updates** - 60fps via requestAnimationFrame
  * - **Web Audio API** - Uses AnalyserNode for frequency data
@@ -182,7 +182,7 @@
  *
  * ## Technical Details
  *
- * ### Frequency Analysis (LiveKit Pattern)
+ * ### Frequency Analysis ( Pattern)
  *
  * - Uses Web Audio API `AnalyserNode`
  * - FFT size: 256 (fast, sufficient for 5-7 bands)

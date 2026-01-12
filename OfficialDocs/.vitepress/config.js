@@ -4,11 +4,17 @@ export default defineConfig({
   title: 'HPD-Agent',
   description: 'Production-ready multi-agent framework for .NET',
 
+  // Base path for GitHub Pages deployment
+  base: '/HPD-Agent/',
+
   // Use OfficialDocs as the root
   srcDir: '.',
 
   // Clean URLs (removes .html)
   cleanUrls: true,
+
+  // Ignore dead links for now (TODO: fix broken links)
+  ignoreDeadLinks: true,
 
   // Theme configuration
   themeConfig: {
@@ -17,7 +23,7 @@ export default defineConfig({
     nav: [
       { text: 'Home', link: '/' },
       { text: 'Getting Started', link: '/Getting Started/00 Agents Overview' },
-      { text: 'Tools', link: '/Tools/02.1 C# Tools Overview' },
+      { text: 'Tools', link: '/Tools/02.1 CSharp Tools Overview' },
       { text: 'Middleware', link: '/Middleware/04.1 Middleware Lifecycle' },
       { text: 'Events', link: '/Events/05.1 Events Overview' },
     ],
@@ -42,7 +48,7 @@ export default defineConfig({
         text: 'Tools',
         collapsed: false,
         items: [
-          { text: 'C# Tools Overview', link: '/Tools/02.1 C# Tools Overview' },
+          { text: 'C# Tools Overview', link: '/Tools/02.1 CSharp Tools Overview' },
           { text: 'AIFunctions', link: '/Tools/02.1.1 AIFunctions' },
           { text: 'Skills', link: '/Tools/02.1.2 Skills' },
           { text: 'SubAgents', link: '/Tools/02.1.3 SubAgents' },

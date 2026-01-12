@@ -149,7 +149,6 @@ public sealed record ModelRequest
 
     /// <summary>
     /// Creates a modified copy of this request.
-    /// Follows the LangChain pattern for immutable request modification.
     /// </summary>
     /// <param name="model">Optional new model (null = keep original)</param>
     /// <param name="messages">Optional new messages (null = keep original)</param>

@@ -52,23 +52,23 @@ Run per LLM call (loops if agent re-thinks). Use for history reduction, dynamic 
 ### Function Level
 Run per function execution. Use for permissions, argument validation, retry logic, logging.
 
-See [05.1 Middleware Lifecycle](Middleware/05.1%20Middleware%20Lifecycle.md) for complete hook reference.
+See [05.1 Middleware Lifecycle](Middleware/04.1%20Middleware%20Lifecycle.md) for complete hook reference.
 
 ## Complete Middleware Guide
 
-### 1. [Middleware Lifecycle](../Middleware/05.1%20Middleware%20Lifecycle.md)
+### 1. [Middleware Lifecycle](../Middleware/04.1%20Middleware%20Lifecycle.md)
 Complete reference of all available hooks and context properties. Understand when each hook fires and what data is available.
 
-### 2. [Middleware State](../Middleware/05.2%20Middleware%20State.md)
+### 2. [Middleware State](../Middleware/04.2%20Middleware%20State.md)
 Manage state across function calls and iterations using a **strongly-typed, immutable state system**. Create custom state, access it, and update it.
 
-### 3. [Middleware Events](../Middleware/05.3%20Middleware%20Events.md)
+### 3. [Middleware Events](../Middleware/04.3%20Middleware%20Events.md)
 Emit events and wait for responses. Build interactive middleware patterns like permissions, approvals, and human-in-the-loop workflows.
 
-### 4. [Built-in Middleware](../Middleware/05.4%20Built-in%20Middleware.md)
+### 4. [Built-in Middleware](../Middleware/04.4%20Built-in%20Middleware.md)
 Ready-to-use middleware for common use cases: rate limiting, circuit breakers, error tracking, permissions, and more.
 
-### 5. [Custom Middleware](../Middleware/05.5%20Custom%20Middleware.md)
+### 5. [Custom Middleware](../Middleware/04.5%20Custom%20Middleware.md)
 Build your own middleware from scratch. Learn patterns, state management, event coordination, and best practices.
 
 ## Quick Example
@@ -118,10 +118,10 @@ var agent = new AgentBuilder()
 
 ## Next Steps
 
-- **Start here:** [05.1 Middleware Lifecycle](../Middleware/05.1%20Middleware%20Lifecycle.md) - See all available hooks
-- **Store data:** [05.2 Middleware State](../Middleware/05.2%20Middleware%20State.md) - Create custom state with `[MiddlewareState]`
-- **Build interactive:** [05.3 Middleware Events](../Middleware/05.3%20Middleware%20Events.md) - Emit events and wait for responses
-- **Use ready-made:** [05.4 Built-in Middleware](../Middleware/05.4%20Built-in%20Middleware.md) - Plug in predefined middleware
-- **Build custom:** [05.5 Custom Middleware](../Middleware/05.5%20Custom%20Middleware.md) - Implement your own logic
+- **Start here:** [05.1 Middleware Lifecycle](../Middleware/04.1%20Middleware%20Lifecycle.md) - See all available hooks
+- **Store data:** [05.2 Middleware State](../Middleware/04.2%20Middleware%20State.md) - Create custom state with `[MiddlewareState]`
+- **Build interactive:** [05.3 Middleware Events](../Middleware/04.3%20Middleware%20Events.md) - Emit events and wait for responses
+- **Use ready-made:** [05.4 Built-in Middleware](../Middleware/04.4%20Built-in%20Middleware.md) - Plug in predefined middleware
+- **Build custom:** [05.5 Custom Middleware](../Middleware/04.5%20Custom%20Middleware.md) - Implement your own logic
 - **Related:** [03 Tool Calling.md](03%20Tool%20Calling.md) - Tools that middleware can control
 - **Related:** [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md) - State persistence across sessions

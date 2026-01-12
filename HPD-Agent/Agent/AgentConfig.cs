@@ -806,29 +806,6 @@ public class HistoryReductionConfig
     public int? SummarizationThreshold { get; set; } = 5;
 
     /// <summary>
-    /// Maximum token budget before triggering reduction (optional, FFI-friendly).
-    ///
-    ///   CURRENTLY DISABLED - Token tracking is not implemented.
-    /// See docs/TOKEN_TRACKING_README.md for why this is architecturally impossible.
-    ///
-    /// This setting exists for API compatibility but is IGNORED by the history reduction system.
-    /// History reduction uses message-count based strategy only (TargetMessageCount).
-    ///
-    /// Why token tracking doesn't work:
-    /// - Provider APIs report cumulative input tokens, not per-message breakdowns
-    /// - Prompt caching makes costs non-deterministic (cache hit = 90% cheaper)
-    /// - Ephemeral context (system prompts, RAG, memory) adds 50-200% overhead
-    /// - Reasoning tokens (o1, Gemini Thinking) can be 50x larger than visible output
-    ///
-    /// Industry context: LangChain, Semantic Kernel, and AutoGen all use message-count
-    /// reduction for the same reason. Even Gemini CLI (with privileged API access) uses
-    /// character estimation with ±20% acknowledged error.
-    ///
-    /// If null (recommended), uses message-based reduction.
-    /// </summary>
-    public int? MaxTokenBudget { get; set; } = null;
-
-    /// <summary>
     /// Target token count after reduction (default: 4000).
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
