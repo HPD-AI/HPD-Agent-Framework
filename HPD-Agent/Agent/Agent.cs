@@ -33,7 +33,7 @@ public sealed class Agent
     private static readonly AsyncLocal<Agent?> _rootAgent = new();
     // AsyncLocal storage for current conversation session (flows across async calls)
     // Provides access to session context (project, documents, etc.) throughout the agent execution
-    private static readonly AsyncLocal<AgentSession?> _currentThread = new();
+    private static readonly AsyncLocal<AgentSession?> _currentSession = new();
 
     // Specialized component fields for delegation
     private readonly MessageProcessor _messageProcessor;
@@ -106,10 +106,10 @@ public sealed class Agent
     /// Gets or sets the current conversation session in the execution context.
     /// This flows across async calls and provides access to session context throughout agent execution.
     /// </summary>
-    public static AgentSession? CurrentThread
+    public static AgentSession? CurrentSession
     {
-        get => _currentThread.Value;
-        internal set => _currentThread.Value = value;
+        get => _currentSession.Value;
+        internal set => _currentSession.Value = value;
     }
 
     /// <summary>

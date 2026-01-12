@@ -1,0 +1,29 @@
+{
+  "sessionId": "console-2026-01-12-101636-edb709c8",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "I am an AI assistant with access to two specialized toolkits that help me perform certain tasks:\n\n1. CodingToolkit - This allows me to work with files and code by:\n- Reading, editing, and writing files\n- Listing directory contents\n- Searching files (glob and grep)\n- Comparing files\n- Getting file information\n- Executing shell commands\n\n2. MathToolkit - This gives me capabilities to perform mathematical operations like:\n- Addition and subtraction\n- Multiplication\n- Finding absolute values\n- Square numbers\n- Finding minimums\n- Solving quadratic equations\n\nI can help you with tasks related to these areas by using these tools appropriately. I aim to provide clear, complete, and helpful responses while explaining my reasoning when needed. I can analyze your requests and use the relevant tools to assist you, or let you know if I need additional information to help you effectively.\n\nWhat would you like help with?"
+        }
+      ],
+      "messageId": "gen-1768245050-dZsgU1PxOcFhIS1CrG03"
+    }
+  ],
+  "metadata": {},
+  "createdAt": "2026-01-12T19:10:49.426754Z",
+  "lastActivity": "2026-01-12T19:10:56.069828Z",
+  "conversationId": "98e308ef-b09a-4425-a257-daca027f9fef",
+  "version": 1
+}

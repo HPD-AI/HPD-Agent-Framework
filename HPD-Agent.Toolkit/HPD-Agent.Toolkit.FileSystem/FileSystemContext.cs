@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using HPD.Agent;
 
-namespace HPD.Agent.Tools.FileSystem;
+namespace HPD.Agent.Toolkit.FileSystem;
 
 /// <summary>
 /// Context for FileSystem Toolkit operations with workspace validation.

@@ -9,7 +9,7 @@ using DiffPlex.DiffBuilder.Model;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Ude;
 
-namespace HPD.Agent.Tools.FileSystem;
+namespace HPD.Agent.Toolkit.FileSystem;
 
 /// <summary>
 /// File system operations Toolkit for HPD-Agent.

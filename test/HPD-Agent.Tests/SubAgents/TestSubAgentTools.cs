@@ -174,6 +174,6 @@ public class TestSubAgentTools
                 SystemInstructions = "Test agent with Toolkit access",
                 Provider = new ProviderConfig { ProviderKey = "openrouter", ModelName = "test" }
             },
-            typeof(HPD.Agent.Tools.FileSystem.FileSystemTools));
+            typeof(HPD.Agent.Toolkit.FileSystem.FileSystemTools));
     }
 }

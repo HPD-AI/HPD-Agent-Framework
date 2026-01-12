@@ -8,7 +8,7 @@ public class ToolVisibilityManager
 {
     private readonly ILogger<ToolVisibilityManager>? _logger;
     private readonly Dictionary<string, AIFunction> _allFunctionsByReference;
-    private readonly ImmutableHashSet<string> _explicitlyRegisteredTools;
+    private readonly ImmutableHashSet<string> _explicitlyRegisteredToolkits;
     private readonly ImmutableHashSet<string> _neverCollapseToolkits;
 
     public ToolVisibilityManager(
@@ -20,20 +20,20 @@ public class ToolVisibilityManager
 
     public ToolVisibilityManager(
         IEnumerable<AIFunction> allFunctions,
-        ImmutableHashSet<string> explicitlyRegisteredTools,
+        ImmutableHashSet<string> explicitlyRegisteredToolkits,
         ILogger<ToolVisibilityManager>? logger = null)
-        : this(allFunctions, explicitlyRegisteredTools, null, logger)
+        : this(allFunctions, explicitlyRegisteredToolkits, null, logger)
     {
     }
 
     public ToolVisibilityManager(
         IEnumerable<AIFunction> allFunctions,
-        ImmutableHashSet<string> explicitlyRegisteredTools,
+        ImmutableHashSet<string> explicitlyRegisteredToolkits,
         HashSet<string>? neverCollapseToolkits,
         ILogger<ToolVisibilityManager>? logger = null)
     {
         _logger = logger;
-        _explicitlyRegisteredTools = explicitlyRegisteredTools ?? ImmutableHashSet<string>.Empty;
+        _explicitlyRegisteredToolkits = explicitlyRegisteredToolkits ?? ImmutableHashSet<string>.Empty;
         _neverCollapseToolkits = neverCollapseToolkits != null
             ? ImmutableHashSet.CreateRange(StringComparer.OrdinalIgnoreCase, neverCollapseToolkits)
             : ImmutableHashSet<string>.Empty;
@@ -384,7 +384,7 @@ public class ToolVisibilityManager
         // Hide Collapse containers for Toolkits that were ONLY implicitly registered via skills
         // (i.e., referenced by skills but NOT explicitly registered by the user)
         if (context.ToolkitsWithCollapsedSkills.Contains(CollapseName) &&
-            !_explicitlyRegisteredTools.Contains(CollapseName))
+            !_explicitlyRegisteredToolkits.Contains(CollapseName))
         {
             _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (implicitly registered via skills)");
             return false;
@@ -526,7 +526,7 @@ public class ToolVisibilityManager
 
         // PRIORITY 2: If Toolkit is explicitly registered (and NOT Collapsed), show all its functions
         // (Explicit registration takes precedence over skill references)
-        if (parentToolkit != null && _explicitlyRegisteredTools.Contains(parentToolkit))
+        if (parentToolkit != null && _explicitlyRegisteredToolkits.Contains(parentToolkit))
         {
             // Explicitly registered Toolkit - always show functions
             _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (explicitly registered Toolkit)");

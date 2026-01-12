@@ -50,11 +50,11 @@ public class AgentBuilder
     /// </summary>
     public readonly List<ToolInstanceRegistration> _instanceRegistrations = new();
     // store individual Toolkit contexts
-    internal readonly Dictionary<string, IToolMetadata?> _toolContexts = new();
+    internal readonly Dictionary<string, IToolMetadata?> _toolkitContexts = new();
     // Phase 5: Document store for skill instruction documents
     internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
     // Track explicitly registered Toolkits (for Collapsing manager)
-    internal readonly HashSet<string> _explicitlyRegisteredTools = new(StringComparer.OrdinalIgnoreCase);
+    internal readonly HashSet<string> _explicitlyRegisteredToolkits = new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<Middleware.IAgentMiddleware> _middlewares = new(); // Unified middleware list
     internal readonly HPD.Agent.Permissions.PermissionOverrideRegistry _permissionOverrides = new(); // Permission overrides
 
@@ -62,7 +62,7 @@ public class AgentBuilder
     private LoggingMiddlewareOptions? _loggingOptions = null;
 
     // Function Collapse tracking for middleware Collapsing
-    internal readonly Dictionary<string, string> _functionToToolMap = new(); // functionName -> toolTypeName
+    internal readonly Dictionary<string, string> _functionToToolkitMap = new(); // functionName -> toolTypeName
     internal readonly Dictionary<string, string> _functionToSkillMap = new(); // functionName -> skillName
 
     // Internal observers for agent-level observability (developer-only, hidden from users)
@@ -364,7 +364,7 @@ public class AgentBuilder
         {
             try
             {
-                _toolContexts.TryGetValue(factory.Name, out var ctx);
+                _toolkitContexts.TryGetValue(factory.Name, out var ctx);
 
                 // Create Toolkit instance using AOT-safe resolution:
                 // 1. Try DI first (if ServiceProvider available)
@@ -420,7 +420,7 @@ public class AgentBuilder
         {
             try
             {
-                _toolContexts.TryGetValue(registration.ToolTypeName, out var ctx);
+                _toolkitContexts.TryGetValue(registration.ToolTypeName, out var ctx);
                 var functions = CreateFunctionsFromInstance(registration, ctx ?? _defaulTMetadata);
 
                 // Apply function filter if set
@@ -539,7 +539,7 @@ public class AgentBuilder
 
             // Add to selected factories
             _selectedToolkitFactories.Add(factory);
-            _explicitlyRegisteredTools.Add(factory.Name);
+            _explicitlyRegisteredToolkits.Add(factory.Name);
 
             // Handle function filtering from config
             if (effectiveRef.Functions != null && effectiveRef.Functions.Count > 0)
@@ -563,7 +563,7 @@ public class AgentBuilder
                         factory.MetadataType);
                     if (metadata != null)
                     {
-                        _toolContexts[factory.Name] = metadata;
+                        _toolkitContexts[factory.Name] = metadata;
                     }
                 }
                 catch (JsonException ex)
@@ -1631,7 +1631,7 @@ public class AgentBuilder
     private void RegisterAutoMiddleware(AgentBuildDependencies buildData)
     {
         // Set explicitly registered Toolkits in config for Collapsing manager
-        _config.ExplicitlyRegisteredTools = _explicitlyRegisteredTools
+        _config.explicitlyRegisteredToolkits = _explicitlyRegisteredToolkits
             .ToImmutableHashSet(StringComparer.OrdinalIgnoreCase);
 
         // Set global config for source-generated code to access (sync path sets this, harmless when called from async)
@@ -1700,7 +1700,7 @@ public class AgentBuilder
             var containerLogger = _logger?.CreateLogger<ContainerMiddleware>();
             var containerMiddleware = new ContainerMiddleware(
                 buildData.MergedOptions.Tools,
-                _explicitlyRegisteredTools.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
+                _explicitlyRegisteredToolkits.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
                 _config.Collapsing,
                 containerLogger);
             _middlewares.Add(containerMiddleware);
@@ -1738,7 +1738,7 @@ public class AgentBuilder
             _config!,
             buildData.ClientToUse,
             buildData.MergedOptions,
-            _functionToToolMap,
+            _functionToToolkitMap,
             _functionToSkillMap,
             _middlewares,
             _serviceProvider,
@@ -2625,7 +2625,7 @@ public class AgentBuilder
     /// <summary>
     /// Public access to Toolkit contexts for extension methods and external configuration
     /// </summary>
-    public Dictionary<string, IToolMetadata?> ToolkitContexts => _toolContexts;
+    public Dictionary<string, IToolMetadata?> ToolkitContexts => _toolkitContexts;
 
     /// <summary>
     /// Public access to unified middlewares for extension methods and external configuration
@@ -3731,7 +3731,7 @@ public static class AgentBuilderToolkitExtensions
         builder._selectedToolkitFactories.Add(factory);
 
         // Track as explicitly registered (for ToolVisibilityManager)
-        builder._explicitlyRegisteredTools.Add(toolkitName);
+        builder._explicitlyRegisteredToolkits.Add(toolkitName);
 
         // Store context
         builder.ToolkitContexts[toolkitName] = context;
@@ -3759,7 +3759,7 @@ public static class AgentBuilderToolkitExtensions
         builder.ToolkitContexts[toolkitName] = context;
 
         // Track this as explicitly registered
-        builder._explicitlyRegisteredTools.Add(toolkitName);
+        builder._explicitlyRegisteredToolkits.Add(toolkitName);
 
         // Auto-register dependencies if toolkit is in catalog (for skill dependencies)
         // First try to load the assembly where the instance type is defined
@@ -3806,7 +3806,7 @@ public static class AgentBuilderToolkitExtensions
         builder._selectedToolkitFactories.Add(factory);
 
         // Track as explicitly registered (for ToolVisibilityManager)
-        builder._explicitlyRegisteredTools.Add(toolkitName);
+        builder._explicitlyRegisteredToolkits.Add(toolkitName);
 
         // Store context
         builder.ToolkitContexts[toolkitName] = context;
@@ -3863,7 +3863,7 @@ public static class AgentBuilderToolkitExtensions
             if (builder._availableToolkits!.TryGetValue(depName, out var depFactory))
             {
                 builder._selectedToolkitFactories.Add(depFactory);
-                // Note: Dependencies are NOT added to _explicitlyRegisteredTools
+                // Note: Dependencies are NOT added to _explicitlyRegisteredToolkits
                 // This distinction matters for ToolVisibilityManager
 
                 // Phase 4.5: Store function filter if specific functions are referenced

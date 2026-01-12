@@ -1,148 +1,151 @@
-# Changelog
+# HPD-Agent 0.2.0 Release Notes
 
-All notable changes to HPD-Agent will be documented in this file.
+## 🚨 Breaking Changes
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This is a major release with significant architectural improvements. **All provider packages have breaking changes.**
 
-> **Note:** During the 0.x.y development phase, minor version bumps (0.1 → 0.2) may contain breaking changes as the API stabilizes before 1.0.
+### Package Renames
+- `HPD-Agent.Plugins.FileSystem` → `HPD-Agent.Toolkit.FileSystem`
+- `HPD-Agent.Plugins.WebSearch` → `HPD-Agent.Toolkit.WebSearch`
+- `FileSystemPlugin` class → `FileSystemToolkit`
+
+### Core Framework Changes
+- **Session Management**: Added asset management system with `IAssetStore` interface
+- **Middleware**: Removed `ContainerErrorRecoveryMiddleware`, refactored `ContainerMiddleware`
+- **Provider Discovery**: Changed from auto-discovery to explicit module pattern
+- **Namespace Changes**: All `Plugins` → `Toolkit`
+
+### Audio Architecture Overhaul
+- Deleted `AudioPipelineConfig` → replaced with modular `AudioConfig`
+- Split audio providers into STT/TTS/VAD modules
+- Deleted monolithic audio provider classes
+- New provider factories for each audio capability
+
+### Provider Module Pattern (ALL PROVIDERS)
+All provider packages now use a standardized module pattern:
+- Explicit configuration via `*ProviderConfig`
+- JSON serialization contexts
+- Enhanced error handling
+- Builder extensions for fluent API
+
+**Affected packages:**
+- HPD-Agent.Providers.Anthropic
+- HPD-Agent.Providers.OpenAI
+- HPD-Agent.Providers.AzureAIInference (deprecated - see below)
+- HPD-Agent.Providers.Bedrock
+- HPD-Agent.Providers.GoogleAI
+- HPD-Agent.Providers.HuggingFace
+- HPD-Agent.Providers.Mistral
+- HPD-Agent.Providers.Ollama
+- HPD-Agent.Providers.OnnxRuntime
+- HPD-Agent.Providers.OpenRouter
+- HPD-Agent.AudioProviders.OpenAI
+- HPD-Agent.AudioProviders.ElevenLabs
+
+## ✨ New Features
+
+### New Packages
+- **HPD.Events** (0.1.0): Standalone event architecture library
+- **HPD.Graph.Abstractions** (0.1.0): Graph workflow abstractions
+- **HPD.Graph.Core** (0.1.0): Graph workflow implementation
+- **HPD.MultiAgent** (0.1.0): Multi-agent coordination and workflows
+- **HPD-Agent.Providers.AzureAI** (0.1.0): New Azure AI provider (replaces AzureAIInference)
+
+### Asset Management System
+- `IAssetStore` interface for session asset storage
+- `InMemoryAssetStore` for in-memory asset management
+- `LocalFileAssetStore` for file-based asset storage
+- `AssetUploadMiddleware` for automatic asset handling
+- `SessionStoreExtensions` for enhanced session operations
+
+### Multi-Target Framework Support
+- Now supports .NET 8.0, 9.0, and 10.0
+- Improved CI pipeline with matrix builds for Linux/Windows/macOS
+- Code coverage reporting
+
+### Enhanced Provider Features
+- **Anthropic**: Added `AnthropicSchemaFixingChatClient` for schema compatibility
+- **All Providers**: Enhanced error handlers with detailed error mapping
+- **All Providers**: Provider auto-discovery for easier configuration
+
+### Multi-Agent & Graph Workflows
+- Subagent and multiagent chat client inheritance
+- Event bubbling across agent hierarchies
+- Hierarchical execution context with AgentId/ParentAgentId chains
+- Deferred agent building for runtime configuration
+- Workflow events (WorkflowStartedEvent, WorkflowCompletedEvent, etc.)
+
+### Audio Improvements
+- Modular STT/TTS/VAD architecture
+- Builder pattern for AudioRunOptions
+- Validation system for audio configurations
+- Provider-specific factories for audio capabilities
+
+### Middleware Enhancements
+- Automated middleware state saving
+- Improved scoping system
+- Tool visibility management
+- Enhanced error tracking
+- Circuit breaker improvements
+
+## 🔧 Improvements
+
+### Developer Experience
+- VitePress documentation setup
+- Provider-specific READMEs with examples
+- Improved error messages across all providers
+- Better type safety with JSON contexts
+
+### Build & CI
+- Multi-framework build support
+- Automated code coverage checks
+- Path filtering for workflows
+- Merge queue support
+
+### Performance
+- Parallel package publishing in CI
+- Optimized middleware pipeline
+- Improved session serialization
+
+## 📦 Deprecated
+
+- **HPD-Agent.Providers.AzureAIInference**: Use `HPD-Agent.Providers.AzureAI` instead
+  - See `DEPRECATION_NOTICE.md` for migration guide
+
+## 🐛 Bug Fixes
+
+- Fixed container middleware scoping issues
+- Fixed audio provider registration
+- Fixed session serialization edge cases
+- Improved error recovery in middleware pipeline
+
+## 📋 Migration Guide
+
+See the full migration guide in `/tmp/breaking_changes_analysis.md` or visit our documentation.
+
+### Quick Start
+1. Update package names (`Plugins` → `Tools`)
+2. Update namespaces in your code
+3. Update provider configuration to use explicit configs
+4. Update audio configuration to use modular structure
+5. Test thoroughly - all providers have breaking changes
+
+## 📊 Statistics
+
+- **172 files changed**: 7,221 insertions, 10,036 deletions
+- **20+ commits** since v0.1.1
+- **5 new packages**
+- **9 packages with breaking changes**
+
+## 🙏 Contributors
+
+- Einstein Essibu (@einsteinessibu)
+
+## 📝 Full Changelog
+
+For the complete list of changes, see: `git log v0.1.1..v0.2.0`
 
 ---
 
-## [Unreleased] - 0.2.0
-
-###   BREAKING CHANGES
-
-This release contains significant terminology changes to improve API clarity and consistency before the 1.0 release. **No backward compatibility aliases are provided** - you must update your code to use the new names.
-
-See [MIGRATION.md](MIGRATION.md) for detailed upgrade instructions.
-
-#### Summary of Breaking Changes
-
-| Category | Old Term | New Term |
-|----------|----------|----------|
-| **Tool Classes** | `*Toolkit` | `*Tools` |
-| **Tool Metadata** | `IToolkitMetadata` | `IToolMetadata` |
-| **Client Tools** | `FrontendTool*` | `ClientTool*` |
-| **Client Tool Groups** | `FrontendToolkitDefinition` | `ClientToolGroupDefinition` |
-
-#### C# API Changes
-
-**Tool Class Naming Convention:**
-- `WeatherToolkit` → `WeatherTools`
-- `SearchToolkit` → `SearchTools`
-- `FileSystemToolkit` → `FileSystemTools`
-
-**Interfaces & Attributes:**
-- `IToolkitMetadata` → `IToolMetadata`
-- `IToolkitMetadataContext` → `IToolMetadataContext`
-- `[ToolkitMetadata]` → `[ToolMetadata]`
-
-**AgentBuilder Methods:**
-- ` .WithTools<T>()` → `.WithTools<T>()`
-- `.WithFrontendTools()` → `.WithClientTools()`
-
-**Configuration:**
-- `CollapseFrontendTools` → `CollapseClientTools`
-- `FrontendToolsInstructions` → `ClientToolsInstructions`
-
-**Source Generator:**
-- `HPDToolkitSourceGenerator` → `HPDToolSourceGenerator`
-- `ToolkitInfo` → `ToolInfo`
-
-#### TypeScript Client API Changes
-
-**Types:**
-- `FrontendToolDefinition` → `ClientToolDefinition`
-- `FrontendToolkitDefinition` → `ClientToolGroupDefinition`
-- `FrontendSkillDefinition` → `ClientSkillDefinition`
-- `FrontendSkillReference` → `ClientSkillReference`
-- `FrontendSkillDocument` → `ClientSkillDocument`
-- `FrontendToolAugmentation` → `ClientToolAugmentation`
-- `FrontendToolInvokeRequest` → `ClientToolInvokeRequest`
-- `FrontendToolInvokeResponse` → `ClientToolInvokeResponse`
-- `FrontendStreamOptions` → `ClientStreamOptions`
-
-**Events:**
-- `FrontendToolInvokeRequestEvent` → `ClientToolInvokeRequestEvent`
-- `FrontendToolkitsRegisteredEvent` → `ClientToolGroupsRegisteredEvent`
-
-**Event Type Constants:**
-- `FRONTEND_TOOL_INVOKE_REQUEST` → `CLIENT_TOOL_INVOKE_REQUEST`
-- `FRONTEND_TOOL_INVOKE_RESPONSE` → `CLIENT_TOOL_INVOKE_RESPONSE`
-- `FRONTEND_ToolkitS_REGISTERED` → `CLIENT_TOOL_GROUPS_REGISTERED`
-
-**Helper Functions:**
-- `createCollapsedToolkit()` → `createCollapsedToolGroup()`
-- `createExpandedToolkit()` → `createExpandedToolGroup()`
-
-**AgentClient Methods:**
-- `registerToolkit()` → `registerToolGroup()`
-- `registerToolkits()` → `registerToolGroups()`
-- `unregisterToolkit()` → `unregisterToolGroup()`
-- `Toolkits` property → `toolGroups` property
-
-**Event Handlers:**
-- `onFrontendToolInvoke` → `onClientToolInvoke`
-- `onFrontendToolkitsRegistered` → `onClientToolGroupsRegistered`
-
-**Stream Options:**
-- `frontendToolkits` → `clientToolGroups`
-- `resetFrontendState` → `resetClientState`
-
-**Type Guards:**
-- `isFrontendToolInvokeRequestEvent()` → `isClientToolInvokeRequestEvent()`
-- `isFrontendToolkitsRegisteredEvent()` → `isClientToolGroupsRegisteredEvent()`
-
-#### Wire Protocol Changes
-
-If you have custom integrations that parse events directly:
-
-| Old Event Type | New Event Type |
-|----------------|----------------|
-| `FRONTEND_TOOL_INVOKE_REQUEST` | `CLIENT_TOOL_INVOKE_REQUEST` |
-| `FRONTEND_TOOL_INVOKE_RESPONSE` | `CLIENT_TOOL_INVOKE_RESPONSE` |
-| `FRONTEND_ToolkitS_REGISTERED` | `CLIENT_TOOL_GROUPS_REGISTERED` |
-
-### Changed
-
-- Renamed `FrontendTools/` directory to `ClientTools/` in C# codebase
-- Renamed `frontend-tools.ts` to `client-tools.ts` in TypeScript client
-- Updated all documentation to use new terminology
-- Event wire format now uses `CLIENT_TOOL_*` instead of `FRONTEND_TOOL_*`
-
-### Removed
-
-- `HPD-Agent.Toolkits.FileSystem` package (moved to `HPD-Agent.Tools.FileSystem`)
-- `HPD-Agent.Toolkits.WebSearch` package (moved to `HPD-Agent.Tools.WebSearch`)
-
-### Migration
-
-See [MIGRATION.md](MIGRATION.md) for step-by-step upgrade instructions with find/replace patterns.
-
----
-
-## [0.1.4] - Previous Release
-
-Last stable release before terminology changes.
-
-### Features
-- Toolkit-based tool registration
-- Frontend tools for client-side execution
-- Conversation threading with branching support
-- MCP server integration
-- Skill-based workflows
-
----
-
-## Versioning Policy
-
-### Pre-1.0 (Current)
-- **0.x.y** releases may contain breaking changes in minor versions
-- Patch versions (0.x.Y) are backward compatible bug fixes
-- Migration guides are provided for breaking changes
-
-### Post-1.0 (Future)
-- **Major (X.0.0)**: Breaking changes
-- **Minor (x.Y.0)**: New features, backward compatible
-- **Patch (x.y.Z)**: Bug fixes, backward compatible
+**Release Date**: January 2026
+**Previous Version**: 0.1.1 (December 2025)

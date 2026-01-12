@@ -148,7 +148,7 @@ public class AgentConfig
     /// This is set by the builder and used to distinguish explicit vs implicit Toolkit registration.
     /// </summary>
     [JsonIgnore]
-    public ImmutableHashSet<string> ExplicitlyRegisteredTools { get; set; } = ImmutableHashSet<string>.Empty;
+    public ImmutableHashSet<string> explicitlyRegisteredToolkits { get; set; } = ImmutableHashSet<string>.Empty;
 
     /// <summary>
     /// Configuration for distributed caching of LLM responses.
