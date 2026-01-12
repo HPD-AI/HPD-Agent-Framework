@@ -109,7 +109,7 @@ var agent = new AgentBuilder()
     .Build();
 ```
 
-Now every time the agent calls a function, your middleware will log it. For more info on middleware: [05 Middleware.md](05%20Middleware.md)
+Now every time the agent calls a function, your middleware will log it. For more info on middleware: [Middleware](04%20Middleware.md)
 
 ### Step 3a: Run the Agent (Stateless)
 
@@ -173,7 +173,7 @@ Agents can be customized extensively - error handling, history reduction, valida
 ### Middleware
 Middleware intercepts and processes events throughout the agent execution pipeline. Use middleware for cross-cutting concerns like history reduction, error handling, logging, and more.
 
-→ Learn more: [04 Middleware.md](05%20Middleware.md)
+→ Learn more: [04 Middleware.md](04%20Middleware.md)
 
 ### Memory
 Agents can leverage memory systems to persist and recall information across conversations. Use memory for context awareness, learning from past interactions, and maintaining long-term state.
@@ -200,9 +200,9 @@ This means you can:
 - Respond to what the agent is doing
 - Build interactive experiences
 
-→ Complete event reference: [05 Event Handling.md](04%20Event%20Handling.md)
+→ Complete event reference: [05 Event Handling.md](05%20Event%20Handling.md)
 
-→ Complete event reference: [05 Event Handling.md](04%20Event%20Handling.md)
+→ Complete event reference: [05 Event Handling.md](05%20Event%20Handling.md)
 
 ## Stateless vs. Persistent
 

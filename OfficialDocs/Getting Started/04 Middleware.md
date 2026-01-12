@@ -52,7 +52,7 @@ Run per LLM call (loops if agent re-thinks). Use for history reduction, dynamic 
 ### Function Level
 Run per function execution. Use for permissions, argument validation, retry logic, logging.
 
-See [05.1 Middleware Lifecycle](Middleware/04.1%20Middleware%20Lifecycle.md) for complete hook reference.
+See [05.1 Middleware Lifecycle](../Middleware/04.1%20Middleware%20Lifecycle.md) for complete hook reference.
 
 ## Complete Middleware Guide
 

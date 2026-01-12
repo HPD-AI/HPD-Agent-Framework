@@ -124,11 +124,10 @@ The quick start works for simple apps, but production deployments need:
 
 For complete production patterns, see:
 
-- [**Web Quick Start**](../Platform%20Guides/Web%20Apps/Web%20Quick%20Start.md) - Full-featured web app setup
-- [**Server Setup (SSE)**](../Platform%20Guides/Web%20Apps/Server%20Setup%20(SSE).md) - Production ASP.NET endpoints
-- [**TypeScript Client**](../Platform%20Guides/Web%20Apps/TypeScript%20Client.md) - Complete client API reference
-- [**User Prompts**](../Platform%20Guides/Web%20Apps/User%20Prompts.md) - React dialogs for permissions/clarifications
-- [**Cancellation**](../Platform%20Guides/Web%20Apps/Cancellation.md) - Stop button implementation
+- [**Event Handling**](05%20Event%20Handling.md) - Understanding the event stream
+- [**Bidirectional Events**](../Events/05.6%20Bidirectional%20Events.md) - User prompts and permissions
+- [**Streaming & Cancellation**](../Events/05.5%20Streaming%20%26%20Cancellation.md) - Stop button implementation
+- [**Client Tools**](../Tools/02.3%20Client%20Tools.md) - Browser-side tool execution
 
 ## Client Installation Options
 

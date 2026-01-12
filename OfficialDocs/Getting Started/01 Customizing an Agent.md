@@ -7,9 +7,10 @@ There are **three primary patterns** to customize an agent:
 
 Each method offers distinct advantages and trade-offs.
 
-**For detailed API documentation, see:**
-- [**AgentConfig Reference**](../API%20Reference/AgentConfig-Reference.md) - Complete property listing for all configuration sections
-- [**AgentBuilder Reference**](../API%20Reference/AgentBuilder-Reference.md) - All builder methods and usage (coming soon)
+**This guide covers:**
+- Builder Pattern (Fluent API) - Configure agents programmatically
+- Config Pattern (Data Model) - Define configuration as serializable data
+- Hybrid approaches combining both patterns
 
 ### Builder Pattern (Fluent API)
 

@@ -73,10 +73,10 @@ This basic example gets you started, but production console apps need:
 
 For complete patterns and best practices, see:
 
-- [**Console Quick Start**](../Platform%20Guides/Console%20Apps/Console%20Quick%20Start.md) - Full-featured console app with all essential patterns
-- [**User Prompts**](../Platform%20Guides/Console%20Apps/User%20Prompts.md) - Handling permissions and clarifications
-- [**Event Handling Patterns**](../Platform%20Guides/Console%20Apps/Event%20Handling%20Patterns.md) - Advanced event consumption patterns
-- [**Cancellation**](../Platform%20Guides/Console%20Apps/Cancellation.md) - Ctrl+C handling and graceful shutdown
+- [**Event Handling**](05%20Event%20Handling.md) - Understanding the event stream
+- [**Middleware**](04%20Middleware.md) - Adding hooks and custom logic
+- [**Bidirectional Events**](../Events/05.6%20Bidirectional%20Events.md) - Handling user prompts and clarifications
+- [**Streaming & Cancellation**](../Events/05.5%20Streaming%20%26%20Cancellation.md) - Ctrl+C handling and graceful shutdown
 
 ## See Also
 

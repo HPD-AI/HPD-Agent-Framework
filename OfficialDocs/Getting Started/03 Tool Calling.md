@@ -47,7 +47,7 @@ public class FileToolkit
 }
 ```
 
-→ See [02.1 C# Toolkit Overview.md](02.1%20C%23%20Toolkit%20Overview.md) for the full guide.
+→ See [C# Tools Overview](../Tools/02.1%20CSharp%20Tools%20Overview.md) for the full guide.
 
 ---
 
@@ -67,7 +67,7 @@ MCP Toolkit support:
 - Custom instructions per server
 - Automatic tool discovery
 
-→ See [02.2 MCP Servers.md](02.2%20MCP%20Servers.md) for setup and configuration.
+→ See [02.2 MCP Servers.md](../Tools/02.2%20MCP%20Servers.md) for setup and configuration.
 
 ---
 
@@ -91,7 +91,7 @@ var config = new AgentConfig
 };
 ```
 
-→ See [02.3 Client Toolkit.md](02.3%20Client%20Toolkit.md) for integration details.
+→ See [02.3 Client Toolkit.md](../Tools/02.3%20Client%20Tools.md) for integration details.
 
 ---
 
@@ -172,6 +172,6 @@ Most applications use a combination:
 
 ## Next Steps
 
-- [02.1 C# Toolkit Overview.md](02.1%20C%23%20Toolkit%20Overview.md) - Native tool development
-- [02.2 MCP Servers.md](02.2%20MCP%20Servers.md) - Model Context Protocol integration
-- [02.3 Client Toolkit.md](02.3%20Client%20Toolkit.md) - Client-provided Toolkit
+- [C# Tools Overview](../Tools/02.1%20CSharp%20Tools%20Overview.md) - Native tool development
+- [02.2 MCP Servers.md](../Tools/02.2%20MCP%20Servers.md) - Model Context Protocol integration
+- [02.3 Client Toolkit.md](../Tools/02.3%20Client%20Tools.md) - Client-provided Toolkit

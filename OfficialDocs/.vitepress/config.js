@@ -5,16 +5,13 @@ export default defineConfig({
   description: 'Production-ready multi-agent framework for .NET',
 
   // Base path for GitHub Pages deployment
-  base: '/HPD-Agent/',
+  base: '/HPD-Agent-Framework/',
 
   // Use OfficialDocs as the root
   srcDir: '.',
 
   // Clean URLs (removes .html)
   cleanUrls: true,
-
-  // Ignore dead links for now (TODO: fix broken links)
-  ignoreDeadLinks: true,
 
   // Theme configuration
   themeConfig: {
