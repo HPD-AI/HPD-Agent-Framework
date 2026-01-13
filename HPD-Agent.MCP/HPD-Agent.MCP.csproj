@@ -11,6 +11,9 @@
     <NoWarn>HPDAUDIO001;MEAI001</NoWarn>
     <!-- Native AOT Configuration -->
     <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
     <OutputType>Library</OutputType>
   </PropertyGroup>
 
@@ -26,7 +29,7 @@
     <!-- Core AI Framework -->
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
 
     <!-- MCP Support -->
     <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />

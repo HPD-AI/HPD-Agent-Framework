@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Azure.AI.OpenAI;
 using Azure;
@@ -71,6 +72,7 @@ internal class OpenAIProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in OpenAIProviderModule")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();
@@ -276,6 +278,7 @@ internal class AzureOpenAIProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in OpenAIProviderModule")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();

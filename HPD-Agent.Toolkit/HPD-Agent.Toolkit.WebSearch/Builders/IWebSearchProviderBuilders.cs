@@ -1,5 +1,7 @@
 using System;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Base interface for all web search provider builders
 /// Provides common configuration options shared across providers

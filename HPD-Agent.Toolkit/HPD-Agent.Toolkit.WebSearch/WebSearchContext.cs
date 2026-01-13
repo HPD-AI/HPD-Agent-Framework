@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using HPD.Agent;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// The complete and corrected context for the WebSearch Toolkit.
 /// </summary>

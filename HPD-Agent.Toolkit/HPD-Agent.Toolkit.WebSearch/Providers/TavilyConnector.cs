@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Tavily web search connector that provides AI-powered search with answers
 /// </summary>

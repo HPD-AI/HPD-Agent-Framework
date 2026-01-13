@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace HPD.Agent.Providers.Anthropic;
@@ -13,6 +14,8 @@ namespace HPD.Agent.Providers.Anthropic;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AnthropicProviderConfig))]
 [JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(string))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 public partial class AnthropicJsonContext : JsonSerializerContext
 {
 }

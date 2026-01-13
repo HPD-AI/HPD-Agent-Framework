@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Bing web search connector (placeholder implementation)
 /// TODO: Implement full Bing Search API integration

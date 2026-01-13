@@ -70,13 +70,20 @@ internal partial class HuggingFaceErrorHandler : IProviderErrorHandler
 
     private static ProviderErrorDetails ParseApiException(Exception exception)
     {
-        // Extract status code from ApiException using duck typing (AOT-safe)
+        // Extract status code from ApiException using reflection (AOT-safe)
         int? statusCode = null;
         try
         {
             // Both ApiException and ApiException<T> have a StatusCode property of type HttpStatusCode
-            dynamic ex = exception;
-            statusCode = (int)ex.StatusCode;
+            var statusCodeProp = exception.GetType().GetProperty("StatusCode");
+            if (statusCodeProp != null)
+            {
+                var statusCodeValue = statusCodeProp.GetValue(exception);
+                if (statusCodeValue is HttpStatusCode httpStatusCode)
+                {
+                    statusCode = (int)httpStatusCode;
+                }
+            }
         }
         catch
         {
@@ -90,20 +97,28 @@ internal partial class HuggingFaceErrorHandler : IProviderErrorHandler
         string? errorCode = null;
         try
         {
-            dynamic ex = exception;
-            responseBody = ex.ResponseBody as string;
+            // Get ResponseBody property using reflection
+            var responseBodyProp = exception.GetType().GetProperty("ResponseBody");
+            if (responseBodyProp != null)
+            {
+                responseBody = responseBodyProp.GetValue(exception) as string;
+            }
 
             // Try to extract error from ErrorResponse if available
-            if (ex.ResponseObject is not null)
+            var responseObjectProp = exception.GetType().GetProperty("ResponseObject");
+            if (responseObjectProp != null)
             {
-                var responseObj = ex.ResponseObject;
-                var errorProp = responseObj.GetType().GetProperty("Error");
-                if (errorProp != null)
+                var responseObj = responseObjectProp.GetValue(exception);
+                if (responseObj is not null)
                 {
-                    var error = errorProp.GetValue(responseObj);
-                    if (error != null)
+                    var errorProp = responseObj.GetType().GetProperty("Error");
+                    if (errorProp != null)
                     {
-                        errorCode = error.ToString();
+                        var error = errorProp.GetValue(responseObj);
+                        if (error != null)
+                        {
+                            errorCode = error.ToString();
+                        }
                     }
                 }
             }

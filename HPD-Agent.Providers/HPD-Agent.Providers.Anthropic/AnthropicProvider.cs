@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Anthropic;
 using Anthropic.Models.Messages;
 using HPD.Agent;
@@ -14,6 +15,7 @@ internal class AnthropicProvider : IProviderFeatures
     public string ProviderKey => "anthropic";
     public string DisplayName => "Anthropic (Claude)";
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in AnthropicProviderModule")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         if (string.IsNullOrEmpty(config.ApiKey))
@@ -74,6 +76,7 @@ internal class AnthropicProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in AnthropicProviderModule")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         if (string.IsNullOrEmpty(config.ApiKey))

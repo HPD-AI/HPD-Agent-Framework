@@ -10,6 +10,9 @@
     
     <!-- Native AOT Configuration for FFI Export -->
     <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
     <InvariantGlobalization>true</InvariantGlobalization>
     <OutputType>Library</OutputType>
     <NativeLib>Shared</NativeLib>

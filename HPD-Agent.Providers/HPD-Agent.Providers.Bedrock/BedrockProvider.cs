@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using Amazon;
 using Amazon.BedrockRuntime;
@@ -45,6 +46,7 @@ internal class BedrockProvider : IProviderFeatures
     public string ProviderKey => "bedrock";
     public string DisplayName => "AWS Bedrock";
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         // Get typed config
@@ -187,6 +189,7 @@ internal class BedrockProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();

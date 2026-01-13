@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Configuration;
 using System;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Fluent builder for configuring Tavily web search provider
 /// </summary>

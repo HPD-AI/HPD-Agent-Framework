@@ -164,17 +164,17 @@ internal sealed class AnthropicSchemaFixingChatClient : IChatClient
         // Build InputSchema with properly nested "properties" key
         var inputSchemaData = new Dictionary<string, JsonElement>
         {
-            ["type"] = JsonSerializer.SerializeToElement("object")
+            ["type"] = JsonSerializer.SerializeToElement("object", AnthropicJsonContext.Default.String)
         };
 
         if (properties.Count > 0)
         {
-            inputSchemaData["properties"] = JsonSerializer.SerializeToElement(properties);
+            inputSchemaData["properties"] = JsonSerializer.SerializeToElement(properties, AnthropicJsonContext.Default.DictionaryStringJsonElement);
         }
 
         if (required.Count > 0)
         {
-            inputSchemaData["required"] = JsonSerializer.SerializeToElement(required);
+            inputSchemaData["required"] = JsonSerializer.SerializeToElement(required, AnthropicJsonContext.Default.ListString);
         }
 
         // Use FromRawUnchecked to bypass the buggy InputSchema constructor

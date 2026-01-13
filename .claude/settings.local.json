@@ -36,7 +36,9 @@
       "Bash(dotnet sln:*)",
       "Bash(git ls-tree:*)",
       "Bash(dotnet clean:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(./pack-local.sh:*)"
     ],
     "deny": [],
     "ask": []

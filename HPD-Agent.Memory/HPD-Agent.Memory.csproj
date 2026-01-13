@@ -8,11 +8,16 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>0.1.1</Version>
+
+    <!-- Native AOT Configuration -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
-        <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
   </ItemGroup>
 
 </Project>

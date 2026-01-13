@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.Linq;
 using Mistral.SDK;
@@ -32,6 +33,7 @@ internal class MistralProvider : IProviderFeatures
     public string ProviderKey => "mistral";
     public string DisplayName => "Mistral";
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         // Resolve API key using the helper utility (handles env vars, config, etc.)
@@ -84,6 +86,7 @@ internal class MistralProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();

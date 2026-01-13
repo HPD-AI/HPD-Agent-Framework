@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Core interface for web search providers that supports both generic and provider-specific capabilities.
 /// Unlike Semantic Kernel's generic ITextSearch, this preserves unique provider features.

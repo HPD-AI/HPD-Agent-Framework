@@ -1,5 +1,7 @@
 using System;
 
+namespace HPD.Agent.Toolkit.WebSearch;
+
 /// <summary>
 /// Configuration container for Tavily web search settings with comprehensive API support
 /// </summary>

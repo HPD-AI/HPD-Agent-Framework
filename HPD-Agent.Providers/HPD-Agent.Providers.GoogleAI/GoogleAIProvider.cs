@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using GenerativeAI.Microsoft;
 using HPD.Agent;
@@ -26,6 +27,7 @@ internal class GoogleAIProvider : IProviderFeatures
     public string ProviderKey => "google-ai";
     public string DisplayName => "Google AI (Gemini)";
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -87,6 +89,7 @@ internal class GoogleAIProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();

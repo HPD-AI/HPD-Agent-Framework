@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using OllamaSharp;
 using OllamaSharp.Models;
@@ -33,6 +34,7 @@ internal class OllamaProvider : IProviderFeatures
     public string ProviderKey => "ollama";
     public string DisplayName => "Ollama";
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
         // Resolve endpoint - defaults to localhost if not provided
@@ -151,6 +153,7 @@ internal class OllamaProvider : IProviderFeatures
         };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
         var errors = new List<string>();

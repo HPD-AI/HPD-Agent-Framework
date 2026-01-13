@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
+namespace HPD.Agent.Toolkit.WebSearch;
 
 /// <summary>
 /// AOT-compatible JSON serialization context for Tavily API models

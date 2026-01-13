@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 
+namespace HPD.Agent.Toolkit.WebSearch;
 
 /// <summary>
 /// Standard search result containing items from any web search provider

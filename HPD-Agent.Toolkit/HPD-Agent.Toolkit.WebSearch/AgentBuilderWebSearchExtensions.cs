@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.Extensions.Configuration;
 using HPD.Agent;
 
+namespace HPD.Agent.Toolkit.WebSearch;
 
 /// <summary>
 /// Extension methods for AgentBuilder to configure web search providers with type-safe fluent builders
