@@ -21,11 +21,11 @@
     "README.md"
   ],
   "scripts": {
-    "build": "~/.bun/bin/bunx tsc",
-    "test": "~/.bun/bin/bun test",
-    "test:watch": "~/.bun/bin/bun test --watch",
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "clean": "rm -rf dist",
-    "prepublishOnly": "~/.bun/bin/bun run build"
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "hpd-agent",
