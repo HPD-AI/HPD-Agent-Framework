@@ -201,10 +201,18 @@ public class LayeredSuspensionTests
             await orchestrator.ExecuteAsync(context);
         });
 
-        await Task.Delay(100);
+        // Wait for the approval request event to be emitted
+        NodeApprovalRequestEvent? requestEvent = null;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(50);
+            requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+            if (requestEvent != null) break;
+        }
 
-        var requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().First();
-        coordinator.SendResponse(requestEvent.RequestId, new NodeApprovalResponseEvent
+        requestEvent.Should().NotBeNull("approval request should be emitted");
+
+        coordinator.SendResponse(requestEvent!.RequestId, new NodeApprovalResponseEvent
         {
             RequestId = requestEvent.RequestId,
             SourceName = "Test",
@@ -244,10 +252,18 @@ public class LayeredSuspensionTests
             }
         });
 
-        await Task.Delay(100);
+        // Wait for the approval request event to be emitted
+        NodeApprovalRequestEvent? requestEvent = null;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(50);
+            requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+            if (requestEvent != null) break;
+        }
 
-        var requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().First();
-        coordinator.SendResponse(requestEvent.RequestId, new NodeApprovalResponseEvent
+        requestEvent.Should().NotBeNull("approval request should be emitted");
+
+        coordinator.SendResponse(requestEvent!.RequestId, new NodeApprovalResponseEvent
         {
             RequestId = requestEvent.RequestId,
             SourceName = "Test",
@@ -375,10 +391,18 @@ public class LayeredSuspensionTests
             }
         });
 
-        await Task.Delay(100);
+        // Wait for the approval request event to be emitted
+        NodeApprovalRequestEvent? requestEvent = null;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(50);
+            requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+            if (requestEvent != null) break;
+        }
 
-        var requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().First();
-        coordinator.SendResponse(requestEvent.RequestId, new NodeApprovalResponseEvent
+        requestEvent.Should().NotBeNull("approval request should be emitted");
+
+        coordinator.SendResponse(requestEvent!.RequestId, new NodeApprovalResponseEvent
         {
             RequestId = requestEvent.RequestId,
             SourceName = "Test",
