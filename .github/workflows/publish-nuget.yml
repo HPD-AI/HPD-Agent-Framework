@@ -101,12 +101,10 @@ jobs:
             if [ -n "$VERSION_SUFFIX" ]; then
               dotnet pack "$PROJECT" -c Release -o ./nupkg \
                 -p:VersionPrefix="$VERSION_PREFIX" \
-                -p:VersionSuffix="$VERSION_SUFFIX" \
-                --no-build
+                -p:VersionSuffix="$VERSION_SUFFIX"
             else
               dotnet pack "$PROJECT" -c Release -o ./nupkg \
-                -p:VersionPrefix="$VERSION_PREFIX" \
-                --no-build
+                -p:VersionPrefix="$VERSION_PREFIX"
             fi
           done
 
