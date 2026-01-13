@@ -174,25 +174,6 @@ public static class AgentConfigValidator
             }
         }
 
-        // Token budget validation
-        if (hr.MaxTokenBudget.HasValue)
-        {
-            if (hr.MaxTokenBudget.Value <= 100 || hr.MaxTokenBudget.Value > 2000000)
-            {
-                errors.Add("MaxTokenBudget must be between 100 and 2,000,000 tokens.");
-            }
-
-            if (hr.TargetTokenBudget <= 0 || hr.TargetTokenBudget >= hr.MaxTokenBudget.Value)
-            {
-                errors.Add("TargetTokenBudget must be positive and less than MaxTokenBudget.");
-            }
-
-            if (hr.TokenBudgetThreshold < 0)
-            {
-                errors.Add("TokenBudgetThreshold must be non-negative.");
-            }
-        }
-
         // Message count validation
         if (hr.TargetMessageCount <= 1 || hr.TargetMessageCount > 1000)
         {

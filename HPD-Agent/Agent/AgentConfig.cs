@@ -794,7 +794,6 @@ public class HistoryReductionConfig
     /// <summary>
     /// Target number of messages to retain after reduction.
     /// Default is 20 messages.
-    /// Used when MaxTokenBudget is not set or as a fallback.
     /// </summary>
     public int TargetMessageCount { get; set; } = 20;
 
@@ -809,8 +808,6 @@ public class HistoryReductionConfig
     /// Target token count after reduction (default: 4000).
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// Only used when MaxTokenBudget is set (which is also disabled).
-    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int TargetTokenBudget { get; set; } = 4000;
 
@@ -819,8 +816,6 @@ public class HistoryReductionConfig
     /// Number of tokens allowed beyond TargetTokenBudget before reduction is triggered.
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// Only used when MaxTokenBudget is set (which is also disabled).
-    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int TokenBudgetThreshold { get; set; } = 1000;
 
@@ -830,7 +825,6 @@ public class HistoryReductionConfig
     /// Example: 0.7 = trigger reduction at 70% of context window.
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// See MaxTokenBudget documentation for why token-based reduction doesn't work.
     /// Use TargetMessageCount instead for reliable history reduction.
     /// </summary>
     public double? TokenBudgetTriggerPercentage { get; set; } = null;
@@ -841,7 +835,6 @@ public class HistoryReductionConfig
     /// Example: 0.3 = keep 30% of context window after compression.
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public double TokenBudgetPreservePercentage { get; set; } = 0.3;
 
@@ -850,7 +843,6 @@ public class HistoryReductionConfig
     /// Required when using TokenBudgetTriggerPercentage.
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// See MaxTokenBudget documentation for details.
     /// </summary>
     public int? ContextWindowSize { get; set; } = null;
 
