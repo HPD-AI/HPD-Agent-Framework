@@ -377,13 +377,33 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
 // HPD Source Generator Diagnostic Report
 // Generated at: {DateTime.Now}
 // Toolkits found: {Toolkits.Length} raw, {ToolkitGroups.Count} after merging
+
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
 namespace HPD.Agent.Diagnostics {{
+    /// <summary>
+    /// Diagnostic information from the HPD-Agent source generator execution.
+    /// </summary>
     public static class SourceGeneratorDiagnostic {{
+        /// <summary>
+        /// Gets the source generator execution status message.
+        /// </summary>
         public const string Message = ""Source generator executed successfully"";
+
+        /// <summary>
+        /// Gets the number of toolkits found during source generation.
+        /// </summary>
         public const int ToolkitsFound = {ToolkitGroups.Count};
+
+        /// <summary>
+        /// Gets the detailed diagnostic report from source generation.
+        /// </summary>
         public const string DetailedReport = @""{reportLines}"";
     }}
-}}";
+}}
+
+#pragma warning restore CS1591
+";
         context.AddSource("HPD.Agent.Diagnostics.SourceGeneratorDiagnostic.g.cs", diagnosticCode);
 
         // Clear for next compilation
