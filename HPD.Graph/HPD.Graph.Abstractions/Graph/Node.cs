@@ -105,6 +105,14 @@ public sealed record Node
     /// </summary>
     public string Version { get; init; } = "1.0";
 
+    /// <summary>
+    /// Number of output ports this node has.
+    /// Default: 1 (single output on port 0).
+    /// Multi-output nodes declare N ports.
+    /// IMPORTANT: Port 0 is the default/implicit port for single-output nodes.
+    /// </summary>
+    public int OutputPortCount { get; init; } = 1;
+
     // ===== MAP NODE PROPERTIES =====
     //
     // DECISION: Do you need a router?

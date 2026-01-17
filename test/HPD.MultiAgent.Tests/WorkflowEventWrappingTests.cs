@@ -241,7 +241,7 @@ public class WorkflowEventWrappingTests
             NodeId = "solver1",
             HandlerName = "MathSolver",
             Duration = TimeSpan.FromSeconds(1.5),
-            Result = new NodeExecutionResult.Success(outputs, TimeSpan.FromSeconds(1.5)),
+            Result = NodeExecutionResult.Success.Single(output: outputs, duration: TimeSpan.FromSeconds(1.5), metadata: new NodeExecutionMetadata()),
             Progress = 0.5f,
             Outputs = outputs
         };
@@ -488,7 +488,7 @@ public class WorkflowEventWrappingTests
                 NodeId = "n",
                 HandlerName = "h",
                 Duration = TimeSpan.Zero,
-                Result = new NodeExecutionResult.Success(new(), TimeSpan.Zero)
+                Result = NodeExecutionResult.Success.Single(output: new Dictionary<string, object>(), duration: TimeSpan.Zero, metadata: new NodeExecutionMetadata())
             },
             new NodeSkippedEvent { NodeId = "n", Reason = "r" },
             new LayerExecutionStartedEvent { LayerIndex = 0, NodeCount = 1 },

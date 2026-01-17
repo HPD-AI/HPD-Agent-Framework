@@ -173,15 +173,45 @@ public class TestGraphBuilder
         return this;
     }
 
+    /// <summary>
+    /// Adds a custom node with full configuration support (for testing port features).
+    /// </summary>
+    public TestGraphBuilder AddNode(
+        string id,
+        string name,
+        NodeType type,
+        string? handlerName,
+        int outputPortCount = 1)
+    {
+        _nodes.Add(new Node
+        {
+            Id = id,
+            Name = name,
+            Type = type,
+            HandlerName = handlerName ?? string.Empty,
+            OutputPortCount = outputPortCount
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Adds an edge with optional port, priority, and condition support.
+    /// </summary>
     public TestGraphBuilder AddEdge(
         string from,
         string to,
-        EdgeCondition? condition = null)
+        EdgeCondition? condition = null,
+        int? fromPort = null,
+        int? toPort = null,
+        int? priority = null)
     {
         _edges.Add(new Edge
         {
             From = from,
             To = to,
+            FromPort = fromPort,
+            ToPort = toPort,
+            Priority = priority,
             Condition = condition
         });
         return this;

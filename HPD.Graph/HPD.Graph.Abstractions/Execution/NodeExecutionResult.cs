@@ -9,12 +9,42 @@ public abstract record NodeExecutionResult
 {
     /// <summary>
     /// Node executed successfully and produced outputs.
+    /// Port-based output routing (all nodes use ports, single-output = port 0).
     /// </summary>
     public sealed record Success(
-        Dictionary<string, object> Outputs,
+        IReadOnlyDictionary<int, Dictionary<string, object>> PortOutputs,
         TimeSpan Duration,
-        NodeExecutionMetadata? Metadata = null
-    ) : NodeExecutionResult;
+        NodeExecutionMetadata Metadata
+    ) : NodeExecutionResult
+    {
+        /// <summary>
+        /// Convenience factory for single-output nodes (port 0).
+        /// Most common case: single output.
+        /// </summary>
+        public static Success Single(
+            Dictionary<string, object> output,
+            TimeSpan duration,
+            NodeExecutionMetadata metadata)
+            => new Success(
+                PortOutputs: new Dictionary<int, Dictionary<string, object>> { [0] = output },
+                Duration: duration,
+                Metadata: metadata
+            );
+
+        /// <summary>
+        /// Convenience factory for multi-port output.
+        /// Builder pattern for complex routing.
+        /// </summary>
+        public static Success WithPorts(
+            PortOutputs ports,
+            TimeSpan duration,
+            NodeExecutionMetadata metadata)
+            => new Success(
+                PortOutputs: ports.Build(),
+                Duration: duration,
+                Metadata: metadata
+            );
+    }
 
     /// <summary>
     /// Node failed with an error.

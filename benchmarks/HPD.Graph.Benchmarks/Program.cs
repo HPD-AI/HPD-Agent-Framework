@@ -1,7 +1,7 @@
 using BenchmarkDotNet.Running;
 using HPD.Graph.Benchmarks;
 
-Console.WriteLine("HPD.Graph Node-RED V3 - Week 0 Performance Benchmarks");
+Console.WriteLine("HPD.Graph -Performance Benchmarks");
 Console.WriteLine("======================================================");
 Console.WriteLine();
 Console.WriteLine("Testing Cloning Performance:");
@@ -38,7 +38,7 @@ if (criticalBenchmark != null)
         Console.WriteLine($"  ✓ PASSED - Target met ({meanMs:F2}ms < 5ms)");
         Console.ResetColor();
         Console.WriteLine();
-        Console.WriteLine("Decision: PROCEED with source-generated JSON cloning for Node-RED V3");
+        Console.WriteLine("Decision: PROCEED with source-generated JSON cloning ");
     }
     else
     {

@@ -422,13 +422,14 @@ public class StableAfterFirstHandler : IGraphNodeHandler<GraphContext>
         // First execution outputs "initial", subsequent ones output "stable"
         var value = _executions == 1 ? "initial" : "stable";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["value"] = value,
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -460,14 +461,15 @@ public class ConvergingHandler : IGraphNodeHandler<GraphContext>
         var shouldContinue = _executions < _iterationsToConverge + 1;
         var dynamicValue = _executions <= _iterationsToConverge ? $"changing_{_executions}" : "converged";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["continue"] = shouldContinue,
                 ["value"] = dynamicValue,
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -498,8 +500,8 @@ public class TimestampHandler : IGraphNodeHandler<GraphContext>
         var shouldContinue = _executions < _stableAfter + 1;
         var stableValue = _executions <= _stableAfter ? $"changing_{_executions}" : "stable";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["continue"] = shouldContinue,
                 ["value"] = stableValue,
@@ -507,7 +509,8 @@ public class TimestampHandler : IGraphNodeHandler<GraphContext>
                 ["requestId"] = Guid.NewGuid().ToString(), // Volatile - should be ignored
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }

@@ -41,9 +41,10 @@ public class PollingCheckpointTests
 
             if (_pollCount >= _successAfter)
             {
-                return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                    Outputs: new Dictionary<string, object> { ["attempt"] = _pollCount },
-                    Duration: TimeSpan.FromMilliseconds(10)
+                return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                    output: new Dictionary<string, object> { ["attempt"] = _pollCount },
+                    duration: TimeSpan.FromMilliseconds(10),
+                    metadata: new NodeExecutionMetadata()
                 ));
             }
 

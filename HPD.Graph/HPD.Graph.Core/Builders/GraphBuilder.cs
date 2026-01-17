@@ -22,6 +22,7 @@ public class GraphBuilder
     private readonly Dictionary<string, string> _metadata = new();
     private int _maxIterations = 10;
     private TimeSpan? _executionTimeout;
+    private Abstractions.Execution.CloningPolicy _cloningPolicy = Abstractions.Execution.CloningPolicy.LazyClone;
 
     /// <summary>
     /// Creates a new GraphBuilder instance.
@@ -101,6 +102,16 @@ public class GraphBuilder
     public GraphBuilder WithMetadata(string key, string value)
     {
         _metadata[key] = value;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the graph-level cloning policy for output propagation.
+    /// Default: LazyClone (optimal for most workloads).
+    /// </summary>
+    public GraphBuilder WithCloningPolicy(Abstractions.Execution.CloningPolicy policy)
+    {
+        _cloningPolicy = policy;
         return this;
     }
 
@@ -337,7 +348,8 @@ public class GraphBuilder
             ExitNodeId = _exitNodeId,
             Metadata = _metadata,
             MaxIterations = _maxIterations,
-            ExecutionTimeout = _executionTimeout
+            ExecutionTimeout = _executionTimeout,
+            CloningPolicy = _cloningPolicy
         };
     }
 
@@ -393,6 +405,7 @@ public class NodeBuilder
     private int? _maxInputBufferSize;
     private ErrorPropagationPolicy? _errorPolicy;
     private SuspensionOpts? _suspensionOptions;
+    private int _outputPortCount = 1;
 
     internal NodeBuilder(string id, string name, NodeType type, string? handlerName)
     {
@@ -523,6 +536,19 @@ public class NodeBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets the number of output ports for this node.
+    /// Default: 1 (single output on port 0).
+    /// Use for multi-output routing patterns (e.g., routers, splitters).
+    /// </summary>
+    public NodeBuilder WithOutputPorts(int portCount)
+    {
+        if (portCount < 1)
+            throw new ArgumentOutOfRangeException(nameof(portCount), "Port count must be at least 1");
+        _outputPortCount = portCount;
+        return this;
+    }
+
     internal Node Build()
     {
         return new Node
@@ -541,7 +567,8 @@ public class NodeBuilder
             SubGraphRef = _subGraphRef,
             MaxParallelExecutions = _maxInputBufferSize,
             ErrorPolicy = _errorPolicy,
-            SuspensionOptions = _suspensionOptions
+            SuspensionOptions = _suspensionOptions,
+            OutputPortCount = _outputPortCount
         };
     }
 }
@@ -555,6 +582,10 @@ public class EdgeBuilder
     private readonly string _to;
     private EdgeCondition? _condition;
     private readonly Dictionary<string, string> _metadata = new();
+    private int? _fromPort;
+    private int? _toPort;
+    private int? _priority;
+    private Abstractions.Execution.CloningPolicy? _cloningPolicy;
 
     internal EdgeBuilder(string from, string to)
     {
@@ -568,6 +599,51 @@ public class EdgeBuilder
     public EdgeBuilder WithCondition(EdgeCondition condition)
     {
         _condition = condition;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the source output port number (0-indexed).
+    /// </summary>
+    public EdgeBuilder FromPort(int portNumber)
+    {
+        if (portNumber < 0)
+            throw new ArgumentOutOfRangeException(nameof(portNumber), "Port number must be non-negative");
+        _fromPort = portNumber;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the destination input port number (0-indexed).
+    /// Reserved for future multi-input support.
+    /// </summary>
+    public EdgeBuilder ToPort(int portNumber)
+    {
+        if (portNumber < 0)
+            throw new ArgumentOutOfRangeException(nameof(portNumber), "Port number must be non-negative");
+        _toPort = portNumber;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the priority for edge traversal ordering (lower = higher priority).
+    /// Used to ensure deterministic lazy cloning behavior.
+    /// </summary>
+    public EdgeBuilder WithPriority(int priority)
+    {
+        if (priority < 0)
+            throw new ArgumentOutOfRangeException(nameof(priority), "Priority must be non-negative");
+        _priority = priority;
+        return this;
+    }
+
+    /// <summary>
+    /// Overrides the graph-level cloning policy for this specific edge.
+    /// Use to optimize specific edges (e.g., NeverClone for read-only handlers).
+    /// </summary>
+    public EdgeBuilder WithCloningPolicy(Abstractions.Execution.CloningPolicy policy)
+    {
+        _cloningPolicy = policy;
         return this;
     }
 
@@ -586,7 +662,11 @@ public class EdgeBuilder
         {
             From = _from,
             To = _to,
+            FromPort = _fromPort,
+            ToPort = _toPort,
+            Priority = _priority,
             Condition = _condition,
+            CloningPolicy = _cloningPolicy,
             Metadata = _metadata
         };
     }

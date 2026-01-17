@@ -840,13 +840,14 @@ public class RetryHandler : IGraphNodeHandler<GraphContext>
         _attempts++;
         var needsRetry = _attempts <= _retriesBeforeSuccess;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["retry"] = needsRetry,
                 ["attempts"] = _attempts
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -867,12 +868,13 @@ public class CountingHandler : IGraphNodeHandler<GraphContext>
     {
         _count++;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["count"] = _count
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -889,12 +891,13 @@ public class InfiniteRetryHandler : IGraphNodeHandler<GraphContext>
         HandlerInputs inputs,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["continue"] = true
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -922,13 +925,14 @@ public class IterationControlHandler : IGraphNodeHandler<GraphContext>
         _executions++;
         var shouldIterate = _executions <= _iterationsBeforeStop;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["iterate"] = shouldIterate,
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -956,13 +960,14 @@ public class PartialRetryHandler : IGraphNodeHandler<GraphContext>
         _attempts++;
         var needsRetry = _attempts <= _retriesBeforeSuccess;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["retry"] = needsRetry,
                 ["attempts"] = _attempts
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -990,13 +995,14 @@ public class IterationCountingHandler : IGraphNodeHandler<GraphContext>
         _executions++;
         var shouldContinue = _executions < _maxIterations;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["continue"] = shouldContinue,
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -1017,12 +1023,13 @@ public class MultiBackEdgeHandler : IGraphNodeHandler<GraphContext>
     {
         _executions++;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -1055,14 +1062,15 @@ public class BranchIterationHandler : IGraphNodeHandler<GraphContext>
         _executions++;
         var shouldIterate = _executions <= _iterationsBeforeStop;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["iterate"] = shouldIterate,
                 ["branch"] = _branchName,
                 ["executions"] = _executions
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -1083,13 +1091,14 @@ public class AccumulatingHandler : IGraphNodeHandler<GraphContext>
     {
         _totalExecutions++;
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>
             {
                 ["totalExecutions"] = _totalExecutions,
                 ["timestamp"] = DateTimeOffset.UtcNow.Ticks
             },
-            Duration: TimeSpan.FromMilliseconds(1)
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }

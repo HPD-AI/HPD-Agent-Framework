@@ -218,9 +218,10 @@ public class SocketBridgeGenerator : ISourceGenerator
         }
 
         sb.AppendLine();
-        sb.AppendLine("            return new HPDAgent.Graph.Abstractions.Execution.NodeExecutionResult.Success(");
-        sb.AppendLine("                Outputs: outputs,");
-        sb.AppendLine("                Duration: stopwatch.Elapsed");
+        sb.AppendLine("            return HPDAgent.Graph.Abstractions.Execution.NodeExecutionResult.Success.Single(");
+        sb.AppendLine("                output: outputs,");
+        sb.AppendLine("                duration: stopwatch.Elapsed,");
+        sb.AppendLine("                metadata: new HPDAgent.Graph.Abstractions.Execution.NodeExecutionMetadata()");
         sb.AppendLine("            );");
         sb.AppendLine("        }");
         sb.AppendLine("        catch (System.Exception ex)");

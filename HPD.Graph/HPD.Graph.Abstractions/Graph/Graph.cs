@@ -67,6 +67,15 @@ public sealed record Graph
     public TimeSpan? ExecutionTimeout { get; init; }
 
     /// <summary>
+    /// Message cloning policy for output propagation.
+    /// Default: LazyClone (optimal memory/performance trade-off).
+    /// - LazyClone: First downstream edge gets original, subsequent get clones (Node-RED pattern)
+    /// - AlwaysClone: All edges get clones (safest, highest memory)
+    /// - NeverClone: All edges share references (fastest, requires immutable handlers)
+    /// </summary>
+    public Execution.CloningPolicy CloningPolicy { get; init; } = Execution.CloningPolicy.LazyClone;
+
+    /// <summary>
     /// Get a node by ID.
     /// </summary>
     public Node? GetNode(string nodeId)

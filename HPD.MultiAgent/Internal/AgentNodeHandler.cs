@@ -78,9 +78,10 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
 
             stopwatch.Stop();
 
-            return new NodeExecutionResult.Success(
-                Outputs: outputs,
-                Duration: stopwatch.Elapsed
+            return NodeExecutionResult.Success.Single(
+                output: outputs,
+                duration: stopwatch.Elapsed,
+                metadata: new NodeExecutionMetadata()
             );
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

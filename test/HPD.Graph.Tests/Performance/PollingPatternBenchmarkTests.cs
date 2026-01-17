@@ -427,9 +427,10 @@ public class PollingPatternBenchmarkTests
 
             if (_currentIteration >= _iterations)
             {
-                return new NodeExecutionResult.Success(
-                    Outputs: new Dictionary<string, object> { ["iterations"] = _currentIteration },
-                    Duration: TimeSpan.FromMilliseconds(250)
+                return NodeExecutionResult.Success.Single(
+                    output: new Dictionary<string, object> { ["iterations"] = _currentIteration },
+                    duration: TimeSpan.FromMilliseconds(250),
+                    metadata: new NodeExecutionMetadata()
                 );
             }
 
@@ -461,9 +462,10 @@ public class PollingPatternBenchmarkTests
             // Simulate some work producing items (30ms per 100 items = ~3s baseline for map)
             var items = Enumerable.Range(0, _itemCount).Select(i => $"item-{i}").ToList();
 
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["items"] = items },
-                Duration: TimeSpan.FromMilliseconds(30)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["items"] = items },
+                duration: TimeSpan.FromMilliseconds(30),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -490,9 +492,10 @@ public class PollingPatternBenchmarkTests
 
             if (_pollCount >= _successAfter)
             {
-                return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                    Outputs: new Dictionary<string, object> { ["polls"] = _pollCount },
-                    Duration: TimeSpan.FromMilliseconds(_retryDelayMs)
+                return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                    output: new Dictionary<string, object> { ["polls"] = _pollCount },
+                    duration: TimeSpan.FromMilliseconds(_retryDelayMs),
+                    metadata: new NodeExecutionMetadata()
                 ));
             }
 

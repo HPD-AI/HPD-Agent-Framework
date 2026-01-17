@@ -37,13 +37,5 @@ public enum PropagationMode
     /// Use case: Optional enrichment, best-effort operations.
     /// Example: Sentiment analysis fails → continue with raw text.
     /// </summary>
-    Isolate,
-
-    /// <summary>
-    /// Execute error handler, then decide based on handler result.
-    /// Handler can return Success (continue), Failure (stop), or Suspended (pause).
-    /// Use case: Complex error handling logic, logging, notifications.
-    /// Example: Rate limit → handler waits and retries, or switches to backup API.
-    /// </summary>
-    DelegateToHandler
+    Isolate
 }

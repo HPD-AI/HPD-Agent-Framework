@@ -23,24 +23,49 @@ public static class OutputCloner
         if (outputs == null || outputs.Count == 0)
             return new Dictionary<string, object>();
 
-        // Serialize to JSON using source-generated context (AOT-safe)
-        var json = JsonSerializer.Serialize(
-            outputs,
-            GraphJsonSerializerContext.Default.DictionaryStringObject);
-
-        // Deserialize to JsonElement dictionary (preserves structure, AOT-safe)
-        var elementDict = JsonSerializer.Deserialize(
-            json,
-            GraphJsonSerializerContext.Default.DictionaryStringJsonElement)!;
-
-        // Convert JsonElement back to concrete types
-        var result = new Dictionary<string, object>(elementDict.Count);
-        foreach (var (key, element) in elementDict)
+        try
         {
-            result[key] = ConvertJsonElement(element);
-        }
+            // Serialize to JSON using source-generated context (AOT-safe)
+            var json = JsonSerializer.Serialize(
+                outputs,
+                GraphJsonSerializerContext.Default.DictionaryStringObject);
 
-        return result;
+            // Deserialize to JsonElement dictionary (preserves structure, AOT-safe)
+            var elementDict = JsonSerializer.Deserialize(
+                json,
+                GraphJsonSerializerContext.Default.DictionaryStringJsonElement)!;
+
+            // Convert JsonElement back to concrete types
+            var result = new Dictionary<string, object>(elementDict.Count);
+            foreach (var (key, element) in elementDict)
+            {
+                result[key] = ConvertJsonElement(element);
+            }
+
+            return result;
+        }
+        catch (NotSupportedException)
+        {
+            // Fallback: If source-generated context doesn't support a type (e.g., in tests),
+            // use reflection-based serialization (not AOT-compatible, but works in normal/test scenarios)
+            var options = new JsonSerializerOptions
+            {
+                TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+                ReferenceHandler = ReferenceHandler.IgnoreCycles,
+                WriteIndented = false
+            };
+
+            var json = JsonSerializer.Serialize(outputs, options);
+            var elementDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, options)!;
+
+            var result = new Dictionary<string, object>(elementDict.Count);
+            foreach (var (key, element) in elementDict)
+            {
+                result[key] = ConvertJsonElement(element);
+            }
+
+            return result;
+        }
     }
 
     /// <summary>

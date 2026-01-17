@@ -237,9 +237,10 @@ public class Solver1Handler : IGraphNodeHandler<GraphContext>
             ["solver_name"] = "Solver 1"
         };
 
-        return new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 
@@ -286,9 +287,10 @@ public class Solver2Handler : IGraphNodeHandler<GraphContext>
             ["solver_name"] = "Solver 2"
         };
 
-        return new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 
@@ -335,9 +337,10 @@ public class Solver3Handler : IGraphNodeHandler<GraphContext>
             ["solver_name"] = "Solver 3"
         };
 
-        return new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 
@@ -420,9 +423,10 @@ Solver 3: {answers[2]}";
             ["message"] = message
         };
 
-        return new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -452,9 +456,10 @@ public class RouterHandler : IGraphNodeHandler<GraphContext>
             ["has_consensus"] = hasConsensus
         };
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -475,9 +480,10 @@ public class ReturnAnswerHandler : IGraphNodeHandler<GraphContext>
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[cyan bold]Final Answer:[/] {Markup.Escape(answer)}");
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>(),
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>(),
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -507,9 +513,10 @@ public class FeedbackHandler : IGraphNodeHandler<GraphContext>
             ["feedback"] = feedbackMessage
         };
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }

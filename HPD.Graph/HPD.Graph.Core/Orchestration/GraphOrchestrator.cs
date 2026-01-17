@@ -39,10 +39,15 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, Exception> _failedNodes = new();
 
-    // Track output hashes for change-aware iteration 
+    // Track output hashes for change-aware iteration
     // Stores hash of each node's outputs to detect changes between iterations
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, string> _outputHashes = new();
+
+    // Track which edges have consumed outputs for lazy cloning
+    // Key: "nodeId:port", Value: HashSet of edge IDs that have consumed this output
+    // Thread-safe for parallel node execution
+    private readonly ConcurrentDictionary<string, HashSet<string>> _consumedOutputs = new();
 
     public GraphOrchestrator(
         IServiceProvider serviceProvider,
@@ -1454,10 +1459,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         LogLevel.Debug, nodeId: node.Id);
 
                     // Create success result from cache
-                    var cachedResult = new NodeExecutionResult.Success(
-                        Outputs: cached.Outputs,
-                        Duration: cached.Duration,
-                        Metadata: new NodeExecutionMetadata
+                    var cachedResult = NodeExecutionResult.Success.Single(
+                        output: cached.Outputs,
+                        duration: cached.Duration,
+                        metadata: new NodeExecutionMetadata
                         {
                             AttemptNumber = 1,
                             CustomMetrics = new Dictionary<string, object>
@@ -1660,33 +1665,54 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             if (sourceNode != null && context.IsNodeComplete(sourceNodeId))
             {
-                // Get outputs from the channel
-                var channelName = $"node_output:{sourceNodeId}";
-                if (context.Channels.Contains(channelName))
+                // Get outputs from the appropriate port channel
+                // Group edges by FromPort to handle multi-port routing
+                var edgesByPort = sourceGroup.GroupBy(e => e.FromPort ?? 0);
+
+                foreach (var portGroup in edgesByPort)
                 {
-                    var outputs = context.Channels[channelName].Get<Dictionary<string, object>>();
-                    if (outputs != null)
+                    var fromPort = portGroup.Key;
+                    var channelName = fromPort == 0
+                        ? $"node_output:{sourceNodeId}" // Legacy channel for port 0
+                        : $"node_output:{sourceNodeId}:port:{fromPort}"; // Port-specific channel
+
+                    if (!context.Channels.Contains(channelName))
                     {
-                        // Two-pass evaluation for default edges
-                        var regularEdges = sourceGroup.Where(e => e.Condition?.Type != ConditionType.Default).ToList();
-                        var defaultEdge = sourceGroup.FirstOrDefault(e => e.Condition?.Type == ConditionType.Default);
+                        // Port has no outputs - this is valid (node may not have output on this port)
+                        context.Log("Orchestrator",
+                            $"No outputs found on port {fromPort} of node {sourceNodeId}",
+                            LogLevel.Debug, nodeId: node.Id);
+                        continue;
+                    }
+
+                    var rawOutputs = context.Channels[channelName].Get<Dictionary<string, object>>();
+                    if (rawOutputs != null)
+                    {
+                        // Two-pass evaluation for default edges (within this port group)
+                        var regularEdges = portGroup.Where(e => e.Condition?.Type != ConditionType.Default).ToList();
+                        var defaultEdge = portGroup.FirstOrDefault(e => e.Condition?.Type == ConditionType.Default);
                         bool anyRegularEdgeMatched = false;
 
                         // Pass 1: Evaluate regular conditions
                         foreach (var edge in regularEdges)
                         {
-                            if (ConditionEvaluator.Evaluate(edge.Condition, outputs, context, edge))
+                            if (ConditionEvaluator.Evaluate(edge.Condition, rawOutputs, context, edge))
                             {
+                                // Apply cloning policy for this edge
+                                var outputs = ApplyCloningPolicy(context, rawOutputs, sourceNodeId, fromPort, edge);
+
                                 // Condition met - include these outputs with namespace
-                                AddOutputsWithNamespace(inputs, sourceNodeId, outputs, keySourceMap);
+                                // Namespace format: {sourceNodeId}.{key} or {sourceNodeId}:port{N}.{key} for non-zero ports
+                                var portSuffix = fromPort == 0 ? "" : $":port{fromPort}";
+                                AddOutputsWithNamespace(inputs, sourceNodeId + portSuffix, outputs, keySourceMap);
                                 anyRegularEdgeMatched = true;
-                                break; // Only use outputs from first matching edge per source
+                                break; // Only use outputs from first matching edge per port
                             }
                             else
                             {
                                 // Condition not met - skip this edge
                                 context.Log("Orchestrator",
-                                    $"Edge condition not met: {edge.From} -> {edge.To} ({edge.Condition?.GetDescription() ?? "N/A"})",
+                                    $"Edge condition not met: {edge.From}:port{fromPort} -> {edge.To} ({edge.Condition?.GetDescription() ?? "N/A"})",
                                     LogLevel.Debug, nodeId: node.Id);
                             }
                         }
@@ -1695,11 +1721,15 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         if (!anyRegularEdgeMatched && defaultEdge != null)
                         {
                             context.Log("Orchestrator",
-                                $"Using default edge: {defaultEdge.From} -> {defaultEdge.To}",
+                                $"Using default edge: {defaultEdge.From}:port{fromPort} -> {defaultEdge.To}",
                                 LogLevel.Debug, nodeId: node.Id);
 
+                            // Apply cloning policy for this edge
+                            var outputs = ApplyCloningPolicy(context, rawOutputs, sourceNodeId, fromPort, defaultEdge);
+
                             // Include outputs from default edge with namespace
-                            AddOutputsWithNamespace(inputs, sourceNodeId, outputs, keySourceMap);
+                            var portSuffix = fromPort == 0 ? "" : $":port{fromPort}";
+                            AddOutputsWithNamespace(inputs, sourceNodeId + portSuffix, outputs, keySourceMap);
                         }
                     }
                 }
@@ -1733,6 +1763,61 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         }
 
         return inputs;
+    }
+
+    /// <summary>
+    /// Applies cloning policy to outputs based on graph configuration and edge settings.
+    /// Implements lazy cloning: first edge gets original, subsequent edges get clones.
+    /// </summary>
+    private Dictionary<string, object> ApplyCloningPolicy(
+        TContext context,
+        Dictionary<string, object> outputs,
+        string sourceNodeId,
+        int fromPort,
+        Edge edge)
+    {
+        // Determine cloning policy (edge-specific or graph-level)
+        var policy = edge.CloningPolicy ?? context.Graph.CloningPolicy;
+
+        // Track consumption for lazy cloning
+        var consumptionKey = $"{sourceNodeId}:{fromPort}";
+        var edgeId = $"{edge.From}:{edge.FromPort ?? 0}->{edge.To}:{edge.ToPort ?? 0}";
+
+        // Apply cloning strategy
+        return policy switch
+        {
+            CloningPolicy.AlwaysClone => CloneOutputs(outputs),
+            CloningPolicy.NeverClone => outputs, // Share reference (requires immutable handlers)
+            CloningPolicy.LazyClone => IsFirstConsumer(consumptionKey, edgeId)
+                ? outputs // First gets original (zero copy)
+                : CloneOutputs(outputs), // Subsequent get clones
+            _ => CloneOutputs(outputs) // Default to safe
+        };
+    }
+
+    /// <summary>
+    /// Checks if this edge is the first consumer of the output and marks it as consumed.
+    /// Thread-safe for parallel execution.
+    /// </summary>
+    private bool IsFirstConsumer(string consumptionKey, string edgeId)
+    {
+        var consumers = _consumedOutputs.GetOrAdd(consumptionKey, _ => new HashSet<string>());
+
+        lock (consumers)
+        {
+            var isFirst = consumers.Count == 0;
+            consumers.Add(edgeId);
+            return isFirst;
+        }
+    }
+
+    /// <summary>
+    /// Deep clones outputs using source-generated JSON serialization.
+    /// Handles circular references and preserves type information.
+    /// </summary>
+    private Dictionary<string, object> CloneOutputs(Dictionary<string, object> outputs)
+    {
+        return Abstractions.Serialization.OutputCloner.DeepClone(outputs);
     }
 
     /// <summary>
@@ -1774,9 +1859,35 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             $"Node {node.Id} completed successfully in {success.Duration.TotalMilliseconds:F2}ms{(isCacheHit ? " (from cache)" : "")}",
             LogLevel.Information, nodeId: node.Id);
 
-        // Store outputs in channel for downstream nodes
-        var channelName = $"node_output:{node.Id}";
-        context.Channels[channelName].Set(success.Outputs);
+        // Validate that all outputs are serializable (for cloning)
+        foreach (var portOutput in success.PortOutputs)
+        {
+            try
+            {
+                Abstractions.Serialization.OutputCloner.ValidateSerializable(portOutput.Value);
+            }
+            catch (InvalidOperationException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Node {node.Id} produced non-serializable outputs on port {portOutput.Key}: {ex.Message}",
+                    ex
+                );
+            }
+        }
+
+        // Store outputs in channels for downstream nodes
+        // Port 0 is stored in the legacy channel for backward compatibility
+        var port0ChannelName = $"node_output:{node.Id}";
+        var port0Outputs = success.PortOutputs.TryGetValue(0, out var outputs) ? outputs : new Dictionary<string, object>();
+        context.Channels[port0ChannelName].Set(port0Outputs);
+
+        // Store ALL port outputs for multi-port routing
+        // Format: "node_output:{nodeId}:port:{portNumber}"
+        foreach (var portOutput in success.PortOutputs)
+        {
+            var portChannelName = $"node_output:{node.Id}:port:{portOutput.Key}";
+            context.Channels[portChannelName].Set(portOutput.Value);
+        }
 
         // Store result for upstream condition evaluation
         context.Channels[$"node_result:{node.Id}"].Set(success);
@@ -1786,7 +1897,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var options = context.Graph.IterationOptions;
         var excludeFields = options?.IgnoreFieldsForChangeDetection;
         var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
-        var outputHash = ComputeOutputHash(success.Outputs, excludeFields, algorithm);
+        var outputHash = ComputeOutputHash(port0Outputs, excludeFields, algorithm);
         _outputHashes[node.Id] = outputHash;
 
         // Cache the result if caching is enabled and this wasn't a cache hit
@@ -1794,10 +1905,12 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         {
             var cachedResult = new CachedNodeResult
             {
-                Outputs = success.Outputs,
+                Outputs = port0Outputs,
                 CachedAt = DateTimeOffset.UtcNow,
                 Duration = success.Duration,
-                Metadata = success.Metadata?.CustomMetrics
+                Metadata = success.Metadata.CustomMetrics != null
+                    ? new Dictionary<string, object>(success.Metadata.CustomMetrics)
+                    : null
             };
 
             // Fire and forget - don't await (caching shouldn't slow down execution)
@@ -1828,7 +1941,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             HandlerName = node.HandlerName ?? node.Type.ToString(),
             LayerIndex = context.CurrentLayerIndex,
             Progress = (float)context.CompletedNodes.Count / context.Graph.Nodes.Count,
-            Outputs = success.Outputs, // Include outputs for downstream consumers
+            Outputs = port0Outputs, // Include port 0 outputs for downstream consumers
             Duration = success.Duration,
             Result = success,
             GraphContext = new Abstractions.Events.GraphExecutionContext
@@ -1936,41 +2049,6 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 context.Channels[$"node_result:{node.Id}"].Set(failure);
                 // Mark as complete so downstream nodes can execute
                 context.MarkNodeComplete(node.Id);
-                break;
-
-            case PropagationMode.DelegateToHandler:
-                // Execute error handler node
-                if (string.IsNullOrEmpty(policy.ErrorHandlerNodeId))
-                {
-                    throw new InvalidOperationException($"Node {node.Id} has DelegateToHandler mode but no ErrorHandlerNodeId specified");
-                }
-
-                var handlerNode = context.Graph.GetNode(policy.ErrorHandlerNodeId);
-                if (handlerNode == null)
-                {
-                    throw new InvalidOperationException($"Error handler node {policy.ErrorHandlerNodeId} not found for node {node.Id}");
-                }
-
-                context.Log("Orchestrator",
-                    $"Node {node.Id} failed - delegating to error handler {handlerNode.Id} (Mode: DelegateToHandler)",
-                    LogLevel.Warning, nodeId: node.Id);
-
-                // Store error details for handler
-                context.Channels[$"error_details:{node.Id}"].Set(new Dictionary<string, object>
-                {
-                    ["original_node_id"] = node.Id,
-                    ["exception"] = failure.Exception,
-                    ["exception_type"] = failure.Exception.GetType().Name,
-                    ["exception_message"] = failure.Exception.Message,
-                    ["severity"] = failure.Severity.ToString(),
-                    ["is_transient"] = failure.IsTransient
-                });
-
-                await ExecuteNodeAsync(context, handlerNode, cancellationToken);
-
-                // Handler result determines what happens next
-                // If handler returns Success, continue; if Failure, stop; if Suspended, pause
-                // Handler already executed, result is in context
                 break;
 
             default:
@@ -2933,9 +3011,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             var duration = DateTimeOffset.UtcNow - (context.Tags.TryGetValue($"node_start_time:{node.Id}", out var startTimes) && startTimes.Count > 0
                 ? DateTimeOffset.Parse(startTimes.First())
                 : DateTimeOffset.UtcNow);
-            var successResult = new NodeExecutionResult.Success(
-                Outputs: outputs,
-                Duration: duration > TimeSpan.Zero ? duration : TimeSpan.FromMilliseconds(1)
+            var successResult = NodeExecutionResult.Success.Single(
+                output: outputs,
+                duration: duration > TimeSpan.Zero ? duration : TimeSpan.FromMilliseconds(1),
+                metadata: new NodeExecutionMetadata()
             );
             context.Channels[$"node_result:{node.Id}"].Set(successResult);
 
@@ -3239,9 +3318,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                     {
                                         outputs["output"] = result;
                                     }
-                                    itemState.Result = new NodeExecutionResult.Success(
-                                        Outputs: outputs,
-                                        Duration: DateTimeOffset.UtcNow - itemState.StartTime
+                                    itemState.Result = NodeExecutionResult.Success.Single(
+                                        output: outputs,
+                                        duration: DateTimeOffset.UtcNow - itemState.StartTime,
+                                        metadata: new NodeExecutionMetadata()
                                     );
                                     itemState.Context = mapContext;
                                     context.AddTag($"node_state:map:{node.Id}[{index}]", NodeState.Succeeded.ToString());
@@ -3312,9 +3392,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             if (itemState.Status == MapItemStatus.Succeeded)
             {
-                // Extract result from Success output
+                // Extract result from Success output (port 0)
                 if (itemState.Result is NodeExecutionResult.Success success &&
-                    success.Outputs.TryGetValue("output", out var output))
+                    success.PortOutputs.TryGetValue(0, out var port0Outputs) &&
+                    port0Outputs.TryGetValue("output", out var output))
                 {
                     finalResults.Add(output);
                     successCount++;
@@ -3524,9 +3605,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                             ? context.Channels[$"node_output:{node!.Id}"].Get<Dictionary<string, object>>()
                             : null,
                         Duration = duration,
-                        Result = new NodeExecutionResult.Success(
-                            Outputs: new Dictionary<string, object>(),
-                            Duration: duration
+                        Result = NodeExecutionResult.Success.Single(
+                            output: new Dictionary<string, object>(),
+                            duration: duration,
+                            metadata: new NodeExecutionMetadata()
                         )
                     };
                 }

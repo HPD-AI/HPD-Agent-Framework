@@ -121,9 +121,10 @@ public class MapNodePollingDebugTests
             }
 
             // Second call - return Success
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["result"] = "success" },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["result"] = "success" },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -163,8 +164,8 @@ public class MapNodePollingDebugTests
 
             result.Should().BeOfType<NodeExecutionResult.Success>();
             var success = (NodeExecutionResult.Success)result;
-            success.Outputs.Should().ContainKey("result");
-            success.Outputs["result"].Should().Be("success");
+            success.PortOutputs[0].Should().ContainKey("result");
+            success.PortOutputs[0]["result"].Should().Be("success");
         }
         else
         {

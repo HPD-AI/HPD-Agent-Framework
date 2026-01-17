@@ -227,9 +227,10 @@ public class IterationPollingIntegrationTests
             }
 
             // Second call after polling - return Success
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["result"] = "success" },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["result"] = "success" },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -291,13 +292,14 @@ public class IterationPollingIntegrationTests
             _executionCount++;
             var needsRetry = _executionCount <= _retriesBeforeSuccess;
 
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object>
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object>
                 {
                     ["retry"] = needsRetry,
                     ["execution"] = _executionCount
                 },
-                Duration: TimeSpan.FromMilliseconds(10)
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }

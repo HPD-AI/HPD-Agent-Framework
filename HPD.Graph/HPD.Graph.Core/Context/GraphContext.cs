@@ -221,6 +221,15 @@ public class GraphContext : IGraphContext
             }
         }
 
+        // Copy tags (for global context like correlation IDs, configuration, etc.)
+        foreach (var tag in _tags)
+        {
+            foreach (var value in tag.Value)
+            {
+                copy.AddTag(tag.Key, value);
+            }
+        }
+
         return copy;
     }
 

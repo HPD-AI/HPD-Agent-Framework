@@ -43,9 +43,10 @@ public class ConditionEvaluatorTests
 
         // Mark upstream1 as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         // Mark upstream2 as failed
@@ -168,15 +169,17 @@ public class ConditionEvaluatorTests
 
         // Mark both upstreams as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         context.MarkNodeComplete("upstream2");
-        context.Channels["node_result:upstream2"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data2" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream2"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data2" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         var condition = new EdgeCondition { Type = ConditionType.UpstreamOneSuccess };
@@ -212,9 +215,10 @@ public class ConditionEvaluatorTests
 
         // Mark upstream1 as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         // Mark upstream2 as failed
@@ -255,9 +259,10 @@ public class ConditionEvaluatorTests
 
         // Mark upstream1 as completed
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         // upstream2 still running (not marked complete)
@@ -339,9 +344,10 @@ public class ConditionEvaluatorTests
 
         // Mark upstream1 as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         // Mark upstream2 as failed
@@ -426,9 +432,10 @@ public class ConditionEvaluatorTests
 
         // Mark upstream1 as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         // upstream2 still running (not marked complete)
@@ -462,15 +469,17 @@ public class ConditionEvaluatorTests
 
         // Mark both upstreams as succeeded
         context.MarkNodeComplete("upstream1");
-        context.Channels["node_result:upstream1"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data1" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream1"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data1" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         context.MarkNodeComplete("upstream2");
-        context.Channels["node_result:upstream2"].Set(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["result"] = "data2" },
-            Duration: TimeSpan.Zero
+        context.Channels["node_result:upstream2"].Set(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["result"] = "data2" },
+            duration: TimeSpan.Zero,
+            metadata: new NodeExecutionMetadata()
         ));
 
         var condition = new EdgeCondition { Type = ConditionType.UpstreamAllDoneOneSuccess };

@@ -65,9 +65,10 @@ public class MapPollingIntegrationTests
             }
 
             // Condition met
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["result"] = $"processed-{item}", ["pollCount"] = pollCount },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["result"] = $"processed-{item}", ["pollCount"] = pollCount },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -366,9 +367,10 @@ public class MapPollingIntegrationTests
                 );
             }
 
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["result"] = $"done-{item}", ["polls"] = pollCount },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["result"] = $"done-{item}", ["polls"] = pollCount },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -395,9 +397,10 @@ public class MapPollingIntegrationTests
             if (!_itemsToPolls.Contains(item))
             {
                 // Immediate success for non-polling items
-                return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                    Outputs: new Dictionary<string, object> { ["result"] = $"immediate-{item}" },
-                    Duration: TimeSpan.FromMilliseconds(5)
+                return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                    output: new Dictionary<string, object> { ["result"] = $"immediate-{item}" },
+                    duration: TimeSpan.FromMilliseconds(5),
+                    metadata: new NodeExecutionMetadata()
                 ));
             }
 
@@ -420,9 +423,10 @@ public class MapPollingIntegrationTests
                 );
             }
 
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["result"] = $"polled-{item}", ["pollCount"] = pollCount },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["result"] = $"polled-{item}", ["pollCount"] = pollCount },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }

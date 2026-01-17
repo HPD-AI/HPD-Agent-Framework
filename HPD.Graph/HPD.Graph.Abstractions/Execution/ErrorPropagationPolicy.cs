@@ -28,14 +28,6 @@ public sealed record ErrorPropagationPolicy
     public string? FallbackNodeId { get; init; }
 
     /// <summary>
-    /// Error handler node to process the error.
-    /// Handler receives exception details as input.
-    /// Can return Success (continue), Failure (stop), or Suspended (pause).
-    /// Used when Mode = DelegateToHandler.
-    /// </summary>
-    public string? ErrorHandlerNodeId { get; init; }
-
-    /// <summary>
     /// Custom predicate to filter which errors propagate.
     /// Null = all errors propagate (default).
     /// Example: Only propagate DatabaseConnectionError, ignore others.
@@ -70,14 +62,4 @@ public sealed record ErrorPropagationPolicy
     /// Creates a policy that isolates errors (continues execution).
     /// </summary>
     public static ErrorPropagationPolicy Isolate() => new() { Mode = PropagationMode.Isolate };
-
-    /// <summary>
-    /// Creates a policy that delegates error handling to another node.
-    /// </summary>
-    public static ErrorPropagationPolicy DelegateToHandler(string errorHandlerNodeId) => new()
-    {
-        Mode = PropagationMode.DelegateToHandler,
-        ErrorHandlerNodeId = errorHandlerNodeId
-            ?? throw new ArgumentNullException(nameof(errorHandlerNodeId), "Error handler node ID cannot be null")
-    };
 }

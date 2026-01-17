@@ -14,9 +14,10 @@ public class SuccessHandler : IGraphNodeHandler<GraphContext>
     public Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         var output = inputs.TryGet<string>("input", out var value) ? value : "success";
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = output },
-            Duration: TimeSpan.FromMilliseconds(10)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = output },
+            duration: TimeSpan.FromMilliseconds(10),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -68,9 +69,10 @@ public class TransientFailureHandler : IGraphNodeHandler<GraphContext>
             ));
         }
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["attempts"] = _attempts },
-            Duration: TimeSpan.FromMilliseconds(10)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["attempts"] = _attempts },
+            duration: TimeSpan.FromMilliseconds(10),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -111,9 +113,10 @@ public class DelayHandler : IGraphNodeHandler<GraphContext>
     public async Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         await Task.Delay(_delay, cancellationToken);
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["delayed"] = true },
-            Duration: _delay
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["delayed"] = true },
+            duration: _delay,
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -133,9 +136,10 @@ public class EchoHandler : IGraphNodeHandler<GraphContext>
             outputs[key] = value;
         }
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -150,9 +154,10 @@ public class CounterHandler : IGraphNodeHandler<GraphContext>
     public Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         var current = inputs.TryGet<int>("count", out var value) ? value : 0;
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["count"] = current + 1 },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["count"] = current + 1 },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -182,9 +187,10 @@ public class ListProducerHandler : IGraphNodeHandler<GraphContext>
             items = new List<string> { "item1", "item2", "item3" };
         }
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = items },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = items },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -203,9 +209,10 @@ public class ChannelReaderHandler : IGraphNodeHandler<GraphContext>
         var channelName = inputs.TryGet<string>("channel", out var ch) ? ch : "map_input";
         var data = context.Channels[channelName].Get<object>();
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = data ?? new List<object>() },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = data ?? new List<object>() },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -222,9 +229,10 @@ public class MixedTypeListProducerHandler : IGraphNodeHandler<GraphContext>
     public Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         var list = new List<object> { "hello", 42, "world" };  // 2 strings + 1 int
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = list },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = list },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -241,9 +249,10 @@ public class StringProcessorHandler : IGraphNodeHandler<GraphContext>
         var item = inputs.TryGet<string>("item", out var value) ? value : "unknown";
         var processed = $"processed_{item}";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = processed },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = processed },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -260,9 +269,10 @@ public class IntProcessorHandler : IGraphNodeHandler<GraphContext>
         var item = inputs.TryGet<int>("item", out var value) ? value : 0;
         var processed = item * 2; // Double the number
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = processed },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = processed },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -279,9 +289,10 @@ public class DefaultProcessorHandler : IGraphNodeHandler<GraphContext>
         var item = inputs.TryGet<object>("item", out var value) ? value : null;
         var processed = $"default_{item}";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = processed },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = processed },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -302,9 +313,10 @@ public class DocumentListProducerHandler : IGraphNodeHandler<GraphContext>
             new() { Type = "pdf", Content = "Another PDF" }
         };
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = docs },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = docs },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -321,9 +333,10 @@ public class PdfProcessorHandler : IGraphNodeHandler<GraphContext>
         var doc = inputs.TryGet<TestDocument>("item", out var value) ? value : new TestDocument();
         var processed = $"pdf_processed_{doc.Content}";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = processed },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = processed },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
@@ -340,9 +353,10 @@ public class ImageProcessorHandler : IGraphNodeHandler<GraphContext>
         var doc = inputs.TryGet<TestDocument>("item", out var value) ? value : new TestDocument();
         var processed = $"image_processed_{doc.Content}";
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["output"] = processed },
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["output"] = processed },
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }

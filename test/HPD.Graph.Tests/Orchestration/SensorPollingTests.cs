@@ -55,9 +55,10 @@ public class SensorPollingTests
             }
 
             // Condition met - succeed
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["pollCount"] = _pollCount },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["pollCount"] = _pollCount },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }
@@ -140,9 +141,10 @@ public class SensorPollingTests
 
             if (_pollCount >= _successAfter)
             {
-                return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                    Outputs: new Dictionary<string, object> { ["result"] = "condition met" },
-                    Duration: TimeSpan.FromMilliseconds(10)
+                return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                    output: new Dictionary<string, object> { ["result"] = "condition met" },
+                    duration: TimeSpan.FromMilliseconds(10),
+                    metadata: new NodeExecutionMetadata()
                 ));
             }
 
@@ -187,9 +189,10 @@ public class SensorPollingTests
                 );
             }
 
-            return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-                Outputs: new Dictionary<string, object> { ["acquired"] = true },
-                Duration: TimeSpan.FromMilliseconds(10)
+            return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+                output: new Dictionary<string, object> { ["acquired"] = true },
+                duration: TimeSpan.FromMilliseconds(10),
+                metadata: new NodeExecutionMetadata()
             ));
         }
     }

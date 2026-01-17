@@ -64,9 +64,13 @@ public class CloningIsolationIntegrationTests
         var aOutputs = context.Channels["node_output:a"].Get<Dictionary<string, object>>();
         aOutputs.Should().NotBeNull();
 
-        var originalList = aOutputs!["mutable_list"] as List<int>;
+        // After cloning, List<int> becomes List<object> due to JSON round-trip
+        var originalList = aOutputs!["mutable_list"] as List<object>;
         originalList.Should().NotBeNull();
-        originalList.Should().Equal(1, 2, 3);
+        originalList.Should().HaveCount(3);
+        originalList[0].Should().Be(1);
+        originalList[1].Should().Be(2);
+        originalList[2].Should().Be(3);
 
         // B and C should have independent copies
         var bOutputs = context.Channels["node_output:b"].Get<Dictionary<string, object>>();
@@ -107,7 +111,7 @@ public class CloningIsolationIntegrationTests
             };
 
             return Task.FromResult<NodeExecutionResult>(
-                new NodeExecutionResult.Success(output, TimeSpan.Zero)
+                NodeExecutionResult.Success.Single(output, TimeSpan.Zero, new NodeExecutionMetadata())
             );
         }
     }
@@ -142,7 +146,7 @@ public class CloningIsolationIntegrationTests
             };
 
             return Task.FromResult<NodeExecutionResult>(
-                new NodeExecutionResult.Success(output, TimeSpan.Zero)
+                NodeExecutionResult.Success.Single(output, TimeSpan.Zero, new NodeExecutionMetadata())
             );
         }
     }

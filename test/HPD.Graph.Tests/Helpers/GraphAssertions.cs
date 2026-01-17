@@ -31,8 +31,9 @@ public static class GraphAssertions
 
     public static void ShouldHaveOutput<T>(this NodeExecutionResult.Success result, string key, T expectedValue)
     {
-        result.Outputs.Should().ContainKey(key);
-        result.Outputs[key].Should().Be(expectedValue);
+        var port0Outputs = result.PortOutputs.TryGetValue(0, out var outputs) ? outputs : new Dictionary<string, object>();
+        port0Outputs.Should().ContainKey(key);
+        port0Outputs[key].Should().Be(expectedValue);
     }
 
     public static void ShouldHaveTransientError(this NodeExecutionResult.Failure result)

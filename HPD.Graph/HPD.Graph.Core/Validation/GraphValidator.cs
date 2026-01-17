@@ -38,6 +38,9 @@ public static class GraphValidator
         // Check map nodes
         ValidateMapNodes(graph, errors, warnings);
 
+        // Check port-based routing
+        ValidatePortRouting(graph, errors, warnings);
+
         if (errors.Count > 0)
         {
             return GraphValidationResult.Failure(errors, warnings);
@@ -436,6 +439,135 @@ public static class GraphValidator
                     Code = "MAP_HAS_HANDLER",
                     Message = $"Map node '{node.Id}' has HandlerName '{node.HandlerName}' which will be ignored. Map nodes use MapProcessorGraph/MapProcessorGraphs instead.",
                     NodeId = node.Id
+                });
+            }
+        }
+    }
+
+    private static void ValidatePortRouting(GraphDefinition graph, List<GraphValidationError> errors, List<GraphValidationWarning> warnings)
+    {
+        foreach (var node in graph.Nodes)
+        {
+            // Rule 1: OutputPortCount must be positive
+            if (node.OutputPortCount < 1)
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "INVALID_PORT_COUNT",
+                    Message = $"Node '{node.Id}' has OutputPortCount={node.OutputPortCount}. Must be at least 1.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Rule 2: OutputPortCount > 100 warning (likely misconfiguration)
+            if (node.OutputPortCount > 100)
+            {
+                warnings.Add(new GraphValidationWarning
+                {
+                    Code = "HIGH_PORT_COUNT",
+                    Message = $"Node '{node.Id}' has OutputPortCount={node.OutputPortCount}. This is unusually high - verify this is intentional.",
+                    NodeId = node.Id
+                });
+            }
+
+            // Rule 3: Validate outgoing edges reference valid ports
+            foreach (var edge in graph.GetOutgoingEdges(node.Id))
+            {
+                var fromPort = edge.FromPort ?? 0; // Default to port 0
+
+                if (fromPort < 0)
+                {
+                    errors.Add(new GraphValidationError
+                    {
+                        Code = "NEGATIVE_FROM_PORT",
+                        Message = $"Edge from '{edge.From}' to '{edge.To}' has negative FromPort={fromPort}. Port numbers must be non-negative.",
+                        NodeId = edge.From,
+                        EdgeId = $"{edge.From}->{edge.To}"
+                    });
+                }
+                else if (fromPort >= node.OutputPortCount)
+                {
+                    errors.Add(new GraphValidationError
+                    {
+                        Code = "INVALID_FROM_PORT",
+                        Message = $"Edge from '{edge.From}' to '{edge.To}' references FromPort={fromPort}, but node only has {node.OutputPortCount} output port(s) (0-{node.OutputPortCount - 1}).",
+                        NodeId = edge.From,
+                        EdgeId = $"{edge.From}->{edge.To}"
+                    });
+                }
+            }
+
+            // Rule 4: Warn if multi-output node has no edges on some ports
+            if (node.OutputPortCount > 1)
+            {
+                var usedPorts = new HashSet<int>();
+                foreach (var edge in graph.GetOutgoingEdges(node.Id))
+                {
+                    usedPorts.Add(edge.FromPort ?? 0);
+                }
+
+                var unusedPorts = Enumerable.Range(0, node.OutputPortCount)
+                    .Where(p => !usedPorts.Contains(p))
+                    .ToList();
+
+                if (unusedPorts.Any())
+                {
+                    warnings.Add(new GraphValidationWarning
+                    {
+                        Code = "UNUSED_OUTPUT_PORTS",
+                        Message = $"Node '{node.Id}' has {node.OutputPortCount} output ports but port(s) [{string.Join(", ", unusedPorts)}] have no outgoing edges. Data sent to these ports will be dropped.",
+                        NodeId = node.Id
+                    });
+                }
+            }
+
+            // Rule 5: Validate ToPort is non-negative (if specified)
+            foreach (var edge in graph.GetIncomingEdges(node.Id))
+            {
+                if (edge.ToPort.HasValue && edge.ToPort.Value < 0)
+                {
+                    errors.Add(new GraphValidationError
+                    {
+                        Code = "NEGATIVE_TO_PORT",
+                        Message = $"Edge from '{edge.From}' to '{edge.To}' has negative ToPort={edge.ToPort.Value}. Port numbers must be non-negative.",
+                        NodeId = edge.To,
+                        EdgeId = $"{edge.From}->{edge.To}"
+                    });
+                }
+
+                // Note: We don't validate ToPort against a max since multi-input isn't implemented yet.
+                // When implemented, we'd check against Node.InputPortCount (future property).
+            }
+
+            // Rule 6: Warn about explicit port on single-output nodes (redundant)
+            if (node.OutputPortCount == 1)
+            {
+                var explicitPort0Edges = graph.GetOutgoingEdges(node.Id)
+                    .Where(e => e.FromPort.HasValue && e.FromPort.Value == 0)
+                    .ToList();
+
+                if (explicitPort0Edges.Any())
+                {
+                    warnings.Add(new GraphValidationWarning
+                    {
+                        Code = "REDUNDANT_PORT_0",
+                        Message = $"Node '{node.Id}' has OutputPortCount=1 (single output), but {explicitPort0Edges.Count} edge(s) explicitly specify FromPort=0. This is redundant - omit FromPort for single-output nodes.",
+                        NodeId = node.Id
+                    });
+                }
+            }
+        }
+
+        // Rule 7: Validate Priority is non-negative
+        foreach (var edge in graph.Edges)
+        {
+            if (edge.Priority.HasValue && edge.Priority.Value < 0)
+            {
+                errors.Add(new GraphValidationError
+                {
+                    Code = "NEGATIVE_PRIORITY",
+                    Message = $"Edge from '{edge.From}' to '{edge.To}' has negative Priority={edge.Priority.Value}. Priority must be non-negative (lower = higher priority).",
+                    EdgeId = $"{edge.From}->{edge.To}"
                 });
             }
         }

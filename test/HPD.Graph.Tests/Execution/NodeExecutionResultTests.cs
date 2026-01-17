@@ -19,13 +19,14 @@ public class NodeExecutionResultTests
         var duration = TimeSpan.FromMilliseconds(100);
 
         // Act
-        var result = new NodeExecutionResult.Success(outputs, duration);
+        var result = NodeExecutionResult.Success.Single(outputs, duration, new NodeExecutionMetadata());
 
         // Assert
-        result.Outputs.Should().ContainKey("result");
-        result.Outputs["result"].Should().Be("success");
+        var port0 = result.PortOutputs[0];
+        port0.Should().ContainKey("result");
+        port0["result"].Should().Be("success");
         result.Duration.Should().Be(duration);
-        result.Metadata.Should().BeNull();
+        result.Metadata.Should().NotBeNull();
     }
 
     [Fact]
@@ -37,20 +38,21 @@ public class NodeExecutionResultTests
         var metadata = new NodeExecutionMetadata { AttemptNumber = 1 };
 
         // Act
-        var result = new NodeExecutionResult.Success(outputs, duration, metadata);
+        var result = NodeExecutionResult.Success.Single(outputs, duration, metadata);
 
         // Assert
         result.Metadata.Should().NotBeNull();
-        result.Metadata!.AttemptNumber.Should().Be(1);
+        result.Metadata.AttemptNumber.Should().Be(1);
     }
 
     [Fact]
     public void Success_PatternMatching_Works()
     {
         // Arrange
-        NodeExecutionResult result = new NodeExecutionResult.Success(
+        NodeExecutionResult result = NodeExecutionResult.Success.Single(
             new Dictionary<string, object>(),
-            TimeSpan.Zero
+            TimeSpan.Zero,
+            new NodeExecutionMetadata()
         );
 
         // Act & Assert
@@ -345,7 +347,7 @@ public class NodeExecutionResultTests
         // Arrange
         var results = new NodeExecutionResult[]
         {
-            new NodeExecutionResult.Success(new Dictionary<string, object>(), TimeSpan.Zero),
+            NodeExecutionResult.Success.Single(new Dictionary<string, object>(), TimeSpan.Zero, new NodeExecutionMetadata()),
             new NodeExecutionResult.Failure(new Exception(), ErrorSeverity.Fatal, false, TimeSpan.Zero),
             new NodeExecutionResult.Skipped(SkipReason.ConditionNotMet),
             NodeExecutionResult.Suspended.ForHumanApproval("token"),
@@ -376,9 +378,10 @@ public class NodeExecutionResultTests
     public void NodeExecutionResult_TypeChecking_Works()
     {
         // Arrange
-        NodeExecutionResult success = new NodeExecutionResult.Success(
+        NodeExecutionResult success = NodeExecutionResult.Success.Single(
             new Dictionary<string, object>(),
-            TimeSpan.Zero
+            TimeSpan.Zero,
+            new NodeExecutionMetadata()
         );
 
         NodeExecutionResult failure = new NodeExecutionResult.Failure(

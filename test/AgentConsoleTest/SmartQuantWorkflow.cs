@@ -352,9 +352,10 @@ public class ClassifierHandler : IGraphNodeHandler<GraphContext>
             ["question"] = question  // ← PASS QUESTION FORWARD!
         };
 
-        return new NodeExecutionResult.Success(
-            Outputs: outputs,
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: outputs,
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -394,9 +395,10 @@ public class GeneralAgentHandler : IGraphNodeHandler<GraphContext>
 
         AnsiConsole.MarkupLine("[green]✓[/] [dim]Answer ready[/]");
 
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>(),
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>(),
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -432,9 +434,10 @@ public class QuickSolver1Handler : IGraphNodeHandler<GraphContext>
         AnsiConsole.MarkupLine("[green]✓[/] [dim]Solver 1 completed[/]");
 
         // Use natural key "answer" - namespacing is automatic (becomes "solver1.answer")
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["answer"] = answer.Trim() },
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["answer"] = answer.Trim() },
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -470,9 +473,10 @@ public class QuickSolver2Handler : IGraphNodeHandler<GraphContext>
         AnsiConsole.MarkupLine("[green]✓[/] [dim]Solver 2 completed[/]");
 
         // Use natural key "answer" - namespacing is automatic (becomes "solver2.answer")
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["answer"] = answer.Trim() },
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["answer"] = answer.Trim() },
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -508,9 +512,10 @@ public class QuickSolver3Handler : IGraphNodeHandler<GraphContext>
         AnsiConsole.MarkupLine("[green]✓[/] [dim]Solver 3 completed[/]");
 
         // Use natural key "answer" - namespacing is automatic (becomes "solver3.answer")
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object> { ["answer"] = answer.Trim() },
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object> { ["answer"] = answer.Trim() },
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -574,9 +579,10 @@ public class QuickVerifierHandler : IGraphNodeHandler<GraphContext>
 
         AnsiConsole.MarkupLine("[green]✓[/] [dim]Consensus reached[/]");
 
-        return new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>(),
-            Duration: TimeSpan.FromSeconds(1)
+        return NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>(),
+            duration: TimeSpan.FromSeconds(1),
+            metadata: new NodeExecutionMetadata()
         );
     }
 }
@@ -597,9 +603,10 @@ public class QuickReturnHandler : IGraphNodeHandler<GraphContext>
         AnsiConsole.MarkupLine(Markup.Escape(answer));
         AnsiConsole.WriteLine();
 
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Success(
-            Outputs: new Dictionary<string, object>(),
-            Duration: TimeSpan.FromMilliseconds(1)
+        return Task.FromResult<NodeExecutionResult>(NodeExecutionResult.Success.Single(
+            output: new Dictionary<string, object>(),
+            duration: TimeSpan.FromMilliseconds(1),
+            metadata: new NodeExecutionMetadata()
         ));
     }
 }
