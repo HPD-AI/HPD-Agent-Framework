@@ -545,10 +545,10 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         // If timeout is zero, suspend indefinitely (for long-term approvals)
         if (approval.Timeout == TimeSpan.Zero)
         {
-            return new NodeExecutionResult.Suspended(
-                SuspendToken: requestId,
-                ResumeValue: outputs,
-                Message: message
+            return NodeExecutionResult.Suspended.ForHumanApproval(
+                suspendToken: requestId,
+                resumeValue: outputs,
+                message: message
             );
         }
 
@@ -602,10 +602,10 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
             return approval.TimeoutBehavior switch
             {
                 ApprovalTimeoutBehavior.AutoApprove => null, // Continue as if approved
-                ApprovalTimeoutBehavior.SuspendIndefinitely => new NodeExecutionResult.Suspended(
-                    SuspendToken: requestId,
-                    ResumeValue: outputs,
-                    Message: $"Approval timed out after {approval.Timeout.TotalMinutes} minutes"
+                ApprovalTimeoutBehavior.SuspendIndefinitely => NodeExecutionResult.Suspended.ForHumanApproval(
+                    suspendToken: requestId,
+                    resumeValue: outputs,
+                    message: $"Approval timed out after {approval.Timeout.TotalMinutes} minutes"
                 ),
                 _ => new NodeExecutionResult.Failure(
                     Exception: new TimeoutException($"Approval timed out after {approval.Timeout.TotalMinutes} minutes"),

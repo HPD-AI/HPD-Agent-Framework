@@ -23,9 +23,9 @@ cd test/NuGetTest/aot-tests
 ### View Results
 
 Results are saved to `aot-test-results.txt` with:
-- ✅ Native AOT Success - Package compiled to native executable
-- ⚠️  AOT Fallback - Package compiled but fell back to .NET assembly
-- ❌ Build Error - Package failed to compile
+-  Native AOT Success - Package compiled to native executable
+-   AOT Fallback - Package compiled but fell back to .NET assembly
+-  Build Error - Package failed to compile
 
 Individual build logs are saved in `test-<package-name>/build-*.txt`
 
@@ -56,10 +56,10 @@ The script tests these HPD-Agent packages individually:
 
 ## Understanding Results
 
-### Native AOT Success (✅)
+### Native AOT Success ()
 The package and all its dependencies are fully AOT-compatible. A native executable was generated with no .dll fallback.
 
-### AOT Fallback (⚠️)
+### AOT Fallback ()
 The package compiled but .NET couldn't produce a native executable. This happens when:
 - The package uses reflection that can't be statically analyzed
 - Dependencies include non-AOT-compatible libraries
@@ -71,7 +71,7 @@ Common warnings include:
 - **IL2057**: Unrecognized types passed to Type.GetType()
 - **IL2087**: Data flow analysis issues with reflection
 
-### Build Error (❌)
+### Build Error ()
 The package failed to compile entirely, indicating:
 - Missing dependencies
 - Platform-specific issues
@@ -119,7 +119,7 @@ To integrate into continuous testing:
 ```bash
 # Run tests and exit with failure if any package fails to build
 ./test-aot-packages.sh
-if grep -q "❌" aot-test-results.txt; then
+if grep -q "" aot-test-results.txt; then
     echo "Some packages failed AOT testing"
     exit 1
 fi

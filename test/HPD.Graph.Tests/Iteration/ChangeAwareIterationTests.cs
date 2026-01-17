@@ -12,7 +12,7 @@ using Xunit;
 namespace HPD.Graph.Tests.Iteration;
 
 /// <summary>
-/// Tests for change-aware iteration (Proposal 005).
+/// Tests for change-aware iteration.
 /// Verifies output-hash based dirty detection, convergence, and lazy propagation.
 /// </summary>
 public class ChangeAwareIterationTests

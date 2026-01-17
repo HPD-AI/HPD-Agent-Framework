@@ -39,7 +39,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, Exception> _failedNodes = new();
 
-    // Track output hashes for change-aware iteration (Proposal 005)
+    // Track output hashes for change-aware iteration 
     // Stores hash of each node's outputs to detect changes between iterations
     // Thread-safe for parallel node execution
     private readonly ConcurrentDictionary<string, string> _outputHashes = new();
@@ -284,9 +284,15 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
+        //  CRITICAL SYNCHRONIZATION POINT
+        // Wait for all polling nodes to reach terminal state before evaluating back-edges
+        // This prevents premature convergence while nodes are still polling
+        await WaitForPollingNodesToResolveAsync(context, cancellationToken);
+
         var executedNodes = new HashSet<string>(dirtyNodes);
 
         // Check for convergence (when enabled) - do this BEFORE evaluating back-edges
+        // Now safe - all nodes in terminal state after polling synchronization
         if (options?.UseChangeAwareIteration == true &&
             options?.EnableAutoConvergence == true &&
             HasConverged(preIterationHashes, executedNodes, context))
@@ -457,7 +463,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             // Evaluate condition (null condition = unconditional back-edge)
             var conditionMet = backEdge.Condition == null ||
-                ConditionEvaluator.Evaluate(backEdge.Condition, outputs);
+                ConditionEvaluator.Evaluate(backEdge.Condition, outputs, context, backEdge.Edge);
 
             if (conditionMet)
             {
@@ -1373,6 +1379,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         context.SetCurrentNode(node.Id);
         context.IncrementNodeExecutionCount(node.Id);
 
+        // Mark as Running
+        context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Running.ToString());
+
         context.Log("Orchestrator", $"Executing node: {node.Name} (ID: {node.Id}, Type: {node.Type})", LogLevel.Information, nodeId: node.Id);
 
         var nodeStartTime = DateTimeOffset.UtcNow;
@@ -1661,7 +1670,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         // Pass 1: Evaluate regular conditions
                         foreach (var edge in regularEdges)
                         {
-                            if (ConditionEvaluator.Evaluate(edge.Condition, outputs))
+                            if (ConditionEvaluator.Evaluate(edge.Condition, outputs, context, edge))
                             {
                                 // Condition met - include these outputs with namespace
                                 AddOutputsWithNamespace(inputs, sourceNodeId, outputs, keySourceMap);
@@ -1764,6 +1773,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var channelName = $"node_output:{node.Id}";
         context.Channels[channelName].Set(success.Outputs);
 
+        // Store result for upstream condition evaluation
+        context.Channels[$"node_result:{node.Id}"].Set(success);
+
         // Track output hash for change-aware iteration (always track, even if not enabled)
         // This ensures hashes are available if the feature is enabled mid-execution
         var options = context.Graph.IterationOptions;
@@ -1800,6 +1812,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         // Mark node as complete
         context.MarkNodeComplete(node.Id);
+
+        // Update state to Succeeded
+        context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Succeeded.ToString());
 
         // Emit node completed event
         context.EventCoordinator?.Emit(new Abstractions.Events.NodeExecutionCompletedEvent
@@ -1870,6 +1885,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             case PropagationMode.SkipDependents:
                 // Mark this node as failed, downstream dependents will be skipped
                 _failedNodes.TryAdd(node.Id, failure.Exception);
+                context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Failed.ToString());
                 context.Log("Orchestrator",
                     $"Node {node.Id} failed - downstream dependents will be skipped (Mode: SkipDependents)",
                     LogLevel.Warning, nodeId: node.Id);
@@ -1905,9 +1921,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             case PropagationMode.Isolate:
                 // Isolate error - don't affect downstream nodes
+                // Note: Still mark as Failed for observability, just don't propagate
+                _failedNodes.TryAdd(node.Id, failure.Exception);
+                context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Failed.ToString());
                 context.Log("Orchestrator",
                     $"Node {node.Id} failed but error is isolated - downstream nodes will continue (Mode: Isolate)",
                     LogLevel.Warning, nodeId: node.Id);
+                // Store result for upstream condition evaluation
+                context.Channels[$"node_result:{node.Id}"].Set(failure);
                 // Mark as complete so downstream nodes can execute
                 context.MarkNodeComplete(node.Id);
                 break;
@@ -1954,9 +1975,38 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
     private void HandleSkipped(TContext context, Node node, NodeExecutionResult.Skipped skipped)
     {
+        // Update state to Skipped
+        context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Skipped.ToString());
+
         context.Log("Orchestrator",
             $"Node {node.Id} skipped: {skipped.Reason} - {skipped.Message}",
             LogLevel.Information, nodeId: node.Id);
+
+        // Store result for upstream condition evaluation
+        context.Channels[$"node_result:{node.Id}"].Set(skipped);
+
+        // Mark node as complete so it doesn't block downstream execution
+        context.MarkNodeComplete(node.Id);
+
+        // Emit node skipped event
+        context.EventCoordinator?.Emit(new Abstractions.Events.NodeExecutionCompletedEvent
+        {
+            NodeId = node.Id,
+            HandlerName = node.HandlerName ?? node.Type.ToString(),
+            LayerIndex = context.CurrentLayerIndex,
+            Progress = (float)context.CompletedNodes.Count / context.Graph.Nodes.Count,
+            Duration = TimeSpan.Zero,
+            Result = skipped,
+            GraphContext = new Abstractions.Events.GraphExecutionContext
+            {
+                GraphId = context.Graph.Id,
+                TotalNodes = context.Graph.Nodes.Count,
+                CompletedNodes = context.CompletedNodes.Count,
+                CurrentLayer = context.CurrentLayerIndex
+            },
+            Kind = HPD.Events.EventKind.Lifecycle,
+            Priority = HPD.Events.EventPriority.Normal
+        });
     }
 
     /// <summary>
@@ -1973,6 +2023,18 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         NodeExecutionResult.Suspended suspended,
         CancellationToken ct)
     {
+        // Check if sensor polling pattern
+        if (suspended.Reason == Abstractions.Execution.SuspendReason.PollingCondition ||
+            suspended.Reason == Abstractions.Execution.SuspendReason.ResourceWait)
+        {
+            // Update state to Polling
+            context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Polling.ToString());
+            return await HandleSensorPollingAsync(context, node, suspended, ct);
+        }
+
+        // HITL suspension or external task wait
+        context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Suspended.ToString());
+
         var options = node.SuspensionOptions ?? _defaultSuspensionOptions;
 
         context.Log("Orchestrator",
@@ -2132,6 +2194,369 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     }
 
     /// <summary>
+    /// Handles sensor polling with iterative active waiting (stack-safe, no recursion).
+    /// Retries in-place until condition met or timeout.
+    /// </summary>
+    private async Task<bool> HandleSensorPollingAsync(
+        TContext context,
+        Node node,
+        NodeExecutionResult.Suspended suspended,
+        CancellationToken ct)
+    {
+        // Try to restore polling state from previous checkpoint
+        var pollingState = TryRestorePollingState(context, node.Id);
+
+        var startTime = pollingState?.StartTime ?? DateTimeOffset.UtcNow;
+        var currentAttempt = pollingState?.AttemptNumber ?? 0;
+        var maxWaitTime = suspended.MaxWaitTime ?? TimeSpan.FromHours(1);
+        var maxRetries = suspended.MaxRetries ?? int.MaxValue;
+
+        context.Log("Orchestrator",
+            $"Node {node.Id} polling (attempt {currentAttempt}, retry after {suspended.RetryAfter})",
+            LogLevel.Debug, nodeId: node.Id);
+
+        // Emit initial polling event
+        context.EventCoordinator?.Emit(new Abstractions.Events.NodePollingEvent
+        {
+            NodeId = node.Id,
+            ExecutionId = context.ExecutionId,
+            SuspendToken = suspended.SuspendToken,
+            AttemptNumber = currentAttempt,
+            RetryAfter = suspended.RetryAfter!.Value,
+            MaxWaitTime = maxWaitTime
+        });
+
+        // ITERATIVE POLLING LOOP (stack-safe)
+        try
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+
+            // Update polling state in context tags (for checkpoint resume)
+            context.AddTag($"polling_info:{node.Id}", System.Text.Json.JsonSerializer.Serialize(new
+            {
+                StartTime = startTime,
+                AttemptNumber = currentAttempt,
+                SuspendToken = suspended.SuspendToken,
+                RetryAfter = suspended.RetryAfter!.Value,
+                MaxWaitTime = maxWaitTime
+            }));
+
+            // CHECKPOINT FIRST (durability)
+            if (_checkpointStore != null && context is Context.GraphContext ctxGraph)
+            {
+                try
+                {
+                    await SaveCheckpointAsync(ctxGraph, context.CurrentLayerIndex,
+                        Abstractions.Checkpointing.CheckpointTrigger.Suspension, ct);
+                }
+                catch (Exception ex)
+                {
+                    context.Log("Orchestrator",
+                        $"Failed to save checkpoint during polling for node {node.Id}: {ex.Message}",
+                        LogLevel.Warning, nodeId: node.Id, exception: ex);
+                }
+            }
+
+            // Check timeout (important after resume or after delays)
+            var elapsed = DateTimeOffset.UtcNow - startTime;
+            if (elapsed >= maxWaitTime)
+            {
+                context.Log("Orchestrator",
+                    $"Node {node.Id} polling timed out after {elapsed}",
+                    LogLevel.Warning, nodeId: node.Id);
+
+                // Clear polling state
+                context.RemoveTag($"polling_info:{node.Id}");
+
+                // Create failure result and handle it
+                var timeoutFailure = new NodeExecutionResult.Failure(
+                    Exception: new TimeoutException($"Sensor polling timeout after {elapsed}"),
+                    Severity: Abstractions.Execution.ErrorSeverity.Fatal,
+                    IsTransient: false,
+                    Duration: elapsed
+                );
+
+                // Emit timeout event
+                context.EventCoordinator?.Emit(new Abstractions.Events.NodePollingTimeoutEvent
+                {
+                    NodeId = node.Id,
+                    ExecutionId = context.ExecutionId,
+                    SuspendToken = suspended.SuspendToken,
+                    Elapsed = elapsed
+                });
+
+                // Clear polling state
+                context.RemoveTag($"polling_info:{node.Id}");
+
+                // Store result BEFORE calling HandleFailureAsync (in case it throws)
+                context.Channels[$"node_result:{node.Id}"].Set(timeoutFailure);
+
+                // Handle failure through normal error propagation system
+                // This applies the node's error policy (Isolate, StopGraph, etc.)
+                await HandleFailureAsync(context, node, timeoutFailure, ct);
+
+                return true; // Continue execution if error policy allows it
+            }
+
+            // Wait before retry (always wait in polling loop since we already executed once to get here)
+            await Task.Delay(suspended.RetryAfter!.Value, ct);
+
+            // Increment attempt count BEFORE executing (so we can check if we've exceeded maxRetries)
+            currentAttempt++;
+
+            // Check max retries BEFORE executing the next attempt
+            // currentAttempt now represents the NEXT execution number (including the initial one)
+            // So if maxRetries=3, we allow attempts 0, 1, 2 (3 total calls)
+            // currentAttempt=3 means we're about to do the 4th call, which exceeds maxRetries
+            if (currentAttempt >= maxRetries)
+            {
+                context.Log("Orchestrator",
+                    $"Node {node.Id} exceeded max retries ({maxRetries})",
+                    LogLevel.Warning, nodeId: node.Id);
+
+                // Clear polling state
+                context.RemoveTag($"polling_info:{node.Id}");
+
+                // Create failure result and handle it
+                var maxRetriesFailure = new NodeExecutionResult.Failure(
+                    Exception: new InvalidOperationException($"Max polling retries exceeded ({currentAttempt})"),
+                    Severity: Abstractions.Execution.ErrorSeverity.Fatal,
+                    IsTransient: false,
+                    Duration: TimeSpan.Zero
+                );
+
+                // Emit max retries event
+                context.EventCoordinator?.Emit(new Abstractions.Events.NodePollingMaxRetriesEvent
+                {
+                    NodeId = node.Id,
+                    ExecutionId = context.ExecutionId,
+                    SuspendToken = suspended.SuspendToken,
+                    Attempts = currentAttempt
+                });
+
+                // Store result BEFORE calling HandleFailureAsync (in case it throws)
+                context.Channels[$"node_result:{node.Id}"].Set(maxRetriesFailure);
+
+                // Handle failure through normal error propagation system
+                // This applies the node's error policy (Isolate, StopGraph, etc.)
+                await HandleFailureAsync(context, node, maxRetriesFailure, ct);
+
+                return true; // Continue execution if error policy allows it
+            }
+
+            // Re-execute node (polling check)
+            context.Log("Orchestrator",
+                $"Node {node.Id} retrying polling check (attempt {currentAttempt})",
+                LogLevel.Debug, nodeId: node.Id);
+
+            // State back to Running for retry
+            context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Running.ToString());
+
+            // Re-execute handler directly
+            var handler = ResolveHandler(node);
+            if (handler == null)
+            {
+                throw new InvalidOperationException($"No handler found for node '{node.Id}' with handler name '{node.HandlerName}'");
+            }
+
+            var inputs = PrepareInputs(context, node);
+            var retryResult = await handler.ExecuteAsync(context, inputs, ct);
+
+            // Check result - loop continues if still suspended, exits otherwise
+            if (retryResult is NodeExecutionResult.Suspended retrySuspended &&
+                (retrySuspended.Reason == Abstractions.Execution.SuspendReason.PollingCondition ||
+                 retrySuspended.Reason == Abstractions.Execution.SuspendReason.ResourceWait))
+            {
+                // Still suspended - continue loop
+                continue;
+            }
+
+            // Not suspended anymore (success, failure, or different suspension type)
+            // Clear polling state BEFORE handling result (ensures cleanup happens before any checkpoint)
+            context.RemoveTag($"polling_info:{node.Id}");
+
+            // Handle the final result
+            return await HandleNodeResultAsync(context, node, retryResult, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Clean up polling state on cancellation
+            context.RemoveTag($"polling_info:{node.Id}");
+
+            // Create cancellation result
+            var cancelResult = new NodeExecutionResult.Cancelled(
+                Reason: Abstractions.Execution.CancellationReason.UserRequested,
+                Message: "Polling cancelled by user"
+            );
+
+            // Handle cancellation
+            HandleCancelled(context, node, cancelResult);
+
+            // Re-throw to propagate cancellation
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Try to restore polling state from checkpoint tags.
+    /// Returns null if no polling state found.
+    /// </summary>
+    private PollingState? TryRestorePollingState(TContext context, string nodeId)
+    {
+        var tagKey = $"polling_info:{nodeId}";
+        if (context.Tags.TryGetValue(tagKey, out var values) && values.Count > 0)
+        {
+            try
+            {
+                return System.Text.Json.JsonSerializer.Deserialize<PollingState>(values.First());
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                context.Log("Orchestrator",
+                    $"Failed to deserialize polling state for node {nodeId}: {ex.Message}",
+                    LogLevel.Warning, nodeId: nodeId, exception: ex);
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Wait for all polling nodes to reach terminal state before iteration can complete.
+    /// This prevents premature back-edge evaluation while nodes are still polling.
+    /// Uses intelligent delay to avoid busy-waiting.
+    /// </summary>
+    private async Task WaitForPollingNodesToResolveAsync(TContext context, CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Get all nodes currently in polling state
+            var pollingNodes = context.GetNodesInState(NodeState.Polling);
+
+            if (pollingNodes.Count == 0)
+            {
+                // No nodes polling - iteration can complete
+                return;
+            }
+
+            context.Log("Orchestrator",
+                $"Iteration waiting for {pollingNodes.Count} polling node(s) to resolve: {string.Join(", ", pollingNodes)}",
+                LogLevel.Debug);
+
+            // Intelligent delay: Calculate next retry time across all polling nodes
+            var nextRetryTime = GetEarliestPollingNodeRetryTime(context, pollingNodes);
+            var delay = nextRetryTime - DateTimeOffset.UtcNow;
+
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay, ct);
+            }
+            else
+            {
+                // Small delay to avoid tight loop
+                await Task.Delay(TimeSpan.FromMilliseconds(100), ct);
+            }
+
+            // NOTE: Polling nodes will transition to terminal states via HandleSensorPollingAsync
+            // (running in parallel). This loop just waits for those transitions.
+        }
+    }
+
+    /// <summary>
+    /// Get earliest retry time across all polling nodes (intelligent delay optimization).
+    /// </summary>
+    private DateTimeOffset GetEarliestPollingNodeRetryTime(TContext context, IReadOnlyList<string> pollingNodeIds)
+    {
+        var earliestRetryTime = DateTimeOffset.MaxValue;
+
+        foreach (var nodeId in pollingNodeIds)
+        {
+            // Try to get polling info from tags
+            var tagKey = $"polling_info:{nodeId}";
+            if (context.Tags.TryGetValue(tagKey, out var values) && values.Count > 0)
+            {
+                try
+                {
+                    var pollingState = System.Text.Json.JsonSerializer.Deserialize<PollingState>(values.First());
+                    if (pollingState != null)
+                    {
+                        // Calculate next retry time for this node
+                        // Note: We don't have LastAttempt in PollingState, so use conservative estimate
+                        var nextRetry = DateTimeOffset.UtcNow + pollingState.RetryAfter;
+                        if (nextRetry < earliestRetryTime)
+                        {
+                            earliestRetryTime = nextRetry;
+                        }
+                    }
+                }
+                catch (System.Text.Json.JsonException)
+                {
+                    // Failed to deserialize - ignore this node
+                }
+            }
+        }
+
+        // If no valid polling states found, return current time (will trigger small delay)
+        return earliestRetryTime == DateTimeOffset.MaxValue
+            ? DateTimeOffset.UtcNow
+            : earliestRetryTime;
+    }
+
+    /// <summary>
+    /// Handle node result after polling completes or fails.
+    /// </summary>
+    private async Task<bool> HandleNodeResultAsync(
+        TContext context,
+        Node node,
+        NodeExecutionResult result,
+        CancellationToken ct)
+    {
+        switch (result)
+        {
+            case NodeExecutionResult.Success success:
+                HandleSuccess(context, node, success);
+                return true; // Continue to next node
+
+            case NodeExecutionResult.Failure failure:
+                await HandleFailureAsync(context, node, failure, ct);
+                return false; // Halt execution
+
+            case NodeExecutionResult.Skipped skipped:
+                HandleSkipped(context, node, skipped);
+                return false; // Halt execution
+
+            case NodeExecutionResult.Suspended s:
+                // Different type of suspension (e.g., HITL)
+                return await HandleSuspendedAsync(context, node, s, ct);
+
+            case NodeExecutionResult.Cancelled cancelled:
+                HandleCancelled(context, node, cancelled);
+                return false; // Halt execution
+
+            default:
+                context.MarkNodeComplete(node.Id);
+                return true; // Continue for other result types
+        }
+    }
+
+    /// <summary>
+    /// Polling state stored in context tags for checkpoint resume.
+    /// </summary>
+    internal record PollingState
+    {
+        public DateTimeOffset StartTime { get; init; }
+        public int AttemptNumber { get; init; }
+        public string SuspendToken { get; init; } = string.Empty;
+        public TimeSpan RetryAfter { get; init; }
+        public TimeSpan MaxWaitTime { get; init; }
+    }
+
+    /// <summary>
     /// Saves checkpoint specifically for suspension with suspension-related metadata.
     /// </summary>
     private async Task SaveSuspensionCheckpointAsync(
@@ -2217,6 +2642,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
     private void HandleCancelled(TContext context, Node node, NodeExecutionResult.Cancelled cancelled)
     {
+        // Update state to Cancelled
+        context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Cancelled.ToString());
+
         context.Log("Orchestrator",
             $"Node {node.Id} cancelled: {cancelled.Reason} - {cancelled.Message}",
             LogLevel.Warning, nodeId: node.Id);
@@ -2359,8 +2787,8 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 return (false, string.Join("; ", evaluatedEdges));
             }
 
-            // Evaluate the condition
-            var conditionMet = ConditionEvaluator.Evaluate(edge.Condition, outputs);
+            // Evaluate the condition (use new overload that supports upstream conditions)
+            var conditionMet = ConditionEvaluator.Evaluate(edge.Condition, outputs, context, edge);
             var conditionDesc = edge.Condition.GetDescription() ?? edge.Condition.Type.ToString();
 
             // Emit condition evaluation diagnostic
@@ -2493,6 +2921,19 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             var outputChannelName = $"node_output:{node.Id}";
             context.Channels[outputChannelName].Set(outputs);
 
+            // Create and store Success result (for upstream condition evaluation)
+            var duration = DateTimeOffset.UtcNow - (context.Tags.TryGetValue($"node_start_time:{node.Id}", out var startTimes) && startTimes.Count > 0
+                ? DateTimeOffset.Parse(startTimes.First())
+                : DateTimeOffset.UtcNow);
+            var successResult = new NodeExecutionResult.Success(
+                Outputs: outputs,
+                Duration: duration > TimeSpan.Zero ? duration : TimeSpan.FromMilliseconds(1)
+            );
+            context.Channels[$"node_result:{node.Id}"].Set(successResult);
+
+            // Update state to Succeeded
+            context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Succeeded.ToString());
+
             // Mark node as complete
             context.MarkNodeComplete(node.Id);
 
@@ -2604,145 +3045,294 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         // Error mode
         var errorMode = node.MapErrorMode ?? Abstractions.Graph.MapErrorMode.FailFast;
 
-        // Execute map with parallelism
-        var semaphore = new SemaphoreSlim(maxConcurrency);
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var results = new System.Collections.Concurrent.ConcurrentDictionary<int, (object? Result, Exception? Error, TContext? Context)>();
-        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        try
-        {
-            var tasks = itemList.Select(async (item, index) =>
-            {
-                await semaphore.WaitAsync(cts.Token);
-
-                try
-                {
-                    // Create isolated context for this item
-                    var mapContext = (TContext)context.CreateIsolatedCopy();
-
-                    if (mapContext is Context.GraphContext baseContext)
-                    {
-                        // ===== NEW: SELECT PROCESSOR GRAPH BASED ON ITEM =====
-                        Abstractions.Graph.Graph processorGraph = SelectProcessorGraph(node, item, context);
-
-                        // Create context with processor graph
-                        var mapContextWithGraph = new Context.GraphContext(
-                            executionId: context.ExecutionId + $":{node.Id}[{index}]",
-                            graph: processorGraph,
-                            services: context.Services,
-                            channels: baseContext.Channels,
-                            managed: baseContext.Managed
-                        );
-
-                        // Write item to input channel
-                        mapContextWithGraph.Channels["input:item"].Set(item);
-                        mapContextWithGraph.Channels["input:index"].Set(index);
-
-                        // Execute processor graph
-                        var orchestrator = new GraphOrchestrator<Context.GraphContext>(_serviceProvider, _cacheStore, _fingerprintCalculator, _checkpointStore);
-                        await orchestrator.ExecuteAsync(mapContextWithGraph, cts.Token);
-
-                        // Read result from output channel
-                        object? result = null;
-                        if (mapContextWithGraph.Channels.ChannelNames.Any(c => c.StartsWith("output:")))
-                        {
-                            var outputChannel = mapContextWithGraph.Channels.ChannelNames.First(c => c.StartsWith("output:"));
-                            result = mapContextWithGraph.Channels[outputChannel].Get<object>();
-                        }
-
-                        results[index] = (result, null, mapContext);
-
-                        context.Log("Orchestrator", $"Map node '{node.Id}' completed item {index + 1}/{itemList.Count}",
-                            LogLevel.Debug, nodeId: node.Id);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Map execution requires TContext to be or derive from GraphContext. Actual type: {typeof(TContext).Name}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    results[index] = (null, ex, null);
-
-                    context.Log("Orchestrator",
-                        $"Map node '{node.Id}' failed processing item {index}. Mode: {errorMode}. Error: {ex.Message}",
-                        LogLevel.Error, nodeId: node.Id, exception: ex);
-
-                    // In FailFast mode, cancel remaining tasks
-                    if (errorMode == Abstractions.Graph.MapErrorMode.FailFast)
-                    {
-                        cts.Cancel();
-                    }
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            });
-
-            // Wait for all tasks
-            try
-            {
-                await Task.WhenAll(tasks);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected in FailFast mode
-            }
-        }
-        finally
-        {
-            semaphore.Dispose();
-            cts.Dispose();
-        }
-
-        stopwatch.Stop();
-
-        // Collect errors
-        var errors = results.Values
-            .Where(r => r.Error != null)
-            .Select(r => r.Error!)
-            .ToList();
-
-        // Handle errors based on mode
-        if (errors.Any() && errorMode == Abstractions.Graph.MapErrorMode.FailFast)
-        {
-            var exception = errors.Count == 1
-                ? errors[0]
-                : new AggregateException($"Map node '{node.Id}' failed with {errors.Count} errors", errors);
-
-            context.Log("Orchestrator",
-                $"Map node '{node.Id}' failed in FailFast mode with {errors.Count} error(s)",
-                LogLevel.Error, nodeId: node.Id, exception: exception);
-
-            throw exception;
-        }
-
-        // Merge contexts back to parent
-        foreach (var kvp in results.OrderBy(r => r.Key))
-        {
-            if (kvp.Value.Context != null)
-            {
-                context.MergeFrom(kvp.Value.Context);
-            }
-        }
-
-        // Aggregate results
-        var finalResults = new List<object?>();
-        var successCount = 0;
-        var failureCount = errors.Count;
+        // Initialize item states for polling support
+        var itemStates = new System.Collections.Concurrent.ConcurrentDictionary<int, MapItemState>();
+        var startTime = DateTimeOffset.UtcNow;
 
         for (int i = 0; i < itemList.Count; i++)
         {
-            if (!results.TryGetValue(i, out var resultTuple))
+            itemStates[i] = new MapItemState
             {
-                // Task was cancelled before completion
-                continue;
+                Status = MapItemStatus.Pending,
+                StartTime = DateTimeOffset.UtcNow
+            };
+        }
+
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Exception? firstException = null; // Track first exception for FailFast mode
+
+        try
+        {
+            // OUTER POLLING LOOP: Continue until all items reach terminal state
+            while (itemStates.Values.Any(s => !s.IsTerminal()))
+            {
+                cts.Token.ThrowIfCancellationRequested();
+
+                // Get items ready to execute (pending or ready to retry)
+                var itemsToExecute = itemStates
+                    .Where(kvp => ShouldExecuteMapItem(kvp.Value))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                if (itemsToExecute.Count == 0)
+                {
+                    // No items ready - calculate next wake-up time (intelligent delay)
+                    var nextRetryTime = GetEarliestRetryTime(itemStates);
+                    var delay = nextRetryTime - DateTimeOffset.UtcNow;
+
+                    if (delay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(delay, cts.Token);
+                    }
+                    else
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(100), cts.Token); // Avoid tight loop
+                    }
+                    continue;
+                }
+
+                // Execute ready items in parallel (with dynamic parallelism)
+                var effectiveParallelism = Math.Min(itemsToExecute.Count, maxConcurrency);
+
+                await Parallel.ForEachAsync(itemsToExecute,
+                    new ParallelOptions { MaxDegreeOfParallelism = effectiveParallelism, CancellationToken = cts.Token },
+                    async (index, ct) =>
+                    {
+                        var item = itemList[index];
+                        var itemState = itemStates[index];
+
+                        // Update state to Running
+                        context.AddTag($"node_state:map:{node.Id}[{index}]", NodeState.Running.ToString());
+                        itemState.LastAttempt = DateTimeOffset.UtcNow;
+
+                        try
+                        {
+                            // Create isolated context for this item
+                            var mapContext = (TContext)context.CreateIsolatedCopy();
+
+                            if (mapContext is Context.GraphContext baseContext)
+                            {
+                                // Select processor graph based on item
+                                Abstractions.Graph.Graph processorGraph = SelectProcessorGraph(node, item, context);
+
+                                // Create context with processor graph
+                                var mapContextWithGraph = new Context.GraphContext(
+                                    executionId: context.ExecutionId + $":{node.Id}[{index}]",
+                                    graph: processorGraph,
+                                    services: context.Services,
+                                    channels: baseContext.Channels,
+                                    managed: baseContext.Managed
+                                );
+
+                                // Write item to input channel
+                                mapContextWithGraph.Channels["input:item"].Set(item);
+                                mapContextWithGraph.Channels["input:index"].Set(index);
+
+                                // Execute processor graph
+                                var orchestrator = new GraphOrchestrator<Context.GraphContext>(_serviceProvider, _cacheStore, _fingerprintCalculator, _checkpointStore);
+                                await orchestrator.ExecuteAsync(mapContextWithGraph, ct);
+
+                                // Check if any nodes failed in the processor graph
+                                // A graph with failures will have at least one handler node with a Failure result
+                                var hasFailures = false;
+                                NodeExecutionResult.Failure? failureResult = null;
+
+                                // Check if the processor graph execution was successful
+                                // We consider it successful if the graph completed without errors
+                                // The nested orchestrator handles polling internally, so when ExecuteAsync completes,
+                                // all polling has resolved and we have final results
+
+                                // Check graph completion status
+                                if (!mapContextWithGraph.IsComplete)
+                                {
+                                    // Graph didn't complete - this is an error
+                                    hasFailures = true;
+                                    failureResult = new NodeExecutionResult.Failure(
+                                        Exception: new InvalidOperationException($"Processor graph for item {index} did not complete"),
+                                        Severity: ErrorSeverity.Fatal,
+                                        IsTransient: false,
+                                        Duration: DateTimeOffset.UtcNow - itemState.StartTime
+                                    );
+                                }
+                                else
+                                {
+                                    // Graph completed - check if any handler nodes failed
+                                    var handlerNodes = processorGraph.Nodes.Where(n => n.Type == Abstractions.Graph.NodeType.Handler).ToList();
+
+                                    foreach (var graphNode in handlerNodes)
+                                    {
+                                        var resultChannelName = $"node_result:{graphNode.Id}";
+
+                                        // Try to get the result
+                                        try
+                                        {
+                                            if (mapContextWithGraph.Channels.Contains(resultChannelName))
+                                            {
+                                                var result = mapContextWithGraph.Channels[resultChannelName].Get<NodeExecutionResult>();
+
+                                                // If we find a Failure, the graph failed
+                                                if (result is NodeExecutionResult.Failure failure)
+                                                {
+                                                    hasFailures = true;
+                                                    failureResult = failure;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        catch
+                                        {
+                                            // Channel doesn't exist or can't be read - skip this node
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                if (hasFailures && failureResult != null)
+                                {
+                                    // Graph completed but with failures - mark item as failed
+                                    itemState.Status = MapItemStatus.Failed;
+                                    itemState.Result = failureResult;
+                                    context.AddTag($"node_state:map:{node.Id}[{index}]", NodeState.Failed.ToString());
+
+                                    context.Log("Orchestrator", $"Map node '{node.Id}' item {index + 1}/{itemList.Count} failed: {failureResult.Exception.Message}",
+                                        LogLevel.Warning, nodeId: node.Id);
+                                }
+                                else
+                                {
+                                    // Graph succeeded - read final result
+                                    // Priority: 1) output: channels (explicit output), 2) node_output: from last handler
+                                    object? result = null;
+
+                                    // First, try to find explicit output: channels
+                                    if (mapContextWithGraph.Channels.ChannelNames.Any(c => c.StartsWith("output:")))
+                                    {
+                                        var outputChannel = mapContextWithGraph.Channels.ChannelNames.First(c => c.StartsWith("output:"));
+                                        result = mapContextWithGraph.Channels[outputChannel].Get<object>();
+                                    }
+                                    else
+                                    {
+                                        // No explicit output channel - try to read from handler nodes
+                                        // Find the last handler node in execution order
+                                        var handlerNodes = processorGraph.Nodes
+                                            .Where(n => n.Type == Abstractions.Graph.NodeType.Handler)
+                                            .ToList();
+
+                                        if (handlerNodes.Count > 0)
+                                        {
+                                            // For simple linear graphs, use the only/last handler
+                                            var lastHandler = handlerNodes.Last();
+                                            var outputChannelName = $"node_output:{lastHandler.Id}";
+
+                                            if (mapContextWithGraph.Channels.Contains(outputChannelName))
+                                            {
+                                                var handlerOutput = mapContextWithGraph.Channels[outputChannelName].Get<Dictionary<string, object>>();
+                                                // Handler outputs are stored as Dictionary<string, object>
+                                                // Extract the actual result value
+                                                if (handlerOutput != null)
+                                                {
+                                                    result = handlerOutput;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Store result as Success
+                                    itemState.Status = MapItemStatus.Succeeded;
+                                    var outputs = new Dictionary<string, object>();
+                                    if (result != null)
+                                    {
+                                        outputs["output"] = result;
+                                    }
+                                    itemState.Result = new NodeExecutionResult.Success(
+                                        Outputs: outputs,
+                                        Duration: DateTimeOffset.UtcNow - itemState.StartTime
+                                    );
+                                    itemState.Context = mapContext;
+                                    context.AddTag($"node_state:map:{node.Id}[{index}]", NodeState.Succeeded.ToString());
+
+                                    context.Log("Orchestrator", $"Map node '{node.Id}' completed item {index + 1}/{itemList.Count}",
+                                        LogLevel.Debug, nodeId: node.Id);
+                                }
+                            }
+                            else
+                            {
+                                throw new InvalidOperationException($"Map execution requires TContext to be or derive from GraphContext. Actual type: {typeof(TContext).Name}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Item execution failed
+                            itemState.Status = MapItemStatus.Failed;
+                            itemState.Result = new NodeExecutionResult.Failure(
+                                Exception: ex,
+                                Severity: ErrorSeverity.Fatal,
+                                IsTransient: false,
+                                Duration: DateTimeOffset.UtcNow - itemState.StartTime
+                            );
+                            context.AddTag($"node_state:map:{node.Id}[{index}]", NodeState.Failed.ToString());
+
+                            context.Log("Orchestrator",
+                                $"Map node '{node.Id}' failed processing item {index}. Mode: {errorMode}. Error: {ex.Message}",
+                                LogLevel.Error, nodeId: node.Id, exception: ex);
+
+                            // In FailFast mode, capture first exception and cancel remaining tasks
+                            if (errorMode == Abstractions.Graph.MapErrorMode.FailFast)
+                            {
+                                // Capture first exception atomically
+                                System.Threading.Interlocked.CompareExchange(ref firstException, ex, null);
+                                cts.Cancel();
+                            }
+                        }
+                    });
+            }
+        }
+        catch (OperationCanceledException) when (firstException != null)
+        {
+            // In FailFast mode, if we cancelled due to an exception, rethrow the original exception
+            // instead of the TaskCanceledException
+            throw firstException;
+        }
+        finally
+        {
+            cts.Dispose();
+        }
+
+        var duration = DateTimeOffset.UtcNow - startTime;
+
+        // All items resolved - aggregate results based on error mode
+        var finalResults = new List<object?>();
+        var successCount = 0;
+        var failureCount = 0;
+
+        for (int i = 0; i < itemList.Count; i++)
+        {
+            var itemState = itemStates[i];
+
+            // Merge context back to parent
+            if (itemState.Context != null)
+            {
+                context.MergeFrom(itemState.Context);
             }
 
-            if (resultTuple.Error != null)
+            if (itemState.Status == MapItemStatus.Succeeded)
             {
+                // Extract result from Success output
+                if (itemState.Result is NodeExecutionResult.Success success &&
+                    success.Outputs.TryGetValue("output", out var output))
+                {
+                    finalResults.Add(output);
+                    successCount++;
+                }
+                else
+                {
+                    finalResults.Add(null);
+                    successCount++;
+                }
+            }
+            else if (itemState.Status == MapItemStatus.Failed)
+            {
+                failureCount++;
+
                 switch (errorMode)
                 {
                     case Abstractions.Graph.MapErrorMode.ContinueWithNulls:
@@ -2754,14 +3344,13 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         break;
 
                     case Abstractions.Graph.MapErrorMode.FailFast:
-                        // Already handled above
+                        // Throw first failure
+                        if (itemState.Result is NodeExecutionResult.Failure failure)
+                        {
+                            throw failure.Exception;
+                        }
                         break;
                 }
-            }
-            else
-            {
-                finalResults.Add(resultTuple.Result);
-                successCount++;
             }
         }
 
@@ -2775,11 +3364,43 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         // Log statistics
         context.Log("Orchestrator",
             $"Map node '{node.Id}' processed {itemList.Count} items: {successCount} succeeded, {failureCount} failed, " +
-            $"{stopwatch.ElapsedMilliseconds}ms (avg: {stopwatch.ElapsedMilliseconds / (double)itemList.Count:F2}ms/item, concurrency: {maxConcurrency})",
+            $"{duration.TotalMilliseconds}ms (avg: {duration.TotalMilliseconds / (double)itemList.Count:F2}ms/item, concurrency: {maxConcurrency})",
             LogLevel.Information, nodeId: node.Id);
 
         context.Log("Orchestrator", $"Exiting map: {node.Name} with {finalResults.Count} results",
             LogLevel.Information, nodeId: node.Id);
+    }
+
+    /// <summary>
+    /// Check if map item should execute (pending or ready to retry).
+    /// </summary>
+    private bool ShouldExecuteMapItem(MapItemState itemState)
+    {
+        if (itemState.Status == MapItemStatus.Pending)
+            return true;
+
+        if (itemState.Status == MapItemStatus.Polling)
+        {
+            var elapsed = DateTimeOffset.UtcNow - itemState.LastAttempt;
+            return elapsed >= itemState.RetryAfter;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Get earliest retry time across all polling items (intelligent delay).
+    /// </summary>
+    private DateTimeOffset GetEarliestRetryTime(System.Collections.Concurrent.ConcurrentDictionary<int, MapItemState> itemStates)
+    {
+        var pollingItems = itemStates.Values
+            .Where(s => s.Status == MapItemStatus.Polling)
+            .ToList();
+
+        if (pollingItems.Count == 0)
+            return DateTimeOffset.UtcNow;
+
+        return pollingItems.Min(s => s.LastAttempt + s.RetryAfter);
     }
 
     /// <summary>
@@ -3090,4 +3711,35 @@ public class GraphSuspendedException : Exception
         NodeId = nodeId;
         SuspendToken = suspendToken;
     }
+}
+
+/// <summary>
+/// Map item execution state for polling support.
+/// </summary>
+internal enum MapItemStatus
+{
+    Pending,
+    Polling,
+    Succeeded,
+    Failed
+}
+
+/// <summary>
+/// Per-item state tracking for Map node polling.
+/// Tracks the execution state, timing, and results for each mapped item.
+/// </summary>
+internal class MapItemState
+{
+    public MapItemStatus Status { get; set; }
+    public DateTimeOffset StartTime { get; set; }
+    public DateTimeOffset LastAttempt { get; set; }
+    public TimeSpan RetryAfter { get; set; }
+    public int AttemptNumber { get; set; }
+    public NodeExecutionResult? Result { get; set; }
+    public Abstractions.Context.IGraphContext? Context { get; set; }
+
+    /// <summary>
+    /// Check if this item has reached a terminal state (succeeded or failed).
+    /// </summary>
+    public bool IsTerminal() => Status == MapItemStatus.Succeeded || Status == MapItemStatus.Failed;
 }

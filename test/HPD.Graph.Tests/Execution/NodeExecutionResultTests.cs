@@ -242,9 +242,9 @@ public class NodeExecutionResultTests
     public void Suspended_WithToken_StoresCorrectly()
     {
         // Arrange & Act
-        var result = new NodeExecutionResult.Suspended(
-            SuspendToken: "suspend-token-123",
-            Message: "Waiting for approval"
+        var result = NodeExecutionResult.Suspended.ForHumanApproval(
+            suspendToken: "suspend-token-123",
+            message: "Waiting for approval"
         );
 
         // Assert
@@ -260,9 +260,9 @@ public class NodeExecutionResultTests
         var resumeValue = new { approved = true, approver = "Alice" };
 
         // Act
-        var result = new NodeExecutionResult.Suspended(
-            SuspendToken: "token-456",
-            ResumeValue: resumeValue
+        var result = NodeExecutionResult.Suspended.ForHumanApproval(
+            suspendToken: "token-456",
+            resumeValue: resumeValue
         );
 
         // Assert
@@ -274,7 +274,7 @@ public class NodeExecutionResultTests
     public void Suspended_PatternMatching_Works()
     {
         // Arrange
-        NodeExecutionResult result = new NodeExecutionResult.Suspended("token");
+        NodeExecutionResult result = NodeExecutionResult.Suspended.ForHumanApproval("token");
 
         // Act & Assert
         var matched = result switch
@@ -348,7 +348,7 @@ public class NodeExecutionResultTests
             new NodeExecutionResult.Success(new Dictionary<string, object>(), TimeSpan.Zero),
             new NodeExecutionResult.Failure(new Exception(), ErrorSeverity.Fatal, false, TimeSpan.Zero),
             new NodeExecutionResult.Skipped(SkipReason.ConditionNotMet),
-            new NodeExecutionResult.Suspended("token"),
+            NodeExecutionResult.Suspended.ForHumanApproval("token"),
             new NodeExecutionResult.Cancelled(CancellationReason.UserRequested)
         };
 

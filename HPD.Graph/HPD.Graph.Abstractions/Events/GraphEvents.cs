@@ -134,7 +134,6 @@ public sealed record NodeExecutionStartedEvent : GraphEvent
 /// <summary>
 /// Event emitted when a node completes executing.
 /// This is the primary progress tracking event during streaming execution.
-/// Based on the PartialResult structure from the original proposal.
 /// </summary>
 public sealed record NodeExecutionCompletedEvent : GraphEvent
 {
@@ -311,6 +310,112 @@ public sealed record GraphDiagnosticEvent : GraphEvent
     /// Additional structured data for debugging.
     /// </summary>
     public IReadOnlyDictionary<string, object>? Data { get; init; }
+
+    /// <summary>
+    /// Override Kind to Diagnostic.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Diagnostic;
+}
+
+/// <summary>
+/// Event emitted when a node starts polling for a condition.
+/// Part of the sensor rescheduling pattern.
+/// </summary>
+public sealed record NodePollingEvent : GraphEvent
+{
+    /// <summary>
+    /// Node that is polling.
+    /// </summary>
+    public required string NodeId { get; init; }
+
+    /// <summary>
+    /// Execution ID.
+    /// </summary>
+    public required string ExecutionId { get; init; }
+
+    /// <summary>
+    /// Suspension token for this polling operation.
+    /// </summary>
+    public required string SuspendToken { get; init; }
+
+    /// <summary>
+    /// Current attempt number (0-based).
+    /// </summary>
+    public required int AttemptNumber { get; init; }
+
+    /// <summary>
+    /// Time to wait before next retry.
+    /// </summary>
+    public required TimeSpan RetryAfter { get; init; }
+
+    /// <summary>
+    /// Maximum time to wait before timeout.
+    /// </summary>
+    public required TimeSpan MaxWaitTime { get; init; }
+
+    /// <summary>
+    /// Override Kind to Lifecycle.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}
+
+/// <summary>
+/// Event emitted when node polling times out.
+/// Node will be marked as failed.
+/// </summary>
+public sealed record NodePollingTimeoutEvent : GraphEvent
+{
+    /// <summary>
+    /// Node that timed out.
+    /// </summary>
+    public required string NodeId { get; init; }
+
+    /// <summary>
+    /// Execution ID.
+    /// </summary>
+    public required string ExecutionId { get; init; }
+
+    /// <summary>
+    /// Suspension token for this polling operation.
+    /// </summary>
+    public required string SuspendToken { get; init; }
+
+    /// <summary>
+    /// Total time elapsed before timeout.
+    /// </summary>
+    public required TimeSpan Elapsed { get; init; }
+
+    /// <summary>
+    /// Override Kind to Diagnostic.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Diagnostic;
+}
+
+/// <summary>
+/// Event emitted when node polling exceeds maximum retry attempts.
+/// Node will be marked as failed.
+/// </summary>
+public sealed record NodePollingMaxRetriesEvent : GraphEvent
+{
+    /// <summary>
+    /// Node that exceeded max retries.
+    /// </summary>
+    public required string NodeId { get; init; }
+
+    /// <summary>
+    /// Execution ID.
+    /// </summary>
+    public required string ExecutionId { get; init; }
+
+    /// <summary>
+    /// Suspension token for this polling operation.
+    /// </summary>
+    public required string SuspendToken { get; init; }
+
+    /// <summary>
+    /// Total number of attempts made.
+    /// </summary>
+    public required int Attempts { get; init; }
 
     /// <summary>
     /// Override Kind to Diagnostic.

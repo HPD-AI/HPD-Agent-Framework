@@ -39,14 +39,123 @@ public abstract record NodeExecutionResult
     ) : NodeExecutionResult;
 
     /// <summary>
-    /// Node execution suspended for external input.
-    /// Human-in-the-loop, approval workflows, external decisions.
+    /// Node execution suspended for external input or polling.
+    /// Use factory methods for type-safe construction.
     /// </summary>
-    public sealed record Suspended(
-        string SuspendToken,
-        object? ResumeValue = null,
-        string? Message = null
-    ) : NodeExecutionResult;
+    public sealed record Suspended : NodeExecutionResult
+    {
+        public required string SuspendToken { get; init; }
+        public required SuspendReason Reason { get; init; }
+        public object? ResumeValue { get; init; }
+        public string? Message { get; init; }
+        public TimeSpan? RetryAfter { get; init; }
+        public TimeSpan? MaxWaitTime { get; init; }
+        public int? MaxRetries { get; init; }
+
+        /// <summary>
+        /// Create a suspension for polling (sensor pattern).
+        /// </summary>
+        public static Suspended ForPolling(
+            string suspendToken,
+            TimeSpan retryAfter,
+            TimeSpan? maxWaitTime = null,
+            int? maxRetries = null,
+            string? message = null)
+        {
+            return new Suspended
+            {
+                SuspendToken = suspendToken,
+                Reason = SuspendReason.PollingCondition,
+                RetryAfter = retryAfter,
+                MaxWaitTime = maxWaitTime,
+                MaxRetries = maxRetries,
+                Message = message
+            };
+        }
+
+        /// <summary>
+        /// Create a suspension for human approval (HITL pattern).
+        /// </summary>
+        public static Suspended ForHumanApproval(
+            string suspendToken,
+            object? resumeValue = null,
+            string? message = null)
+        {
+            return new Suspended
+            {
+                SuspendToken = suspendToken,
+                Reason = SuspendReason.HumanApproval,
+                ResumeValue = resumeValue,
+                Message = message
+            };
+        }
+
+        /// <summary>
+        /// Create a suspension for external task wait (webhook, callback).
+        /// </summary>
+        public static Suspended ForExternalTask(
+            string suspendToken,
+            TimeSpan? maxWaitTime = null,
+            string? message = null)
+        {
+            return new Suspended
+            {
+                SuspendToken = suspendToken,
+                Reason = SuspendReason.ExternalTaskWait,
+                MaxWaitTime = maxWaitTime,
+                Message = message
+            };
+        }
+
+        /// <summary>
+        /// Create a suspension for resource availability wait.
+        /// </summary>
+        public static Suspended ForResourceWait(
+            string suspendToken,
+            TimeSpan retryAfter,
+            TimeSpan? maxWaitTime = null,
+            int? maxRetries = null,
+            string? message = null)
+        {
+            return new Suspended
+            {
+                SuspendToken = suspendToken,
+                Reason = SuspendReason.ResourceWait,
+                RetryAfter = retryAfter,
+                MaxWaitTime = maxWaitTime,
+                MaxRetries = maxRetries,
+                Message = message
+            };
+        }
+
+        /// <summary>
+        /// Private parameterless constructor for backward compatibility constructor.
+        /// </summary>
+        private Suspended()
+        {
+            SuspendToken = string.Empty;
+            Reason = SuspendReason.HumanApproval;
+        }
+
+        /// <summary>
+        /// Backward-compatibility constructor for existing HITL suspension code.
+        /// Automatically defaults to HumanApproval reason.
+        /// </summary>
+        /// <remarks>
+        /// This constructor exists for migration of existing HITL workflows.
+        /// New code should use ForHumanApproval() factory method instead.
+        /// Will be removed in v2.0.
+        /// </remarks>
+        [Obsolete("Use Suspended.ForHumanApproval() factory method instead. This constructor will be removed in v2.0.", error: false)]
+        public Suspended(string suspendToken, object? resumeValue = null, string? message = null)
+            : this()
+        {
+            SuspendToken = suspendToken;
+            Reason = SuspendReason.HumanApproval;
+            ResumeValue = resumeValue;
+            Message = message;
+        }
+    }
 
     /// <summary>
     /// Node was cancelled before or during execution.

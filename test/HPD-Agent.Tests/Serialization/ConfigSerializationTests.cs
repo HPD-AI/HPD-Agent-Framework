@@ -5,7 +5,7 @@ using Xunit;
 namespace HPD.Agent.Tests.Serialization;
 
 /// <summary>
-/// Tests for config serialization (Proposal 002).
+/// Tests for config serialization.
 /// Verifies that AgentConfig with Toolkits and Middlewares can be
 /// serialized to JSON and deserialized back.
 /// </summary>
@@ -183,7 +183,7 @@ public class ConfigSerializationTests
     [Fact]
     public void AgentConfig_CompleteExample_RoundTrip()
     {
-        // Arrange - matches the example from the proposal
+        
         var json = """
             {
               "name": "ResearchAgent",

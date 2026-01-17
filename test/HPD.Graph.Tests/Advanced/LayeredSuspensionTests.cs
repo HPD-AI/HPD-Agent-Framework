@@ -15,7 +15,7 @@ using Xunit;
 namespace HPD.Graph.Tests.Advanced;
 
 /// <summary>
-/// Tests for Layered Suspension feature (Proposal 003).
+/// Tests for Layered Suspension feature.
 /// Covers all behavior matrix scenarios and edge cases.
 /// </summary>
 public class LayeredSuspensionTests
@@ -142,11 +142,18 @@ public class LayeredSuspensionTests
             }
         });
 
-        await Task.Delay(100);
+        // Wait for the approval request event to be emitted with polling
+        NodeApprovalRequestEvent? requestEvent = null;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(50);
+            requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+            if (requestEvent != null) break;
+        }
 
-        // Get request and approve
-        var requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().First();
-        coordinator.SendResponse(requestEvent.RequestId, new NodeApprovalResponseEvent
+        requestEvent.Should().NotBeNull("approval request should be emitted");
+
+        coordinator.SendResponse(requestEvent!.RequestId, new NodeApprovalResponseEvent
         {
             RequestId = requestEvent.RequestId,
             SourceName = "Test",
@@ -472,10 +479,12 @@ public class ConfigurableSuspendingHandler : IGraphNodeHandler<GraphContext>
     public Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         var token = Guid.NewGuid().ToString();
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Suspended(
-            SuspendToken: token,
-            Message: "Waiting for approval"
-        ));
+        return Task.FromResult<NodeExecutionResult>(
+            NodeExecutionResult.Suspended.ForHumanApproval(
+                suspendToken: token,
+                message: "Waiting for approval"
+            )
+        );
     }
 }
 

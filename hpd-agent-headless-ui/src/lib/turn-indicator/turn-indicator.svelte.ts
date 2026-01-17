@@ -10,8 +10,6 @@
  * - TURN_DETECTED
  * - VAD_START_OF_SPEECH
  * - SYNTHESIS_STARTED
- *
- * @see AUDIO_COMPONENTS.md proposal
  */
 
 import { createHPDAttrs } from '$lib/internal/attrs.js';

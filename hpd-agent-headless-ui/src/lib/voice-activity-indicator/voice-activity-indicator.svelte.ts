@@ -10,8 +10,6 @@
  * Handles 2 HPD events:
  * - VAD_START_OF_SPEECH
  * - VAD_END_OF_SPEECH
- *
- * @see AUDIO_COMPONENTS.md proposal
  */
 
 import { createHPDAttrs } from '$lib/internal/attrs.js';

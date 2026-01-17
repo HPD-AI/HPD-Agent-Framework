@@ -95,7 +95,7 @@ for PROJECT in "${PROJECTS[@]}"; do
   PROJECT_NAME=$(basename "$PROJECT" .csproj)
 
   if [ ! -f "$PROJECT_PATH" ]; then
-    echo "⚠️  SKIP: $PROJECT_NAME (project file not found)"
+    echo "  SKIP: $PROJECT_NAME (project file not found)"
     continue
   fi
 
@@ -117,9 +117,9 @@ for PROJECT in "${PROJECTS[@]}"; do
   fi
 
   if [ $? -eq 0 ]; then
-    echo "✅ $PROJECT_NAME"
+    echo " $PROJECT_NAME"
   else
-    echo "❌ FAILED: $PROJECT_NAME"
+    echo " FAILED: $PROJECT_NAME"
   fi
   echo ""
 done

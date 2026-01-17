@@ -557,9 +557,6 @@ public class PriorityStreamingTests
     // 2. Stream Interruption: IStreamRegistry.InterruptAll() + IStreamHandle.WasInterrupted
     // 3. Cancellation Cleanup: OnErrorAsync(ErrorContext) handles OperationCanceledException
     //
-    // See:
-    // - InternalDocs/Proposals/V2/Audio/PRIORITY_STREAMING_ARCHITECTURE_PROPOSAL.md
-    // - InternalDocs/MIDDLEWARE_V2_PROPOSAL_REVISED.md (Section 1.6: Centralized Error Handling)
 
     //[Fact]
     //public async Task OnUpstreamEventAsync_CalledInReverseOrder()

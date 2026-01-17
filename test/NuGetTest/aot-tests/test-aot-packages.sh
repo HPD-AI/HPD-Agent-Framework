@@ -107,11 +107,11 @@ test_package() {
         local publish_dir="$project_dir/bin/Release/net8.0/osx-arm64/publish"
 
         if [ -f "$publish_dir/Test" ] && [ ! -f "$publish_dir/Test.dll" ]; then
-            echo -e "  ${GREEN}✅ NATIVE AOT: Success - Native executable generated${NC}"
-            echo "$package_name: ✅ NATIVE AOT SUCCESS" >> "$RESULTS_FILE"
+            echo -e "  ${GREEN} NATIVE AOT: Success - Native executable generated${NC}"
+            echo "$package_name:  NATIVE AOT SUCCESS" >> "$RESULTS_FILE"
         elif [ -f "$publish_dir/Test.dll" ]; then
-            echo -e "  ${YELLOW}⚠️  AOT FALLBACK: Built as .NET assembly (not native)${NC}"
-            echo "$package_name: ⚠️  AOT FALLBACK (DLL only)" >> "$RESULTS_FILE"
+            echo -e "  ${YELLOW}  AOT FALLBACK: Built as .NET assembly (not native)${NC}"
+            echo "$package_name:   AOT FALLBACK (DLL only)" >> "$RESULTS_FILE"
 
             # Extract trim warnings
             if grep -q "IL[0-9]\{4\}" "$output_file" "$error_file" 2>/dev/null; then
@@ -119,8 +119,8 @@ test_package() {
                 grep -o "IL[0-9]\{4\}" "$output_file" "$error_file" 2>/dev/null | sort | uniq -c >> "$RESULTS_FILE"
             fi
         else
-            echo -e "  ${RED}❌ BUILD FAILED: No output generated${NC}"
-            echo "$package_name: ❌ BUILD FAILED" >> "$RESULTS_FILE"
+            echo -e "  ${RED} BUILD FAILED: No output generated${NC}"
+            echo "$package_name:  BUILD FAILED" >> "$RESULTS_FILE"
         fi
 
         # Check for IL warnings (trim/AOT issues)
@@ -129,8 +129,8 @@ test_package() {
             echo -e "  ${YELLOW}Found $warning_count trim/AOT warnings${NC}"
         fi
     else
-        echo -e "  ${RED}❌ BUILD ERROR${NC}"
-        echo "$package_name: ❌ BUILD ERROR" >> "$RESULTS_FILE"
+        echo -e "  ${RED} BUILD ERROR${NC}"
+        echo "$package_name:  BUILD ERROR" >> "$RESULTS_FILE"
         echo "  Error details:" >> "$RESULTS_FILE"
         tail -20 "$error_file" >> "$RESULTS_FILE" 2>/dev/null || echo "  No error details" >> "$RESULTS_FILE"
     fi
@@ -151,7 +151,7 @@ echo ""
 echo "Results saved to: $RESULTS_FILE"
 echo ""
 echo -e "${BLUE}Summary:${NC}"
-grep "✅\|⚠️\|❌" "$RESULTS_FILE" | sort
+grep "\|\|" "$RESULTS_FILE" | sort
 
 echo ""
 echo "Detailed results available in: $RESULTS_FILE"

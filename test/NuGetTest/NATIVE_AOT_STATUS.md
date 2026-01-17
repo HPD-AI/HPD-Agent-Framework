@@ -1,6 +1,6 @@
 # Native AOT Compatibility Status for HPD-Agent
 
-## Current Status: ❌ Not Fully Compatible
+## Current Status:  Not Fully Compatible
 
 As of testing date, the HPD-Agent framework and its dependencies are **not yet fully compatible** with .NET Native AOT compilation.
 
@@ -15,9 +15,9 @@ The test project at `test/NuGetTest` has been configured with:
 
 ### What Happened
 When publishing with `PublishAot=true`, the build:
-1. ✅ Compiles successfully without errors
-2. ❌ Does NOT generate a native executable
-3. ⚠️ Falls back to producing standard .NET assemblies (DLLs)
+1.  Compiles successfully without errors
+2.  Does NOT generate a native executable
+3.  Falls back to producing standard .NET assemblies (DLLs)
 
 ### Why Native AOT is Not Working
 

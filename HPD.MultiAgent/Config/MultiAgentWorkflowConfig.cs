@@ -288,7 +288,7 @@ public enum StreamingMode
 }
 
 /// <summary>
-/// Configuration for change-aware iteration (Proposal 005).
+/// Configuration for change-aware iteration 
 /// </summary>
 public sealed record IterationOptionsConfig
 {

@@ -150,7 +150,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         // NEW: Extract config constructor type (single-parameter constructor with *Config type)
         var configConstructorTypeName = GetConfigConstructorTypeName(classDecl, semanticModel);
 
-        // NEW: Extract metadata type from capabilities (first one wins, should all be same per proposal)
+        // NEW: Extract metadata type from capabilities
         var metadataTypeName = capabilities
             .OfType<HPD.Agent.SourceGenerator.Capabilities.BaseCapability>()
             .Where(c => !string.IsNullOrEmpty(c.ContextTypeName))
@@ -330,7 +330,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 // Use first config constructor type found (should only be defined in one partial)
                 var configConstructorTypeName = group.FirstOrDefault(p => !string.IsNullOrEmpty(p!.ConfigConstructorTypeName))?.ConfigConstructorTypeName;
 
-                // Use first metadata type found (should be consistent across all capabilities per proposal)
+                    // Use first metadata type found
                 var metadataTypeName = group.FirstOrDefault(p => !string.IsNullOrEmpty(p!.MetadataTypeName))?.MetadataTypeName;
 
                 return new ToolkitInfo

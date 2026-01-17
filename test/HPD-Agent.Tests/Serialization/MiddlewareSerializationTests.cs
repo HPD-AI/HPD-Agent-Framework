@@ -6,7 +6,7 @@ using Xunit;
 namespace HPD.Agent.Tests.Serialization;
 
 /// <summary>
-/// Tests for middleware serialization and MiddlewareFactory (Proposal 002).
+/// Tests for middleware serialization and MiddlewareFactory.
 /// Verifies that MiddlewareReference can be serialized to JSON and deserialized back,
 /// and that MiddlewareFactory supports AOT-compatible instantiation.
 /// </summary>
@@ -216,7 +216,7 @@ public class MiddlewareSerializationTests
     [Fact]
     public void AgentConfig_MixedMiddlewareSyntax_Deserializes()
     {
-        // Arrange - matches the example from the proposal
+        // Arrange
         var json = """
             {
               "name": "TestAgent",

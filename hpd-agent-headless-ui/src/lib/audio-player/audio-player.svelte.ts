@@ -11,8 +11,6 @@
  * - Progress tracking
  *
  * Based on  patterns adapted for Svelte runes + headless design.
- *
- * @see AUDIO_COMPONENTS.md proposal
  */
 
 import { createHPDAttrs } from '$lib/internal/attrs.js';

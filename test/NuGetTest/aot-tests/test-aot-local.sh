@@ -94,11 +94,11 @@ test_package() {
         local warning_count=$(grep -o "IL[0-9]\{4\}" "$output_file" "$error_file" 2>/dev/null | wc -l)
 
         if [ "$warning_count" -eq 0 ]; then
-            echo -e "  ${GREEN}✅ AOT COMPATIBLE: 0 IL warnings${NC}"
-            echo "$package_name: ✅ AOT COMPATIBLE (0 warnings)" >> "$RESULTS_FILE"
+            echo -e "  ${GREEN} AOT COMPATIBLE: 0 IL warnings${NC}"
+            echo "$package_name:  AOT COMPATIBLE (0 warnings)" >> "$RESULTS_FILE"
         else
-            echo -e "  ${RED}❌ AOT INCOMPATIBLE: $warning_count IL warnings${NC}"
-            echo "$package_name: ❌ AOT INCOMPATIBLE ($warning_count warnings)" >> "$RESULTS_FILE"
+            echo -e "  ${RED} AOT INCOMPATIBLE: $warning_count IL warnings${NC}"
+            echo "$package_name:  AOT INCOMPATIBLE ($warning_count warnings)" >> "$RESULTS_FILE"
             echo "  Warning breakdown:" >> "$RESULTS_FILE"
             grep -o "IL[0-9]\{4\}" "$output_file" "$error_file" 2>/dev/null | sort | uniq -c >> "$RESULTS_FILE"
         fi
@@ -109,8 +109,8 @@ test_package() {
             echo -e "  ${BLUE}ℹ️  Native executable generated${NC}"
         fi
     else
-        echo -e "  ${RED}❌ BUILD ERROR${NC}"
-        echo "$package_name: ❌ BUILD ERROR" >> "$RESULTS_FILE"
+        echo -e "  ${RED} BUILD ERROR${NC}"
+        echo "$package_name:  BUILD ERROR" >> "$RESULTS_FILE"
         echo "  Error details:" >> "$RESULTS_FILE"
         tail -20 "$error_file" >> "$RESULTS_FILE" 2>/dev/null || echo "  No error details" >> "$RESULTS_FILE"
     fi
@@ -143,7 +143,7 @@ echo ""
 echo "Results saved to: $RESULTS_FILE"
 echo ""
 echo -e "${BLUE}Summary:${NC}"
-grep "✅\|⚠️\|❌" "$RESULTS_FILE" | sort
+grep "\|\|" "$RESULTS_FILE" | sort
 
 echo ""
 echo "Detailed results available in: $RESULTS_FILE"

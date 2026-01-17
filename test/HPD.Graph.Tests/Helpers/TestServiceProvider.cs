@@ -41,6 +41,15 @@ public static class TestServiceProvider
         return services.BuildServiceProvider();
     }
 
+    public static IServiceProvider CreateWithCustomHandler<THandler>(THandler instance)
+        where THandler : class, IGraphNodeHandler<GraphContext>
+    {
+        return Create(services =>
+        {
+            services.AddSingleton<IGraphNodeHandler<GraphContext>>(instance);
+        });
+    }
+
     public static IServiceProvider CreateWithRouters(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
@@ -68,5 +77,44 @@ public static class TestServiceProvider
         configure?.Invoke(services);
 
         return services.BuildServiceProvider();
+    }
+}
+
+/// <summary>
+/// Extension methods for building test service providers.
+/// </summary>
+public static class TestServiceProviderExtensions
+{
+    public static TestServiceBuilder AddHandler<THandler>(this IServiceProvider provider, THandler instance)
+        where THandler : class, IGraphNodeHandler<GraphContext>
+    {
+        var builder = new TestServiceBuilder();
+        builder.Services.AddSingleton<IGraphNodeHandler<GraphContext>>(instance);
+        return builder;
+    }
+}
+
+/// <summary>
+/// Builder for creating test service providers with multiple handlers.
+/// </summary>
+public class TestServiceBuilder
+{
+    public ServiceCollection Services { get; } = new ServiceCollection();
+
+    public TestServiceBuilder AddHandler<THandler>(THandler instance)
+        where THandler : class, IGraphNodeHandler<GraphContext>
+    {
+        Services.AddSingleton<IGraphNodeHandler<GraphContext>>(instance);
+        return this;
+    }
+
+    public IServiceProvider Build()
+    {
+        return Services.BuildServiceProvider();
+    }
+
+    public static implicit operator ServiceProvider(TestServiceBuilder builder)
+    {
+        return builder.Services.BuildServiceProvider();
     }
 }

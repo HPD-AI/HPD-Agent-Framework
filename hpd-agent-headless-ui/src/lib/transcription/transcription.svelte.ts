@@ -9,8 +9,6 @@
  * Handles 2 HPD events:
  * - TRANSCRIPTION_DELTA
  * - TRANSCRIPTION_COMPLETED
- *
- * @see AUDIO_COMPONENTS.md proposal
  */
 
 import { createHPDAttrs } from '$lib/internal/attrs.js';

@@ -49,7 +49,32 @@ public enum ConditionType
     /// Default/fallback edge - traverse only if no other conditions from the same source node match.
     /// Only one default edge per source node is allowed.
     /// </summary>
-    Default
+    Default,
+
+    // ========================================
+    // Upstream State Conditions
+    // ========================================
+
+    /// <summary>
+    /// Traverse if at least one upstream node succeeded.
+    /// Use case: Fallback chains (try A, if fails try B).
+    /// Requires context at evaluation time.
+    /// </summary>
+    UpstreamOneSuccess,
+
+    /// <summary>
+    /// Traverse if all upstream nodes completed (any terminal state).
+    /// Use case: Aggregation regardless of success/failure.
+    /// Requires context at evaluation time.
+    /// </summary>
+    UpstreamAllDone,
+
+    /// <summary>
+    /// Traverse if all upstream nodes completed AND at least one succeeded.
+    /// Use case: Partial success handling.
+    /// Requires context at evaluation time.
+    /// </summary>
+    UpstreamAllDoneOneSuccess
 }
 
 /// <summary>
@@ -91,6 +116,9 @@ public sealed record EdgeCondition
             ConditionType.FieldNotExists => $"{Field} not exists",
             ConditionType.FieldContains => $"{Field} contains {Value}",
             ConditionType.Default => "Default (fallback)",
+            ConditionType.UpstreamOneSuccess => "At least one upstream succeeded",
+            ConditionType.UpstreamAllDone => "All upstreams completed",
+            ConditionType.UpstreamAllDoneOneSuccess => "All upstreams done, at least one succeeded",
             _ => Type.ToString()
         };
     }

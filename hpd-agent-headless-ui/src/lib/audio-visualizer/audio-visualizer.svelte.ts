@@ -10,8 +10,7 @@
  * Handles audio from:
  * - AUDIO_CHUNK events (agent speech)
  * - AnalyserNode (microphone/playback)
- *
- * @see AUDIO_COMPONENTS.md proposal
+
  */
 
 import { createHPDAttrs } from '$lib/internal/attrs.js';

@@ -24,7 +24,7 @@ try
         .WithEventHandler(new SimpleConsoleEventHandler())
         .Build();
 
-    Console.WriteLine("✅ Agent created successfully!");
+    Console.WriteLine(" Agent created successfully!");
     Console.WriteLine("📝 Asking: 'What is 2 + 2? Explain briefly.'");
     Console.WriteLine();
     Console.WriteLine("═══ Agent Response ═══");
@@ -39,12 +39,12 @@ try
 
     Console.WriteLine();
     Console.WriteLine("═══════════════════════════════════════════");
-    Console.WriteLine("✅ Test completed successfully!");
+    Console.WriteLine(" Test completed successfully!");
 }
 catch (Exception ex)
 {
     Console.WriteLine();
-    Console.WriteLine($"❌ Error: {ex.Message}");
+    Console.WriteLine($" Error: {ex.Message}");
     Console.WriteLine($"   Type: {ex.GetType().Name}");
     if (ex.InnerException != null)
     {
@@ -103,7 +103,7 @@ public class SimpleConsoleEventHandler : IAgentEventHandler
             case MessageTurnErrorEvent errorEvt:
                 // Display errors
                 Console.WriteLine();
-                Console.WriteLine($"⚠️  Error: {errorEvt.Message}");
+                Console.WriteLine($"  Error: {errorEvt.Message}");
                 break;
 
             case MessageTurnFinishedEvent:

@@ -286,6 +286,11 @@ public interface IGraphContext
     /// </summary>
     void AddTag(string key, string value);
 
+    /// <summary>
+    /// Remove a tag key and all its values.
+    /// </summary>
+    void RemoveTag(string key);
+
     // ========================================
     // Progress Tracking
     // ========================================

@@ -85,10 +85,12 @@ public class SuspendingHandler : IGraphNodeHandler<GraphContext>
     public Task<NodeExecutionResult> ExecuteAsync(GraphContext context, HandlerInputs inputs, CancellationToken cancellationToken = default)
     {
         var token = Guid.NewGuid().ToString();
-        return Task.FromResult<NodeExecutionResult>(new NodeExecutionResult.Suspended(
-            SuspendToken: token,
-            Message: "Waiting for human approval"
-        ));
+        return Task.FromResult<NodeExecutionResult>(
+            NodeExecutionResult.Suspended.ForHumanApproval(
+                suspendToken: token,
+                message: "Waiting for human approval"
+            )
+        );
     }
 }
 

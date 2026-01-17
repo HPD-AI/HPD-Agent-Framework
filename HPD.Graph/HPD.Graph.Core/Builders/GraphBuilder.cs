@@ -212,6 +212,101 @@ public class GraphBuilder
         return AddEdge(from, to, null);
     }
 
+    // ========================================
+    // Upstream State Conditions
+    // ========================================
+
+    /// <summary>
+    /// Set upstream state condition on all incoming edges to a node.
+    /// WARNING: This will replace any existing data-based conditions on those edges.
+    /// </summary>
+    /// <param name="targetNodeId">Node ID to apply condition to</param>
+    /// <param name="upstreamCondition">Upstream condition type</param>
+    /// <returns>This builder for chaining</returns>
+    /// <exception cref="ArgumentException">If condition is not an upstream condition type</exception>
+    /// <exception cref="InvalidOperationException">If node has no incoming edges or edges have conflicting conditions</exception>
+    public GraphBuilder WithUpstreamCondition(string targetNodeId, ConditionType upstreamCondition)
+    {
+        if (upstreamCondition != ConditionType.UpstreamOneSuccess &&
+            upstreamCondition != ConditionType.UpstreamAllDone &&
+            upstreamCondition != ConditionType.UpstreamAllDoneOneSuccess)
+        {
+            throw new ArgumentException(
+                $"Condition type must be upstream condition, got: {upstreamCondition}",
+                nameof(upstreamCondition));
+        }
+
+        // Find all edges pointing to targetNodeId
+        var incomingEdges = _edges.Where(e => e.To == targetNodeId).ToList();
+
+        if (incomingEdges.Count == 0)
+            throw new InvalidOperationException($"Node {targetNodeId} has no incoming edges");
+
+        // Check if any edges already have non-default conditions
+        var edgesWithConditions = incomingEdges
+            .Where(e => e.Condition != null &&
+                        e.Condition.Type != ConditionType.Always)
+            .ToList();
+
+        if (edgesWithConditions.Count > 0)
+        {
+            var edgeList = string.Join(", ", edgesWithConditions.Select(e => $"{e.From} → {e.To}"));
+            throw new InvalidOperationException(
+                $"Cannot set upstream condition on node {targetNodeId}: " +
+                $"The following edges already have conditions: {edgeList}. " +
+                "Upstream conditions replace existing edge conditions. " +
+                "Remove existing conditions first or use separate nodes for different conditions.");
+        }
+
+        // Set condition on all incoming edges
+        for (int i = 0; i < _edges.Count; i++)
+        {
+            var edge = _edges[i];
+            if (edge.To == targetNodeId)
+            {
+                _edges[i] = edge with
+                {
+                    Condition = new EdgeCondition
+                    {
+                        Type = upstreamCondition
+                    }
+                };
+            }
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// Convenience: Execute if at least one upstream succeeded (parallel fallback).
+    /// </summary>
+    /// <param name="targetNodeId">Node ID to apply condition to</param>
+    /// <returns>This builder for chaining</returns>
+    public GraphBuilder RequireOneSuccess(string targetNodeId)
+    {
+        return WithUpstreamCondition(targetNodeId, ConditionType.UpstreamOneSuccess);
+    }
+
+    /// <summary>
+    /// Convenience: Execute when all upstreams completed (aggregation).
+    /// </summary>
+    /// <param name="targetNodeId">Node ID to apply condition to</param>
+    /// <returns>This builder for chaining</returns>
+    public GraphBuilder RequireAllDone(string targetNodeId)
+    {
+        return WithUpstreamCondition(targetNodeId, ConditionType.UpstreamAllDone);
+    }
+
+    /// <summary>
+    /// Convenience: Execute when all done AND at least one succeeded (partial success).
+    /// </summary>
+    /// <param name="targetNodeId">Node ID to apply condition to</param>
+    /// <returns>This builder for chaining</returns>
+    public GraphBuilder RequirePartialSuccess(string targetNodeId)
+    {
+        return WithUpstreamCondition(targetNodeId, ConditionType.UpstreamAllDoneOneSuccess);
+    }
+
     /// <summary>
     /// Builds the graph.
     /// </summary>

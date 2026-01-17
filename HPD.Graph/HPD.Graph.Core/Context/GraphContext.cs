@@ -182,6 +182,16 @@ public class GraphContext : IGraphContext
         bag.Add(value);
     }
 
+    public void RemoveTag(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
+        }
+
+        _tags.TryRemove(key, out _);
+    }
+
     public virtual IGraphContext CreateIsolatedCopy()
     {
         var copy = new GraphContext(

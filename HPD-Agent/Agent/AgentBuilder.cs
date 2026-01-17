@@ -2055,7 +2055,6 @@ public class AgentBuilder
 
         // Use base client directly (no middleware pipeline)
         // Observability (telemetry, logging, caching) is integrated directly into Agent.cs
-        // See: Proposals/Urgent/MIDDLEWARE_DIRECT_INTEGRATION.md
         var clientToUse = _baseClient;
 
         // Dynamic Memory registration is handled by WithDynamicMemory() extension method

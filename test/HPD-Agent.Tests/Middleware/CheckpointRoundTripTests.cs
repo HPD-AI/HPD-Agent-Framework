@@ -9,7 +9,7 @@ using Xunit;
 namespace HPD.Agent.Tests.Middleware;
 
 /// <summary>
-/// CRITICAL CHECKPOINT ROUND-TRIP TEST (Appendix C from proposal).
+/// CRITICAL CHECKPOINT ROUND-TRIP TEST .
 /// Verifies that middleware state survives serialization → deserialization → access cycle.
 /// This is the single most important test for the checkpoint/resume feature.
 /// </summary>
