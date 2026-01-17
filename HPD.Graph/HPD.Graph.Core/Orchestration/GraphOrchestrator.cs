@@ -718,15 +718,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             return sb.ToString();
         }
 
-        // Complex objects - JSON serialize
+        // Complex objects - JSON serialize using source-generated context
         // Note: May fail on circular references, falls back to ToString
         try
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(value, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            });
+            var json = System.Text.Json.JsonSerializer.Serialize(
+                value,
+                HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.Object
+            );
             return json;
         }
         catch
@@ -1059,7 +1058,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                 {
                                     NodeId = nodeId,
                                     Version = node.Version,
-                                    StateJson = System.Text.Json.JsonSerializer.Serialize(output),
+                                    StateJson = System.Text.Json.JsonSerializer.Serialize(
+                                        output,
+                                        HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.DictionaryStringObject
+                                    ),
                                     CapturedAt = DateTimeOffset.UtcNow
                                 };
                             }
@@ -1084,14 +1086,17 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             NodeStateMetadata = nodeStateMetadata,
             CurrentIteration = iteration,
             PendingDirtyNodes = pendingDirtyNodes,
-            ContextJson = System.Text.Json.JsonSerializer.Serialize(new
-            {
-                ExecutionId = context.ExecutionId,
-                CompletedNodes = context.CompletedNodes,
-                CurrentLayerIndex = context.CurrentLayerIndex,
-                CurrentIteration = iteration,
-                PendingDirtyNodes = pendingDirtyNodes.ToList()
-            }),
+            ContextJson = System.Text.Json.JsonSerializer.Serialize(
+                new HPDAgent.Graph.Abstractions.Serialization.ContextMetadata
+                {
+                    ExecutionId = context.ExecutionId,
+                    CompletedNodes = context.CompletedNodes.ToList(),
+                    CurrentLayerIndex = context.CurrentLayerIndex,
+                    CurrentIteration = iteration,
+                    PendingDirtyNodes = pendingDirtyNodes.ToList()
+                },
+                HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.ContextMetadata
+            ),
             Metadata = new Abstractions.Checkpointing.CheckpointMetadata
             {
                 Trigger = Abstractions.Checkpointing.CheckpointTrigger.IterationCompleted,
@@ -2234,14 +2239,18 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 ct.ThrowIfCancellationRequested();
 
             // Update polling state in context tags (for checkpoint resume)
-            context.AddTag($"polling_info:{node.Id}", System.Text.Json.JsonSerializer.Serialize(new
+            var currentPollingState = new HPDAgent.Graph.Abstractions.Serialization.PollingState
             {
                 StartTime = startTime,
                 AttemptNumber = currentAttempt,
                 SuspendToken = suspended.SuspendToken,
                 RetryAfter = suspended.RetryAfter!.Value,
                 MaxWaitTime = maxWaitTime
-            }));
+            };
+            context.AddTag($"polling_info:{node.Id}", System.Text.Json.JsonSerializer.Serialize(
+                currentPollingState,
+                HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.PollingState
+            ));
 
             // CHECKPOINT FIRST (durability)
             if (_checkpointStore != null && context is Context.GraphContext ctxGraph)
@@ -2404,14 +2413,16 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// Try to restore polling state from checkpoint tags.
     /// Returns null if no polling state found.
     /// </summary>
-    private PollingState? TryRestorePollingState(TContext context, string nodeId)
+    private Abstractions.Serialization.PollingState? TryRestorePollingState(TContext context, string nodeId)
     {
         var tagKey = $"polling_info:{nodeId}";
         if (context.Tags.TryGetValue(tagKey, out var values) && values.Count > 0)
         {
             try
             {
-                return System.Text.Json.JsonSerializer.Deserialize<PollingState>(values.First());
+                return System.Text.Json.JsonSerializer.Deserialize(
+                    values.First(),
+                    HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.PollingState);
             }
             catch (System.Text.Json.JsonException ex)
             {
@@ -2482,7 +2493,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             {
                 try
                 {
-                    var pollingState = System.Text.Json.JsonSerializer.Deserialize<PollingState>(values.First());
+                    var pollingState = System.Text.Json.JsonSerializer.Deserialize(
+                        values.First(),
+                        HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.PollingState);
                     if (pollingState != null)
                     {
                         // Calculate next retry time for this node
@@ -2547,14 +2560,6 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// <summary>
     /// Polling state stored in context tags for checkpoint resume.
     /// </summary>
-    internal record PollingState
-    {
-        public DateTimeOffset StartTime { get; init; }
-        public int AttemptNumber { get; init; }
-        public string SuspendToken { get; init; } = string.Empty;
-        public TimeSpan RetryAfter { get; init; }
-        public TimeSpan MaxWaitTime { get; init; }
-    }
 
     /// <summary>
     /// Saves checkpoint specifically for suspension with suspension-related metadata.
@@ -2596,7 +2601,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                 {
                                     NodeId = nodeId,
                                     Version = completedNode.Version,
-                                    StateJson = System.Text.Json.JsonSerializer.Serialize(output),
+                                    StateJson = System.Text.Json.JsonSerializer.Serialize(
+                                        output,
+                                        HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.DictionaryStringObject
+                                    ),
                                     CapturedAt = DateTimeOffset.UtcNow
                                 };
                             }
@@ -3015,21 +3023,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             return;
         }
 
-        // Optional type validation
-        if (!string.IsNullOrEmpty(node.MapItemType))
-        {
-            var expectedType = Type.GetType(node.MapItemType);
-            if (expectedType != null)
-            {
-                var actualType = itemList[0]?.GetType();
-                if (actualType != null && !expectedType.IsAssignableFrom(actualType))
-                {
-                    context.Log("Orchestrator",
-                        $"Map node '{node.Id}' type mismatch: expected {node.MapItemType}, got {actualType.FullName}",
-                        LogLevel.Warning, nodeId: node.Id);
-                }
-            }
-        }
+        // Note: Optional type validation removed for Native AOT compatibility
+        // Type.GetType() requires runtime reflection which is not AOT-compatible
+        // Type safety is enforced at handler level instead
 
         // Determine concurrency
         var maxConcurrency = node.MaxParallelMapTasks ?? 0;
@@ -3644,7 +3640,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                 {
                                     NodeId = nodeId,
                                     Version = node.Version,
-                                    StateJson = System.Text.Json.JsonSerializer.Serialize(output),
+                                    StateJson = System.Text.Json.JsonSerializer.Serialize(
+                                        output,
+                                        HPDAgent.Graph.Abstractions.Serialization.GraphJsonSerializerContext.Default.DictionaryStringObject
+                                    ),
                                     CapturedAt = DateTimeOffset.UtcNow
                                 };
                             }

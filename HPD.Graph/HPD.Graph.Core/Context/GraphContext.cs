@@ -331,11 +331,14 @@ public class GraphContext : IGraphContext
         {
             if (channelName.StartsWith("node_output:"))
             {
-                // Copy the node output dictionary to the isolated context
+                // Deep clone the node output dictionary to the isolated context
+                // This fixes the shallow copy bug that caused state corruption in parallel execution
                 var outputs = Channels[channelName].Get<Dictionary<string, object>>();
                 if (outputs != null)
                 {
-                    clonedChannels[channelName].Set(outputs);
+                    // Use OutputCloner for Native AOT-compatible deep cloning
+                    var clonedOutputs = Abstractions.Serialization.OutputCloner.DeepClone(outputs);
+                    clonedChannels[channelName].Set(clonedOutputs);
                 }
             }
         }
