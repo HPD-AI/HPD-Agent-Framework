@@ -1,4 +1,7 @@
+using HPDAgent.Graph.Abstractions.Artifacts;
+using HPDAgent.Graph.Abstractions.Caching;
 using HPDAgent.Graph.Abstractions.Execution;
+using HPDAgent.Graph.Abstractions.Validation;
 
 namespace HPDAgent.Graph.Abstractions.Graph;
 
@@ -113,6 +116,44 @@ public sealed record Node
     /// </summary>
     public int OutputPortCount { get; init; } = 1;
 
+    // ===== ARTIFACT PROPERTIES (Data Orchestration Primitives - Phase 1) =====
+
+    /// <summary>
+    /// Declares that this node produces a named artifact.
+    /// When set, node outputs are automatically registered in artifact registry.
+    /// Artifact key is prefixed with SubGraph namespace if applicable (see Primitive 5).
+    ///
+    /// Example:
+    ///   ProducesArtifact = ArtifactKey.FromPath("database", "users")
+    ///   → Artifact "database/users" will be registered when node completes
+    ///
+    /// Enables:
+    /// - Artifact-centric workflows (request "users_table@2025-01-15" not "execute graph X")
+    /// - Data lineage tracking (what inputs created this artifact?)
+    /// - Demand-driven execution (materialize artifact → auto-detect required nodes)
+    /// </summary>
+    public ArtifactKey? ProducesArtifact { get; init; }
+
+    /// <summary>
+    /// Declares artifact dependencies (alternative to explicit node dependencies).
+    /// Orchestrator resolves which nodes produce these artifacts and builds dependency graph.
+    /// Supports both explicit and namespace-relative keys.
+    ///
+    /// Example:
+    ///   RequiresArtifacts = [
+    ///     ArtifactKey.FromPath("database", "users"),
+    ///     ArtifactKey.FromPath("database", "orders")
+    ///   ]
+    ///   → Orchestrator finds nodes that produce these artifacts
+    ///   → Creates implicit edges from those nodes to this node
+    ///
+    /// Benefits:
+    /// - Declarative dependencies (say WHAT you need, not HOW to get it)
+    /// - Loose coupling (don't need to know specific node IDs)
+    /// - Multi-producer support (automatically resolves best producer)
+    /// </summary>
+    public IReadOnlyList<ArtifactKey>? RequiresArtifacts { get; init; }
+
     // ===== MAP NODE PROPERTIES =====
     //
     // DECISION: Do you need a router?
@@ -221,6 +262,50 @@ public sealed record Node
     /// </summary>
     public Graph? MapDefaultGraph { get; init; }
 
+    // ===== PARTITIONING (Phase 2: Data Orchestration Primitives) =====
+
+    /// <summary>
+    /// Declares that this node produces/consumes partitioned data.
+    /// When set, node is executed once per partition key.
+    /// If ProducesArtifact is also set, each execution produces artifactKey@partitionKey.
+    /// Integrates with existing Map node infrastructure—partitions become input to Map iteration.
+    ///
+    /// Example (Daily partitions):
+    ///   Partitions = TimePartitionDefinition.Daily(
+    ///       start: new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero),
+    ///       end: new DateTimeOffset(2025, 1, 31, 0, 0, 0, TimeSpan.Zero)
+    ///   )
+    ///   → Generates 31 partitions: "2025-01-01", "2025-01-02", ..., "2025-01-31"
+    ///
+    /// Example (Regional partitions):
+    ///   Partitions = StaticPartitionDefinition.FromKeys("us-east", "us-west", "eu-central")
+    ///   → Generates 3 partitions
+    ///
+    /// Example (Multi-dimensional: daily × region):
+    ///   Partitions = MultiPartitionDefinition.Combine(
+    ///       TimePartitionDefinition.Daily(...),
+    ///       StaticPartitionDefinition.FromKeys("us-east", "us-west")
+    ///   )
+    ///   → Generates Cartesian product: ["2025-01-01", "us-east"], ["2025-01-01", "us-west"], ...
+    /// </summary>
+    public PartitionDefinition? Partitions { get; init; }
+
+    /// <summary>
+    /// Maps output partitions to required input partitions (for cross-partition dependencies).
+    /// Example: Weekly aggregation node maps week partition to 7 daily input partitions.
+    /// Null means 1:1 partition alignment (output partition = input partition).
+    ///
+    /// Example (Weekly from Daily):
+    ///   PartitionDependencies = PartitionDependencyMapping.WeeklyFromDaily()
+    ///   Output partition "2025-W03" requires input partitions:
+    ///   ["2025-01-15", "2025-01-16", ..., "2025-01-21"]
+    ///
+    /// Example (Monthly from Daily):
+    ///   PartitionDependencies = PartitionDependencyMapping.MonthlyFromDaily()
+    ///   Output partition "2025-01" requires all daily partitions in January
+    /// </summary>
+    public PartitionDependencyMapping? PartitionDependencies { get; init; }
+
     // ===== SUSPENSION OPTIONS (Layered Suspension) =====
 
     /// <summary>
@@ -229,4 +314,48 @@ public sealed record Node
     /// Null = use orchestrator defaults (30s active wait, events enabled, checkpoint first).
     /// </summary>
     public SuspensionOptions? SuspensionOptions { get; init; }
+
+    // ===== PHASE 5: HIERARCHICAL NAMESPACES =====
+
+    /// <summary>
+    /// Namespace prefix for all artifacts produced by this subgraph (Phase 5: Hierarchical Namespaces).
+    /// When set, all ProducesArtifact declarations in child nodes are automatically prefixed.
+    ///
+    /// Example:
+    ///   SubGraph namespace: ["pipeline", "stage1"]
+    ///   Child node produces: ["users"]
+    ///   Actual artifact key: ["pipeline", "stage1", "users"]
+    ///
+    /// Prevents naming collisions when composing multiple subgraphs.
+    /// Uses existing scope pattern from IGraphStateScope.
+    ///
+    /// Validation Rules:
+    /// - Max depth: 10 levels (prevents excessive nesting)
+    /// - Characters: Alphanumeric, hyphen, underscore only (a-zA-Z0-9_-)
+    /// - No leading/trailing hyphens or underscores
+    /// - No consecutive hyphens or underscores
+    /// - Length: 1-50 characters per segment
+    ///
+    /// Best Practices:
+    /// - Use 2-3 levels for most applications (e.g., ["team", "service"])
+    /// - Prefer short, descriptive names (e.g., ["etl", "extract"] not ["extract_transform_load", "extraction_phase"])
+    /// - Mirror organizational structure (e.g., ["sales", "reports", "daily"])
+    /// </summary>
+    public IReadOnlyList<string>? ArtifactNamespace { get; init; }
+
+    /// <summary>
+    /// Input validation schemas.
+    /// Validated before handler execution (fail-fast).
+    /// Keys are input names, values are schemas with type and constraint validation.
+    /// Null = no validation (default, zero overhead).
+    /// </summary>
+    public IReadOnlyDictionary<string, InputSchema>? InputSchemas { get; init; }
+
+    /// <summary>
+    /// Cache configuration for this node.
+    /// When set, orchestrator automatically caches results using INodeCacheStore.
+    /// Cache key is computed based on Strategy (inputs, code, config).
+    /// Null = no caching (default, zero overhead).
+    /// </summary>
+    public CacheOptions? Cache { get; init; }
 }

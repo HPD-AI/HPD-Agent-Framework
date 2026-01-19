@@ -68,4 +68,25 @@ public sealed record CachedNodeResult
     /// Optional metadata about the cached result.
     /// </summary>
     public Dictionary<string, object>? Metadata { get; init; }
+
+    /// <summary>
+    /// Time-to-live for this cached result.
+    /// Null = no expiration (cached forever).
+    /// </summary>
+    public TimeSpan? Ttl { get; init; }
+
+    /// <summary>
+    /// Check if this cached result has expired.
+    /// </summary>
+    public bool IsExpired
+    {
+        get
+        {
+            if (!Ttl.HasValue)
+                return false;
+
+            var elapsed = DateTimeOffset.UtcNow - CachedAt;
+            return elapsed > Ttl.Value;
+        }
+    }
 }

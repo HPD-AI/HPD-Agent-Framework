@@ -406,6 +406,8 @@ public class NodeBuilder
     private ErrorPropagationPolicy? _errorPolicy;
     private SuspensionOpts? _suspensionOptions;
     private int _outputPortCount = 1;
+    private Dictionary<string, Abstractions.Validation.InputSchema>? _inputSchemas;
+    private Abstractions.Caching.CacheOptions? _cache;
 
     internal NodeBuilder(string id, string name, NodeType type, string? handlerName)
     {
@@ -568,8 +570,29 @@ public class NodeBuilder
             MaxParallelExecutions = _maxInputBufferSize,
             ErrorPolicy = _errorPolicy,
             SuspensionOptions = _suspensionOptions,
-            OutputPortCount = _outputPortCount
+            OutputPortCount = _outputPortCount,
+            InputSchemas = _inputSchemas,
+            Cache = _cache
         };
+    }
+
+    /// <summary>
+    /// Adds an input schema for validation.
+    /// </summary>
+    public NodeBuilder WithInputSchema(string inputName, Abstractions.Validation.InputSchema schema)
+    {
+        _inputSchemas ??= new Dictionary<string, Abstractions.Validation.InputSchema>();
+        _inputSchemas[inputName] = schema;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets cache configuration for this node.
+    /// </summary>
+    public NodeBuilder WithCache(Abstractions.Caching.CacheOptions cache)
+    {
+        _cache = cache;
+        return this;
     }
 }
 

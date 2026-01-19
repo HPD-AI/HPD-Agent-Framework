@@ -18,7 +18,14 @@ public enum BackoffStrategy
     /// <summary>
     /// Linear backoff (delay increases by fixed amount).
     /// </summary>
-    Linear
+    Linear,
+
+    /// <summary>
+    /// Jittered exponential backoff (prevents thundering herd).
+    /// Adds random jitter (50-150% of base delay) to prevent synchronized retries.
+    /// Recommended for high-concurrency scenarios (AWS best practice).
+    /// </summary>
+    JitteredExponential
 }
 
 /// <summary>
@@ -72,6 +79,9 @@ public sealed record RetryPolicy
                 InitialDelay.TotalMilliseconds * Math.Pow(2, attemptNumber - 1)),
             BackoffStrategy.Linear => TimeSpan.FromMilliseconds(
                 InitialDelay.TotalMilliseconds * attemptNumber),
+            BackoffStrategy.JitteredExponential => TimeSpan.FromMilliseconds(
+                InitialDelay.TotalMilliseconds * Math.Pow(2, attemptNumber - 1) *
+                (0.5 + Random.Shared.NextDouble())), // 50-150% of base delay
             _ => InitialDelay
         };
 

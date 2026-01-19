@@ -17,10 +17,11 @@ public class AffectedNodeDetector : IAffectedNodeDetector
         _fingerprintCalculator = fingerprintCalculator ?? throw new ArgumentNullException(nameof(fingerprintCalculator));
     }
 
-    public Task<HashSet<string>> GetAffectedNodesAsync(
+    public async Task<HashSet<string>> GetAffectedNodesAsync(
         GraphSnapshot? previousSnapshot,
         GraphDefinition currentGraph,
         HandlerInputs currentInputs,
+        IServiceProvider services,
         CancellationToken ct = default)
     {
         var affectedNodes = new HashSet<string>();
@@ -36,7 +37,7 @@ public class AffectedNodeDetector : IAffectedNodeDetector
                     affectedNodes.Add(node.Id);
                 }
             }
-            return Task.FromResult(affectedNodes);
+            return affectedNodes;
         }
 
         // Compute current fingerprints and compare with previous
@@ -64,12 +65,21 @@ public class AffectedNodeDetector : IAffectedNodeDetector
                     }
                 }
 
-                // Compute fingerprint for this node
+                // Resolve partition snapshot if node is partitioned
+                string? currentPartitionHash = null;
+                if (node.Partitions != null)
+                {
+                    var currentPartitionSnapshot = await node.Partitions.ResolveAsync(services, ct);
+                    currentPartitionHash = currentPartitionSnapshot.SnapshotHash;
+                }
+
+                // Compute fingerprint for this node (including partition hash if applicable)
                 var fingerprint = _fingerprintCalculator.Compute(
                     nodeId,
                     currentInputs, // In real implementation, would get node-specific inputs
                     nodeUpstreamHashes,
-                    previousSnapshot.GraphHash);
+                    previousSnapshot.GraphHash,
+                    currentPartitionHash);
 
                 currentFingerprints[nodeId] = fingerprint;
 
@@ -86,7 +96,7 @@ public class AffectedNodeDetector : IAffectedNodeDetector
             }
         }
 
-        return Task.FromResult(affectedNodes);
+        return affectedNodes;
     }
 
     /// <summary>

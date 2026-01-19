@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using HPDAgent.Graph.Abstractions.Artifacts;
 using HPDAgent.Graph.Abstractions.Channels;
 using HPDAgent.Graph.Abstractions.Context;
 using HPDAgent.Graph.Abstractions.State;
@@ -25,6 +26,19 @@ public class GraphContext : IGraphContext
     // Iteration tracking for cyclic graphs
     private int _currentIteration;
 
+    // Partitioning (Phase 2: Data Orchestration Primitives)
+    private PartitionKey? _currentPartition;
+
+    // Hierarchical namespaces (Phase 5: Hierarchical Namespaces)
+    private IReadOnlyList<string>? _currentNamespace;
+
+    // Internal execution state (moved from Orchestrator for statelessness)
+    // These dictionaries are initialized once and reused throughout execution
+    private readonly ConcurrentDictionary<string, string> _internalCurrentFingerprints = new();
+    private readonly ConcurrentDictionary<string, Exception> _internalFailedNodes = new();
+    private readonly ConcurrentDictionary<string, string> _internalOutputHashes = new();
+    private readonly ConcurrentDictionary<string, HashSet<string>> _internalConsumedOutputs = new();
+
     public string ExecutionId { get; init; }
     public GraphDefinition Graph { get; init; }
     public string? CurrentNodeId { get; private set; }
@@ -43,6 +57,14 @@ public class GraphContext : IGraphContext
     public int CurrentLayerIndex { get; set; }
     public int TotalLayers { get; private set; }
     public int CurrentIteration => _currentIteration;
+    public PartitionKey? CurrentPartition => _currentPartition;
+    public IReadOnlyList<string>? CurrentNamespace => _currentNamespace;
+
+    // Internal execution state properties (IGraphContext implementation)
+    public ConcurrentDictionary<string, string> InternalCurrentFingerprints => _internalCurrentFingerprints;
+    public ConcurrentDictionary<string, Exception> InternalFailedNodes => _internalFailedNodes;
+    public ConcurrentDictionary<string, string> InternalOutputHashes => _internalOutputHashes;
+    public ConcurrentDictionary<string, HashSet<string>> InternalConsumedOutputs => _internalConsumedOutputs;
 
     public float Progress
     {
@@ -326,6 +348,26 @@ public class GraphContext : IGraphContext
     internal void SetCurrentIteration(int iteration)
     {
         _currentIteration = iteration;
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Internal setter called by Map execution loop.
+    /// Sets the current partition for partition-aware execution.
+    /// </summary>
+    internal void SetCurrentPartition(PartitionKey? partition)
+    {
+        _currentPartition = partition;
+        LastUpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>
+    /// Internal setter called by SubGraph execution.
+    /// Sets the current namespace for hierarchical artifact resolution (Phase 5).
+    /// </summary>
+    internal void SetCurrentNamespace(IReadOnlyList<string>? namespacePath)
+    {
+        _currentNamespace = namespacePath;
         LastUpdatedAt = DateTimeOffset.UtcNow;
     }
 

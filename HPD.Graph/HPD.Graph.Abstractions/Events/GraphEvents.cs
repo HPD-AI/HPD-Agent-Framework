@@ -422,3 +422,143 @@ public sealed record NodePollingMaxRetriesEvent : GraphEvent
     /// </summary>
     public new EventKind Kind { get; init; } = EventKind.Diagnostic;
 }
+
+/// <summary>
+/// Event emitted when a backfill operation starts.
+/// Backfills materialize an artifact across multiple partitions in parallel.
+/// </summary>
+public sealed record BackfillStartedEvent : GraphEvent
+{
+    /// <summary>
+    /// Artifact being backfilled.
+    /// </summary>
+    public required Artifacts.ArtifactKey ArtifactKey { get; init; }
+
+    /// <summary>
+    /// Total number of partitions requested.
+    /// </summary>
+    public required int TotalPartitions { get; init; }
+
+    /// <summary>
+    /// Number of partitions that will be processed.
+    /// May be less than TotalPartitions if SkipExisting is enabled.
+    /// </summary>
+    public required int PartitionsToProcess { get; init; }
+
+    /// <summary>
+    /// Number of partitions that were skipped (already materialized).
+    /// </summary>
+    public int PartitionsSkipped { get; init; }
+
+    /// <summary>
+    /// Maximum number of partitions being processed in parallel.
+    /// </summary>
+    public int MaxParallelPartitions { get; init; }
+
+    /// <summary>
+    /// Override Kind to Lifecycle.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}
+
+/// <summary>
+/// Event emitted when a single partition completes during a backfill.
+/// This is the primary progress tracking event for backfill operations.
+/// </summary>
+public sealed record BackfillPartitionCompletedEvent : GraphEvent
+{
+    /// <summary>
+    /// Artifact being backfilled.
+    /// </summary>
+    public required Artifacts.ArtifactKey ArtifactKey { get; init; }
+
+    /// <summary>
+    /// Partition that completed.
+    /// </summary>
+    public required Artifacts.PartitionKey Partition { get; init; }
+
+    /// <summary>
+    /// Version fingerprint for this partition.
+    /// </summary>
+    public required string Version { get; init; }
+
+    /// <summary>
+    /// Number of partitions completed so far (including this one).
+    /// </summary>
+    public required int CompletedCount { get; init; }
+
+    /// <summary>
+    /// Total number of partitions being processed in this backfill.
+    /// </summary>
+    public required int TotalCount { get; init; }
+
+    /// <summary>
+    /// Progress percentage (0.0 to 1.0).
+    /// Calculated as CompletedCount / TotalCount.
+    /// </summary>
+    public float Progress => TotalCount > 0 ? (float)CompletedCount / TotalCount : 0f;
+
+    /// <summary>
+    /// Time taken to materialize this partition.
+    /// </summary>
+    public required TimeSpan Duration { get; init; }
+
+    /// <summary>
+    /// Whether this partition materialized successfully.
+    /// </summary>
+    public required bool Success { get; init; }
+
+    /// <summary>
+    /// Error message if materialization failed.
+    /// </summary>
+    public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// The materialized artifact (if successful).
+    /// Type is object to support generic artifacts - cast to expected type.
+    /// Null if Success is false.
+    /// </summary>
+    public object? Artifact { get; init; }
+
+    /// <summary>
+    /// Override Kind to Lifecycle.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}
+
+/// <summary>
+/// Event emitted when a backfill operation completes.
+/// Contains summary statistics for the entire backfill.
+/// </summary>
+public sealed record BackfillCompletedEvent : GraphEvent
+{
+    /// <summary>
+    /// Artifact that was backfilled.
+    /// </summary>
+    public required Artifacts.ArtifactKey ArtifactKey { get; init; }
+
+    /// <summary>
+    /// Total duration of the backfill operation.
+    /// </summary>
+    public required TimeSpan Duration { get; init; }
+
+    /// <summary>
+    /// Number of partitions successfully materialized.
+    /// </summary>
+    public int SuccessfulPartitions { get; init; }
+
+    /// <summary>
+    /// Number of partitions that failed to materialize.
+    /// </summary>
+    public int FailedPartitions { get; init; }
+
+    /// <summary>
+    /// Number of partitions that were skipped (already existed).
+    /// </summary>
+    public int SkippedPartitions { get; init; }
+
+    /// <summary>
+    /// Override Kind to Lifecycle.
+    /// </summary>
+    public new EventKind Kind { get; init; } = EventKind.Lifecycle;
+}

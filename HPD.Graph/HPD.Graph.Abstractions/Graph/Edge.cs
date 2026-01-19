@@ -49,6 +49,33 @@ public sealed record Edge
     /// </summary>
     public Execution.CloningPolicy? CloningPolicy { get; init; }
 
+    // ========== PHASE 4: TEMPORAL OPERATORS ==========
+
+    /// <summary>
+    /// Delay before traversing this edge (Phase 4: Temporal Operators).
+    /// Smart threshold: &lt; 30s = synchronous Task.Delay, ≥ 30s = checkpoint and suspend.
+    /// Example: TimeSpan.FromMinutes(5) = wait 5 minutes before traversing edge.
+    /// Null = no delay.
+    /// </summary>
+    public TimeSpan? Delay { get; init; }
+
+    /// <summary>
+    /// Schedule constraint for edge traversal (Phase 4: Temporal Operators).
+    /// Edge can only be traversed during scheduled time windows.
+    /// Example: Daily at 3am, weekly on Mondays, etc.
+    /// Null = no schedule constraint.
+    /// </summary>
+    public Execution.ScheduleConstraint? Schedule { get; init; }
+
+    /// <summary>
+    /// Retry policy for edge traversal (Phase 4: Temporal Operators).
+    /// Polls condition until met or timeout.
+    /// OUTER LOOP: Retries edge traversal (before node execution).
+    /// Example: Wait for external file, API availability, quota, etc.
+    /// Null = no retry policy.
+    /// </summary>
+    public Execution.EdgeRetryPolicy? RetryPolicy { get; init; }
+
     /// <summary>
     /// Additional metadata (labels, weights, etc.).
     /// </summary>

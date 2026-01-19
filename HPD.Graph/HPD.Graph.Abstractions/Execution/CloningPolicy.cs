@@ -30,7 +30,7 @@ public enum CloningPolicy
     /// <summary>
     /// Clone only when fanning out to multiple edges (lazy cloning).
     /// First downstream edge gets original, subsequent get clones.
-    /// Node-RED pattern: Optimizes for common single-recipient case.
+    /// Optimizes for common single-recipient case.
     /// DEFAULT from v1.0 (optimal for most workloads).
     /// Memory: Medium (clones only when needed)
     /// Performance: Good (zero copy for single-recipient)

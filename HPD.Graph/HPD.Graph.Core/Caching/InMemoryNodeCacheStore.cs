@@ -16,8 +16,20 @@ public class InMemoryNodeCacheStore : INodeCacheStore
     {
         lock (_lock)
         {
-            _cache.TryGetValue(fingerprint, out var result);
-            return Task.FromResult(result);
+            if (_cache.TryGetValue(fingerprint, out var result))
+            {
+                // Check expiration
+                if (result.IsExpired)
+                {
+                    // Remove expired entry
+                    _cache.Remove(fingerprint);
+                    return Task.FromResult<CachedNodeResult?>(null);
+                }
+
+                return Task.FromResult<CachedNodeResult?>(result);
+            }
+
+            return Task.FromResult<CachedNodeResult?>(null);
         }
     }
 

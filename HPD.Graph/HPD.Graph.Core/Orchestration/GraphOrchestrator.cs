@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using HPD.Events;
+using HPDAgent.Graph.Abstractions.Artifacts;
 using HPDAgent.Graph.Abstractions.Caching;
 using HPDAgent.Graph.Abstractions.Context;
 using HPDAgent.Graph.Abstractions.Events;
@@ -8,6 +10,7 @@ using HPDAgent.Graph.Abstractions.Execution;
 using HPDAgent.Graph.Abstractions.Graph;
 using HPDAgent.Graph.Abstractions.Handlers;
 using HPDAgent.Graph.Abstractions.Orchestration;
+using HPDAgent.Graph.Core.Artifacts;
 using HPDAgent.Graph.Core.Channels;
 using HPDAgent.Graph.Core.State;
 using HPDAgent.Graph.Extensions;
@@ -27,40 +30,69 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     private readonly INodeCacheStore? _cacheStore;
     private readonly INodeFingerprintCalculator? _fingerprintCalculator;
     private readonly Abstractions.Checkpointing.IGraphCheckpointStore? _checkpointStore;
+    private readonly IAffectedNodeDetector? _affectedNodeDetector;
+    private readonly IGraphSnapshotStore? _snapshotStore;
+    private readonly IArtifactRegistry? _artifactRegistry;
 
     // Default suspension options for nodes that don't specify their own
     private readonly Abstractions.Execution.SuspensionOptions _defaultSuspensionOptions;
 
-    // Track fingerprints for current execution (for incremental execution)
-    // Thread-safe for parallel node execution
-    private readonly ConcurrentDictionary<string, string> _currentFingerprints = new();
+    // Artifact index for O(1) producer lookups (built at graph initialization)
+    private readonly ArtifactIndex? _artifactIndex;
 
-    // Track failed nodes for error propagation
-    // Thread-safe for parallel node execution
-    private readonly ConcurrentDictionary<string, Exception> _failedNodes = new();
+    // Graph registry for multi-graph scenarios
+    // Enables stateless orchestration with explicit graph references
+    // Orchestrator is now TRULY STATELESS - all execution state lives in context!
+    private readonly Abstractions.Registry.IGraphRegistry? _graphRegistry;
 
-    // Track output hashes for change-aware iteration
-    // Stores hash of each node's outputs to detect changes between iterations
-    // Thread-safe for parallel node execution
-    private readonly ConcurrentDictionary<string, string> _outputHashes = new();
+    // Partition snapshot cache: Cache snapshots per execution to avoid repeated resolution
+    // Key = node ID + serialized partition definition, Value = resolved snapshot
+    // Cleared per execution (not shared across executions to avoid stale data)
+    private readonly ConcurrentDictionary<string, PartitionSnapshot> _partitionSnapshotCache = new();
 
-    // Track which edges have consumed outputs for lazy cloning
-    // Key: "nodeId:port", Value: HashSet of edge IDs that have consumed this output
-    // Thread-safe for parallel node execution
-    private readonly ConcurrentDictionary<string, HashSet<string>> _consumedOutputs = new();
+    // Maximum concurrent nodes per layer (prevents thread pool starvation)
+    // Defaults to 4x CPU cores, can be overridden via constructor
+    private readonly int _maxLayerConcurrency;
+
+    /// <summary>
+    /// Initializes a new instance of the GraphOrchestrator.
+    /// </summary>
+    /// <param name="serviceProvider">Service provider for dependency injection.</param>
+    /// <param name="cacheStore">Optional cache store for content-addressable caching.</param>
+    /// <param name="fingerprintCalculator">Optional fingerprint calculator for cache keys.</param>
+    /// <param name="checkpointStore">Optional checkpoint store for durability.</param>
+    /// <param name="defaultSuspensionOptions">Default suspension options for nodes.</param>
+    /// <param name="affectedNodeDetector">Optional detector for incremental execution.</param>
+    /// <param name="snapshotStore">Optional snapshot store for incremental execution.</param>
+    /// <param name="artifactRegistry">Optional artifact registry for data orchestration (Phase 1).</param>
+    /// <param name="graphRegistry">Optional graph registry for multi-graph scenarios.</param>
+    /// <param name="maxLayerConcurrency">Maximum concurrent nodes per layer. Defaults to 4x CPU cores if not specified.</param>
 
     public GraphOrchestrator(
         IServiceProvider serviceProvider,
         INodeCacheStore? cacheStore = null,
         INodeFingerprintCalculator? fingerprintCalculator = null,
         Abstractions.Checkpointing.IGraphCheckpointStore? checkpointStore = null,
-        Abstractions.Execution.SuspensionOptions? defaultSuspensionOptions = null)
+        Abstractions.Execution.SuspensionOptions? defaultSuspensionOptions = null,
+        IAffectedNodeDetector? affectedNodeDetector = null,
+        IGraphSnapshotStore? snapshotStore = null,
+        IArtifactRegistry? artifactRegistry = null,
+        Abstractions.Registry.IGraphRegistry? graphRegistry = null,
+        int? maxLayerConcurrency = null)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _cacheStore = cacheStore;
         _fingerprintCalculator = fingerprintCalculator;
         _checkpointStore = checkpointStore;
+        _affectedNodeDetector = affectedNodeDetector;
+        _snapshotStore = snapshotStore;
+        _artifactRegistry = artifactRegistry;
+        _graphRegistry = graphRegistry;
         _defaultSuspensionOptions = defaultSuspensionOptions ?? Abstractions.Execution.SuspensionOptions.Default;
+        _maxLayerConcurrency = maxLayerConcurrency ?? (Environment.ProcessorCount * 4);
+
+        // Build artifact index if registry is provided
+        _artifactIndex = artifactRegistry != null ? new ArtifactIndex() : null;
     }
 
     public async Task<TContext> ExecuteAsync(TContext context, CancellationToken cancellationToken = default)
@@ -68,6 +100,23 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         context.Log("Orchestrator", $"Starting graph execution: {context.Graph.Name}", LogLevel.Information);
 
         var executionStartTime = DateTimeOffset.UtcNow;
+
+        // Clear partition snapshot cache at the start of each execution to ensure isolation
+        // This maintains statelessness across executions
+        // Only clear if cache has entries (avoid overhead when no partitions are used)
+        if (_partitionSnapshotCache.Count > 0)
+        {
+            _partitionSnapshotCache.Clear();
+        }
+
+        // Build artifact index if artifact registry is enabled
+        if (_artifactIndex != null)
+        {
+            _artifactIndex.BuildIndex(context.Graph);
+            context.Log("Orchestrator",
+                $"Built artifact index: {_artifactIndex.ArtifactCount} artifacts declared",
+                LogLevel.Debug);
+        }
 
         try
         {
@@ -109,6 +158,54 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         DateTimeOffset executionStartTime,
         CancellationToken cancellationToken)
     {
+        // Check for incremental execution support
+        HashSet<string>? dirtyNodes = null;
+        if (_affectedNodeDetector != null && _snapshotStore != null)
+        {
+            try
+            {
+                // Load previous snapshot
+                var previousSnapshot = await _snapshotStore.GetLatestSnapshotAsync(
+                    context.Graph.Id,
+                    cancellationToken);
+
+                // Compute affected nodes
+                var affected = await _affectedNodeDetector.GetAffectedNodesAsync(
+                    previousSnapshot,
+                    context.Graph,
+                    GetCurrentInputs(context),
+                    _serviceProvider,
+                    cancellationToken);
+
+                if (previousSnapshot == null)
+                {
+                    context.Log("Orchestrator",
+                        $"No previous snapshot found - executing all {affected.Count} nodes",
+                        LogLevel.Information);
+                }
+                else
+                {
+                    var totalNodes = context.Graph.Nodes.Count;
+                    var skippedCount = totalNodes - affected.Count;
+                    var percentSkipped = totalNodes > 0 ? (skippedCount * 100.0 / totalNodes) : 0;
+                    context.Log("Orchestrator",
+                        $"Incremental execution: {affected.Count} affected nodes, {skippedCount} cached ({percentSkipped:F1}% skip rate)",
+                        LogLevel.Information);
+                }
+
+                dirtyNodes = affected;
+            }
+            catch (Exception ex)
+            {
+                // If snapshot loading fails, fall back to full execution
+                context.Log("Orchestrator",
+                    $"Failed to load snapshot for incremental execution: {ex.Message}. Falling back to full execution.",
+                    LogLevel.Warning,
+                    exception: ex);
+                // dirtyNodes remains null, so we'll execute all nodes below
+            }
+        }
+
         // Get execution layers (topological sort)
         var layers = context.Graph.GetExecutionLayers();
 
@@ -122,7 +219,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         // Emit graph started event
         EmitGraphStartedEvent(context, layers.Count);
 
-        // Execute each layer
+        // Execute each layer (skip nodes not in dirtyNodes if incremental execution is active)
         for (int i = 0; i < layers.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -130,9 +227,23 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             var layer = layers[i];
             context.CurrentLayerIndex = i;
 
-            context.Log("Orchestrator", $"Executing layer {i} with {layer.NodeIds.Count} node(s)", LogLevel.Debug);
+            // Filter layer nodes if using incremental execution
+            var nodesToExecute = layer.NodeIds;
+            if (dirtyNodes != null)
+            {
+                nodesToExecute = layer.NodeIds.Where(nodeId => dirtyNodes.Contains(nodeId)).ToList();
+            }
 
-            await ExecuteLayerAsync(context, layer, cancellationToken);
+            if (nodesToExecute.Count == 0)
+            {
+                // Skip empty layers
+                continue;
+            }
+
+            context.Log("Orchestrator", $"Executing layer {i} with {nodesToExecute.Count} node(s)", LogLevel.Debug);
+
+            var filteredLayer = new Abstractions.Orchestration.ExecutionLayer { Level = i, NodeIds = nodesToExecute };
+            await ExecuteLayerAsync(context, filteredLayer, cancellationToken);
 
             // Update managed context
             if (context.Managed is ManagedContext managed)
@@ -158,6 +269,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
+        // Save snapshot for next incremental execution
+        await SaveSnapshotAsync(context, cancellationToken);
+
         FinalizeExecution(context, executionStartTime, totalIterations: 1);
         return context;
     }
@@ -179,8 +293,65 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var iteration = 0;
         var converged = false;
 
-        // Initial dirty set = all executable nodes
-        var dirtyNodes = GetExecutableNodeIds(context.Graph);
+        // Initial dirty set: Use incremental execution if available, otherwise all nodes
+        HashSet<string> dirtyNodes;
+
+        if (_affectedNodeDetector != null && _snapshotStore != null)
+        {
+            try
+            {
+                // Load previous snapshot for incremental execution
+                var previousSnapshot = await _snapshotStore.GetLatestSnapshotAsync(
+                    context.Graph.Id,
+                    cancellationToken);
+
+                // Compute affected nodes (reuses existing fingerprint calculator!)
+                dirtyNodes = await _affectedNodeDetector.GetAffectedNodesAsync(
+                    previousSnapshot,
+                    context.Graph,
+                    GetCurrentInputs(context),
+                    _serviceProvider,
+                    cancellationToken);
+
+                if (previousSnapshot == null)
+                {
+                    context.Log("Orchestrator",
+                        $"No previous snapshot found - executing all {dirtyNodes.Count} nodes",
+                        LogLevel.Information);
+                }
+                else
+                {
+                    var totalNodes = GetExecutableNodeIds(context.Graph).Count;
+                    var skippedCount = totalNodes - dirtyNodes.Count;
+                    var percentSkipped = totalNodes > 0 ? (skippedCount * 100.0 / totalNodes) : 0;
+
+                    context.Log("Orchestrator",
+                        $"Incremental execution: {dirtyNodes.Count} affected nodes, {skippedCount} cached ({percentSkipped:F1}% skip rate)",
+                        LogLevel.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                // If snapshot loading fails, fall back to full execution
+                context.Log("Orchestrator",
+                    $"Failed to load snapshot for incremental execution: {ex.Message}. Falling back to full execution.",
+                    LogLevel.Warning,
+                    exception: ex);
+                dirtyNodes = GetExecutableNodeIds(context.Graph);
+            }
+        }
+        else
+        {
+            // Fallback to full execution (no incremental support)
+            dirtyNodes = GetExecutableNodeIds(context.Graph);
+
+            if (_affectedNodeDetector == null && _snapshotStore == null)
+            {
+                context.Log("Orchestrator",
+                    "Incremental execution disabled (no AffectedNodeDetector or SnapshotStore configured)",
+                    LogLevel.Debug);
+            }
+        }
 
         // Emit graph started event
         EmitGraphStartedEvent(context, layerCount: 0); // Updated per-iteration
@@ -223,6 +394,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             HandleMaxIterationsReached(context, maxIterations, dirtyNodes, backEdges);
         }
 
+        // Save snapshot for next incremental execution
+        await SaveSnapshotAsync(context, cancellationToken);
+
         FinalizeExecution(context, executionStartTime, iteration + 1);
         return context;
     }
@@ -242,7 +416,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var options = context.Graph.IterationOptions;
 
         // Snapshot output hashes before execution (for convergence detection)
-        var preIterationHashes = _outputHashes.ToDictionary(x => x.Key, x => x.Value);
+        var preIterationHashes = context.InternalOutputHashes.ToDictionary(x => x.Key, x => x.Value);
 
         // Clear ephemeral channels between iterations (not on first)
         if (iteration > 0)
@@ -744,16 +918,17 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// Updates stored hash and returns change status.
     /// </summary>
     private bool NodeOutputChanged(
+        TContext context,
         string nodeId,
         Dictionary<string, object>? outputs,
         HashSet<string>? excludeFields = null,
         Abstractions.Graph.OutputHashAlgorithm algorithm = Abstractions.Graph.OutputHashAlgorithm.XxHash64)
     {
         var currentHash = ComputeOutputHash(outputs, excludeFields, algorithm);
-        var changed = !_outputHashes.TryGetValue(nodeId, out var previousHash)
+        var changed = !context.InternalOutputHashes.TryGetValue(nodeId, out var previousHash)
                       || previousHash != currentHash;
 
-        _outputHashes[nodeId] = currentHash;
+        context.InternalOutputHashes[nodeId] = currentHash;
         return changed;
     }
 
@@ -777,7 +952,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 continue;
 
             // Get the hash we stored when this upstream node last executed
-            if (!_outputHashes.TryGetValue(sourceNodeId, out var storedHash))
+            if (!context.InternalOutputHashes.TryGetValue(sourceNodeId, out var storedHash))
                 continue; // No previous execution, can't compare
 
             // Get current output from channel
@@ -911,6 +1086,82 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                or NodeType.Map)
             .Select(n => n.Id)
             .ToHashSet();
+    }
+
+    /// <summary>
+    /// Extracts current inputs from context for fingerprint calculation.
+    /// Used by AffectedNodeDetector to detect input changes.
+    /// </summary>
+    private static HandlerInputs GetCurrentInputs(TContext context)
+    {
+        var inputs = new HandlerInputs();
+
+        // Extract all channels that look like inputs (input:* pattern)
+        foreach (var channelName in context.Channels.ChannelNames)
+        {
+            if (channelName.StartsWith("input:"))
+            {
+                var key = channelName.Substring("input:".Length);
+                try
+                {
+                    var value = context.Channels[channelName].Get<object>();
+                    if (value != null)
+                    {
+                        inputs.Add(key, value);
+                    }
+                }
+                catch
+                {
+                    // Skip channels that can't be retrieved as objects
+                    // (e.g., uninitialized channels)
+                }
+            }
+        }
+
+        return inputs;
+    }
+
+    /// <summary>
+    /// Saves snapshot for incremental execution if snapshot store is configured.
+    /// </summary>
+    private async Task SaveSnapshotAsync(TContext context, CancellationToken cancellationToken)
+    {
+        if (_snapshotStore == null)
+            return;
+
+        try
+        {
+            // Extract partition snapshots from cache
+            // Cache key format: "nodeId:TypeName" → extract nodeId
+            var partitionSnapshots = _partitionSnapshotCache
+                .ToDictionary(
+                    kvp => kvp.Key.Split(':')[0], // Extract nodeId from "nodeId:TypeName"
+                    kvp => kvp.Value
+                );
+
+            var snapshot = new GraphSnapshot
+            {
+                NodeFingerprints = context.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                GraphHash = context.Graph.ComputeStructureHash(),
+                Timestamp = DateTimeOffset.UtcNow,
+                ExecutionId = context.ExecutionId,
+                PartitionSnapshots = partitionSnapshots
+            };
+
+            await _snapshotStore.SaveSnapshotAsync(context.Graph.Id, snapshot, cancellationToken);
+
+            context.Log("Orchestrator",
+                $"Snapshot saved: {snapshot.NodeFingerprints.Count} node fingerprints, {snapshot.PartitionSnapshots.Count} partition snapshots",
+                LogLevel.Debug);
+        }
+        catch (Exception ex)
+        {
+            // Don't fail execution if snapshot save fails
+            context.Log("Orchestrator",
+                $"Failed to save execution snapshot: {ex.Message}",
+                LogLevel.Warning,
+                exception: ex);
+        }
     }
 
     private void EmitGraphStartedEvent(TContext context, int layerCount)
@@ -1303,35 +1554,40 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         try
         {
-            // Create isolated contexts for each node
-            var tasks = nodes.Select(async node =>
-            {
-                // Apply parallelism limit if this node has one
-                SemaphoreSlim? parallelismSemaphore = null;
-                if (nodeParallelismLimits.TryGetValue(node.Id, out parallelismSemaphore))
-                {
-                    // Wait for available execution slot (throttling)
-                    await parallelismSemaphore.WaitAsync(cancellationToken);
-                }
+            // Use Parallel.ForEachAsync with bounded concurrency to prevent thread pool starvation
+            var results = new ConcurrentBag<TContext>();
 
-                try
+            await Parallel.ForEachAsync(nodes,
+                new ParallelOptions
                 {
-                    var isolatedContext = (TContext)context.CreateIsolatedCopy();
-                    await ExecuteNodeAsync(isolatedContext, node, cancellationToken);
-                    return isolatedContext;
-                }
-                finally
+                    MaxDegreeOfParallelism = _maxLayerConcurrency,
+                    CancellationToken = cancellationToken
+                },
+                async (node, ct) =>
                 {
-                    // Release execution slot after completion
-                    parallelismSemaphore?.Release();
-                }
-            });
+                    // Apply per-node parallelism limit if this node has one
+                    SemaphoreSlim? parallelismSemaphore = null;
+                    if (nodeParallelismLimits.TryGetValue(node.Id, out parallelismSemaphore))
+                    {
+                        // Wait for available execution slot (throttling)
+                        await parallelismSemaphore.WaitAsync(ct);
+                    }
 
-            // Execute all in parallel
-            var isolatedContexts = await Task.WhenAll(tasks);
+                    try
+                    {
+                        var isolatedContext = (TContext)context.CreateIsolatedCopy();
+                        await ExecuteNodeAsync(isolatedContext, node, ct);
+                        results.Add(isolatedContext);
+                    }
+                    finally
+                    {
+                        // Release execution slot after completion
+                        parallelismSemaphore?.Release();
+                    }
+                });
 
             // Merge results back into parent context
-            foreach (var isolatedContext in isolatedContexts)
+            foreach (var isolatedContext in results)
             {
                 context.MergeFrom(isolatedContext);
             }
@@ -1368,7 +1624,8 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         }
 
         // NEW: Pre-execution condition check - skip if no incoming edge conditions are met
-        var (shouldSkip, skipDetails) = EvaluateSkipConditions(context, node);
+        // PHASE 4: Now async to support temporal operators (delay, schedule, retry)
+        var (shouldSkip, skipDetails) = await EvaluateSkipConditions(context, node, cancellationToken);
         if (shouldSkip)
         {
             context.Log("Orchestrator",
@@ -1388,6 +1645,21 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         context.SetCurrentNode(node.Id);
         context.IncrementNodeExecutionCount(node.Id);
+
+        // Phase 5: Set current namespace if node has ArtifactNamespace
+        if (node.ArtifactNamespace != null && context is Context.GraphContext graphContext)
+        {
+            // Combine with parent namespace if already in a namespace
+            var combinedNamespace = context.CurrentNamespace != null
+                ? context.CurrentNamespace.Concat(node.ArtifactNamespace).ToList()
+                : node.ArtifactNamespace;
+
+            graphContext.SetCurrentNamespace(combinedNamespace);
+
+            context.Log("Orchestrator",
+                $"Set artifact namespace: {string.Join("/", combinedNamespace)}",
+                LogLevel.Debug, nodeId: node.Id);
+        }
 
         // Mark as Running
         context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Running.ToString());
@@ -1415,6 +1687,13 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         try
         {
+            // Handle partitioned nodes by converting partitions to Map items (Phase 2)
+            if (node.Partitions != null)
+            {
+                await ExecutePartitionedNodeAsync(context, node, cancellationToken);
+                return;
+            }
+
             // Handle Map nodes by iterating over collection
             if (node.Type == NodeType.Map)
             {
@@ -1439,46 +1718,49 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             // Prepare inputs from upstream nodes
             var inputs = PrepareInputs(context, node);
 
-            // Check cache if caching is enabled
+            // Compute fingerprint if fingerprint calculator is available (for caching OR artifacts)
             string? fingerprint = null;
-            if (_cacheStore != null && _fingerprintCalculator != null)
+            if (_fingerprintCalculator != null)
             {
                 // Compute fingerprint for this node
                 var upstreamHashes = GetUpstreamFingerprints(context, node);
                 var globalHash = context.Graph.Id + context.Graph.Version; // Simple global hash
                 fingerprint = _fingerprintCalculator.Compute(node.Id, inputs, upstreamHashes, globalHash);
 
-                // Store for downstream nodes
-                _currentFingerprints[node.Id] = fingerprint;
+                // Store for downstream nodes and artifact versioning
+                context.InternalCurrentFingerprints[node.Id] = fingerprint;
 
-                // Try to get from cache
-                var cached = await _cacheStore.GetAsync(fingerprint, cancellationToken);
-                if (cached != null)
+                // Try to get from cache if cache store is available
+                if (_cacheStore != null)
                 {
-                    context.Log("Orchestrator", $"Cache HIT for node {node.Id} (fingerprint: {fingerprint[..8]}...)",
-                        LogLevel.Debug, nodeId: node.Id);
+                    var cached = await _cacheStore.GetAsync(fingerprint, cancellationToken);
+                    if (cached != null)
+                    {
+                        context.Log("Orchestrator", $"Cache HIT for node {node.Id} (fingerprint: {fingerprint[..8]}...)",
+                            LogLevel.Debug, nodeId: node.Id);
 
-                    // Create success result from cache
-                    var cachedResult = NodeExecutionResult.Success.Single(
-                        output: cached.Outputs,
-                        duration: cached.Duration,
-                        metadata: new NodeExecutionMetadata
-                        {
-                            AttemptNumber = 1,
-                            CustomMetrics = new Dictionary<string, object>
+                        // Create success result from cache
+                        var cachedResult = NodeExecutionResult.Success.Single(
+                            output: cached.Outputs,
+                            duration: cached.Duration,
+                            metadata: new NodeExecutionMetadata
                             {
-                                ["CacheHit"] = true,
-                                ["Fingerprint"] = fingerprint
+                                AttemptNumber = 1,
+                                CustomMetrics = new Dictionary<string, object>
+                                {
+                                    ["CacheHit"] = true,
+                                    ["Fingerprint"] = fingerprint
+                                }
                             }
-                        }
-                    );
+                        );
 
-                    HandleSuccess(context, node, cachedResult);
-                    return; // Skip execution entirely
+                        HandleSuccess(context, node, cachedResult);
+                        return; // Skip execution entirely
+                    }
+
+                    context.Log("Orchestrator", $"Cache MISS for node {node.Id} (fingerprint: {fingerprint[..8]}...)",
+                        LogLevel.Debug, nodeId: node.Id);
                 }
-
-                context.Log("Orchestrator", $"Cache MISS for node {node.Id} (fingerprint: {fingerprint[..8]}...)",
-                    LogLevel.Debug, nodeId: node.Id);
             }
 
             // Execute with timeout if specified
@@ -1762,6 +2044,22 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
+        // Validate inputs against schemas if configured
+        if (node.InputSchemas != null)
+        {
+            var validationErrors = ValidateInputs(inputs, node.InputSchemas);
+            if (validationErrors.Count > 0)
+            {
+                var message = string.Join("; ", validationErrors);
+                context.Log("Orchestrator",
+                    $"Input validation failed for node {node.Id}: {message}",
+                    LogLevel.Error, nodeId: node.Id);
+
+                throw new InvalidOperationException(
+                    $"Input validation failed for node {node.Id}: {message}");
+            }
+        }
+
         return inputs;
     }
 
@@ -1788,7 +2086,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         {
             CloningPolicy.AlwaysClone => CloneOutputs(outputs),
             CloningPolicy.NeverClone => outputs, // Share reference (requires immutable handlers)
-            CloningPolicy.LazyClone => IsFirstConsumer(consumptionKey, edgeId)
+            CloningPolicy.LazyClone => IsFirstConsumer(context, consumptionKey, edgeId)
                 ? outputs // First gets original (zero copy)
                 : CloneOutputs(outputs), // Subsequent get clones
             _ => CloneOutputs(outputs) // Default to safe
@@ -1799,9 +2097,9 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// Checks if this edge is the first consumer of the output and marks it as consumed.
     /// Thread-safe for parallel execution.
     /// </summary>
-    private bool IsFirstConsumer(string consumptionKey, string edgeId)
+    private bool IsFirstConsumer(TContext context, string consumptionKey, string edgeId)
     {
-        var consumers = _consumedOutputs.GetOrAdd(consumptionKey, _ => new HashSet<string>());
+        var consumers = context.InternalConsumedOutputs.GetOrAdd(consumptionKey, _ => new HashSet<string>());
 
         lock (consumers)
         {
@@ -1851,6 +2149,59 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         }
     }
 
+    /// <summary>
+    /// Validates inputs against declared schemas.
+    /// Returns list of validation error messages (empty if valid).
+    /// </summary>
+    private List<string> ValidateInputs(
+        HandlerInputs inputs,
+        IReadOnlyDictionary<string, Abstractions.Validation.InputSchema> schemas)
+    {
+        var errors = new List<string>();
+
+        foreach (var (inputName, schema) in schemas)
+        {
+            var hasValue = inputs.TryGet<object>(inputName, out var value);
+
+            // Check required
+            if (!hasValue && schema.Required)
+            {
+                errors.Add($"Required input '{inputName}' is missing");
+                continue;
+            }
+
+            // Apply default if missing and optional
+            if (!hasValue && schema.DefaultValue != null)
+            {
+                inputs.Add(inputName, schema.DefaultValue);
+                continue;
+            }
+
+            if (!hasValue)
+                continue; // Optional and no default
+
+            // Type check
+            if (value != null && !schema.Type.IsInstanceOfType(value))
+            {
+                errors.Add($"Input '{inputName}' has type {value.GetType().Name}, " +
+                          $"expected {schema.Type.Name}");
+                continue;
+            }
+
+            // Custom validation
+            if (schema.Validator != null)
+            {
+                var result = schema.Validator.Validate(inputName, value);
+                if (!result.IsValid)
+                {
+                    errors.AddRange(result.Errors);
+                }
+            }
+        }
+
+        return errors;
+    }
+
     private void HandleSuccess(TContext context, Node node, NodeExecutionResult.Success success)
     {
         var isCacheHit = success.Metadata?.CustomMetrics?.ContainsKey("CacheHit") == true;
@@ -1898,10 +2249,10 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         var excludeFields = options?.IgnoreFieldsForChangeDetection;
         var algorithm = options?.HashAlgorithm ?? Abstractions.Graph.OutputHashAlgorithm.XxHash64;
         var outputHash = ComputeOutputHash(port0Outputs, excludeFields, algorithm);
-        _outputHashes[node.Id] = outputHash;
+        context.InternalOutputHashes[node.Id] = outputHash;
 
         // Cache the result if caching is enabled and this wasn't a cache hit
-        if (!isCacheHit && _cacheStore != null && _currentFingerprints.TryGetValue(node.Id, out var fingerprint))
+        if (!isCacheHit && _cacheStore != null && context.InternalCurrentFingerprints.TryGetValue(node.Id, out var fingerprint))
         {
             var cachedResult = new CachedNodeResult
             {
@@ -1926,6 +2277,53 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                         LogLevel.Warning, nodeId: node.Id);
                 }
             });
+        }
+
+        // Register artifact if node produces one (Phase 1: Data Orchestration Primitives)
+        if (node.ProducesArtifact != null && _artifactRegistry != null)
+        {
+            var version = context.InternalCurrentFingerprints.TryGetValue(node.Id, out var fp) ? fp : Guid.NewGuid().ToString();
+
+            // Collect input artifact versions for lineage tracking
+            var inputVersions = GetInputArtifactVersions(context, node);
+
+            // Phase 5: Prefix artifact key with current namespace (if any)
+            var qualifiedPath = context.CurrentNamespace != null && context.CurrentNamespace.Count > 0
+                ? context.CurrentNamespace.Concat(node.ProducesArtifact.Path).ToList()
+                : node.ProducesArtifact.Path;
+
+            // Determine artifact key with partition (if current context has partition)
+            var artifactKey = context.CurrentPartition != null
+                ? new ArtifactKey { Path = qualifiedPath, Partition = context.CurrentPartition }
+                : new ArtifactKey { Path = qualifiedPath, Partition = node.ProducesArtifact.Partition };
+
+            var metadata = new ArtifactMetadata
+            {
+                CreatedAt = DateTimeOffset.UtcNow,
+                InputVersions = inputVersions,
+                ProducedByNodeId = node.Id,
+                ExecutionId = context.ExecutionId,
+                CustomMetadata = success.Metadata?.CustomMetrics != null
+                    ? new Dictionary<string, object>(success.Metadata.CustomMetrics)
+                    : null
+            };
+
+            // Register artifact synchronously to ensure it's available for MaterializeAsync
+            // (MaterializeAsync depends on artifacts being registered to resolve producers)
+            try
+            {
+                _artifactRegistry.RegisterAsync(artifactKey, version, metadata).GetAwaiter().GetResult();
+
+                context.Log("Orchestrator",
+                    $"Registered artifact {artifactKey} version {version.Substring(0, Math.Min(8, version.Length))}",
+                    LogLevel.Debug, nodeId: node.Id);
+            }
+            catch (Exception ex)
+            {
+                context.Log("Orchestrator",
+                    $"Failed to register artifact {artifactKey} for node {node.Id}: {ex.Message}",
+                    LogLevel.Warning, nodeId: node.Id);
+            }
         }
 
         // Mark node as complete
@@ -2002,7 +2400,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
             case PropagationMode.SkipDependents:
                 // Mark this node as failed, downstream dependents will be skipped
-                _failedNodes.TryAdd(node.Id, failure.Exception);
+                context.InternalFailedNodes.TryAdd(node.Id, failure.Exception);
                 context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Failed.ToString());
                 context.Log("Orchestrator",
                     $"Node {node.Id} failed - downstream dependents will be skipped (Mode: SkipDependents)",
@@ -2040,7 +2438,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             case PropagationMode.Isolate:
                 // Isolate error - don't affect downstream nodes
                 // Note: Still mark as Failed for observability, just don't propagate
-                _failedNodes.TryAdd(node.Id, failure.Exception);
+                context.InternalFailedNodes.TryAdd(node.Id, failure.Exception);
                 context.AddTag($"node_state:{node.Id}", Abstractions.Execution.NodeState.Failed.ToString());
                 context.Log("Orchestrator",
                     $"Node {node.Id} failed but error is isolated - downstream nodes will continue (Mode: Isolate)",
@@ -2750,7 +3148,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         foreach (var edge in incomingEdges)
         {
             // Check if the source node failed
-            if (_failedNodes.ContainsKey(edge.From))
+            if (context.InternalFailedNodes.ContainsKey(edge.From))
             {
                 var failedNode = context.Graph.GetNode(edge.From);
                 if (failedNode == null) continue;
@@ -2793,7 +3191,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// - All source nodes have completed
     /// - No incoming edge conditions evaluate to true (including unconditional and default edges)
     /// </remarks>
-    private (bool ShouldSkip, string Details) EvaluateSkipConditions(TContext context, Node node)
+    private async Task<(bool ShouldSkip, string Details)> EvaluateSkipConditions(TContext context, Node node, CancellationToken cancellationToken)
     {
         // Get all incoming edges
         var incomingEdges = context.Graph.GetIncomingEdges(node.Id);
@@ -2822,6 +3220,126 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
 
             hasAnyCompletedSource = true;
+
+            // ========== PHASE 4: TEMPORAL OPERATORS - Edge-level temporal checks ==========
+
+            //  NEW: Edge DELAY evaluation
+            if (edge.Delay.HasValue)
+            {
+                var delayDuration = edge.Delay.Value;
+
+                // Smart threshold: < 30s = synchronous Task.Delay, >= 30s = checkpoint and suspend
+                if (delayDuration < TimeSpan.FromSeconds(30))
+                {
+                    // Short delay - execute synchronously
+                    context.Log("Orchestrator",
+                        $"Edge {edge.From}→{edge.To}: short delay {delayDuration.TotalSeconds}s (synchronous)",
+                        LogLevel.Debug, nodeId: node.Id);
+
+                    await Task.Delay(delayDuration, cancellationToken);
+                }
+                else
+                {
+                    // Long delay - checkpoint and suspend
+                    context.Log("Orchestrator",
+                        $"Edge {edge.From}→{edge.To}: long delay {delayDuration.TotalSeconds}s (suspending)",
+                        LogLevel.Information, nodeId: node.Id);
+
+                    throw new GraphSuspendedException(
+                        node.Id,
+                        Guid.NewGuid().ToString(),
+                        $"Edge {edge.From}→{edge.To} delay: {delayDuration}");
+                }
+            }
+
+            //  NEW: Edge SCHEDULE evaluation (cron-based)
+            if (edge.Schedule != null)
+            {
+                var schedule = edge.Schedule;
+                var now = DateTimeOffset.UtcNow;
+
+                // Parse cron expression and get next occurrence
+                // Note: Requires Cronos NuGet package
+                var cronExpr = Cronos.CronExpression.Parse(schedule.CronExpression);
+                var timeZone = schedule.TimeZone ?? TimeZoneInfo.Utc;
+
+                // Cronos requires DateTime.Kind = Utc, so pass now.UtcDateTime
+                var nextOccurrence = cronExpr.GetNextOccurrence(now.UtcDateTime, timeZone);
+
+                if (nextOccurrence == null)
+                {
+                    throw new InvalidOperationException(
+                        $"Edge {edge.From}→{edge.To}: cron expression '{schedule.CronExpression}' has no next occurrence");
+                }
+
+                var nextTime = new DateTimeOffset(nextOccurrence.Value, timeZone.GetUtcOffset(nextOccurrence.Value));
+                var timeUntilNext = nextTime - now;
+
+                // Check if we're within tolerance window
+                var isWithinWindow = Math.Abs(timeUntilNext.TotalMilliseconds) <= schedule.Tolerance.TotalMilliseconds;
+
+                if (!isWithinWindow)
+                {
+                    // Not within schedule window - suspend until next occurrence
+                    context.Log("Orchestrator",
+                        $"Edge {edge.From}→{edge.To}: schedule not satisfied (next: {nextTime:yyyy-MM-dd HH:mm:ss zzz})",
+                        LogLevel.Information, nodeId: node.Id);
+
+                    throw new GraphSuspendedException(
+                        node.Id,
+                        Guid.NewGuid().ToString(),
+                        $"Edge {edge.From}→{edge.To} schedule: waiting until {nextTime}");
+                }
+
+                // Within window - check additional condition if present
+                if (schedule.AdditionalCondition != null)
+                {
+                    var additionalConditionMet = await schedule.AdditionalCondition(context);
+                    if (!additionalConditionMet)
+                    {
+                        context.Log("Orchestrator",
+                            $"Edge {edge.From}→{edge.To}: schedule satisfied but additional condition not met",
+                            LogLevel.Information, nodeId: node.Id);
+
+                        // Retry after tolerance period
+                        throw new GraphSuspendedException(
+                            node.Id,
+                            Guid.NewGuid().ToString(),
+                            $"Edge {edge.From}→{edge.To}: schedule additional condition not met");
+                    }
+                }
+
+                context.Log("Orchestrator",
+                    $"Edge {edge.From}→{edge.To}: schedule satisfied at {now:yyyy-MM-dd HH:mm:ss zzz}",
+                    LogLevel.Debug, nodeId: node.Id);
+            }
+
+            //  NEW: Edge RETRY POLICY evaluation (polling)
+            if (edge.RetryPolicy != null)
+            {
+                var policy = edge.RetryPolicy;
+
+                var retryConditionMet = policy.RetryCondition != null
+                    ? await policy.RetryCondition(context)
+                    : true;
+
+                if (!retryConditionMet)
+                {
+                    // Condition not met -> suspend and retry later
+                    context.Log("Orchestrator",
+                        $"Edge {edge.From}→{edge.To}: retry condition not met, suspending for {policy.RetryInterval.TotalSeconds}s",
+                        LogLevel.Information, nodeId: node.Id);
+
+                    throw new GraphSuspendedException(
+                        node.Id,
+                        Guid.NewGuid().ToString(),
+                        $"Edge {edge.From}→{edge.To}: retry condition not met");
+                }
+
+                context.Log("Orchestrator",
+                    $"Edge {edge.From}→{edge.To}: retry condition satisfied",
+                    LogLevel.Debug, nodeId: node.Id);
+            }
 
             // Get source node outputs
             var channelName = $"node_output:{edge.From}";
@@ -2985,7 +3503,18 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             // If TContext is exactly GraphContext, use it directly
             // If TContext is a derived type, we need to preserve custom properties
             // For now, we execute with GraphContext - derived types should override ExecuteSubGraphAsync if needed
-            var orchestrator = new GraphOrchestrator<Context.GraphContext>(_serviceProvider, _cacheStore, _fingerprintCalculator, _checkpointStore);
+            var orchestrator = new GraphOrchestrator<Context.GraphContext>(
+                _serviceProvider,
+                _cacheStore,
+                _fingerprintCalculator,
+                _checkpointStore,
+                _defaultSuspensionOptions,
+                _affectedNodeDetector,
+                _snapshotStore,
+                _artifactRegistry,
+                _graphRegistry,
+                _maxLayerConcurrency
+            );
             await orchestrator.ExecuteAsync(subGraphContextWithGraph, cancellationToken);
 
             // Collect outputs from sub-graph
@@ -3031,6 +3560,149 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         {
             throw new InvalidOperationException($"SubGraph execution requires TContext to be or derive from GraphContext. Actual type: {typeof(TContext).Name}");
         }
+    }
+
+    /// <summary>
+    /// Execute a partitioned node by converting partitions to Map items.
+    /// Delegates to existing ExecuteMapAsync infrastructure (Phase 2: Data Orchestration Primitives).
+    /// </summary>
+    private async Task ExecutePartitionedNodeAsync(TContext context, Node node, CancellationToken cancellationToken)
+    {
+        if (node.Partitions == null)
+        {
+            // Not partitioned -> normal execution
+            await ExecuteNodeAsync(context, node, cancellationToken);
+            return;
+        }
+
+        // If context already has CurrentPartition set (e.g., from MaterializeAsync),
+        // execute only for that partition instead of all partitions
+        if (context.CurrentPartition != null)
+        {
+            context.Log("Orchestrator",
+                $"Node {node.Id} executing for single partition {context.CurrentPartition.Dimensions.FirstOrDefault()} (MaterializeAsync mode)",
+                LogLevel.Debug, nodeId: node.Id);
+
+            // Execute the node as a regular handler node (remove Partitions to avoid recursion)
+            // The CurrentPartition is already set in context for artifact registration
+            var singlePartitionNode = node with { Partitions = null };
+            await ExecuteNodeAsync(context, singlePartitionNode, cancellationToken);
+
+            // Mark original node as complete
+            context.MarkNodeComplete(node.Id);
+            return;
+        }
+
+        // 1. Resolve partition snapshot (with caching)
+        var snapshot = await ResolvePartitionsAsync(node, cancellationToken);
+
+        if (snapshot.KeyCount == 0)
+        {
+            context.Log("Orchestrator",
+                $"Node {node.Id} has no partitions to process (empty partition definition)",
+                LogLevel.Warning, nodeId: node.Id);
+            return;
+        }
+
+        context.Log("Orchestrator",
+            $"Node {node.Id} will execute for {snapshot.KeyCount} partitions (snapshot: {snapshot.SnapshotHash[..8]}...)",
+            LogLevel.Information, nodeId: node.Id);
+
+        var partitionKeys = snapshot.Keys.ToList();
+
+        // 2. Convert to Map-compatible items (with partition marker interface)
+        var mapItems = partitionKeys
+            .Select((pk, idx) => new PartitionMapItem(idx, pk) as IPartitionMapItem)
+            .ToList();
+
+        // 3. Create synthetic Map node wrapping the partitioned node
+        var mapNode = new Node
+        {
+            Id = $"{node.Id}:__partition_map",
+            Name = $"{node.Name} (Partitioned)",
+            Type = NodeType.Map,
+            MapProcessorGraph = CreateSingleNodeGraph(node),
+            MaxParallelMapTasks = node.MaxParallelExecutions ?? Environment.ProcessorCount,
+            MapErrorMode = MapErrorMode.FailFast
+        };
+
+        // 4. Pre-populate input channel with partition items
+        var inputChannelName = $"__partition_input:{node.Id}";
+        context.Channels[inputChannelName].Set(mapItems);
+
+        // Temporarily override MapInputChannel
+        mapNode = mapNode with { MapInputChannel = inputChannelName };
+
+        // 5. Delegate to EXISTING ExecuteMapAsync (which sets CurrentPartition via IPartitionMapItem detection!)
+        await ExecuteMapAsync(context, mapNode, cancellationToken);
+
+        // Mark original node as complete (synthetic map node completion doesn't count)
+        context.MarkNodeComplete(node.Id);
+    }
+
+    /// <summary>
+    /// Resolve partitions for a node with caching.
+    /// Uses partition snapshot cache to avoid repeated resolution within the same execution.
+    /// </summary>
+    private async Task<PartitionSnapshot> ResolvePartitionsAsync(
+        Node node,
+        CancellationToken cancellationToken)
+    {
+        if (node.Partitions == null)
+        {
+            // Non-partitioned node: return default snapshot with single default partition
+            return new PartitionSnapshot
+            {
+                Keys = Array.Empty<PartitionKey>(),
+                SnapshotHash = "Default"
+            };
+        }
+
+        // Use node ID + partition definition type as cache key
+        // This ensures different nodes with same partition definition share cache
+        var cacheKey = $"{node.Id}:{node.Partitions.GetType().Name}";
+
+        if (_partitionSnapshotCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        // Resolve partitions asynchronously (may involve I/O for dynamic partitions)
+        var snapshot = await node.Partitions.ResolveAsync(_serviceProvider, cancellationToken);
+
+        // Cache for this execution
+        _partitionSnapshotCache[cacheKey] = snapshot;
+
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Wrap partitioned node in minimal processor graph.
+    /// </summary>
+    private Abstractions.Graph.Graph CreateSingleNodeGraph(Node node)
+    {
+        // Preserve the original node ID so artifacts are registered correctly
+        var handlerId = node.Id;
+
+        return new Abstractions.Graph.Graph
+        {
+            Id = $"{node.Id}:__processor",
+            Name = $"{node.Name} Processor",
+            Version = "1.0",
+            Nodes =
+            [
+                new Node { Id = "start", Name = "Start", Type = NodeType.Start },
+                node with { Partitions = null },  // Keep original ID, clear Partitions to prevent recursion
+                new Node { Id = "end", Name = "End", Type = NodeType.End }
+            ],
+            Edges =
+            [
+                new Edge { From = "start", To = handlerId },
+                new Edge { From = handlerId, To = "end" }
+            ],
+            EntryNodeId = "start",
+            ExitNodeId = "end"
+        };
     }
 
     /// <summary>
@@ -3203,8 +3875,25 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                                 mapContextWithGraph.Channels["input:item"].Set(item);
                                 mapContextWithGraph.Channels["input:index"].Set(index);
 
+                                //  NEW (3 lines): Set partition on context if item is partition-aware (Phase 2)
+                                if (item is IPartitionMapItem partitionItem)
+                                {
+                                    mapContextWithGraph.SetCurrentPartition(partitionItem.PartitionKey);
+                                }
+
                                 // Execute processor graph
-                                var orchestrator = new GraphOrchestrator<Context.GraphContext>(_serviceProvider, _cacheStore, _fingerprintCalculator, _checkpointStore);
+                                var orchestrator = new GraphOrchestrator<Context.GraphContext>(
+                                    _serviceProvider,
+                                    _cacheStore,
+                                    _fingerprintCalculator,
+                                    _checkpointStore,
+                                    _defaultSuspensionOptions,
+                                    _affectedNodeDetector,
+                                    _snapshotStore,
+                                    _artifactRegistry,
+                                    _graphRegistry,
+                                    _maxLayerConcurrency
+                                );
                                 await orchestrator.ExecuteAsync(mapContextWithGraph, ct);
 
                                 // Check if any nodes failed in the processor graph
@@ -3489,13 +4178,64 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
         foreach (var edge in context.Graph.GetIncomingEdges(node.Id))
         {
-            if (_currentFingerprints.TryGetValue(edge.From, out var upstreamHash))
+            if (context.InternalCurrentFingerprints.TryGetValue(edge.From, out var upstreamHash))
             {
                 upstreamHashes[edge.From] = upstreamHash;
             }
         }
 
         return upstreamHashes;
+    }
+
+    /// <summary>
+    /// Get input artifact versions for lineage tracking (Phase 1: Data Orchestration Primitives).
+    /// Collects artifact versions from upstream nodes that declare ProducesArtifact.
+    /// Used to build lineage: what artifacts were inputs to produce this artifact?
+    /// </summary>
+    private Dictionary<ArtifactKey, string> GetInputArtifactVersions(TContext context, Node node)
+    {
+        var inputVersions = new Dictionary<ArtifactKey, string>();
+
+        if (_artifactIndex == null)
+            return inputVersions;
+
+        // Strategy 1: Collect from explicit RequiresArtifacts declarations
+        if (node.RequiresArtifacts != null)
+        {
+            foreach (var requiredArtifact in node.RequiresArtifacts)
+            {
+                // Find which node produced this artifact
+                var producers = _artifactIndex.GetProducers(requiredArtifact);
+                foreach (var producerNodeId in producers)
+                {
+                    // Get the version (fingerprint) for this producer
+                    if (context.InternalCurrentFingerprints.TryGetValue(producerNodeId, out var version))
+                    {
+                        inputVersions[requiredArtifact] = version;
+                        break; // Take first producer (Phase 1: single producer only)
+                    }
+                }
+            }
+        }
+
+        // Strategy 2: Collect from upstream nodes with ProducesArtifact
+        foreach (var edge in context.Graph.GetIncomingEdges(node.Id))
+        {
+            var upstreamNode = context.Graph.Nodes.FirstOrDefault(n => n.Id == edge.From);
+            if (upstreamNode?.ProducesArtifact != null)
+            {
+                if (context.InternalCurrentFingerprints.TryGetValue(edge.From, out var version))
+                {
+                    // Only add if not already present (RequiresArtifacts takes precedence)
+                    if (!inputVersions.ContainsKey(upstreamNode.ProducesArtifact))
+                    {
+                        inputVersions[upstreamNode.ProducesArtifact] = version;
+                    }
+                }
+            }
+        }
+
+        return inputVersions;
     }
 
     /// <summary>
@@ -3765,6 +4505,890 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
         await _checkpointStore.SaveCheckpointAsync(checkpoint, cancellationToken);
 
         context.Log("Orchestrator", $"Checkpoint saved after layer {completedLayerIndex} with {nodeOutputs.Count} node outputs", LogLevel.Debug);
+    }
+
+    // ========== PHASE 3: DEMAND-DRIVEN EXECUTION API ==========
+
+    /// <summary>
+    /// Materialize an artifact by executing only the necessary nodes.
+    /// Thin wrapper around existing ExecuteAsync() infrastructure.
+    /// Requires graph registry to be configured and graph to be registered.
+    /// </summary>
+    /// <param name="graphId">The ID of the graph to use for materialization (registered in graph registry)</param>
+    /// <param name="artifactKey">The artifact to materialize</param>
+    /// <param name="partition">Optional partition key</param>
+    /// <param name="options">Materialization options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public Task<Artifact<T>> MaterializeAsync<T>(
+        string graphId,
+        ArtifactKey artifactKey,
+        PartitionKey? partition = null,
+        MaterializationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_graphRegistry == null)
+        {
+            throw new InvalidOperationException(
+                "Graph registry is not configured. Provide IGraphRegistry in constructor to use graph-ID-based materialization.");
+        }
+
+        var graph = _graphRegistry.GetGraph(graphId);
+        if (graph == null)
+        {
+            throw new InvalidOperationException(
+                $"Graph with ID '{graphId}' is not registered. Available graphs: {string.Join(", ", _graphRegistry.GetGraphIds())}");
+        }
+
+        // Delegate to internal implementation with the resolved graph
+        return MaterializeAsync<T>(graph, artifactKey, partition, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Materialize an artifact by executing only the necessary nodes.
+    /// This is the core implementation that accepts an explicit graph.
+    /// </summary>
+    internal async Task<Artifact<T>> MaterializeAsync<T>(
+        Abstractions.Graph.Graph graph,
+        ArtifactKey artifactKey,
+        PartitionKey? partition = null,
+        MaterializationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_artifactRegistry == null)
+            throw new InvalidOperationException("Artifact registry is required for demand-driven execution. Provide IArtifactRegistry in constructor.");
+
+        if (_artifactIndex == null)
+            throw new InvalidOperationException("Artifact index is required for demand-driven execution.");
+
+        options ??= new MaterializationOptions();
+
+        // Apply partition to artifact key if provided
+        var fullArtifactKey = partition != null
+            ? new ArtifactKey { Path = artifactKey.Path, Partition = partition }
+            : artifactKey;
+
+        // Build artifact index from graph
+        _artifactIndex.BuildIndex(graph);
+
+        // 1. Acquire distributed lock (prevent concurrent materialization)
+        await using var lockHandle = options.WaitForLock
+            ? await _artifactRegistry.TryAcquireMaterializationLockAsync(
+                fullArtifactKey, partition, options.LockTimeout, cancellationToken)
+            : await _artifactRegistry.TryAcquireMaterializationLockAsync(
+                fullArtifactKey, partition, TimeSpan.Zero, cancellationToken);
+
+        if (lockHandle == null)
+            throw new InvalidOperationException(
+                $"Failed to acquire lock for artifact {fullArtifactKey}. " +
+                $"Another process may be materializing this artifact.");
+
+        // 2. Resolve producing node via artifact index
+        var producingNodeIds = _artifactIndex.GetProducers(artifactKey);
+        if (producingNodeIds.Count == 0)
+            throw new InvalidOperationException(
+                $"No node produces artifact {artifactKey}. " +
+                $"Ensure the graph contains a node with ProducesArtifact = {artifactKey}.");
+
+        // For now, use first producer (multi-producer resolution will be added later)
+        var producingNodeId = producingNodeIds.First();
+
+        // 3. Check if artifact exists with current version
+        if (!options.ForceRecompute)
+        {
+            var latestVersion = await _artifactRegistry.GetLatestVersionAsync(fullArtifactKey, partition, cancellationToken);
+
+            if (latestVersion != null && _fingerprintCalculator != null && _cacheStore != null)
+            {
+                // Try to load from cache
+                var cacheResult = await _cacheStore.GetAsync(latestVersion, cancellationToken);
+                if (cacheResult != null)
+                {
+                    // Found cached artifact
+                    var metadata = await _artifactRegistry.GetMetadataAsync(fullArtifactKey, latestVersion, cancellationToken);
+                    if (metadata != null)
+                    {
+                        // Extract value from cache result
+                        var value = cacheResult.Outputs.Values.FirstOrDefault();
+                        if (value is T typedValue)
+                        {
+                            return new Artifact<T>
+                            {
+                                Key = fullArtifactKey,
+                                Version = latestVersion,
+                                Value = typedValue,
+                                CreatedAt = metadata.CreatedAt,
+                                InputVersions = metadata.InputVersions,
+                                ProducedByNodeId = metadata.ProducedByNodeId,
+                                ExecutionId = metadata.ExecutionId
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Build minimal subgraph using AffectedNodeDetector (if available)
+        Abstractions.Graph.Graph minimalGraph;
+        HashSet<string>? affectedNodes = null;
+
+        if (_affectedNodeDetector != null && _snapshotStore != null && !options.ForceRecompute)
+        {
+            // Load previous snapshot to compute affected nodes
+            var previousSnapshot = await _snapshotStore.GetLatestSnapshotAsync(graph.Id, cancellationToken);
+
+            // Create empty inputs for now (TODO: Extract from context if needed)
+            var currentInputs = new Abstractions.Handlers.HandlerInputs();
+
+            // Compute which nodes are affected (need re-execution)
+            affectedNodes = await _affectedNodeDetector.GetAffectedNodesAsync(
+                previousSnapshot, graph, currentInputs, _serviceProvider, cancellationToken);
+
+            // Build minimal subgraph containing only affected nodes + the producing node
+            if (!affectedNodes.Contains(producingNodeId))
+            {
+                affectedNodes.Add(producingNodeId);
+            }
+
+            minimalGraph = BuildMinimalSubgraph(graph, affectedNodes, producingNodeId);
+        }
+        else
+        {
+            // No incremental execution - use full graph
+            minimalGraph = graph;
+        }
+
+        // 5. Create context and execute
+        var executionId = $"materialize-{fullArtifactKey.Path.Last()}-{Guid.NewGuid():N}";
+
+        // We need to create a GraphContext to execute - use the GraphContext constructor
+        var context = new Context.GraphContext(executionId, minimalGraph, _serviceProvider);
+
+        // Set CurrentPartition if a specific partition was requested
+        // This ensures partitioned nodes only execute for the requested partition
+        if (partition != null)
+        {
+            context.SetCurrentPartition(partition);
+        }
+
+        // Execute the graph
+        await ExecuteAsync(context as TContext ?? throw new InvalidOperationException("Failed to cast context"), cancellationToken);
+
+        // 6. Get version from fingerprint (computed during execution)
+        var version = _fingerprintCalculator != null
+            ? context.InternalCurrentFingerprints.GetValueOrDefault(producingNodeId, Guid.NewGuid().ToString("N"))
+            : Guid.NewGuid().ToString("N");
+
+        // 7. Extract artifact value directly from context channels (not cache, to avoid race conditions)
+        // The cache write is fire-and-forget, so we retrieve from the execution context instead
+        var port0ChannelName = $"node_output:{producingNodeId}";
+        T typedArtifactValue;
+
+        if (context.Channels.ChannelNames.Contains(port0ChannelName))
+        {
+            var channel = context.Channels[port0ChannelName];
+            var port0Outputs = channel.Get<Dictionary<string, object>>();
+            if (port0Outputs != null && port0Outputs.Count > 0)
+            {
+                var artifactValue = port0Outputs.Values.FirstOrDefault();
+                if (artifactValue is not T value)
+                {
+                    throw new InvalidOperationException(
+                        $"Node {producingNodeId} produced value of type {artifactValue?.GetType().Name ?? "null"}, expected {typeof(T).Name}");
+                }
+                typedArtifactValue = value;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Node {producingNodeId} did not produce any output.");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Node {producingNodeId} did not execute or produce output. Channel {port0ChannelName} not found.");
+        }
+
+        // 8. Extract input artifact versions for lineage tracking
+        var producingNode = graph.Nodes.FirstOrDefault(n => n.Id == producingNodeId);
+        var inputVersions = producingNode != null && context is TContext typedContext
+            ? GetInputArtifactVersions(typedContext, producingNode)
+            : new Dictionary<ArtifactKey, string>();
+
+        // 9. Register artifact in registry
+        var artifactMetadata = new ArtifactMetadata
+        {
+            CreatedAt = DateTimeOffset.UtcNow,
+            InputVersions = inputVersions,
+            ProducedByNodeId = producingNodeId,
+            ExecutionId = executionId
+        };
+
+        await _artifactRegistry.RegisterAsync(fullArtifactKey, version, artifactMetadata, cancellationToken);
+
+        // 10. Save snapshot for future incremental execution (if snapshot store is available)
+        if (_snapshotStore != null)
+        {
+            var snapshot = new Abstractions.Caching.GraphSnapshot
+            {
+                ExecutionId = executionId,
+                Timestamp = DateTimeOffset.UtcNow,
+                NodeFingerprints = context.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                GraphHash = ComputeGraphHash(graph)
+            };
+            await _snapshotStore.SaveSnapshotAsync(graph.Id, snapshot, cancellationToken);
+        }
+
+        return new Artifact<T>
+        {
+            Key = fullArtifactKey,
+            Version = version,
+            Value = typedArtifactValue,
+            CreatedAt = artifactMetadata.CreatedAt,
+            InputVersions = artifactMetadata.InputVersions,
+            ProducedByNodeId = producingNodeId,
+            ExecutionId = executionId
+        };
+    }
+
+    /// <summary>
+    /// Compute a hash of the graph structure for snapshot validation.
+    /// Uses the built-in ComputeStructureHash() method from Graph class.
+    /// </summary>
+    private string ComputeGraphHash(Abstractions.Graph.Graph graph)
+    {
+        return graph.ComputeStructureHash();
+    }
+
+    /// <summary>
+    /// Build a minimal subgraph containing only the necessary nodes to materialize a target artifact.
+    /// Includes the target node and all its transitive dependencies (backward traversal).
+    /// </summary>
+    /// <param name="graph">Full graph</param>
+    /// <param name="affectedNodes">Set of nodes that need re-execution (from AffectedNodeDetector)</param>
+    /// <param name="targetNodeId">Target node that produces the artifact</param>
+    /// <returns>Minimal subgraph</returns>
+    private Abstractions.Graph.Graph BuildMinimalSubgraph(
+        Abstractions.Graph.Graph graph,
+        HashSet<string> affectedNodes,
+        string targetNodeId)
+    {
+        // Build dependency graph (reverse edges for backward traversal)
+        var dependencies = new Dictionary<string, HashSet<string>>();
+        foreach (var edge in graph.Edges)
+        {
+            if (!dependencies.ContainsKey(edge.To))
+            {
+                dependencies[edge.To] = new HashSet<string>();
+            }
+            dependencies[edge.To].Add(edge.From);
+        }
+
+        // Backward traversal from target node to collect all necessary nodes
+        var necessaryNodes = new HashSet<string>();
+        var queue = new Queue<string>();
+        queue.Enqueue(targetNodeId);
+        necessaryNodes.Add(targetNodeId);
+
+        // Always include start and end nodes
+        necessaryNodes.Add(graph.EntryNodeId);
+        necessaryNodes.Add(graph.ExitNodeId);
+
+        while (queue.Count > 0)
+        {
+            var nodeId = queue.Dequeue();
+
+            // Add all dependencies of this node
+            if (dependencies.TryGetValue(nodeId, out var deps))
+            {
+                foreach (var depNodeId in deps)
+                {
+                    // Only include if it's affected or if we haven't seen it yet
+                    if (necessaryNodes.Add(depNodeId))
+                    {
+                        queue.Enqueue(depNodeId);
+                    }
+                }
+            }
+        }
+
+        // Filter nodes and edges to only include necessary ones
+        var filteredNodes = graph.Nodes
+            .Where(n => necessaryNodes.Contains(n.Id))
+            .ToList();
+
+        var filteredEdges = graph.Edges
+            .Where(e => necessaryNodes.Contains(e.From) && necessaryNodes.Contains(e.To))
+            .ToList();
+
+        // Create minimal subgraph
+        return new Abstractions.Graph.Graph
+        {
+            Id = $"{graph.Id}-minimal-{targetNodeId}",
+            Name = $"{graph.Name} (Minimal for {targetNodeId})",
+            Version = graph.Version,
+            Nodes = filteredNodes,
+            Edges = filteredEdges,
+            EntryNodeId = graph.EntryNodeId,
+            ExitNodeId = graph.ExitNodeId,
+            Metadata = graph.Metadata,
+            MaxIterations = graph.MaxIterations,
+            IterationOptions = graph.IterationOptions,
+            ExecutionTimeout = graph.ExecutionTimeout,
+            CloningPolicy = graph.CloningPolicy
+        };
+    }
+
+    /// <summary>
+    /// Materialize multiple artifacts in parallel.
+    /// Requires graph registry to be configured and graph to be registered.
+    /// </summary>
+    /// <param name="graphId">The ID of the graph to use for materialization (registered in graph registry)</param>
+    /// <param name="artifactKeys">The artifacts to materialize</param>
+    /// <param name="partition">Optional partition key</param>
+    /// <param name="options">Materialization options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task<IReadOnlyDictionary<ArtifactKey, object>> MaterializeManyAsync(
+        string graphId,
+        IEnumerable<ArtifactKey> artifactKeys,
+        PartitionKey? partition = null,
+        MaterializationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_artifactRegistry == null)
+            throw new InvalidOperationException("Artifact registry is required for demand-driven execution. Provide IArtifactRegistry in constructor.");
+
+        if (_graphRegistry == null)
+        {
+            throw new InvalidOperationException(
+                "Graph registry is not configured. Provide IGraphRegistry in constructor to use graph-ID-based materialization.");
+        }
+
+        var artifactList = artifactKeys.ToList();
+        if (artifactList.Count == 0)
+            return new Dictionary<ArtifactKey, object>();
+
+        options ??= new MaterializationOptions();
+
+        // Resolve graph from registry
+        if (_graphRegistry == null)
+        {
+            throw new InvalidOperationException(
+                "Graph registry is not configured. Provide IGraphRegistry in constructor to use graph-ID-based materialization.");
+        }
+
+        var graph = _graphRegistry.GetGraph(graphId);
+        if (graph == null)
+        {
+            throw new InvalidOperationException(
+                $"Graph with ID '{graphId}' is not registered. Available graphs: {string.Join(", ", _graphRegistry.GetGraphIds())}");
+        }
+
+        // Delegate to internal implementation (which handles lock acquisition)
+        return await MaterializeManyAsync(graph, artifactList, partition, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Internal overload: Materialize multiple artifacts in parallel (with graph parameter).
+    /// Automatically deduplicates shared upstream dependencies by building a unified minimal subgraph.
+    /// </summary>
+    internal async Task<IReadOnlyDictionary<ArtifactKey, object>> MaterializeManyAsync(
+        Abstractions.Graph.Graph graph,
+        IEnumerable<ArtifactKey> artifactKeys,
+        PartitionKey? partition = null,
+        MaterializationOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (_artifactRegistry == null)
+            throw new InvalidOperationException("Artifact registry is required for demand-driven execution. Provide IArtifactRegistry in constructor.");
+
+        if (_artifactIndex == null)
+            throw new InvalidOperationException("Artifact index is required for demand-driven execution.");
+
+        var artifactList = artifactKeys.ToList();
+        if (artifactList.Count == 0)
+            return new Dictionary<ArtifactKey, object>();
+
+        options ??= new MaterializationOptions();
+
+        // Build artifact index from graph
+        _artifactIndex.BuildIndex(graph);
+
+        // Strategy: Build a unified minimal subgraph that produces ALL requested artifacts,
+        // then execute once. This automatically deduplicates shared upstream dependencies.
+
+        // 1. Resolve producing nodes for all artifacts
+        var artifactToProducerMap = new Dictionary<ArtifactKey, string>();
+        var allProducingNodeIds = new HashSet<string>();
+
+        foreach (var artifactKey in artifactList)
+        {
+            var producingNodeIds = _artifactIndex.GetProducers(artifactKey);
+            if (producingNodeIds.Count == 0)
+                throw new InvalidOperationException($"No node produces artifact {artifactKey}");
+
+            // Use first producer (multi-producer resolution can be enhanced later)
+            var producingNodeId = producingNodeIds.First();
+            artifactToProducerMap[artifactKey] = producingNodeId;
+            allProducingNodeIds.Add(producingNodeId);
+        }
+
+        // 2. Acquire locks for all artifacts (prevents concurrent materialization)
+        // CRITICAL: Sort artifacts to ensure deterministic lock ordering and prevent deadlocks
+        // When multiple concurrent requests need overlapping artifacts, they must acquire locks
+        // in the same order to avoid circular wait conditions.
+        var sortedArtifactList = artifactList
+            .OrderBy(a => a.ToString(), StringComparer.Ordinal)
+            .ToList();
+
+        var lockHandles = new List<IAsyncDisposable>();
+        try
+        {
+            foreach (var artifactKey in sortedArtifactList)
+            {
+                var fullArtifactKey = partition != null
+                    ? new ArtifactKey { Path = artifactKey.Path, Partition = partition }
+                    : artifactKey;
+
+                var lockHandle = options.WaitForLock
+                    ? await _artifactRegistry.TryAcquireMaterializationLockAsync(
+                        fullArtifactKey, partition, options.LockTimeout, cancellationToken)
+                    : await _artifactRegistry.TryAcquireMaterializationLockAsync(
+                        fullArtifactKey, partition, TimeSpan.Zero, cancellationToken);
+
+                if (lockHandle == null)
+                    throw new InvalidOperationException(
+                        $"Failed to acquire lock for artifact {fullArtifactKey}. " +
+                        $"Another process may be materializing this artifact.");
+
+                lockHandles.Add(lockHandle);
+            }
+
+            // 3. Build unified minimal subgraph containing all necessary producing nodes
+            // Use backward traversal to collect all dependencies for ALL target nodes
+            var allNecessaryNodes = new HashSet<string>();
+
+            // Build dependency graph (reverse edges for backward traversal)
+            var dependencies = new Dictionary<string, HashSet<string>>();
+            foreach (var edge in graph.Edges)
+            {
+                if (!dependencies.ContainsKey(edge.To))
+                {
+                    dependencies[edge.To] = new HashSet<string>();
+                }
+                dependencies[edge.To].Add(edge.From);
+            }
+
+            // Always include start and end nodes
+            allNecessaryNodes.Add(graph.EntryNodeId);
+            allNecessaryNodes.Add(graph.ExitNodeId);
+
+            // Backward traversal from ALL producing nodes (deduplication happens naturally)
+            var queue = new Queue<string>();
+            foreach (var producingNodeId in allProducingNodeIds)
+            {
+                if (allNecessaryNodes.Add(producingNodeId))
+                {
+                    queue.Enqueue(producingNodeId);
+                }
+            }
+
+            while (queue.Count > 0)
+            {
+                var nodeId = queue.Dequeue();
+
+                // Add all dependencies of this node
+                if (dependencies.TryGetValue(nodeId, out var deps))
+                {
+                    foreach (var depNodeId in deps)
+                    {
+                        if (allNecessaryNodes.Add(depNodeId))
+                        {
+                            queue.Enqueue(depNodeId);
+                        }
+                    }
+                }
+            }
+
+            // 4. Build minimal subgraph with affected nodes (incremental execution)
+            HashSet<string>? affectedNodes = null;
+
+            if (_affectedNodeDetector != null && _snapshotStore != null && !options.ForceRecompute)
+            {
+                // Load previous snapshot to compute affected nodes
+                var previousSnapshot = await _snapshotStore.GetLatestSnapshotAsync(graph.Id, cancellationToken);
+
+                // Create empty inputs for now
+                var currentInputs = new Abstractions.Handlers.HandlerInputs();
+
+                // Compute which nodes are affected (need re-execution)
+                affectedNodes = await _affectedNodeDetector.GetAffectedNodesAsync(
+                    previousSnapshot, graph, currentInputs, _serviceProvider, cancellationToken);
+
+                // Intersect with necessary nodes (only execute what's both necessary AND affected)
+                allNecessaryNodes.IntersectWith(affectedNodes);
+            }
+
+            // Filter nodes and edges to only include necessary ones
+            var filteredNodes = graph.Nodes
+                .Where(n => allNecessaryNodes.Contains(n.Id))
+                .ToList();
+
+            var filteredEdges = graph.Edges
+                .Where(e => allNecessaryNodes.Contains(e.From) && allNecessaryNodes.Contains(e.To))
+                .ToList();
+
+            // Create minimal subgraph
+            var minimalGraph = new Abstractions.Graph.Graph
+            {
+                Id = $"{graph.Id}-minimal-many",
+                Name = $"{graph.Name} (Minimal for {artifactList.Count} artifacts)",
+                Version = graph.Version,
+                Nodes = filteredNodes,
+                Edges = filteredEdges,
+                EntryNodeId = graph.EntryNodeId,
+                ExitNodeId = graph.ExitNodeId,
+                Metadata = graph.Metadata,
+                MaxIterations = graph.MaxIterations,
+                IterationOptions = graph.IterationOptions,
+                ExecutionTimeout = graph.ExecutionTimeout,
+                CloningPolicy = graph.CloningPolicy
+            };
+
+            // 5. Execute minimal subgraph
+            var executionId = $"materialize-many-{Guid.NewGuid():N}";
+            var context = new Context.GraphContext(executionId, minimalGraph, _serviceProvider);
+
+            // Cast to TContext and execute
+            if (context is not TContext executionContext)
+                throw new InvalidOperationException($"Context must be of type {typeof(TContext).Name}");
+
+            await ExecuteAsync(executionContext, cancellationToken);
+
+            // 6. Extract artifacts from execution results and register them
+            var results = new Dictionary<ArtifactKey, object>();
+
+            foreach (var artifactKey in artifactList)
+            {
+                var producingNodeId = artifactToProducerMap[artifactKey];
+                var producingNode = graph.Nodes.FirstOrDefault(n => n.Id == producingNodeId);
+
+                if (producingNode == null)
+                    throw new InvalidOperationException($"Producing node {producingNodeId} not found in graph");
+
+                // Extract value from context outputs
+                var outputKey = $"node_output:{producingNodeId}";
+                if (!executionContext.Channels.Contains(outputKey))
+                    throw new InvalidOperationException($"Node {producingNodeId} did not produce output");
+
+                var outputChannel = executionContext.Channels[outputKey];
+                var outputs = outputChannel.Get<Dictionary<string, object>>();
+                var value = outputs.Values.FirstOrDefault()
+                    ?? throw new InvalidOperationException($"Node {producingNodeId} produced empty output");
+
+                results[artifactKey] = value;
+
+                // 7. Get fingerprint from execution (populated during ExecuteAsync)
+                var fingerprint = context.InternalCurrentFingerprints.TryGetValue(producingNodeId, out var fp)
+                    ? fp
+                    : Guid.NewGuid().ToString("N");
+
+                // 8. Extract input artifact versions for lineage tracking
+                var inputVersions = GetInputArtifactVersions(executionContext, producingNode);
+
+                // 9. Register artifact in registry
+                var metadata = new ArtifactMetadata
+                {
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    InputVersions = inputVersions,
+                    ProducedByNodeId = producingNodeId,
+                    ExecutionId = executionId
+                };
+
+                var fullArtifactKey = partition != null
+                    ? new ArtifactKey { Path = artifactKey.Path, Partition = partition }
+                    : artifactKey;
+
+                await _artifactRegistry.RegisterAsync(fullArtifactKey, fingerprint, metadata, cancellationToken);
+            }
+
+            // 10. Save snapshot for future incremental execution
+            if (_snapshotStore != null)
+            {
+                var snapshot = new Abstractions.Caching.GraphSnapshot
+                {
+                    ExecutionId = executionId,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    GraphHash = graph.ComputeStructureHash(),
+                    NodeFingerprints = context.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                };
+
+                await _snapshotStore.SaveSnapshotAsync(graph.Id, snapshot, cancellationToken);
+            }
+
+            return results;
+        }
+        finally
+        {
+            // Release all locks
+            foreach (var lockHandle in lockHandles)
+            {
+                await lockHandle.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Backfill: materialize an artifact for a range of partitions.
+    /// Requires graph registry to be configured and graph to be registered.
+    /// </summary>
+    /// <param name="graphId">ID of the graph to use (registered in graph registry)</param>
+    /// <param name="artifactKey">Artifact to backfill</param>
+    /// <param name="partitions">Partitions to materialize</param>
+    /// <param name="options">Backfill options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async IAsyncEnumerable<Event> BackfillAsync<T>(
+        string graphId,
+        ArtifactKey artifactKey,
+        IEnumerable<PartitionKey> partitions,
+        BackfillOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (_artifactRegistry == null)
+            throw new InvalidOperationException("Artifact registry is required for demand-driven execution. Provide IArtifactRegistry in constructor.");
+
+        if (_graphRegistry == null)
+        {
+            throw new InvalidOperationException(
+                "Graph registry is not configured. Provide IGraphRegistry in constructor to use graph-ID-based materialization.");
+        }
+
+        var graph = _graphRegistry.GetGraph(graphId);
+        if (graph == null)
+        {
+            throw new InvalidOperationException(
+                $"Graph with ID '{graphId}' is not registered. Available graphs: {string.Join(", ", _graphRegistry.GetGraphIds())}");
+        }
+
+        // Delegate to internal implementation with the resolved graph
+        await foreach (var evt in BackfillAsync<T>(graph, artifactKey, partitions, options, cancellationToken))
+        {
+            yield return evt;
+        }
+    }
+
+    /// <summary>
+    /// Internal overload: Backfill an artifact for a range of partitions (with graph parameter).
+    /// Processes partitions in parallel and streams events as they complete.
+    /// </summary>
+    internal async IAsyncEnumerable<Event> BackfillAsync<T>(
+        Abstractions.Graph.Graph graph,
+        ArtifactKey artifactKey,
+        IEnumerable<PartitionKey> partitions,
+        BackfillOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (_artifactRegistry == null)
+            throw new InvalidOperationException("Artifact registry is required for demand-driven execution. Provide IArtifactRegistry in constructor.");
+
+        if (_artifactIndex == null)
+            throw new InvalidOperationException("Artifact index is required for demand-driven execution.");
+
+        options ??= new BackfillOptions();
+
+        var partitionList = partitions.ToList();
+        if (partitionList.Count == 0)
+            yield break;
+
+        var startTime = DateTimeOffset.UtcNow;
+
+        // Build artifact index from graph
+        _artifactIndex.BuildIndex(graph);
+
+        // Filter partitions based on SkipExisting option
+        var partitionsToProcess = new List<PartitionKey>();
+        var partitionsSkipped = 0;
+
+        if (options.SkipExisting)
+        {
+            foreach (var partition in partitionList)
+            {
+                var version = await _artifactRegistry.GetLatestVersionAsync(artifactKey, partition, cancellationToken);
+                if (version == null)
+                {
+                    partitionsToProcess.Add(partition);
+                }
+                else
+                {
+                    partitionsSkipped++;
+                }
+            }
+        }
+        else
+        {
+            partitionsToProcess.AddRange(partitionList);
+        }
+
+        // Emit BackfillStartedEvent
+        if (options.EmitProgressEvents)
+        {
+            yield return new Abstractions.Events.BackfillStartedEvent
+            {
+                ArtifactKey = artifactKey,
+                TotalPartitions = partitionList.Count,
+                PartitionsToProcess = partitionsToProcess.Count,
+                PartitionsSkipped = partitionsSkipped,
+                MaxParallelPartitions = options.MaxParallelPartitions
+            };
+        }
+
+        if (partitionsToProcess.Count == 0)
+        {
+            // All partitions already exist and SkipExisting is true - emit completion
+            if (options.EmitProgressEvents)
+            {
+                yield return new Abstractions.Events.BackfillCompletedEvent
+                {
+                    ArtifactKey = artifactKey,
+                    Duration = DateTimeOffset.UtcNow - startTime,
+                    SuccessfulPartitions = 0,
+                    FailedPartitions = 0,
+                    SkippedPartitions = partitionsSkipped
+                };
+            }
+            yield break;
+        }
+
+        // Use SemaphoreSlim to limit concurrent partition processing
+        using var semaphore = new SemaphoreSlim(options.MaxParallelPartitions, options.MaxParallelPartitions);
+
+        // Create a channel for streaming events
+        var eventChannel = Channel.CreateUnbounded<Event>();
+        var processingTasks = new List<Task>();
+
+        var completedCount = 0;
+        var totalCount = partitionsToProcess.Count;
+        var successfulCount = 0;
+        var failedPartitions = new List<(PartitionKey Partition, Exception Error)>();
+
+        // Start processing partitions in parallel
+        foreach (var partition in partitionsToProcess)
+        {
+            var task = Task.Run(async () =>
+            {
+                await semaphore.WaitAsync(cancellationToken);
+                var partitionStartTime = DateTimeOffset.UtcNow;
+                try
+                {
+                    // Materialize the artifact for this partition
+                    var artifact = await MaterializeAsync<T>(graph, artifactKey, partition,
+                        new MaterializationOptions { ForceRecompute = !options.SkipExisting },
+                        cancellationToken);
+
+                    // Track progress
+                    var completed = Interlocked.Increment(ref completedCount);
+                    Interlocked.Increment(ref successfulCount);
+
+                    // Emit completion event with artifact
+                    if (options.EmitProgressEvents)
+                    {
+                        var completionEvent = new Abstractions.Events.BackfillPartitionCompletedEvent
+                        {
+                            ArtifactKey = artifactKey,
+                            Partition = partition,
+                            Version = artifact.Version,
+                            CompletedCount = completed,
+                            TotalCount = totalCount,
+                            Duration = DateTimeOffset.UtcNow - partitionStartTime,
+                            Success = true,
+                            Artifact = artifact // Include the artifact in the event
+                        };
+                        await eventChannel.Writer.WriteAsync(completionEvent, cancellationToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failedPartitions.Add((partition, ex));
+
+                    // Track progress even on failure
+                    var completed = Interlocked.Increment(ref completedCount);
+
+                    // Emit failure event
+                    if (options.EmitProgressEvents)
+                    {
+                        var failureEvent = new Abstractions.Events.BackfillPartitionCompletedEvent
+                        {
+                            ArtifactKey = artifactKey,
+                            Partition = partition,
+                            Version = string.Empty,
+                            CompletedCount = completed,
+                            TotalCount = totalCount,
+                            Duration = DateTimeOffset.UtcNow - partitionStartTime,
+                            Success = false,
+                            ErrorMessage = ex.Message,
+                            Artifact = null
+                        };
+                        await eventChannel.Writer.WriteAsync(failureEvent, cancellationToken);
+                    }
+
+                    if (options.FailFast)
+                    {
+                        // Close the channel and stop processing
+                        eventChannel.Writer.Complete(ex);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }, cancellationToken);
+
+            processingTasks.Add(task);
+        }
+
+        // Complete the channel when all tasks finish
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.WhenAll(processingTasks);
+                eventChannel.Writer.Complete();
+            }
+            catch (Exception ex)
+            {
+                eventChannel.Writer.Complete(ex);
+            }
+        }, cancellationToken);
+
+        // Stream events as they become available
+        await foreach (var evt in eventChannel.Reader.ReadAllAsync(cancellationToken))
+        {
+            yield return evt;
+        }
+
+        // Emit final BackfillCompletedEvent
+        if (options.EmitProgressEvents)
+        {
+            yield return new Abstractions.Events.BackfillCompletedEvent
+            {
+                ArtifactKey = artifactKey,
+                Duration = DateTimeOffset.UtcNow - startTime,
+                SuccessfulPartitions = successfulCount,
+                FailedPartitions = failedPartitions.Count,
+                SkippedPartitions = partitionsSkipped
+            };
+        }
+
+        // Check for failures after all processing is complete
+        if (failedPartitions.Count > 0 && !options.FailFast)
+        {
+            // Aggregate all failures into a single exception
+            var failureMessages = string.Join(", ", failedPartitions.Select(f => $"{f.Partition}: {f.Error.Message}"));
+            throw new AggregateException(
+                $"Backfill completed with {failedPartitions.Count} failures out of {totalCount} partitions: {failureMessages}",
+                failedPartitions.Select(f => f.Error));
+        }
     }
 }
 

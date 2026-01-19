@@ -8,7 +8,7 @@ namespace HPDAgent.Graph.Core.Caching;
 
 /// <summary>
 /// Computes hierarchical fingerprints for node executions.
-/// Fingerprint = Hash(global | nodeId | inputs | upstreamFingerprints)
+/// Fingerprint = Hash(global | nodeId | inputs | upstreamFingerprints | partitionSnapshot)
 /// Changes automatically propagate downstream.
 /// </summary>
 public class HierarchicalFingerprintCalculator : INodeFingerprintCalculator
@@ -17,7 +17,8 @@ public class HierarchicalFingerprintCalculator : INodeFingerprintCalculator
         string nodeId,
         HandlerInputs inputs,
         Dictionary<string, string> upstreamHashes,
-        string globalHash)
+        string globalHash,
+        string? partitionSnapshotHash = null)
     {
         var builder = new StringBuilder();
 
@@ -40,6 +41,15 @@ public class HierarchicalFingerprintCalculator : INodeFingerprintCalculator
         foreach (var (upstreamNodeId, upstreamHash) in upstreamHashes.OrderBy(kv => kv.Key))
         {
             builder.Append(upstreamNodeId).Append('=').Append(upstreamHash).Append(';');
+        }
+        builder.Append('|');
+
+        // 5. Partition snapshot hash (if node is partitioned)
+        // When partition definitions change (e.g., new regions added, time range expanded),
+        // this hash changes and invalidates the node + all downstream nodes
+        if (partitionSnapshotHash != null)
+        {
+            builder.Append("partitions=").Append(partitionSnapshotHash);
         }
 
         // Compute final hash

@@ -1,3 +1,4 @@
+using HPDAgent.Graph.Abstractions.Artifacts;
 using HPDAgent.Graph.Abstractions.Channels;
 using HPDAgent.Graph.Abstractions.State;
 
@@ -320,6 +321,74 @@ public interface IGraphContext
     /// Increments when back-edge conditions trigger re-execution.
     /// </summary>
     int CurrentIteration { get; }
+
+    // ========================================
+    // Partitioning (Phase 2: Data Orchestration Primitives)
+    // ========================================
+
+    /// <summary>
+    /// The partition key for the current execution (null if not partitioned).
+    /// Set by Map execution loop when processing partition-aware items.
+    /// Available to handlers via context.CurrentPartition.
+    ///
+    /// Example:
+    ///   // In a partitioned node handler
+    ///   var partition = context.CurrentPartition; // e.g., "2025-01-15"
+    ///   // Process data for this specific partition
+    /// </summary>
+    PartitionKey? CurrentPartition { get; }
+
+    // ========================================
+    // Hierarchical Namespaces (Phase 5: Universal Workflow Primitives)
+    // ========================================
+
+    /// <summary>
+    /// The current artifact namespace for the execution (null if not in a namespaced subgraph).
+    /// Set by SubGraph execution when entering a node with ArtifactNamespace property.
+    /// Used for automatic artifact key prefixing to prevent naming collisions.
+    ///
+    /// Example:
+    ///   // SubGraph with namespace ["pipeline", "stage1"]
+    ///   var ns = context.CurrentNamespace; // ["pipeline", "stage1"]
+    ///   // Child node produces artifact "users"
+    ///   // Actual registered key: ["pipeline", "stage1", "users"]
+    /// </summary>
+    IReadOnlyList<string>? CurrentNamespace { get; }
+
+    // ========================================
+    // Internal Execution State (Orchestrator Usage Only)
+    // ========================================
+    // These properties are internal to the orchestrator and should NOT be accessed by handlers.
+    // They track execution-scoped state like fingerprints, failed nodes, and output hashes.
+    // By storing these in the context (not the orchestrator), we achieve true statelessness.
+
+    /// <summary>
+    /// Internal: Fingerprints for nodes in the current execution.
+    /// Used by incremental execution to detect changes.
+    /// ORCHESTRATOR USE ONLY - Not intended for handler access.
+    /// </summary>
+    System.Collections.Concurrent.ConcurrentDictionary<string, string> InternalCurrentFingerprints { get; }
+
+    /// <summary>
+    /// Internal: Failed nodes in the current execution with their exceptions.
+    /// Used for error propagation and diagnostics.
+    /// ORCHESTRATOR USE ONLY - Not intended for handler access.
+    /// </summary>
+    System.Collections.Concurrent.ConcurrentDictionary<string, Exception> InternalFailedNodes { get; }
+
+    /// <summary>
+    /// Internal: Output hashes for change-aware iteration.
+    /// Stores hash of each node's outputs to detect changes between iterations.
+    /// ORCHESTRATOR USE ONLY - Not intended for handler access.
+    /// </summary>
+    System.Collections.Concurrent.ConcurrentDictionary<string, string> InternalOutputHashes { get; }
+
+    /// <summary>
+    /// Internal: Track which edges have consumed outputs (for lazy cloning).
+    /// Key: "nodeId:port", Value: HashSet of edge IDs that consumed this output.
+    /// ORCHESTRATOR USE ONLY - Not intended for handler access.
+    /// </summary>
+    System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<string>> InternalConsumedOutputs { get; }
 }
 
 /// <summary>

@@ -69,7 +69,7 @@ public sealed record Graph
     /// <summary>
     /// Message cloning policy for output propagation.
     /// Default: LazyClone (optimal memory/performance trade-off).
-    /// - LazyClone: First downstream edge gets original, subsequent get clones (Node-RED pattern)
+    /// - LazyClone: First downstream edge gets original, subsequent get clones
     /// - AlwaysClone: All edges get clones (safest, highest memory)
     /// - NeverClone: All edges share references (fastest, requires immutable handlers)
     /// </summary>
@@ -399,5 +399,65 @@ public sealed record Graph
             .Replace("|", "&#124;")
             .Replace("<", "&lt;")
             .Replace(">", "&gt;");
+    }
+
+    /// <summary>
+    /// Computes a structural hash of the graph for change detection.
+    /// Hash includes nodes, edges, and critical configuration.
+    /// Used by incremental execution to detect graph structure changes.
+    /// If the structure hash changes, the entire graph must re-execute.
+    /// </summary>
+    public string ComputeStructureHash()
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+
+        // Build deterministic string representation of graph structure
+        var structureBuilder = new System.Text.StringBuilder();
+
+        // Include graph-level properties
+        structureBuilder.AppendLine($"Version:{Version}");
+        structureBuilder.AppendLine($"MaxIterations:{MaxIterations}");
+        structureBuilder.AppendLine($"CloningPolicy:{CloningPolicy}");
+
+        // Include iteration options if present
+        if (IterationOptions != null)
+        {
+            structureBuilder.AppendLine($"IterationOptions.MaxIterations:{IterationOptions.MaxIterations}");
+            structureBuilder.AppendLine($"IterationOptions.UseChangeAwareIteration:{IterationOptions.UseChangeAwareIteration}");
+            structureBuilder.AppendLine($"IterationOptions.EnableAutoConvergence:{IterationOptions.EnableAutoConvergence}");
+        }
+
+        // Include nodes (sorted by ID for determinism)
+        foreach (var node in Nodes.OrderBy(n => n.Id))
+        {
+            structureBuilder.AppendLine($"Node:{node.Id}|{node.Type}|{node.HandlerName}");
+
+            // Include critical node properties that affect execution
+            if (node.Timeout.HasValue)
+                structureBuilder.AppendLine($"  Timeout:{node.Timeout}");
+            if (node.MaxExecutions.HasValue)
+                structureBuilder.AppendLine($"  MaxExecutions:{node.MaxExecutions}");
+            if (node.OutputPortCount > 1)
+                structureBuilder.AppendLine($"  OutputPortCount:{node.OutputPortCount}");
+        }
+
+        // Include edges (sorted by From → To for determinism)
+        foreach (var edge in Edges.OrderBy(e => e.From).ThenBy(e => e.To))
+        {
+            structureBuilder.AppendLine($"Edge:{edge.From}→{edge.To}");
+
+            // Include port information if multi-port
+            if (edge.FromPort.HasValue || edge.ToPort.HasValue)
+                structureBuilder.AppendLine($"  Ports:{edge.FromPort}→{edge.ToPort}");
+
+            // Include cloning policy override if present
+            if (edge.CloningPolicy.HasValue)
+                structureBuilder.AppendLine($"  CloningPolicy:{edge.CloningPolicy}");
+        }
+
+        // Compute hash
+        var bytes = System.Text.Encoding.UTF8.GetBytes(structureBuilder.ToString());
+        var hashBytes = sha256.ComputeHash(bytes);
+        return Convert.ToHexString(hashBytes);
     }
 }

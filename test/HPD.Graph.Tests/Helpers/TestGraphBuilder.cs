@@ -174,6 +174,15 @@ public class TestGraphBuilder
     }
 
     /// <summary>
+    /// Adds a fully configured node object (useful for artifact testing).
+    /// </summary>
+    public TestGraphBuilder AddNode(Node node)
+    {
+        _nodes.Add(node);
+        return this;
+    }
+
+    /// <summary>
     /// Adds a custom node with full configuration support (for testing port features).
     /// </summary>
     public TestGraphBuilder AddNode(

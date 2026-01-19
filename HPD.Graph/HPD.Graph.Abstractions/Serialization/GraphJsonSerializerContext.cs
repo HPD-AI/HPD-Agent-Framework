@@ -79,6 +79,15 @@ namespace HPDAgent.Graph.Abstractions.Serialization;
 // === Context Serialization ===
 [JsonSerializable(typeof(ContextMetadata))]  // For checkpoint ContextJson
 
+// === Partition Definitions (Polymorphic) ===
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.PartitionDefinition))]
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.StaticPartitionDefinition))]
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.TimePartitionDefinition))]
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.MultiPartitionDefinition))]
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.PartitionSnapshot))]
+[JsonSerializable(typeof(HPDAgent.Graph.Abstractions.Artifacts.PartitionKey))]
+[JsonSerializable(typeof(List<HPDAgent.Graph.Abstractions.Artifacts.PartitionKey>))]
+
 // === JsonElement for Polymorphic Support ===
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(object))]

@@ -31,5 +31,19 @@ public enum SuspendReason
     /// Waiting for resource availability.
     /// Example: GPU slot, database connection, memory quota.
     /// </summary>
-    ResourceWait
+    ResourceWait,
+
+    /// <summary>
+    /// Edge-level schedule constraint (Phase 4: Temporal Operators).
+    /// Waits until scheduled time window before allowing edge traversal.
+    /// Example: Edge with Schedule = daily at 3am.
+    /// </summary>
+    Schedule,
+
+    /// <summary>
+    /// Edge-level retry policy (Phase 4: Temporal Operators).
+    /// Polls edge condition until met or timeout.
+    /// Example: Edge waiting for external dependency before allowing traversal.
+    /// </summary>
+    EdgeRetry
 }

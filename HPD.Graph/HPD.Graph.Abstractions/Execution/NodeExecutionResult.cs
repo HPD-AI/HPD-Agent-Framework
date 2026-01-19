@@ -159,6 +159,31 @@ public abstract record NodeExecutionResult
         }
 
         /// <summary>
+        /// Create a general suspension (Phase 4: Temporal Operators).
+        /// Used for schedule-based suspension and other custom scenarios.
+        /// </summary>
+        public static Suspended Create(
+            string suspendToken,
+            SuspendReason reason,
+            TimeSpan? retryAfter = null,
+            object? resumeValue = null,
+            string? message = null,
+            TimeSpan? maxWaitTime = null,
+            int? maxRetries = null)
+        {
+            return new Suspended
+            {
+                SuspendToken = suspendToken,
+                Reason = reason,
+                RetryAfter = retryAfter,
+                ResumeValue = resumeValue,
+                Message = message,
+                MaxWaitTime = maxWaitTime,
+                MaxRetries = maxRetries
+            };
+        }
+
+        /// <summary>
         /// Private parameterless constructor for backward compatibility constructor.
         /// </summary>
         private Suspended()
