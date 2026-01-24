@@ -1186,21 +1186,21 @@ public class ToolVisibilityManagerTests
 
     /// <summary>
     /// Regression test for the Toolkit attribute migration.
-    /// When a toolkit is marked with [Toolkit(Collapsed=true)], the source generator sets
+    /// When a toolkit is marked with [Collapse(Collapsed=true)], the source generator sets
     /// IsToolkitContainer=true (not the legacy IsCollapse flag).
     /// ToolVisibilityManager must recognize both flags to properly hide skills inside collapsed toolkits.
     ///
     /// Bug fix: ToolVisibilityManager.GetContainerType() was only checking IsCollapse flag,
-    /// but the new [Toolkit] attribute sets IsToolkitContainer flag.
+    /// but the new [Collapse] attribute sets IsToolkitContainer flag.
     /// </summary>
     [Fact]
     public void CollapsedToolkit_WithIsToolkitContainerFlag_HidesSkillsUntilExpanded()
     {
         // Arrange: Create a collapsed toolkit using the NEW IsToolkitContainer flag
-        // This simulates what the source generator produces for [Toolkit("...", Collapsed = true)]
+        // This simulates what the source generator produces for [Collapse("...", Collapsed = true)]
         var tools = new List<AIFunction>();
 
-        // Toolkit container with IsToolkitContainer=true (new flag from [Toolkit] attribute)
+        // Toolkit container with IsToolkitContainer=true (new flag from [Collapse] attribute)
         tools.Add(CreateToolkitContainerWithNewFlag(
             "MathToolkit",
             "Math Operations. Contains 3 functions: Add, Multiply, SolveQuadratic"));
@@ -1310,7 +1310,7 @@ public class ToolVisibilityManagerTests
 
     /// <summary>
     /// Creates a toolkit container using the NEW IsToolkitContainer flag.
-    /// This simulates what the source generator produces for [Toolkit("...", Collapsed = true)]
+    /// This simulates what the source generator produces for [Collapse("...", Collapsed = true)]
     /// </summary>
     private AIFunction CreateToolkitContainerWithNewFlag(string name, string description)
     {
@@ -1323,7 +1323,7 @@ public class ToolVisibilityManagerTests
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsContainer"] = true,
-                    ["IsToolkitContainer"] = true, // NEW flag from [Toolkit] attribute
+                    ["IsToolkitContainer"] = true, // NEW flag from [Collapse] attribute
                     ["FunctionNames"] = new string[] { },
                     ["FunctionCount"] = 0
                 }

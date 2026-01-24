@@ -19,7 +19,7 @@ public class DualContextAttributeTests
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     FunctionResult = ""Toolkit activated with features A, B, C"",
@@ -54,7 +54,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     SystemPrompt = ""System-level rules only""
@@ -83,7 +83,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     FunctionResult = ""One-time activation message""
@@ -112,7 +112,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Financial Toolkit"",
      
     SystemPrompt = @""# RULES
@@ -146,7 +146,7 @@ public class FinancialToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     SystemPrompt = @""Use """"quotes"""" properly""
@@ -181,7 +181,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     FunctionResult = ""Uses $, €, ¥ symbols"",
@@ -212,7 +212,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     FunctionResult = """",
@@ -242,7 +242,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     FunctionResult = ""Toolkit activated"",
@@ -277,12 +277,12 @@ public partial class TestToolkit
     [Fact]
     public void Generator_HandlesBackwardCompatibility_LegacyPostExpansionInstructions()
     {
-        // Arrange - Note: This tests the legacy FunctionResult property with the new [Toolkit] attribute
+        // Arrange - Note: This tests the legacy FunctionResult property with the new [Collapse] attribute
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Legacy Toolkit"",
      
     FunctionResult = ""Legacy instructions""
@@ -313,7 +313,7 @@ public class LegacyToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Test Toolkit"",
      
     SystemPrompt = @""{longRules}""
@@ -343,7 +343,7 @@ public class TestToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(""Test Toolkit"", Collapsed = true)]
+[Collapse(""Test Toolkit"", Collapsed = true)]
 public class TestToolkit
 {
     [AIFunction]
@@ -365,12 +365,12 @@ public class TestToolkit
     [Fact]
     public void Generator_HandlesMixedPositionalAndNamedArguments()
     {
-        // Arrange - Test positional args with [Toolkit] attribute
+        // Arrange - Test positional args with [Collapse] attribute
         var source = @"
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(""Test Toolkit"",   FunctionResult = ""Positional function context"", SystemPrompt = ""Positional system context"")]
+[Collapse(""Test Toolkit"",   FunctionResult = ""Positional function context"", SystemPrompt = ""Positional system context"")]
 public class TestToolkit
 {
     [AIFunction]
@@ -399,7 +399,7 @@ public class TestToolkit
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },

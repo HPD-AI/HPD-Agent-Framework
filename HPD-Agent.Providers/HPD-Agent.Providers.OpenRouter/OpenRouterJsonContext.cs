@@ -41,5 +41,6 @@ namespace HPD.Agent.Providers.OpenRouter;
 [JsonSerializable(typeof(OpenRouterKeyData))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(IDictionary<string, object?>))]
+[JsonSerializable(typeof(List<object>))]
 [JsonSerializable(typeof(object))]
 internal sealed partial class OpenRouterJsonContext : JsonSerializerContext;

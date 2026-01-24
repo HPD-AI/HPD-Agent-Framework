@@ -58,6 +58,10 @@ public sealed class Agent
     // Service provider for creating new clients
     private readonly IServiceProvider? _serviceProvider;
 
+    // Middleware state factories for cross-assembly state discovery
+    // Passed from AgentBuilder, used for session persistence and schema validation
+    private readonly ImmutableDictionary<string, MiddlewareStateFactory> _stateFactories;
+
     /// <summary>
     /// Agent configuration object containing all settings
     /// </summary>
@@ -68,6 +72,12 @@ public sealed class Agent
     /// This can be used by SubAgents to inherit the parent's client when no provider is specified.
     /// </summary>
     public IChatClient BaseClient => _baseClient;
+
+    /// <summary>
+    /// Gets the middleware state factories registered for this agent.
+    /// Used for session persistence, schema validation, and cross-assembly state discovery.
+    /// </summary>
+    internal IReadOnlyDictionary<string, MiddlewareStateFactory> StateFactories => _stateFactories;
 
     // V2: CurrentFunctionContext restored as AsyncLocal<HookContext?> for AIFunction context access
     // Functions like ClarificationFunction need access to Emit(), WaitForResponseAsync(), etc.
@@ -187,10 +197,13 @@ public sealed class Agent
         IServiceProvider? serviceProvider = null,
         IEnumerable<IAgentEventObserver>? observers = null,
         IEnumerable<IAgentEventHandler>? eventHandlers = null,
-        Providers.IProviderRegistry? providerRegistry = null)
+        Providers.IProviderRegistry? providerRegistry = null,
+        IReadOnlyDictionary<string, MiddlewareStateFactory>? stateFactories = null)
     {
         _providerRegistry = providerRegistry;
         _serviceProvider = serviceProvider;
+        _stateFactories = stateFactories?.ToImmutableDictionary()
+            ?? ImmutableDictionary<string, MiddlewareStateFactory>.Empty;
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = config.Name ?? "Agent"; // Default to "Agent" to prevent null dictionary key exceptions
@@ -298,11 +311,20 @@ public sealed class Agent
     /// <summary>
     /// Validates and migrates middleware state schema when resuming from checkpoint.
     /// Detects added/removed middleware and logs changes for operational visibility.
+    /// Schema is computed from runtime-registered factories (not compiled constants).
     /// </summary>
     /// <param name="checkpointState">Middleware state from checkpoint</param>
     /// <returns>Updated middleware state with current schema metadata</returns>
     private MiddlewareState ValidateAndMigrateSchema(MiddlewareState checkpointState)
     {
+        // Compute current schema signature from runtime-registered factories
+        var currentSignature = string.Join(",",
+            _stateFactories.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        var currentVersions = _stateFactories.ToImmutableDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Version);
+
         // Case 1: Pre-versioning checkpoint (SchemaSignature is null)
         if (checkpointState.SchemaSignature == null)
         {
@@ -312,7 +334,7 @@ public sealed class Agent
 
             var upgradeEvent = new SchemaChangedEvent(
                 OldSignature: null,
-                NewSignature: MiddlewareState.CompiledSchemaSignature,
+                NewSignature: currentSignature,
                 RemovedTypes: Array.Empty<string>(),
                 AddedTypes: Array.Empty<string>(),
                 IsUpgrade: true);
@@ -323,21 +345,23 @@ public sealed class Agent
             return new MiddlewareState
             {
                 States = checkpointState.States,
-                SchemaSignature = MiddlewareState.CompiledSchemaSignature,
-                SchemaVersion = MiddlewareState.CompiledSchemaVersion,
-                StateVersions = MiddlewareState.CompiledStateVersions
+                SchemaSignature = currentSignature,
+                SchemaVersion = 1,
+                StateVersions = currentVersions
             };
         }
 
         // Case 2: Schema matches (common case - no changes)
-        if (checkpointState.SchemaSignature == MiddlewareState.CompiledSchemaSignature)
+        if (checkpointState.SchemaSignature == currentSignature)
         {
             return checkpointState;
         }
 
         // Case 3: Schema changed - detect and log differences
-        var oldTypes = checkpointState.SchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
-        var newTypes = MiddlewareState.CompiledSchemaSignature.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var oldTypes = checkpointState.SchemaSignature
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .ToHashSet();
+        var newTypes = _stateFactories.Keys.ToHashSet();
 
         var removed = oldTypes.Except(newTypes).ToList();
         var added = newTypes.Except(oldTypes).ToList();
@@ -369,7 +393,7 @@ public sealed class Agent
         // Emit telemetry event for monitoring
         var schemaEvent = new SchemaChangedEvent(
             OldSignature: checkpointState.SchemaSignature,
-            NewSignature: MiddlewareState.CompiledSchemaSignature,
+            NewSignature: currentSignature,
             RemovedTypes: removed,
             AddedTypes: added,
             IsUpgrade: false);
@@ -381,9 +405,9 @@ public sealed class Agent
         return new MiddlewareState
         {
             States = checkpointState.States,
-            SchemaSignature = MiddlewareState.CompiledSchemaSignature,
-            SchemaVersion = MiddlewareState.CompiledSchemaVersion,
-            StateVersions = MiddlewareState.CompiledStateVersions
+            SchemaSignature = currentSignature,
+            SchemaVersion = 1,
+            StateVersions = currentVersions
         };
     }
 
@@ -648,7 +672,7 @@ public sealed class Agent
                 //
 
                 // Load persistent middleware state from session (cross-run caching)
-                var persistentState = MiddlewareState.LoadFromSession(session);
+                var persistentState = MiddlewareState.LoadFromSession(session, _stateFactories);
 
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
@@ -721,16 +745,44 @@ public sealed class Agent
                 parentChatClient: _baseClient,  // Pass chat client for SubAgent inheritance
                 services: _serviceProvider);  // Pass service provider for DI
 
+            // IMPORTANT: Create runOptions instance ONCE and reuse it throughout the entire turn
+            // Middleware may modify runOptions (e.g., AgentPlanAgentMiddleware sets AdditionalSystemInstructions)
+            // We must use the SAME instance for BeforeMessageTurnAsync and BeforeIterationAsync
+            var effectiveRunOptions = runOptions ?? new AgentRunOptions();
+
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             var beforeTurnContext = agentContext.AsBeforeMessageTurn(
                 userMessage: newInputMessages.FirstOrDefault(),
                 conversationHistory: effectiveMessages.ToList(),
-                runOptions: runOptions ?? new AgentRunOptions());
+                runOptions: effectiveRunOptions);
 
             await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(beforeTurnContext, effectiveCancellationToken);
 
             // V2: State updates are immediate - no GetPendingState() needed!
             state = agentContext.State;
+
+            // UPDATE TURN HISTORY: If middleware transformed the user message (e.g., DataContent → UriContent),
+            // replace it in turnHistory so the transformed version gets persisted to session
+            if (beforeTurnContext.UserMessage != null && newInputMessages.Count > 0)
+            {
+                var originalMessage = newInputMessages[0];
+                if (!ReferenceEquals(originalMessage, beforeTurnContext.UserMessage))
+                {
+                    // Middleware transformed the message - update turnHistory
+                    for (int i = 0; i < turnHistory.Count; i++)
+                    {
+                        if (ReferenceEquals(turnHistory[i], originalMessage))
+                        {
+                            turnHistory[i] = beforeTurnContext.UserMessage;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // UPDATE EFFECTIVE MESSAGES: If middleware modified ConversationHistory (e.g., HistoryReductionMiddleware),
+            // update effectiveMessages to use the modified history
+            effectiveMessages = beforeTurnContext.ConversationHistory;
 
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
@@ -753,10 +805,10 @@ public sealed class Agent
                 // Emit state snapshot for testing/debugging
                 yield return new StateSnapshotEvent(
                     CurrentIteration: state.Iteration,
-                    MaxIterations: state.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? config.MaxIterations,
+                    MaxIterations: state.MiddlewareState.ContinuationPermission()?.CurrentExtendedLimit ?? config.MaxIterations,
                     IsTerminated: state.IsTerminated,
                     TerminationReason: state.TerminationReason,
-                    ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
+                    ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking()?.ConsecutiveFailures ?? 0,
                     CompletedFunctions: new List<string>(state.CompletedFunctions),
                     AgentName: _name);
 
@@ -789,7 +841,7 @@ public sealed class Agent
                     AgentName: _name,
                     DecisionType: decision.GetType().Name,
                     Iteration: state.Iteration,
-                    ConsecutiveFailures: state.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? 0,
+                    ConsecutiveFailures: state.MiddlewareState.ErrorTracking()?.ConsecutiveFailures ?? 0,
                     CompletedFunctionsCount: state.CompletedFunctions.Count);
 
                 // NOTE: Circuit breaker events are now emitted directly by CircuitBreakerIterationMiddleware
@@ -895,7 +947,7 @@ public sealed class Agent
                         iteration: state.Iteration,
                         messages: messagesToSend.ToList(),
                         options: effectiveOptions ?? new ChatOptions(),
-                        runOptions: runOptions ?? new AgentRunOptions());
+                        runOptions: effectiveRunOptions);  // Use the SAME instance from BeforeMessageTurnAsync
 
                     // EXECUTE BEFORE ITERATION MIDDLEWARES
                     // Run with event polling to support bidirectional events (e.g., ContinuationPermissionMiddleware)
@@ -1007,12 +1059,12 @@ public sealed class Agent
                             State = agentContext.State,
                             Iteration = state.Iteration,
                             Streams = _eventCoordinator.Streams,
-                            RunOptions = runOptions,
+                            RunOptions = effectiveRunOptions,
                             EventCoordinator = _eventCoordinator
                         };
 
                         // Check if we should coalesce deltas (run options override config default)
-                        bool coalesceDeltas = runOptions?.CoalesceDeltas ?? Config?.CoalesceDeltas ?? false;
+                        bool coalesceDeltas = effectiveRunOptions.CoalesceDeltas ?? Config?.CoalesceDeltas ?? false;
 
                         if (coalesceDeltas)
                         {
@@ -1370,7 +1422,7 @@ public sealed class Agent
                         var beforeToolContext = agentContext.AsBeforeToolExecution(
                             response: assistantResponse,
                             toolCalls: toolRequests.AsReadOnly(),
-                            runOptions: runOptions ?? new AgentRunOptions());
+                            runOptions: effectiveRunOptions);
 
                         await _middlewarePipeline.ExecuteBeforeToolExecutionAsync(
                             beforeToolContext,
@@ -1409,7 +1461,7 @@ public sealed class Agent
                             toolRequests,
                             effectiveOptionsForTools,
                             state,
-                            runOptions ?? new AgentRunOptions(),
+                            effectiveRunOptions,
                             agentContext,
                             effectiveCancellationToken);
 
@@ -1467,7 +1519,7 @@ public sealed class Agent
                                 .OfType<FunctionResultContent>()
                                 .ToList()
                                 .AsReadOnly(),
-                            runOptions: runOptions ?? new AgentRunOptions());
+                            runOptions: effectiveRunOptions);
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
                             afterIterationContext,
@@ -1541,7 +1593,7 @@ public sealed class Agent
                         var afterIterationContext = agentContext.AsAfterIteration(
                             iteration: state.Iteration,
                             toolResults: Array.Empty<FunctionResultContent>(),
-                            runOptions: runOptions ?? new AgentRunOptions());
+                            runOptions: effectiveRunOptions);
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
                             afterIterationContext,
@@ -1752,7 +1804,7 @@ public sealed class Agent
                 var afterTurnContext = agentContext.AsAfterMessageTurn(
                     finalResponse: lastResponse,
                     turnHistory: turnHistory,
-                    runOptions: runOptions ?? new AgentRunOptions());
+                    runOptions: effectiveRunOptions);
 
                 // Execute AfterMessageTurnAsync in REVERSE order (stack unwinding)
                 await _middlewarePipeline.ExecuteAfterMessageTurnAsync(afterTurnContext, effectiveCancellationToken);
@@ -1789,7 +1841,7 @@ public sealed class Agent
             {
                 try
                 {
-                    state.MiddlewareState.SaveToSession(session);
+                    state.MiddlewareState.SaveToSession(session, _stateFactories);
                 }
                 catch (Exception)
                 {
@@ -2137,6 +2189,84 @@ public sealed class Agent
             session,
             options,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Run the agent with options-only (UserMessage and/or Attachments from options).
+    /// Enables content-first interactions: audio-only, image-only, document-only runs.
+    /// </summary>
+    /// <param name="options">Run options containing UserMessage and/or Attachments</param>
+    /// <param name="session">Optional session for conversation continuity</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of agent events</returns>
+    /// <exception cref="ArgumentException">Thrown if both UserMessage and Attachments are null/empty</exception>
+    /// <remarks>
+    /// <para>
+    /// This overload enables clean DX for content-first interactions:
+    /// - Voice assistants: User sends only audio
+    /// - Vision apps: User sends only images
+    /// - Document analysis: User sends only documents
+    /// </para>
+    /// <para>
+    /// The middleware pipeline handles content transformation before the LLM call.
+    /// For example, AudioPipelineMiddleware transcribes audio → text.
+    /// </para>
+    /// <para>
+    /// <b>Example - Text + Attachments:</b>
+    /// <code>
+    /// await agent.RunAsync(new AgentRunOptions
+    /// {
+    ///     UserMessage = "Analyze this document",
+    ///     Attachments = [await DocumentContent.FromFileAsync("report.pdf")]
+    /// });
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Example - Audio Only:</b>
+    /// <code>
+    /// await agent.RunAsync(new AgentRunOptions
+    /// {
+    ///     Attachments = [new AudioContent(audioBytes)]
+    /// });
+    /// </code>
+    /// </para>
+    /// <para>
+    /// <b>Example - Multiple Attachments:</b>
+    /// <code>
+    /// await agent.RunAsync(new AgentRunOptions
+    /// {
+    ///     Attachments = [
+    ///         new ImageContent(screenshotBytes),
+    ///         await DocumentContent.FromFileAsync("context.pdf")
+    ///     ]
+    /// });
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public IAsyncEnumerable<AgentEvent> RunAsync(
+        AgentRunOptions options,
+        AgentSession? session = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var contents = new List<AIContent>();
+
+        if (!string.IsNullOrEmpty(options.UserMessage))
+            contents.Add(new TextContent(options.UserMessage));
+
+        if (options.Attachments?.Count > 0)
+            contents.AddRange(options.Attachments);
+
+        if (contents.Count == 0)
+        {
+            throw new ArgumentException(
+                "AgentRunOptions must provide UserMessage or Attachments (at least one).",
+                nameof(options));
+        }
+
+        var message = new ChatMessage(ChatRole.User, contents);
+        return RunAsync([message], session, options, cancellationToken);
     }
 
     /// <summary>
@@ -3369,6 +3499,46 @@ public sealed class Agent
     }
 
     /// <summary>
+    /// Convenience overload for running with a single ChatMessage and session ID.
+    /// Useful for sending messages with typed content (ImageContent, AudioContent, etc.)
+    /// </summary>
+    /// <param name="message">Single chat message to send</param>
+    /// <param name="sessionId">Session ID for auto-save</param>
+    /// <param name="options">Optional run options</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Stream of agent events</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>Example - Send image to vision model:</b>
+    /// <code>
+    /// var image = await ImageContent.FromFileAsync("photo.jpg");
+    /// await agent.RunAsync(
+    ///     new ChatMessage(ChatRole.User, [new TextContent("What's in this?"), image]),
+    ///     sessionId);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    public async IAsyncEnumerable<AgentEvent> RunAsync(
+        ChatMessage message,
+        string sessionId,
+        AgentRunOptions? options = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var session = await LoadSessionAsync(sessionId, cancellationToken);
+
+        await foreach (var evt in RunAsync(new[] { message }, session, options, cancellationToken))
+        {
+            yield return evt;
+        }
+
+        // Auto-save if configured
+        if (Config.SessionStoreOptions?.AutoSave == true)
+        {
+            await SaveSessionAsync(session, cancellationToken);
+        }
+    }
+
+    /// <summary>
     /// Loads a session by ID from the configured store.
     /// Returns a new empty session if no saved session exists.
     /// </summary>
@@ -4137,7 +4307,7 @@ public sealed record AgentLoopState
         }
 
         // Check error tracking state from MiddlewareState (new pattern)
-        var errorState = this.MiddlewareState.ErrorTracking;
+        var errorState = this.MiddlewareState.ErrorTracking();
         if (errorState != null && errorState.ConsecutiveFailures < 0)
         {
             throw new InvalidOperationException($"Checkpoint has invalid ConsecutiveFailures: {errorState.ConsecutiveFailures}");
@@ -4605,7 +4775,7 @@ internal class FunctionCallProcessor
         Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
-        // PHASE 1: Batch permission check via BeforeParallelBatchAsync hook
+        // : Batch permission check via BeforeParallelBatchAsync hook
         // Build function map and collect parallel function information
         var functionMap = BuildMergedMap(_serverConfiguredTools, options?.Tools);
         var parallelFunctions = new List<ParallelFunctionInfo>();

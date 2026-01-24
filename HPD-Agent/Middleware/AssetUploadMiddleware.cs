@@ -29,11 +29,16 @@ public class AssetUploadMiddleware : IAgentMiddleware
     // NO instance fields - middleware is stateless
 
     /// <summary>
-    /// Called before each LLM iteration.
+    /// Called before processing a user message turn.
     /// Uploads DataContent to AssetStore and replaces with UriContent.
     /// </summary>
-    public async Task BeforeIterationAsync(
-        BeforeIterationContext context,
+    /// <remarks>
+    /// Uses BeforeMessageTurnAsync (not BeforeIterationAsync) to upload assets once per user message,
+    /// not on every agentic loop iteration. This prevents redundant uploads when the agent
+    /// makes multiple LLM calls in a single turn.
+    /// </remarks>
+    public async Task BeforeMessageTurnAsync(
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         // Get session from context
@@ -46,91 +51,72 @@ public class AssetUploadMiddleware : IAgentMiddleware
         if (assetStore == null)
             return;  // No asset store configured - zero cost exit
 
-        var messagesList = context.Messages.ToList();
-        var messagesToUpdate = new List<(ChatMessage original, ChatMessage updated)>();
+        var message = context.UserMessage;
 
-        for (int msgIndex = 0; msgIndex < messagesList.Count; msgIndex++)
+        // UserMessage can be null in continuation scenarios
+        if (message == null)
+            return;
+
+        // Check if message contains DataContent with bytes
+        var hasDataBytes = message.Contents.Any(c =>
+            c is DataContent data && data.Data.Length > 0);
+
+        if (!hasDataBytes)
+            return;
+
+        // Upload assets and build new content list with URIs
+        var newContents = new List<AIContent>();
+
+        foreach (var content in message.Contents)
         {
-            var message = messagesList[msgIndex];
+            AIContent transformedContent = content;
 
-            // Check if message contains DataContent with bytes
-            var hasDataBytes = message.Contents.Any(c =>
-                c is DataContent data && data.Data.Length > 0);
-
-            if (!hasDataBytes)
-                continue;
-
-            // Upload assets and build new content list with URIs
-            var newContents = new List<AIContent>();
-
-            foreach (var content in message.Contents)
+            // Handle DataContent (images, audio, files, etc.)
+            if (content is DataContent data && data.Data.Length > 0)
             {
-                AIContent transformedContent = content;
-
-                // Handle DataContent (images, audio, files, etc.)
-                if (content is DataContent data && data.Data.Length > 0)
+                try
                 {
-                    try
-                    {
-                        // Upload to asset store
-                        var assetId = await assetStore.UploadAssetAsync(
-                            data.Data.ToArray(),
-                            data.MediaType ?? "application/octet-stream",
-                            cancellationToken);
+                    // Upload to asset store
+                    var assetId = await assetStore.UploadAssetAsync(
+                        data.Data.ToArray(),
+                        data.MediaType ?? "application/octet-stream",
+                        cancellationToken);
 
-                        // Replace with URI reference using MEAI's UriContent
-                        transformedContent = new UriContent(
-                            new Uri($"asset://{assetId}"),
-                            data.MediaType);
+                    // Replace with URI reference using MEAI's UriContent
+                    transformedContent = new UriContent(
+                        new Uri($"asset://{assetId}"),
+                        data.MediaType);
 
-                        // Emit event for observability
-                        context.Emit(new AssetUploadedEvent(
-                            AssetId: assetId,
-                            MediaType: data.MediaType ?? "application/octet-stream",
-                            SizeBytes: data.Data.Length));
-                    }
-                    catch (Exception ex)
-                    {
-                        // Log error but continue (could add retry logic here)
-                        context.Emit(new AssetUploadFailedEvent(
-                            MediaType: data.MediaType ?? "application/octet-stream",
-                            Error: ex.Message));
-
-                        // Keep original content if upload fails
-                        transformedContent = content;
-                    }
+                    // Emit event for observability
+                    context.Emit(new AssetUploadedEvent(
+                        AssetId: assetId,
+                        MediaType: data.MediaType ?? "application/octet-stream",
+                        SizeBytes: data.Data.Length));
                 }
+                catch (Exception ex)
+                {
+                    // Log error but continue (could add retry logic here)
+                    context.Emit(new AssetUploadFailedEvent(
+                        MediaType: data.MediaType ?? "application/octet-stream",
+                        Error: ex.Message));
 
-                newContents.Add(transformedContent);
+                    // Keep original content if upload fails
+                    transformedContent = content;
+                }
             }
 
-            // Create new message with transformed contents
-            var updatedMessage = new ChatMessage(message.Role, newContents)
-            {
-                AuthorName = message.AuthorName,
-                AdditionalProperties = message.AdditionalProperties
-            };
-
-            messagesToUpdate.Add((message, updatedMessage));
-            messagesList[msgIndex] = updatedMessage;
+            newContents.Add(transformedContent);
         }
 
-        // Update context messages if any were modified
-        if (messagesToUpdate.Any())
+        // Create new message with transformed contents
+        var updatedMessage = new ChatMessage(message.Role, newContents)
         {
-            // Update context messages (for LLM call)
-            context.Messages.Clear();
-            foreach (var msg in messagesList)
-            {
-                context.Messages.Add(msg);
-            }
+            AuthorName = message.AuthorName,
+            AdditionalProperties = message.AdditionalProperties
+        };
 
-            // ALSO update session messages (for persistence)
-            // This ensures DataContent → UriContent transformation persists in session
-            foreach (var (original, updated) in messagesToUpdate)
-            {
-                session.ReplaceMessage(original, updated);
-            }
-        }
+        // Update the user message in the context
+        // The agent will handle persisting this to session.Messages via turnHistory
+        context.UserMessage = updatedMessage;
     }
 }

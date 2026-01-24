@@ -38,7 +38,10 @@
       "Bash(dotnet clean:*)",
       "Bash(tree:*)",
       "Bash(dotnet restore:*)",
-      "Bash(./pack-local.sh:*)"
+      "Bash(./pack-local.sh:*)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent stash list:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": [],
     "ask": []

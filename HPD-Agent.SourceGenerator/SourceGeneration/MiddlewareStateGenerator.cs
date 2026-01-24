@@ -11,9 +11,9 @@ using System.Text;
 namespace HPD.Agent.SourceGenerator;
 
 /// <summary>
-/// Incremental source generator for middleware state container.
-/// Generates properties and WithX() methods for types marked with [MiddlewareState].
-/// Supports both source types and types from referenced assemblies.
+/// Incremental source generator for middleware state.
+/// Generates per-assembly MiddlewareStateRegistry.g.cs and MiddlewareStateExtensions.g.cs.
+/// Follows the ToolkitRegistry pattern for cross-assembly state discovery.
 /// </summary>
 [Generator]
 public class MiddlewareStateGenerator : IIncrementalGenerator
@@ -52,19 +52,18 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor HPD005_PropertyNameConflict = new(
         id: "HPD005",
         title: "Middleware state property name conflicts with container API",
-        messageFormat: "Generated property name '{0}' conflicts with MiddlewareState API. Rename type '{1}' to avoid conflicts with: GetState, SetState, _states, _deserializedCache.",
+        messageFormat: "Generated property name '{0}' conflicts with MiddlewareState API. Rename type '{1}' to avoid conflicts with: GetState, SetState, States.",
         category: "Design",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "The generator creates properties based on type names. Conflicts with base class methods would cause compilation errors.");
+        description: "The generator creates extension methods based on type names. Conflicts with base class methods would cause compilation errors.");
 
     // Reserved names that would conflict with the container API
     private static readonly HashSet<string> ReservedPropertyNames = new(System.StringComparer.Ordinal)
     {
         "GetState",
         "SetState",
-        "_states",
-        "_deserializedCache"
+        "States"
     };
 
     //
@@ -73,7 +72,8 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Find all types with [MiddlewareState] attribute in SOURCE CODE
+        // Find all types with [MiddlewareState] attribute in SOURCE CODE ONLY
+        // Each assembly generates its own registry - no cross-assembly scanning
         var sourceStateTypes = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: "HPD.Agent.MiddlewareStateAttribute",
@@ -81,169 +81,17 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 transform: GetStateInfo)
             .Where(static info => info is not null);
 
-        // Combine source types
-        var allStateTypes = sourceStateTypes.Collect()
-            .Select((sourceTypes, _) =>
-            {
-                // Only use source types - don't pull in referenced types for consumer projects
-                var combined = new List<StateInfo>();
-                foreach (var t in sourceTypes)
-                {
-                    if (t != null) combined.Add(t);
-                }
-                return combined.ToImmutableArray();
-            });
+        // Collect all state types and generate registry + extensions
+        var collectedTypes = sourceStateTypes.Collect();
 
-        // Generate container with source state types only
         context.RegisterSourceOutput(
-            allStateTypes,
-            (spc, types) => GenerateContainerProperties(spc, types!));
+            collectedTypes,
+            (spc, types) => GenerateRegistryAndExtensions(spc, types!));
     }
 
-    /// <summary>
-    /// Scans referenced assemblies for types marked with [MiddlewareState].
-    /// </summary>
-    private static ImmutableArray<StateInfo> GetReferencedMiddlewareStates(
-        Compilation compilation,
-        CancellationToken ct)
-    {
-        var results = new List<StateInfo>();
-        var attributeSymbol = compilation.GetTypeByMetadataName("HPD.Agent.MiddlewareStateAttribute");
-
-        if (attributeSymbol == null)
-            return ImmutableArray<StateInfo>.Empty;
-
-        // Scan all referenced assemblies
-        foreach (var reference in compilation.References)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly)
-                continue;
-
-            // Skip the current assembly (those are handled by ForAttributeWithMetadataName)
-            if (SymbolEqualityComparer.Default.Equals(assembly, compilation.Assembly))
-                continue;
-
-            // Find types with [MiddlewareState] in this assembly
-            var stateTypes = FindTypesWithAttribute(assembly.GlobalNamespace, attributeSymbol, ct);
-
-            foreach (var typeSymbol in stateTypes)
-            {
-                var stateInfo = GetStateInfoFromSymbol(typeSymbol, attributeSymbol);
-                if (stateInfo != null)
-                {
-                    results.Add(stateInfo);
-                }
-            }
-        }
-
-        return results.ToImmutableArray();
-    }
-
-    /// <summary>
-    /// Recursively finds all types with the specified attribute in a namespace.
-    /// </summary>
-    private static IEnumerable<INamedTypeSymbol> FindTypesWithAttribute(
-        INamespaceSymbol ns,
-        INamedTypeSymbol attributeSymbol,
-        CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-
-        foreach (var member in ns.GetMembers())
-        {
-            if (member is INamespaceSymbol childNs)
-            {
-                foreach (var type in FindTypesWithAttribute(childNs, attributeSymbol, ct))
-                {
-                    yield return type;
-                }
-            }
-            else if (member is INamedTypeSymbol typeSymbol)
-            {
-                // Check if type has the attribute
-                foreach (var attr in typeSymbol.GetAttributes())
-                {
-                    if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, attributeSymbol))
-                    {
-                        yield return typeSymbol;
-                        break;
-                    }
-                }
-
-                // Also check nested types
-                foreach (var nested in typeSymbol.GetTypeMembers())
-                {
-                    foreach (var attr in nested.GetAttributes())
-                    {
-                        if (SymbolEqualityComparer.Default.Equals(attr.AttributeClass, attributeSymbol))
-                        {
-                            yield return nested;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Creates StateInfo from a type symbol (for referenced assembly types).
-    /// </summary>
-    private static StateInfo? GetStateInfoFromSymbol(
-        INamedTypeSymbol typeSymbol,
-        INamedTypeSymbol attributeSymbol)
-    {
-        // Must be a record
-        if (typeSymbol.TypeKind != TypeKind.Class || !typeSymbol.IsRecord)
-            return null;
-
-        var typeName = typeSymbol.Name;
-        var fullyQualifiedName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
-            .Replace("global::", "");
-        var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
-        var propertyName = GetPropertyName(typeName);
-
-        // Check for reserved names
-        if (ReservedPropertyNames.Contains(propertyName))
-            return null;
-
-        // Extract version and persistent from attribute
-        int version = 1;
-        bool persistent = false;
-        var attribute = typeSymbol.GetAttributes()
-            .FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attributeSymbol));
-
-        if (attribute != null)
-        {
-            foreach (var namedArg in attribute.NamedArguments)
-            {
-                if (namedArg.Key == "Version" && namedArg.Value.Value is int v)
-                {
-                    version = v;
-                }
-                else if (namedArg.Key == "Persistent" && namedArg.Value.Value is bool p)
-                {
-                    persistent = p;
-                }
-            }
-        }
-
-        return new StateInfo(
-            TypeName: typeName,
-            FullyQualifiedName: fullyQualifiedName,
-            PropertyName: propertyName,
-            Namespace: namespaceName,
-            Version: version,
-            Persistent: persistent,
-            Diagnostics: new List<Diagnostic>(), // No diagnostics for referenced types
-            IsFromReference: true);
-    }
-
-    //      
+    //
     // STATE INFO EXTRACTION
-    //      
+    //
 
     private StateInfo? GetStateInfo(
         GeneratorAttributeSyntaxContext context,
@@ -357,11 +205,11 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         return typeName;
     }
 
-    //      
+    //
     // CODE GENERATION
-    //      
+    //
 
-    private void GenerateContainerProperties(
+    private void GenerateRegistryAndExtensions(
         SourceProductionContext context,
         ImmutableArray<StateInfo> types)
     {
@@ -399,7 +247,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     HPD003_DuplicateKey,
-                    Location.None, // We don't have location info here
+                    Location.None,
                     duplicate.Key,
                     first.TypeName));
             }
@@ -411,183 +259,153 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             .Select(g => g.First())
             .ToList();
 
-        // Generate the partial class
+        // Generate MiddlewareStateRegistry.g.cs
+        GenerateRegistry(context, uniqueTypes);
+
+        // Generate MiddlewareStateExtensions.g.cs
+        GenerateExtensions(context, uniqueTypes);
+    }
+
+    /// <summary>
+    /// Generates MiddlewareStateRegistry.g.cs with factory array.
+    /// This follows the ToolkitRegistry pattern for cross-assembly discovery.
+    /// </summary>
+    private void GenerateRegistry(
+        SourceProductionContext context,
+        List<StateInfo> uniqueTypes)
+    {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated/>");
         sb.AppendLine("// Generated by MiddlewareStateGenerator");
         sb.AppendLine();
         sb.AppendLine("#nullable enable");
         sb.AppendLine();
-        sb.AppendLine("using System.Collections.Generic;");
-        sb.AppendLine("using System.Collections.Immutable;");
+        sb.AppendLine("using System;");
+        sb.AppendLine("using System.Text.Json;");
+        sb.AppendLine("using HPD.Agent;");
+        sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine();
-        sb.AppendLine("namespace HPD.Agent;");
+        sb.AppendLine("namespace HPD.Agent.Generated;");
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
-        sb.AppendLine("/// Generated properties for middleware state container.");
+        sb.AppendLine("/// Registry of middleware state types in this assembly.");
+        sb.AppendLine("/// Loaded by AgentBuilder.LoadStateRegistryFromAssembly() at runtime.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("public sealed partial class MiddlewareState");
+        sb.AppendLine("public static class MiddlewareStateRegistry");
         sb.AppendLine("{");
-
-        // Generate schema metadata constants
-        var sortedTypeNames = uniqueTypes
-            .Select(t => t.FullyQualifiedName)
-            .OrderBy(n => n, System.StringComparer.Ordinal)
-            .ToList();
-
-        sb.AppendLine("    //      ");
-        sb.AppendLine("    // SCHEMA METADATA (Generated)");
-        sb.AppendLine("    //      ");
-        sb.AppendLine();
         sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Compiled schema signature (sorted list of middleware state FQNs).");
-        sb.AppendLine("    /// Used for detecting middleware composition changes across deployments.");
+        sb.AppendLine("    /// All middleware state factories in this assembly.");
         sb.AppendLine("    /// </summary>");
-        sb.AppendLine($"    public const string CompiledSchemaSignature = \"{string.Join(",", sortedTypeNames)}\";");
-        sb.AppendLine();
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Container schema version (for future container-level migrations).");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    public const int CompiledSchemaVersion = 1;");
-        sb.AppendLine();
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Per-state version mapping (type FQN → version).");
-        sb.AppendLine("    /// Used for detecting individual state schema changes.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    internal static readonly ImmutableDictionary<string, int> CompiledStateVersions =");
-        sb.AppendLine("        new Dictionary<string, int>");
-        sb.AppendLine("        {");
-        foreach (var state in uniqueTypes)
-        {
-            sb.AppendLine($"            [\"{state.FullyQualifiedName}\"] = {state.Version},");
-        }
-        sb.AppendLine("        }.ToImmutableDictionary();");
-        sb.AppendLine();
+        sb.AppendLine("    public static readonly MiddlewareStateFactory[] All = new MiddlewareStateFactory[]");
+        sb.AppendLine("    {");
 
-        // Generate persistence metadata
-        var persistentStates = uniqueTypes.Where(s => s.Persistent).ToList();
-
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Persistent state type mapping (type FQN → should persist).");
-        sb.AppendLine("    /// Used by LoadFromSession/SaveToSession for automatic persistence.");
-        sb.AppendLine("    /// Only includes states marked with Persistent = true.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    internal static readonly ImmutableDictionary<string, bool> CompiledPersistenceMap =");
-        sb.AppendLine("        new Dictionary<string, bool>");
-        sb.AppendLine("        {");
-        foreach (var state in persistentStates)
-        {
-            sb.AppendLine($"            [\"{state.FullyQualifiedName}\"] = true,");
-        }
-        sb.AppendLine("        }.ToImmutableDictionary();");
-        sb.AppendLine();
-
-        // Generate properties and WithX methods for each state type
         foreach (var stateInfo in uniqueTypes)
         {
-            sb.AppendLine($"    //      ");
+            sb.AppendLine($"        new MiddlewareStateFactory(");
+            sb.AppendLine($"            FullyQualifiedName: \"{stateInfo.FullyQualifiedName}\",");
+            sb.AppendLine($"            StateType: typeof({stateInfo.FullyQualifiedName}),");
+            sb.AppendLine($"            PropertyName: \"{stateInfo.PropertyName}\",");
+            sb.AppendLine($"            Version: {stateInfo.Version},");
+            sb.AppendLine($"            Persistent: {(stateInfo.Persistent ? "true" : "false")},");
+            sb.AppendLine($"            Deserialize: json => JsonSerializer.Deserialize<{stateInfo.FullyQualifiedName}>(json, AIJsonUtilities.DefaultOptions),");
+            sb.AppendLine($"            Serialize: state => JsonSerializer.Serialize(({stateInfo.FullyQualifiedName})state, AIJsonUtilities.DefaultOptions)");
+            sb.AppendLine($"        ),");
+        }
+
+        sb.AppendLine("    };");
+        sb.AppendLine("}");
+
+        context.AddSource("MiddlewareStateRegistry.g.cs", sb.ToString());
+    }
+
+    /// <summary>
+    /// Generates MiddlewareStateExtensions.g.cs with typed extension methods.
+    /// This provides consistent API regardless of which assembly defines the state.
+    /// </summary>
+    private void GenerateExtensions(
+        SourceProductionContext context,
+        List<StateInfo> uniqueTypes)
+    {
+        // Group types by namespace to generate proper using statements
+        var namespaces = uniqueTypes
+            .Select(t => t.Namespace)
+            .Where(ns => !string.IsNullOrEmpty(ns))
+            .Distinct()
+            .OrderBy(ns => ns)
+            .ToList();
+
+        // Determine the namespace for extensions (use the first state's namespace or HPD.Agent)
+        var extensionNamespace = namespaces.FirstOrDefault() ?? "HPD.Agent";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("// Generated by MiddlewareStateGenerator");
+        sb.AppendLine();
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine();
+        sb.AppendLine("using HPD.Agent;");
+
+        // Add using statements for all namespaces that contain state types
+        foreach (var ns in namespaces)
+        {
+            if (ns != "HPD.Agent" && ns != extensionNamespace)
+            {
+                sb.AppendLine($"using {ns};");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"namespace {extensionNamespace};");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Extension methods for accessing middleware states defined in this assembly.");
+        sb.AppendLine("/// All state access uses extension methods for consistent API.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static class MiddlewareStateExtensions");
+        sb.AppendLine("{");
+
+        // Generate key constants
+        foreach (var stateInfo in uniqueTypes)
+        {
+            sb.AppendLine($"    private const string {stateInfo.PropertyName}Key = \"{stateInfo.FullyQualifiedName}\";");
+        }
+        sb.AppendLine();
+
+        // Generate extension methods for each state type
+        foreach (var stateInfo in uniqueTypes)
+        {
+            sb.AppendLine($"    //");
             sb.AppendLine($"    // {stateInfo.PropertyName} ({stateInfo.TypeName})");
-            sb.AppendLine($"    //      ");
+            sb.AppendLine($"    //");
             sb.AppendLine();
 
-            // Generate property
+            // Generate getter extension method
             sb.AppendLine($"    /// <summary>");
             sb.AppendLine($"    /// Gets {stateInfo.PropertyName} middleware state.");
             sb.AppendLine($"    /// </summary>");
-            sb.AppendLine($"    public {stateInfo.FullyQualifiedName}? {stateInfo.PropertyName}");
-            sb.AppendLine($"    {{");
-            sb.AppendLine($"        get => this.GetState<{stateInfo.FullyQualifiedName}>(\"{stateInfo.FullyQualifiedName}\");");
-            sb.AppendLine($"    }}");
+            sb.AppendLine($"    public static {stateInfo.FullyQualifiedName}? {stateInfo.PropertyName}(this MiddlewareState state)");
+            sb.AppendLine($"        => state.GetState<{stateInfo.FullyQualifiedName}>({stateInfo.PropertyName}Key);");
             sb.AppendLine();
 
-            // Generate WithX method
+            // Generate WithX extension method
             sb.AppendLine($"    /// <summary>");
             sb.AppendLine($"    /// Creates a new container with updated {stateInfo.PropertyName} state (immutable).");
             sb.AppendLine($"    /// </summary>");
-            sb.AppendLine($"    /// <param name=\"value\">New state value (null to clear)</param>");
-            sb.AppendLine($"    /// <returns>New container instance with updated state</returns>");
-            sb.AppendLine($"    public MiddlewareState With{stateInfo.PropertyName}({stateInfo.FullyQualifiedName}? value)");
+            sb.AppendLine($"    /// <param name=\"state\">The middleware state container.</param>");
+            sb.AppendLine($"    /// <param name=\"value\">New state value (null to keep unchanged).</param>");
+            sb.AppendLine($"    /// <returns>New container instance with updated state.</returns>");
+            sb.AppendLine($"    public static MiddlewareState With{stateInfo.PropertyName}(");
+            sb.AppendLine($"        this MiddlewareState state,");
+            sb.AppendLine($"        {stateInfo.FullyQualifiedName}? value)");
             sb.AppendLine($"    {{");
-            sb.AppendLine($"        return value == null");
-            sb.AppendLine($"            ? this");
-            sb.AppendLine($"            : this.SetState<{stateInfo.FullyQualifiedName}>(\"{stateInfo.FullyQualifiedName}\", value);");
+            sb.AppendLine($"        return value == null ? state : state.SetState({stateInfo.PropertyName}Key, value);");
             sb.AppendLine($"    }}");
             sb.AppendLine();
         }
 
-        // Generate LoadFromSession and SaveToSession methods
-        sb.AppendLine("    //");
-        sb.AppendLine("    // AUTOMATIC PERSISTENCE (Generated)");
-        sb.AppendLine("    //");
-        sb.AppendLine();
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Load persistent middleware state from Session (called at agent start).");
-        sb.AppendLine("    /// Automatically generated - restores all states marked with Persistent = true.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    /// <param name=\"session\">Session to load state from (null returns empty state)</param>");
-        sb.AppendLine("    /// <returns>MiddlewareState with restored persistent state</returns>");
-        sb.AppendLine("    public static MiddlewareState LoadFromSession(AgentSession? session)");
-        sb.AppendLine("    {");
-        sb.AppendLine("        if (session == null)");
-        sb.AppendLine("            return new MiddlewareState();");
-        sb.AppendLine();
-        sb.AppendLine("        var state = new MiddlewareState();");
-        sb.AppendLine();
-
-        // Generate load code for each persistent state
-        foreach (var stateInfo in persistentStates)
-        {
-            sb.AppendLine($"        // Load {stateInfo.PropertyName}");
-            sb.AppendLine($"        {{");
-            sb.AppendLine($"            var key = \"{stateInfo.FullyQualifiedName}\";");
-            sb.AppendLine($"            var json = session.GetMiddlewarePersistentState(key);");
-            sb.AppendLine($"            if (json != null)");
-            sb.AppendLine($"            {{");
-            sb.AppendLine($"                var data = System.Text.Json.JsonSerializer.Deserialize<{stateInfo.FullyQualifiedName}>(");
-            sb.AppendLine($"                    json, Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);");
-            sb.AppendLine($"                if (data != null)");
-            sb.AppendLine($"                    state = state.With{stateInfo.PropertyName}(data);");
-            sb.AppendLine($"            }}");
-            sb.AppendLine($"        }}");
-            sb.AppendLine();
-        }
-
-        sb.AppendLine("        return state;");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        // Generate SaveToSession method
-        sb.AppendLine("    /// <summary>");
-        sb.AppendLine("    /// Save persistent middleware state to Session (called at agent end).");
-        sb.AppendLine("    /// Automatically generated - persists all states marked with Persistent = true.");
-        sb.AppendLine("    /// </summary>");
-        sb.AppendLine("    /// <param name=\"session\">Session to save state to</param>");
-        sb.AppendLine("    public void SaveToSession(AgentSession session)");
-        sb.AppendLine("    {");
-        sb.AppendLine("        if (session == null)");
-        sb.AppendLine("            throw new System.ArgumentNullException(nameof(session));");
-        sb.AppendLine();
-
-        // Generate save code for each persistent state
-        foreach (var stateInfo in persistentStates)
-        {
-            sb.AppendLine($"        // Save {stateInfo.PropertyName}");
-            sb.AppendLine($"        if (this.{stateInfo.PropertyName} != null)");
-            sb.AppendLine($"        {{");
-            sb.AppendLine($"            var key = \"{stateInfo.FullyQualifiedName}\";");
-            sb.AppendLine($"            var json = System.Text.Json.JsonSerializer.Serialize(");
-            sb.AppendLine($"                this.{stateInfo.PropertyName},");
-            sb.AppendLine($"                Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);");
-            sb.AppendLine($"            session.SetMiddlewarePersistentState(key, json);");
-            sb.AppendLine($"        }}");
-            sb.AppendLine();
-        }
-
-        sb.AppendLine("    }");
-
         sb.AppendLine("}");
 
-        context.AddSource("MiddlewareState.g.cs", sb.ToString());
+        context.AddSource("MiddlewareStateExtensions.g.cs", sb.ToString());
     }
 
     //
@@ -601,6 +419,5 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         string Namespace,
         int Version,
         bool Persistent,
-        List<Diagnostic> Diagnostics,
-        bool IsFromReference = false);
+        List<Diagnostic> Diagnostics);
 }

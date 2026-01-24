@@ -109,7 +109,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             // Consume events
         }
 
-        // Assert: Info logged
+        // Assert: Info logged about new middleware being initialized to defaults
         var logs = _loggerProvider.GetLogs();
         Assert.Contains(logs, log =>
             log.LogLevel == LogLevel.Information &&
@@ -234,7 +234,8 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     private AgentLoopState CreateCheckpointWithRemovedMiddleware()
     {
         // Create a checkpoint with a fake middleware that doesn't exist in current schema
-        var currentSignature = MiddlewareState.CompiledSchemaSignature;
+        // Use a known state type name + a fake obsolete one
+        var currentSignature = "HPD.Agent.ErrorTrackingStateData";
         var fakeOldSignature = currentSignature + ",HPD.Agent.ObsoleteMiddlewareStateData";
 
         var middlewareState = new MiddlewareState
@@ -243,7 +244,8 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", new { }),
             SchemaSignature = fakeOldSignature,
             SchemaVersion = 1,
-            StateVersions = MiddlewareState.CompiledStateVersions
+            StateVersions = ImmutableDictionary<string, int>.Empty
+                .Add("HPD.Agent.ErrorTrackingStateData", 1)
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", 1)
         };
 
@@ -270,17 +272,23 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
 
     private AgentLoopState CreateCheckpointWithFewerMiddleware()
     {
-        // Create a checkpoint with fewer middleware than current schema
-        var currentTypes = MiddlewareState.CompiledSchemaSignature.Split(',');
-        var fewerTypes = currentTypes.Take(Math.Max(1, currentTypes.Length - 1)).ToArray();
-        var olderSignature = string.Join(",", fewerTypes);
+        // Create a checkpoint with fewer middleware than would be registered at runtime
+        // This simulates a checkpoint from an older version with fewer state types.
+        // We use a subset of the current schema to trigger the "new middleware added" case.
+        var currentSignature = GetExpectedSchemaSignature();
+        var currentTypes = currentSignature.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+        // Take only the first type (or just one type) to create an "older" checkpoint
+        var olderSignature = currentTypes.Count > 0 ? currentTypes[0] : "";
 
         var middlewareState = new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = olderSignature,
             SchemaVersion = 1,
-            StateVersions = ImmutableDictionary<string, int>.Empty
+            StateVersions = string.IsNullOrEmpty(olderSignature)
+                ? ImmutableDictionary<string, int>.Empty
+                : ImmutableDictionary<string, int>.Empty.Add(olderSignature, 1)
         };
 
         return new AgentLoopState
@@ -306,8 +314,23 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
 
     private AgentLoopState CreateCheckpointWithCurrentSchema()
     {
-        // Create a checkpoint with the current schema (no changes)
-        var middlewareState = new MiddlewareState();  // Uses current schema
+        // Create a checkpoint with a schema signature that matches what the agent will compute.
+        // The agent computes schema from its registered _stateFactories at runtime.
+        // For a default AgentBuilder, this includes all [MiddlewareState] types from HPD-Agent.
+        // We need to provide a signature that matches to avoid triggering schema change detection.
+        //
+        // The key insight: When schema signatures match exactly, ValidateAndMigrateSchema
+        // returns the checkpoint state unchanged (no logging, no events).
+        // We use a placeholder that the test agent will also have registered.
+        var currentSignature = GetExpectedSchemaSignature();
+
+        var middlewareState = new MiddlewareState
+        {
+            States = ImmutableDictionary<string, object?>.Empty,
+            SchemaSignature = currentSignature,
+            SchemaVersion = 1,
+            StateVersions = ImmutableDictionary<string, int>.Empty
+        };
 
         return new AgentLoopState
         {
@@ -328,6 +351,33 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             Version = 1,
             Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
         };
+    }
+
+    /// <summary>
+    /// Gets the expected schema signature that matches what CreateTestAgentWithLogging() will compute.
+    /// This is determined by what MiddlewareStateRegistry.All contains in the HPD-Agent assembly.
+    /// </summary>
+    private string GetExpectedSchemaSignature()
+    {
+        // The schema signature is computed from the agent's _stateFactories keys, sorted alphabetically.
+        // For a default AgentBuilder, this includes all [MiddlewareState] types discovered by the generator.
+        // We can get this by building a temporary agent and inspecting, or by knowing the generated types.
+        //
+        // For this test, we use reflection to get the actual registry from the generated code.
+        var registryType = typeof(MiddlewareState).Assembly.GetType("HPD.Agent.Generated.MiddlewareStateRegistry");
+        if (registryType == null)
+        {
+            // Fallback: return empty signature which will trigger schema change (test may need adjustment)
+            return "";
+        }
+
+        var allField = registryType.GetField("All", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        if (allField?.GetValue(null) is MiddlewareStateFactory[] factories)
+        {
+            return string.Join(",", factories.Select(f => f.FullyQualifiedName).OrderBy(k => k, StringComparer.Ordinal));
+        }
+
+        return "";
     }
 }
 

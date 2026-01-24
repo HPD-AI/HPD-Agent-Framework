@@ -1,6 +1,9 @@
 using Xunit;
 using FluentAssertions;
 using HPD.Agent;
+using System.Collections.Immutable;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -11,16 +14,40 @@ namespace HPD.Agent.Tests.Middleware;
 /// </summary>
 public class SessionPersistenceTests
 {
+    // Create test factories for persistent states
+    private static readonly IReadOnlyDictionary<string, MiddlewareStateFactory> TestFactories =
+        new Dictionary<string, MiddlewareStateFactory>
+        {
+            ["HPD.Agent.PermissionPersistentStateData"] = new MiddlewareStateFactory(
+                FullyQualifiedName: "HPD.Agent.PermissionPersistentStateData",
+                StateType: typeof(PermissionPersistentStateData),
+                PropertyName: "PermissionPersistent",
+                Version: 1,
+                Persistent: true,
+                Deserialize: json => JsonSerializer.Deserialize<PermissionPersistentStateData>(json, AIJsonUtilities.DefaultOptions),
+                Serialize: state => JsonSerializer.Serialize((PermissionPersistentStateData)state, AIJsonUtilities.DefaultOptions)
+            ),
+            ["HPD.Agent.HistoryReductionStateData"] = new MiddlewareStateFactory(
+                FullyQualifiedName: "HPD.Agent.HistoryReductionStateData",
+                StateType: typeof(HistoryReductionStateData),
+                PropertyName: "HistoryReduction",
+                Version: 1,
+                Persistent: true,
+                Deserialize: json => JsonSerializer.Deserialize<HistoryReductionStateData>(json, AIJsonUtilities.DefaultOptions),
+                Serialize: state => JsonSerializer.Serialize((HistoryReductionStateData)state, AIJsonUtilities.DefaultOptions)
+            )
+        }.ToImmutableDictionary();
+
     [Fact]
     public void LoadFromSession_WithNullSession_ReturnsEmptyState()
     {
         // Act
-        var state = MiddlewareState.LoadFromSession(null);
+        var state = MiddlewareState.LoadFromSession(null, TestFactories);
 
         // Assert
         state.Should().NotBeNull();
-        state.PermissionPersistent.Should().BeNull("no session data to load from");
-        state.HistoryReduction.Should().BeNull("no session data to load from");
+        state.PermissionPersistent().Should().BeNull("no session data to load from");
+        state.HistoryReduction().Should().BeNull("no session data to load from");
     }
 
     [Fact]
@@ -35,18 +62,18 @@ public class SessionPersistenceTests
         var middlewareState = new MiddlewareState()
             .WithPermissionPersistent(permState);
 
-        middlewareState.SaveToSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
 
         // Act: Load from session
-        var restored = MiddlewareState.LoadFromSession(session);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: Permission state is restored
-        restored.PermissionPersistent.Should().NotBeNull();
-        restored.PermissionPersistent!.GetPermission("Bash")
+        restored.PermissionPersistent().Should().NotBeNull();
+        restored.PermissionPersistent()!.GetPermission("Bash")
             .Should().Be(PermissionChoice.AlwaysAllow);
-        restored.PermissionPersistent.GetPermission("Read")
+        restored.PermissionPersistent().GetPermission("Read")
             .Should().Be(PermissionChoice.AlwaysDeny);
-        restored.PermissionPersistent.GetPermission("Write")
+        restored.PermissionPersistent().GetPermission("Write")
             .Should().BeNull("not stored");
     }
 
@@ -72,17 +99,17 @@ public class SessionPersistenceTests
         var hrState = new HistoryReductionStateData().WithReduction(reduction);
         var middlewareState = new MiddlewareState().WithHistoryReduction(hrState);
 
-        middlewareState.SaveToSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
 
         // Act: Load from session
-        var restored = MiddlewareState.LoadFromSession(session);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: History reduction is restored
-        restored.HistoryReduction.Should().NotBeNull();
-        restored.HistoryReduction!.LastReduction.Should().NotBeNull();
-        restored.HistoryReduction.LastReduction!.SummarizedUpToIndex.Should().Be(90);
-        restored.HistoryReduction.LastReduction.MessageCountAtReduction.Should().Be(100);
-        restored.HistoryReduction.LastReduction.SummaryContent.Should().Be("Test summary");
+        restored.HistoryReduction().Should().NotBeNull();
+        restored.HistoryReduction()!.LastReduction.Should().NotBeNull();
+        restored.HistoryReduction().LastReduction!.SummarizedUpToIndex.Should().Be(90);
+        restored.HistoryReduction().LastReduction.MessageCountAtReduction.Should().Be(100);
+        restored.HistoryReduction().LastReduction.SummaryContent.Should().Be("Test summary");
     }
 
     [Fact]
@@ -112,18 +139,18 @@ public class SessionPersistenceTests
             .WithHistoryReduction(hrState);
 
         // Act: Save to session
-        middlewareState.SaveToSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
 
         // Load back
-        var restored = MiddlewareState.LoadFromSession(session);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: Both states are restored
-        restored.PermissionPersistent.Should().NotBeNull();
-        restored.PermissionPersistent!.GetPermission("Bash")
+        restored.PermissionPersistent().Should().NotBeNull();
+        restored.PermissionPersistent()!.GetPermission("Bash")
             .Should().Be(PermissionChoice.AlwaysAllow);
 
-        restored.HistoryReduction.Should().NotBeNull();
-        restored.HistoryReduction!.LastReduction!.SummarizedUpToIndex.Should().Be(50);
+        restored.HistoryReduction().Should().NotBeNull();
+        restored.HistoryReduction()!.LastReduction!.SummarizedUpToIndex.Should().Be(50);
     }
 
     [Fact]
@@ -139,13 +166,13 @@ public class SessionPersistenceTests
             .WithBatchPermission(batchState);
 
         // Act: Save to session (batch state should NOT be saved)
-        middlewareState.SaveToSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
 
         // Load back
-        var restored = MiddlewareState.LoadFromSession(session);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: Batch state is NOT restored (it's transient)
-        restored.BatchPermission.Should().BeNull("batch state is transient and should not persist");
+        restored.BatchPermission().Should().BeNull("batch state is transient and should not persist");
     }
 
     [Fact]
@@ -156,14 +183,14 @@ public class SessionPersistenceTests
         var middlewareState = new MiddlewareState(); // All states null
 
         // Act
-        middlewareState.SaveToSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
 
         // Load back
-        var restored = MiddlewareState.LoadFromSession(session);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: Nothing restored (nothing was saved)
-        restored.PermissionPersistent.Should().BeNull();
-        restored.HistoryReduction.Should().BeNull();
+        restored.PermissionPersistent().Should().BeNull();
+        restored.HistoryReduction().Should().BeNull();
     }
 
     [Fact]
@@ -173,7 +200,7 @@ public class SessionPersistenceTests
         var middlewareState = new MiddlewareState();
 
         // Act & Assert
-        Action act = () => middlewareState.SaveToSession(null!);
+        Action act = () => middlewareState.SaveToSession(null!, TestFactories);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -191,14 +218,14 @@ public class SessionPersistenceTests
         var middlewareState = new MiddlewareState().WithPermissionPersistent(permState);
 
         // Act: Round-trip through session
-        middlewareState.SaveToSession(session);
-        var restored = MiddlewareState.LoadFromSession(session);
+        middlewareState.SaveToSession(session, TestFactories);
+        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: All permission choices preserved
-        restored.PermissionPersistent!.GetPermission("Bash").Should().Be(PermissionChoice.AlwaysAllow);
-        restored.PermissionPersistent.GetPermission("Read").Should().Be(PermissionChoice.AlwaysAllow);
-        restored.PermissionPersistent.GetPermission("Write").Should().Be(PermissionChoice.AlwaysDeny);
-        restored.PermissionPersistent.GetPermission("Delete").Should().Be(PermissionChoice.Ask);
+        restored.PermissionPersistent()!.GetPermission("Bash").Should().Be(PermissionChoice.AlwaysAllow);
+        restored.PermissionPersistent().GetPermission("Read").Should().Be(PermissionChoice.AlwaysAllow);
+        restored.PermissionPersistent().GetPermission("Write").Should().Be(PermissionChoice.AlwaysDeny);
+        restored.PermissionPersistent().GetPermission("Delete").Should().Be(PermissionChoice.Ask);
     }
 
     [Fact]
@@ -211,19 +238,19 @@ public class SessionPersistenceTests
 
         // Act: First round-trip
         var state1 = new MiddlewareState().WithPermissionPersistent(permState1);
-        state1.SaveToSession(session);
-        var restored1 = MiddlewareState.LoadFromSession(session);
+        state1.SaveToSession(session, TestFactories);
+        var restored1 = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Add more permissions
-        var permState2 = restored1.PermissionPersistent!
+        var permState2 = restored1.PermissionPersistent()!
             .WithPermission("Read", PermissionChoice.AlwaysDeny);
         var state2 = new MiddlewareState().WithPermissionPersistent(permState2);
-        state2.SaveToSession(session);
-        var restored2 = MiddlewareState.LoadFromSession(session);
+        state2.SaveToSession(session, TestFactories);
+        var restored2 = MiddlewareState.LoadFromSession(session, TestFactories);
 
         // Assert: Both permissions present after multiple round-trips
-        restored2.PermissionPersistent.Should().NotBeNull();
-        restored2.PermissionPersistent!.GetPermission("Bash").Should().Be(PermissionChoice.AlwaysAllow);
-        restored2.PermissionPersistent.GetPermission("Read").Should().Be(PermissionChoice.AlwaysDeny);
+        restored2.PermissionPersistent().Should().NotBeNull();
+        restored2.PermissionPersistent()!.GetPermission("Bash").Should().Be(PermissionChoice.AlwaysAllow);
+        restored2.PermissionPersistent().GetPermission("Read").Should().Be(PermissionChoice.AlwaysDeny);
     }
 }

@@ -300,7 +300,7 @@ internal class OpenRouterRequestMessage
     public string Role { get; set; } = string.Empty;
 
     [JsonPropertyName("content")]
-    public string? Content { get; set; } // JSON string that can represent string or array
+    public object? Content { get; set; } // Can be string (simple text) or array (multimodal content)
 
     [JsonPropertyName("tool_calls")]
     public List<OpenRouterRequestToolCall>? ToolCalls { get; set; }

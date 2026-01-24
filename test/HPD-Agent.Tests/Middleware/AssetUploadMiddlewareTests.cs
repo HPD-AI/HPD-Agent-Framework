@@ -8,70 +8,64 @@ namespace HPD.Agent.Tests.Middleware;
 public class AssetUploadMiddlewareTests
 {
     [Fact]
-    public async Task BeforeIterationAsync_NoAssetStore_DoesNothing()
+    public async Task BeforeMessageTurnAsync_NoAssetStore_DoesNothing()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var session = new AgentSession("test-session");
         // session.Store is null (no store associated)
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage>
-        {
-            new ChatMessage(ChatRole.User, "Hello")
-        });
+        var userMessage = new ChatMessage(ChatRole.User, "Hello");
+        var context = CreateBeforeMessageTurnContext(session, userMessage);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Single(context.Messages);
-        Assert.Equal("Hello", context.Messages[0].Text);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal("Hello", context.UserMessage.Text);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_StoreWithoutAssetStore_DoesNothing()
+    public async Task BeforeMessageTurnAsync_StoreWithoutAssetStore_DoesNothing()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new TestSessionStoreWithoutAssets();
         var session = await store.LoadOrCreateSessionAsync("test-session");
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage>
-        {
-            new ChatMessage(ChatRole.User, "Hello")
-        });
+        var userMessage = new ChatMessage(ChatRole.User, "Hello");
+        var context = CreateBeforeMessageTurnContext(session, userMessage);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Single(context.Messages);
-        Assert.Equal("Hello", context.Messages[0].Text);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal("Hello", context.UserMessage.Text);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_NoDataContent_DoesNothing()
+    public async Task BeforeMessageTurnAsync_NoDataContent_DoesNothing()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
         var session = await store.LoadOrCreateSessionAsync("test-session");
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage>
-        {
-            new ChatMessage(ChatRole.User, "Hello")
-        });
+        var userMessage = new ChatMessage(ChatRole.User, "Hello");
+        var context = CreateBeforeMessageTurnContext(session, userMessage);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Single(context.Messages);
-        Assert.Equal("Hello", context.Messages[0].Text);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal("Hello", context.UserMessage.Text);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_WithDataContent_TransformsToUriContent()
+    public async Task BeforeMessageTurnAsync_WithDataContent_TransformsToUriContent()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -84,29 +78,28 @@ public class AssetUploadMiddlewareTests
             new DataContent(imageBytes, "image/png")
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Single(context.Messages);
-        var transformedMessage = context.Messages[0];
-        Assert.Equal(2, transformedMessage.Contents.Count);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal(2, context.UserMessage.Contents.Count);
 
         // First content should still be text
-        Assert.IsType<TextContent>(transformedMessage.Contents[0]);
-        Assert.Equal("Check this image:", ((TextContent)transformedMessage.Contents[0]).Text);
+        Assert.IsType<TextContent>(context.UserMessage.Contents[0]);
+        Assert.Equal("Check this image:", ((TextContent)context.UserMessage.Contents[0]).Text);
 
         // Second content should be transformed to UriContent
-        Assert.IsType<UriContent>(transformedMessage.Contents[1]);
-        var uriContent = (UriContent)transformedMessage.Contents[1];
+        Assert.IsType<UriContent>(context.UserMessage.Contents[1]);
+        var uriContent = (UriContent)context.UserMessage.Contents[1];
         Assert.StartsWith("asset://", uriContent.Uri.ToString());
         Assert.Equal("image/png", uriContent.MediaType);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_EmitsAssetUploadedEvent()
+    public async Task BeforeMessageTurnAsync_EmitsAssetUploadedEvent()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -118,24 +111,19 @@ public class AssetUploadMiddlewareTests
             new DataContent(imageBytes, "image/png")
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
-        var events = new List<AgentEvent>();
-
-        // Capture emitted events
-        var originalEmit = context.Emit;
-        context = context with { };
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert - verify event was emitted via context.Emit
         // Note: We can't easily capture events in this test structure
-        // because BeforeIterationContext.Emit is not mockable.
-        // The event emission is tested in integration tests below.
+        // because BeforeMessageTurnContext.Emit is not mockable.
+        // The event emission is tested in integration tests.
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_MultipleDataContents_TransformsAll()
+    public async Task BeforeMessageTurnAsync_MultipleDataContents_TransformsAll()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -150,28 +138,27 @@ public class AssetUploadMiddlewareTests
             new DataContent(image2, "image/jpeg")
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Single(context.Messages);
-        var transformedMessage = context.Messages[0];
-        Assert.Equal(3, transformedMessage.Contents.Count);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal(3, context.UserMessage.Contents.Count);
 
         // All DataContent should be transformed to UriContent
-        Assert.IsType<UriContent>(transformedMessage.Contents[0]);
-        Assert.Equal("image/png", ((UriContent)transformedMessage.Contents[0]).MediaType);
+        Assert.IsType<UriContent>(context.UserMessage.Contents[0]);
+        Assert.Equal("image/png", ((UriContent)context.UserMessage.Contents[0]).MediaType);
 
-        Assert.IsType<TextContent>(transformedMessage.Contents[1]);
+        Assert.IsType<TextContent>(context.UserMessage.Contents[1]);
 
-        Assert.IsType<UriContent>(transformedMessage.Contents[2]);
-        Assert.Equal("image/jpeg", ((UriContent)transformedMessage.Contents[2]).MediaType);
+        Assert.IsType<UriContent>(context.UserMessage.Contents[2]);
+        Assert.Equal("image/jpeg", ((UriContent)context.UserMessage.Contents[2]).MediaType);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_PreservesMessageMetadata()
+    public async Task BeforeMessageTurnAsync_PreservesMessageMetadata()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -190,19 +177,19 @@ public class AssetUploadMiddlewareTests
             }
         };
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var transformedMessage = context.Messages[0];
-        Assert.Equal("TestUser", transformedMessage.AuthorName);
-        Assert.Equal("customValue", transformedMessage.AdditionalProperties?["customKey"]);
+        Assert.NotNull(context.UserMessage);
+        Assert.Equal("TestUser", context.UserMessage.AuthorName);
+        Assert.Equal("customValue", context.UserMessage.AdditionalProperties?["customKey"]);
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_EmptyDataContent_Skips()
+    public async Task BeforeMessageTurnAsync_EmptyDataContent_Skips()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -213,20 +200,19 @@ public class AssetUploadMiddlewareTests
             new DataContent(Array.Empty<byte>(), "image/png") // Empty data
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert - should not transform empty DataContent
-        Assert.Single(context.Messages);
-        var transformedMessage = context.Messages[0];
-        Assert.Single(transformedMessage.Contents);
-        Assert.IsType<DataContent>(transformedMessage.Contents[0]); // Still DataContent
+        Assert.NotNull(context.UserMessage);
+        Assert.Single(context.UserMessage.Contents);
+        Assert.IsType<DataContent>(context.UserMessage.Contents[0]); // Still DataContent
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_AssetStoreReturnsId_CreatesCorrectUri()
+    public async Task BeforeMessageTurnAsync_AssetStoreReturnsId_CreatesCorrectUri()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -238,13 +224,14 @@ public class AssetUploadMiddlewareTests
             new DataContent(imageBytes, "image/png")
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var uriContent = (UriContent)context.Messages[0].Contents[0];
+        Assert.NotNull(context.UserMessage);
+        var uriContent = (UriContent)context.UserMessage.Contents[0];
         var assetId = uriContent.Uri.Host;
 
         // Verify we can retrieve the asset
@@ -256,7 +243,7 @@ public class AssetUploadMiddlewareTests
     }
 
     [Fact]
-    public async Task BeforeIterationAsync_OctetStreamMediaType_PreservesContentType()
+    public async Task BeforeMessageTurnAsync_OctetStreamMediaType_PreservesContentType()
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
@@ -268,13 +255,14 @@ public class AssetUploadMiddlewareTests
             new DataContent(bytes, "application/octet-stream")
         ]);
 
-        var context = CreateBeforeIterationContext(session, new List<ChatMessage> { message });
+        var context = CreateBeforeMessageTurnContext(session, message);
 
         // Act
-        await middleware.BeforeIterationAsync(context, CancellationToken.None);
+        await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
 
         // Assert
-        var uriContent = (UriContent)context.Messages[0].Contents[0];
+        Assert.NotNull(context.UserMessage);
+        var uriContent = (UriContent)context.UserMessage.Contents[0];
         var assetId = uriContent.Uri.Host;
         var assetStore = store.GetAssetStore(session.Id)!;
         var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
@@ -283,13 +271,13 @@ public class AssetUploadMiddlewareTests
         Assert.Equal("application/octet-stream", retrievedAsset.ContentType);
     }
 
-    // Helper method to create BeforeIterationContext
-    private static BeforeIterationContext CreateBeforeIterationContext(
+    // Helper method to create BeforeMessageTurnContext
+    private static BeforeMessageTurnContext CreateBeforeMessageTurnContext(
         AgentSession session,
-        List<ChatMessage> messages)
+        ChatMessage userMessage)
     {
         var state = AgentLoopState.Initial(
-            new List<ChatMessage>(),
+            [],
             "test-run",
             "test-conv",
             "TestAgent");
@@ -302,10 +290,10 @@ public class AssetUploadMiddlewareTests
             session,
             CancellationToken.None);
 
-        var options = new ChatOptions();
+        var conversationHistory = new List<ChatMessage>();
         var runOptions = new AgentRunOptions();
 
-        return agentContext.AsBeforeIteration(0, messages, options, runOptions);
+        return agentContext.AsBeforeMessageTurn(userMessage, conversationHistory, runOptions);
     }
 
     // Test session store without asset support

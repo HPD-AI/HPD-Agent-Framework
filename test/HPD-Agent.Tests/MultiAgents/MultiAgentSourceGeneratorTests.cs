@@ -227,7 +227,7 @@ public class MultiAgentSourceGeneratorTests
 /// Test toolkit with [MultiAgent] methods for source generator validation.
 /// Uses TestAgentFactory to create agents with test provider registry.
 /// </summary>
-[Toolkit("Test multi-agent capabilities")]
+[Collapse("Test multi-agent capabilities")]
 public class TestMultiAgentToolkit
 {
     private static HPD.Agent.Agent CreateTestAgent(string name)

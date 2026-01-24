@@ -55,9 +55,9 @@ namespace HPD.Agent;
 /// </example>
 public class HistoryReductionMiddleware : IAgentMiddleware
 {
-    //     
+    //
     // CONFIGURATION (not state - set at registration time)
-    //     
+    //
 
     /// <summary>
     /// Chat reducer to use for history reduction.
@@ -76,32 +76,58 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// </summary>
     public string? SystemInstructions { get; init; }
 
-    //     
+    //
     // HOOKS
-    //     
+    //
 
     /// <summary>
-    /// Called BEFORE each LLM call.
-    /// Applies history reduction to context.Messages if needed.
+    /// Called BEFORE each message turn.
+    /// This is the perfect place for history reduction - runs once per user message.
     /// </summary>
-    public async Task BeforeIterationAsync(
-        BeforeIterationContext context,
+    public async Task BeforeMessageTurnAsync(
+        BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        // Skip if no messages or reduction disabled
-        if (context.Messages == null || context.Messages.Count == 0)
-            return;
+        var startTime = DateTimeOffset.UtcNow;
 
-        // Skip if first iteration (no history to reduce yet)
-        if (context.Iteration == 0 && context.Messages.Count <= Config.TargetMessageCount + (Config.SummarizationThreshold ?? 5))
+        // Check for explicit skip flag in RunOptions (highest priority)
+        if (context.RunOptions.SkipHistoryReduction)
+        {
+            EmitHistoryReductionEvent(context, HistoryReductionStatus.Skipped,
+                reason: "Explicitly skipped via RunOptions.SkipHistoryReduction", startTime: startTime);
             return;
+        }
+
+        // Skip if no messages or reduction disabled
+        if (context.ConversationHistory == null || context.ConversationHistory.Count == 0)
+        {
+            EmitHistoryReductionEvent(context, HistoryReductionStatus.Skipped,
+                reason: "No messages present", startTime: startTime);
+            return;
+        }
+
+        // Check for explicit trigger flag in RunOptions (bypasses threshold checks)
+        var shouldTrigger = context.RunOptions.TriggerHistoryReduction;
+
+        // If not explicitly triggered, check automatic thresholds
+        if (!shouldTrigger)
+        {
+            // Skip if message count is below threshold
+            if (context.ConversationHistory.Count <= Config.TargetMessageCount + (Config.SummarizationThreshold ?? 5))
+            {
+                EmitHistoryReductionEvent(context, HistoryReductionStatus.Skipped,
+                    reason: "Message count below threshold", startTime: startTime,
+                    originalMessageCount: context.ConversationHistory.Count);
+                return;
+            }
+        }
 
         // Read state
         var hrState = context.GetMiddlewareState<HistoryReductionStateData>();
 
         // Separate system messages from conversation messages
-        var systemMessages = context.Messages.Where(m => m.Role == ChatRole.System).ToList();
-        var conversationMessages = context.Messages.Where(m => m.Role != ChatRole.System).ToList();
+        var systemMessages = context.ConversationHistory.Where(m => m.Role == ChatRole.System).ToList();
+        var conversationMessages = context.ConversationHistory.Where(m => m.Role != ChatRole.System).ToList();
 
         // Try cache first
         CachedReduction? activeReduction = null;
@@ -115,15 +141,24 @@ public class HistoryReductionMiddleware : IAgentMiddleware
             var reducedMessages = activeReduction.ApplyToMessages(conversationMessages, systemMessage: null).ToList();
 
             // Update context with reduced messages (system messages + reduced conversation)
-            // V2: Messages is mutable - clear and repopulate instead of reassigning
-            context.Messages.Clear();
+            // ConversationHistory is mutable - clear and repopulate instead of reassigning
+            context.ConversationHistory.Clear();
             foreach (var msg in systemMessages.Concat(reducedMessages))
             {
-                context.Messages.Add(msg);
+                context.ConversationHistory.Add(msg);
             }
 
             // Emit event for observability
-            EmitCacheHitEvent(context, activeReduction);
+            EmitHistoryReductionEvent(context, HistoryReductionStatus.CacheHit,
+                startTime: startTime,
+                originalMessageCount: conversationMessages.Count,
+                reducedMessageCount: reducedMessages.Count,
+                summaryContent: activeReduction.SummaryContent,
+                cacheAge: DateTime.UtcNow - activeReduction.CreatedAt);
+
+            // NOTE: Circuit breaker does NOT fire on cache hits
+            // Cache hits are transparent - just reusing an existing summary.
+            // Circuit breaker ONLY fires when a NEW reduction is performed.
 
             return; // Done - cache hit path
         }
@@ -157,11 +192,11 @@ public class HistoryReductionMiddleware : IAgentMiddleware
                         Config.SummarizationThreshold ?? 5);
 
                     // Update context with reduced messages (system messages + reduced conversation)
-                    // V2: Messages is mutable - clear and repopulate instead of reassigning
-                    context.Messages.Clear();
+                    // ConversationHistory is mutable - clear and repopulate instead of reassigning
+                    context.ConversationHistory.Clear();
                     foreach (var msg in systemMessages.Concat(reducedList))
                     {
-                        context.Messages.Add(msg);
+                        context.ConversationHistory.Add(msg);
                     }
 
                     // Store reduction in state for next iteration
@@ -169,12 +204,26 @@ public class HistoryReductionMiddleware : IAgentMiddleware
                         s.WithReduction(activeReduction)
                     );
 
-                    // Emit events for observability
-                    EmitReductionPerformedEvent(context, activeReduction, removedCount);
+                    // Emit event for observability
+                    EmitHistoryReductionEvent(context, HistoryReductionStatus.Performed,
+                        startTime: startTime,
+                        originalMessageCount: conversationMessages.Count,
+                        reducedMessageCount: reducedList.Count,
+                        messagesRemoved: removedCount,
+                        summaryContent: activeReduction.SummaryContent);
+
+                    // Check if we should terminate (circuit breaker mode)
+                    TerminateIfCircuitBreaker(context, "History reduction performed - circuit breaker triggered");
 
                     return; // Done - reduction performed
                 }
             }
+        }
+        else
+        {
+            EmitHistoryReductionEvent(context, HistoryReductionStatus.Skipped,
+                reason: "Reduction threshold not met", startTime: startTime,
+                originalMessageCount: conversationMessages.Count);
         }
     }
 
@@ -196,17 +245,36 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Emits a cache hit event for observability.
+    /// Emits a unified history reduction event for all scenarios.
     /// </summary>
-    private void EmitCacheHitEvent(BeforeIterationContext context, CachedReduction reduction)
+    private void EmitHistoryReductionEvent(
+        BeforeMessageTurnContext context,
+        HistoryReductionStatus status,
+        DateTimeOffset startTime,
+        int? originalMessageCount = null,
+        int? reducedMessageCount = null,
+        int? messagesRemoved = null,
+        string? summaryContent = null,
+        TimeSpan? cacheAge = null,
+        string? reason = null)
     {
         try
         {
-            context.Emit(new HistoryReductionCacheHitEvent(
+            var duration = DateTimeOffset.UtcNow - startTime;
+
+            context.Emit(new HistoryReductionEvent(
                 AgentName: context.AgentName,
-                Iteration: context.Iteration,
-                MessageCount: context.Messages?.Count ?? 0,
-                CachedReductionAge: DateTime.UtcNow - reduction.CreatedAt,
+                Iteration: 0, // Always 0 since we're in BeforeMessageTurn
+                Status: status,
+                Strategy: Config.Strategy,
+                OriginalMessageCount: originalMessageCount,
+                ReducedMessageCount: reducedMessageCount,
+                MessagesRemoved: messagesRemoved,
+                SummaryContent: summaryContent,
+                SummaryLength: summaryContent?.Length,
+                CacheAge: cacheAge,
+                Duration: duration,
+                Reason: reason,
                 Timestamp: DateTimeOffset.UtcNow));
         }
         catch (InvalidOperationException)
@@ -216,52 +284,74 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Emits a reduction performed event for observability.
+    /// Checks if circuit breaker mode is enabled and terminates the agent if so.
+    /// Circuit breaker mode stops execution after reduction, requiring user to send next message.
     /// </summary>
-    private void EmitReductionPerformedEvent(BeforeIterationContext context, CachedReduction reduction, int removedCount)
+    private void TerminateIfCircuitBreaker(BeforeMessageTurnContext context, string reason)
     {
-        try
+        // Determine effective behavior (RunOptions override takes precedence)
+        var effectiveBehavior = context.RunOptions.HistoryReductionBehaviorOverride ?? Config.Behavior;
+
+        // If circuit breaker mode, terminate the turn
+        if (effectiveBehavior == HistoryReductionBehavior.CircuitBreaker)
         {
-            context.Emit(new HistoryReductionPerformedEvent(
-                AgentName: context.AgentName,
-                Iteration: context.Iteration,
-                OriginalMessageCount: reduction.MessageCountAtReduction,
-                ReducedMessageCount: reduction.MessageCountAtReduction - removedCount,
-                MessagesRemoved: removedCount,
-                SummaryLength: reduction.SummaryContent.Length,
-                Strategy: Config.Strategy.ToString(),
-                Timestamp: DateTimeOffset.UtcNow));
-        }
-        catch (InvalidOperationException)
-        {
-            // EventCoordinator not configured - event emission is optional
+            context.UpdateState(s => s with
+            {
+                IsTerminated = true,
+                TerminationReason = reason
+            });
         }
     }
 }
 
-//     
+//
 // OBSERVABILITY EVENTS
-//     
+//
 
 /// <summary>
-/// Event emitted when a cached reduction is reused (cache hit).
+/// Status of history reduction operation.
 /// </summary>
-public sealed record HistoryReductionCacheHitEvent(
-    string AgentName,
-    int Iteration,
-    int MessageCount,
-    TimeSpan CachedReductionAge,
-    DateTimeOffset Timestamp) : AgentEvent;
+public enum HistoryReductionStatus
+{
+    /// <summary>Reduction was skipped (no messages, below threshold, etc.)</summary>
+    Skipped,
+
+    /// <summary>Cached reduction was reused (no LLM call needed)</summary>
+    CacheHit,
+
+    /// <summary>New reduction was performed (LLM call made to summarize)</summary>
+    Performed
+}
 
 /// <summary>
-/// Event emitted when a new reduction is performed (cache miss).
+/// Unified event emitted for all history reduction scenarios.
+/// Consolidates started, skipped, cache hit, and performed events into a single event.
 /// </summary>
-public sealed record HistoryReductionPerformedEvent(
+/// <remarks>
+/// <para><b>Design Rationale:</b></para>
+/// <para>
+/// This consolidated event simplifies observability by providing a single event type
+/// for all history reduction outcomes. The Status field discriminates between:
+/// - Skipped: Reduction not needed (early return conditions)
+/// - CacheHit: Reused cached summary (no LLM call)
+/// - Performed: New summarization (LLM call made)
+/// </para>
+/// <para>
+/// When Strategy is Summarizing and Status is CacheHit or Performed,
+/// the SummaryContent field contains the actual summary text that was applied.
+/// </para>
+/// </remarks>
+public sealed record HistoryReductionEvent(
     string AgentName,
     int Iteration,
-    int OriginalMessageCount,
-    int ReducedMessageCount,
-    int MessagesRemoved,
-    int SummaryLength,
-    string Strategy,
-    DateTimeOffset Timestamp) : AgentEvent;
+    HistoryReductionStatus Status,
+    HistoryReductionStrategy Strategy,
+    int? OriginalMessageCount,
+    int? ReducedMessageCount,
+    int? MessagesRemoved,
+    string? SummaryContent,
+    int? SummaryLength,
+    TimeSpan? CacheAge,
+    TimeSpan Duration,
+    string? Reason,
+    DateTimeOffset Timestamp) : AgentEvent, IObservabilityEvent;

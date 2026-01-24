@@ -52,7 +52,7 @@ public class ThreadSafetyTests
 
         // Simulate middleware reading state BEFORE async gap
         var stateCapturedBefore = context.State; // OLD state reference
-        var staleErrorState = stateCapturedBefore.MiddlewareState.ErrorTracking ?? new();
+        var staleErrorState = stateCapturedBefore.MiddlewareState.ErrorTracking() ?? new();
 
         // Simulate Agent.cs changing state during an async gap (via SyncState)
         // This is what would happen if middleware did: await SomeAsyncWork();
@@ -82,7 +82,7 @@ public class ThreadSafetyTests
         // Act - Read inside lambda (always fresh)
         context.UpdateState(s =>
         {
-            var current = s.MiddlewareState.ErrorTracking ?? new();
+            var current = s.MiddlewareState.ErrorTracking() ?? new();
             var updated = current with { ConsecutiveFailures = current.ConsecutiveFailures + 1 };
             return s with
             {
@@ -91,7 +91,7 @@ public class ThreadSafetyTests
         });
 
         // Assert
-        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures ?? 0);
+        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking())?.ConsecutiveFailures ?? 0);
     }
 
     [Fact(Skip = "Generation counter cannot detect stale state captured before UpdateState is called. " +
@@ -106,7 +106,7 @@ public class ThreadSafetyTests
 
         // Simulate middleware reading state BEFORE spawning background task
         var stateCapturedBefore = context.State; // OLD state reference
-        var staleErrorState = stateCapturedBefore.MiddlewareState.ErrorTracking ?? new();
+        var staleErrorState = stateCapturedBefore.MiddlewareState.ErrorTracking() ?? new();
 
         // Simulate background task (bad practice)
         var backgroundTask = Task.Run(async () =>
@@ -297,7 +297,7 @@ public class ThreadSafetyTests
         // Act - Update multiple fields atomically
         context.UpdateState(s =>
         {
-            var errorState = s.MiddlewareState.ErrorTracking ?? new();
+            var errorState = s.MiddlewareState.ErrorTracking() ?? new();
             var updatedErrors = errorState with { ConsecutiveFailures = errorState.ConsecutiveFailures + 1 };
 
             return s with
@@ -310,7 +310,7 @@ public class ThreadSafetyTests
 
         // Assert - All fields updated
         Assert.Equal(1, context.Analyze(s => s.Iteration));
-        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures ?? 0);
+        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking())?.ConsecutiveFailures ?? 0);
         Assert.False(context.Analyze(s => s.IsTerminated));
     }
 

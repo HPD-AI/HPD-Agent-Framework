@@ -24,7 +24,7 @@ internal class AnthropicProvider : IProviderFeatures
         // Create the official Anthropic client
         var anthropicClient = new AnthropicClient
         {
-            APIKey = config.ApiKey,
+            ApiKey = config.ApiKey,
             BaseUrl = config.Endpoint ?? "https://api.anthropic.com"
         };
 

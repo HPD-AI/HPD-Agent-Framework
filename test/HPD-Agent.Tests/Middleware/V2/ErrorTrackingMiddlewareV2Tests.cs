@@ -22,7 +22,7 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - failure count incremented
-        var errorState = context.Analyze(s => s.MiddlewareState.ErrorTracking);
+        var errorState = context.Analyze(s => s.MiddlewareState.ErrorTracking());
         Assert.NotNull(errorState);
         Assert.Equal(1, errorState.ConsecutiveFailures);
     }
@@ -46,7 +46,7 @@ public class ErrorTrackingMiddlewareTests
         // Assert
         Assert.True(context.Analyze(s => s.IsTerminated));
         Assert.Contains("Maximum consecutive errors", context.Analyze(s => s.TerminationReason) ?? "");
-        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
+        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking())?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -62,7 +62,7 @@ public class ErrorTrackingMiddlewareTests
 
         // Simulate error first
         await middleware.OnErrorAsync(errorContext, CancellationToken.None);
-        Assert.Equal(1, errorContext.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(1, errorContext.State.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
 
         // Update afterContext to have same state as errorContext
         var agentContext = GetAgentContextFromErrorContext(errorContext);
@@ -72,7 +72,7 @@ public class ErrorTrackingMiddlewareTests
         await middleware.AfterIterationAsync(newAfterContext, CancellationToken.None);
 
         // Assert
-        Assert.Equal(0, newAfterContext.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(0, newAfterContext.State.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -88,7 +88,7 @@ public class ErrorTrackingMiddlewareTests
 
         // Simulate error first
         await middleware.OnErrorAsync(errorContext, CancellationToken.None);
-        Assert.Equal(1, errorContext.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(1, errorContext.State.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
 
         // Update afterContext to have same state as errorContext
         var agentContext = GetAgentContextFromErrorContext(errorContext);
@@ -102,7 +102,7 @@ public class ErrorTrackingMiddlewareTests
         await middleware.AfterIterationAsync(newAfterContext, CancellationToken.None);
 
         // Assert - counter unchanged
-        Assert.Equal(1, newAfterContext.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(1, newAfterContext.State.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -119,13 +119,13 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - state updated immediately, visible in context.State (no GetPendingState!)
-        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
+        Assert.Equal(1, context.Analyze(s => s.MiddlewareState.ErrorTracking())?.ConsecutiveFailures);
 
         // Second error
         await middleware.OnErrorAsync(context, CancellationToken.None);
 
         // Assert - immediately visible
-        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking)?.ConsecutiveFailures);
+        Assert.Equal(2, context.Analyze(s => s.MiddlewareState.ErrorTracking())?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -154,7 +154,7 @@ public class ErrorTrackingMiddlewareTests
         await middleware.OnErrorAsync(secondError, CancellationToken.None);
 
         // Assert - both errors counted
-        Assert.Equal(2, secondError.State.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(2, secondError.State.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
     }
 
     /// <summary>

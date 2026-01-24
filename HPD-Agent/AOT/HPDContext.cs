@@ -88,6 +88,12 @@ using HPD.Agent;
 [JsonSerializable(typeof(IList<Microsoft.Extensions.AI.ChatMessage>))]
 [JsonSerializable(typeof(IEnumerable<Microsoft.Extensions.AI.ChatMessage>))]
 
+// --- HPD-Agent Typed Content Classes (Phase 1 - Typed Content) ---
+[JsonSerializable(typeof(HPD.Agent.ImageContent))]
+[JsonSerializable(typeof(HPD.Agent.AudioContent))]
+[JsonSerializable(typeof(HPD.Agent.VideoContent))]
+[JsonSerializable(typeof(HPD.Agent.DocumentContent))]
+
 // --- Conversation storage and serialization types ---
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]

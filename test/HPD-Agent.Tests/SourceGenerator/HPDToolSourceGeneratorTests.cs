@@ -23,7 +23,7 @@ public class HPDToolSourceGeneratorTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location), // Corrected AIFunction reference
-                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location), // ToolkitAttribute is in HPD-Agent assembly
+                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location), // ToolkitAttribute is in HPD-Agent assembly
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
@@ -62,7 +62,7 @@ namespace TestToolkits
         }}
     }}
 
-    [Toolkit(""Test collapsed Toolkit"",   FunctionResult = DynamicInstructionsProvider.GetInstructions())]
+    [Collapse(""Test collapsed Toolkit"",   FunctionResult = DynamicInstructionsProvider.GetInstructions())]
     public partial class CollapsedTestToolkit
     {{
         [AIFunction]
@@ -91,7 +91,7 @@ using System;
 
 namespace TestToolkits
 {{
-    [Toolkit(""Test static collapsed Toolkit"",   FunctionResult = ""Static instructions here."")]
+    [Collapse(""Test static collapsed Toolkit"",   FunctionResult = ""Static instructions here."")]
     public partial class StaticCollapsedTestToolkit
     {{
         [AIFunction]

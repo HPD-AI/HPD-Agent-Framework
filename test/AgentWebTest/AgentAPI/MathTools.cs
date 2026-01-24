@@ -38,7 +38,7 @@ public class MathToolMetadataContext : IToolMetadata
     public IEnumerable<string> GetPropertyNames() => _properties.Keys;
 }
 
-[Toolkit("Math Toolkit")]
+[Collapse("Math Toolkit")]
 public class MathTools
 {
     [AIFunction<MathToolMetadataContext>]

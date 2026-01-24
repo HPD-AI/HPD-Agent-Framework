@@ -10,21 +10,15 @@ internal class ToolkitInfo
 {
     /// <summary>
     /// The class name (always set from ClassDeclarationSyntax.Identifier).
-    /// Used for file names and type references.
+    /// Used for file names, type references, registry lookup, and container names.
     /// </summary>
     public string ClassName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Custom name from [Toolkit(Name = "...")] attribute, if provided.
-    /// Allows overriding the default class name for registry lookup, container names, etc.
-    /// </summary>
-    public string? CustomName { get; set; }
-
-    /// <summary>
     /// The effective name used in registry, container functions, and skill references.
-    /// Returns CustomName if set, otherwise falls back to ClassName.
+    /// Always returns ClassName (CustomName support has been removed).
     /// </summary>
-    public string EffectiveName => CustomName ?? ClassName;
+    public string EffectiveName => ClassName;
 
     /// <summary>
     /// Description of the toolkit capabilities.
@@ -150,7 +144,7 @@ internal class ToolkitInfo
     public bool IsCollapsed { get; set; }
 
     /// <summary>
-    /// Description from [Toolkit] attribute (if present).
+    /// Description from [Collapse] attribute (if present).
     /// Used for the container function description when collapsed.
     /// </summary>
     public string? ContainerDescription { get; set; }
@@ -207,4 +201,4 @@ internal class ToolkitInfo
 
 // ========== RENAMED (Phase: Toolkit Consolidation) ==========
 // ToolInfo has been renamed to ToolkitInfo.
-// The Name property is now ClassName, with CustomName and EffectiveName for [Toolkit(Name = "...")] support.
+// The Name property is now ClassName. CustomName support has been removed - always use ClassName.

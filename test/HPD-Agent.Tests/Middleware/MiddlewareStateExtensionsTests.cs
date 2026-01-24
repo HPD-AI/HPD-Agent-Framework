@@ -156,7 +156,7 @@ public class MiddlewareStateExtensionsTests
 
         // Assert - Verify state was actually updated in the context
         var stateViaAnalyze = context.Analyze(s =>
-            s.MiddlewareState.ErrorTracking?.ConsecutiveFailures ?? -1
+            s.MiddlewareState.ErrorTracking()?.ConsecutiveFailures ?? -1
         );
         Assert.Equal(1, stateViaAnalyze);
     }
@@ -512,7 +512,7 @@ public class MiddlewareStateExtensionsTests
         // BEFORE approach (verbose, but still works)
         context.UpdateState(s =>
         {
-            var errState = s.MiddlewareState.ErrorTracking ?? new ErrorTrackingStateData();
+            var errState = s.MiddlewareState.ErrorTracking() ?? new ErrorTrackingStateData();
             return s with
             {
                 MiddlewareState = s.MiddlewareState.WithErrorTracking(

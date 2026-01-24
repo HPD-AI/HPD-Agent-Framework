@@ -67,7 +67,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
     {
         // Get or initialize the current extended limit from state
         var permState = context.Analyze(s =>
-            s.MiddlewareState.ContinuationPermission ?? new()
+            s.MiddlewareState.ContinuationPermission() ?? new()
         );
 
         // Initialize state with configured max iterations if this is the first check
@@ -79,7 +79,7 @@ public class ContinuationPermissionMiddleware : IAgentMiddleware
             {
                 MiddlewareState = s.MiddlewareState.WithContinuationPermission(newState)
             });
-            permState = context.Analyze(s => s.MiddlewareState.ContinuationPermission ?? new());
+            permState = context.Analyze(s => s.MiddlewareState.ContinuationPermission() ?? new());
         }
 
         // Check if we've EXCEEDED the iteration limit

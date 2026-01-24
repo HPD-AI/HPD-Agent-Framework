@@ -231,6 +231,51 @@ public class AgentRunOptions
 
     #endregion
 
+    #region Content Attachments
+
+    /// <summary>
+    /// User message text for this run.
+    /// Combined with Attachments to form the user ChatMessage.
+    /// If only Attachments are provided (no UserMessage), middleware handles
+    /// the content transformation (e.g., AudioPipelineMiddleware transcribes audio).
+    /// </summary>
+    public string? UserMessage { get; set; }
+
+    /// <summary>
+    /// Binary content attachments (images, audio, documents, video) for this run.
+    /// Use typed classes: ImageContent, AudioContent, DocumentContent, VideoContent.
+    /// Combined with UserMessage to form the user ChatMessage.
+    /// Middleware processes each content type appropriately.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Attachments can be sent without a UserMessage. For example:
+    /// - Audio-only: AudioPipelineMiddleware transcribes → becomes the message
+    /// - Image-only: Sent to vision model for description
+    /// - Document-only: DocumentHandlingMiddleware extracts text
+    /// </para>
+    /// <para>
+    /// <b>Type Constraint:</b> IReadOnlyList&lt;DataContent&gt; (not AIContent) ensures only binary
+    /// content can be attached. TextContent must go in UserMessage string, not as attachments.
+    /// This provides clear semantics: text vs. binary content separation.
+    /// </para>
+    /// <para>
+    /// <b>Example:</b>
+    /// <code>
+    /// var options = new AgentRunOptions
+    /// {
+    ///     UserMessage = "Analyze this document",
+    ///     Attachments = [await DocumentContent.FromFileAsync("report.pdf")]
+    /// };
+    /// await agent.RunAsync(options);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    [JsonIgnore]  // DataContent derivatives not JSON-serializable
+    public IReadOnlyList<DataContent>? Attachments { get; set; }
+
+    #endregion
+
     #region Audio
 
     /// <summary>
@@ -283,6 +328,58 @@ public class AgentRunOptions
     /// </para>
     /// </remarks>
     public object? Audio { get; set; }
+
+    #endregion
+
+    #region History Reduction
+
+    /// <summary>
+    /// Force history reduction to trigger for this turn, regardless of automatic thresholds.
+    /// Useful for:
+    /// - Context switches: Summarize before changing topics
+    /// - Before expensive operations: Reduce history before complex tasks
+    /// - Memory management: Explicit reduction at strategic points
+    /// - Testing: Trigger reduction at specific points in testing
+    /// </summary>
+    /// <remarks>
+    /// When true, history reduction will be performed even if the automatic
+    /// thresholds (TargetMessageCount + SummarizationThreshold) are not met.
+    /// The reduction will use the configured strategy (Summarizing or MessageCounting).
+    /// </remarks>
+    public bool TriggerHistoryReduction { get; set; } = false;
+
+    /// <summary>
+    /// Skip history reduction for this turn, even if automatic thresholds are met.
+    /// Useful for:
+    /// - Critical context preservation: Keep full history for important decisions
+    /// - Debugging: Disable reduction to inspect full conversation
+    /// - Testing: Test behavior without reduction interference
+    /// - User preference: Premium users or specific requests need full context
+    /// </summary>
+    /// <remarks>
+    /// When true, history reduction will be skipped for this turn regardless
+    /// of whether automatic thresholds would normally trigger it.
+    /// Takes precedence over TriggerHistoryReduction if both are set.
+    /// </remarks>
+    public bool SkipHistoryReduction { get; set; } = false;
+
+    /// <summary>
+    /// Override the history reduction behavior for this turn only.
+    /// - Continue: Reduction happens transparently, agent continues immediately
+    /// - CircuitBreaker: Reduction terminates the turn, user must send next message to continue
+    /// Null = use configured default from HistoryReductionConfig.Behavior.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Use Cases:</b>
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Force circuit breaker for critical moments: "Before this important decision, stop and show summary"</item>
+    /// <item>Override to Continue for automated flows: "Don't interrupt automated batch processing"</item>
+    /// <item>Testing: Switch behaviors per-test to verify both modes work correctly</item>
+    /// </list>
+    /// </remarks>
+    public HistoryReductionBehavior? HistoryReductionBehaviorOverride { get; set; }
 
     #endregion
 

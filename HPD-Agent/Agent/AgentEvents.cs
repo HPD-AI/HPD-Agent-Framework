@@ -855,6 +855,65 @@ public record PlanModeActivatedEvent(
     DateTimeOffset Timestamp
 ) : AgentEvent, IObservabilityEvent;
 
+#region Plan Lifecycle Events
+
+/// <summary>
+/// Type of plan update operation.
+/// </summary>
+public enum PlanUpdateType
+{
+    /// <summary>Plan was created with initial goal and steps</summary>
+    Created,
+
+    /// <summary>A step's status was updated</summary>
+    StepUpdated,
+
+    /// <summary>A new step was added to the plan</summary>
+    StepAdded,
+
+    /// <summary>A context note was added</summary>
+    NoteAdded,
+
+    /// <summary>The entire plan was marked as complete</summary>
+    Completed
+}
+
+/// <summary>
+/// Consolidated plan update event following the Codex pattern.
+/// Emitted whenever a plan is created or modified, containing the full plan state.
+/// </summary>
+/// <remarks>
+/// <para><b>Design Rationale:</b></para>
+/// <para>
+/// This follows the Codex pattern of emitting a single event type with full plan state,
+/// rather than multiple granular events. Benefits:
+/// - Simpler for consumers (one event handler)
+/// - Always includes complete context (no partial state)
+/// - Matches industry patterns (Codex, OpenCode)
+/// - Reduces serialization registrations
+/// </para>
+/// <para>
+/// The UpdateType discriminator allows consumers to react to specific changes while
+/// always having access to the complete plan state for UI synchronization.
+/// </para>
+/// <para><b>Plan Property:</b></para>
+/// <para>
+/// The Plan property is of type object to avoid circular dependencies between HPD-Agent
+/// and HPD-Agent.Memory assemblies. At runtime, this will be an AgentPlanData instance.
+/// Consumers can cast it to the appropriate type.
+/// </para>
+/// </remarks>
+public record PlanUpdatedEvent(
+    string PlanId,
+    string ConversationId,
+    PlanUpdateType UpdateType,
+    object Plan,
+    string? Explanation,
+    DateTimeOffset UpdatedAt
+) : AgentEvent, IObservabilityEvent;
+
+#endregion
+
 /// <summary>
 /// Emitted when a nested agent is invoked.
 /// </summary>

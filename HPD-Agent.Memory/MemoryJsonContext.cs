@@ -7,18 +7,14 @@ namespace HPD.Agent.Memory;
 /// Consolidated source-generated JSON serialization context for all Memory module types.
 /// Provides AOT and trimming compatibility for:
 /// - Dynamic Memory: DynamicMemoryConfig
-/// - Plan Mode: PlanModeConfig, AgentPlan, PlanStep, PlanStepStatus
+/// - Plan Mode: PlanModeConfig (state types are in HPD-Agent core)
 /// - Static Memory: StaticMemoryConfig, StaticMemoryDocument
 /// </summary>
 [JsonSourceGenerationOptions(WriteIndented = true)]
 // Dynamic Memory types
 [JsonSerializable(typeof(DynamicMemoryConfig))]
-// Plan Mode types
+// Plan Mode types (state types like AgentPlanData are in HPD-Agent core)
 [JsonSerializable(typeof(PlanModeConfig))]
-[JsonSerializable(typeof(AgentPlan))]
-[JsonSerializable(typeof(PlanStep))]
-[JsonSerializable(typeof(PlanStepStatus))]
-[JsonSerializable(typeof(List<PlanStep>))]
 // Static Memory types
 [JsonSerializable(typeof(StaticMemoryConfig))]
 [JsonSerializable(typeof(StaticMemoryDocument))]

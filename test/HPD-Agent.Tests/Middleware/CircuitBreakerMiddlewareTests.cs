@@ -243,7 +243,7 @@ public class CircuitBreakerMiddlewareTests
 
         // Add a tool call that matches the circuit breaker state (if any)
         var toolCalls = new List<FunctionCallContent>();
-        var cbState = actualState.MiddlewareState.CircuitBreaker;
+        var cbState = actualState.MiddlewareState.CircuitBreaker();
         if (cbState != null && cbState.LastSignaturePerTool.Count > 0)
         {
             // Get the last tool name to create a matching tool call

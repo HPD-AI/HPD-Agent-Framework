@@ -38,6 +38,13 @@ namespace HPD.Agent;
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(JsonElement))]
 
+// HPD-Agent Typed Content Classes (Phase 1 - Typed Content)
+// These must be serializable for session persistence
+[JsonSerializable(typeof(HPD.Agent.ImageContent))]
+[JsonSerializable(typeof(HPD.Agent.AudioContent))]
+[JsonSerializable(typeof(HPD.Agent.VideoContent))]
+[JsonSerializable(typeof(HPD.Agent.DocumentContent))]
+
 // Common .NET types that may appear in tool results
 [JsonSerializable(typeof(decimal))]
 [JsonSerializable(typeof(long))]
@@ -75,6 +82,13 @@ public partial class SessionJsonContext : JsonSerializerContext
                 options.TypeInfoResolverChain.Add(resolver);
             }
         }
+
+        // Register HPD-Agent custom content types as AIContent derived types
+        // These extend DataContent but need explicit registration for polymorphic serialization
+        options.AddAIContentType<ImageContent>("hpd:image");
+        options.AddAIContentType<AudioContent>("hpd:audio");
+        options.AddAIContentType<VideoContent>("hpd:video");
+        options.AddAIContentType<DocumentContent>("hpd:document");
 
         options.MakeReadOnly();
         return options;

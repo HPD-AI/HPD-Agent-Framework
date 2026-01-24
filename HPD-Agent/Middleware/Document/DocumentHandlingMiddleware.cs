@@ -48,7 +48,7 @@ public class DocumentHandlingMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Called before processing a user message turn.
+    /// Called before each LLM iteration.
     /// Checks for DataContent, UriContent, or HostedFileContent in messages and processes them if present.
     /// </summary>
     public async Task BeforeIterationAsync(

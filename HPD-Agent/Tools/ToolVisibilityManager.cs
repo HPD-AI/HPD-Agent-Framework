@@ -94,7 +94,7 @@ public class ToolVisibilityManager
         ImmutableHashSet<string> expandedCollapsedToolkitContainers,
         ImmutableHashSet<string> expandedSkillContainers)
     {
-        // Phase 1: Build context (first pass - identify relationships)
+        //  Build context (first pass - identify relationships)
         var context = BuildVisibilityContext(allTools, expandedCollapsedToolkitContainers, expandedSkillContainers);
 
         var CollapseContainers = new List<AIFunction>();
@@ -296,7 +296,7 @@ public class ToolVisibilityManager
         if (_neverCollapseToolkits.Contains(function.Name))
             return ContainerType.NotAContainer;
 
-        // Check for IsToolkitContainer flag (new [Toolkit] attribute) or IsCollapse flag (legacy [Collapse] attribute)
+        // Check for IsToolkitContainer flag (from [Collapse] attribute) or IsCollapse flag (legacy compatibility)
         if ((function.AdditionalProperties?.TryGetValue("IsToolkitContainer", out var toolkitVal) == true &&
             toolkitVal is bool toolkitFlag && toolkitFlag) ||
             (function.AdditionalProperties?.TryGetValue("IsCollapse", out var CollapseVal) == true &&
@@ -312,7 +312,7 @@ public class ToolVisibilityManager
             return ContainerType.SkillMethodContainer;
         }
 
-        // Container with no special flags = legacy Collapsed Toolkit
+        // Container with no special flags = legacy collapsed toolkit
         return ContainerType.CollapsedToolkitContainer;
     }
 

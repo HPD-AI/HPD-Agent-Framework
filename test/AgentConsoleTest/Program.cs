@@ -3,6 +3,7 @@
 using HPD.Agent;
 using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
+using HPD.Agent.Memory;
 using HPD.Agent.Providers.Anthropic;
 using HPD.Agent.Providers.AzureAI;
 using Microsoft.Extensions.Configuration;
@@ -58,6 +59,16 @@ When the user asks you something:
 
 Be helpful, thorough, and conversational.",
     Collapsing = new CollapsingConfig { Enabled = true },
+    // Enable history reduction to manage long conversations
+    /*HistoryReduction = new HistoryReductionConfig
+    {
+        Enabled = true,
+        Strategy = HistoryReductionStrategy.Summarizing,  // LLM summarizes old messages
+        TargetMessageCount = 3,      // Keep last 3 messages (small for testing)
+        SummarizationThreshold = 2,  // Re-summarize when 2 new messages added
+        Behavior = HistoryReductionBehavior.CircuitBreaker  // STOP after reduction for testing!
+    },
+    */
     // Toolkits resolved from source-generated registry at Build() time
     Toolkits = new List<ToolkitReference>
     {
@@ -68,18 +79,20 @@ Be helpful, thorough, and conversational.",
     Provider = new ProviderConfig
     {
         ProviderKey = "openrouter",
-        ModelName = "anthropic/claude-3-5-sonnet",  // Switched from Mistral to Claude - avoids chat_template issue
+        ModelName = "google/gemini-2.5-pro",  // Switched from Mistral to Claude - avoids chat_template issue
     }
 };
 // Configure logging to show Information level logs including HTTP details
 var loggerFactory = LoggerFactory.Create(builder =>
 {
-    builder.SetMinimumLevel(LogLevel.Debug);  // Show debug logs
+    builder.SetMinimumLevel(LogLevel.Trace);  // Show trace logs for maximum verbosity
     builder.AddConsole();
     // Enable HTTP client logging to see exact requests/responses
     builder.AddFilter("System.Net.Http", LogLevel.Debug);
     builder.AddFilter("System.Net.Http.HttpClient", LogLevel.Debug);
     builder.AddFilter("Microsoft.Extensions.AI", LogLevel.Debug);
+    // Enable plan mode middleware logging
+    builder.AddFilter("HPD.Agent.Memory.AgentPlanAgentMiddleware", LogLevel.Trace);
 });
 
 
@@ -87,7 +100,9 @@ var loggerFactory = LoggerFactory.Create(builder =>
 var agentBuilder = new AgentBuilder(config)
     .WithLogging(loggerFactory)
     // Toolkits and Provider now come from config - no need for .WithToolkit<>() or .WithProvider() calls
-    .WithSessionStore(sessionStore, persistAfterTurn: true);
+    .WithSessionStore(sessionStore, persistAfterTurn: true)
+    // Enable plan mode for multi-step task tracking
+    .WithPlanMode();
 
 // Add audio pipeline if providers are available
 var agent = await agentBuilder.Build();
@@ -123,6 +138,7 @@ AnsiConsole.MarkupLine($"[dim]Session ID: {sessionId}[/]");
 AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
 AnsiConsole.MarkupLine("[dim]Sessions are automatically saved to: " + sessionsPath + "[/]");
 AnsiConsole.MarkupLine("[dim]Type /help for commands, or just chat naturally[/]");
+AnsiConsole.MarkupLine("[dim]💡 Drag images into terminal or use /image <path> [[question]][/]");
 AnsiConsole.WriteLine();
 
 while (true)
@@ -258,7 +274,32 @@ while (true)
         continue;
     }
 
-    // Check if it's a slash command (AFTER custom commands like /quant)
+    // Check for image input BEFORE command processor
+    var (hasImage, imageContent, imageQuestion) = await ImageInputHelper.TryParseImageInputAsync(userInput);
+    if (hasImage && imageContent != null)
+    {
+        // Create message with both text and image
+        // detail options: "low" (~85 tokens, cheap), "high" (best quality), null/auto (balanced)
+        // Using auto (null) for balanced quality and cost - change to "low" for cheaper
+        var message = ImageInputHelper.CreateImageMessage(
+            imageQuestion ?? "Describe this image in detail",
+            imageContent,
+            detail: null); // auto/balanced
+
+        // Stream agent response using the new ChatMessage overload
+        await foreach (var evt in agent.RunAsync(message, sessionId))
+        {
+            ui.RenderEvent(evt);
+        }
+
+        // Reload thread to show updated message count
+        thread = await agent.LoadSessionAsync(sessionId);
+        AnsiConsole.MarkupLine($"[dim]💾 Session saved ({thread.Messages.Count} messages)[/]");
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    // Check if it's a slash command (AFTER custom commands like /quant and /image)
     if (commandProcessor.IsCommand(userInput))
     {
         var result = await commandProcessor.ExecuteAsync(userInput);
@@ -300,15 +341,28 @@ while (true)
 }
 
 // Helper class to log HTTP requests/responses
-public class DebugHttpHandler : HttpClientHandler
+    /// <summary>
+    /// HTTP handler for debugging HTTP requests and responses.
+    /// </summary>
+    public class DebugHttpHandler : HttpClientHandler
 {
     private readonly ILogger _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DebugHttpHandler"/> class.
+    /// </summary>
+    /// <param name="logger">The logger to use for debugging output.</param>
     public DebugHttpHandler(ILogger logger)
     {
         _logger = logger;
     }
 
+    /// <summary>
+    /// Sends an HTTP request asynchronously and logs the request and response.
+    /// </summary>
+    /// <param name="request">The HTTP request message.</param>
+    /// <param name="cancellationToken">A cancellation token to cancel operation.</param>
+    /// <returns>The HTTP response message.</returns>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         _logger.LogInformation("=== HTTP REQUEST ===");

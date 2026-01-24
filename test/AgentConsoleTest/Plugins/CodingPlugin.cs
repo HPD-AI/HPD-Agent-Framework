@@ -14,7 +14,7 @@ using HPD.Agent;
 /// CodingToolkit - Comprehensive coding assistant with file operations, search, execution, and analysis.
 /// Features: Line-based reading, diff generation, glob patterns, .gitignore support, grep search, shell execution.
 /// </summary>
-[Toolkit(
+[Collapse(
     "Contains tools Coding operations: file operations, code search, shell execution, and code analysis.",
     SystemPrompt: CodingToolkitPrompts.SystemPrompt)]
 public class CodingToolkit

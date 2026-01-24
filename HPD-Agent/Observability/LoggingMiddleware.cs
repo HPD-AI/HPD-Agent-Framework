@@ -249,6 +249,13 @@ public class LoggingMiddleware : IAgentMiddleware
             sb.AppendLine($"  System Instructions: {instructions}");
         }
 
+        // Show additional instructions if present (e.g., plan mode, custom overrides)
+        if (_options.IncludeInstructions && !string.IsNullOrEmpty(context.RunOptions?.AdditionalSystemInstructions))
+        {
+            var additional = TruncateString(context.RunOptions.AdditionalSystemInstructions);
+            sb.AppendLine($"  Additional Instructions: {additional}");
+        }
+
         sb.AppendLine("───────────────────────────────────────────────────────");
 
         LogMessage(sb.ToString());

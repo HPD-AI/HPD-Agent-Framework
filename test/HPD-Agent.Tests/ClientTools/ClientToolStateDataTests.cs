@@ -327,9 +327,9 @@ public class ClientToolStateDataTests
         var container = new MiddlewareState();
 
         // Act
-        var state = container.ClientTool;
+        var state = container.ClientTool();
 
-        // Assert - property exists and returns null initially
+        // Assert - extension method exists and returns null initially
         Assert.Null(state);
     }
 
@@ -346,8 +346,8 @@ public class ClientToolStateDataTests
 
         // Assert
         Assert.NotSame(container, updated);
-        Assert.NotNull(updated.ClientTool);
-        Assert.Single(updated.ClientTool.RegisteredToolGroups);
+        Assert.NotNull(updated.ClientTool());
+        Assert.Single(updated.ClientTool().RegisteredToolGroups);
     }
 
     [Fact]

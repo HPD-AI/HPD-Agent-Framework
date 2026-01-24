@@ -126,7 +126,7 @@ public class ErrorTrackingMiddleware : IAgentMiddleware
             // MaxIterations comes from continuation permission (if extended) or default config
             // Extract both values using Analyze to ensure fresh reads
             var (maxIterations, completedFunctions) = context.Analyze(s => (
-                s.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit ?? 50,
+                s.MiddlewareState.ContinuationPermission()?.CurrentExtendedLimit ?? 50,
                 s.CompletedFunctions.ToList()
             ));
 

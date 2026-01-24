@@ -154,6 +154,25 @@ public class AgentBuilder
     /// </summary>
     internal readonly Dictionary<string, Middleware.MiddlewareFactory> _availableMiddlewares = new(StringComparer.OrdinalIgnoreCase);
 
+    //
+    // AOT-COMPATIBLE MIDDLEWARE STATE REGISTRY (Phase: Cross-Assembly State Discovery)
+    //
+    // These fields enable cross-assembly middleware state discovery following the ToolkitRegistry pattern.
+    // Each assembly generates a MiddlewareStateRegistry.All array with factories for [MiddlewareState] types.
+
+    /// <summary>
+    /// Middleware state catalog loaded from generated MiddlewareStateRegistry.All.
+    /// Starts with the calling assembly's registry and lazily loads additional assemblies
+    /// when toolkits from other assemblies are registered via WithToolkit&lt;T&gt;().
+    /// </summary>
+    internal readonly Dictionary<string, MiddlewareStateFactory> _stateFactories = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Tracks which assemblies have already been scanned for state registries.
+    /// Used to avoid repeated reflection calls for the same assembly.
+    /// </summary>
+    internal readonly HashSet<Assembly> _loadedStateAssemblies = new();
+
     /// <summary>
     /// Toolkit configs from config Toolkits list.
     /// Maps toolkit name -> JsonElement config for CreateFromConfig delegate.
@@ -173,6 +192,11 @@ public class AgentBuilder
 
         _config = new AgentConfig();
         _providerRegistry = new ProviderRegistry();
+
+        // Load from HPD-Agent assembly first (ensures core middleware states are always available)
+        LoadToolRegistryFromAssembly(typeof(Agent).Assembly);
+
+        // Then load from calling assembly (user-defined toolkits/states)
         LoadToolRegistryFromAssembly(callingAssembly);
         RegisterDiscoveredProviders();
     }
@@ -190,6 +214,11 @@ public class AgentBuilder
 
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _providerRegistry = new ProviderRegistry();
+
+        // Load from HPD-Agent assembly first (ensures core middleware states are always available)
+        LoadToolRegistryFromAssembly(typeof(Agent).Assembly);
+
+        // Then load from calling assembly (user-defined toolkits/states)
         LoadToolRegistryFromAssembly(callingAssembly);
         RegisterDiscoveredProviders();
     }
@@ -207,6 +236,11 @@ public class AgentBuilder
 
         _config = config;
         _providerRegistry = providerRegistry;
+
+        // Load from HPD-Agent assembly first (ensures core middleware states are always available)
+        LoadToolRegistryFromAssembly(typeof(Agent).Assembly);
+
+        // Then load from calling assembly (user-defined toolkits/states)
         LoadToolRegistryFromAssembly(callingAssembly);
     }
 #pragma warning restore IL2026
@@ -232,14 +266,14 @@ public class AgentBuilder
     }
 
     /// <summary>
-    /// Loads Toolkits and Middlewares from the generated registries in the specified assembly
-    /// and merges them into the _availableToolkits and _availableMiddlewares dictionaries.
+    /// Loads Toolkits, Middlewares, and Middleware States from the generated registries in the specified assembly
+    /// and merges them into the _availableToolkits, _availableMiddlewares, and _stateFactories dictionaries.
     /// Uses minimal reflection (GetType calls per assembly) to discover the catalogs.
     /// Thread-safe: tracks loaded assemblies to avoid duplicate processing.
     /// WARNING: Requires source-generated registry types to be preserved in AOT.
     /// </summary>
     /// <param name="assembly">The assembly to search for the generated registries</param>
-    [RequiresUnreferencedCode("Registry lookup via Assembly.GetType requires ToolkitRegistry and MiddlewareRegistry types to be preserved during AOT compilation.")]
+    [RequiresUnreferencedCode("Registry lookup via Assembly.GetType requires ToolkitRegistry, MiddlewareRegistry, and MiddlewareStateRegistry types to be preserved during AOT compilation.")]
     internal void LoadToolRegistryFromAssembly(Assembly assembly)
     {
         // Skip if already loaded
@@ -253,6 +287,9 @@ public class AgentBuilder
 
         // Load Middleware registry
         LoadMiddlewareRegistryFromAssembly(assembly);
+
+        // Load Middleware State registry (cross-assembly state discovery)
+        LoadStateRegistryFromAssembly(assembly);
     }
 
     /// <summary>
@@ -345,6 +382,57 @@ public class AgentBuilder
             // Log warning but don't crash - no middlewares from this assembly
             _logger?.CreateLogger<AgentBuilder>()
                 .LogWarning(ex, "Failed to load MiddlewareRegistry.All from assembly {Assembly}", assembly.FullName);
+        }
+    }
+
+    /// <summary>
+    /// Loads middleware state factories from the generated MiddlewareStateRegistry.All in the specified assembly.
+    /// This enables cross-assembly state discovery following the ToolkitRegistry pattern.
+    /// </summary>
+    [RequiresUnreferencedCode("State registry lookup via Assembly.GetType requires MiddlewareStateRegistry type to be preserved during AOT compilation.")]
+    internal void LoadStateRegistryFromAssembly(Assembly assembly)
+    {
+        // Skip if already loaded for this builder instance
+        if (!_loadedStateAssemblies.Add(assembly))
+            return;
+
+        try
+        {
+            // Look for generated state registry in the specified assembly
+            var registryType = assembly.GetType("HPD.Agent.Generated.MiddlewareStateRegistry");
+
+            if (registryType == null)
+            {
+                // No state registry found - no middleware states in this assembly
+                return;
+            }
+
+            // Get the All field (static readonly array)
+            var allField = registryType.GetField("All", BindingFlags.Public | BindingFlags.Static);
+            if (allField == null)
+            {
+                return;
+            }
+
+            // Get the MiddlewareStateFactory array
+            var factories = allField.GetValue(null) as MiddlewareStateFactory[];
+            if (factories == null || factories.Length == 0)
+            {
+                return;
+            }
+
+            // Add to dictionary (new state factories from this assembly)
+            foreach (var factory in factories)
+            {
+                // Use TryAdd to avoid overwriting if state with same key already exists
+                _stateFactories.TryAdd(factory.FullyQualifiedName, factory);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log warning but don't crash - no states from this assembly
+            _logger?.CreateLogger<AgentBuilder>()
+                .LogWarning(ex, "Failed to load MiddlewareStateRegistry.All from assembly {Assembly}", assembly.FullName);
         }
     }
 
@@ -1665,6 +1753,12 @@ public class AgentBuilder
         // Safe because it checks session.Store.GetAssetStore(sessionId) at runtime (zero cost if null)
         _middlewares.Add(new Middleware.AssetUploadMiddleware());
 
+        // Register ImageMiddleware ALWAYS with default PassThrough strategy
+        // Allows images to flow to vision models without processing
+        // Users can override with .WithImageHandling() for custom strategies (OCR, Description, etc.)
+        _middlewares.Add(new Middleware.Image.ImageMiddleware(
+            new Middleware.Image.PassThroughImageStrategy()));
+
         //
         // AUTO-REGISTER FUNCTION-LEVEL MIDDLEWARE
         //     
@@ -1744,7 +1838,8 @@ public class AgentBuilder
             _serviceProvider,
             _observers,
             _eventHandlers,
-            _providerRegistry);
+            _providerRegistry,
+            _stateFactories);
     }
 
     /// <summary>
@@ -1789,7 +1884,7 @@ public class AgentBuilder
     [RequiresUnreferencedCode("MCP tool loading via reflection. Requires HPD.Agent.MCP types preserved.")]
     private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
-        // === PHASE 1: PROCESS SKILL DOCUMENTS (Before provider validation) ===
+        // === : PROCESS SKILL DOCUMENTS (Before provider validation) ===
         // This happens early so documents can be uploaded even if provider config is invalid
         // Matches the StaticMemory pattern where documents are uploaded during WithStaticMemory()
         // See: Comparison with StaticMemory in architecture docs
@@ -2183,7 +2278,7 @@ public class AgentBuilder
         var logger = _logger?.CreateLogger<AgentBuilder>();
         logger?.LogInformation("Starting skill document processing");
 
-        // ========== PHASE 1: Collect skill containers ==========
+        // ==========  Collect skill containers ==========
         // Use the catalog-based function creation (same as Build() uses)
         var skillContainers = new List<AIFunction>();
         var allFunctions = CreateFunctionsFromCatalog();
@@ -3813,6 +3908,41 @@ public static class AgentBuilderToolkitExtensions
         // Auto-discover skill dependencies using catalog (zero reflection)
         AutoRegisterDependenciesFromFactory(builder, factory);
 
+        return builder;
+    }
+
+    // ============================================
+    // MIDDLEWARE STATE ASSEMBLY REGISTRATION
+    // ============================================
+
+    /// <summary>
+    /// Explicitly loads middleware state factories from the assembly containing the specified marker type.
+    /// Use this for assemblies that have [MiddlewareState] types but no toolkits.
+    /// For assemblies with toolkits, state registries are loaded automatically via WithToolkit&lt;T&gt;().
+    /// </summary>
+    /// <typeparam name="TMarker">Any type from the assembly to load states from.</typeparam>
+    /// <returns>The builder for chaining.</returns>
+    [RequiresUnreferencedCode("State registry loading requires MiddlewareStateRegistry from assembly where TMarker is defined to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithStateAssembly<TMarker>(this AgentBuilder builder)
+    {
+        builder.LoadStateRegistryFromAssembly(typeof(TMarker).Assembly);
+        return builder;
+    }
+
+    /// <summary>
+    /// Explicitly loads middleware state factories from the specified assembly.
+    /// Use this for assemblies that have [MiddlewareState] types but no toolkits.
+    /// For assemblies with toolkits, state registries are loaded automatically via WithToolkit&lt;T&gt;().
+    /// </summary>
+    /// <param name="builder">The agent builder.</param>
+    /// <param name="assembly">The assembly to load states from.</param>
+    /// <returns>The builder for chaining.</returns>
+    [RequiresUnreferencedCode("State registry loading requires MiddlewareStateRegistry from the specified assembly to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithStateAssembly(this AgentBuilder builder, Assembly assembly)
+    {
+        builder.LoadStateRegistryFromAssembly(assembly);
         return builder;
     }
 

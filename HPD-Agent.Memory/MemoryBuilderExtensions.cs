@@ -151,12 +151,18 @@ public static class MemoryBuilderExtensions
     /// <param name="builder">The agent builder instance</param>
     /// <param name="configure">Configuration action for plan mode settings</param>
     /// <returns>The builder for method chaining</returns>
+    /// <remarks>
+    /// <para><b>Session Persistence (V2):</b></para>
+    /// <para>
+    /// Plans are now automatically persisted to the session via MiddlewareState (PlanModePersistentStateData).
+    /// The old store-based persistence options (EnablePersistence, StorageDirectory, Store) are obsolete.
+    /// Plans will automatically survive across agent runs within the same session.
+    /// </para>
+    /// </remarks>
     /// <example>
     /// <code>
     /// var agent = await new AgentBuilder()
-    ///     .WithPlanMode(opts => opts
-    ///         .EnablePersistence()
-    ///         .WithStorageDirectory("./plans"))
+    ///     .WithPlanMode()  // Plans auto-persist to session
     ///     .Build();
     /// </code>
     /// </example>
@@ -170,43 +176,28 @@ public static class MemoryBuilderExtensions
             return builder;
         }
 
-        // Determine which store to use
-        AgentPlanStore store;
-        if (options.Store != null)
-        {
-            // Use custom store provided by user
-            store = options.Store;
-        }
-        else if (options.EnablePersistence)
-        {
-            // Use JSON file-based storage for persistence
-            store = new JsonAgentPlanStore(
-                options.StorageDirectory,
-                builder.Logger?.CreateLogger<JsonAgentPlanStore>());
-        }
-        else
-        {
-            // Default to in-memory storage (non-persistent)
-            store = new InMemoryAgentPlanStore(
-                builder.Logger?.CreateLogger<InMemoryAgentPlanStore>());
-        }
+        // V2: Plans are now stored in MiddlewareState (PlanModePersistentStateData)
+        // and automatically persisted to session. No separate store needed.
 
-        // Create Toolkit and middleware with store
+        // Create config for middleware
         var config = new PlanModeConfig
         {
             Enabled = options.Enabled,
             CustomInstructions = options.CustomInstructions
         };
-        var Toolkit = new AgentPlanToolkit(store, builder.Logger?.CreateLogger<AgentPlanToolkit>());
+
+        // Create toolkit (no longer needs store - uses MiddlewareState)
+        var toolkit = new AgentPlanToolkit(builder.Logger?.CreateLogger<AgentPlanToolkit>());
+
+        // Create middleware (no longer needs store - uses MiddlewareState)
         var middleware = new AgentPlanAgentMiddleware(
-            store,
-            config, // Pass config to middleware
+            config,
             builder.Logger?.CreateLogger<AgentPlanAgentMiddleware>());
 
-        // Register Toolkit directly (instance-based for DI Toolkits)
-        var ToolkitName = typeof(AgentPlanToolkit).Name;
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(Toolkit, ToolkitName));
-        builder.ToolkitContexts[ToolkitName] = null;
+        // Register toolkit directly (instance-based for DI toolkits)
+        var toolkitName = typeof(AgentPlanToolkit).Name;
+        builder._instanceRegistrations.Add(new ToolInstanceRegistration(toolkit, toolkitName));
+        builder.ToolkitContexts[toolkitName] = null;
 
         // Register middleware directly
         builder.Middlewares.Add(middleware);

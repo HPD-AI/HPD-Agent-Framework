@@ -23,7 +23,7 @@ public class InstanceMethodContextTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
@@ -51,7 +51,7 @@ public class InstanceMethodContextTests
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Dynamic Toolkit"",
      
     FunctionResult = GetActivationMessage()
@@ -89,7 +89,7 @@ public class DynamicToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Static Toolkit"",
      
     FunctionResult = GetStaticMessage()
@@ -125,7 +125,7 @@ public class StaticToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Property Toolkit"",
      
     SystemPrompt = Rules
@@ -157,7 +157,7 @@ public class PropertyToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Static Property Toolkit"",
      
     SystemPrompt = StaticRules
@@ -190,7 +190,7 @@ public class StaticPropertyToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Mixed Toolkit"",
      
     FunctionResult = GetInstanceMessage(),
@@ -239,7 +239,7 @@ public static class MessageBuilder
     public static string BuildMessage() => ""External static message"";
 }
 
-[Toolkit(
+[Collapse(
     ""External Toolkit"",
      
     FunctionResult = MessageBuilder.BuildMessage()
@@ -270,7 +270,7 @@ public class ExternalToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Complex Toolkit"",
      
     FunctionResult = BuildActivationMessage()
@@ -314,7 +314,7 @@ public class ComplexToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Chained Toolkit"",
      
     SystemPrompt = GetRules().Trim()
@@ -349,7 +349,7 @@ public class ChainedToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Legacy Toolkit"",
      
     FunctionResult = GetLegacyInstructions()
@@ -384,7 +384,7 @@ public class LegacyToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Literal Toolkit"",
      
     FunctionResult = ""Literal activation message"",
@@ -420,7 +420,7 @@ using Microsoft.Extensions.AI;
 using HPD.Agent;
 using System;
 
-[Toolkit(
+[Collapse(
     ""Time-based Toolkit"",
      
     FunctionResult = GetTimeBasedMessage()
@@ -457,7 +457,7 @@ public class TimeBasedToolkit
 using Microsoft.Extensions.AI;
 using HPD.Agent;
 
-[Toolkit(
+[Collapse(
     ""Metadata Toolkit"",
      
     SystemPrompt = GetDynamicRules()

@@ -32,7 +32,7 @@ public class CollapsingRegressionTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
@@ -69,14 +69,14 @@ public class CollapsingRegressionTests
     [Fact]
     public void Bug1_ToolkitWithCollapseAndFunctionsButNoSkills_GeneratesContainer()
     {
-        // Arrange: Toolkit with [Toolkit] attribute (Collapsed=true), multiple functions, but NO skills
+        // Arrange: Toolkit with [Collapse] attribute (Collapsed=true), multiple functions, but NO skills
         var ToolkitSource = @"
 using HPD.Agent;
 using System;
 
 namespace TestToolkits
 {
-    [Toolkit(
+    [Collapse(
         ""Test Toolkit with only functions"",
          
         FunctionResult = ""Toolkit expanded. These functions are now available."",
@@ -130,13 +130,13 @@ namespace TestToolkits
     [Fact]
     public void Bug2_CollapseOnlyToolkit_TriggersSkillCodeGeneration()
     {
-        // Arrange: Toolkit with [Toolkit(Collapsed=true)] but no skills
+        // Arrange: Toolkit with [Collapse(Collapsed=true)] but no skills
         var ToolkitSource = @"
 using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(""Collapsed Toolkit without skills"", Collapsed = true)]
+    [Collapse(""Collapsed Toolkit without skills"", Collapsed = true)]
     public partial class CollapseOnlyToolkit
     {
         [AIFunction]
@@ -179,7 +179,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(""Test collapsed Toolkit"", Collapsed = true)]
+    [Collapse(""Test collapsed Toolkit"", Collapsed = true)]
     public partial class TestToolkit
     {
         [AIFunction]
@@ -240,7 +240,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(""Explicitly registered collapsed Toolkit"", Collapsed = true)]
+    [Collapse(""Explicitly registered collapsed Toolkit"", Collapsed = true)]
     public partial class ExplicitToolkit
     {
         [AIFunction]
@@ -292,7 +292,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(
+    [Collapse(
         ""Toolkit with function result context"",
          
         FunctionResult = ""This is ephemeral context returned in function result."")]
@@ -324,7 +324,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(
+    [Collapse(
         ""Toolkit with system prompt context"",
          
         SystemPrompt = ""This is persistent context injected into system prompt."")]
@@ -356,7 +356,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(
+    [Collapse(
         ""Toolkit with dual context"",
          
         FunctionResult = ""Ephemeral instructions."",
@@ -391,7 +391,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(""Toolkit without contexts"", Collapsed = true)]
+    [Collapse(""Toolkit without contexts"", Collapsed = true)]
     public partial class NoContextToolkit
     {
         [AIFunction]
@@ -423,7 +423,7 @@ namespace TestToolkits
     public void Integration_FinancialAnalysisToolkitScenario_AllBugsFixed()
     {
         // Arrange: Realistic Toolkit similar to FinancialAnalysisToolkit
-        // - Has [Toolkit(Collapsed=true)] attribute
+        // - Has [Collapse(Collapsed=true)] attribute
         // - Has multiple functions (17 in real case, using 5 for test)
         // - Has NO skills
         // - Has both FunctionResult and SystemPrompt
@@ -432,7 +432,7 @@ using HPD.Agent;
 
 namespace TestToolkits
 {
-    [Toolkit(
+    [Collapse(
         ""Financial Analysis Toolkit"",
          
         FunctionResult = @""Financial Analysis Toolkit activated.

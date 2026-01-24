@@ -158,7 +158,7 @@ public class ContainerMiddleware : IAgentMiddleware
         // This implements "immediate transparency" - containers disappear even within the same turn
         if (hasTools && collapsingState.ContainersExpandedThisTurn.Count > 0)
         {
-            FilterCollapseContainersFromMessages(context, collapsingState.ContainersExpandedThisTurn);
+            FilterCollapseContainersFromMessages(context, collapsingState);
         }
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
@@ -233,6 +233,9 @@ public class ContainerMiddleware : IAgentMiddleware
         if (!_config.Enabled || context.ToolCalls.Count == 0)
             return Task.CompletedTask;
 
+        // Get current state to check which containers are already expanded
+        var currentState = context.GetMiddlewareState<ContainerMiddlewareState>() ?? new ContainerMiddlewareState();
+
         var containersToExpand = new HashSet<string>();
         var containerInstructions = new Dictionary<string, ContainerInstructionSet>();
         var recoveredCalls = new Dictionary<string, RecoveryInfo>();
@@ -268,6 +271,13 @@ public class ContainerMiddleware : IAgentMiddleware
             // 2. Recovery Check A: Hidden Item? (e.g., "Add" -> "MathToolkit")
             if (_itemToContainerMap.TryGetValue(toolCall.Name, out var parentContainer))
             {
+                // Check if container is already expanded - if so, this is a VALID call, not a recovery
+                if (currentState.ExpandedContainers.Contains(parentContainer))
+                {
+                    _logger?.LogDebug("Container '{Container}' already expanded, '{Item}' is a valid call", parentContainer, toolCall.Name);
+                    continue; // Not a recovery - container is expanded and function is visible
+                }
+
                 _logger?.LogInformation("Recovery: Auto-expanding '{Container}' for hidden item '{Item}'", parentContainer, toolCall.Name);
                 containersToExpand.Add(parentContainer);
                 recoveredCalls[toolCall.CallId] = new RecoveryInfo(
@@ -750,15 +760,16 @@ public class ContainerMiddleware : IAgentMiddleware
     /// Filters [Collapse] container calls/results from the messages list in BeforeIterationContext.
     /// This implements "immediate transparency" - containers disappear even within the same turn.
     /// Only filters [Collapse] containers, not [Skill] containers.
+    /// Also filters recovered hidden item calls.
     /// </summary>
     private void FilterCollapseContainersFromMessages(
         BeforeIterationContext context,
-        ImmutableHashSet<string> containersExpandedThisTurn)
+        ContainerMiddlewareState collapsingState)
     {
         // Identify which containers are [Collapse] vs [Skill]
         var collapseContainersToFilter = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var containerName in containersExpandedThisTurn)
+        foreach (var containerName in collapsingState.ContainersExpandedThisTurn)
         {
             var containerFunction = FindContainerInInitialTools(containerName);
             if (containerFunction == null)
@@ -803,6 +814,20 @@ public class ContainerMiddleware : IAgentMiddleware
                             fcc.Name, fcc.CallId);
                     }
                 }
+            }
+        }
+
+        // Also add recovered hidden item calls to the filter list
+        // All HiddenItem recoveries are failed calls (empty result) because:
+        // - Successful calls don't trigger recovery (container already expanded check in BeforeToolExecutionAsync)
+        // - Only the FIRST failed call (before container expansion) gets added to RecoveredFunctionCalls
+        foreach (var (callId, recovery) in collapsingState.RecoveredFunctionCalls)
+        {
+            if (recovery.Type == RecoveryType.HiddenItem)
+            {
+                containerCallIds.Add(callId);
+                _logger?.LogDebug("BeforeIterationAsync: Added recovered hidden item call '{Function}' (CallId: '{CallId}') to filter list",
+                    recovery.FunctionName, callId);
             }
         }
 
@@ -1046,9 +1071,11 @@ public class ContainerMiddleware : IAgentMiddleware
         if (turnHistory == null || turnHistory.Count == 0)
             return;
 
-        // Find all recoveries that need history rewriting (QualifiedName and ContainerWithArguments)
+        // Find all recoveries that need history rewriting (all recovery types)
         var recoveriesNeedingRewrite = collapsingState.RecoveredFunctionCalls
-            .Where(r => r.Value.Type == RecoveryType.QualifiedName || r.Value.Type == RecoveryType.ContainerWithArguments)
+            .Where(r => r.Value.Type == RecoveryType.QualifiedName ||
+                        r.Value.Type == RecoveryType.ContainerWithArguments ||
+                        r.Value.Type == RecoveryType.HiddenItem)
             .ToDictionary(r => r.Key, r => r.Value);
 
         if (recoveriesNeedingRewrite.Count == 0)

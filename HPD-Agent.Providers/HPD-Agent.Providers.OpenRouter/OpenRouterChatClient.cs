@@ -54,7 +54,8 @@ internal sealed class OpenRouterChatClient : IChatClient
         CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(messages, options, stream: false);
-        var requestJson = JsonSerializer.Serialize(requestBody, _jsonContext.OpenRouterChatRequest);
+        // Use AIJsonUtilities.DefaultOptions for request serialization to support anonymous types
+        var requestJson = JsonSerializer.Serialize(requestBody, AIJsonUtilities.DefaultOptions);
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
@@ -90,7 +91,8 @@ internal sealed class OpenRouterChatClient : IChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(messages, options, stream: true);
-        var requestJson = JsonSerializer.Serialize(requestBody, _jsonContext.OpenRouterChatRequest);
+        // Use AIJsonUtilities.DefaultOptions for request serialization to support anonymous types
+        var requestJson = JsonSerializer.Serialize(requestBody, AIJsonUtilities.DefaultOptions);
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
@@ -593,14 +595,14 @@ internal sealed class OpenRouterChatClient : IChatClient
 
                         case UriContent uriContent when uriContent.MediaType?.StartsWith("image/") == true:
                             hasMultimodalContent = true;
-                            (contentParts ??= []).Add(new { type = "image_url", image_url = new { url = uriContent.Uri.ToString() } });
+                            (contentParts ??= []).Add(CreateImageUrlPart(uriContent.Uri.ToString(), GetImageDetail(uriContent)));
                             break;
 
                         case DataContent dataContent:
                             hasMultimodalContent = true;
                             if (dataContent.MediaType?.StartsWith("image/") == true)
                             {
-                                (contentParts ??= []).Add(new { type = "image_url", image_url = new { url = dataContent.Uri.ToString() } });
+                                (contentParts ??= []).Add(CreateImageUrlPart(dataContent.Uri, GetImageDetail(dataContent)));
                             }
                             else if (dataContent.MediaType == "application/pdf")
                             {
@@ -629,10 +631,11 @@ internal sealed class OpenRouterChatClient : IChatClient
                     }
                 }
 
-                // ✨ PERFORMANCE: Handle structured content efficiently
+                // Handle structured content (multimodal: text + images/audio/etc)
                 if (hasMultimodalContent && contentParts?.Count > 0)
                 {
-                    msg.Content = JsonSerializer.Serialize(contentParts);
+                    // Pass content parts as array (NOT JSON string) for OpenRouter API
+                    msg.Content = contentParts;
                 }
                 else if (msg.Content == null)
                 {
@@ -1176,5 +1179,54 @@ internal sealed class OpenRouterChatClient : IChatClient
             Text.Clear();
             EncryptedData = null;
         }
+    }
+
+    /// <summary>
+    /// Gets the image detail level from content's additional properties.
+    /// NOTE: OpenRouter does not officially document the "detail" parameter.
+    /// This is kept for OpenAI model compatibility when routing through OpenRouter.
+    /// For native OpenRouter models (Gemini, Claude, etc.), this may be ignored.
+    /// </summary>
+    private static string? GetImageDetail(AIContent content)
+    {
+        if (content.AdditionalProperties?.TryGetValue("detail", out object? value) is true)
+        {
+            return value switch
+            {
+                string detailString when detailString is "low" or "high" or "auto" => detailString,
+                _ => null
+            };
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Creates an image_url part according to OpenRouter's documentation.
+    ///
+    /// Official OpenRouter format (documented at https://openrouter.ai/docs/guides/overview/multimodal/images):
+    /// {
+    ///   "type": "image_url",
+    ///   "image_url": {
+    ///     "url": "data:image/jpeg;base64,..." or "https://..."
+    ///   }
+    /// }
+    ///
+    /// The "detail" parameter is an OpenAI-specific extension that may work when
+    /// routing to OpenAI models (openai/gpt-4o, etc.) but is NOT documented by OpenRouter
+    /// and will likely be ignored by native models like Google Gemini or Anthropic Claude.
+    ///
+    /// Supported image formats: image/png, image/jpeg, image/webp, image/gif
+    /// </summary>
+    private static object CreateImageUrlPart(string url, string? detail)
+    {
+        // Include detail parameter for OpenAI model compatibility
+        // OpenRouter will pass it through to OpenAI models, others will ignore it
+        if (detail != null)
+        {
+            return new { type = "image_url", image_url = new { url, detail } };
+        }
+
+        // Standard OpenRouter format (officially documented)
+        return new { type = "image_url", image_url = new { url } };
     }
 }

@@ -195,6 +195,11 @@ public class AgentUIRenderer
                     AnsiConsole.WriteLine();
                     break;
 
+                // Plan Mode events
+                case PlanUpdatedEvent planUpdate:
+                    RenderPlanUpdate(planUpdate);
+                    break;
+
                 // Workflow events (multi-agent)
                 case WorkflowStartedEvent workflowStart:
                     RenderWorkflowStarted(workflowStart);
@@ -230,6 +235,11 @@ public class AgentUIRenderer
 
                 case WorkflowDiagnosticEvent diagnostic:
                     RenderWorkflowDiagnostic(diagnostic);
+                    break;
+
+                // History reduction events
+                case HistoryReductionEvent historyReduction:
+                    RenderHistoryReduction(historyReduction);
                     break;
             }
         }
@@ -611,5 +621,187 @@ public class AgentUIRenderer
             };
             AnsiConsole.MarkupLine($"[{color}][{Markup.Escape(evt.Source)}] {Markup.Escape(evt.Message)}[/]");
         }
+    }
+
+    private void RenderHistoryReduction(HistoryReductionEvent evt)
+    {
+        // Only show if reduction actually happened (not skipped)
+        if (evt.Status == HistoryReductionStatus.Skipped)
+        {
+            // Optionally show skipped events in debug mode
+            // AnsiConsole.MarkupLine($"[dim]⊘ History reduction skipped: {evt.Reason}[/]");
+            return;
+        }
+
+        var icon = evt.Status switch
+        {
+            HistoryReductionStatus.CacheHit => "💾",
+            HistoryReductionStatus.Performed => "📝",
+            _ => "📊"
+        };
+
+        var color = evt.Status switch
+        {
+            HistoryReductionStatus.CacheHit => "cyan",
+            HistoryReductionStatus.Performed => "yellow",
+            _ => "dim"
+        };
+
+        // Show reduction summary
+        AnsiConsole.MarkupLine($"[{color}]{icon} History Reduction ({evt.Status}):[/]");
+
+        if (evt.OriginalMessageCount.HasValue && evt.ReducedMessageCount.HasValue)
+        {
+            AnsiConsole.MarkupLine($"[dim]  {evt.OriginalMessageCount} → {evt.ReducedMessageCount} messages[/]");
+        }
+
+        if (evt.MessagesRemoved.HasValue)
+        {
+            AnsiConsole.MarkupLine($"[dim]  Removed: {evt.MessagesRemoved} messages[/]");
+        }
+
+        if (evt.CacheAge.HasValue)
+        {
+            AnsiConsole.MarkupLine($"[dim]  Cache age: {evt.CacheAge.Value.TotalMinutes:F1}m[/]");
+        }
+
+        // Show summary content if available (for Summarizing strategy)
+        if (evt.Strategy == HistoryReductionStrategy.Summarizing &&
+            !string.IsNullOrEmpty(evt.SummaryContent))
+        {
+            var summaryPreview = evt.SummaryContent.Length > 200
+                ? evt.SummaryContent[..200] + "..."
+                : evt.SummaryContent;
+
+            var panel = new Panel(Markup.Escape(summaryPreview))
+            {
+                Header = new PanelHeader($"Summary ({evt.SummaryLength} chars)", Justify.Left),
+                Border = BoxBorder.Rounded,
+                BorderStyle = new Style(foreground: Color.Grey)
+            };
+
+            AnsiConsole.Write(panel);
+        }
+
+        AnsiConsole.MarkupLine($"[dim]  Duration: {evt.Duration.TotalMilliseconds:F0}ms[/]");
+        AnsiConsole.WriteLine();
+    }
+
+    private void RenderPlanUpdate(PlanUpdatedEvent evt)
+    {
+        // Cast Plan to AgentPlanData
+        if (evt.Plan is not HPD.Agent.Memory.AgentPlanData plan)
+        {
+            AnsiConsole.MarkupLine("[red]⚠ Invalid plan data in PlanUpdatedEvent[/]");
+            return;
+        }
+
+        var icon = evt.UpdateType switch
+        {
+            PlanUpdateType.Created => "📋",
+            PlanUpdateType.StepUpdated => "✏️",
+            PlanUpdateType.StepAdded => "➕",
+            PlanUpdateType.NoteAdded => "📝",
+            PlanUpdateType.Completed => "✅",
+            _ => "📌"
+        };
+
+        var color = evt.UpdateType switch
+        {
+            PlanUpdateType.Created => "cyan",
+            PlanUpdateType.StepUpdated => "yellow",
+            PlanUpdateType.StepAdded => "green",
+            PlanUpdateType.NoteAdded => "blue",
+            PlanUpdateType.Completed => "green bold",
+            _ => "white"
+        };
+
+        // Display plan update header
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[{color}]{icon} Plan {evt.UpdateType}:[/] [dim]{Markup.Escape(evt.Explanation ?? "")}[/]");
+
+        // Display plan details in a panel
+        var panel = new Panel(BuildPlanDisplay(plan, evt.UpdateType))
+        {
+            Header = new PanelHeader($"Plan: {Markup.Escape(plan.Goal)}", Justify.Left),
+            Border = BoxBorder.Rounded,
+            BorderStyle = new Style(foreground: Color.Grey)
+        };
+
+        AnsiConsole.Write(panel);
+        AnsiConsole.WriteLine();
+    }
+
+    private IRenderable BuildPlanDisplay(HPD.Agent.Memory.AgentPlanData plan, PlanUpdateType updateType)
+    {
+        var table = new Table()
+            .Border(TableBorder.None)
+            .HideHeaders()
+            .AddColumn(new TableColumn("").Width(3))
+            .AddColumn(new TableColumn("").Width(12))
+            .AddColumn(new TableColumn(""));
+
+        // Show steps
+        foreach (var step in plan.Steps)
+        {
+            var statusIcon = step.Status switch
+            {
+                HPD.Agent.Memory.PlanStepStatus.Pending => "⏳",
+                HPD.Agent.Memory.PlanStepStatus.InProgress => "🔄",
+                HPD.Agent.Memory.PlanStepStatus.Completed => "✓",
+                HPD.Agent.Memory.PlanStepStatus.Blocked => "⛔",
+                _ => "•"
+            };
+
+            var statusColor = step.Status switch
+            {
+                HPD.Agent.Memory.PlanStepStatus.Pending => "dim",
+                HPD.Agent.Memory.PlanStepStatus.InProgress => "yellow",
+                HPD.Agent.Memory.PlanStepStatus.Completed => "green",
+                HPD.Agent.Memory.PlanStepStatus.Blocked => "red",
+                _ => "white"
+            };
+
+            var statusText = $"[{statusColor}]{step.Status}[/]";
+            var description = Markup.Escape(step.Description);
+
+            // Highlight the step if it was just updated
+            if (updateType == PlanUpdateType.StepUpdated || updateType == PlanUpdateType.StepAdded)
+            {
+                description = $"[bold]{description}[/]";
+            }
+
+            table.AddRow(
+                $"[{statusColor}]{statusIcon}[/]",
+                statusText,
+                description
+            );
+
+            // Show notes if available
+            if (!string.IsNullOrEmpty(step.Notes))
+            {
+                table.AddRow("", "", $"[dim italic]→ {Markup.Escape(step.Notes)}[/]");
+            }
+        }
+
+        // Show context notes if any
+        if (plan.ContextNotes.Count > 0)
+        {
+            table.AddEmptyRow();
+            table.AddRow("[blue]📝[/]", "[blue]Notes:[/]", "");
+            foreach (var note in plan.ContextNotes)
+            {
+                table.AddRow("", "", $"[dim]• {Markup.Escape(note)}[/]");
+            }
+        }
+
+        // Show completion status
+        if (plan.IsComplete)
+        {
+            table.AddEmptyRow();
+            table.AddRow("[green]✅[/]", "[green bold]Complete[/]", $"[dim]{plan.CompletedAt:g}[/]");
+        }
+
+        return table;
     }
 }

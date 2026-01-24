@@ -36,7 +36,7 @@ namespace HPD.Agent;
 public class ToolkitReference
 {
     /// <summary>
-    /// Name of the toolkit (class name or [Toolkit(Name = "...")]).
+    /// Name of the toolkit (always the class name).
     /// This is the lookup key in the source-generated toolkit registry.
     /// </summary>
     public string Name { get; set; } = "";

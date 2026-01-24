@@ -38,7 +38,7 @@ public class MiddlewareStateTests
         var container = new MiddlewareState();
 
         // Act
-        var state = container.ErrorTracking;
+        var state = container.ErrorTracking();
 
         // Assert
         Assert.Null(state);
@@ -59,8 +59,8 @@ public class MiddlewareStateTests
 
         // Assert
         Assert.NotSame(container, updated);
-        Assert.NotNull(updated.ErrorTracking);
-        Assert.Equal(3, updated.ErrorTracking.ConsecutiveFailures);
+        Assert.NotNull(updated.ErrorTracking());
+        Assert.Equal(3, updated.ErrorTracking().ConsecutiveFailures);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class MiddlewareStateTests
         var updated = container.WithErrorTracking(testState);
 
         // Assert
-        Assert.Equal(5, updated.ErrorTracking!.ConsecutiveFailures);
+        Assert.Equal(5, updated.ErrorTracking()!.ConsecutiveFailures);
     }
 
     [Fact]
@@ -101,9 +101,9 @@ public class MiddlewareStateTests
         var updated = original.WithErrorTracking(state);
 
         // Assert
-        Assert.Null(original.ErrorTracking);
-        Assert.NotNull(updated.ErrorTracking);
-        Assert.Equal(10, updated.ErrorTracking.ConsecutiveFailures);
+        Assert.Null(original.ErrorTracking());
+        Assert.NotNull(updated.ErrorTracking());
+        Assert.Equal(10, updated.ErrorTracking().ConsecutiveFailures);
     }
 
     [Fact]
@@ -121,8 +121,8 @@ public class MiddlewareStateTests
         // Assert
         Assert.NotSame(container, updated1);
         Assert.NotSame(updated1, updated2);
-        Assert.Equal(1, updated1.ErrorTracking!.ConsecutiveFailures);
-        Assert.Equal(2, updated2.ErrorTracking!.ConsecutiveFailures);
+        Assert.Equal(1, updated1.ErrorTracking()!.ConsecutiveFailures);
+        Assert.Equal(2, updated2.ErrorTracking()!.ConsecutiveFailures);
     }
 
     [Fact]
@@ -135,8 +135,8 @@ public class MiddlewareStateTests
         var container = new MiddlewareState();
 
         // Act & Assert - property names should have 'StateData' suffix stripped
-        var errorTracking = container.ErrorTracking;
-        var circuitBreaker = container.CircuitBreaker;
+        var errorTracking = container.ErrorTracking();
+        var circuitBreaker = container.CircuitBreaker();
 
         Assert.Null(errorTracking);
         Assert.Null(circuitBreaker);
@@ -158,9 +158,9 @@ public class MiddlewareStateTests
         var withBoth = withError.WithCircuitBreaker(circuitState);
 
         // Assert
-        Assert.NotNull(withBoth.ErrorTracking);
-        Assert.NotNull(withBoth.CircuitBreaker);
-        Assert.Equal(3, withBoth.ErrorTracking.ConsecutiveFailures);
-        Assert.Equal(2, withBoth.CircuitBreaker.ConsecutiveCountPerTool["testTool"]);
+        Assert.NotNull(withBoth.ErrorTracking());
+        Assert.NotNull(withBoth.CircuitBreaker());
+        Assert.Equal(3, withBoth.ErrorTracking().ConsecutiveFailures);
+        Assert.Equal(2, withBoth.CircuitBreaker().ConsecutiveCountPerTool["testTool"]);
     }
 }

@@ -15,8 +15,10 @@ public sealed record BeforeMessageTurnContext : HookContext
     /// <summary>
     /// The user message that initiated this turn.
     ///   Can be NULL in continuation scenarios (when resuming from checkpoint with no new user input)
+    ///   Can be reassigned by middleware (e.g., AssetUploadMiddleware for content transformation)
+    /// NOTE: Changes do NOT flow to iteration messages - update session.ReplaceMessage() for persistence.
     /// </summary>
-    public ChatMessage? UserMessage { get; init; }
+    public ChatMessage? UserMessage { get; set; }
 
     /// <summary>
     /// Complete conversation history prior to this turn.

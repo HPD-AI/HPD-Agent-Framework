@@ -19,27 +19,31 @@ namespace HPD.Agent.Memory;
 /// <item><b>Instructions (Options.Instructions):</b> General plan mode guidance explaining how to use plan tools.
 /// Injected when plan mode is enabled, regardless of whether an active plan exists.</item>
 /// <item><b>Active Plan (System Message):</b> Current plan state (goals, steps, progress).
-/// Only injected when a plan exists for the conversation.</item>
+/// Only injected when a plan exists for the current conversation.</item>
 /// </list>
 ///
 /// <para><b>Plan Lifecycle:</b></para>
 /// <para>
-/// Plans are created per-conversation and persist across message turns.
-/// The LLM uses the plan to track progress and coordinate complex multi-step tasks.
+/// Plans are stored in MiddlewareState (PlanModePersistentStateData) keyed by conversation ID.
+/// Each conversation can have its own independent plan, supporting parallel workstreams.
+/// Plans persist across agent runs within the same session via the automatic session persistence mechanism.
+/// </para>
+///
+/// <para><b>Session Persistence:</b></para>
+/// <para>
+/// Plans are automatically saved to AgentSession.MiddlewarePersistentState at the end of each run
+/// and restored at agent start via LoadFromSession/SaveToSession (source-generated).
 /// </para>
 /// </remarks>
 public class AgentPlanAgentMiddleware : IAgentMiddleware
 {
-    private readonly AgentPlanStore _store;
     private readonly PlanModeConfig? _config;
     private readonly ILogger<AgentPlanAgentMiddleware>? _logger;
 
     public AgentPlanAgentMiddleware(
-        AgentPlanStore store,
         PlanModeConfig? config = null,
         ILogger<AgentPlanAgentMiddleware>? logger = null)
     {
-        _store = store ?? throw new ArgumentNullException(nameof(store));
         _config = config;
         _logger = logger;
     }
@@ -48,7 +52,7 @@ public class AgentPlanAgentMiddleware : IAgentMiddleware
     /// Injects plan mode instructions and active plan (if exists) into the conversation.
     /// </summary>
     /// <remarks>
-    /// <para><b>Phase 1: Instruction Injection</b></para>
+    /// <para><b>Instruction Injection</b></para>
     /// <para>
     /// If plan mode is enabled, appends plan mode instructions to Options.Instructions.
     /// This happens regardless of whether an active plan exists, so the LLM knows how to use plan tools.
@@ -56,43 +60,58 @@ public class AgentPlanAgentMiddleware : IAgentMiddleware
     ///
     /// <para><b>Phase 2: Active Plan Injection</b></para>
     /// <para>
-    /// If an active plan exists for this conversation, injects it as a system message.
+    /// If an active plan exists for the current conversation, injects it as a system message.
     /// This provides the current plan state (goals, steps, progress).
     /// </para>
     /// </remarks>
-    public async Task BeforeMessageTurnAsync(
+    public Task BeforeMessageTurnAsync(
         BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        // V2: This middleware hooks into BeforeMessageTurn but needs access to Options which isn't available
-        // NOTE: Plan mode instructions would normally be set at agent configuration time, not dynamically
-        // For now, log a warning if plan mode is enabled but we can't inject instructions
+        // PHASE 1: Inject plan mode instructions via AdditionalSystemInstructions
         if (_config?.Enabled == true)
         {
-            _logger?.LogWarning(
-                "Plan mode instructions cannot be injected in V2 BeforeMessageTurn hook. " +
-                "Set instructions via AgentConfig.ChatOptions.Instructions instead.");
+            var planModeInstructions = _config.CustomInstructions ?? GetDefaultPlanModeInstructions();
+
+            // Append to existing additional instructions (if any)
+            if (string.IsNullOrEmpty(context.RunOptions.AdditionalSystemInstructions))
+            {
+                context.RunOptions.AdditionalSystemInstructions = planModeInstructions;
+            }
+            else if (!context.RunOptions.AdditionalSystemInstructions.Contains("[PLAN MODE ENABLED]"))
+            {
+                // Only add if not already present
+                context.RunOptions.AdditionalSystemInstructions += "\n\n" + planModeInstructions;
+            }
+
+            _logger?.LogDebug("Injected plan mode instructions for agent {AgentName}", context.AgentName);
         }
 
-        // PHASE 2: Inject active plan (if exists)
+        // PHASE 2: Inject active plan (if exists) from MiddlewareState
         var conversationId = context.ConversationId;
-
         if (string.IsNullOrEmpty(conversationId))
         {
-            // No conversation ID available, skip active plan injection
-            return;
+            return Task.CompletedTask;
         }
 
-        // Only inject plan if one exists for this conversation
-        if (!await _store.HasPlanAsync(conversationId))
+        var planState = context.Analyze(s => s.MiddlewareState.PlanModePersistent());
+
+        // Check if we have an active plan for this conversation
+        if (planState == null || !planState.HasActivePlan(conversationId))
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var planPrompt = await _store.BuildPlanPromptAsync(conversationId);
+        var plan = planState.GetPlan(conversationId);
+        if (plan == null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var planPrompt = plan.BuildPlanPrompt();
         if (string.IsNullOrEmpty(planPrompt))
         {
-            return;
+            return Task.CompletedTask;
         }
 
         // Inject plan as a system message at the beginning
@@ -110,16 +129,19 @@ public class AgentPlanAgentMiddleware : IAgentMiddleware
         }
 
         _logger?.LogDebug(
-            "Injected active plan into prompt for agent {AgentName}, conversation {ConversationId}",
+            "Injected active plan {PlanId} into prompt for agent {AgentName}, conversation {ConversationId}",
+            plan.Id,
             context.AgentName,
             conversationId);
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
     /// Gets default plan mode instructions explaining how to use plan tools.
     /// Moved from Agent to make plan mode fully middleware-based.
     /// </summary>
-    private static string GetDefaultPlanModeInstructions()
+    public static string GetDefaultPlanModeInstructions()
     {
         return @"[PLAN MODE ENABLED]
 You have access to plan management tools for complex multi-step tasks.
@@ -132,10 +154,10 @@ Available functions:
 - complete_plan(): Mark the entire plan as complete when goal is achieved
 
 Best practices:
-- Create plans for tasks requiring 3+ steps, affecting multiple files, or with uncertain Collapse
+- Create plans for tasks requiring 3+ steps, affecting multiple files, or with uncertain scope
 - Update step status as you progress to maintain context across conversation turns
 - Add context notes when discovering important information (e.g., ""Found auth uses JWT, not sessions"")
-- Plans are conversation-Collapsed working memory - they help you maintain progress and avoid repeating failed approaches
+- Plans are conversation-scoped working memory - they help you maintain progress and avoid repeating failed approaches
 - When a step is blocked, mark it as 'blocked' with notes explaining why, then continue with other steps if possible";
     }
 }

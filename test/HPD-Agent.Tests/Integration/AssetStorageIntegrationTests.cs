@@ -54,11 +54,9 @@ public class AssetStorageIntegrationTests
                 new DataContent(imageBytes, "image/png")
             ]);
 
-            session.AddMessage(userMessage);
-
             // Track events emitted during execution
             var events = new List<AgentEvent>();
-            await foreach (var evt in agent.RunAsync([], session))
+            await foreach (var evt in agent.RunAsync([userMessage], session))
             {
                 events.Add(evt);
             }
@@ -155,11 +153,9 @@ public class AssetStorageIntegrationTests
                 new DataContent(pdfBytes, "application/pdf")
             ]);
 
-            session.AddMessage(message);
-
             // Act
             var events = new List<AgentEvent>();
-            await foreach (var evt in agent.RunAsync([], session))
+            await foreach (var evt in agent.RunAsync([message], session))
             {
                 events.Add(evt);
             }
@@ -225,11 +221,9 @@ public class AssetStorageIntegrationTests
             new DataContent(imageBytes, "image/png")
         ]);
 
-        session.AddMessage(message);
-
         // Act
         var events = new List<AgentEvent>();
-        await foreach (var evt in agent.RunAsync([], session))
+        await foreach (var evt in agent.RunAsync([message], session))
         {
             events.Add(evt);
         }
@@ -269,13 +263,13 @@ public class AssetStorageIntegrationTests
             var session1 = await store.LoadOrCreateSessionAsync("roundtrip-session");
             var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x01, 0x02, 0x03 };
 
-            session1.AddMessage(new ChatMessage(ChatRole.User,
+            var userMessage = new ChatMessage(ChatRole.User,
             [
                 new TextContent("Process image"),
                 new DataContent(imageBytes, "image/png")
-            ]));
+            ]);
 
-            await foreach (var _ in agent.RunAsync([], session1)) { }
+            await foreach (var _ in agent.RunAsync([userMessage], session1)) { }
             await session1.SaveAsync();
 
             // Get asset ID from first session

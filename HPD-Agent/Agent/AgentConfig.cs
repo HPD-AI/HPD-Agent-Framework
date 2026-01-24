@@ -792,6 +792,14 @@ public class HistoryReductionConfig
     public HistoryReductionStrategy Strategy { get; set; } = HistoryReductionStrategy.MessageCounting;
 
     /// <summary>
+    /// Behavior when history reduction is triggered.
+    /// - Continue (default): Reduction happens transparently, agent continues immediately
+    /// - CircuitBreaker: Reduction terminates the turn, user must explicitly continue
+    /// Can be overridden per-turn via AgentRunOptions.HistoryReductionBehaviorOverride.
+    /// </summary>
+    public HistoryReductionBehavior Behavior { get; set; } = HistoryReductionBehavior.Continue;
+
+    /// <summary>
     /// Target number of messages to retain after reduction.
     /// Default is 20 messages.
     /// </summary>
@@ -885,6 +893,27 @@ public enum HistoryReductionStrategy
     /// Preserves context through summarization, but requires additional LLM calls.
     /// </summary>
     Summarizing
+}
+
+/// <summary>
+/// Behavior when history reduction is triggered.
+/// Controls whether the agent continues immediately or stops for user confirmation.
+/// </summary>
+public enum HistoryReductionBehavior
+{
+    /// <summary>
+    /// Continue immediately after reduction (default).
+    /// Reduction happens transparently without interrupting the agent flow.
+    /// Use when: Reduction is an implementation detail, users don't need to know.
+    /// </summary>
+    Continue,
+
+    /// <summary>
+    /// Stop execution after reduction and require user confirmation to continue.
+    /// Acts as a circuit breaker - reduction terminates the current turn.
+    /// Use when: Users need to be aware of context loss, review summary, or save important info.
+    /// </summary>
+    CircuitBreaker
 }
 
 

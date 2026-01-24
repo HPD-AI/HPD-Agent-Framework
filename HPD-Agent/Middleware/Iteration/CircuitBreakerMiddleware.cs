@@ -87,7 +87,7 @@ public class CircuitBreakerMiddleware : IAgentMiddleware
 
         // Read state using Analyze for safety
         var cbState = context.Analyze(s =>
-            s.MiddlewareState.CircuitBreaker ?? new()
+            s.MiddlewareState.CircuitBreaker() ?? new()
         );
 
         foreach (var toolCall in context.ToolCalls)

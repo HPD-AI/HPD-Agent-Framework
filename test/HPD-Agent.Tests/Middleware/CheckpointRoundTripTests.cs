@@ -47,9 +47,9 @@ public class CheckpointRoundTripTests
             };
 
         // Verify runtime state is correct
-        Assert.Equal(3, runtimeState.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
-        Assert.Equal(3, runtimeState.MiddlewareState.CircuitBreaker?.ConsecutiveCountPerTool["ReadFile"]);
-        Assert.Equal(30, runtimeState.MiddlewareState.ContinuationPermission?.CurrentExtendedLimit);
+        Assert.Equal(3, runtimeState.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
+        Assert.Equal(3, runtimeState.MiddlewareState.CircuitBreaker()?.ConsecutiveCountPerTool["ReadFile"]);
+        Assert.Equal(30, runtimeState.MiddlewareState.ContinuationPermission()?.CurrentExtendedLimit);
 
         //      
         // PHASE 2: CHECKPOINT - Serialize to durable storage
@@ -86,18 +86,18 @@ public class CheckpointRoundTripTests
         //      
 
         // First access: JsonElement → ErrorTrackingStateData (with caching)
-        var deserializedErrorState = deserializedState.MiddlewareState.ErrorTracking;
+        var deserializedErrorState = deserializedState.MiddlewareState.ErrorTracking();
         Assert.NotNull(deserializedErrorState);
         Assert.Equal(3, deserializedErrorState.ConsecutiveFailures);
 
         // First access: JsonElement → CircuitBreakerStateData (with caching)
-        var deserializedCbState = deserializedState.MiddlewareState.CircuitBreaker;
+        var deserializedCbState = deserializedState.MiddlewareState.CircuitBreaker();
         Assert.NotNull(deserializedCbState);
         Assert.Equal(3, deserializedCbState.ConsecutiveCountPerTool["ReadFile"]);
         Assert.Equal("ReadFile(path=/foo/bar.txt)", deserializedCbState.LastSignaturePerTool["ReadFile"]);
 
         // First access: JsonElement → ContinuationPermissionStateData (with caching)
-        var deserializedPermState = deserializedState.MiddlewareState.ContinuationPermission;
+        var deserializedPermState = deserializedState.MiddlewareState.ContinuationPermission();
         Assert.NotNull(deserializedPermState);
         Assert.Equal(30, deserializedPermState.CurrentExtendedLimit);
 
@@ -105,13 +105,13 @@ public class CheckpointRoundTripTests
         // PHASE 5: CACHE VERIFICATION - Second access uses cache
         //      
 
-        var cachedErrorState = deserializedState.MiddlewareState.ErrorTracking;
+        var cachedErrorState = deserializedState.MiddlewareState.ErrorTracking();
         Assert.Same(deserializedErrorState, cachedErrorState); // Same instance = cache hit
 
-        var cachedCbState = deserializedState.MiddlewareState.CircuitBreaker;
+        var cachedCbState = deserializedState.MiddlewareState.CircuitBreaker();
         Assert.Same(deserializedCbState, cachedCbState);
 
-        var cachedPermState = deserializedState.MiddlewareState.ContinuationPermission;
+        var cachedPermState = deserializedState.MiddlewareState.ContinuationPermission();
         Assert.Same(deserializedPermState, cachedPermState);
 
         //      
@@ -124,7 +124,7 @@ public class CheckpointRoundTripTests
             MiddlewareState = deserializedState.MiddlewareState.WithErrorTracking(updatedErrorState)
         };
 
-        Assert.Equal(4, updatedState.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(4, updatedState.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
 
         //      
         // SUCCESS: All phases passed!
@@ -147,9 +147,9 @@ public class CheckpointRoundTripTests
         var deserialized = JsonSerializer.Deserialize<AgentLoopState>(json, AIJsonUtilities.DefaultOptions);
 
         Assert.NotNull(deserialized);
-        Assert.Null(deserialized.MiddlewareState.ErrorTracking);
-        Assert.Null(deserialized.MiddlewareState.CircuitBreaker);
-        Assert.Null(deserialized.MiddlewareState.ContinuationPermission);
+        Assert.Null(deserialized.MiddlewareState.ErrorTracking());
+        Assert.Null(deserialized.MiddlewareState.CircuitBreaker());
+        Assert.Null(deserialized.MiddlewareState.ContinuationPermission());
     }
 
     /// <summary>
@@ -174,10 +174,10 @@ public class CheckpointRoundTripTests
         var deserialized = JsonSerializer.Deserialize<AgentLoopState>(json, AIJsonUtilities.DefaultOptions);
 
         Assert.NotNull(deserialized);
-        Assert.NotNull(deserialized.MiddlewareState.ErrorTracking);
-        Assert.Equal(1, deserialized.MiddlewareState.ErrorTracking.ConsecutiveFailures);
-        Assert.Null(deserialized.MiddlewareState.CircuitBreaker);
-        Assert.Null(deserialized.MiddlewareState.ContinuationPermission);
+        Assert.NotNull(deserialized.MiddlewareState.ErrorTracking());
+        Assert.Equal(1, deserialized.MiddlewareState.ErrorTracking().ConsecutiveFailures);
+        Assert.Null(deserialized.MiddlewareState.CircuitBreaker());
+        Assert.Null(deserialized.MiddlewareState.ContinuationPermission());
     }
 
     /// <summary>
@@ -206,7 +206,7 @@ public class CheckpointRoundTripTests
         var instances = new List<ErrorTrackingStateData?>();
         for (int i = 0; i < 10; i++)
         {
-            instances.Add(deserialized.MiddlewareState.ErrorTracking);
+            instances.Add(deserialized.MiddlewareState.ErrorTracking());
         }
 
         // All instances should be the same (cache hit)
@@ -238,7 +238,7 @@ public class CheckpointRoundTripTests
         var state2 = JsonSerializer.Deserialize<AgentLoopState>(json1, AIJsonUtilities.DefaultOptions)!;
 
         // Update: Error occurred
-        var errorState = state2.MiddlewareState.ErrorTracking!.IncrementFailures();
+        var errorState = state2.MiddlewareState.ErrorTracking()!.IncrementFailures();
         var state3 = state2 with
         {
             MiddlewareState = state2.MiddlewareState.WithErrorTracking(errorState)
@@ -249,7 +249,7 @@ public class CheckpointRoundTripTests
         var state4 = JsonSerializer.Deserialize<AgentLoopState>(json2, AIJsonUtilities.DefaultOptions)!;
 
         // Update: Another error
-        var errorState2 = state4.MiddlewareState.ErrorTracking!.IncrementFailures();
+        var errorState2 = state4.MiddlewareState.ErrorTracking()!.IncrementFailures();
         var state5 = state4 with
         {
             MiddlewareState = state4.MiddlewareState.WithErrorTracking(errorState2)
@@ -260,7 +260,7 @@ public class CheckpointRoundTripTests
         var finalState = JsonSerializer.Deserialize<AgentLoopState>(json3, AIJsonUtilities.DefaultOptions)!;
 
         // Verify final state has 2 consecutive failures
-        Assert.Equal(2, finalState.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
+        Assert.Equal(2, finalState.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
     }
 
     /// <summary>
@@ -292,11 +292,11 @@ public class CheckpointRoundTripTests
         var resumedState = JsonSerializer.Deserialize<AgentLoopState>(checkpointJson, AIJsonUtilities.DefaultOptions)!;
 
         // Verify middleware can read state
-        Assert.Equal(1, resumedState.MiddlewareState.ErrorTracking?.ConsecutiveFailures);
-        Assert.Equal(1, resumedState.MiddlewareState.CircuitBreaker?.ConsecutiveCountPerTool["Tool1"]);
+        Assert.Equal(1, resumedState.MiddlewareState.ErrorTracking()?.ConsecutiveFailures);
+        Assert.Equal(1, resumedState.MiddlewareState.CircuitBreaker()?.ConsecutiveCountPerTool["Tool1"]);
 
         // Verify middleware can update state
-        var cbState = resumedState.MiddlewareState.CircuitBreaker!;
+        var cbState = resumedState.MiddlewareState.CircuitBreaker()!;
         var updatedCbState = cbState.RecordToolCall("Tool1", "sig1"); // Identical call
 
         var updatedState = resumedState with
@@ -304,6 +304,6 @@ public class CheckpointRoundTripTests
             MiddlewareState = resumedState.MiddlewareState.WithCircuitBreaker(updatedCbState)
         };
 
-        Assert.Equal(2, updatedState.MiddlewareState.CircuitBreaker?.ConsecutiveCountPerTool["Tool1"]);
+        Assert.Equal(2, updatedState.MiddlewareState.CircuitBreaker()?.ConsecutiveCountPerTool["Tool1"]);
     }
 }

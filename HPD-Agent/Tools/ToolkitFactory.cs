@@ -31,7 +31,7 @@ public record ToolkitFactory(
 
     /// <summary>
     /// Toolkit name (e.g., "MathToolkit", "SearchToolkit").
-    /// This is the EffectiveName from [Toolkit(Name = "...")] or the class name.
+    /// Always the class name (CustomName support removed).
     /// </summary>
     string Name,
 
@@ -64,29 +64,29 @@ public record ToolkitFactory(
     /// </summary>
     Func<Dictionary<string, string[]>> GetReferencedFunctions,
 
-    // ========== NEW: COLLAPSING METADATA (from [Toolkit] attribute) ==========
+    // ========== NEW: COLLAPSING METADATA (from [Collapse] attribute) ==========
 
     /// <summary>
-    /// Whether this toolkit has a description (from [Toolkit("description")]).
+    /// Whether this toolkit has a description (from [Collapse("description")]).
     /// Description presence = collapsible (functions hidden behind container).
     /// </summary>
     bool HasDescription = false,
 
     /// <summary>
-    /// Description from [Toolkit] attribute (if present).
+    /// Description from [Collapse] attribute (if present).
     /// Used for the container function description when collapsed.
     /// </summary>
     string? Description = null,
 
     /// <summary>
     /// Instructions returned as FUNCTION RESULT when container is expanded.
-    /// From [Toolkit(FunctionResult = "...")] or method reference.
+    /// From [Collapse(FunctionResult = "...")] or method reference.
     /// </summary>
     string? FunctionResult = null,
 
     /// <summary>
     /// Instructions injected into SYSTEM PROMPT while expanded.
-    /// From [Toolkit(SystemPrompt = "...")] or method reference.
+    /// From [Collapse(SystemPrompt = "...")] or method reference.
     /// </summary>
     string? SystemPrompt = null,
 

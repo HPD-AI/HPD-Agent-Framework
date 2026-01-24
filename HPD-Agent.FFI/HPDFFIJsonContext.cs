@@ -64,10 +64,7 @@ namespace HPD.Agent.FFI;
 [JsonSerializable(typeof(DynamicMemoryConfig))]
 [JsonSerializable(typeof(StaticMemoryConfig))]
 [JsonSerializable(typeof(PlanModeConfig))]
-[JsonSerializable(typeof(AgentPlan))]
-[JsonSerializable(typeof(PlanStep))]
 [JsonSerializable(typeof(PlanStepStatus))]
-[JsonSerializable(typeof(List<PlanStep>))]
 
 // --- Conversation and messaging types ---
 [JsonSerializable(typeof(ChatMessage))]

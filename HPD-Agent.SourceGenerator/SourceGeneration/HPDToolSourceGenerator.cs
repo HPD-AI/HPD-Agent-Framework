@@ -120,8 +120,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         if (!capabilities.Any())
             return null;
 
-        // Check for [Toolkit] attribute and validate dual-context configuration
-        var (isCollapsed, containerDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics, customName) = GetToolkitAttribute(classDecl, semanticModel);
+        // Check for [Collapse] attribute and validate dual-context configuration
+        var (isCollapsed, containerDescription, FunctionResult, FunctionResultExpression, FunctionResultIsStatic, SystemPrompt, SystemPromptExpression, SystemPromptIsStatic, diagnostics, customName) = GetCollapseAttribute(classDecl, semanticModel);
 
         // Merge capability diagnostics with toolkit diagnostics
         diagnostics.AddRange(capabilityDiagnostics);
@@ -159,9 +159,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
 
         return new ToolkitInfo
         {
-            // ClassName is always the class identifier; CustomName comes from [Toolkit(Name = "...")]
+            // ClassName is always the class identifier
             ClassName = classDecl.Identifier.ValueText,
-            CustomName = customName,
             Description = description,
             Namespace = namespaceName,
 
@@ -528,7 +527,7 @@ namespace HPD.Agent.Diagnostics {{
 
             sb.AppendLine($"            new ToolkitFactory(");
             sb.AppendLine($"                // ========== EXISTING FIELDS ==========");
-            // Use EffectiveName for registry lookup (supports [Toolkit(Name = "...")] override)
+            // Use EffectiveName for registry lookup (always ClassName now)
             sb.AppendLine($"                Name: \"{Toolkit.EffectiveName}\",");
             sb.AppendLine($"                ToolkitType: typeof({fullTypeName}),");
             sb.AppendLine($"                CreateInstance: () => new {fullTypeName}(),  // Direct instantiation (AOT-safe)");
@@ -555,7 +554,7 @@ namespace HPD.Agent.Diagnostics {{
                 sb.AppendLine($"                GetReferencedFunctions: () => new Dictionary<string, string[]>(),");
             }
 
-            // NEW: Collapsing metadata (from [Toolkit] attribute)
+            // NEW: Collapsing metadata (from [Collapse] attribute)
             sb.AppendLine($"                // ========== COLLAPSING METADATA ==========");
             sb.AppendLine($"                HasDescription: {Toolkit.IsCollapsed.ToString().ToLower()},");
             sb.AppendLine($"                Description: {(string.IsNullOrEmpty(Toolkit.ContainerDescription) ? "null" : $"@\"{EscapeForVerbatim(Toolkit.ContainerDescription)}\"")},");
@@ -1639,8 +1638,8 @@ $@"    /// <summary>
     }
 
     /// <summary>
-    /// Detects [Toolkit] attribute on a class and extracts its configuration.
-    /// Supports dual-context (FunctionResult, SystemPrompt) and custom naming.
+    /// Detects [Collapse] attribute on a class and extracts its configuration.
+    /// Supports dual-context (FunctionResult, SystemPrompt).
     /// Analyzes expressions to determine if they're static or instance methods/properties.
     /// </summary>
     private static (
@@ -1654,14 +1653,14 @@ $@"    /// <summary>
         bool SystemPromptIsStatic,
         List<Diagnostic> diagnostics,
         string? customName
-    ) GetToolkitAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
+    ) GetCollapseAttribute(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
     {
-        // Look for [Toolkit] attribute
+        // Look for [Collapse] attribute
         var allAttributes = classDecl.AttributeLists
             .SelectMany(attrList => attrList.Attributes);
 
         var attr = allAttributes.FirstOrDefault(attr =>
-            attr.Name.ToString() == "Toolkit" || attr.Name.ToString() == "ToolkitAttribute");
+            attr.Name.ToString() == "Collapse" || attr.Name.ToString() == "CollapseAttribute");
 
         if (attr != null)
         {
@@ -1672,15 +1671,14 @@ $@"    /// <summary>
             bool funcResultIsStatic = true;
             string? sysPromptCtx = null, sysPromptExpr = null;
             bool sysPromptIsStatic = true;
-            string? customName = null;
             bool hasDescription = false;
 
-            // [Toolkit] attribute handling
+            // [Collapse] attribute handling
             // Constructor forms:
-            // - [Toolkit] - no args, not collapsed
-            // - [Toolkit(Name = "...")] - named arg, not collapsed
-            // - [Toolkit("description")] - collapsible (has description)
-            // - [Toolkit("description", FunctionResult = "...")] - collapsible with contexts
+            // - [Collapse("description")] - collapsible with description
+            // - [Collapse("description", FunctionResult = "...")] - collapsible with contexts
+            // - [Collapse("description", SystemPrompt = "...")] - collapsible with system prompt
+            // - [Collapse("description", FunctionResult = "...", SystemPrompt = "...")] - full dual-context
             // Runtime override: CollapsingConfig.NeverCollapse to prevent collapsing at runtime
 
             if (arguments.HasValue)
@@ -1690,11 +1688,7 @@ $@"    /// <summary>
                     var argName = arg.NameEquals?.Name.Identifier.ValueText
                                ?? arg.NameColon?.Name.Identifier.ValueText;
 
-                    if (argName == "Name")
-                    {
-                        customName = ExtractStringLiteral(arg.Expression);
-                    }
-                    else if (argName == "Description")
+                    if (argName == "Description")
                     {
                         description = ExtractStringLiteral(arg.Expression);
                         hasDescription = true;
@@ -1732,23 +1726,22 @@ $@"    /// <summary>
                 }
             }
 
-            // Toolkit is collapsed if it has a description
-            // Runtime override available via CollapsingConfig.NeverCollapse
+            // Collapse always requires a description
             bool isCollapsed = hasDescription;
 
-            // If attribute is present but not collapsed, still return the customName
+            // If attribute is present but no description, this is an error
             if (!isCollapsed)
             {
-                return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), customName);
+                return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), null);
             }
 
-            // If collapsed, validate and return
+            // Validate and return
             var diagnostics = ValidateDualContextConfiguration(
                 funcResultCtx, funcResultExpr,
                 sysPromptCtx, sysPromptExpr,
                 classDecl, semanticModel);
 
-            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic, diagnostics, customName);
+            return (true, description, funcResultCtx, funcResultExpr, funcResultIsStatic, sysPromptCtx, sysPromptExpr, sysPromptIsStatic, diagnostics, null);
         }
 
         return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), null);
@@ -2172,7 +2165,7 @@ $@"    /// <summary>
         sb.AppendLine("        {");
         sb.AppendLine("            return _cachedMetadata ??= new ToolMetadata");
         sb.AppendLine("            {");
-        // Use EffectiveName for LLM-visible name (supports [Toolkit(Name = "...")] override)
+        // Use EffectiveName for LLM-visible name (always ClassName now)
         sb.AppendLine($"                Name = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                Description = \"{description}\",");
         sb.AppendLine($"                FunctionNames = new string[] {{ {functionNamesArray} }},");
@@ -2257,7 +2250,7 @@ $@"    /// <summary>
         sb.AppendLine("                    AdditionalProperties = new Dictionary<string, object>");
         sb.AppendLine("                    {");
         sb.AppendLine("                        [\"IsContainer\"] = true,");
-        // Use EffectiveName for ToolkitName metadata (supports custom naming)
+        // Use EffectiveName for ToolkitName metadata (always ClassName now)
         sb.AppendLine($"                        [\"ToolkitName\"] = \"{Toolkit.EffectiveName}\",");
         sb.AppendLine($"                        [\"FunctionNames\"] = new string[] {{ {string.Join(", ", allCapabilities.Select(c => $"\"{c}\""))} }},");
         sb.AppendLine($"                        [\"FunctionCount\"] = {totalCount},");

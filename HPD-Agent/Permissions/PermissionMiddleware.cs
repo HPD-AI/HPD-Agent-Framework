@@ -97,7 +97,7 @@ public class PermissionMiddleware : IAgentMiddleware
             return;
 
         var batchState = context.Analyze(s =>
-            s.MiddlewareState.BatchPermission ?? new BatchPermissionStateData()
+            s.MiddlewareState.BatchPermission() ?? new BatchPermissionStateData()
         );
 
         // Loop through each function and check permission individually
@@ -185,7 +185,7 @@ public class PermissionMiddleware : IAgentMiddleware
         //     
 
         var batchState = context.Analyze(s =>
-            s.MiddlewareState.BatchPermission ?? new BatchPermissionStateData()
+            s.MiddlewareState.BatchPermission() ?? new BatchPermissionStateData()
         );
 
         // If already approved in batch, allow execution immediately
@@ -208,7 +208,7 @@ public class PermissionMiddleware : IAgentMiddleware
         // STORED PERMISSION LOOKUP (from MiddlewareState)
         //
 
-        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent);
+        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent());
         if (permState != null)
         {
             // Check for stored permission choice (session-scoped)
@@ -307,7 +307,7 @@ public class PermissionMiddleware : IAgentMiddleware
                 // Update both batch state AND persistent state atomically
                 context.UpdateState(s =>
                 {
-                    var currentPermState = s.MiddlewareState.PermissionPersistent ?? new();
+                    var currentPermState = s.MiddlewareState.PermissionPersistent() ?? new();
                     var updatedPermState = currentPermState.WithPermission(functionName, response.Choice);
                     var updatedBatchState = batchState.RecordApproval(functionName);
 
@@ -371,7 +371,7 @@ public class PermissionMiddleware : IAgentMiddleware
         CancellationToken cancellationToken)
     {
         // Check stored permissions from MiddlewareState
-        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent);
+        var permState = context.Analyze(s => s.MiddlewareState.PermissionPersistent());
         if (permState != null)
         {
             var storedChoice = permState.GetPermission(functionName);
@@ -436,7 +436,7 @@ public class PermissionMiddleware : IAgentMiddleware
                 // Read state INSIDE UpdateState lambda for thread safety
                 context.UpdateState(s =>
                 {
-                    var currentPermState = s.MiddlewareState.PermissionPersistent ?? new();
+                    var currentPermState = s.MiddlewareState.PermissionPersistent() ?? new();
                     var updatedPermState = currentPermState.WithPermission(functionName, response.Choice);
 
                     return s with

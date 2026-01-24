@@ -103,6 +103,8 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(FunctionRetryEvent))]
 [JsonSerializable(typeof(DeltaSendingActivatedEvent))]
 [JsonSerializable(typeof(PlanModeActivatedEvent))]
+[JsonSerializable(typeof(PlanUpdatedEvent))]
+[JsonSerializable(typeof(PlanUpdateType))]
 [JsonSerializable(typeof(NestedAgentInvokedEvent))]
 [JsonSerializable(typeof(DocumentProcessedEvent))]
 [JsonSerializable(typeof(InternalMessagePreparedEvent))]

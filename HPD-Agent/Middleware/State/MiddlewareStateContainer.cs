@@ -111,7 +111,7 @@ public sealed partial class MiddlewareState
 
     /// <summary>
     /// Creates an empty middleware state container.
-    /// Auto-populates schema metadata from source-generated constants.
+    /// Schema metadata is computed from runtime-registered factories (not compiled constants).
     /// </summary>
     public MiddlewareState()
     {
@@ -119,10 +119,11 @@ public sealed partial class MiddlewareState
         _deserializedCache = new Lazy<ConcurrentDictionary<string, object?>>(
             () => new ConcurrentDictionary<string, object?>());
 
-        // Auto-populate schema metadata from compiled constants
-        SchemaSignature = CompiledSchemaSignature;
-        SchemaVersion = CompiledSchemaVersion;
-        StateVersions = CompiledStateVersions;
+        // Schema metadata is now computed at runtime from registered factories
+        // See ValidateAndMigrateSchema in Agent.cs
+        SchemaSignature = null;
+        SchemaVersion = 1;
+        StateVersions = null;
     }
 
     //      
@@ -234,7 +235,89 @@ public sealed partial class MiddlewareState
     //
     // PERSISTENCE API (Session Synchronization)
     //
-    // NOTE: LoadFromSession and SaveToSession are now auto-generated
-    // in MiddlewareState.g.cs based on [MiddlewareState(Persistent = true)]
-    // attributes. See MiddlewareStateGenerator.cs for implementation.
+    // LoadFromSession and SaveToSession use the agent's registered factories
+    // to determine which states are persistent and how to serialize them.
+
+    /// <summary>
+    /// Load persistent middleware state from session.
+    /// Uses the agent's registered factories to deserialize correctly.
+    /// </summary>
+    /// <param name="session">Session to load state from (null returns empty state).</param>
+    /// <param name="factories">Middleware state factories from the agent's registry.</param>
+    /// <returns>MiddlewareState with restored persistent states.</returns>
+    public static MiddlewareState LoadFromSession(
+        AgentSession? session,
+        IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
+    {
+        if (session == null)
+            return new MiddlewareState();
+
+        var state = new MiddlewareState();
+
+        // Load all registered persistent states
+        foreach (var (key, factory) in factories)
+        {
+            if (factory.Persistent)
+            {
+                var json = session.GetMiddlewarePersistentState(key);
+                if (json != null)
+                {
+                    try
+                    {
+                        var data = factory.Deserialize(json);
+                        if (data != null)
+                        {
+                            state = new MiddlewareState
+                            {
+                                States = state.States.SetItem(key, data),
+                                SchemaSignature = state.SchemaSignature,
+                                SchemaVersion = state.SchemaVersion,
+                                StateVersions = state.StateVersions
+                            };
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore deserialization errors - state will be missing
+                        // This handles schema evolution gracefully
+                    }
+                }
+            }
+        }
+
+        return state;
+    }
+
+    /// <summary>
+    /// Save persistent middleware state to session.
+    /// Uses the agent's registered factories to determine which states are persistent.
+    /// </summary>
+    /// <param name="session">Session to save state to.</param>
+    /// <param name="factories">Middleware state factories from the agent's registry.</param>
+    /// <exception cref="ArgumentNullException">Thrown if session is null.</exception>
+    public void SaveToSession(
+        AgentSession session,
+        IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
+    {
+        if (session == null)
+            throw new ArgumentNullException(nameof(session));
+
+        // Save all registered persistent states
+        foreach (var (key, factory) in factories)
+        {
+            if (factory.Persistent && States.TryGetValue(key, out var value) && value != null)
+            {
+                try
+                {
+                    var json = factory.Serialize(value);
+                    session.SetMiddlewarePersistentState(key, json);
+                }
+                catch
+                {
+                    // Ignore serialization errors - state will not be persisted
+                    // This handles schema evolution gracefully
+                }
+            }
+        }
+    }
 }

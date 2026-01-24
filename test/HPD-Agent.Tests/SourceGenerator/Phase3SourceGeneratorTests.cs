@@ -36,7 +36,7 @@ public class Phase3SourceGeneratorTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.RuntimeHelpers).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.AI.AIFunction).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ToolkitAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(CollapseAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
             },
