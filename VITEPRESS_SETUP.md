@@ -130,7 +130,7 @@ Both support VitePress out of the box:
 - **Build command**: `npm run docs:build`
 - **Output directory**: `OfficialDocs/.vitepress/dist`
 
-## 🔧 Customization
+##  Customization
 
 ### Config File
 Edit `OfficialDocs/.vitepress/config.js` to:

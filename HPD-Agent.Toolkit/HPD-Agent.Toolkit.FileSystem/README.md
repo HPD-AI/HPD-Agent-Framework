@@ -289,7 +289,7 @@ File: src/Services/EmailService.cs
 
 ---
 
-## 🔧 Configuration
+##  Configuration
 
 ### FileSystemContext Options
 

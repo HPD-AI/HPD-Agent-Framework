@@ -43,5 +43,11 @@ public enum ErrorCategory
     /// <summary>
     /// Server error (5xx) - retry with exponential backoff.
     /// </summary>
-    ServerError
+    ServerError,
+
+    /// <summary>
+    /// Model not found or invalid model identifier - don't retry, user needs to fix model name.
+    /// This includes: model doesn't exist, deployment not found (Azure), model not pulled (Ollama).
+    /// </summary>
+    ModelNotFound
 }

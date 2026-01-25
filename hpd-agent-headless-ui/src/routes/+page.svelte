@@ -78,7 +78,7 @@
 										<ToolExecution.Root {toolCall} class="tool-execution">
 											<ToolExecution.Trigger class="tool-trigger">
 												<div class="tool-header">
-													<span class="tool-icon">🔧</span>
+													<span class="tool-icon"></span>
 													<span class="tool-name">{toolCall.name}</span>
 													<ToolExecution.Status class="tool-status">
 														{#snippet children({ status })}

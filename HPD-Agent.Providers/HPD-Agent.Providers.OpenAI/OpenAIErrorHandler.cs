@@ -72,7 +72,7 @@ internal partial class OpenAIErrorHandler : IProviderErrorHandler
         // Don't retry terminal errors
         if (details.Category is ErrorCategory.ClientError or
             ErrorCategory.ContextWindow or ErrorCategory.RateLimitTerminal or
-            ErrorCategory.AuthError)
+            ErrorCategory.AuthError or ErrorCategory.ModelNotFound)
         {
             return null;
         }
@@ -206,11 +206,17 @@ internal partial class OpenAIErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(int? status, string message, string? errorCode, string? errorType)
     {
+        // Check for model not found errors first
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode, errorType))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             // Client errors - invalid request
             400 => ClassifyBadRequest(message, errorCode),
-            404 => ErrorCategory.ClientError, // Model not found, endpoint not found
+            404 => ErrorCategory.ClientError, // Generic not found (model check done above)
 
             // Authentication/Authorization errors
             401 => ErrorCategory.AuthError, // Unauthorized - invalid API key

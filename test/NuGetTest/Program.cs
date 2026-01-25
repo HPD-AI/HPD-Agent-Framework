@@ -114,7 +114,7 @@ public class SimpleConsoleEventHandler : IAgentEventHandler
             case ToolCallStartEvent toolStart:
                 // Show when tools are called
                 Console.WriteLine();
-                Console.WriteLine($"🔧 Calling tool: {toolStart.Name}");
+                Console.WriteLine($" Calling tool: {toolStart.Name}");
                 break;
 
             case ToolCallResultEvent toolResult:

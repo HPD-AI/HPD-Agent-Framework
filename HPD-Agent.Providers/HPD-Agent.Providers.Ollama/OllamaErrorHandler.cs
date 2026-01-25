@@ -109,12 +109,12 @@ internal class OllamaErrorHandler : IProviderErrorHandler
         if (exceptionType == "OllamaSharp.Models.Exceptions.ModelDoesNotSupportToolsException")
             return ErrorCategory.ClientError;
 
+        // Check for model not found errors (Ollama: "try pulling it first")
+        if (ModelNotFoundDetector.IsModelNotFoundError(status: null, message, errorCode: null, errorType: null))
+            return ErrorCategory.ModelNotFound;
+
         // Classify based on message content
         var lowerMessage = message.ToLowerInvariant();
-
-        // Model not found
-        if (lowerMessage.Contains("model") && lowerMessage.Contains("not found"))
-            return ErrorCategory.ClientError;
 
         // Connection errors are transient
         if (lowerMessage.Contains("connection") || lowerMessage.Contains("connect"))
@@ -134,11 +134,17 @@ internal class OllamaErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyHttpError(int? status, string message)
     {
+        // Check for model not found errors first
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode: null, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             // Client errors
             400 => ErrorCategory.ClientError, // Bad request - invalid parameters
-            404 => ErrorCategory.ClientError, // Model not found or endpoint not found
+            404 => ErrorCategory.ClientError, // Generic not found (model check done above)
 
             // Model is loading - temporary condition
             503 => ErrorCategory.Transient, // Service Unavailable - model is loading

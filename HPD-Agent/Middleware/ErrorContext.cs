@@ -1,3 +1,5 @@
+using HPD.Agent.ErrorHandling;
+
 namespace HPD.Agent.Middleware;
 
 /// <summary>
@@ -125,6 +127,39 @@ public sealed record ErrorContext : HookContext
     /// True if error came from message turn processing.
     /// </summary>
     public bool IsMessageTurnError => Source == ErrorSource.MessageTurn;
+
+    /// <summary>
+    /// Parsed error details from provider-specific error handler.
+    /// Lazily computed on first access using GenericErrorHandler.
+    /// </summary>
+    public ProviderErrorDetails? ErrorDetails => _errorDetails ??= ParseErrorDetails();
+
+    private ProviderErrorDetails? _errorDetails;
+
+    private ProviderErrorDetails? ParseErrorDetails()
+    {
+        var handler = new GenericErrorHandler();
+        return handler.ParseError(Error);
+    }
+
+    /// <summary>
+    /// Error category (e.g., ModelNotFound, RateLimitRetryable, AuthError).
+    /// Convenience property that delegates to ErrorDetails.
+    /// </summary>
+    public ErrorCategory? ErrorCategory => ErrorDetails?.Category;
+
+    /// <summary>
+    /// True if this is a model not found error.
+    /// </summary>
+    public bool IsModelNotFoundError => ErrorCategory == ErrorHandling.ErrorCategory.ModelNotFound;
+
+    /// <summary>
+    /// True if this error is retryable (transient, rate limit, server error).
+    /// </summary>
+    public bool IsRetryableError => ErrorCategory is
+        ErrorHandling.ErrorCategory.Transient or
+        ErrorHandling.ErrorCategory.RateLimitRetryable or
+        ErrorHandling.ErrorCategory.ServerError;
 
     internal ErrorContext(
         AgentContext baseContext,

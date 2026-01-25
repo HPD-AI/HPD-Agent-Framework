@@ -101,19 +101,22 @@ public class CommandResult
 {
     /// <summary>Success or failure</summary>
     public bool Success { get; set; } = true;
-    
+
     /// <summary>Message to display to user</summary>
     public string? Message { get; set; }
-    
+
     /// <summary>Should the application exit?</summary>
     public bool ShouldExit { get; set; } = false;
-    
+
     /// <summary>Should the conversation be cleared?</summary>
     public bool ShouldClearHistory { get; set; } = false;
-    
+
+    /// <summary>Should the model/provider be switched?</summary>
+    public bool ShouldSwitchModel { get; set; } = false;
+
     /// <summary>Additional result data</summary>
     public Dictionary<string, object> Data { get; set; } = new();
-    
+
     public static CommandResult Ok(string? message = null) => new() { Success = true, Message = message };
     public static CommandResult Error(string message) => new() { Success = false, Message = message };
     public static CommandResult Exit(string? message = null) => new() { Success = true, ShouldExit = true, Message = message };

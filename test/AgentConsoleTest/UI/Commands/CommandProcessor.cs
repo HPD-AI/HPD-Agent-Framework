@@ -55,7 +55,7 @@ public class CommandProcessor
             return CommandResult.Error($"Unknown command: {commandName}");
         }
         
-        // Build command context
+        // Build command context - use reference to original dict so commands can add data
         var context = new CommandContext
         {
             RawInput = input,
@@ -63,9 +63,9 @@ public class CommandProcessor
             Arguments = arguments,
             UIRenderer = _renderer,
             State = _renderer.StateManager.State,
-            Data = new Dictionary<string, object>(_contextData)
+            Data = _contextData  // Use reference, not copy!
         };
-        
+
         // Execute the command
         try
         {
@@ -73,9 +73,9 @@ public class CommandProcessor
             {
                 return CommandResult.Error($"Command '{commandName}' has no action defined");
             }
-            
+
             var result = await command.Action(context);
-            
+
             // Display result message if any
             if (!string.IsNullOrEmpty(result.Message))
             {
@@ -88,7 +88,7 @@ public class CommandProcessor
                     AnsiConsole.MarkupLine($"[red]{Markup.Escape(result.Message)}[/]");
                 }
             }
-            
+
             return result;
         }
         catch (Exception ex)

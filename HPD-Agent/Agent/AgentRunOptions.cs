@@ -55,6 +55,19 @@ public class AgentRunOptions
     public string? ModelId { get; set; }
 
     /// <summary>
+    /// API key to use when switching providers.
+    /// Required when switching to a different provider that needs authentication.
+    /// If null and switching to same provider, inherits from agent config.
+    /// </summary>
+    public string? ApiKey { get; set; }
+
+    /// <summary>
+    /// Endpoint URL override for the provider.
+    /// Useful for custom/self-hosted endpoints (e.g., local Ollama, Azure OpenAI).
+    /// </summary>
+    public string? ProviderEndpoint { get; set; }
+
+    /// <summary>
     /// Override the chat client for this specific run.
     /// Highest priority - used if provided, overriding ProviderKey/ModelId.
     /// Enables dynamic provider switching without rebuilding.

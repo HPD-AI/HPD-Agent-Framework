@@ -30,7 +30,7 @@ public class ContainerInstructionUnificationTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
         Assert.Contains("FinancialToolkit", context.Options.Instructions);
         Assert.Contains("Always validate calculations", context.Options.Instructions);
     }
@@ -50,7 +50,7 @@ public class ContainerInstructionUnificationTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert - Header is emitted but container content is skipped sinceSystemPrompt is null
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
 
         // But the Toolkit name and FunctionResult should NOT be in system prompt
         Assert.DoesNotContain("TestToolkit", context.Options.Instructions!);
@@ -188,7 +188,7 @@ public class ContainerInstructionUnificationTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert - Header is emitted but container is skipped (empty string is IsNullOrEmpty)
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
         Assert.DoesNotContain("TestToolkit", context.Options.Instructions); // Container is skipped
     }
 
@@ -208,7 +208,7 @@ public class ContainerInstructionUnificationTests
 
         // Assert - Header is injected, but whitespace-only content is still added
         // (IsNullOrEmpty returns false for whitespace)
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
         Assert.Contains("TestToolkit", context.Options.Instructions); // Container name is added
         // The whitespace itself will be in the output but isn't meaningful
     }

@@ -256,6 +256,26 @@ public class LoggingMiddleware : IAgentMiddleware
             sb.AppendLine($"  Additional Instructions: {additional}");
         }
 
+        // Show messages being sent to LLM (helps debug middleware injections like EnvironmentContextMiddleware)
+        if (context.Messages != null && context.Messages.Count > 0)
+        {
+            sb.AppendLine($"  Messages to send to LLM: {context.Messages.Count}");
+            // Show first 3 messages with truncated content
+            foreach (var msg in context.Messages.Take(3))
+            {
+                var roleStr = msg.Role.ToString();
+                var textPreview = msg.Text != null
+                    ? (msg.Text.Length > 100 ? msg.Text.Substring(0, 100) + "..." : msg.Text)
+                    : "<no text>";
+                var contentCount = msg.Contents?.Count ?? 0;
+                sb.AppendLine($"    - [{roleStr}] {textPreview} ({contentCount} content items)");
+            }
+            if (context.Messages.Count > 3)
+            {
+                sb.AppendLine($"    ... and {context.Messages.Count - 3} more messages");
+            }
+        }
+
         sb.AppendLine("───────────────────────────────────────────────────────");
 
         LogMessage(sb.ToString());

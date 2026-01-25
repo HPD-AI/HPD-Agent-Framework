@@ -5,17 +5,35 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- Single-file publish settings -->
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
     <ProjectReference Include="../../HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
     <ProjectReference Include="../../HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj" />
+    <!-- LLM Providers -->
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.Anthropic/HPD-Agent.Providers.Anthropic.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.AzureAIInference/HPD-Agent.Providers.AzureAIInference.csproj" />
     <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.AzureAI/HPD-Agent.Providers.AzureAI.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.GoogleAI/HPD-Agent.Providers.GoogleAI.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.Ollama/HPD-Agent.Providers.Ollama.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.Mistral/HPD-Agent.Providers.Mistral.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.Bedrock/HPD-Agent.Providers.Bedrock.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Providers/HPD-Agent.Providers.HuggingFace/HPD-Agent.Providers.HuggingFace.csproj" />
     <ProjectReference Include="../../HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="../../HPD-Agent/HPD-Agent.csproj" />
     <ProjectReference Include="../../HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj" />
@@ -36,6 +54,8 @@
     <!-- File Operations -->
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.1" />
     <PackageReference Include="Ignore" Version="0.2.1" />
+    <PackageReference Include="MAB.DotIgnore" Version="3.0.2" />
+    <PackageReference Include="Ude.NetStandard" Version="1.2.0" />
     
     <!-- Diff Support -->
     <PackageReference Include="DiffPlex" Version="1.9.0" />

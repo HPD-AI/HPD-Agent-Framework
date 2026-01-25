@@ -375,7 +375,7 @@
 							border: 1px solid #ddd;
 						"
 					>
-						<div style="font-weight: bold; margin-bottom: 4px;">🔧 Tool Execution</div>
+						<div style="font-weight: bold; margin-bottom: 4px;"> Tool Execution</div>
 						<div style="font-size: 14px; color: #666;">
 							<pre style="margin: 0; font-size: 12px;">{JSON.stringify(args, null, 2)}</pre>
 						</div>
@@ -414,7 +414,7 @@
 				<ToolExecution.Trigger class="tool-trigger">
 					<div class="tool-header">
 						<div class="tool-info">
-							<span class="tool-icon">🔧</span>
+							<span class="tool-icon"></span>
 							<span class="tool-name">{toolCall.name}</span>
 						</div>
 						<div class="tool-meta">

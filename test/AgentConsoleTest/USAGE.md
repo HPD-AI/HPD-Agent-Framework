@@ -174,7 +174,7 @@ Max retries (3) exceeded - no consensus
 Final Answer: Unable to reach consensus after 3 attempts
 ```
 
-## 🔧 Configuration
+##  Configuration
 
 Both workflows use:
 - **LLM Model**: `anthropic/claude-3.5-sonnet` (via OpenRouter)

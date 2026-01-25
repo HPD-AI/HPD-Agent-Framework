@@ -128,13 +128,39 @@ internal partial class MistralErrorHandler : IProviderErrorHandler
         return null;
     }
 
+    private static string? ExtractErrorType(string message)
+    {
+        // Look for a 'type' field in error responses (e.g., "type": "invalid_model")
+        var typeMatch = ErrorTypePattern().Match(message);
+        if (typeMatch.Success)
+        {
+            return typeMatch.Groups[1].Value;
+        }
+
+        // Check for "invalid_model" pattern in message
+        if (message.Contains("invalid_model", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("Invalid model:", StringComparison.OrdinalIgnoreCase))
+        {
+            return "invalid_model";
+        }
+
+        return null;
+    }
+
     private static ErrorCategory ClassifyError(int? status, string message)
     {
+        // Check for model not found errors first (Mistral: "Invalid model: X" with type "invalid_model")
+        var errorType = ExtractErrorType(message);
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode: null, errorType))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             // Client errors - invalid request
             400 => ErrorCategory.ClientError,
-            404 => ErrorCategory.ClientError, // Model or endpoint not found
+            404 => ErrorCategory.ClientError, // Generic not found (model check done above)
 
             // Authentication/Authorization errors
             401 => ErrorCategory.AuthError, // Unauthorized - invalid API key

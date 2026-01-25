@@ -4,42 +4,48 @@ using HPD.Agent;
 using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
 using HPD.Agent.Memory;
-using HPD.Agent.Providers.Anthropic;
-using HPD.Agent.Providers.AzureAI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using AgentConsoleTest;
+using System.Threading.Channels;
 
-// Print banner
-var logo = @"            ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
-            ██║  ██║██╔══██╗██╔══██╗     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
-            ███████║██████╔╝██║  ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   
-            ██╔══██║██╔═══╝ ██║  ██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   
-            ██║  ██║██║     ██████╔╝      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   
-            ╚═╝  ╚═╝╚═╝     ╚═════╝       ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝";
+// Print banner - simple ASCII art that works across all terminals
+var logo = @"
+ ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+ ██║  ██║██╔══██╗██╔══██╗     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+ ███████║██████╔╝██║  ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
+ ██╔══██║██╔═══╝ ██║  ██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
+ ██║  ██║██║     ██████╔╝      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
+ ╚═╝  ╚═╝╚═╝     ╚═════╝       ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝";
 
 AnsiConsole.MarkupLine($"[cyan]{Markup.Escape(logo)}[/]");
 AnsiConsole.MarkupLine("[dim]Powered by HPD Agent Framework[/]");
-AnsiConsole.WriteLine();
 
+var appDirectory = AppContext.BaseDirectory;
+// Set the current directory to the app directory so EnvironmentContext sees the right location
+Directory.SetCurrentDirectory(appDirectory);
 var currentDirectory = Directory.GetCurrentDirectory();
-AnsiConsole.MarkupLine($"[dim]Working Directory: {currentDirectory}[/]");
 
-// Load configuration from appsettings.json
+// Load configuration from appsettings.json (use app directory for config file)
 var configuration = new ConfigurationBuilder()
-    .SetBasePath(currentDirectory)
+    .SetBasePath(appDirectory)
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
     .AddEnvironmentVariables()
     .Build();
 
-// Set up session persistence
-var sessionsPath = Path.Combine(
-    Directory.GetCurrentDirectory(),
-    "sessions");
+// Set up session persistence using XDG-style data directory
+// Store sessions in user data directory, not build output
+// On macOS: ~/Library/Application Support/HPD-Agent/sessions
+// On Linux: ~/.local/share/HPD-Agent/sessions
+// On Windows: %LOCALAPPDATA%\HPD-Agent\sessions
+var userDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+var hpdDataPath = Path.Combine(userDataPath, "HPD-Agent");
+var sessionsPath = Path.Combine(hpdDataPath, "sessions");
 Directory.CreateDirectory(sessionsPath);
 
 var sessionStore = new JsonSessionStore(sessionsPath);
+AnsiConsole.MarkupLine($"[dim]Sessions: {sessionsPath}[/]");
 
 // Create agent configuration - generic base, specialized personas come from Toolkits
 // NEW: Toolkits are now registered via config instead of builder calls
@@ -60,26 +66,27 @@ When the user asks you something:
 Be helpful, thorough, and conversational.",
     Collapsing = new CollapsingConfig { Enabled = true },
     // Enable history reduction to manage long conversations
-    /*HistoryReduction = new HistoryReductionConfig
+    HistoryReduction = new HistoryReductionConfig
     {
         Enabled = true,
         Strategy = HistoryReductionStrategy.Summarizing,  // LLM summarizes old messages
         TargetMessageCount = 3,      // Keep last 3 messages (small for testing)
-        SummarizationThreshold = 2,  // Re-summarize when 2 new messages added
-        Behavior = HistoryReductionBehavior.CircuitBreaker  // STOP after reduction for testing!
+        SummarizationThreshold = 100,  // Re-summarize when 2 new messages added
+        
     },
-    */
+    
     // Toolkits resolved from source-generated registry at Build() time
+    // Note: CodingToolkit is registered as an instance below for chat client injection
     Toolkits = new List<ToolkitReference>
     {
-        "CodingToolkit",
+        // "CodingToolkit" is registered as instance below for LLM self-correction
         "MathToolkit"
     },
     // Provider configuration - Claude 3.5 Sonnet works well with OpenRouter
     Provider = new ProviderConfig
     {
         ProviderKey = "openrouter",
-        ModelName = "google/gemini-2.5-pro",  // Switched from Mistral to Claude - avoids chat_template issue
+        ModelName = "z-ai/glm-4.7",  // Switched from Mistral to Claude - avoids chat_template issue
     }
 };
 // Configure logging to show Information level logs including HTTP details
@@ -97,15 +104,23 @@ var loggerFactory = LoggerFactory.Create(builder =>
 
 
 
+// Create CodingToolkit instance for chat client injection (LLM self-correction)
+var codingToolkit = new CodingToolkit();
+
 var agentBuilder = new AgentBuilder(config)
-    .WithLogging(loggerFactory)
-    // Toolkits and Provider now come from config - no need for .WithToolkit<>() or .WithProvider() calls
+    //.WithLogging(loggerFactory)
+    .WithMiddleware(new EnvironmentContextMiddleware())
+    // Register CodingToolkit as instance to enable chat client injection after build
+    .WithToolkit(codingToolkit)
     .WithSessionStore(sessionStore, persistAfterTurn: true)
     // Enable plan mode for multi-step task tracking
-    .WithPlanMode();
+    .WithPlanMode()
+    .WithPermissions();
 
 // Add audio pipeline if providers are available
 var agent = await agentBuilder.Build();
+
+AnsiConsole.WriteLine();
 
 // Generate a unique session ID for this run
 var sessionId = $"console-{DateTime.Now:yyyy-MM-dd-HHmmss}-{Guid.NewGuid().ToString()[..8]}";
@@ -121,40 +136,116 @@ var commandContextData = new Dictionary<string, object>
     { "SessionsPath", sessionsPath },
     { "Agent", agent },
     { "Configuration", configuration },
-    { "OnSessionSwitch", new Func<string, Task>(async (newSessionId) =>
-    {
-        sessionId = newSessionId;
-        thread = await agent.LoadSessionAsync(sessionId);
-        AnsiConsole.MarkupLine($"[green]✓ Switched to session:[/] [cyan]{sessionId}[/]");
-        AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
-    }) }
+    { "CurrentSessionId", sessionId },
+    { "Thread", thread }
 };
+
+// Add session switch callback (needs reference to commandContextData, so added after)
+commandContextData["OnSessionSwitch"] = new Func<string, Task>(async (newSessionId) =>
+{
+    sessionId = newSessionId;
+    thread = await agent.LoadSessionAsync(sessionId);
+    // Update context data with new session info
+    commandContextData["CurrentSessionId"] = sessionId;
+    commandContextData["Thread"] = thread;
+    AnsiConsole.MarkupLine($"[green]✓ Switched to session:[/] [cyan]{sessionId}[/]");
+    AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
+
+    // Render conversation history - group by conversation turns
+    var allMessages = thread.Messages.ToList();
+
+    if (allMessages.Count > 0)
+    {
+        AnsiConsole.WriteLine();
+
+        // Group messages into conversation turns: user message -> all responses until next user message
+        var turns = new List<(string UserMessage, List<string> ToolsUsed, string? AssistantResponse)>();
+        string? currentUserMessage = null;
+        var currentTools = new List<string>();
+        string? lastAssistantResponse = null;
+
+        foreach (var msg in allMessages)
+        {
+            var role = msg.Role.Value;
+
+            if (role == "user")
+            {
+                // Save previous turn if exists
+                if (currentUserMessage != null)
+                {
+                    turns.Add((currentUserMessage, new List<string>(currentTools), lastAssistantResponse));
+                }
+                // Start new turn
+                currentUserMessage = msg.Text ?? "";
+                currentTools.Clear();
+                lastAssistantResponse = null;
+            }
+            else if (role == "assistant")
+            {
+                // Collect tool calls
+                var toolCalls = msg.Contents?.OfType<Microsoft.Extensions.AI.FunctionCallContent>().ToList();
+                if (toolCalls?.Count > 0)
+                {
+                    foreach (var tc in toolCalls)
+                    {
+                        if (!currentTools.Contains(tc.Name))
+                            currentTools.Add(tc.Name);
+                    }
+                }
+
+                // Track text response (last one wins - that's the final response)
+                var textContent = msg.Text;
+                if (!string.IsNullOrWhiteSpace(textContent))
+                {
+                    lastAssistantResponse = textContent;
+                }
+            }
+            // Skip tool result messages
+        }
+
+        // Don't forget the last turn
+        if (currentUserMessage != null)
+        {
+            turns.Add((currentUserMessage, new List<string>(currentTools), lastAssistantResponse));
+        }
+
+        AnsiConsole.Write(new Rule($"[yellow]Conversation History ({turns.Count} turns)[/]").LeftJustified().RuleStyle("yellow"));
+        AnsiConsole.WriteLine();
+
+        // Render each turn
+        foreach (var turn in turns)
+        {
+            AnsiConsole.MarkupLine($"[bold cyan]You:[/] {Markup.Escape(turn.UserMessage)}");
+
+            if (turn.ToolsUsed.Count > 0)
+            {
+                AnsiConsole.MarkupLine($"[dim]   {Markup.Escape(string.Join(", ", turn.ToolsUsed))}[/]");
+            }
+
+            if (!string.IsNullOrWhiteSpace(turn.AssistantResponse))
+            {
+                AnsiConsole.MarkupLine($"[bold green]Assistant:[/] {Markup.Escape(turn.AssistantResponse)}");
+            }
+
+            AnsiConsole.WriteLine();
+        }
+
+        AnsiConsole.Write(new Rule("[dim]End of History[/]").LeftJustified().RuleStyle("dim"));
+        AnsiConsole.WriteLine();
+    }
+});
 
 var commandProcessor = new CommandProcessor(ui.CommandRegistry, ui, commandContextData);
 var commandInput = new CommandAwareInput(commandProcessor);
 
-AnsiConsole.MarkupLine("[green]✓[/] Agent initialized successfully!");
-AnsiConsole.MarkupLine($"[dim]Session ID: {sessionId}[/]");
-AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
-AnsiConsole.MarkupLine("[dim]Sessions are automatically saved to: " + sessionsPath + "[/]");
-AnsiConsole.MarkupLine("[dim]Type /help for commands, or just chat naturally[/]");
-AnsiConsole.MarkupLine("[dim]💡 Drag images into terminal or use /image <path> [[question]][/]");
-AnsiConsole.WriteLine();
+// Current run options (for provider/model override)
+AgentRunOptions? currentRunOptions = null;
 
 while (true)
 {
-    // Show current directory context
-    var cwd = Directory.GetCurrentDirectory();
-    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    if (cwd.StartsWith(home))
-    {
-        cwd = "~" + cwd.Substring(home.Length);
-    }
-
-    AnsiConsole.MarkupLine($"[dim]📂 {Markup.Escape(cwd)}[/]");
-    
-    // Read input - check for slash commands
-    var userInput = AnsiConsole.Ask<string>("[bold cyan]You:[/]");
+    // Read input using CommandAwareInput for proper paste handling and autocomplete
+    // This uses ReadKey which buffers until Enter is pressed, not on newlines in pasted content
+    var userInput = commandInput.ReadLine("You: ");
 
     if (string.IsNullOrWhiteSpace(userInput))
         continue;
@@ -202,6 +293,14 @@ while (true)
             thread = await agent.LoadSessionAsync(sessionId);
         }
         
+        AnsiConsole.WriteLine();
+        continue;
+    }
+
+    // Diff demo - showcase DiffPlex rendering
+    if (userInput.Equals("/diff", StringComparison.OrdinalIgnoreCase))
+    {
+        DiffDemo.Run();
         AnsiConsole.WriteLine();
         continue;
     }
@@ -287,14 +386,13 @@ while (true)
             detail: null); // auto/balanced
 
         // Stream agent response using the new ChatMessage overload
-        await foreach (var evt in agent.RunAsync(message, sessionId))
+        await foreach (var evt in agent.RunAsync(message, sessionId, currentRunOptions))
         {
             ui.RenderEvent(evt);
         }
 
-        // Reload thread to show updated message count
+        // Reload thread
         thread = await agent.LoadSessionAsync(sessionId);
-        AnsiConsole.MarkupLine($"[dim]💾 Session saved ({thread.Messages.Count} messages)[/]");
         AnsiConsole.WriteLine();
         continue;
     }
@@ -316,6 +414,41 @@ while (true)
             thread = await agent.LoadSessionAsync(sessionId);
         }
 
+        // Handle model switch request
+        if (result.ShouldSwitchModel && commandContextData.TryGetValue("ModelSwitchRequest", out var switchReqObj)
+            && switchReqObj is BuiltInCommands.ModelSwitchRequest switchReq)
+        {
+            // Use AgentRunOptions for runtime provider switching (no rebuild needed)
+            currentRunOptions = new AgentRunOptions
+            {
+                ProviderKey = switchReq.Provider,
+                ModelId = switchReq.Model,
+                ApiKey = switchReq.ApiKey  // Pass the API key for the new provider
+            };
+
+            // Update UI to show new model in response headers
+            ui.SetModelInfo(switchReq.Provider, switchReq.Model);
+
+            AnsiConsole.MarkupLine($"[green]✓ Switched to [cyan]{switchReq.Provider}[/]:[white]{switchReq.Model}[/][/]");
+
+            // Clear the switch request
+            commandContextData["ModelSwitchRequest"] = null!;
+        }
+
+        // Handle new session request
+        if (commandContextData.TryGetValue("NewSessionRequest", out var newSessionObj)
+            && newSessionObj is string newSessionId && !string.IsNullOrEmpty(newSessionId))
+        {
+            sessionId = newSessionId;
+            thread = await agent.LoadSessionAsync(sessionId);
+            commandContextData["CurrentSessionId"] = sessionId;
+            commandContextData["Thread"] = thread;
+            AnsiConsole.MarkupLine($"[green]✓ New session created:[/] [cyan]{sessionId}[/]");
+
+            // Clear the request
+            commandContextData["NewSessionRequest"] = null!;
+        }
+
         AnsiConsole.WriteLine();
         continue;
     }
@@ -329,15 +462,23 @@ while (true)
     }
 
     // Stream agent response with real-time rendering using sessionId for auto-save
-    await foreach (var evt in agent.RunAsync(userInput, sessionId))
+    // DEBUG: Show session info before running (helps diagnose session restore issues)
+    #if DEBUG
+    var debugSession = await agent.LoadSessionAsync(sessionId);
+    AnsiConsole.MarkupLine($"[dim]📋 Session: {sessionId} ({debugSession.Messages.Count} messages)[/]");
+    if (currentRunOptions != null && !string.IsNullOrEmpty(currentRunOptions.ProviderKey))
+    {
+        AnsiConsole.MarkupLine($"[dim]🔀 Using override: {currentRunOptions.ProviderKey}:{currentRunOptions.ModelId}[/]");
+    }
+    #endif
+
+    await foreach (var evt in agent.RunAsync(userInput, sessionId, currentRunOptions))
     {
         ui.RenderEvent(evt);
     }
 
-    // Reload thread to show updated message count
+    // Reload thread
     thread = await agent.LoadSessionAsync(sessionId);
-    AnsiConsole.MarkupLine($"[dim]💾 Session saved ({thread.Messages.Count} messages)[/]");
-    AnsiConsole.WriteLine();
 }
 
 // Helper class to log HTTP requests/responses

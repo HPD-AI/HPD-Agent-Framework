@@ -242,6 +242,13 @@ internal partial class GoogleAIErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(int? status, string message)
     {
+        // Check for model not found errors first (Gemini: "is not found for API version")
+        var errorCode = ExtractErrorCode(message);
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         // Classify by HTTP status code
         return status switch
         {
@@ -249,7 +256,7 @@ internal partial class GoogleAIErrorHandler : IProviderErrorHandler
             400 => ErrorCategory.ClientError,  // Bad Request - invalid parameters
             401 => ErrorCategory.AuthError,    // Unauthorized - invalid API key
             403 => ErrorCategory.AuthError,    // Forbidden - permission denied
-            404 => ErrorCategory.ClientError,  // Not Found - model or resource not found
+            404 => ErrorCategory.ClientError,  // Generic Not Found (model check done above)
             413 => ErrorCategory.ClientError,  // Payload Too Large - file too large
 
             // Rate limiting

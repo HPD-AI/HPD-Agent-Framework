@@ -43,7 +43,7 @@ public class SkillInstructionMiddlewareTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Assert
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options.Instructions!);
         Assert.Contains("trading", context.Options.Instructions);
         Assert.Contains("Trading skill instructions", context.Options.Instructions);
     }

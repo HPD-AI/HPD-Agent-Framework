@@ -65,7 +65,7 @@ Available AI Functions (all providers):
 | Raw Content |  |    |    |
 | Privacy Focus |    |  |    |
 
-## 🔧 Configuration Examples
+##  Configuration Examples
 
 ### Research Assistant (Tavily AI)
 
@@ -376,7 +376,7 @@ await agent.InvokeAsync("What are the main benefits of quantum computing?");
 - [ ] Custom search templates
 - [ ] Analytics and monitoring
 
-## 🔧 Development
+##  Development
 
 ### Building the Project
 

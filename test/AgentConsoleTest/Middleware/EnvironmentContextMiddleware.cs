@@ -4,7 +4,6 @@ using Microsoft.Extensions.AI;
 
 /// <summary>
 /// Middleware that injects environment context into the conversation.
-/// Based on Codex CLI's approach - provides the model with awareness of:
 /// - Current working directory
 /// - Shell type
 /// - Platform
@@ -38,15 +37,12 @@ public class EnvironmentContextMiddleware : IAgentMiddleware
     }
 
     /// <summary>
-    /// Called before each LLM iteration - injects environment context into Messages.
-    /// On first iteration: inject full context after system messages
-    /// On subsequent iterations: inject only if cwd changed
+    /// Called before each message turn - injects environment context into ConversationHistory.
+    /// On first turn: inject full context after system messages
+    /// On subsequent turns: inject only if cwd changed
     /// </summary>
-    public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
+    public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
     {
-        if (context.Messages == null)
-            return Task.CompletedTask;
-
         var currentContext = CreateCurrentContext();
         string? contextXml = null;
 
@@ -70,9 +66,9 @@ public class EnvironmentContextMiddleware : IAgentMiddleware
 
             // Find the right position - after system messages but before user messages
             var insertIndex = 0;
-            for (int i = 0; i < context.Messages.Count; i++)
+            for (int i = 0; i < context.ConversationHistory.Count; i++)
             {
-                if (context.Messages[i].Role == ChatRole.System)
+                if (context.ConversationHistory[i].Role == ChatRole.System)
                 {
                     insertIndex = i + 1;
                 }
@@ -82,7 +78,7 @@ public class EnvironmentContextMiddleware : IAgentMiddleware
                 }
             }
 
-            context.Messages.Insert(insertIndex, envMessage);
+            context.ConversationHistory.Insert(insertIndex, envMessage);
         }
 
         _lastContext = currentContext;
@@ -92,6 +88,6 @@ public class EnvironmentContextMiddleware : IAgentMiddleware
     private EnvironmentContext CreateCurrentContext()
     {
         var writableRoots = _writableRoots ?? new[] { Directory.GetCurrentDirectory() };
-        return EnvironmentContext.CreateCurrent(writableRoots);
+        return EnvironmentContext.CreateCurrent(writableRoots, includeDirectoryListing: true);
     }
 }

@@ -430,43 +430,35 @@ public class ToolMessage : UIComponent
     private IRenderable RenderContent()
     {
         var rows = new List<IRenderable>();
-        
+
         // Description
         if (!string.IsNullOrEmpty(Description))
         {
             rows.Add(new Markup($"[dim]{Markup.Escape(Description)}[/]"));
             rows.Add(new Text(""));
         }
-        
-        // Arguments
-        if (!string.IsNullOrEmpty(Args))
-        {
-            rows.Add(new Markup($"[grey]Args:[/]"));
-            rows.Add(new Text(UIHelpers.FormatJson(Args)));
-            rows.Add(new Text(""));
-        }
-        
+
         // Result
         if (!string.IsNullOrEmpty(Result))
         {
             var resultColor = Status == ToolCallStatus.Error ? Theme.Status.Error : Theme.Status.Success;
             var resultIcon = Status == ToolCallStatus.Error ? "✗" : "✓";
-            
+
             rows.Add(new Markup($"[{resultColor}]{resultIcon} Result:[/]"));
-            
+
             // Truncate long results
-            var displayResult = Result.Length > 1000 
+            var displayResult = Result.Length > 1000
                 ? Result.Substring(0, 1000) + "\n[dim]... (truncated)[/]"
                 : Result;
             rows.Add(new Text(displayResult));
         }
-        
+
         // Executing indicator
         if (Status == ToolCallStatus.Executing)
         {
             rows.Add(new Markup("[cyan]◐ Executing...[/]"));
         }
-        
+
         return new Rows(rows);
     }
     
@@ -494,149 +486,274 @@ public class ToolMessage : UIComponent
 // ============================================================================
 
 /// <summary>
-/// Renders unified diff with syntax highlighting.
-/// Mirrors Gemini's DiffRenderer.tsx
+/// Renders unified diff with syntax highlighting using DiffPlex.
+/// Supports both unified diff format parsing and side-by-side comparison.
 /// </summary>
 public class DiffRenderer : UIComponent
 {
     public string DiffContent { get; set; } = "";
+    public string? OldContent { get; set; }
+    public string? NewContent { get; set; }
     public string? Filename { get; set; }
     public int MaxLines { get; set; } = 50;
-    
+    public bool ShowSideBySide { get; set; } = false;
+    public bool IgnoreWhitespace { get; set; } = true;
+
     public override IRenderable Render()
     {
-        var lines = ParseDiff(DiffContent);
-        
-        if (lines.Count == 0)
-            return new Text("[No changes]");
-        
+        // If we have OldContent and NewContent, use DiffPlex directly
+        if (OldContent != null && NewContent != null)
+        {
+            return ShowSideBySide
+                ? RenderSideBySideDiff()
+                : RenderInlineDiff();
+        }
+
+        // Otherwise parse unified diff format
+        return RenderUnifiedDiffFormat();
+    }
+
+    private IRenderable RenderInlineDiff()
+    {
+        // Use SideBySideDiffBuilder instead to get SubPieces for word-level highlighting
+        var differ = new DiffPlex.DiffBuilder.SideBySideDiffBuilder(new DiffPlex.Differ());
+        var sideBySideDiff = differ.BuildDiffModel(OldContent!, NewContent!, IgnoreWhitespace);
+
+        if (!sideBySideDiff.OldText.HasDifferences && !sideBySideDiff.NewText.HasDifferences)
+            return new Text("[dim]No changes[/]");
+
         var rows = new List<IRenderable>();
-        
+
         // Header with filename
         if (!string.IsNullOrEmpty(Filename))
         {
             rows.Add(new Markup($"[bold]{Markup.Escape(Filename)}[/]"));
         }
-        
-        // Stats
-        var additions = lines.Count(l => l.Type == DiffLineType.Add);
-        var deletions = lines.Count(l => l.Type == DiffLineType.Delete);
-        rows.Add(new Markup($"[green]+{additions}[/] [red]-{deletions}[/]"));
+
+        // Merge old and new lines for inline view
+        var maxLines = Math.Max(sideBySideDiff.OldText.Lines.Count, sideBySideDiff.NewText.Lines.Count);
+        var additions = 0;
+        var deletions = 0;
+        var modifications = 0;
+
+        for (int i = 0; i < maxLines; i++)
+        {
+            var oldLine = i < sideBySideDiff.OldText.Lines.Count ? sideBySideDiff.OldText.Lines[i] : null;
+            var newLine = i < sideBySideDiff.NewText.Lines.Count ? sideBySideDiff.NewText.Lines[i] : null;
+
+            if (oldLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Deleted) deletions++;
+            if (newLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Inserted) additions++;
+            if (oldLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Modified || newLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Modified) modifications++;
+        }
+
+        rows.Add(new Markup($"[{Theme.Diff.Added}]+{additions}[/] [{Theme.Diff.Removed}]-{deletions}[/] [{Theme.Status.Warning}]~{modifications}[/]"));
         rows.Add(new Text(""));
-        
-        // Diff lines
-        var displayLines = lines.Take(MaxLines).ToList();
-        foreach (var line in displayLines)
+
+        // Render diff lines in inline format (old then new)
+        int lineCount = 0;
+        for (int i = 0; i < maxLines && lineCount < MaxLines; i++)
         {
-            rows.Add(RenderLine(line));
+            var oldLine = i < sideBySideDiff.OldText.Lines.Count ? sideBySideDiff.OldText.Lines[i] : null;
+            var newLine = i < sideBySideDiff.NewText.Lines.Count ? sideBySideDiff.NewText.Lines[i] : null;
+
+            // For unchanged lines, show once
+            if (oldLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Unchanged)
+            {
+                rows.Add(RenderInlineDiffLine(oldLine, isOldLine: false));
+                lineCount++;
+                continue;
+            }
+
+            // For modified lines, show BOTH old and new versions on separate lines
+            if (oldLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Modified)
+            {
+                rows.Add(RenderInlineDiffLine(oldLine, isOldLine: true));
+                lineCount++;
+            }
+
+            if (newLine?.Type == DiffPlex.DiffBuilder.Model.ChangeType.Modified)
+            {
+                rows.Add(RenderInlineDiffLine(newLine, isOldLine: false));
+                lineCount++;
+                continue;
+            }
+
+            // For deleted lines
+            if (oldLine != null && oldLine.Type == DiffPlex.DiffBuilder.Model.ChangeType.Deleted)
+            {
+                rows.Add(RenderInlineDiffLine(oldLine, isOldLine: true));
+                lineCount++;
+            }
+
+            // For inserted lines
+            if (newLine != null && newLine.Type == DiffPlex.DiffBuilder.Model.ChangeType.Inserted)
+            {
+                rows.Add(RenderInlineDiffLine(newLine, isOldLine: false));
+                lineCount++;
+            }
         }
-        
+
         // Truncation notice
-        if (lines.Count > MaxLines)
+        if (lineCount >= MaxLines)
         {
-            rows.Add(new Markup($"[dim]... {lines.Count - MaxLines} more lines[/]"));
+            rows.Add(new Markup($"[dim]... more lines truncated[/]"));
         }
-        
+
         return new Panel(new Rows(rows))
             .Border(BoxBorder.Rounded)
             .BorderColor(Theme.Tool.Border)
             .Padding(1, 0);
     }
-    
-    private IRenderable RenderLine(DiffLine line)
+
+    private IRenderable RenderInlineDiffLine(DiffPlex.DiffBuilder.Model.DiffPiece piece, bool isOldLine)
     {
-        var (prefix, color) = line.Type switch
+        var (prefix, color) = piece.Type switch
         {
-            DiffLineType.Add => ("+", Theme.Diff.Added),
-            DiffLineType.Delete => ("-", Theme.Diff.Removed),
-            DiffLineType.Context => (" ", Theme.Diff.Context),
-            DiffLineType.Hunk => ("@", Theme.Diff.Hunk),
-            _ => (" ", Theme.Text.Secondary)
+            DiffPlex.DiffBuilder.Model.ChangeType.Inserted => ("+", Theme.Diff.Added),
+            DiffPlex.DiffBuilder.Model.ChangeType.Deleted => ("-", Theme.Diff.Removed),
+            DiffPlex.DiffBuilder.Model.ChangeType.Modified => ("~", Theme.Status.Warning),
+            _ => (" ", Theme.Diff.Context)
         };
-        
-        var lineNum = line.Type switch
-        {
-            DiffLineType.Add => line.NewLine?.ToString().PadLeft(4) ?? "    ",
-            DiffLineType.Delete => line.OldLine?.ToString().PadLeft(4) ?? "    ",
-            DiffLineType.Context => line.NewLine?.ToString().PadLeft(4) ?? "    ",
-            _ => "    "
-        };
-        
-        // Escape content for Spectre
-        var content = Markup.Escape(line.Content);
-        
+
+        var lineNum = piece.Position?.ToString().PadLeft(4) ?? "    ";
+
+        var content = Markup.Escape(piece.Text ?? "");
         return new Markup($"[dim]{lineNum}[/] [{color}]{prefix}{content}[/]");
     }
-    
-    private List<DiffLine> ParseDiff(string diff)
+
+    private IRenderable RenderSideBySideDiff()
     {
-        var result = new List<DiffLine>();
-        var lines = diff.Split('\n');
-        
-        int oldLine = 0, newLine = 0;
-        var hunkRegex = new Regex(@"^@@ -(\d+),?\d* \+(\d+),?\d* @@");
-        bool inHunk = false;
-        
+        var differ = new DiffPlex.DiffBuilder.SideBySideDiffBuilder(new DiffPlex.Differ());
+        var diff = differ.BuildDiffModel(OldContent!, NewContent!, IgnoreWhitespace);
+
+        if (!diff.OldText.HasDifferences && !diff.NewText.HasDifferences)
+            return new Text("[dim]No changes[/]");
+
+        var table = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Theme.Tool.Border);
+
+        // Add columns for side-by-side view
+        table.AddColumn(new TableColumn("[dim]Old[/]").Width(60));
+        table.AddColumn(new TableColumn("[dim]New[/]").Width(60));
+
+        // Header with filename
+        if (!string.IsNullOrEmpty(Filename))
+        {
+            table.Caption = new TableTitle($"[bold]{Markup.Escape(Filename)}[/]");
+        }
+
+        // Render lines side by side
+        var maxLines = Math.Min(MaxLines, Math.Max(diff.OldText.Lines.Count, diff.NewText.Lines.Count));
+        for (int i = 0; i < maxLines; i++)
+        {
+            var oldLine = i < diff.OldText.Lines.Count ? diff.OldText.Lines[i] : null;
+            var newLine = i < diff.NewText.Lines.Count ? diff.NewText.Lines[i] : null;
+
+            table.AddRow(
+                RenderSideBySidePiece(oldLine, i + 1, isOldSide: true),
+                RenderSideBySidePiece(newLine, i + 1, isOldSide: false)
+            );
+        }
+
+        // Truncation notice
+        var totalLines = Math.Max(diff.OldText.Lines.Count, diff.NewText.Lines.Count);
+        if (totalLines > MaxLines)
+        {
+            table.AddRow(
+                new Markup($"[dim]... {totalLines - MaxLines} more lines[/]"),
+                new Markup($"[dim]... {totalLines - MaxLines} more lines[/]")
+            );
+        }
+
+        return table;
+    }
+
+    private IRenderable RenderUnifiedDiffFormat()
+    {
+        // Parse unified diff format (legacy support for tools that output unified diffs)
+        var lines = DiffContent.Split('\n');
+        var rows = new List<IRenderable>();
+
+        // Header with filename
+        if (!string.IsNullOrEmpty(Filename))
+        {
+            rows.Add(new Markup($"[bold]{Markup.Escape(Filename)}[/]"));
+        }
+
+        // Count stats
+        int additions = 0, deletions = 0;
         foreach (var line in lines)
         {
-            var hunkMatch = hunkRegex.Match(line);
-            if (hunkMatch.Success)
-            {
-                oldLine = int.Parse(hunkMatch.Groups[1].Value) - 1;
-                newLine = int.Parse(hunkMatch.Groups[2].Value) - 1;
-                inHunk = true;
-                result.Add(new DiffLine { Type = DiffLineType.Hunk, Content = line });
-                continue;
-            }
-            
-            if (!inHunk) continue;
-            if (line.StartsWith("---") || line.StartsWith("+++")) continue;
-            
-            if (line.StartsWith("+"))
-            {
-                newLine++;
-                result.Add(new DiffLine 
-                { 
-                    Type = DiffLineType.Add, 
-                    NewLine = newLine, 
-                    Content = line.Length > 1 ? line.Substring(1) : "" 
-                });
-            }
-            else if (line.StartsWith("-"))
-            {
-                oldLine++;
-                result.Add(new DiffLine 
-                { 
-                    Type = DiffLineType.Delete, 
-                    OldLine = oldLine, 
-                    Content = line.Length > 1 ? line.Substring(1) : "" 
-                });
-            }
-            else if (line.StartsWith(" ") || line.Length == 0)
-            {
-                oldLine++;
-                newLine++;
-                result.Add(new DiffLine 
-                { 
-                    Type = DiffLineType.Context, 
-                    OldLine = oldLine, 
-                    NewLine = newLine, 
-                    Content = line.Length > 1 ? line.Substring(1) : line 
-                });
-            }
+            if (line.StartsWith("+") && !line.StartsWith("+++")) additions++;
+            if (line.StartsWith("-") && !line.StartsWith("---")) deletions++;
         }
-        
-        return result;
+
+        rows.Add(new Markup($"[{Theme.Diff.Added}]+{additions}[/] [{Theme.Diff.Removed}]-{deletions}[/]"));
+        rows.Add(new Text(""));
+
+        // Render diff lines
+        var displayLines = lines.Take(MaxLines).ToList();
+        foreach (var line in displayLines)
+        {
+            rows.Add(RenderUnifiedDiffLine(line));
+        }
+
+        // Truncation notice
+        if (lines.Length > MaxLines)
+        {
+            rows.Add(new Markup($"[dim]... {lines.Length - MaxLines} more lines[/]"));
+        }
+
+        return new Panel(new Rows(rows))
+            .Border(BoxBorder.Rounded)
+            .BorderColor(Theme.Tool.Border)
+            .Padding(1, 0);
     }
-    
-    private enum DiffLineType { Add, Delete, Context, Hunk, Other }
-    
-    private record DiffLine
+
+
+    private IRenderable RenderSideBySidePiece(DiffPlex.DiffBuilder.Model.DiffPiece? piece, int lineNum, bool isOldSide)
     {
-        public DiffLineType Type { get; init; }
-        public int? OldLine { get; init; }
-        public int? NewLine { get; init; }
-        public string Content { get; init; } = "";
+        if (piece == null || piece.Type == DiffPlex.DiffBuilder.Model.ChangeType.Imaginary)
+        {
+            return new Markup("[dim]   [/]");
+        }
+
+        var color = piece.Type switch
+        {
+            DiffPlex.DiffBuilder.Model.ChangeType.Inserted => Theme.Diff.Added,
+            DiffPlex.DiffBuilder.Model.ChangeType.Deleted => Theme.Diff.Removed,
+            DiffPlex.DiffBuilder.Model.ChangeType.Modified => Theme.Status.Warning,
+            _ => Theme.Diff.Context
+        };
+
+        var lineNumStr = piece.Position?.ToString().PadLeft(4) ?? "    ";
+        var content = Markup.Escape(piece.Text ?? "");
+
+        return new Markup($"[dim]{lineNumStr}[/] [{color}]{content}[/]");
+    }
+
+    private IRenderable RenderUnifiedDiffLine(string line)
+    {
+        if (line.StartsWith("+++") || line.StartsWith("---"))
+        {
+            return new Markup($"[{Theme.Text.Muted}]{Markup.Escape(line)}[/]");
+        }
+
+        if (line.StartsWith("@@"))
+        {
+            return new Markup($"[{Theme.Diff.Hunk}]{Markup.Escape(line)}[/]");
+        }
+
+        var (prefix, color) = (line.Length > 0 ? line[0] : ' ') switch
+        {
+            '+' => ("+", Theme.Diff.Added),
+            '-' => ("-", Theme.Diff.Removed),
+            _ => (" ", Theme.Diff.Context)
+        };
+
+        var content = line.Length > 1 ? Markup.Escape(line.Substring(1)) : "";
+        return new Markup($"[{color}]{prefix}{content}[/]");
     }
 }
 

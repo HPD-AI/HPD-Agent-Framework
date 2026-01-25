@@ -784,6 +784,10 @@ public sealed class Agent
             // update effectiveMessages to use the modified history
             effectiveMessages = beforeTurnContext.ConversationHistory;
 
+            // UPDATE STATE MESSAGES: If middleware modified ConversationHistory (e.g., EnvironmentContextMiddleware),
+            // update state.CurrentMessages so subsequent iterations also see the changes
+            state = state.WithMessages(effectiveMessages.ToList());
+
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
                 yield return (AgentEvent)middlewareEvt;
@@ -3097,6 +3101,8 @@ public sealed class Agent
             }
 
             // Build provider config for the new client
+            // Priority for API key: options.ApiKey > inherit if same provider > null
+            var isSameProvider = string.Equals(Config?.Provider?.ProviderKey, options.ProviderKey, StringComparison.OrdinalIgnoreCase);
             var providerConfig = new ProviderConfig
             {
                 ProviderKey = options.ProviderKey,
@@ -3104,13 +3110,12 @@ public sealed class Agent
                 ModelName = options.ModelId
                     ?? Config?.Provider?.ModelName
                     ?? "default",
-                // Inherit API key and endpoint from agent's config if switching within same provider
-                ApiKey = Config?.Provider?.ProviderKey == options.ProviderKey
-                    ? Config?.Provider?.ApiKey
-                    : null,
-                Endpoint = Config?.Provider?.ProviderKey == options.ProviderKey
-                    ? Config?.Provider?.Endpoint
-                    : null,
+                // Priority: explicit ApiKey from options > inherit if same provider > null
+                ApiKey = options.ApiKey
+                    ?? (isSameProvider ? Config?.Provider?.ApiKey : null),
+                // Priority: explicit Endpoint from options > inherit if same provider > null
+                Endpoint = options.ProviderEndpoint
+                    ?? (isSameProvider ? Config?.Provider?.Endpoint : null),
                 // Inherit default chat options from agent config
                 DefaultChatOptions = Config?.Provider?.DefaultChatOptions
             };

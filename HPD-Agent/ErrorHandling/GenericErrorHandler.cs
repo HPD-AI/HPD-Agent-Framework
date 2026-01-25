@@ -3,28 +3,41 @@ namespace HPD.Agent.ErrorHandling;
 /// <summary>
 /// Generic error handler used when no provider-specific handler is available.
 /// Provides basic HTTP status code classification.
+/// Can be used by external consumers to classify errors when a provider-specific handler is not available.
 /// </summary>
-internal class GenericErrorHandler : IProviderErrorHandler
+public class GenericErrorHandler : IProviderErrorHandler
 {
     public ProviderErrorDetails? ParseError(Exception exception)
     {
         // Try to extract HTTP status from common exception types
         int? statusCode = ExtractStatusCode(exception);
+        var message = exception.Message;
+
+        // Check for model not found patterns first (applies across providers)
+        if (ModelNotFoundDetector.IsModelNotFoundError(statusCode, message, errorCode: null, errorType: null))
+        {
+            return new ProviderErrorDetails
+            {
+                StatusCode = statusCode,
+                Category = ErrorCategory.ModelNotFound,
+                Message = message
+            };
+        }
 
         if (statusCode == null)
         {
             return new ProviderErrorDetails
             {
                 Category = ErrorCategory.Unknown,
-                Message = exception.Message
+                Message = message
             };
         }
 
         return new ProviderErrorDetails
         {
             StatusCode = statusCode,
-            Category = ClassifyStatusCode(statusCode.Value),
-            Message = exception.Message
+            Category = ClassifyStatusCode(statusCode.Value, message),
+            Message = message
         };
     }
 
@@ -33,7 +46,8 @@ internal class GenericErrorHandler : IProviderErrorHandler
     {
         // Don't retry terminal errors
         if (details.Category is ErrorCategory.ClientError or
-            ErrorCategory.ContextWindow or ErrorCategory.RateLimitTerminal)
+            ErrorCategory.ContextWindow or ErrorCategory.RateLimitTerminal or
+            ErrorCategory.ModelNotFound)
         {
             return null;
         }
@@ -88,15 +102,23 @@ internal class GenericErrorHandler : IProviderErrorHandler
         return null;
     }
 
-    private static ErrorCategory ClassifyStatusCode(int status)
+    private static ErrorCategory ClassifyStatusCode(int status, string message)
     {
+        // Check for model not found first (can be 400 or 404)
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, null, null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             400 => ErrorCategory.ClientError,
             401 => ErrorCategory.AuthError,
+            404 => ErrorCategory.ClientError, // Generic 404, specific model checks done above
             429 => ErrorCategory.RateLimitRetryable,
             >= 500 and < 600 => ErrorCategory.ServerError,
             _ => ErrorCategory.Unknown
         };
     }
+
 }

@@ -145,6 +145,12 @@ internal partial class BedrockErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(string exceptionTypeName, int? statusCode, string? errorCode, string message)
     {
+        // Check for model not found errors first (Bedrock: "model identifier is invalid")
+        if (ModelNotFoundDetector.IsModelNotFoundError(statusCode, message, errorCode, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         // First, classify by specific exception types (most reliable)
         var category = ClassifyByExceptionType(exceptionTypeName);
         if (category != ErrorCategory.Unknown)

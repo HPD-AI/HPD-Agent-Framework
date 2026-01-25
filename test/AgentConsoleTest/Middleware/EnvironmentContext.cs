@@ -52,19 +52,27 @@ public class EnvironmentContext
     public string TodaysDate { get; init; } = DateTime.Now.ToString("yyyy-MM-dd");
 
     /// <summary>
+    /// Directory structure listing (files and folders in current directory).
+    /// Null if not yet generated.
+    /// </summary>
+    public string? DirectoryListing { get; init; }
+
+    /// <summary>
     /// Creates a new EnvironmentContext with current environment values.
     /// </summary>
-    public static EnvironmentContext CreateCurrent(IReadOnlyList<string>? writableRoots = null)
+    public static EnvironmentContext CreateCurrent(IReadOnlyList<string>? writableRoots = null, bool includeDirectoryListing = true)
     {
+        var cwd = Directory.GetCurrentDirectory();
         return new EnvironmentContext
         {
-            Cwd = Directory.GetCurrentDirectory(),
+            Cwd = cwd,
             Shell = DetectShell(),
             Platform = DetectPlatform(),
             OsVersion = Environment.OSVersion.ToString(),
             WritableRoots = writableRoots,
             IsGitRepo = DetectGitRepo(),
-            TodaysDate = DateTime.Now.ToString("yyyy-MM-dd")
+            TodaysDate = DateTime.Now.ToString("yyyy-MM-dd"),
+            DirectoryListing = includeDirectoryListing ? GenerateDirectoryListing(cwd) : null
         };
     }
 
@@ -95,6 +103,15 @@ public class EnvironmentContext
         if (!string.IsNullOrEmpty(NetworkAccess))
         {
             sb.AppendLine($"  <network_access>{EscapeXml(NetworkAccess)}</network_access>");
+        }
+
+        if (!string.IsNullOrEmpty(DirectoryListing))
+        {
+            sb.AppendLine("  <directory_listing>");
+            sb.AppendLine($"    # Current Directory ({Cwd}) Files");
+            sb.AppendLine();
+            sb.AppendLine(DirectoryListing);
+            sb.AppendLine("  </directory_listing>");
         }
 
         sb.AppendLine("</environment_context>");
@@ -192,5 +209,138 @@ public class EnvironmentContext
             .Replace(">", "&gt;")
             .Replace("\"", "&quot;")
             .Replace("'", "&apos;");
+    }
+
+    /// <summary>
+    /// Generates a simple directory listing (similar to Gemini CLI).
+    /// Lists directories (ending with /) first, then files.
+    /// Respects .gitignore if present.
+    /// Limits to 200 items total.
+    /// </summary>
+    private static string GenerateDirectoryListing(string directory, int maxItems = 200)
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            var items = new List<string>();
+            var gitignorePatterns = LoadGitignorePatterns(directory);
+
+            // Get all directories and files
+            var dirInfo = new DirectoryInfo(directory);
+
+            // Get directories first
+            foreach (var dir in dirInfo.GetDirectories().OrderBy(d => d.Name))
+            {
+                if (ShouldIgnore(dir.Name, gitignorePatterns, isDirectory: true))
+                    continue;
+
+                items.Add(dir.Name + "/");
+
+                if (items.Count >= maxItems)
+                    break;
+            }
+
+            // Then get files
+            if (items.Count < maxItems)
+            {
+                foreach (var file in dirInfo.GetFiles().OrderBy(f => f.Name))
+                {
+                    if (ShouldIgnore(file.Name, gitignorePatterns, isDirectory: false))
+                        continue;
+
+                    items.Add(file.Name);
+
+                    if (items.Count >= maxItems)
+                        break;
+                }
+            }
+
+            // Build the output
+            foreach (var item in items)
+            {
+                sb.AppendLine($"    {item}");
+            }
+
+            if (items.Count >= maxItems)
+            {
+                sb.AppendLine();
+                sb.AppendLine("    (File list truncated. Use file tools to explore further.)");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+        catch (Exception ex)
+        {
+            return $"    Error listing directory: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Loads .gitignore patterns from the current directory.
+    /// Returns common ignore patterns plus .gitignore content.
+    /// </summary>
+    private static HashSet<string> LoadGitignorePatterns(string directory)
+    {
+        var patterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // Common ignore patterns
+            ".git",
+            "node_modules",
+            ".vs",
+            "bin",
+            "obj",
+            ".vscode",
+            ".idea",
+            "*.swp",
+            "*.swo",
+            ".DS_Store"
+        };
+
+        try
+        {
+            var gitignorePath = Path.Combine(directory, ".gitignore");
+            if (File.Exists(gitignorePath))
+            {
+                foreach (var line in File.ReadAllLines(gitignorePath))
+                {
+                    var trimmed = line.Trim();
+                    if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#"))
+                    {
+                        patterns.Add(trimmed.TrimStart('/'));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors reading .gitignore
+        }
+
+        return patterns;
+    }
+
+    /// <summary>
+    /// Checks if a file/directory should be ignored based on gitignore patterns.
+    /// Simple pattern matching - supports exact names and wildcards.
+    /// </summary>
+    private static bool ShouldIgnore(string name, HashSet<string> patterns, bool isDirectory)
+    {
+        // Check exact match
+        if (patterns.Contains(name))
+            return true;
+
+        // Check wildcard patterns
+        foreach (var pattern in patterns)
+        {
+            if (pattern.Contains("*"))
+            {
+                var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
+                    .Replace("\\*", ".*") + "$";
+                if (System.Text.RegularExpressions.Regex.IsMatch(name, regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
     }
 }

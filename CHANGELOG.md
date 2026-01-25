@@ -88,7 +88,7 @@ All provider packages now use a standardized module pattern:
 - Enhanced error tracking
 - Circuit breaker improvements
 
-## 🔧 Improvements
+##  Improvements
 
 ### Developer Experience
 - VitePress documentation setup

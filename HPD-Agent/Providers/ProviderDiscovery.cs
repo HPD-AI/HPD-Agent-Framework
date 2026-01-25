@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -54,13 +55,13 @@ public static class ProviderDiscovery
 
     /// <summary>
     /// Explicitly loads a provider package to trigger its ModuleInitializer.
-    /// Required for Native AOT scenarios where automatic assembly loading is not available.
+    /// Required for Native AOT or PublishSingleFile scenarios where automatic assembly loading is not available.
     /// In non-AOT scenarios, AgentBuilder automatically discovers and loads provider assemblies.
     /// </summary>
     /// <typeparam name="TProviderModule">The provider module type (e.g., HPD.Agent.Providers.OpenRouter.OpenRouterProviderModule)</typeparam>
     /// <example>
     /// <code>
-    /// // Native AOT: Explicitly load providers before creating AgentBuilder
+    /// // Native AOT or PublishSingleFile: Explicitly load providers before creating AgentBuilder
     /// ProviderDiscovery.LoadProvider&lt;HPD.Agent.Providers.OpenRouter.OpenRouterProviderModule&gt;();
     /// var agent = new AgentBuilder(config).Build();
     /// </code>
@@ -68,6 +69,79 @@ public static class ProviderDiscovery
     public static void LoadProvider<TProviderModule>() where TProviderModule : class
     {
         RuntimeHelpers.RunModuleConstructor(typeof(TProviderModule).Module.ModuleHandle);
+    }
+
+    /// <summary>
+    /// Automatically discovers and loads all HPD-Agent provider assemblies from the entry assembly's references.
+    /// Call this at application startup for PublishSingleFile deployments to ensure all providers are registered.
+    /// This method is safe to call multiple times.
+    /// Uses minimal reflection with known type names, making it AOT-compatible when provider assemblies are preserved.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// // At application startup (especially for PublishSingleFile):
+    /// ProviderDiscovery.LoadAllProviders();
+    /// var agent = new AgentBuilder(config).Build();
+    /// </code>
+    /// </example>
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Provider assembly discovery uses Assembly.GetType to find provider modules. Requires provider module types to be preserved during AOT compilation.")]
+    public static void LoadAllProviders()
+    {
+        try
+        {
+            // First, try to trigger module initializers for already-loaded provider assemblies
+            var loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+            foreach (var assembly in loadedAssemblies)
+            {
+                var assemblyName = assembly.GetName().Name;
+                if (assemblyName != null && assemblyName.StartsWith("HPD-Agent.Providers.", StringComparison.OrdinalIgnoreCase))
+                {
+                    TriggerModuleInitializer(assembly);
+                }
+            }
+
+            // Then try to load provider assemblies that are referenced but not yet loaded
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (entryAssembly != null)
+            {
+                var referencedAssemblies = entryAssembly.GetReferencedAssemblies();
+                foreach (var assemblyName in referencedAssemblies)
+                {
+                    if (assemblyName.Name != null &&
+                        assemblyName.Name.StartsWith("HPD-Agent.Providers.", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var assembly = Assembly.Load(assemblyName);
+                            TriggerModuleInitializer(assembly);
+                        }
+                        catch
+                        {
+                            // Ignore - assembly may not be available in this deployment
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Silently continue - providers may be registered via other means
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Uses RuntimeHelpers.RunModuleConstructor which requires the module to be preserved.")]
+    private static void TriggerModuleInitializer(Assembly assembly)
+    {
+        try
+        {
+            // Use RuntimeHelpers.RunModuleConstructor - most reliable way to trigger ModuleInitializers
+            // This is AOT-safe as it doesn't require reflection on types, just the module handle
+            RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+        }
+        catch
+        {
+            // Ignore errors - some assemblies may have already been initialized
+        }
     }
 
     //     

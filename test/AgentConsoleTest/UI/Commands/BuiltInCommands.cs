@@ -21,6 +21,7 @@ public static class BuiltInCommands
             CreateStatsCommand(),
             CreateExitCommand(),
             CreateModelCommand(),
+            CreateSessionCommand(),
             CreateSessionsCommand(),
             CreateAudioCommand()
         );
@@ -124,24 +125,219 @@ public static class BuiltInCommands
     }
     
     /// <summary>
-    /// /model - Show current model information (placeholder for future expansion)
+    /// /model - Show current model information and optionally switch models
     /// </summary>
     private static SlashCommand CreateModelCommand()
     {
         return new SlashCommand
         {
             Name = "model",
-            Description = "Show current AI model information",
-            AutoExecute = true,
+            AltNames = new List<string> { "models" },
+            Description = "Show/switch current AI model (usage: /model [provider:model])",
+            AutoExecute = false,
             Action = async (ctx) =>
             {
-                // Placeholder - can be expanded to show/switch models
-                var message = "Model information:\n" +
-                            "  Current: (configured model)\n" +
-                            "  Provider: (configured provider)\n" +
-                            "  Status: Active";
-                
-                return await Task.FromResult(CommandResult.Ok(message));
+                // Get agent from context
+                if (!ctx.Data.TryGetValue("Agent", out var agentObj) || agentObj is not HPD.Agent.Agent agent)
+                {
+                    return CommandResult.Error("Agent not available");
+                }
+
+                // Get configuration for available providers
+                var config = ctx.Data.TryGetValue("Configuration", out var configObj)
+                    ? configObj as Microsoft.Extensions.Configuration.IConfiguration
+                    : null;
+
+                var currentProvider = agent.Config.Provider?.ProviderKey ?? "unknown";
+                var currentModel = agent.Config.Provider?.ModelName ?? "unknown";
+
+                // If no arguments, show current model and available options
+                if (string.IsNullOrWhiteSpace(ctx.Arguments))
+                {
+                    // Show current model
+                    AnsiConsole.MarkupLine("[bold yellow]Current Model[/]");
+                    AnsiConsole.MarkupLine($"  Provider: [cyan]{currentProvider}[/]");
+                    AnsiConsole.MarkupLine($"  Model:    [green]{currentModel}[/]");
+                    AnsiConsole.WriteLine();
+
+                    // Show configured providers from appsettings.json
+                    if (config != null)
+                    {
+                        var providersSection = config.GetSection("Providers");
+                        var providers = providersSection.GetChildren().ToList();
+
+                        if (providers.Count > 0)
+                        {
+                            AnsiConsole.MarkupLine("[bold yellow]Configured Providers[/]");
+                            foreach (var provider in providers)
+                            {
+                                var providerKey = provider["ProviderKey"] ?? provider.Key.ToLower();
+                                var hasApiKey = !string.IsNullOrEmpty(provider["ApiKey"]);
+                                var status = hasApiKey ? "[green]✓[/]" : "[red]✗[/]";
+                                AnsiConsole.MarkupLine($"  {status} [cyan]{providerKey}[/]");
+                            }
+                            AnsiConsole.WriteLine();
+                        }
+                    }
+
+                    // Show usage
+                    AnsiConsole.MarkupLine("[dim]Usage: /model <provider>:<model-name>[/]");
+                    AnsiConsole.MarkupLine("[dim]Example: /model openrouter:anthropic/claude-3.5-sonnet[/]");
+                    AnsiConsole.MarkupLine("[dim]Example: /model anthropic:claude-3-5-sonnet-20241022[/]");
+                    AnsiConsole.MarkupLine("[dim]Example: /model ollama:llama3.2[/]");
+
+                    return await Task.FromResult(CommandResult.Ok());
+                }
+
+                // Parse provider:model argument
+                var input = ctx.Arguments.Trim();
+                string newProvider;
+                string newModel;
+
+                if (input.Contains(':'))
+                {
+                    var parts = input.Split(':', 2);
+                    newProvider = parts[0].Trim().ToLower();
+                    newModel = parts[1].Trim();
+                }
+                else
+                {
+                    // Assume same provider, just changing model
+                    newProvider = currentProvider;
+                    newModel = input;
+                }
+
+                if (string.IsNullOrEmpty(newModel))
+                {
+                    return CommandResult.Error("Model name is required. Usage: /model <provider>:<model>");
+                }
+
+                // Get API key for the provider from config
+                string? apiKey = null;
+                if (config != null)
+                {
+                    // Try to find provider config (case-insensitive)
+                    var providersSection = config.GetSection("Providers");
+                    foreach (var provider in providersSection.GetChildren())
+                    {
+                        var providerKey = provider["ProviderKey"] ?? provider.Key.ToLower();
+                        if (providerKey.Equals(newProvider, StringComparison.OrdinalIgnoreCase))
+                        {
+                            apiKey = provider["ApiKey"];
+                            break;
+                        }
+                    }
+                }
+
+                // Store the switch request in context for the main loop to handle
+                if (!ctx.Data.ContainsKey("ModelSwitchRequest"))
+                {
+                    ctx.Data["ModelSwitchRequest"] = null;
+                }
+
+                ctx.Data["ModelSwitchRequest"] = new ModelSwitchRequest
+                {
+                    Provider = newProvider,
+                    Model = newModel,
+                    ApiKey = apiKey
+                };
+
+                return new CommandResult
+                {
+                    Success = true,
+                    Message = $"Switching to {newProvider}:{newModel}...",
+                    ShouldSwitchModel = true
+                };
+            }
+        };
+    }
+
+    /// <summary>
+    /// Request to switch model/provider at runtime
+    /// </summary>
+    public class ModelSwitchRequest
+    {
+        public string Provider { get; set; } = "";
+        public string Model { get; set; } = "";
+        public string? ApiKey { get; set; }
+    }
+
+    /// <summary>
+    /// /session - Show current session info or create a new session
+    /// </summary>
+    private static SlashCommand CreateSessionCommand()
+    {
+        return new SlashCommand
+        {
+            Name = "session",
+            AltNames = new List<string> { "current" },
+            Description = "Show current session or create new (usage: /session [new])",
+            AutoExecute = false,
+            Action = async (ctx) =>
+            {
+                if (!ctx.Data.TryGetValue("CurrentSessionId", out var sessionIdObj) ||
+                    !ctx.Data.TryGetValue("OnSessionSwitch", out var callbackObj) ||
+                    !ctx.Data.TryGetValue("SessionsPath", out var sessionsPathObj))
+                {
+                    return CommandResult.Error("Session feature not available");
+                }
+
+                var currentSessionId = sessionIdObj?.ToString() ?? "unknown";
+                var sessionsPath = sessionsPathObj?.ToString() ?? "";
+                var callback = callbackObj as Func<string, Task>;
+                var args = ctx.Arguments?.Trim().ToLower() ?? "";
+
+                // /session new - Create a new session
+                if (args == "new" || args == "create")
+                {
+                    var newSessionId = $"console-{DateTime.Now:yyyy-MM-dd-HHmmss}-{Guid.NewGuid().ToString()[..8]}";
+
+                    if (callback != null)
+                    {
+                        // Store the new session ID request
+                        ctx.Data["NewSessionRequest"] = newSessionId;
+                        return new CommandResult
+                        {
+                            Success = true,
+                            Message = $"Creating new session: {newSessionId}",
+                            Data = new Dictionary<string, object> { ["NewSessionId"] = newSessionId }
+                        };
+                    }
+
+                    return CommandResult.Error("Cannot create new session - callback not available");
+                }
+
+                // /session (no args) - Show current session info
+                AnsiConsole.MarkupLine("[bold yellow]Current Session[/]");
+                AnsiConsole.MarkupLine($"  ID: [cyan]{currentSessionId}[/]");
+
+                // Try to get session file info (JsonSessionStore uses {sessionId}/session.json structure)
+                var sessionFile = Path.Combine(sessionsPath, currentSessionId, "session.json");
+                if (File.Exists(sessionFile))
+                {
+                    var fileInfo = new FileInfo(sessionFile);
+                    AnsiConsole.MarkupLine($"  Size: [dim]{FormatBytes(fileInfo.Length)}[/]");
+                    AnsiConsole.MarkupLine($"  Modified: [dim]{fileInfo.LastWriteTime:g}[/]");
+                }
+
+                // Get message count from thread if available
+                if (ctx.Data.TryGetValue("Thread", out var threadObj) && threadObj != null)
+                {
+                    var thread = threadObj as dynamic;
+                    try
+                    {
+                        var messageCount = thread?.Messages?.Count ?? 0;
+                        AnsiConsole.MarkupLine($"  Messages: [dim]{messageCount}[/]");
+                    }
+                    catch { /* ignore */ }
+                }
+
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[dim]Commands:[/]");
+                AnsiConsole.MarkupLine("[dim]  /session new    - Start a fresh session[/]");
+                AnsiConsole.MarkupLine("[dim]  /sessions       - Browse previous sessions[/]");
+
+                return await Task.FromResult(CommandResult.Ok());
             }
         };
     }
@@ -175,23 +371,29 @@ public static class BuiltInCommands
                     return CommandResult.Error("No sessions directory found");
                 }
 
-                // Get all session files
-                var sessionFiles = Directory.GetFiles(sessionsPath, "*.json")
-                    .OrderByDescending(f => File.GetLastWriteTime(f))
+                // Get all session directories (JsonSessionStore uses directory-per-session structure)
+                // Each session is stored as: {sessionsPath}/{sessionId}/session.json
+                var sessionDirs = Directory.GetDirectories(sessionsPath)
+                    .Where(d => File.Exists(Path.Combine(d, "session.json")))  // Only dirs with session.json
+                    .OrderByDescending(d => Directory.GetLastWriteTime(d))
                     .ToList();
 
-                if (sessionFiles.Count == 0)
+                if (sessionDirs.Count == 0)
                 {
                     return CommandResult.Ok("No previous sessions found");
                 }
 
                 // Show session list for selection
-                var sessionOptions = sessionFiles.Select(f => new
+                var sessionOptions = sessionDirs.Select(d =>
                 {
-                    File = f,
-                    Name = Path.GetFileNameWithoutExtension(f),
-                    Modified = File.GetLastWriteTime(f).ToString("yyyy-MM-dd HH:mm:ss"),
-                    Size = new FileInfo(f).Length
+                    var sessionFile = Path.Combine(d, "session.json");
+                    return new
+                    {
+                        Directory = d,
+                        Name = Path.GetFileName(d),
+                        Modified = File.GetLastWriteTime(sessionFile).ToString("yyyy-MM-dd HH:mm:ss"),
+                        Size = new FileInfo(sessionFile).Length
+                    };
                 }).ToList();
 
                 // Create display options with info
@@ -219,7 +421,8 @@ public static class BuiltInCommands
                     {
                         await callback(sessionId);
                     }
-                    return CommandResult.Ok($"Restored session: {sessionId}");
+                    // No message here - the callback already displays session info and history
+                    return CommandResult.Ok();
                 }
                 catch (Exception ex)
                 {

@@ -37,6 +37,10 @@ public class AgentUIRenderer
     // Agent reference for sending permission responses
     private Agent? _agent;
 
+    // Current model info for display in response headers
+    private string? _currentProvider;
+    private string? _currentModel;
+
     public UIStateManager StateManager => _stateManager;
     public CommandRegistry CommandRegistry => _commandRegistry;
 
@@ -70,8 +74,24 @@ public class AgentUIRenderer
 
     /// <summary>
     /// Sets the agent reference for handling bidirectional events like permissions.
+    /// Also extracts model info for display in response headers.
     /// </summary>
-    public void SetAgent(Agent agent) => _agent = agent;
+    public void SetAgent(Agent agent)
+    {
+        _agent = agent;
+        _currentProvider = agent.Config.Provider?.ProviderKey;
+        _currentModel = agent.Config.Provider?.ModelName;
+    }
+
+    /// <summary>
+    /// Updates the model info displayed in response headers.
+    /// Used when switching models via AgentRunOptions (without rebuilding agent).
+    /// </summary>
+    public void SetModelInfo(string provider, string model)
+    {
+        _currentProvider = provider;
+        _currentModel = model;
+    }
     
     /// <summary>
     /// Display the app header on startup.
@@ -184,7 +204,7 @@ public class AgentUIRenderer
 
                 case ReasoningMessageStartEvent:
                     AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine("[dim italic]🧠 Thinking...[/]");
+                    AnsiConsole.MarkupLine("[dim italic] Thinking...[/]");
                     break;
 
                 case ReasoningDeltaEvent delta:
@@ -270,13 +290,21 @@ public class AgentUIRenderer
         }
 
         AnsiConsole.WriteLine();
+
+        // Build header: "AgentName - provider:model" or just "AgentName" if no model info
+        var headerText = evt.AgentName;
+        if (!string.IsNullOrEmpty(_currentProvider) && !string.IsNullOrEmpty(_currentModel))
+        {
+            headerText = $"{evt.AgentName} [dim]-[/] [cyan]{_currentProvider}[/]:[white]{_currentModel}[/]";
+        }
+
         AnsiConsole.Write(
-            new Rule($"[bold green]{Markup.Escape(evt.AgentName)}[/]")
+            new Rule($"[bold green]{headerText}[/]")
                 .LeftJustified()
                 .RuleStyle("green")
         );
     }
-    
+
     private void RenderTurnFinished(MessageTurnFinishedEvent evt)
     {
         // Stop animation and drain any remaining queued lines
@@ -298,13 +326,34 @@ public class AgentUIRenderer
         }
 
         AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[dim]✓ Completed in {evt.Duration.TotalSeconds:F2}s[/]");
     }
     
     private void RenderError(MessageTurnErrorEvent evt)
     {
         AnsiConsole.WriteLine();
-        new ErrorMessage { Message = evt.Message }.Display();
+
+        // Show model-specific error with helpful suggestion
+        if (evt.IsModelNotFound)
+        {
+            AnsiConsole.MarkupLine("[red bold]Model not found[/]");
+            AnsiConsole.MarkupLine($"[dim]{Markup.Escape(evt.Message)}[/]");
+            AnsiConsole.MarkupLine("[yellow]Tip:[/] Use [cyan]/models[/] to see available models, or check your model ID.");
+        }
+        else if (evt.Category != null)
+        {
+            // Show category-specific error
+            AnsiConsole.MarkupLine($"[red bold][{evt.Category}][/]");
+            new ErrorMessage { Message = evt.Message }.Display();
+
+            if (evt.IsRetryable)
+            {
+                AnsiConsole.MarkupLine("[dim]This error may be temporary. Try again.[/]");
+            }
+        }
+        else
+        {
+            new ErrorMessage { Message = evt.Message }.Display();
+        }
     }
     
     private void RenderTextDelta(TextDeltaEvent evt)
@@ -359,40 +408,78 @@ public class AgentUIRenderer
     
     private void RenderToolStart(ToolCallStartEvent evt)
     {
+        // Flush any pending streamed text BEFORE showing tool call
+        // This ensures text appears in correct order relative to tool outputs
+        FlushPendingText();
+
         var toolMessage = new ToolMessage
         {
             Name = evt.Name,
             Status = ToolCallStatus.Executing
         };
         _toolComponents[evt.CallId] = toolMessage;
-        
+
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[yellow]⚙ Calling:[/] [bold]{Markup.Escape(evt.Name)}[/]");
+    }
+
+    /// <summary>
+    /// Flushes any pending streamed text from the line collector.
+    /// Call this before rendering tool calls/results to maintain proper ordering.
+    /// </summary>
+    private void FlushPendingText()
+    {
+        if (!_useStreamingMarkdown) return;
+
+        lock (_animationLock)
+        {
+            // Stop animation if running and drain queued lines
+            _animationController?.StopAndDrain();
+
+            // Finalize and display any buffered text (incomplete lines)
+            var remaining = _lineCollector.Finalize();
+            foreach (var line in remaining)
+            {
+                AnsiConsole.Write(line);
+            }
+
+            // Clear collector for fresh start after tool
+            _lineCollector.Clear();
+
+            // Recreate animation controller if animated streaming is enabled
+            _animationController?.Dispose();
+            if (_useAnimatedStreaming)
+            {
+                _animationController = new AnimationController<IRenderable>(
+                    _lineCollector,
+                    line => AnsiConsole.Write(line),
+                    () => { } // Animation complete callback
+                );
+            }
+            else
+            {
+                _animationController = null;
+            }
+        }
     }
     
     private void RenderToolArgs(ToolCallArgsEvent evt)
     {
         if (!_toolComponents.TryGetValue(evt.CallId, out var tool))
             return;
-            
+
         tool.Args = evt.ArgsJson;
-        
-        // Display formatted args
-        var formattedJson = UIHelpers.FormatJson(evt.ArgsJson);
-        AnsiConsole.Write(
-            new Panel(new Text(formattedJson))
-                .Header($"[{Theme.Tool.Header}]Arguments[/]")
-                .Border(BoxBorder.Rounded)
-                .BorderColor(Theme.Tool.Header)
-                .Padding(1, 0)
-        );
+        // Don't display args - keep it clean
     }
     
     private void RenderToolResult(ToolCallResultEvent evt)
     {
+        // Flush any pending streamed text before showing tool result
+        FlushPendingText();
+
         if (!_toolComponents.TryGetValue(evt.CallId, out var tool))
             return;
-            
+
         tool.Result = evt.Result;
         
         var isError = evt.Result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
@@ -400,8 +487,7 @@ public class AgentUIRenderer
         
         // Display result using component
         AnsiConsole.Write(tool.Render());
-        AnsiConsole.WriteLine();
-        
+
         // Smart content-based rendering (Toolkit-agnostic)
         if (!isError)
         {

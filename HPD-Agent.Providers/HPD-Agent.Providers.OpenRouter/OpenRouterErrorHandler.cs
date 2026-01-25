@@ -125,6 +125,12 @@ internal class OpenRouterErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(int? status, string message, string? errorCode)
     {
+        // Check for model not found errors first
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         // Check error code first (more specific than status)
         if (!string.IsNullOrEmpty(errorCode))
         {

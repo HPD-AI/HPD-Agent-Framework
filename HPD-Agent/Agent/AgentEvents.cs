@@ -189,12 +189,57 @@ public record MessageTurnFinishedEvent(
 }
 
 /// <summary>
-/// Emitted when an error occurs during message turn execution
+/// Emitted when an error occurs during message turn execution.
+/// Error category is lazily computed from the exception using GenericErrorHandler.
 /// </summary>
-public record MessageTurnErrorEvent(string Message, Exception? Exception = null) : AgentEvent, IErrorEvent
+public record MessageTurnErrorEvent(
+    string Message,
+    Exception? Exception = null) : AgentEvent, IErrorEvent
 {
     /// <inheritdoc />
     string IErrorEvent.ErrorMessage => Message;
+
+    // Lazy-computed error details from the exception
+    private ErrorHandling.ProviderErrorDetails? _errorDetails;
+    private bool _errorDetailsParsed;
+
+    private ErrorHandling.ProviderErrorDetails? GetErrorDetails()
+    {
+        if (!_errorDetailsParsed)
+        {
+            _errorDetailsParsed = true;
+            if (Exception != null)
+            {
+                var handler = new ErrorHandling.GenericErrorHandler();
+                _errorDetails = handler.ParseError(Exception);
+            }
+        }
+        return _errorDetails;
+    }
+
+    /// <summary>
+    /// Error category lazily computed from the exception.
+    /// Uses GenericErrorHandler to classify the error.
+    /// </summary>
+    public ErrorHandling.ErrorCategory? Category => GetErrorDetails()?.Category;
+
+    /// <summary>
+    /// Error code from the provider, if available.
+    /// </summary>
+    public string? ErrorCode => GetErrorDetails()?.ErrorCode;
+
+    /// <summary>
+    /// Whether this is a model not found error.
+    /// </summary>
+    public bool IsModelNotFound => Category == ErrorHandling.ErrorCategory.ModelNotFound;
+
+    /// <summary>
+    /// Whether this error is retryable.
+    /// </summary>
+    public bool IsRetryable => Category is
+        ErrorHandling.ErrorCategory.RateLimitRetryable or
+        ErrorHandling.ErrorCategory.ServerError or
+        ErrorHandling.ErrorCategory.Transient;
 }
 
 #endregion
@@ -763,6 +808,7 @@ public record InternalRetryEvent(
 /// <summary>
 /// Emitted when a function execution is being retried due to an error.
 /// Emitted by FunctionRetryMiddleware for observability.
+/// Error category is lazily computed from the exception.
 /// </summary>
 /// <param name="FunctionName">The name of the function being retried</param>
 /// <param name="Attempt">The current retry attempt number (1-based)</param>
@@ -783,12 +829,46 @@ public record FunctionRetryEvent(
 {
     /// <inheritdoc />
     Exception? IErrorEvent.Exception => Exception;
+
+    // Lazy-computed error details
+    private ErrorHandling.ProviderErrorDetails? _errorDetails;
+    private bool _errorDetailsParsed;
+
+    private ErrorHandling.ProviderErrorDetails? GetErrorDetails()
+    {
+        if (!_errorDetailsParsed)
+        {
+            _errorDetailsParsed = true;
+            var handler = new ErrorHandling.GenericErrorHandler();
+            _errorDetails = handler.ParseError(Exception);
+        }
+        return _errorDetails;
+    }
+
+    /// <summary>
+    /// Error category lazily computed from the exception.
+    /// </summary>
+    public ErrorHandling.ErrorCategory? Category => GetErrorDetails()?.Category;
+
+    /// <summary>
+    /// Whether this is a model not found error.
+    /// </summary>
+    public bool IsModelNotFound => Category == ErrorHandling.ErrorCategory.ModelNotFound;
+
+    /// <summary>
+    /// Whether this error is retryable.
+    /// </summary>
+    public bool IsRetryable => Category is
+        ErrorHandling.ErrorCategory.RateLimitRetryable or
+        ErrorHandling.ErrorCategory.ServerError or
+        ErrorHandling.ErrorCategory.Transient;
 }
 
 /// <summary>
 /// Emitted when a model call (LLM streaming) is being retried due to an error.
 /// Signals to consumers (like UI) that partial content should be discarded.
 /// Emitted by RetryMiddleware for observability and progressive streaming support.
+/// Error category is lazily computed from the exception.
 /// </summary>
 /// <remarks>
 /// <para><b>Progressive Streaming Pattern:</b></para>
@@ -836,6 +916,39 @@ public record ModelCallRetryEvent(
     Exception? IErrorEvent.Exception => Exception;
 
     public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Control;
+
+    // Lazy-computed error details
+    private ErrorHandling.ProviderErrorDetails? _errorDetails;
+    private bool _errorDetailsParsed;
+
+    private ErrorHandling.ProviderErrorDetails? GetErrorDetails()
+    {
+        if (!_errorDetailsParsed)
+        {
+            _errorDetailsParsed = true;
+            var handler = new ErrorHandling.GenericErrorHandler();
+            _errorDetails = handler.ParseError(Exception);
+        }
+        return _errorDetails;
+    }
+
+    /// <summary>
+    /// Error category lazily computed from the exception.
+    /// </summary>
+    public ErrorHandling.ErrorCategory? Category => GetErrorDetails()?.Category;
+
+    /// <summary>
+    /// Whether this is a model not found error.
+    /// </summary>
+    public bool IsModelNotFound => Category == ErrorHandling.ErrorCategory.ModelNotFound;
+
+    /// <summary>
+    /// Whether this error is retryable according to the error category.
+    /// </summary>
+    public bool IsRetryable => Category is
+        ErrorHandling.ErrorCategory.RateLimitRetryable or
+        ErrorHandling.ErrorCategory.ServerError or
+        ErrorHandling.ErrorCategory.Transient;
 }
 
 /// <summary>

@@ -59,6 +59,11 @@ public static class Theme
         public static Color Removed => Color.Red;
         public static Color Context => Color.Grey;
         public static Color Hunk => Color.Cyan1;
+
+        // Background colors for inline word highlighting (GitHub-style)
+        public static Color AddedBackground => Color.Green3;
+        public static Color RemovedBackground => Color.Red3_1;
+        public static Color ModifiedBackground => Color.Yellow3;
     }
 }
 

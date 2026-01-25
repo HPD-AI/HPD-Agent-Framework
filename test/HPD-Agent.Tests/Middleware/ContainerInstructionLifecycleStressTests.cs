@@ -32,7 +32,7 @@ public class ContainerInstructionLifecycleStressTests
         await middleware.BeforeIterationAsync(turn1Context, CancellationToken.None);
 
         // Verify instructions injected in Turn 1
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", turn1Context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", turn1Context.Options!.Instructions!);
         Assert.Contains("CODING RULES", turn1Context.Options.Instructions);
 
         // Simulate end of Turn 1
@@ -48,7 +48,7 @@ public class ContainerInstructionLifecycleStressTests
         await middleware.BeforeIterationAsync(turn2Context, CancellationToken.None);
 
         // Verify instructions NOT present in Turn 2
-        Assert.DoesNotContain("🔧 ACTIVE CONTAINER PROTOCOLS", turn2Context.Options.Instructions);
+        Assert.DoesNotContain(" ACTIVE CONTAINER PROTOCOLS", turn2Context.Options.Instructions);
         Assert.DoesNotContain("CODING RULES", turn2Context.Options.Instructions);
         Assert.Equal("You are a helpful AI assistant.", turn2Context.Options.Instructions);
     }
@@ -106,7 +106,7 @@ public class ContainerInstructionLifecycleStressTests
             You are a helpful AI assistant.
 
             ═════════════════════════════════════════════════════════════════════════════════════════════════
-            🔧 ACTIVE CONTAINER PROTOCOLS (Execute ALL steps completely)
+             ACTIVE CONTAINER PROTOCOLS (Execute ALL steps completely)
             ═════════════════════════════════════════════════════════════════════════════════════════════════
 
             ## CodingToolkit:
@@ -117,7 +117,7 @@ public class ContainerInstructionLifecycleStressTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Verify stale protocols were removed
-        Assert.DoesNotContain("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options.Instructions);
+        Assert.DoesNotContain(" ACTIVE CONTAINER PROTOCOLS", context.Options.Instructions);
         Assert.DoesNotContain("STALE INSTRUCTIONS", context.Options.Instructions);
         Assert.Equal("You are a helpful AI assistant.", context.Options.Instructions.Trim());
     }
@@ -314,7 +314,7 @@ public class ContainerInstructionLifecycleStressTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         Assert.Equal(originalInstructions, context.Options.Instructions);
-        Assert.DoesNotContain("🔧 ACTIVE", context.Options.Instructions);
+        Assert.DoesNotContain(" ACTIVE", context.Options.Instructions);
     }
 
     [Fact]
@@ -331,7 +331,7 @@ public class ContainerInstructionLifecycleStressTests
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Header present but no container content since SystemPrompt is null
-        Assert.Contains("🔧 ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
+        Assert.Contains(" ACTIVE CONTAINER PROTOCOLS", context.Options!.Instructions!);
         Assert.DoesNotContain("TestToolkit", context.Options.Instructions);
     }
 
@@ -344,12 +344,12 @@ public class ContainerInstructionLifecycleStressTests
         var context = CreateBeforeIterationContext(emptyState, iteration: 0);
 
         // Only the emoji, not full marker
-        context.Options!.Instructions = "Instructions\n🔧 ACTIVE but incomplete marker";
+        context.Options!.Instructions = "Instructions\n ACTIVE but incomplete marker";
 
         await middleware.BeforeIterationAsync(context, CancellationToken.None);
 
         // Should NOT remove since marker is incomplete
-        Assert.Contains("🔧 ACTIVE but incomplete marker", context.Options.Instructions);
+        Assert.Contains(" ACTIVE but incomplete marker", context.Options.Instructions);
     }
 
     #endregion

@@ -120,11 +120,18 @@ internal partial class AzureAIErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(int? status, string message)
     {
+        // Check for model/deployment not found errors first (Azure: "DeploymentNotFound", "deployment does not exist")
+        var errorCode = ExtractErrorCode(message);
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             // Client errors - invalid request
             400 => ErrorCategory.ClientError,
-            404 => ErrorCategory.ClientError, // Endpoint, deployment, or model not found
+            404 => ErrorCategory.ClientError, // Generic not found (model/deployment check done above)
 
             // Authentication/Authorization errors
             401 => ErrorCategory.AuthError, // Unauthorized - invalid API key or token

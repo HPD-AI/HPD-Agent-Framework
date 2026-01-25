@@ -9,6 +9,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Immutable;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HPD.Agent.Validation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
@@ -248,9 +249,14 @@ public class AgentBuilder
     /// <summary>
     /// Registers all providers that were discovered by ProviderAutoDiscovery ModuleInitializer.
     /// Provider assemblies are loaded and their ModuleInitializers run before this is called.
+    /// For PublishSingleFile scenarios, also force-loads provider assemblies from the calling assembly.
     /// </summary>
     private void RegisterDiscoveredProviders()
     {
+        // For PublishSingleFile, ModuleInitializers may not fire until assemblies are explicitly loaded
+        // Force load provider assemblies referenced by the entry/calling assembly
+        ForceLoadProviderAssembliesFromCallingAssembly();
+
         foreach (var factory in ProviderDiscovery.GetFactories())
         {
             try
@@ -264,6 +270,48 @@ public class AgentBuilder
             }
         }
     }
+
+    /// <summary>
+    /// Force-loads provider assemblies by trying to load known provider names.
+    /// This triggers ModuleInitializers in PublishSingleFile scenarios.
+    /// For PublishSingleFile, GetReferencedAssemblies() may not work reliably, so we try known names.
+    /// </summary>
+    private void ForceLoadProviderAssembliesFromCallingAssembly()
+    {
+        // Known provider assembly names to try loading
+        string[] knownProviders = {
+            "HPD-Agent.Providers.OpenRouter",
+            "HPD-Agent.Providers.Anthropic",
+            "HPD-Agent.Providers.AzureAI",
+            "HPD-Agent.Providers.AzureAIInference",
+            "HPD-Agent.Providers.OpenAI",
+            "HPD-Agent.Providers.Ollama",
+            "HPD-Agent.Providers.GoogleAI",
+            "HPD-Agent.Providers.HuggingFace",
+            "HPD-Agent.Providers.Bedrock",
+            "HPD-Agent.Providers.Mistral",
+            "HPD-Agent.Providers.OnnxRuntime"
+        };
+
+        foreach (var providerName in knownProviders)
+        {
+            try
+            {
+                // Try to load the assembly by name - if it's referenced, this will load it
+                var assembly = Assembly.Load(new AssemblyName(providerName));
+                if (assembly != null)
+                {
+                    // Trigger the module initializer
+                    RuntimeHelpers.RunModuleConstructor(assembly.ManifestModule.ModuleHandle);
+                }
+            }
+            catch
+            {
+                // Ignore - provider not referenced/available in this application
+            }
+        }
+    }
+
 
     /// <summary>
     /// Loads Toolkits, Middlewares, and Middleware States from the generated registries in the specified assembly
@@ -1933,14 +1981,19 @@ public class AgentBuilder
             throw new InvalidOperationException("Provider configuration is required.");
 
         // ✨ AUTO-CONFIGURE: If no configuration provided, create default configuration
-        // Automatically loads from appsettings.json in the current directory
+        // Automatically loads from appsettings.json in the application directory
         if (_configuration == null)
         {
             try
             {
+                // Use AppContext.BaseDirectory for PublishSingleFile compatibility
+                // Falls back to current directory if BaseDirectory is not available
+                var basePath = AppContext.BaseDirectory ?? Directory.GetCurrentDirectory();
+
                 _configuration = new ConfigurationBuilder()
-                    .SetBasePath(Directory.GetCurrentDirectory())
+                    .SetBasePath(basePath)
                     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                    .AddEnvironmentVariables()
                     .Build();
             }
             catch (Exception ex)

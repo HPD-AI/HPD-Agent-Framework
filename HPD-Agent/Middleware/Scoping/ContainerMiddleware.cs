@@ -142,7 +142,7 @@ public class ContainerMiddleware : IAgentMiddleware
         // ALWAYS remove stale protocols from ChatOptions.Instructions
         // This handles session restoration where ChatOptions is reused across message turns
         // State clearing in AfterMessageTurnAsync removes from state, but can't touch ChatOptions
-        if (context.Options.Instructions != null && context.Options.Instructions.Contains("🔧 ACTIVE"))
+        if (context.Options.Instructions != null && context.Options.Instructions.Contains(" ACTIVE"))
         {
             RemoveStaleContainerProtocols(context.Options);
         }
@@ -170,7 +170,7 @@ public class ContainerMiddleware : IAgentMiddleware
         {
             var expandedContainers = collapsingState.ExpandedContainers;
 
-            // 🔧 CRITICAL FIX: Always filter from _initialTools (complete list), not context.Options.Tools (already filtered)
+            //  CRITICAL FIX: Always filter from _initialTools (complete list), not context.Options.Tools (already filtered)
             // This ensures that when containers expand, their nested functions become visible in subsequent iterations
             var aiFunctions = _initialTools.OfType<AIFunction>().ToList();
 
@@ -544,7 +544,7 @@ public class ContainerMiddleware : IAgentMiddleware
     /// <summary>
     /// Removes stale container protocol sections from ChatOptions.Instructions.
     /// Handles session restoration where ChatOptions is reused across message turns.
-    /// Finds and removes everything from the separator line before "🔧 ACTIVE CONTAINER PROTOCOLS" onwards.
+    /// Finds and removes everything from the separator line before " ACTIVE CONTAINER PROTOCOLS" onwards.
     /// </summary>
     private static void RemoveStaleContainerProtocols(ChatOptions options)
     {
@@ -555,16 +555,16 @@ public class ContainerMiddleware : IAgentMiddleware
         // The separator marker that appears before the protocols section
         var separatorMarker = "═════════════════════════════════════════════════════════════════════════════════════════════════";
 
-        // Find the start of the protocols section by looking for the separator that comes before "🔧 ACTIVE"
+        // Find the start of the protocols section by looking for the separator that comes before " ACTIVE"
         var parts = currentInstructions.Split([separatorMarker], StringSplitOptions.None);
 
         if (parts.Length <= 1)
             return; // No separator found, nothing to remove
 
-        // Find which part contains the "🔧 ACTIVE CONTAINER PROTOCOLS" marker
+        // Find which part contains the " ACTIVE CONTAINER PROTOCOLS" marker
         for (int i = 0; i < parts.Length; i++)
         {
-            if (parts[i].Contains("🔧 ACTIVE CONTAINER PROTOCOLS"))
+            if (parts[i].Contains(" ACTIVE CONTAINER PROTOCOLS"))
             {
                 // Take everything BEFORE this separator (parts 0 through i-1)
                 // This removes the separator, the marker, and everything after
@@ -652,7 +652,7 @@ public class ContainerMiddleware : IAgentMiddleware
     {
         var sb = new StringBuilder();
         sb.AppendLine("═════════════════════════════════════════════════════════════════════════════════════════════════");
-        sb.AppendLine("🔧 ACTIVE CONTAINER PROTOCOLS (Execute ALL steps completely)");
+        sb.AppendLine(" ACTIVE CONTAINER PROTOCOLS (Execute ALL steps completely)");
         sb.AppendLine("═════════════════════════════════════════════════════════════════════════════════════════════════");
         sb.AppendLine();
 

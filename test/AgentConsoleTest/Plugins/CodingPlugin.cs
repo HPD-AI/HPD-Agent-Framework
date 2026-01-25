@@ -1,24 +1,27 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
-using System.Runtime.InteropServices;
 using DiffPlex;
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
-using Microsoft.Extensions.FileSystemGlobbing;
-using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using HPD.Agent;
+using MAB.DotIgnore;
+using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
+using Ude;
 
+using Matcher = Microsoft.Extensions.FileSystemGlobbing.Matcher;
 
 /// <summary>
 /// CodingToolkit - Comprehensive coding assistant with file operations, search, execution, and analysis.
-/// Features: Line-based reading, diff generation, glob patterns, .gitignore support, grep search, shell execution.
+/// Features: Line-based reading, smart diff-based editing, glob patterns, .gitignore support, grep search, shell execution.
 /// </summary>
 [Collapse(
-    "Contains tools Coding operations: file operations, code search, shell execution, and code analysis.",
+    "Contains tools for coding operations: file operations, code search, shell execution, and code analysis.",
     SystemPrompt: CodingToolkitPrompts.SystemPrompt)]
 public class CodingToolkit
 {
+    private readonly IgnoreList? _gitIgnoreList;
 
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -38,12 +41,24 @@ public class CodingToolkit
         ".next", ".nuxt", "coverage", ".cache"
     };
 
+    /// <summary>
+    /// Creates a CodingToolkit. Optionally loads .gitignore from current directory.
+    /// </summary>
+    public CodingToolkit()
+    {
+        var gitignorePath = Path.Combine(Directory.GetCurrentDirectory(), ".gitignore");
+        if (File.Exists(gitignorePath))
+        {
+            _gitIgnoreList = new IgnoreList(gitignorePath);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════
-    // READ FILE - With offset/limit like Gemini
+    // READ FILE - With offset/limit and encoding detection
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
-    [AIDescription("Read file contents with optional line offset and limit. Returns file content with line numbers.")]
+    [AIDescription("Read file contents with optional line offset and limit. Returns file content with line numbers. Automatically detects file encoding.")]
     public string ReadFile(
         [AIDescription("Absolute path to the file to read.")] string filePath,
         [AIDescription("Line number to start reading from (1-based). Default: 1")] int offset = 1,
@@ -59,9 +74,11 @@ public class CodingToolkit
 
         try
         {
-            var lines = File.ReadAllLines(filePath);
+            // Detect encoding
+            var encoding = DetectEncoding(filePath) ?? Encoding.UTF8;
+            var lines = File.ReadAllLines(filePath, encoding);
             var totalLines = lines.Length;
-            
+
             // Validate offset
             if (offset < 1) offset = 1;
             if (offset > totalLines)
@@ -69,15 +86,15 @@ public class CodingToolkit
 
             // Calculate range
             var startIndex = offset - 1;
-            var endIndex = limit > 0 
-                ? Math.Min(startIndex + limit, totalLines) 
+            var endIndex = limit > 0
+                ? Math.Min(startIndex + limit, totalLines)
                 : totalLines;
             var linesRead = endIndex - startIndex;
 
             // Build output with line numbers
             var sb = new StringBuilder();
             var mimeType = GetMimeType(ext);
-            
+
             sb.AppendLine($"File: {Path.GetFileName(filePath)}");
             sb.AppendLine($"Type: {mimeType}");
             sb.AppendLine($"Lines: {offset}-{offset + linesRead - 1} of {totalLines}");
@@ -105,14 +122,134 @@ public class CodingToolkit
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // EDIT FILE - Targeted string replacement (PREFERRED for modifications)
+    // READ MANY FILES - Batch read with glob patterns
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
-    [AIDescription("Edit a file by replacing exact string matches. PREFERRED over WriteFile for targeted changes. Safer and more precise.")]
+    [AIDescription("Read and concatenate content from multiple files matching glob patterns. Useful for getting an overview of a codebase or analyzing multiple related files.")]
+    public async Task<string> ReadManyFiles(
+        [AIDescription("Glob patterns to match files (e.g., '**/*.cs', '*.md', 'src/**/*.json')")] string[] patterns,
+        [AIDescription("Root directory to search from.")] string rootPath,
+        [AIDescription("Optional: Glob patterns to exclude (e.g., '**/bin/**', '**/obj/**')")] string[]? exclude = null)
+    {
+        if (patterns == null || patterns.Length == 0)
+            return "Error: At least one pattern must be provided.";
+
+        if (!Directory.Exists(rootPath))
+            return $"Error: Directory not found: {rootPath}";
+
+        try
+        {
+            var matcher = new Matcher();
+
+            foreach (var pattern in patterns.Where(p => !string.IsNullOrWhiteSpace(p)))
+                matcher.AddInclude(pattern);
+
+            // Add user excludes
+            if (exclude != null)
+            {
+                foreach (var pattern in exclude.Where(p => !string.IsNullOrWhiteSpace(p)))
+                    matcher.AddExclude(pattern);
+            }
+
+            // Add default excludes
+            foreach (var dir in DefaultIgnoreDirs)
+                matcher.AddExclude($"**/{dir}/**");
+
+            var matchResult = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(rootPath)));
+
+            var matchedFiles = matchResult.Files
+                .Select(f => Path.Combine(rootPath, f.Path))
+                .ToList();
+
+            // Apply gitignore filtering
+            matchedFiles = FilterIgnoredFiles(matchedFiles, rootPath).ToList();
+
+            if (matchedFiles.Count == 0)
+                return $"No files found matching patterns: {string.Join(", ", patterns)}";
+
+            const int maxFiles = 50;
+            var filesToRead = matchedFiles.Take(maxFiles).ToList();
+            var skippedFiles = new List<string>();
+            var contentParts = new List<string>();
+
+            // Read files in parallel
+            var readTasks = filesToRead.Select(async path =>
+            {
+                try
+                {
+                    if (IsBinaryFile(path))
+                        return (Path: path, Content: (string?)null, Error: (string?)"binary file");
+
+                    var encoding = DetectEncoding(path) ?? Encoding.UTF8;
+                    var fileContent = await File.ReadAllTextAsync(path, encoding);
+                    return (Path: path, Content: (string?)fileContent, Error: (string?)null);
+                }
+                catch (Exception ex)
+                {
+                    return (Path: path, Content: (string?)null, Error: (string?)ex.Message);
+                }
+            });
+
+            var results = await Task.WhenAll(readTasks);
+
+            foreach (var (filePath, content, error) in results)
+            {
+                var relativePath = Path.GetRelativePath(rootPath, filePath);
+
+                if (error != null)
+                {
+                    skippedFiles.Add($"{relativePath} ({error})");
+                    continue;
+                }
+
+                if (content != null)
+                {
+                    contentParts.Add($"--- {relativePath} ---\n\n{content}\n");
+                }
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== Read {contentParts.Count} file(s) matching patterns: {string.Join(", ", patterns)} ===");
+            sb.AppendLine();
+
+            if (skippedFiles.Count > 0)
+            {
+                sb.AppendLine($"Skipped {skippedFiles.Count} file(s):");
+                foreach (var skipped in skippedFiles.Take(10))
+                    sb.AppendLine($"  - {skipped}");
+                if (skippedFiles.Count > 10)
+                    sb.AppendLine($"  ... and {skippedFiles.Count - 10} more");
+                sb.AppendLine();
+            }
+
+            if (matchedFiles.Count > maxFiles)
+            {
+                sb.AppendLine($"Note: Showing first {maxFiles} of {matchedFiles.Count} matching files.");
+                sb.AppendLine();
+            }
+
+            foreach (var part in contentParts)
+                sb.AppendLine(part);
+
+            sb.AppendLine("--- End of content ---");
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return $"Error reading multiple files: {ex.Message}";
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // EDIT FILE - Smart matching (exact, flexible whitespace, regex fuzzy)
+    // ═══════════════════════════════════════════════════════════════════
+
+    [AIFunction]
+    [AIDescription("Edit a file by replacing exact string matches. Uses smart matching: tries exact match first, then flexible whitespace matching, then regex fuzzy matching. PREFERRED over WriteFile for targeted changes.")]
     public string EditFile(
         [AIDescription("Absolute path to the file to edit.")] string filePath,
-        [AIDescription("Exact string to find and replace (must match exactly).")] string oldString,
+        [AIDescription("Exact string to find and replace (will try smart matching if exact match fails).")] string oldString,
         [AIDescription("New string to replace with.")] string newString,
         [AIDescription("Replace all occurrences (true) or just first (false). Default: false")] bool replaceAll = false)
     {
@@ -129,62 +266,41 @@ public class CodingToolkit
         {
             var content = File.ReadAllText(filePath);
 
-            // Check if old string exists
-            if (!content.Contains(oldString))
+            // Use smart replacement
+            var replacementResult = CalculateSmartReplacement(content, oldString, newString, replaceAll);
+
+            if (replacementResult.Occurrences == 0)
             {
-                return $"Error: String not found in file. Make sure the string matches exactly.\n" +
-                       $"Looking for: {oldString.Substring(0, Math.Min(100, oldString.Length))}...";
+                return $"Error: Could not find the specified text in the file.\n" +
+                       $"Looking for: {oldString[..Math.Min(100, oldString.Length)]}...\n" +
+                       $"Tried: exact match, flexible whitespace matching, and regex fuzzy matching.";
             }
 
-            // Count occurrences
-            var occurrences = CountOccurrences(content, oldString);
+            if (!replaceAll && replacementResult.Occurrences > 1 && replacementResult.Strategy == "exact match")
+            {
+                return $"Error: Found {replacementResult.Occurrences} occurrences of the text. " +
+                       $"Either set replaceAll=true or provide more context to make the match unique.";
+            }
 
-            // Perform replacement
-            var newContent = replaceAll
-                ? content.Replace(oldString, newString)
-                : ReplaceFirst(content, oldString, newString);
+            var newContent = replacementResult.NewContent;
 
             // Generate diff for preview
-            var sb = new StringBuilder();
-            var fileName = Path.GetFileName(filePath);
             var diffBuilder = new InlineDiffBuilder(new Differ());
             var diff = diffBuilder.BuildDiffModel(content, newContent);
 
             var additions = diff.Lines.Count(l => l.Type == ChangeType.Inserted);
             var deletions = diff.Lines.Count(l => l.Type == ChangeType.Deleted);
 
+            var sb = new StringBuilder();
+
             sb.AppendLine($"Editing: {filePath}");
-            sb.AppendLine($"Replacements: {(replaceAll ? occurrences : 1)} occurrence(s)");
+            sb.AppendLine($"Strategy: {replacementResult.Strategy}");
+            sb.AppendLine($"Replacements: {replacementResult.Occurrences} occurrence(s)");
             sb.AppendLine($"Changes: +{additions} -{deletions} lines");
             sb.AppendLine("---");
 
             // Show diff (condensed)
-            var diffLineCount = 0;
-            foreach (var line in diff.Lines)
-            {
-                if (diffLineCount >= 30 && line.Type == ChangeType.Unchanged)
-                    continue; // Skip unchanged lines after showing enough context
-
-                if (diffLineCount >= 50)
-                {
-                    sb.AppendLine("... (diff truncated)");
-                    break;
-                }
-
-                var prefix = line.Type switch
-                {
-                    ChangeType.Inserted => "+ ",
-                    ChangeType.Deleted => "- ",
-                    ChangeType.Modified => "~ ",
-                    _ => "  "
-                };
-
-                if (line.Type != ChangeType.Unchanged || diffLineCount < 30)
-                {
-                    sb.AppendLine($"{prefix}{line.Text}");
-                    diffLineCount++;
-                }
-            }
+            sb.Append(GenerateDiffDisplay(diff));
 
             // Write the file
             File.WriteAllText(filePath, newContent);
@@ -201,7 +317,7 @@ public class CodingToolkit
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // WRITE FILE - With diff preview like Gemini
+    // WRITE FILE - With diff preview
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
@@ -218,55 +334,24 @@ public class CodingToolkit
 
             var sb = new StringBuilder();
             var fileExists = File.Exists(filePath);
-            string? originalContent = null;
 
             if (fileExists)
             {
-                originalContent = File.ReadAllText(filePath);
-                
-                // Generate unified diff format for display
-                var fileName = Path.GetFileName(filePath);
-                var unifiedDiff = GenerateUnifiedDiff(originalContent, content, fileName);
-                
-                sb.AppendLine(unifiedDiff);
-                sb.AppendLine();
-                
-                // Also generate inline diff for summary
+                var originalContent = File.ReadAllText(filePath);
+
+                // Generate diff
                 var diffBuilder = new InlineDiffBuilder(new Differ());
                 var diff = diffBuilder.BuildDiffModel(originalContent, content);
-                
+
                 var additions = diff.Lines.Count(l => l.Type == ChangeType.Inserted);
                 var deletions = diff.Lines.Count(l => l.Type == ChangeType.Deleted);
-                
+
                 sb.AppendLine($"Modifying: {filePath}");
                 sb.AppendLine($"Changes: +{additions} -{deletions} lines");
                 sb.AppendLine("---");
-                
-                // Show condensed diff (max 50 lines)
-                var diffLineCount = 0;
-                foreach (var line in diff.Lines)
-                {
-                    if (diffLineCount >= 50)
-                    {
-                        sb.AppendLine("... (diff truncated)");
-                        break;
-                    }
-                    
-                    var prefix = line.Type switch
-                    {
-                        ChangeType.Inserted => "+ ",
-                        ChangeType.Deleted => "- ",
-                        ChangeType.Modified => "~ ",
-                        _ => "  "
-                    };
-                    
-                    // Only show changed lines and minimal context
-                    if (line.Type != ChangeType.Unchanged || diffLineCount < 3)
-                    {
-                        sb.AppendLine($"{prefix}{line.Text}");
-                        diffLineCount++;
-                    }
-                }
+
+                // Show condensed diff
+                sb.Append(GenerateDiffDisplay(diff, maxLines: 50));
             }
             else
             {
@@ -276,7 +361,7 @@ public class CodingToolkit
 
             // Write the file
             File.WriteAllText(filePath, content);
-            
+
             sb.AppendLine("---");
             sb.AppendLine($"✓ Successfully wrote to {filePath}");
 
@@ -289,15 +374,14 @@ public class CodingToolkit
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // LIST DIRECTORY - With .gitignore support like Gemini
+    // LIST DIRECTORY - With .gitignore support
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
     [AIDescription("List directory contents with file metadata. Respects .gitignore patterns.")]
     public string ListDirectory(
         [AIDescription("Absolute path to the directory to list. If empty, uses current working directory.")] string directoryPath = "",
-        [AIDescription("Include hidden files/directories. Default: false")] bool showHidden = false,
-        [AIDescription("Respect .gitignore patterns. Default: true")] bool respectGitIgnore = true)
+        [AIDescription("Include hidden files/directories. Default: false")] bool showHidden = false)
     {
         // Default to current directory if not provided
         if (string.IsNullOrWhiteSpace(directoryPath))
@@ -311,20 +395,6 @@ public class CodingToolkit
         try
         {
             var sb = new StringBuilder();
-            var ignorePatterns = new List<string>();
-
-            // Load .gitignore if present
-            if (respectGitIgnore)
-            {
-                var gitignorePath = Path.Combine(directoryPath, ".gitignore");
-                if (File.Exists(gitignorePath))
-                {
-                    ignorePatterns.AddRange(
-                        File.ReadAllLines(gitignorePath)
-                            .Where(l => !string.IsNullOrWhiteSpace(l) && !l.StartsWith('#'))
-                    );
-                }
-            }
 
             sb.AppendLine($"Directory: {directoryPath}");
             sb.AppendLine("---");
@@ -345,10 +415,13 @@ public class CodingToolkit
             var files = Directory.GetFiles(directoryPath)
                 .Select(f => new FileInfo(f))
                 .Where(f => showHidden || !f.Name.StartsWith('.'))
-                .Where(f => !ShouldIgnore(f.Name, ignorePatterns))
                 .OrderBy(f => f.Name);
 
-            foreach (var file in files)
+            // Apply gitignore filtering
+            var filteredFiles = FilterIgnoredFiles(files.Select(f => f.FullName), directoryPath)
+                .Select(p => new FileInfo(p));
+
+            foreach (var file in filteredFiles)
             {
                 var size = FormatFileSize(file.Length);
                 var modified = file.LastWriteTime.ToString("yyyy-MM-dd HH:mm");
@@ -356,8 +429,8 @@ public class CodingToolkit
             }
 
             var dirCount = dirs.Count();
-            var fileCount = files.Count();
-            
+            var fileCount = filteredFiles.Count();
+
             sb.AppendLine("---");
             sb.AppendLine($"Total: {dirCount} directories, {fileCount} files");
 
@@ -374,7 +447,7 @@ public class CodingToolkit
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
-    [AIDescription("Search for files using glob patterns (e.g., '**/*.cs', 'src/**/*.ts').")]
+    [AIDescription("Search for files using glob patterns (e.g., '**/*.cs', 'src/**/*.ts'). Respects .gitignore patterns.")]
     public string GlobSearch(
         [AIDescription("Root directory to search from.")] string rootPath,
         [AIDescription("Glob pattern (e.g., '**/*.cs', 'src/**/*.json').")] string pattern,
@@ -387,32 +460,47 @@ public class CodingToolkit
         {
             var matcher = new Matcher();
             matcher.AddInclude(pattern);
-            
+
             // Exclude common directories
             foreach (var dir in DefaultIgnoreDirs)
-            {
                 matcher.AddExclude($"**/{dir}/**");
-            }
 
             var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(rootPath)));
-            
+
             if (!result.HasMatches)
                 return $"No files found matching '{pattern}'";
 
+            // Get file info and apply ignore filtering
+            var matchedFiles = result.Files
+                .Select(f => Path.Combine(rootPath, f.Path))
+                .ToList();
+
+            matchedFiles = FilterIgnoredFiles(matchedFiles, rootPath).ToList();
+
+            // Sort by most recently modified
+            var sortedFiles = matchedFiles
+                .Select(p => new FileInfo(p))
+                .OrderByDescending(f => f.LastWriteTime)
+                .ToList();
+
             var sb = new StringBuilder();
-            var matches = result.Files.Take(maxResults).ToList();
-            
-            sb.AppendLine($"Found {result.Files.Count()} file(s) matching '{pattern}':");
+            sb.AppendLine($"Found {sortedFiles.Count} file(s) matching '{pattern}':");
             sb.AppendLine("---");
 
-            foreach (var file in matches)
+            var displayCount = Math.Min(sortedFiles.Count, maxResults);
+            for (int i = 0; i < displayCount; i++)
             {
-                sb.AppendLine(file.Path);
+                var file = sortedFiles[i];
+                var relativePath = Path.GetRelativePath(rootPath, file.FullName);
+                var size = FormatFileSize(file.Length);
+                var age = FormatAge(DateTime.Now - file.LastWriteTime);
+
+                sb.AppendLine($"{i + 1}. {relativePath} ({size}, modified {age})");
             }
 
-            if (result.Files.Count() > maxResults)
+            if (sortedFiles.Count > maxResults)
             {
-                sb.AppendLine($"... and {result.Files.Count() - maxResults} more files");
+                sb.AppendLine($"... and {sortedFiles.Count - maxResults} more files");
             }
 
             return sb.ToString();
@@ -424,7 +512,7 @@ public class CodingToolkit
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // GREP - Content search with regex support like Gemini
+    // GREP - Content search with regex support
     // ═══════════════════════════════════════════════════════════════════
 
     [AIFunction]
@@ -449,19 +537,20 @@ public class CodingToolkit
             matcher.AddInclude(string.IsNullOrWhiteSpace(includeFiles) ? "**/*" : includeFiles);
             foreach (var dir in DefaultIgnoreDirs)
                 matcher.AddExclude($"**/{dir}/**");
-            // Exclude binary files
             foreach (var ext in BinaryExtensions)
                 matcher.AddExclude($"**/*{ext}");
 
             var filesToSearch = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(rootPath)));
 
+            var searchPaths = filesToSearch.Files.Select(f => Path.Combine(rootPath, f.Path)).ToList();
+            searchPaths = FilterIgnoredFiles(searchPaths, rootPath).ToList();
+
             var results = new List<(string File, int Line, string Content)>();
 
-            foreach (var fileMatch in filesToSearch.Files)
+            foreach (var fullPath in searchPaths)
             {
                 if (results.Count >= maxResults) break;
 
-                var fullPath = Path.Combine(rootPath, fileMatch.Path);
                 try
                 {
                     var lines = File.ReadAllLines(fullPath);
@@ -469,7 +558,8 @@ public class CodingToolkit
                     {
                         if (regex.IsMatch(lines[i]))
                         {
-                            results.Add((fileMatch.Path, i + 1, lines[i].Trim()));
+                            var relativePath = Path.GetRelativePath(rootPath, fullPath);
+                            results.Add((relativePath, i + 1, lines[i].Trim()));
                         }
                     }
                 }
@@ -493,8 +583,8 @@ public class CodingToolkit
                 sb.AppendLine($"File: {group.Key}");
                 foreach (var match in group)
                 {
-                    var preview = match.Content.Length > 100 
-                        ? match.Content[..100] + "..." 
+                    var preview = match.Content.Length > 100
+                        ? match.Content[..100] + "..."
                         : match.Content;
                     sb.AppendLine($"  L{match.Line}: {preview}");
                 }
@@ -541,6 +631,7 @@ public class CodingToolkit
             var diff = diffBuilder.BuildDiffModel(original, modified);
 
             var sb = new StringBuilder();
+
             sb.AppendLine($"Diff: {Path.GetFileName(originalPath)} ↔ {Path.GetFileName(modifiedPath)}");
             sb.AppendLine("---");
 
@@ -588,7 +679,7 @@ public class CodingToolkit
             var ext = info.Extension;
             var mimeType = GetMimeType(ext);
             var isBinary = BinaryExtensions.Contains(ext);
-            
+
             var sb = new StringBuilder();
             sb.AppendLine($"File: {info.Name}");
             sb.AppendLine($"Path: {info.FullName}");
@@ -615,7 +706,241 @@ public class CodingToolkit
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // HELPERS
+    // EXECUTE COMMAND - Cross-platform shell execution
+    // ═══════════════════════════════════════════════════════════════════
+
+    [AIFunction]
+    [AIDescription("Execute a shell command and return its output. Use for build, test, package management, and running scripts.")]
+    public async Task<string> ExecuteCommand(
+        [AIDescription("Command to execute (e.g., 'dotnet build', 'npm test', 'git status')")] string command,
+        [AIDescription("Working directory for command execution. Default: current directory")] string workingDirectory = "",
+        [AIDescription("Timeout in milliseconds. Default: 120000 (2 minutes)")] int timeout = 120000)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return "Error: Command cannot be empty";
+
+        // Use current directory if not specified
+        var workDir = string.IsNullOrWhiteSpace(workingDirectory)
+            ? Directory.GetCurrentDirectory()
+            : workingDirectory;
+
+        if (!Directory.Exists(workDir))
+            return $"Error: Working directory not found: {workDir}";
+
+        try
+        {
+            var (shell, shellArg) = GetShellExecutable();
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = shell,
+                Arguments = $"{shellArg} \"{command.Replace("\"", "\\\"")}\"",
+                WorkingDirectory = workDir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            var output = new StringBuilder();
+            var error = new StringBuilder();
+
+            using var process = new Process { StartInfo = startInfo };
+
+            process.OutputDataReceived += (sender, e) =>
+            {
+                if (e.Data != null) output.AppendLine(e.Data);
+            };
+
+            process.ErrorDataReceived += (sender, e) =>
+            {
+                if (e.Data != null) error.AppendLine(e.Data);
+            };
+
+            var sw = Stopwatch.StartNew();
+            process.Start();
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+
+            var completed = await Task.Run(() => process.WaitForExit(timeout));
+            sw.Stop();
+
+            if (!completed)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+
+                return FormatCommandResult(
+                    command: command,
+                    workingDir: workDir,
+                    exitCode: -1,
+                    output: output.ToString(),
+                    error: $"Command timed out after {timeout}ms",
+                    duration: sw.ElapsedMilliseconds,
+                    timedOut: true
+                );
+            }
+
+            return FormatCommandResult(
+                command: command,
+                workingDir: workDir,
+                exitCode: process.ExitCode,
+                output: output.ToString(),
+                error: error.ToString(),
+                duration: sw.ElapsedMilliseconds,
+                timedOut: false
+            );
+        }
+        catch (Exception ex)
+        {
+            return $"Error executing command: {ex.Message}\n" +
+                   $"Command: {command}\n" +
+                   $"Working Directory: {workDir}";
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SMART EDIT HELPERS
+    // ═══════════════════════════════════════════════════════════════════
+
+    private record SmartReplacementResult(string NewContent, int Occurrences, string Strategy);
+
+    /// <summary>
+    /// Tries multiple strategies to find and replace text: exact, flexible (whitespace-insensitive), and regex fuzzy
+    /// </summary>
+    private SmartReplacementResult CalculateSmartReplacement(string currentContent, string oldString, string newString, bool replaceAll)
+    {
+        // Normalize line endings to \n for consistent processing
+        var normalizedContent = currentContent.Replace("\r\n", "\n");
+        var normalizedOldString = oldString.Replace("\r\n", "\n");
+        var normalizedNewString = newString.Replace("\r\n", "\n");
+
+        // Strategy 1: Exact match
+        var exactOccurrences = CountOccurrences(normalizedContent, normalizedOldString);
+        if (exactOccurrences > 0)
+        {
+            string result;
+            if (replaceAll)
+            {
+                result = normalizedContent.Replace(normalizedOldString, normalizedNewString);
+            }
+            else
+            {
+                result = ReplaceFirst(normalizedContent, normalizedOldString, normalizedNewString);
+            }
+            return new SmartReplacementResult(result, exactOccurrences, "exact match");
+        }
+
+        // Strategy 2: Flexible match (ignores whitespace differences and indentation)
+        var flexibleResult = FlexibleReplace(normalizedContent, normalizedOldString, normalizedNewString, replaceAll);
+        if (flexibleResult.Occurrences > 0)
+        {
+            return new SmartReplacementResult(flexibleResult.NewContent, flexibleResult.Occurrences, "flexible whitespace match");
+        }
+
+        // Strategy 3: Regex fuzzy match (tokenizes and allows flexible whitespace)
+        var regexResult = RegexFuzzyReplace(normalizedContent, normalizedOldString, normalizedNewString);
+        if (regexResult.Occurrences > 0)
+        {
+            return new SmartReplacementResult(regexResult.NewContent, regexResult.Occurrences, "regex fuzzy match");
+        }
+
+        // No matches found
+        return new SmartReplacementResult(currentContent, 0, "no match");
+    }
+
+    /// <summary>
+    /// Flexible replacement that ignores indentation differences
+    /// </summary>
+    private (string NewContent, int Occurrences) FlexibleReplace(string content, string search, string replace, bool replaceAll)
+    {
+        var sourceLines = content.Split('\n');
+        var searchLines = search.Split('\n').Select(l => l.Trim()).ToArray();
+        var replaceLines = replace.Split('\n');
+
+        if (searchLines.Length == 0)
+            return (content, 0);
+
+        int occurrences = 0;
+        int i = 0;
+
+        while (i <= sourceLines.Length - searchLines.Length)
+        {
+            var window = sourceLines.Skip(i).Take(searchLines.Length).ToArray();
+            var windowStripped = window.Select(l => l.Trim()).ToArray();
+
+            if (windowStripped.SequenceEqual(searchLines))
+            {
+                occurrences++;
+
+                // Preserve the indentation of the first line
+                var firstLineIndentation = GetIndentation(window[0]);
+                var indentedReplace = replaceLines.Select(line => firstLineIndentation + line.TrimStart());
+
+                // Replace this section
+                var before = sourceLines.Take(i);
+                var after = sourceLines.Skip(i + searchLines.Length);
+                sourceLines = before.Concat(indentedReplace).Concat(after).ToArray();
+
+                i += replaceLines.Length;
+
+                if (!replaceAll)
+                    break;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        return (string.Join("\n", sourceLines), occurrences);
+    }
+
+    /// <summary>
+    /// Regex-based fuzzy matching - tokenizes the search string and allows flexible whitespace
+    /// </summary>
+    private (string NewContent, int Occurrences) RegexFuzzyReplace(string content, string search, string replace)
+    {
+        var delimiters = new[] { '(', ')', ':', '[', ']', '{', '}', '>', '<', '=' };
+
+        var processedSearch = search;
+        foreach (var delim in delimiters)
+        {
+            processedSearch = processedSearch.Replace(delim.ToString(), $" {delim} ");
+        }
+
+        var tokens = processedSearch.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+
+        if (tokens.Length == 0)
+            return (content, 0);
+
+        var escapedTokens = tokens.Select(Regex.Escape);
+        var pattern = string.Join(@"\s*", escapedTokens);
+        var finalPattern = @"^(\s*)" + pattern;
+
+        try
+        {
+            var regex = new Regex(finalPattern, RegexOptions.Multiline);
+            var match = regex.Match(content);
+
+            if (!match.Success)
+                return (content, 0);
+
+            var indentation = match.Groups[1].Value;
+            var replaceLines = replace.Split('\n');
+            var indentedReplace = string.Join("\n", replaceLines.Select(line => indentation + line.TrimStart()));
+
+            var result = regex.Replace(content, indentedReplace, 1);
+
+            return (result, 1);
+        }
+        catch (ArgumentException)
+        {
+            return (content, 0);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // HELPER METHODS
     // ═══════════════════════════════════════════════════════════════════
 
     private static int CountOccurrences(string text, string substring)
@@ -639,7 +964,13 @@ public class CodingToolkit
         if (pos < 0)
             return text;
 
-        return text.Substring(0, pos) + newValue + text.Substring(pos + oldValue.Length);
+        return text[..pos] + newValue + text[(pos + oldValue.Length)..];
+    }
+
+    private static string GetIndentation(string line)
+    {
+        var match = Regex.Match(line, @"^(\s*)");
+        return match.Success ? match.Groups[1].Value : string.Empty;
     }
 
     private static string FormatFileSize(long bytes)
@@ -655,22 +986,60 @@ public class CodingToolkit
         return $"{size:0.##} {sizes[order]}";
     }
 
-    private static bool ShouldIgnore(string fileName, List<string> patterns)
+    private static string FormatAge(TimeSpan age)
     {
-        foreach (var pattern in patterns)
+        if (age.TotalMinutes < 1) return "just now";
+        if (age.TotalHours < 1) return $"{(int)age.TotalMinutes}m ago";
+        if (age.TotalDays < 1) return $"{(int)age.TotalHours}h ago";
+        if (age.TotalDays < 7) return $"{(int)age.TotalDays}d ago";
+        if (age.TotalDays < 30) return $"{(int)(age.TotalDays / 7)}w ago";
+        return $"{(int)(age.TotalDays / 30)}mo ago";
+    }
+
+    private static bool IsBinaryFile(string filePath)
+    {
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        if (BinaryExtensions.Contains(ext))
+            return true;
+
+        try
         {
-            if (pattern.Contains('*'))
+            using var fs = File.OpenRead(filePath);
+            var buffer = new byte[8192];
+            var bytesRead = fs.Read(buffer, 0, buffer.Length);
+
+            for (int i = 0; i < bytesRead; i++)
             {
-                var regex = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
-                if (Regex.IsMatch(fileName, regex, RegexOptions.IgnoreCase))
+                if (buffer[i] == 0)
                     return true;
             }
-            else if (fileName.Equals(pattern, StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private static Encoding? DetectEncoding(string filePath)
+    {
+        try
+        {
+            using var fs = File.OpenRead(filePath);
+            var detector = new CharsetDetector();
+            detector.Feed(fs);
+            detector.DataEnd();
+
+            if (detector.Charset != null)
             {
-                return true;
+                return Encoding.GetEncoding(detector.Charset);
             }
         }
-        return false;
+        catch
+        {
+            // Fall back to UTF8
+        }
+        return null;
     }
 
     private static string GetMimeType(string extension)
@@ -713,194 +1082,113 @@ public class CodingToolkit
         };
     }
 
-    private string GenerateUnifiedDiff(string originalContent, string newContent, string fileName)
+    private IEnumerable<string> FilterIgnoredFiles(IEnumerable<string> files, string rootPath)
     {
-        var originalLines = originalContent.Split('\n');
-        var newLines = newContent.Split('\n');
-        
-        var sb = new StringBuilder();
-        sb.AppendLine($"--- {fileName}\t(Original)");
-        sb.AppendLine($"+++ {fileName}\t(Modified)");
-        
-        // Simple line-by-line diff
-        var maxLines = Math.Max(originalLines.Length, newLines.Length);
-        for (int i = 0; i < maxLines; i++)
+        if (_gitIgnoreList == null)
         {
-            var originalLine = i < originalLines.Length ? originalLines[i] : null;
-            var newLine = i < newLines.Length ? newLines[i] : null;
-            
-            if (originalLine != newLine)
+            foreach (var file in files)
+                yield return file;
+            yield break;
+        }
+
+        foreach (var file in files)
+        {
+            var relativePath = Path.GetRelativePath(rootPath, file);
+
+            if (!_gitIgnoreList.IsIgnored(relativePath, pathIsDirectory: false))
+                yield return file;
+        }
+    }
+
+    private static string GenerateDiffDisplay(DiffPaneModel diff, int maxLines = 30)
+    {
+        var sb = new StringBuilder();
+        const int contextLines = 3;
+
+        var changedLineIndices = diff.Lines
+            .Select((line, index) => (line, index))
+            .Where(x => x.line.Type != ChangeType.Unchanged)
+            .Select(x => x.index)
+            .ToList();
+
+        if (changedLineIndices.Count == 0)
+            return "(no changes)\n";
+
+        // Find ranges to display
+        var ranges = new List<(int start, int end)>();
+        foreach (var idx in changedLineIndices)
+        {
+            var start = Math.Max(0, idx - contextLines);
+            var end = Math.Min(diff.Lines.Count - 1, idx + contextLines);
+
+            if (ranges.Count > 0 && start <= ranges[^1].end + 1)
             {
-                if (originalLine != null)
-                    sb.AppendLine($"- {originalLine}");
-                if (newLine != null)
-                    sb.AppendLine($"+ {newLine}");
+                ranges[^1] = (ranges[^1].start, end);
             }
-            else if (originalLine != null)
+            else
             {
-                sb.AppendLine($"  {originalLine}");
+                ranges.Add((start, end));
             }
         }
-        
+
+        var displayedLines = 0;
+        foreach (var (start, end) in ranges)
+        {
+            if (displayedLines >= maxLines)
+            {
+                sb.AppendLine("... (more changes not shown)");
+                break;
+            }
+
+            for (int i = start; i <= end && displayedLines < maxLines; i++)
+            {
+                var line = diff.Lines[i];
+                var prefix = line.Type switch
+                {
+                    ChangeType.Inserted => "+ ",
+                    ChangeType.Deleted => "- ",
+                    ChangeType.Modified => "! ",
+                    _ => "  "
+                };
+
+                sb.AppendLine($"{prefix}{line.Text}");
+                displayedLines++;
+            }
+
+            if (ranges.Count > 1 && (start, end) != ranges[^1])
+            {
+                sb.AppendLine("...");
+            }
+        }
+
         return sb.ToString();
     }
 
-        private static readonly string DefaultShell = GetDefaultShell();
-    private static readonly string ShellArg = GetShellArg();
-
-    // ═══════════════════════════════════════════════════════════════════
-    // EXECUTE COMMAND - Cross-platform shell execution
-    // ═══════════════════════════════════════════════════════════════════
-
-    [AIFunction]
-    [AIDescription("Execute a shell command and return its output. Use for build, test, package management, and running scripts.")]
-    public async Task<string> ExecuteCommand(
-        [AIDescription("Command to execute (e.g., 'dotnet build', 'npm test', 'git status')")] string command,
-        [AIDescription("Working directory for command execution. Default: current directory")] string workingDirectory = "",
-        [AIDescription("Timeout in milliseconds. Default: 120000 (2 minutes)")] int timeout = 120000)
-    {
-        if (string.IsNullOrWhiteSpace(command))
-            return "Error: Command cannot be empty";
-
-        // Use current directory if not specified
-        var workDir = string.IsNullOrWhiteSpace(workingDirectory)
-            ? Directory.GetCurrentDirectory()
-            : workingDirectory;
-
-        if (!Directory.Exists(workDir))
-            return $"Error: Working directory not found: {workDir}";
-
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = DefaultShell,
-                Arguments = $"{ShellArg} \"{command.Replace("\"", "\\\"")}\"",
-                WorkingDirectory = workDir,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            var output = new StringBuilder();
-            var error = new StringBuilder();
-
-            using var process = new Process { StartInfo = startInfo };
-
-            // Capture output and error streams
-            process.OutputDataReceived += (sender, e) =>
-            {
-                if (e.Data != null)
-                    output.AppendLine(e.Data);
-            };
-
-            process.ErrorDataReceived += (sender, e) =>
-            {
-                if (e.Data != null)
-                    error.AppendLine(e.Data);
-            };
-
-            var sw = Stopwatch.StartNew();
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-
-            // Wait for completion with timeout
-            var completed = await Task.Run(() => process.WaitForExit(timeout));
-            sw.Stop();
-
-            if (!completed)
-            {
-                try
-                {
-                    process.Kill(entireProcessTree: true);
-                }
-                catch
-                {
-                    // Ignore kill errors
-                }
-
-                return FormatCommandResult(
-                    command: command,
-                    workingDir: workDir,
-                    exitCode: -1,
-                    output: output.ToString(),
-                    error: $"Command timed out after {timeout}ms",
-                    duration: sw.ElapsedMilliseconds,
-                    timedOut: true
-                );
-            }
-
-            var exitCode = process.ExitCode;
-            var outputText = output.ToString();
-            var errorText = error.ToString();
-
-            return FormatCommandResult(
-                command: command,
-                workingDir: workDir,
-                exitCode: exitCode,
-                output: outputText,
-                error: errorText,
-                duration: sw.ElapsedMilliseconds,
-                timedOut: false
-            );
-        }
-        catch (Exception ex)
-        {
-            return $"Error executing command: {ex.Message}\n" +
-                   $"Command: {command}\n" +
-                   $"Working Directory: {workDir}";
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // HELPERS
-    // ═══════════════════════════════════════════════════════════════════
-
-    private static string GetDefaultShell()
+    // Shell command helpers
+    private static (string shell, string args) GetShellExecutable()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return "cmd.exe";
+            return ("cmd.exe", "/c");
 
-        // Unix-like systems (macOS, Linux)
-        return Environment.GetEnvironmentVariable("SHELL") ?? "/bin/bash";
+        return (Environment.GetEnvironmentVariable("SHELL") ?? "/bin/bash", "-c");
     }
 
-    private static string GetShellArg()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return "/c";
-
-        return "-c";
-    }
-
-    private static string FormatCommandResult(
-        string command,
-        string workingDir,
-        int exitCode,
-        string output,
-        string error,
-        long duration,
-        bool timedOut)
+    private static string FormatCommandResult(string command, string workingDir, int exitCode, string output, string error, long duration, bool timedOut)
     {
         var sb = new StringBuilder();
 
-        // Header
         sb.AppendLine($"Command: {command}");
         sb.AppendLine($"Working Directory: {workingDir}");
         sb.AppendLine($"Duration: {duration}ms");
         sb.AppendLine($"Exit Code: {exitCode}");
         sb.AppendLine("---");
 
-        // Output
         if (!string.IsNullOrWhiteSpace(output))
         {
             sb.AppendLine("OUTPUT:");
             sb.AppendLine(TruncateOutput(output, maxLines: 100));
         }
 
-        // Error
         if (!string.IsNullOrWhiteSpace(error))
         {
             sb.AppendLine();
@@ -908,11 +1196,10 @@ public class CodingToolkit
             sb.AppendLine(TruncateOutput(error, maxLines: 50));
         }
 
-        // Status
         sb.AppendLine("---");
         if (timedOut)
         {
-            sb.AppendLine("   TIMED OUT");
+            sb.AppendLine("⏱ TIMED OUT");
         }
         else if (exitCode == 0)
         {
@@ -920,7 +1207,7 @@ public class CodingToolkit
         }
         else
         {
-            sb.AppendLine($"   FAILED (Exit Code: {exitCode})");
+            sb.AppendLine($"✗ FAILED (Exit Code: {exitCode})");
         }
 
         return sb.ToString();

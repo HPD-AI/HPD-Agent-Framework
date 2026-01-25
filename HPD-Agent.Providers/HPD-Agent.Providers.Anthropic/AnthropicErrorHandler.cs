@@ -183,6 +183,12 @@ internal class AnthropicErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyAnthropicError(int statusCode, string? errorType, string message)
     {
+        // Check for model not found errors first (Anthropic uses "not_found_error" type)
+        if (ModelNotFoundDetector.IsModelNotFoundError(statusCode, message, errorCode: null, errorType))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         // Check for insufficient credits (common 400 error)
         if (errorType == "invalid_request_error" &&
             (message.Contains("credit balance is too low") ||

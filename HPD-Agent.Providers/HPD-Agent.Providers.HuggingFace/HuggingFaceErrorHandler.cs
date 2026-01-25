@@ -142,11 +142,17 @@ internal partial class HuggingFaceErrorHandler : IProviderErrorHandler
 
     private static ErrorCategory ClassifyError(int? status, string message)
     {
+        // Check for model not found errors first (HuggingFace: "model is not supported")
+        if (ModelNotFoundDetector.IsModelNotFoundError(status, message, errorCode: null, errorType: null))
+        {
+            return ErrorCategory.ModelNotFound;
+        }
+
         return status switch
         {
             // Client errors - invalid request
             400 => ErrorCategory.ClientError, // Bad request - invalid parameters
-            404 => ErrorCategory.ClientError, // Model not found
+            404 => ErrorCategory.ClientError, // Generic not found (model check done above)
             413 => ErrorCategory.ClientError, // Payload too large
 
             // Authentication/Authorization errors

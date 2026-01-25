@@ -55,7 +55,7 @@ npm install @hpd/hpd-agent-headless-ui
 
 - **🤖 AI-Specific States**: Built-in support for `streaming`, `thinking`, `executing`, and `complete` states
 - **🎯 Status Derivation**: Automatically calculates message status based on AI activity
-- **🔧 Tool Execution Tracking**: Embedded tool call state management
+- ** Tool Execution Tracking**: Embedded tool call state management
 - **💭 Reasoning Support**: Display AI thinking/reasoning process
 - **♿ Accessibility**: Automatic ARIA live regions and busy states
 - **📦 Tiny Bundle**: < 2 KB gzipped
@@ -198,7 +198,7 @@ npm install @hpd/hpd-agent-headless-ui
         <div class="tools">
           {#each toolCalls as tool}
             <div class="tool" data-status={tool.status}>
-              🔧 {tool.name}: {tool.status}
+               {tool.name}: {tool.status}
             </div>
           {/each}
         </div>

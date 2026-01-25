@@ -174,7 +174,7 @@
 														<ToolExecution.Trigger class="w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors flex items-center justify-between">
 															{#snippet children({ expanded })}
 																<div class="flex items-center gap-2 flex-1">
-																	<span class="text-sm">🔧</span>
+																	<span class="text-sm"></span>
 																	<span class="text-sm font-medium">{toolCall.name}</span>
 																	<ToolExecution.Status>
 																		{#snippet children({ status: toolStatus, isActive })}
