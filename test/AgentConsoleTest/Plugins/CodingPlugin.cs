@@ -408,7 +408,7 @@ public class CodingToolkit
 
             foreach (var dir in dirs)
             {
-                sb.AppendLine($"📁 {dir.Name}/");
+                sb.AppendLine($"▸ {dir.Name}/");
             }
 
             // List files

@@ -3,10 +3,18 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <!-- Single-file publish settings -->
-    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <AssemblyName>HPD.Agent.CLI</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Exclude TestFiles folder which contains a separate project -->
+  <ItemGroup>
+    <Compile Remove="TestFiles\**" />
+    <None Remove="TestFiles\**" />
+    <Content Remove="TestFiles\**" />
+  </ItemGroup>
+
+  <!-- Single-file publish settings (only for publish, not build) -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishTrimmed>false</PublishTrimmed>
@@ -16,6 +24,15 @@
   <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="MCP.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="Fonts\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 

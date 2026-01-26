@@ -111,8 +111,20 @@ if [ -n "$binary_path" ]; then
         exit 1
     fi
     echo -e "${CYAN}Installing from local binary: ${binary_path}${NC}"
+
+    # Copy binary
     cp "$binary_path" "$INSTALL_DIR/hpd-agent"
     chmod +x "$INSTALL_DIR/hpd-agent"
+
+    # Copy appsettings.json from same directory as binary
+    binary_dir=$(dirname "$binary_path")
+    if [ -f "$binary_dir/appsettings.json" ]; then
+        cp "$binary_dir/appsettings.json" "$INSTALL_DIR/appsettings.json"
+        echo -e "${CYAN}Copied appsettings.json${NC}"
+    else
+        echo -e "${ORANGE}Warning: appsettings.json not found in binary directory${NC}"
+    fi
+
     specific_version="local"
 else
     # TODO: Replace with actual GitHub releases URL
@@ -207,6 +219,11 @@ echo -e ""
 echo -e "${MUTED}To start using HPD-Agent:${NC}"
 echo -e "  ${CYAN}hpd-agent${NC}     # Start interactive mode"
 echo -e ""
-echo -e "${MUTED}Restart your shell or run:${NC}"
-echo -e "  ${CYAN}source ${config_file}${NC}"
+if [[ "$no_modify_path" != "true" ]] && [[ -n "${config_file:-}" ]]; then
+    echo -e "${MUTED}Restart your shell or run:${NC}"
+    echo -e "  ${CYAN}source ${config_file}${NC}"
+else
+    echo -e "${MUTED}Add to your PATH manually:${NC}"
+    echo -e "  ${CYAN}export PATH=$INSTALL_DIR:\$PATH${NC}"
+fi
 echo -e ""

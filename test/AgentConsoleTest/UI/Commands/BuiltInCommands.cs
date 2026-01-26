@@ -119,7 +119,7 @@ public static class BuiltInCommands
             AutoExecute = true,
             Action = async (ctx) =>
             {
-                return await Task.FromResult(CommandResult.Exit("Goodbye! 👋"));
+                return await Task.FromResult(CommandResult.Exit("Goodbye! ~"));
             }
         };
     }
@@ -235,6 +235,12 @@ public static class BuiltInCommands
                     ctx.Data["ModelSwitchRequest"] = null;
                 }
 
+                // Warn if API key is missing for the provider
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠ No API key configured for '{newProvider}' - using default or environment variable[/]");
+                }
+
                 ctx.Data["ModelSwitchRequest"] = new ModelSwitchRequest
                 {
                     Provider = newProvider,
@@ -245,7 +251,7 @@ public static class BuiltInCommands
                 return new CommandResult
                 {
                     Success = true,
-                    Message = $"Switching to {newProvider}:{newModel}...",
+                    Message = $"Switching to {newProvider}:{newModel}...\n[dim](Model will be validated on first use)[/]",
                     ShouldSwitchModel = true
                 };
             }

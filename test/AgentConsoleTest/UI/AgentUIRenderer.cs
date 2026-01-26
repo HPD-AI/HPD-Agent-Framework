@@ -721,9 +721,9 @@ public class AgentUIRenderer
 
         var icon = evt.Status switch
         {
-            HistoryReductionStatus.CacheHit => "💾",
-            HistoryReductionStatus.Performed => "📝",
-            _ => "📊"
+            HistoryReductionStatus.CacheHit => "◇",
+            HistoryReductionStatus.Performed => "≡",
+            _ => "◈"
         };
 
         var color = evt.Status switch
@@ -784,12 +784,12 @@ public class AgentUIRenderer
 
         var icon = evt.UpdateType switch
         {
-            PlanUpdateType.Created => "📋",
-            PlanUpdateType.StepUpdated => "✏️",
-            PlanUpdateType.StepAdded => "➕",
-            PlanUpdateType.NoteAdded => "📝",
-            PlanUpdateType.Completed => "✅",
-            _ => "📌"
+            PlanUpdateType.Created => "≡",
+            PlanUpdateType.StepUpdated => "◐",
+            PlanUpdateType.StepAdded => "+",
+            PlanUpdateType.NoteAdded => "»",
+            PlanUpdateType.Completed => "●",
+            _ => "•"
         };
 
         var color = evt.UpdateType switch
@@ -832,10 +832,10 @@ public class AgentUIRenderer
         {
             var statusIcon = step.Status switch
             {
-                HPD.Agent.Memory.PlanStepStatus.Pending => "⏳",
-                HPD.Agent.Memory.PlanStepStatus.InProgress => "🔄",
-                HPD.Agent.Memory.PlanStepStatus.Completed => "✓",
-                HPD.Agent.Memory.PlanStepStatus.Blocked => "⛔",
+                HPD.Agent.Memory.PlanStepStatus.Pending => "○",
+                HPD.Agent.Memory.PlanStepStatus.InProgress => "◐",
+                HPD.Agent.Memory.PlanStepStatus.Completed => "●",
+                HPD.Agent.Memory.PlanStepStatus.Blocked => "⊘",
                 _ => "•"
             };
 
@@ -874,7 +874,7 @@ public class AgentUIRenderer
         if (plan.ContextNotes.Count > 0)
         {
             table.AddEmptyRow();
-            table.AddRow("[blue]📝[/]", "[blue]Notes:[/]", "");
+            table.AddRow("[blue]»[/]", "[blue]Notes:[/]", "");
             foreach (var note in plan.ContextNotes)
             {
                 table.AddRow("", "", $"[dim]• {Markup.Escape(note)}[/]");
@@ -885,7 +885,7 @@ public class AgentUIRenderer
         if (plan.IsComplete)
         {
             table.AddEmptyRow();
-            table.AddRow("[green]✅[/]", "[green bold]Complete[/]", $"[dim]{plan.CompletedAt:g}[/]");
+            table.AddRow("[green]●[/]", "[green bold]Complete[/]", $"[dim]{plan.CompletedAt:g}[/]");
         }
 
         return table;

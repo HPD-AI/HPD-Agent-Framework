@@ -3,6 +3,7 @@
 using HPD.Agent;
 using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
+using HPD.Agent.MCP;
 using HPD.Agent.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -10,22 +11,24 @@ using Spectre.Console;
 using AgentConsoleTest;
 using System.Threading.Channels;
 
-// Print banner - simple ASCII art that works across all terminals
-var logo = @"
- ██╗  ██╗██████╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
- ██║  ██║██╔══██╗██╔══██╗     ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
- ███████║██████╔╝██║  ██║█████╗███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
- ██╔══██║██╔═══╝ ██║  ██║╚════╝██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
- ██║  ██║██║     ██████╔╝      ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
- ╚═╝  ╚═╝╚═╝     ╚═════╝       ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝";
-
-AnsiConsole.MarkupLine($"[cyan]{Markup.Escape(logo)}[/]");
-AnsiConsole.MarkupLine("[dim]Powered by HPD Agent Framework[/]");
+// Capture user's working directory BEFORE changing it
+var userWorkingDirectory = Directory.GetCurrentDirectory();
 
 var appDirectory = AppContext.BaseDirectory;
-// Set the current directory to the app directory so EnvironmentContext sees the right location
-Directory.SetCurrentDirectory(appDirectory);
-var currentDirectory = Directory.GetCurrentDirectory();
+
+// Print banner using FigletText - resizable and consistent across terminals
+// Load ANSI Shadow font for block-style ASCII art (similar to original logo)
+var fontPath = Path.Combine(appDirectory, "Fonts", "ANSIShadow.flf");
+var font = File.Exists(fontPath)
+    ? FigletFont.Load(fontPath)
+    : FigletFont.Default;
+
+var logo = new FigletText(font, "HPD AGENT")
+    .LeftJustified()
+    .Color(new Spectre.Console.Color(0, 255, 255)); // Cyan
+
+AnsiConsole.Write(logo);
+AnsiConsole.MarkupLine("[dim]Powered by HPD Agent Framework[/]");
 
 // Load configuration from appsettings.json (use app directory for config file)
 var configuration = new ConfigurationBuilder()
@@ -34,18 +37,47 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
-// Set up session persistence using XDG-style data directory
-// Store sessions in user data directory, not build output
-// On macOS: ~/Library/Application Support/HPD-Agent/sessions
-// On Linux: ~/.local/share/HPD-Agent/sessions
-// On Windows: %LOCALAPPDATA%\HPD-Agent\sessions
-var userDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-var hpdDataPath = Path.Combine(userDataPath, "HPD-Agent");
-var sessionsPath = Path.Combine(hpdDataPath, "sessions");
+// Set up session persistence
+// Production: ~/Library/Application Support/HPD-Agent/sessions (user data)
+// Development: /Users/einsteinessibu/Documents/HPD-Agent/test/AgentConsoleTest/sessions (project folder)
+
+// Detect if running from installed location or development
+var isProduction = appDirectory.Contains(".hpd-agent") || appDirectory.Contains("publish");
+
+string sessionsPath;
+if (isProduction)
+{
+    // Production: Use user data directory
+    var userDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    var hpdDataPath = Path.Combine(userDataPath, "HPD-Agent");
+    sessionsPath = Path.Combine(hpdDataPath, "sessions");
+}
+else
+{
+    // Development: Use project sessions folder at the AgentConsoleTest level
+    // Find the .csproj file to identify project root
+    var projectRoot = appDirectory;
+    DirectoryInfo? parent = Directory.GetParent(projectRoot);
+
+    while (parent != null)
+    {
+        // Check if this directory contains the .csproj file
+        if (File.Exists(Path.Combine(parent.FullName, "AgentConsoleTest.csproj")))
+        {
+            projectRoot = parent.FullName;
+            break;
+        }
+        parent = parent.Parent;
+    }
+
+    sessionsPath = Path.Combine(projectRoot, "sessions");
+}
+
 Directory.CreateDirectory(sessionsPath);
 
 var sessionStore = new JsonSessionStore(sessionsPath);
-AnsiConsole.MarkupLine($"[dim]Sessions: {sessionsPath}[/]");
+var envLabel = isProduction ? "prod" : "dev";
+AnsiConsole.MarkupLine($"[dim]Sessions ({envLabel}): {sessionsPath}[/]");
 
 // Create agent configuration - generic base, specialized personas come from Toolkits
 // NEW: Toolkits are now registered via config instead of builder calls
@@ -107,15 +139,20 @@ var loggerFactory = LoggerFactory.Create(builder =>
 // Create CodingToolkit instance for chat client injection (LLM self-correction)
 var codingToolkit = new CodingToolkit();
 
+// MCP manifest path (same directory as appsettings.json)
+var mcpManifestPath = Path.Combine(appDirectory, "MCP.json");
+
 var agentBuilder = new AgentBuilder(config)
     //.WithLogging(loggerFactory)
-    .WithMiddleware(new EnvironmentContextMiddleware())
+    .WithMiddleware(new EnvironmentContextMiddleware(new[] { userWorkingDirectory }))
     // Register CodingToolkit as instance to enable chat client injection after build
     .WithToolkit(codingToolkit)
     .WithSessionStore(sessionStore, persistAfterTurn: true)
     // Enable plan mode for multi-step task tracking
     .WithPlanMode()
-    .WithPermissions();
+    .WithPermissions()
+    // Add MCP support for external tool servers
+    .WithMCP(mcpManifestPath);
 
 // Add audio pipeline if providers are available
 var agent = await agentBuilder.Build();
@@ -284,7 +321,7 @@ while (true)
         
         if (result.ShouldExit)
         {
-            AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+            AnsiConsole.MarkupLine("\n[dim]Goodbye! ~[/]");
             break;
         }
         
@@ -386,9 +423,47 @@ while (true)
             detail: null); // auto/balanced
 
         // Stream agent response using the new ChatMessage overload
-        await foreach (var evt in agent.RunAsync(message, sessionId, currentRunOptions))
+        using (var escape = new EscapeCancellation())
         {
-            ui.RenderEvent(evt);
+            try
+            {
+                await foreach (var evt in agent.RunAsync(message, sessionId, currentRunOptions, escape.Token))
+                {
+                    ui.RenderEvent(evt);
+                }
+            }
+            catch (OperationCanceledException) when (escape.WasCancelled)
+            {
+                // User cancelled with Escape - this is expected
+            }
+            catch (Exception ex)
+            {
+                // Handle errors gracefully
+                var errorMessage = ex.InnerException?.Message ?? ex.Message;
+
+                var isModelError = HPD.Agent.ErrorHandling.ModelNotFoundDetector.IsModelNotFoundError(
+                    status: null,
+                    message: errorMessage,
+                    errorCode: null,
+                    errorType: null);
+
+                if (isModelError)
+                {
+                    AnsiConsole.MarkupLine($"\n[red]⊘ Model not found:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
+
+                    if (currentRunOptions != null)
+                    {
+                        AnsiConsole.MarkupLine("[dim]Resetting to default model. Use /model to set a valid model.[/]");
+                        currentRunOptions = null;
+                    }
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine($"\n[red]⊘ Error:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
+                }
+
+                AnsiConsole.WriteLine();
+            }
         }
 
         // Reload thread
@@ -404,7 +479,7 @@ while (true)
 
         if (result.ShouldExit)
         {
-            AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+            AnsiConsole.MarkupLine("\n[dim]Goodbye! ~[/]");
             break;
         }
 
@@ -457,7 +532,7 @@ while (true)
     if (userInput.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
         userInput.Equals("quit", StringComparison.OrdinalIgnoreCase))
     {
-        AnsiConsole.MarkupLine("\n[dim]Goodbye! 👋[/]");
+        AnsiConsole.MarkupLine("\n[dim]Goodbye! ~[/]");
         break;
     }
 
@@ -465,16 +540,57 @@ while (true)
     // DEBUG: Show session info before running (helps diagnose session restore issues)
     #if DEBUG
     var debugSession = await agent.LoadSessionAsync(sessionId);
-    AnsiConsole.MarkupLine($"[dim]📋 Session: {sessionId} ({debugSession.Messages.Count} messages)[/]");
+    AnsiConsole.MarkupLine($"[dim]≡ Session: {sessionId} ({debugSession.Messages.Count} messages)[/]");
     if (currentRunOptions != null && !string.IsNullOrEmpty(currentRunOptions.ProviderKey))
     {
-        AnsiConsole.MarkupLine($"[dim]🔀 Using override: {currentRunOptions.ProviderKey}:{currentRunOptions.ModelId}[/]");
+        AnsiConsole.MarkupLine($"[dim]→ Using override: {currentRunOptions.ProviderKey}:{currentRunOptions.ModelId}[/]");
     }
     #endif
 
-    await foreach (var evt in agent.RunAsync(userInput, sessionId, currentRunOptions))
+    using (var escape = new EscapeCancellation())
     {
-        ui.RenderEvent(evt);
+        try
+        {
+            await foreach (var evt in agent.RunAsync(userInput, sessionId, currentRunOptions, escape.Token))
+            {
+                ui.RenderEvent(evt);
+            }
+        }
+        catch (OperationCanceledException) when (escape.WasCancelled)
+        {
+            // User cancelled with Escape - this is expected
+        }
+        catch (Exception ex)
+        {
+            // Handle errors gracefully - don't crash the whole app
+            var errorMessage = ex.InnerException?.Message ?? ex.Message;
+
+            // Use HPD-Agent's error detection to properly categorize the error
+            var isModelError = HPD.Agent.ErrorHandling.ModelNotFoundDetector.IsModelNotFoundError(
+                status: null,
+                message: errorMessage,
+                errorCode: null,
+                errorType: null);
+
+            if (isModelError)
+            {
+                AnsiConsole.MarkupLine($"\n[red]⊘ Model not found:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
+
+                // Reset to default model if we were using an override
+                if (currentRunOptions != null)
+                {
+                    AnsiConsole.MarkupLine("[dim]Resetting to default model. Use /model to set a valid model.[/]");
+                    currentRunOptions = null;
+                }
+            }
+            else
+            {
+                // For other errors, show the error and continue
+                AnsiConsole.MarkupLine($"\n[red]⊘ Error:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
+            }
+
+            AnsiConsole.WriteLine();
+        }
     }
 
     // Reload thread

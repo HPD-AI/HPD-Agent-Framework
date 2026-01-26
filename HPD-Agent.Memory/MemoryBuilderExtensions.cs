@@ -194,10 +194,9 @@ public static class MemoryBuilderExtensions
             config,
             builder.Logger?.CreateLogger<AgentPlanAgentMiddleware>());
 
-        // Register toolkit directly (instance-based for DI toolkits)
-        var toolkitName = typeof(AgentPlanToolkit).Name;
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(toolkit, toolkitName));
-        builder.ToolkitContexts[toolkitName] = null;
+        // Register toolkit using WithToolkit - this automatically loads the MiddlewareStateRegistry
+        // from HPD-Agent.Memory assembly, registering PlanModePersistentStateData for session persistence
+        builder.WithToolkit(toolkit);
 
         // Register middleware directly
         builder.Middlewares.Add(middleware);
