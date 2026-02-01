@@ -987,6 +987,19 @@ public sealed class Agent
                     messagesToSend = beforeIterationContext.Messages;
                     var CollapsedOptions = beforeIterationContext.Options;
 
+                    // Helper for toolkit name lookup in events
+                    // Try collapsed tools first, then fall back to original (pre-collapse) tools
+                    string? LookupToolkit(string? functionName)
+                    {
+                        var result = _functionCallProcessor.LookupToolkitName(functionName, CollapsedOptions?.Tools);
+                        if (result == null)
+                        {
+                            // Function not found in collapsed view - try original tools
+                            result = _functionCallProcessor.LookupToolkitName(functionName, effectiveOptions?.Tools);
+                        }
+                        return result;
+                    }
+
                     // Streaming state
                     var assistantContents = new List<AIContent>();
                     var toolRequests = new List<FunctionCallContent>();
@@ -1026,7 +1039,8 @@ public sealed class Agent
                                     yield return new ToolCallStartEvent(
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
-                                        assistantMessageId);
+                                        assistantMessageId,
+                                        LookupToolkit(functionCall.Name));
 
                                     if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                     {
@@ -1187,7 +1201,8 @@ public sealed class Agent
                                     yield return new ToolCallStartEvent(
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
-                                        assistantMessageId);
+                                        assistantMessageId,
+                                        LookupToolkit(functionCall.Name));
 
                                     if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                     {
@@ -1295,7 +1310,8 @@ public sealed class Agent
                                             yield return new ToolCallStartEvent(
                                                 functionCall.CallId,
                                                 functionCall.Name ?? string.Empty,
-                                                assistantMessageId);
+                                                assistantMessageId,
+                                                LookupToolkit(functionCall.Name));
 
                                             if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                             {
@@ -1569,13 +1585,19 @@ public sealed class Agent
                         // Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
                         turnHistory.Add(toolResultMessage);
      
-                        // EMIT TOOL RESULT EVENTS   
+                        // Build callId → toolkitName mapping for result events
+                        var callIdToToolkit = toolRequests.ToDictionary(
+                            tr => tr.CallId,
+                            tr => LookupToolkit(tr.Name));
+
+                        // EMIT TOOL RESULT EVENTS
                         foreach (var content in toolResultMessage.Contents)
                         {
                             if (content is FunctionResultContent result)
                             {
                                 yield return new ToolCallEndEvent(result.CallId);
-                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null");
+                                callIdToToolkit.TryGetValue(result.CallId, out var toolkitName);
+                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName);
                             }
                         }
                         // Update state with new messages
@@ -4688,6 +4710,37 @@ internal class FunctionCallProcessor
     {
         return function?.AdditionalProperties?.TryGetValue("Kind", out var kind) == true
                && kind?.ToString() == "Output";
+    }
+
+    /// <summary>
+    /// Gets the toolkit name for a function from its metadata.
+    /// Used by Agent class for event emission.
+    /// </summary>
+    public string? LookupToolkitName(string? functionName, IList<AITool>? tools)
+    {
+        if (string.IsNullOrEmpty(functionName))
+            return null;
+
+        var functionMap = BuildMergedMap(_serverConfiguredTools, tools);
+        var function = FindFunction(functionName, functionMap);
+        if (function == null)
+            return null;
+
+        // Check ParentToolkit first (for nested functions from source generator)
+        if (function.AdditionalProperties?.TryGetValue("ParentToolkit", out var parentToolkit) == true
+            && parentToolkit is string pt)
+        {
+            return pt;
+        }
+
+        // Fall back to ToolkitName (for container functions)
+        if (function.AdditionalProperties?.TryGetValue("ToolkitName", out var toolkitName) == true
+            && toolkitName is string tn)
+        {
+            return tn;
+        }
+
+        return null;
     }
 
     /// <summary>

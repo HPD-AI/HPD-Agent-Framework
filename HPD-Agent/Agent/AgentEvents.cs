@@ -329,7 +329,8 @@ public record ReasoningMessageEndEvent(string MessageId) : AgentEvent;
 public record ToolCallStartEvent(
     string CallId,
     string Name,
-    string MessageId) : AgentEvent;
+    string MessageId,
+    string? ToolkitName = null) : AgentEvent;
 
 /// <summary>
 /// Emitted when a tool call's arguments are fully available
@@ -346,7 +347,8 @@ public record ToolCallEndEvent(string CallId) : AgentEvent;
 /// </summary>
 public record ToolCallResultEvent(
     string CallId,
-    string Result) : AgentEvent;
+    string Result,
+    string? ToolkitName = null) : AgentEvent;
 
 #endregion
 

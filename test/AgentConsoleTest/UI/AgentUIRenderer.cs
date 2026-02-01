@@ -18,8 +18,28 @@ public class AgentUIRenderer
 {
     private readonly UIStateManager _stateManager;
     private readonly ConcurrentDictionary<string, ToolMessage> _toolComponents = new();
+    private readonly ConcurrentDictionary<string, string?> _callIdToToolkit = new();
+    private readonly ConcurrentDictionary<string, string?> _callIdToRenderedLine = new();
     private readonly object _lock = new();
     private bool _isFirstOutput = true;
+
+    // Known CodingToolkit tools (for fallback detection when ToolkitName is null)
+    private static readonly HashSet<string> CodingToolkitTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ReadFile", "read_file", "ReadManyFiles", "read_many_files",
+        "EditFile", "edit_file", "WriteFile", "write_file",
+        "ListDirectory", "list_directory", "GlobSearch", "glob_search",
+        "Grep", "grep", "DiffFiles", "diff_files",
+        "GetFileInfo", "get_file_info", "ExecuteCommand", "execute_command"
+    };
+
+    // Tools whose results should be hidden (rendered via dedicated events instead)
+    private static readonly HashSet<string> HiddenResultTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CreatePlanAsync", "create_plan_async", "CreatePlan", "create_plan",
+        "UpdatePlanStepAsync", "update_plan_step_async", "UpdatePlanStep", "update_plan_step",
+        "CodingToolkit", "MathToolkit"
+    };
 
     // Streaming markdown support - Codex-style line accumulator
     // Using extracted StreamingMarkdown library for portable, reusable streaming logic
@@ -208,7 +228,8 @@ public class AgentUIRenderer
                     break;
 
                 case ReasoningDeltaEvent delta:
-                    AnsiConsole.Markup($"[dim]{Markup.Escape(delta.Text)}[/]");
+                    // Reasoning text hidden - users find it too verbose
+                    // AnsiConsole.Markup($"[dim]{Markup.Escape(delta.Text)}[/]");
                     break;
 
                 case ReasoningMessageEndEvent:
@@ -418,9 +439,33 @@ public class AgentUIRenderer
             Status = ToolCallStatus.Executing
         };
         _toolComponents[evt.CallId] = toolMessage;
+        _callIdToToolkit[evt.CallId] = evt.ToolkitName;
 
+        // Hide toolkit containers and tools with dedicated event rendering
+        if (evt.Name.EndsWith("Toolkit") || HiddenResultTools.Contains(evt.Name))
+        {
+            return; // Completely hidden
+        }
+
+        // CodingToolkit tools: don't show anything on start - we'll show inline with result
+        if (IsCodingToolkitTool(evt.Name, evt.ToolkitName))
+        {
+            return; // Buffer for inline display
+        }
+
+        // Default: show full tool call info for non-CodingToolkit tools
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine($"[yellow]⚙ Calling:[/] [bold]{Markup.Escape(evt.Name)}[/]");
+    }
+
+    /// <summary>
+    /// Detects if a tool belongs to CodingToolkit (by name or explicit ToolkitName)
+    /// </summary>
+    private static bool IsCodingToolkitTool(string toolName, string? toolkitName)
+    {
+        if (toolkitName == "CodingToolkit") return true;
+        if (CodingToolkitTools.Contains(toolName)) return true;
+        return false;
     }
 
     /// <summary>
@@ -469,7 +514,87 @@ public class AgentUIRenderer
             return;
 
         tool.Args = evt.ArgsJson;
-        // Don't display args - keep it clean
+        _callIdToToolkit.TryGetValue(evt.CallId, out var toolkit);
+
+        // For CodingToolkit tools: buffer the display line (will be shown with result)
+        if (IsCodingToolkitTool(tool.Name, toolkit))
+        {
+            var displayLine = BuildCodingToolkitDisplayLine(tool.Name, evt.ArgsJson);
+            _callIdToRenderedLine[evt.CallId] = displayLine;
+        }
+    }
+
+    /// <summary>
+    /// Builds the display line for a CodingToolkit tool call (returned as markup string)
+    /// </summary>
+    private static string BuildCodingToolkitDisplayLine(string toolName, string argsJson)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(argsJson);
+            var root = doc.RootElement;
+
+            switch (toolName)
+            {
+                case "ReadFile" or "read_file":
+                    var path = root.TryGetProperty("path", out var p) ? p.GetString() :
+                               root.TryGetProperty("filePath", out var fp) ? fp.GetString() : null;
+                    var startLine = root.TryGetProperty("startLine", out var sl) ? sl.GetInt32() : (int?)null;
+                    var endLine = root.TryGetProperty("endLine", out var el) ? el.GetInt32() : (int?)null;
+                    if (path != null)
+                    {
+                        var lineInfo = (startLine.HasValue && endLine.HasValue)
+                            ? $" [dim](lines {startLine}-{endLine})[/]"
+                            : startLine.HasValue ? $" [dim](from line {startLine})[/]" : "";
+                        return $"[dim]⚙ ReadFile:[/] [blue]{Markup.Escape(path)}[/]{lineInfo}";
+                    }
+                    break;
+
+                case "ReadManyFiles" or "read_many_files":
+                    if (root.TryGetProperty("paths", out var paths) && paths.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        return $"[dim]⚙ ReadManyFiles:[/] [blue]{paths.GetArrayLength()} files[/]";
+                    break;
+
+                case "EditFile" or "edit_file":
+                case "WriteFile" or "write_file":
+                    var editPath = root.TryGetProperty("path", out var ep) ? ep.GetString() :
+                                   root.TryGetProperty("filePath", out var efp) ? efp.GetString() : null;
+                    if (editPath != null)
+                        return $"[dim]⚙ {Markup.Escape(toolName)}:[/] [blue]{Markup.Escape(editPath)}[/]";
+                    break;
+
+                case "ListDirectory" or "list_directory":
+                    var dirPath = root.TryGetProperty("directoryPath", out var dp) ? dp.GetString() :
+                                  root.TryGetProperty("path", out var dp2) ? dp2.GetString() : null;
+                    var displayDir = string.IsNullOrWhiteSpace(dirPath) ? "." : dirPath;
+                    return $"[dim]⚙ ListDirectory:[/] [blue]{Markup.Escape(displayDir)}[/]";
+
+                case "GlobSearch" or "glob_search":
+                    var pattern = root.TryGetProperty("pattern", out var pat) ? pat.GetString() : null;
+                    if (pattern != null)
+                        return $"[dim]⚙ GlobSearch:[/] [blue]{Markup.Escape(pattern)}[/]";
+                    break;
+
+                case "Grep" or "grep":
+                    var query = root.TryGetProperty("pattern", out var q) ? q.GetString() :
+                                root.TryGetProperty("query", out var qry) ? qry.GetString() : null;
+                    if (query != null)
+                        return $"[dim]⚙ Grep:[/] [blue]{Markup.Escape(query)}[/]";
+                    break;
+
+                case "ExecuteCommand" or "execute_command":
+                    var cmd = root.TryGetProperty("command", out var c) ? c.GetString() : null;
+                    if (cmd != null)
+                    {
+                        var displayCmd = cmd.Length > 60 ? cmd[..60] + "..." : cmd;
+                        return $"[dim]⚙ ExecuteCommand:[/] [yellow]{Markup.Escape(displayCmd)}[/]";
+                    }
+                    break;
+            }
+        }
+        catch { /* JSON parse failed */ }
+
+        return $"[dim]⚙ {Markup.Escape(toolName)}[/]";
     }
     
     private void RenderToolResult(ToolCallResultEvent evt)
@@ -481,20 +606,77 @@ public class AgentUIRenderer
             return;
 
         tool.Result = evt.Result;
-        
+
         var isError = evt.Result.StartsWith("Error:", StringComparison.OrdinalIgnoreCase);
         tool.Status = isError ? ToolCallStatus.Error : ToolCallStatus.Completed;
-        
-        // Display result using component
-        AnsiConsole.Write(tool.Render());
 
-        // Smart content-based rendering (Toolkit-agnostic)
+        // Get toolkit name (from event or cached from start event)
+        var toolkitName = evt.ToolkitName ?? (_callIdToToolkit.TryGetValue(evt.CallId, out var cached) ? cached : null);
+
+        // Hide results for tools with dedicated event rendering
+        if (HiddenResultTools.Contains(tool.Name) || tool.Name.EndsWith("Toolkit"))
+        {
+            _toolComponents.TryRemove(evt.CallId, out _);
+            _callIdToToolkit.TryRemove(evt.CallId, out _);
+            _callIdToRenderedLine.TryRemove(evt.CallId, out _);
+            return;
+        }
+
+        // CodingToolkit tools: show inline with colored gear
+        if (IsCodingToolkitTool(tool.Name, toolkitName))
+        {
+            RenderCodingToolkitResult(tool, evt.Result, isError, evt.CallId);
+            _toolComponents.TryRemove(evt.CallId, out _);
+            _callIdToToolkit.TryRemove(evt.CallId, out _);
+            _callIdToRenderedLine.TryRemove(evt.CallId, out _);
+            return;
+        }
+
+        // Default: show full result for non-CodingToolkit tools
+        AnsiConsole.Write(tool.Render());
         if (!isError)
         {
             RenderResultByType(evt.Result);
         }
-        
+
         _toolComponents.TryRemove(evt.CallId, out _);
+        _callIdToToolkit.TryRemove(evt.CallId, out _);
+    }
+
+    private void RenderCodingToolkitResult(ToolMessage tool, string result, bool isError, string callId)
+    {
+        // Get buffered display line and colorize gear based on result
+        _callIdToRenderedLine.TryRemove(callId, out var displayLine);
+        displayLine ??= $"⚙ {Markup.Escape(tool.Name)}";
+
+        // Replace dim gear with colored gear based on success/failure
+        var coloredLine = isError
+            ? displayLine.Replace("[dim]⚙", "[red]⚙")
+            : displayLine.Replace("[dim]⚙", "[green]⚙");
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine(coloredLine);
+
+        if (isError)
+        {
+            AnsiConsole.MarkupLine($"[red dim]  {Markup.Escape(TruncateResult(result, 100))}[/]");
+            return;
+        }
+
+        // Show diff for write operations
+        var isWriteOp = tool.Name is "EditFile" or "WriteFile" or "edit_file" or "write_file";
+        var hasDiff = result.Contains("+++") && result.Contains("---");
+
+        if (isWriteOp && hasDiff)
+        {
+            DisplayToolDiff(result);
+        }
+    }
+
+    private static string TruncateResult(string result, int maxLength)
+    {
+        if (result.Length <= maxLength) return result;
+        return result[..maxLength] + "...";
     }
     
     /// <summary>
