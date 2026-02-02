@@ -23,14 +23,14 @@
 
   <ItemGroup>
     <!-- Core Audio project -->
-    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />
 
     <!-- Audio providers for integration testing -->
-    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.AudioProviders.ElevenLabs\HPD-Agent.AudioProviders.ElevenLabs.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.ElevenLabs\HPD-Agent.AudioProviders.ElevenLabs.csproj" />
 
     <!-- Main HPD-Agent project for integration -->
-    <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj" />
   </ItemGroup>
 
 </Project>

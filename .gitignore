@@ -10,6 +10,7 @@ appsettings.*.json
 **/dist
 OfficialDocs/.vitepress/cache
 OfficialDocs/.vitepress/dist
+.vitepress/cache
 /target
 **/target
 /.nupkg

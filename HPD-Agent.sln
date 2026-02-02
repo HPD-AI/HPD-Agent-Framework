@@ -3,61 +3,61 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent", "HPD-Agent\HPD-Agent.csproj", "{028CF679-8342-45E5-A8D4-CF864D45F306}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent", "HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj", "{028CF679-8342-45E5-A8D4-CF864D45F306}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.SourceGenerator", "HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj", "{9FCFCF82-797E-4BD0-A51A-F2E8F68B7636}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.SourceGenerator", "HPD-Agent.Framework\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj", "{9FCFCF82-797E-4BD0-A51A-F2E8F68B7636}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.TextExtraction", "HPD-Agent.TextExtraction\HPD-Agent.TextExtraction.csproj", "{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.TextExtraction", "HPD-Agent.Framework\HPD-Agent.TextExtraction\HPD-Agent.TextExtraction.csproj", "{FAA62D9F-DD0B-457B-89CB-C65E6CBAA83F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.MCP", "HPD-Agent.MCP\HPD-Agent.MCP.csproj", "{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.MCP", "HPD-Agent.Framework\HPD-Agent.MCP\HPD-Agent.MCP.csproj", "{A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Toolkit", "HPD-Agent.Toolkit", "{DA053773-4718-BBFE-4AB7-9E4FCE55BF84}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.FileSystem", "HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj", "{DB341036-1919-4305-A8D1-0BFC4FDB945C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.FileSystem", "HPD-Agent.Framework\HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj", "{DB341036-1919-4305-A8D1-0BFC4FDB945C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Providers", "HPD-Agent.Providers", "{8BC2D7F8-375B-160C-ABF4-2068149162CA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OpenAI", "HPD-Agent.Providers\HPD-Agent.Providers.OpenAI\HPD-Agent.Providers.OpenAI.csproj", "{3DF8747C-22F6-435D-8058-9F8DD9B3C167}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OpenAI", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.OpenAI\HPD-Agent.Providers.OpenAI.csproj", "{3DF8747C-22F6-435D-8058-9F8DD9B3C167}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Anthropic", "HPD-Agent.Providers\HPD-Agent.Providers.Anthropic\HPD-Agent.Providers.Anthropic.csproj", "{C57CF287-73E3-4ECE-AB3B-0138CCD2ADE1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Anthropic", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.Anthropic\HPD-Agent.Providers.Anthropic.csproj", "{C57CF287-73E3-4ECE-AB3B-0138CCD2ADE1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Ollama", "HPD-Agent.Providers\HPD-Agent.Providers.Ollama\HPD-Agent.Providers.Ollama.csproj", "{C5E0DA50-1FA1-4D1E-A5AA-C042E553B21C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Ollama", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.Ollama\HPD-Agent.Providers.Ollama.csproj", "{C5E0DA50-1FA1-4D1E-A5AA-C042E553B21C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.GoogleAI", "HPD-Agent.Providers\HPD-Agent.Providers.GoogleAI\HPD-Agent.Providers.GoogleAI.csproj", "{5DCA40A0-B7E8-4B38-8308-B91A4D294E07}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.GoogleAI", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.GoogleAI\HPD-Agent.Providers.GoogleAI.csproj", "{5DCA40A0-B7E8-4B38-8308-B91A4D294E07}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Mistral", "HPD-Agent.Providers\HPD-Agent.Providers.Mistral\HPD-Agent.Providers.Mistral.csproj", "{7A08A2F6-6C2B-4769-8261-30ABF64B863F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Mistral", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.Mistral\HPD-Agent.Providers.Mistral.csproj", "{7A08A2F6-6C2B-4769-8261-30ABF64B863F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.HuggingFace", "HPD-Agent.Providers\HPD-Agent.Providers.HuggingFace\HPD-Agent.Providers.HuggingFace.csproj", "{B39363CF-D250-4E4E-A0CB-C20EDEBBCFCB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.HuggingFace", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.HuggingFace\HPD-Agent.Providers.HuggingFace.csproj", "{B39363CF-D250-4E4E-A0CB-C20EDEBBCFCB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Bedrock", "HPD-Agent.Providers\HPD-Agent.Providers.Bedrock\HPD-Agent.Providers.Bedrock.csproj", "{0F240660-192B-4A37-810D-96EC62F06289}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.Bedrock", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.Bedrock\HPD-Agent.Providers.Bedrock.csproj", "{0F240660-192B-4A37-810D-96EC62F06289}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.AzureAIInference", "HPD-Agent.Providers\HPD-Agent.Providers.AzureAIInference\HPD-Agent.Providers.AzureAIInference.csproj", "{31861751-0EBA-4A01-96E8-9B9D598DD5E1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.AzureAIInference", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.AzureAIInference\HPD-Agent.Providers.AzureAIInference.csproj", "{31861751-0EBA-4A01-96E8-9B9D598DD5E1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OnnxRuntime", "HPD-Agent.Providers\HPD-Agent.Providers.OnnxRuntime\HPD-Agent.Providers.OnnxRuntime.csproj", "{7A682B30-C481-4E7B-AB11-9E3C16334C9C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OnnxRuntime", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.OnnxRuntime\HPD-Agent.Providers.OnnxRuntime.csproj", "{7A682B30-C481-4E7B-AB11-9E3C16334C9C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OpenRouter", "HPD-Agent.Providers\HPD-Agent.Providers.OpenRouter\HPD-Agent.Providers.OpenRouter.csproj", "{C0A57D6F-3CD6-4C07-8D91-A08F01991591}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Providers.OpenRouter", "HPD-Agent.Framework\HPD-Agent.Providers\HPD-Agent.Providers.OpenRouter\HPD-Agent.Providers.OpenRouter.csproj", "{C0A57D6F-3CD6-4C07-8D91-A08F01991591}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0C88DD14-F956-CE84-757C-A364CCF449FC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentConsoleTest", "test\AgentConsoleTest\AgentConsoleTest.csproj", "{A3FA071B-DF96-4C64-8672-BE9695D897CC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.CLI", "HPD-Agent.CLI\HPD-Agent.CLI.csproj", "{A3FA071B-DF96-4C64-8672-BE9695D897CC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Memory", "HPD-Agent.Memory\HPD-Agent.Memory.csproj", "{7415F7AC-4BAE-44E6-B3E8-41701578EA22}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Memory", "HPD-Agent.Framework\HPD-Agent.Memory\HPD-Agent.Memory.csproj", "{7415F7AC-4BAE-44E6-B3E8-41701578EA22}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "AgentWebTest", "AgentWebTest", "{31F18773-9844-6384-810A-1250F6C000ED}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.WebApplication", "HPD-Agent.WebApplication", "{31F18773-9844-6384-810A-1250F6C000ED}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAPI", "test\AgentWebTest\AgentAPI\AgentAPI.csproj", "{CCF66A9F-8C83-45EB-A9B1-A926EC0901EC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AgentAPI", "HPD-Agent.WebApplication\AgentAPI\AgentAPI.csproj", "{CCF66A9F-8C83-45EB-A9B1-A926EC0901EC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.WebSearch", "HPD-Agent.Toolkit\HPD-Agent.Toolkit.WebSearch\HPD-Agent.Toolkit.WebSearch.csproj", "{B479B926-7F13-4AED-8B88-90658DD8F0F9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Toolkit.WebSearch", "HPD-Agent.Framework\HPD-Agent.Toolkit\HPD-Agent.Toolkit.WebSearch\HPD-Agent.Toolkit.WebSearch.csproj", "{B479B926-7F13-4AED-8B88-90658DD8F0F9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.FFI", "HPD-Agent.FFI\HPD-Agent.FFI.csproj", "{FA199B73-7082-4F26-AD52-F33BD1BAE9ED}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.FFI", "HPD-Agent.Framework\HPD-Agent.FFI\HPD-Agent.FFI.csproj", "{FA199B73-7082-4F26-AD52-F33BD1BAE9ED}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Tests", "test\HPD-Agent.Tests\HPD-Agent.Tests.csproj", "{531C83FC-D724-4FF4-8543-2DA397863530}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD-Agent.Audio", "HPD-Agent.Audio", "{E1A2B3C4-D5E6-4F7A-8B9C-0D1E2F3A4B5C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Audio", "HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj", "{A1B2C3D4-5E6F-7A8B-9C0D-1E2F3A4B5C6D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Audio", "HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj", "{A1B2C3D4-5E6F-7A8B-9C0D-1E2F3A4B5C6D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.AudioProviders.OpenAI", "HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj", "{B2C3D4E5-6F7A-8B9C-0D1E-2F3A4B5C6D7E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.AudioProviders.OpenAI", "HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj", "{B2C3D4E5-6F7A-8B9C-0D1E-2F3A4B5C6D7E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD.Graph.Abstractions", "HPD.Graph\HPD.Graph.Abstractions\HPD.Graph.Abstractions.csproj", "{483E6F6F-8B60-49F4-822C-E61DD7153CE1}"
 EndProject
@@ -71,7 +71,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD.Events", "HPD.Events\HP
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD.Events.Tests", "test\HPD.Events.Tests\HPD.Events.Tests.csproj", "{6FB45E2E-255C-458C-B081-7D8D7F825011}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD.MultiAgent", "HPD.MultiAgent\HPD.MultiAgent.csproj", "{4CCAE05C-E04A-4E34-A88B-0037FEC5942C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.MultiAgent", "HPD-Agent.Framework\HPD-Agent.MultiAgent\HPD-Agent.MultiAgent.csproj", "{4CCAE05C-E04A-4E34-A88B-0037FEC5942C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "HPD.Graph", "HPD.Graph", "{849DDDF2-64FE-4FB5-4220-67C8D2C87C02}"
 EndProject
@@ -79,7 +79,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD.MultiAgent.Tests", "tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.Audio.Tests", "test\HPD-Agent.Audio.Tests\HPD-Agent.Audio.Tests.csproj", "{993AF19A-644B-4D35-A554-C6055A9A4741}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.AudioProviders.ElevenLabs", "HPD-Agent.Audio\HPD-Agent.AudioProviders.ElevenLabs\HPD-Agent.AudioProviders.ElevenLabs.csproj", "{250970D9-6335-4D1E-93CB-3625D95C7B5E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HPD-Agent.AudioProviders.ElevenLabs", "HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.ElevenLabs\HPD-Agent.AudioProviders.ElevenLabs.csproj", "{250970D9-6335-4D1E-93CB-3625D95C7B5E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -503,8 +503,6 @@ Global
 		{31861751-0EBA-4A01-96E8-9B9D598DD5E1} = {8BC2D7F8-375B-160C-ABF4-2068149162CA}
 		{7A682B30-C481-4E7B-AB11-9E3C16334C9C} = {8BC2D7F8-375B-160C-ABF4-2068149162CA}
 		{C0A57D6F-3CD6-4C07-8D91-A08F01991591} = {8BC2D7F8-375B-160C-ABF4-2068149162CA}
-		{A3FA071B-DF96-4C64-8672-BE9695D897CC} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
-		{31F18773-9844-6384-810A-1250F6C000ED} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
 		{CCF66A9F-8C83-45EB-A9B1-A926EC0901EC} = {31F18773-9844-6384-810A-1250F6C000ED}
 		{B479B926-7F13-4AED-8B88-90658DD8F0F9} = {DA053773-4718-BBFE-4AB7-9E4FCE55BF84}
 		{531C83FC-D724-4FF4-8543-2DA397863530} = {0C88DD14-F956-CE84-757C-A364CCF449FC}

@@ -41,7 +41,8 @@
       "Bash(./pack-local.sh:*)",
       "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent stash list:*)",
       "Bash(gh run list:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

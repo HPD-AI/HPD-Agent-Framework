@@ -53,7 +53,8 @@ public class LayeredSuspensionTests
         });
 
         // Wait a bit for the approval request to be emitted
-        await Task.Delay(100);
+        // Increased delay to 500ms for .NET 9 runtime timing variations
+        await Task.Delay(500);
 
         // Get the emitted event
         var events = coordinator.EmittedEvents.ToList();

@@ -29,15 +29,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.FFI\HPD-Agent.FFI.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj" />
-    <ProjectReference Include="..\..\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj"
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.FFI\HPD-Agent.FFI.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.Audio\HPD-Agent.Audio.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.OpenAI\HPD-Agent.AudioProviders.OpenAI.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.SourceGenerator\HPD-Agent.SourceGenerator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
-    <ProjectReference Include="..\..\HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj" />
-    <ProjectReference Include="..\..\HPD.MultiAgent\HPD.MultiAgent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.MultiAgent\HPD-Agent.MultiAgent.csproj" />
   </ItemGroup>
 
 </Project>
