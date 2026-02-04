@@ -1,0 +1,919 @@
+/**
+ * SplitPanelRootState - Component API Wrapper for SplitPanelState
+ *
+ * Provides a higher-level, component-friendly API wrapping the core SplitPanelState.
+ * Follows Bits UI patterns for context management, reactive props, and registration.
+ *
+ * Features:
+ * - Preset configurations (default, IDE, dashboard, presentation)
+ * - Storage integration with configurable backends
+ * - Undo/redo management
+ * - Pane/split registration for programmatic access
+ * - Focus tracking and management
+ * - Event callbacks for layout changes, pane close/focus
+ * - Derived snippet props for component consumers
+ */
+
+import { untrack } from 'svelte';
+import { SplitPanelState } from '../state/split-panel-state.svelte.js';
+import { LayoutHistory } from '../state/layout-history.svelte.js';
+import { LayoutPersistence, type StorageState } from '../state/layout-persistence.svelte.js';
+import type { LayoutNode, LeafNode, BranchNode } from '../types/index.js';
+import type { SplitPanelSplitState } from './split-panel-split-state.svelte.js';
+
+/**
+ * Preset configurations for common layout patterns.
+ */
+export type LayoutPreset = 'default' | 'ide' | 'dashboard' | 'presentation';
+
+/**
+ * Storage backend types for persistence.
+ */
+export type StorageBackend = 'localStorage' | 'sessionStorage' | 'indexedDB' | 'memory';
+
+/**
+ * Pane state information for inspection.
+ */
+export interface PaneStateInfo {
+	id: string;
+	size: number;
+	isCollapsed: boolean;
+	isFocused: boolean;
+}
+
+/**
+ * Layout state API exposed to components via snippet props.
+ */
+export interface SplitPanelLayoutState {
+	undo: () => void;
+	redo: () => void;
+	canUndo: boolean;
+	canRedo: boolean;
+	focusPane: (paneId: string) => void;
+	collapsePane: (paneId: string) => void;
+	expandPane: (paneId: string) => void;
+	togglePane: (paneId: string) => void;
+	removePane: (paneId: string) => void;
+	resetLayout: () => void;
+	getPaneState: (paneId: string) => PaneStateInfo | null;
+	getFocusedPaneId: () => string | null;
+}
+
+/**
+ * Configuration options for SplitPanelRootState.
+ */
+export interface SplitPanelRootStateOpts {
+	/** Unique identifier for this layout instance */
+	id?: string;
+
+	/** Storage key for persistence (if undefined, persistence is disabled) */
+	storageKey?: string;
+
+	/** Storage backend to use */
+	storageBackend?: StorageBackend;
+
+	/** Preset configuration */
+	preset?: LayoutPreset;
+
+	/** Enable undo/redo functionality */
+	undoable?: boolean;
+
+	/** Enable debug logging */
+	debug?: boolean;
+
+	/** Callback when layout changes */
+	onLayoutChange?: (layout: LayoutNode) => void;
+
+	/** Callback when pane is closed */
+	onPaneClose?: (paneId: string) => void;
+
+	/** Callback when pane receives focus */
+	onPaneFocus?: (paneId: string) => void;
+
+	/** Container width accessor (required for persistence and resize) */
+	containerWidth: () => number;
+
+	/** Container height accessor (required for persistence and resize) */
+	containerHeight: () => number;
+
+	/** Optional storage instance (if not provided, persistence is disabled) */
+	storage?: StorageState;
+}
+
+/**
+ * SplitPanelRootState - Component API wrapper for SplitPanelState.
+ *
+ * Provides higher-level features:
+ * - Preset configurations
+ * - Storage integration
+ * - Undo/redo management
+ * - Pane/split registration
+ * - Focus tracking
+ */
+export class SplitPanelRootState {
+	/** Configuration options */
+	readonly opts: Required<
+		Omit<
+			SplitPanelRootStateOpts,
+			'storage' | 'storageKey' | 'onLayoutChange' | 'onPaneClose' | 'onPaneFocus'
+		>
+	> & {
+		storage?: StorageState;
+		storageKey?: string;
+		onLayoutChange?: (layout: LayoutNode) => void;
+		onPaneClose?: (paneId: string) => void;
+		onPaneFocus?: (paneId: string) => void;
+	};
+
+	/** Core layout state engine */
+	readonly layoutState: SplitPanelState;
+
+	/** Undo/redo manager (if undoable) */
+	readonly #history: LayoutHistory | null = null;
+
+	/** Persistence manager (if storage provided) */
+	readonly #persistence: LayoutPersistence | null = null;
+
+	/** Track focused pane */
+	#focusedPaneId = $state<string | null>(null);
+
+	/** Pane registry for programmatic access */
+	#paneRegistry = $state(new Map<string, { size: number; isCollapsed: boolean }>());
+
+	/** Split registry for programmatic access */
+	#splitRegistry = $state(new Map<string, SplitPanelSplitState>());
+
+	/**
+	 * Metadata for panes awaiting tree sync.
+	 * Maps paneId -> { path, config, split }
+	 */
+	#pendingPanes = $state(
+		new Map<
+			string,
+			{
+				path: number[];
+				config: Partial<LeafNode>;
+				split: SplitPanelSplitState;
+			}
+		>()
+	);
+
+	/**
+	 * Tree synchronization flag.
+	 * Set to true when components mount/unmount to trigger tree rebuild.
+	 */
+	#needsTreeSync = $state(false);
+
+	/**
+	 * Track last container size to prevent unnecessary updates.
+	 */
+	#lastContainerWidth = $state(0);
+	#lastContainerHeight = $state(0);
+
+	/**
+	 * Layout version counter for reactivity.
+	 * Incremented when layout sizes are recomputed to trigger derived state updates.
+	 * Public so Svelte can track it across class boundaries.
+	 */
+	layoutVersion = $state(0);
+
+	/** Cleanup functions */
+	#cleanupFns: Array<() => void> = [];
+
+	constructor(opts: SplitPanelRootStateOpts) {
+		// Apply defaults
+		this.opts = {
+			id: opts.id ?? 'split-panel-root',
+			storageBackend: opts.storageBackend ?? 'localStorage',
+			preset: opts.preset ?? 'default',
+			undoable: opts.undoable ?? true,
+			debug: opts.debug ?? false,
+			containerWidth: opts.containerWidth,
+			containerHeight: opts.containerHeight,
+			storage: opts.storage,
+			storageKey: opts.storageKey,
+			onLayoutChange: opts.onLayoutChange,
+			onPaneClose: opts.onPaneClose,
+			onPaneFocus: opts.onPaneFocus
+		};
+
+		// Initialize core layout state
+		const presetConfig = this.#getPresetConfig(this.opts.preset);
+		this.layoutState = new SplitPanelState();
+
+		// Apply preset configuration to root node if needed
+		// TODO: Set default minSize, autoCollapseThreshold from preset
+
+		// Initialize undo/redo if enabled
+		if (this.opts.undoable) {
+			this.#history = new LayoutHistory(this.layoutState);
+			this.#history.attachEffect();
+			this.#cleanupFns.push(() => this.#history?.destroy());
+		}
+
+		// Initialize persistence if storage provided
+		if (this.opts.storage && this.opts.storageKey) {
+			this.#persistence = new LayoutPersistence(
+				this.layoutState,
+				this.opts.storage,
+				this.opts.containerWidth,
+				this.opts.containerHeight
+			);
+
+			// Try to load saved layout
+			this.#persistence.load();
+
+			// Enable auto-save
+			const cleanupAutoSave = this.#persistence.enableAutoSave();
+			this.#cleanupFns.push(cleanupAutoSave);
+		}
+
+		// Wire up layout change callback if provided
+		if (this.opts.onLayoutChange) {
+			// Use $effect to watch for layout changes
+			// Note: This requires running in a component effect scope
+			$effect(() => {
+				const layout = this.layoutState.root;
+				this.opts.onLayoutChange?.(layout);
+			});
+		}
+
+		// Tree synchronization effect
+		// Watches #needsTreeSync flag and rebuilds tree when components mount/unmount
+		$effect(() => {
+			if (this.#needsTreeSync) {
+				// Untrack the sync to prevent infinite loops
+				untrack(() => {
+					this.#syncTreeFromComponents();
+					this.#needsTreeSync = false;
+				});
+			}
+		});
+	}
+
+	/**
+	 * Get preset configuration for common layout patterns.
+	 */
+	#getPresetConfig(preset: LayoutPreset): { minSize: number; autoCollapseThreshold: number } {
+		const presets = {
+			default: { minSize: 100, autoCollapseThreshold: 50 },
+			ide: { minSize: 150, autoCollapseThreshold: 80 },
+			dashboard: { minSize: 200, autoCollapseThreshold: 100 },
+			presentation: { minSize: 300, autoCollapseThreshold: 150 }
+		};
+		return presets[preset];
+	}
+
+	// =========================================================================
+	// Tree Synchronization (Automatic Tree Building from Components)
+	// =========================================================================
+
+	/**
+	 * Rebuild the layout tree from component registration state.
+	 * Called automatically when components mount/unmount via $effect.
+	 *
+	 * This bridges the declarative component structure to the imperative layout engine.
+	 */
+	#syncTreeFromComponents(): void {
+		// Find the root split (the one with no parent)
+		let rootSplit: SplitPanelSplitState | null = null;
+		for (const split of this.#splitRegistry.values()) {
+			if (!split.parent) {
+				rootSplit = split;
+				break;
+			}
+		}
+
+		if (this.opts.debug) {
+			console.log('[SyncTree] Root split:', rootSplit?.splitId, 'Registry size:', this.#splitRegistry.size);
+			console.log('[SyncTree] Pending panes:', this.#pendingPanes.size);
+		}
+
+		if (!rootSplit) {
+			// No root split yet, keep empty branch
+			if (this.opts.debug) console.log('[SyncTree] No root split found, keeping empty branch');
+			return;
+		}
+
+		// Set root split path
+		rootSplit._setPath([]);
+
+		// Build tree structure recursively from root split using DOM ordering
+		const newTree = this.#buildBranchFromSplit(rootSplit, []);
+		if (this.opts.debug) console.log('[SyncTree] Built tree:', JSON.stringify(newTree, null, 2));
+
+		// Assign to layoutState
+		this.layoutState.root = newTree;
+
+		// Trigger recomputation with current container size
+		const width = this.opts.containerWidth();
+		const height = this.opts.containerHeight();
+		if (this.opts.debug) console.log('[SyncTree] Container size:', width, 'x', height);
+		this.updateContainerSize(width, height);
+	}
+
+	/**
+	 * Build a branch node from a split at the given path.
+	 * Uses DOM ordering to ensure children are in correct visual order.
+	 */
+	#buildBranchFromSplit(split: SplitPanelSplitState, path: number[]): BranchNode {
+		const children: LayoutNode[] = [];
+		const flexes: number[] = [];
+
+		if (this.opts.debug) {
+			console.log('[BuildBranch] Building for split at path:', path, 'axis:', split.internalAxis);
+		}
+
+		// Get children in DOM order (panes and nested splits sorted by document position)
+		const orderedChildren = split.getChildrenInDOMOrder();
+
+		if (this.opts.debug) {
+			console.log('[BuildBranch] Children in DOM order:', orderedChildren.map(c => ({ id: c.id, type: c.type })));
+		}
+
+		// First pass: collect all leaf nodes and their configs to calculate flexes
+		interface ChildInfo {
+			type: 'pane' | 'split';
+			isCollapsed: boolean;
+			initialSize?: number;
+			initialSizeUnit?: 'percent' | 'pixels';
+			config?: Partial<LeafNode>;
+			splitState?: SplitPanelSplitState;
+			id: string;
+		}
+		const childInfos: ChildInfo[] = [];
+
+		for (let i = 0; i < orderedChildren.length; i++) {
+			const child = orderedChildren[i];
+
+			if (child.type === 'pane') {
+				const paneInfo = this.#pendingPanes.get(child.id);
+				const config = paneInfo?.config ?? {};
+				const paneState = this.#paneRegistry.get(child.id);
+				const isCollapsed = paneState?.isCollapsed ?? false;
+
+				childInfos.push({
+					type: 'pane',
+					id: child.id,
+					isCollapsed,
+					initialSize: config.initialSize,
+					initialSizeUnit: config.initialSizeUnit,
+					config
+				});
+			} else if (child.type === 'split' && child.splitState) {
+				childInfos.push({
+					type: 'split',
+					id: child.id,
+					isCollapsed: false,
+					splitState: child.splitState
+				});
+			}
+		}
+
+		// Calculate flexes based on initialSize percentages
+		const activeIndices = childInfos
+			.map((info, idx) => ({ info, idx }))
+			.filter(({ info }) => !info.isCollapsed)
+			.map(({ idx }) => idx);
+
+		// Check if any active pane has percentage-based initialSize
+		let hasPercentageSizes = false;
+		let totalPercent = 0;
+		for (const idx of activeIndices) {
+			const info = childInfos[idx];
+			if (info.type === 'pane' && info.initialSize !== undefined && info.initialSizeUnit === 'percent') {
+				hasPercentageSizes = true;
+				totalPercent += info.initialSize;
+			}
+		}
+
+		// Calculate flex values
+		const computedFlexes: number[] = new Array(childInfos.length).fill(0);
+
+		if (hasPercentageSizes && activeIndices.length > 0) {
+			// Distribute based on percentage initialSize values
+			const panesWithoutPercent: number[] = [];
+			let allocatedPercent = 0;
+
+			for (const idx of activeIndices) {
+				const info = childInfos[idx];
+				if (info.type === 'pane' && info.initialSize !== undefined && info.initialSizeUnit === 'percent') {
+					allocatedPercent += info.initialSize;
+				} else {
+					panesWithoutPercent.push(idx);
+				}
+			}
+
+			// Remaining percentage for panes without explicit size
+			const remainingPercent = Math.max(0, 100 - allocatedPercent);
+			const perPanePercent = panesWithoutPercent.length > 0 
+				? remainingPercent / panesWithoutPercent.length 
+				: 0;
+
+			// Calculate total for normalization
+			const totalForNormalization = allocatedPercent + (perPanePercent * panesWithoutPercent.length);
+
+			for (const idx of activeIndices) {
+				const info = childInfos[idx];
+				let percent: number;
+
+				if (info.type === 'pane' && info.initialSize !== undefined && info.initialSizeUnit === 'percent') {
+					percent = info.initialSize;
+				} else if (panesWithoutPercent.includes(idx)) {
+					percent = perPanePercent;
+				} else {
+					percent = 100 / activeIndices.length; // Fallback for branches
+				}
+
+				// Convert percentage to flex (scaled so sum = activeIndices.length)
+				computedFlexes[idx] = totalForNormalization > 0 
+					? (percent / totalForNormalization) * activeIndices.length 
+					: 1.0;
+			}
+
+			if (this.opts.debug) {
+				console.log('[BuildBranch] Using percentage-based flexes:', computedFlexes);
+			}
+		} else {
+			// No percentage sizes, use equal distribution for active children
+			for (const idx of activeIndices) {
+				computedFlexes[idx] = 1.0;
+			}
+		}
+
+		// Second pass: build children and collect flexes
+		for (let i = 0; i < childInfos.length; i++) {
+			const info = childInfos[i];
+
+			if (info.type === 'pane') {
+				const config = info.config ?? {};
+
+				const leafNode: LeafNode = {
+					type: 'leaf',
+					id: info.id,
+					// If collapsed, start with size 0; otherwise use config size
+					size: info.isCollapsed ? 0 : (config.size ?? 300),
+					// Store original size for restore on expand
+					cachedSize: info.isCollapsed ? (config.size ?? 300) : undefined,
+					maximized: false,
+					priority: config.priority ?? 'normal',
+					minSize: config.minSize,
+					maxSize: config.maxSize,
+					snapPoints: config.snapPoints,
+					snapThreshold: config.snapThreshold,
+					autoCollapseThreshold: config.autoCollapseThreshold,
+					panelType: config.panelType,
+					// Pass initial size for flex computation
+					initialSize: config.initialSize,
+					initialSizeUnit: config.initialSizeUnit
+				};
+
+				children.push(leafNode);
+				flexes.push(computedFlexes[i]);
+
+				if (this.opts.debug) {
+					console.log('[BuildBranch]   Pane:', info.id, 'at index:', i, 'collapsed:', info.isCollapsed, 'flex:', computedFlexes[i]);
+				}
+			} else if (info.type === 'split' && info.splitState) {
+				// Recursively build branch for nested split
+				const childPath = [...path, i];
+				// Update the split's path for tree sync
+				info.splitState._setPath(childPath);
+
+				const branchNode = this.#buildBranchFromSplit(info.splitState, childPath);
+				children.push(branchNode);
+				flexes.push(computedFlexes[i]);
+
+				if (this.opts.debug) {
+					console.log('[BuildBranch]   Nested split at index:', i, 'path:', childPath, 'flex:', computedFlexes[i]);
+				}
+			}
+		}
+
+		return {
+			type: 'branch',
+			axis: split.internalAxis,
+			children,
+			flexes: new Float32Array(flexes)
+		};
+	}
+
+	// =========================================================================
+	// Public API - Undo/Redo
+	// =========================================================================
+
+	/**
+	 * Get the history instance (if enabled).
+	 */
+	get history(): LayoutHistory | null {
+		return this.#history;
+	}
+
+	/**
+	 * Check if undo is available.
+	 */
+	get canUndo(): boolean {
+		return this.#history?.state.canUndo ?? false;
+	}
+
+	/**
+	 * Check if redo is available.
+	 */
+	get canRedo(): boolean {
+		return this.#history?.state.canRedo ?? false;
+	}
+
+	/**
+	 * Check if a drag operation is in progress.
+	 */
+	get isDragging(): boolean {
+		return this.layoutState.state === 'busy';
+	}
+
+	/**
+	 * Undo the last layout change.
+	 */
+	undo(): void {
+		this.#history?.undo();
+	}
+
+	/**
+	 * Redo the last undone layout change.
+	 */
+	redo(): void {
+		this.#history?.redo();
+	}
+
+	// =========================================================================
+	// Public API - Layout Control
+	// =========================================================================
+
+	/**
+	 * Reset layout to default state.
+	 */
+	resetLayout(): void {
+		// TODO: Implement reset to initial/default layout
+		// For now, just clear the root
+		this.layoutState.root = {
+			type: 'branch',
+			axis: 'column',
+			children: [],
+			flexes: new Float32Array([])
+		};
+	}
+
+	// =========================================================================
+	// Public API - Pane Control
+	// =========================================================================
+
+	/**
+	 * Focus a pane by ID.
+	 */
+	focusPane(paneId: string): void {
+		this.#focusedPaneId = paneId;
+		this.opts.onPaneFocus?.(paneId);
+		// Note: Actual DOM focus is handled by component via registerPanel action
+	}
+
+	/**
+	 * Check if a pane is collapsed by examining the layout tree.
+	 */
+	isPaneCollapsed(paneId: string): boolean {
+		const leafNode = this.#findLeafNode(this.layoutState.root, paneId);
+		return leafNode ? leafNode.size === 0 : false;
+	}
+
+	/**
+	 * Collapse a pane by ID.
+	 */
+	collapsePane(paneId: string): void {
+		if (this.opts.debug) console.log('[CollapsePane]', paneId, 'current collapsed:', this.isPaneCollapsed(paneId));
+		if (!this.isPaneCollapsed(paneId)) {
+			this.layoutState.togglePanel(paneId);
+			this.#updatePaneCollapsedState(paneId, true);
+			this.layoutVersion++;
+			if (this.opts.debug) console.log('[CollapsePane]', paneId, 'collapsed, new version:', this.layoutVersion);
+		}
+	}
+
+	/**
+	 * Expand a pane by ID.
+	 */
+	expandPane(paneId: string): void {
+		if (this.opts.debug) console.log('[ExpandPane]', paneId, 'current collapsed:', this.isPaneCollapsed(paneId));
+		if (this.isPaneCollapsed(paneId)) {
+			this.layoutState.togglePanel(paneId);
+			this.#updatePaneCollapsedState(paneId, false);
+			this.layoutVersion++;
+			if (this.opts.debug) console.log('[ExpandPane]', paneId, 'expanded, new version:', this.layoutVersion);
+		}
+	}
+
+	/**
+	 * Toggle a pane's collapsed state by ID.
+	 */
+	togglePane(paneId: string): void {
+		const wasCollapsed = this.isPaneCollapsed(paneId);
+		console.log('[TogglePane] START', paneId, 'wasCollapsed:', wasCollapsed);
+		console.log('[TogglePane] Tree BEFORE:', JSON.stringify(this.layoutState.root, null, 2));
+		
+		this.layoutState.togglePanel(paneId);
+		
+		console.log('[TogglePane] Tree AFTER:', JSON.stringify(this.layoutState.root, null, 2));
+		
+		// Sync ALL pane sizes from tree to registry AND create new Map to force reactivity
+		const newRegistry = new Map<string, { size: number; isCollapsed: boolean }>();
+		this.#syncPaneSizesToMap(this.layoutState.root, newRegistry);
+		this.#paneRegistry = newRegistry;
+		
+		console.log('[TogglePane] Registry synced:', [...newRegistry.entries()]);
+		
+		this.layoutVersion++;
+		console.log('[TogglePane] END', paneId, 'now collapsed:', !wasCollapsed, 'new version:', this.layoutVersion);
+	}
+
+	/**
+	 * Sync all pane sizes from the layout tree to a new map.
+	 */
+	#syncPaneSizesToMap(node: LayoutNode, map: Map<string, { size: number; isCollapsed: boolean }>): void {
+		if (node.type === 'leaf') {
+			map.set(node.id, {
+				size: node.size,
+				isCollapsed: node.size === 0
+			});
+		} else {
+			for (const child of node.children) {
+				this.#syncPaneSizesToMap(child, map);
+			}
+		}
+	}
+
+	/**
+	 * Update the pane registry's collapsed state.
+	 */
+	#updatePaneCollapsedState(paneId: string, isCollapsed: boolean): void {
+		const pane = this.#paneRegistry.get(paneId);
+		if (pane) {
+			this.#paneRegistry.set(paneId, { ...pane, isCollapsed });
+		}
+	}
+
+	/**
+	 * Remove a pane from the layout.
+	 */
+	removePane(paneId: string): void {
+		const result = this.layoutState.removePanel(paneId);
+		if (result.ok) {
+			this.#paneRegistry.delete(paneId);
+			this.opts.onPaneClose?.(paneId);
+		}
+	}
+
+	// =========================================================================
+	// Public API - Container Size Management
+	// =========================================================================
+
+	/**
+	 * Update container size and trigger layout recomputation.
+	 * This method wraps the layoutState's updateContainerSize and triggers reactive updates.
+	 */
+	updateContainerSize(width: number, height: number): void {
+		// Only update if size actually changed
+		if (width === this.#lastContainerWidth && height === this.#lastContainerHeight) {
+			if (this.opts.debug) console.log('[RootState] Skipping update - size unchanged:', width, 'x', height);
+			return;
+		}
+
+		// Skip zero-size updates (element not yet mounted)
+		if (width === 0 && height === 0) {
+			if (this.opts.debug) console.log('[RootState] Skipping zero-size update');
+			return;
+		}
+
+		this.#lastContainerWidth = width;
+		this.#lastContainerHeight = height;
+
+		this.layoutState.updateContainerSize(width, height);
+		if (this.opts.debug) console.log('[RootState] Container size updated:', width, 'x', height);
+
+		// Increment version to trigger reactive updates in pane components
+		this.layoutVersion++;
+	}
+
+	// =========================================================================
+	// Public API - State Inspection
+	// =========================================================================
+
+	/**
+	 * Find a leaf node in the layout tree by pane ID.
+	 */
+	#findLeafNode(node: LayoutNode, paneId: string): LeafNode | null {
+		if (node.type === 'leaf') {
+			return node.id === paneId ? node : null;
+		}
+
+		// Branch: search children recursively
+		for (const child of node.children) {
+			const found = this.#findLeafNode(child, paneId);
+			if (found) return found;
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get state information for a specific pane.
+	 * 
+	 * Note: Callers should read `layoutVersion` in their reactive context
+	 * to ensure they get updates when layout sizes change.
+	 */
+	getPaneState(paneId: string): PaneStateInfo | null {
+		// Always read from tree directly - the tree is the source of truth
+		// and this ensures we get the latest values after toggle/resize operations
+		const leafNode = this.#findLeafNode(this.layoutState.root, paneId);
+		if (!leafNode) return null;
+		return {
+			id: paneId,
+			size: leafNode.size,
+			isCollapsed: leafNode.size === 0,
+			isFocused: this.isPaneFocused(paneId)
+		};
+	}
+
+	/**
+	 * Get the currently focused pane ID.
+	 */
+	getFocusedPaneId(): string | null {
+		return this.#focusedPaneId;
+	}
+
+	/**
+	 * Check if a pane is currently focused.
+	 */
+	isPaneFocused(paneId: string): boolean {
+		return this.#focusedPaneId === paneId;
+	}
+
+	// =========================================================================
+	// Internal - Registration (called by Pane/Split components)
+	// =========================================================================
+
+	/**
+	 * Register a pane for programmatic access.
+	 * Returns cleanup function.
+	 * 
+	 * Note: The pane also registers with its parent split for DOM ordering.
+	 * This registration is for metadata and programmatic access.
+	 */
+	_registerPane(
+		paneId: string,
+		size: number,
+		isCollapsed: boolean,
+		split: SplitPanelSplitState,
+		config: Partial<LeafNode>
+	): () => void {
+		this.#paneRegistry.set(paneId, { size, isCollapsed });
+
+		if (this.opts.debug) {
+			console.log('[RegisterPane]', paneId, 'registered with split:', split.splitId);
+		}
+
+		// Store pane metadata for tree building
+		// Note: path is no longer stored here - DOM ordering determines position
+		this.#pendingPanes.set(paneId, {
+			path: [], // Path will be computed during tree sync based on DOM order
+			config,
+			split
+		});
+
+		// Mark tree as needing sync (untracked to avoid infinite loops)
+		untrack(() => {
+			this.#needsTreeSync = true;
+		});
+
+		return () => {
+			this.#paneRegistry.delete(paneId);
+			this.#pendingPanes.delete(paneId);
+			// Mark tree as needing sync on unmount too
+			untrack(() => {
+				this.#needsTreeSync = true;
+			});
+		};
+	}
+
+	/**
+	 * Register a split for programmatic access.
+	 * Returns cleanup function.
+	 */
+	_registerSplit(splitId: string, splitState: SplitPanelSplitState): () => void {
+		this.#splitRegistry.set(splitId, splitState);
+
+		if (this.opts.debug) {
+			console.log('[RegisterSplit]', splitId, 'registered');
+		}
+
+		// Mark tree as needing sync (untracked to avoid infinite loops)
+		untrack(() => {
+			this.#needsTreeSync = true;
+		});
+
+		return () => {
+			this.#splitRegistry.delete(splitId);
+			// Mark tree as needing sync on unmount too
+			untrack(() => {
+				this.#needsTreeSync = true;
+			});
+		};
+	}
+
+	/**
+	 * Trigger a tree sync.
+	 * Called by pane/split components when their elements are mounted.
+	 * @internal
+	 */
+	_triggerTreeSync(): void {
+		untrack(() => {
+			this.#needsTreeSync = true;
+		});
+	}
+
+	// =========================================================================
+	// Component Props (for Bits UI pattern)
+	// =========================================================================
+
+	/**
+	 * Reactive props for Root component rendering.
+	 * Provides data attributes and ARIA attributes for accessibility.
+	 */
+	get props(): Record<string, any> {
+		return {
+			id: this.opts.id,
+			role: 'group',
+			'aria-label': 'Split panel layout',
+			'data-split-panel-root': '',
+			'data-preset': this.opts.preset,
+			'data-dragging': this.isDragging ? '' : undefined,
+			style: {
+				display: 'flex',
+				'flex-direction': 'column',
+				width: '100%',
+				height: '100%',
+				overflow: 'hidden',
+				'min-width': 0,
+				'min-height': 0
+			}
+		};
+	}
+
+	// =========================================================================
+	// Exposed Layout State (for snippet props)
+	// =========================================================================
+
+	/**
+	 * Layout state API exposed to components.
+	 * This is the interface passed to snippet props for consumer control.
+	 */
+	get snippetProps(): {
+		layoutState: SplitPanelLayoutState;
+		isDragging: boolean;
+		canUndo: boolean;
+		canRedo: boolean;
+	} {
+		return {
+			layoutState: {
+				undo: () => this.undo(),
+				redo: () => this.redo(),
+				canUndo: this.canUndo,
+				canRedo: this.canRedo,
+				focusPane: (id) => this.focusPane(id),
+				collapsePane: (id) => this.collapsePane(id),
+				expandPane: (id) => this.expandPane(id),
+				togglePane: (id) => this.togglePane(id),
+				removePane: (id) => this.removePane(id),
+				resetLayout: () => this.resetLayout(),
+				getPaneState: (id) => this.getPaneState(id),
+				getFocusedPaneId: () => this.getFocusedPaneId()
+			},
+			isDragging: this.isDragging,
+			canUndo: this.canUndo,
+			canRedo: this.canRedo
+		};
+	}
+
+	// =========================================================================
+	// Lifecycle
+	// =========================================================================
+
+	/**
+	 * Cleanup resources when component is unmounted.
+	 */
+	destroy(): void {
+		// Run all cleanup functions
+		for (const cleanup of this.#cleanupFns) {
+			cleanup();
+		}
+
+		// Clear cleanup array
+		this.#cleanupFns = [];
+	}
+}

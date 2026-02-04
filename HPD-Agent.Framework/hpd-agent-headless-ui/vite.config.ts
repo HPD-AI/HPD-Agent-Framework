@@ -3,7 +3,7 @@ import { playwright } from '@vitest/browser-playwright';
 import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
-	Toolkits: [sveltekit()],
+	plugins: [sveltekit()],
 
 	test: {
 		expect: { requireAssertions: true },

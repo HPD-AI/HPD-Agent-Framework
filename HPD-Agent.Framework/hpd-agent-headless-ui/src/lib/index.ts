@@ -48,6 +48,16 @@ export { createMockAgent } from './testing/mock-agent.ts';
 export type { MockAgentOptions } from './testing/mock-agent.ts';
 
 // ========================================
+// Storage System
+// ========================================
+export * from './storage/index.ts';
+
+// ========================================
+// SplitPanel Component
+// ========================================
+export * as SplitPanel from './split-panel/index.ts';
+
+// ========================================
 // Utilities (for extending the library)
 // ========================================
 

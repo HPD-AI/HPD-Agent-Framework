@@ -1,0 +1,199 @@
+/**
+ * SplitPanel CSS Styling
+ *
+ * Uses data attributes for styling to avoid class name conflicts.
+ * All styles are opt-in via data attributes set by the component system.
+ *
+ * CSS Variables for theming:
+ * --focus-ring-color: Focus ring color (default: #2196f3)
+ * --handle-color: Handle background color (default: #e0e0e0)
+ * --handle-hover-color: Handle hover color (default: #2196f3)
+ * --handle-active-color: Handle active/dragging color (default: #1976d2)
+ */
+
+/* ===== Root Container ===== */
+[data-split-panel-root] {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	position: relative;
+}
+
+/* Dragging state on root - prevents text selection and pointer events during drag */
+[data-split-panel-root][data-dragging] {
+	cursor: col-resize;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+[data-split-panel-root][data-dragging] * {
+	pointer-events: none;
+}
+
+/* ===== Split Container (Branch Nodes) ===== */
+[data-split-panel-split] {
+	display: flex;
+	flex: 1 1 0%;
+	overflow: hidden;
+	position: relative;
+}
+
+[data-split-panel-split][data-orientation='horizontal'] {
+	flex-direction: row;
+}
+
+[data-split-panel-split][data-orientation='vertical'] {
+	flex-direction: column;
+}
+
+/* ===== Pane (Leaf Nodes) ===== */
+[data-split-panel-pane] {
+	overflow: hidden;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+
+/* Focus state for keyboard navigation */
+[data-split-panel-pane]:focus-visible {
+	outline: 2px solid var(--focus-ring-color, #2196f3);
+	outline-offset: -2px;
+	z-index: 1;
+}
+
+[data-split-panel-pane][data-focused] {
+	outline: 2px solid var(--focus-ring-color, #2196f3);
+	outline-offset: -2px;
+	z-index: 1;
+}
+
+/* Collapsed state - completely hidden */
+[data-split-panel-pane][data-state='closed'],
+[data-split-panel-pane][data-collapsed] {
+	flex: 0 0 0px !important;
+	overflow: hidden;
+	min-width: 0;
+	min-height: 0;
+}
+
+/* Maximized state - takes full space */
+[data-split-panel-pane][data-maximized] {
+	flex: 1 1 100% !important;
+	z-index: 10;
+}
+
+/* Disabled state */
+[data-split-panel-pane][data-disabled] {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+/* ===== Resize Handle ===== */
+[data-split-panel-handle] {
+	flex: 0 0 auto;
+	background: var(--handle-color, #3e3e42);
+	transition: background-color 150ms ease-in-out;
+	position: relative;
+	z-index: 5;
+	/* Ensure handles are above panes but below focused panes */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* Horizontal handle (vertical split - resizes horizontally) */
+[data-split-panel-handle][data-orientation='horizontal'] {
+	width: 6px;
+	cursor: col-resize;
+	min-width: 6px;
+	max-width: 6px;
+}
+
+/* Vertical handle (horizontal split - resizes vertically) */
+[data-split-panel-handle][data-orientation='vertical'] {
+	height: 6px;
+	cursor: row-resize;
+	min-height: 6px;
+	max-height: 6px;
+}
+
+/* Hover state */
+[data-split-panel-handle]:hover {
+	background: var(--handle-hover-color, #2196f3);
+}
+
+/* Focus state for keyboard navigation */
+[data-split-panel-handle]:focus-visible {
+	background: var(--handle-hover-color, #2196f3);
+	outline: 2px solid var(--focus-ring-color, #2196f3);
+	outline-offset: 2px;
+	z-index: 10;
+}
+
+/* Dragging state */
+[data-split-panel-handle][data-dragging] {
+	background: var(--handle-active-color, #1976d2);
+	z-index: 100;
+}
+
+/* Disabled handle */
+[data-split-panel-handle][data-disabled] {
+	cursor: not-allowed;
+	opacity: 0.5;
+	pointer-events: none;
+}
+
+/* ===== Accessibility Enhancements ===== */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	[data-split-panel-handle] {
+		background: CanvasText;
+	}
+
+	[data-split-panel-handle]:hover,
+	[data-split-panel-handle]:focus-visible {
+		background: Highlight;
+	}
+
+	[data-split-panel-pane]:focus-visible,
+	[data-split-panel-pane][data-focused] {
+		outline-color: Highlight;
+	}
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+	[data-split-panel-handle] {
+		transition: none;
+	}
+}
+
+/* ===== Handle Grip Visual ===== */
+[data-split-panel-handle]::before {
+	content: '';
+	position: absolute;
+	background: currentColor;
+	opacity: 0.5;
+}
+
+[data-split-panel-handle][data-orientation="horizontal"]::before {
+	width: 2px;
+	height: 24px;
+	left: 1px;
+	top: 50%;
+	transform: translateY(-50%);
+}
+
+[data-split-panel-handle][data-orientation="vertical"]::before {
+	width: 24px;
+	height: 2px;
+	left: 50%;
+	top: 1px;
+	transform: translateX(-50%);
+}
+
+[data-split-panel-handle]:hover::before,
+[data-split-panel-handle][data-dragging]::before {
+	opacity: 1;
+}
