@@ -246,9 +246,19 @@ Access layout state from outside the split panel tree:
 - `togglePane(paneId)` - Toggle a pane's collapsed state
 - `collapsePane(paneId)` - Collapse a specific pane
 - `expandPane(paneId)` - Expand a specific pane
-- `setPaneSize(paneId, size)` - Set a pane's size programmatically
+- `setPaneSize(paneId, size, unit?)` - Set a pane's size (pixels or percent)
 - `resetLayout()` - Reset to initial layout
 - `undo()` / `redo()` - Undo/redo (if `undoable={true}`)
+
+**Examples of `setPaneSize`:**
+```typescript
+// Set to 600 pixels (default)
+layoutState?.setPaneSize('panel', 600);
+layoutState?.setPaneSize('panel', 600, 'pixels');
+
+// Set to 70% of container width
+layoutState?.setPaneSize('panel', 70, 'percent');
+```
 
 ### 7. Nested Splits
 
@@ -536,8 +546,8 @@ When using `bind:layout={layoutState}`:
 | `togglePane` | `(paneId: string) => void` | Toggle collapsed state |
 | `collapsePane` | `(paneId: string) => void` | Collapse a pane |
 | `expandPane` | `(paneId: string) => void` | Expand a pane |
-| `setPaneSize` | `(paneId: string, size: number) => void` | Set pane size in pixels |
-| `getPaneSize` | `(paneId: string) => number` | Get current pane size |
+| `setPaneSize` | `(paneId: string, size: number, unit?: 'pixels' \| 'percent') => void` | Set pane size (pixels default, or percent of container) |
+| `getPaneState` | `(paneId: string) => PaneStateInfo \| null` | Get pane state (size, isCollapsed, isFocused) |
 | `resetLayout` | `() => void` | Reset to initial layout |
 | `undo` | `() => void` | Undo last change (if undoable) |
 | `redo` | `() => void` | Redo last undone change |
@@ -650,6 +660,65 @@ The library sets these CSS custom properties on panes:
     height: 100vh;
   }
 </style>
+```
+
+---
+
+## Styling with Data Attributes
+
+This is a headless UI library - you provide all styling. Components expose data attributes for CSS targeting:
+
+### Data Attributes
+
+| Selector | Description |
+|----------|-------------|
+| `[data-split-panel-root]` | Root container |
+| `[data-split-panel-split]` | Split containers (branches) |
+| `[data-split-panel-pane]` | Pane containers (leaves) |
+| `[data-split-panel-handle]` | Resize handles |
+| `[data-orientation="horizontal"]` | Horizontal split/handle |
+| `[data-orientation="vertical"]` | Vertical split/handle |
+| `[data-dragging]` | Added to root during drag operations |
+| `[data-state="dragging"]` | Added to handle while dragging |
+
+### Preventing Text Selection During Drag
+
+Add these styles to prevent text highlighting when dragging handles:
+
+```css
+[data-split-panel-root][data-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-split-panel-root][data-dragging] * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+```
+
+### Basic Handle Styling
+
+```css
+[data-split-panel-handle] {
+  background: transparent;
+  transition: background 0.15s;
+}
+
+[data-split-panel-handle]:hover,
+[data-split-panel-handle][data-state="dragging"] {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+[data-split-panel-handle][data-orientation="horizontal"] {
+  width: 4px;
+  cursor: col-resize;
+}
+
+[data-split-panel-handle][data-orientation="vertical"] {
+  height: 4px;
+  cursor: row-resize;
+}
 ```
 
 ---

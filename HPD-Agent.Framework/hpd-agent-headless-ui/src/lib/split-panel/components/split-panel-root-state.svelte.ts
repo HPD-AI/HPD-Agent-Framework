@@ -53,6 +53,7 @@ export interface SplitPanelLayoutState {
 	collapsePane: (paneId: string) => void;
 	expandPane: (paneId: string) => void;
 	togglePane: (paneId: string) => void;
+	setPaneSize: (paneId: string, size: number, unit?: 'pixels' | 'percent') => void;
 	removePane: (paneId: string) => void;
 	resetLayout: () => void;
 	getPaneState: (paneId: string) => PaneStateInfo | null;
@@ -176,6 +177,12 @@ export class SplitPanelRootState {
 	 * Public so Svelte can track it across class boundaries.
 	 */
 	layoutVersion = $state(0);
+
+	/**
+	 * Track if a drag operation is in progress.
+	 * Used to apply user-select: none and prevent text selection during resize.
+	 */
+	#isDragging = $state(false);
 
 	/** Cleanup functions */
 	#cleanupFns: Array<() => void> = [];
@@ -527,7 +534,23 @@ export class SplitPanelRootState {
 	 * Check if a drag operation is in progress.
 	 */
 	get isDragging(): boolean {
-		return this.layoutState.state === 'busy';
+		return this.#isDragging;
+	}
+
+	/**
+	 * Start a drag operation. Called by handle when dragging begins.
+	 * @internal
+	 */
+	_startDragging(): void {
+		this.#isDragging = true;
+	}
+
+	/**
+	 * End a drag operation. Called by handle when dragging ends.
+	 * @internal
+	 */
+	_stopDragging(): void {
+		this.#isDragging = false;
 	}
 
 	/**
@@ -667,6 +690,166 @@ export class SplitPanelRootState {
 			this.#paneRegistry.delete(paneId);
 			this.opts.onPaneClose?.(paneId);
 		}
+	}
+
+	/**
+	 * Set a pane to a specific size.
+	 *
+	 * @param paneId - The ID of the pane to resize
+	 * @param size - The desired size (in pixels or percent depending on unit)
+	 * @param unit - 'pixels' (default) or 'percent' of container size along the pane's axis
+	 *
+	 * @example
+	 * // Set to 600 pixels
+	 * layoutState.setPaneSize('panel', 600);
+	 * layoutState.setPaneSize('panel', 600, 'pixels');
+	 *
+	 * // Set to 70% of available space
+	 * layoutState.setPaneSize('panel', 70, 'percent');
+	 */
+	setPaneSize(paneId: string, size: number, unit: 'pixels' | 'percent' = 'pixels'): void {
+		// If pane is collapsed, expand it first
+		if (this.isPaneCollapsed(paneId)) {
+			this.expandPane(paneId);
+		}
+
+		// Find pane and its parent branch
+		const result = this.#findPaneWithParent(this.layoutState.root, paneId, null, -1);
+		if (!result) {
+			console.warn(`[setPaneSize] Pane not found: ${paneId}`);
+			return;
+		}
+
+		const { parent, index } = result;
+		if (!parent || parent.type !== 'branch') {
+			console.warn(`[setPaneSize] Pane has no parent branch: ${paneId}`);
+			return;
+		}
+
+		// Get container size along the split axis
+		const containerSize = parent.axis === 'row'
+			? this.opts.containerWidth()
+			: this.opts.containerHeight();
+
+		// Convert percent to target flex ratio
+		// If unit is percent, size is the desired percentage of the container
+		// We need to calculate the flex value that achieves this
+		let targetFlex: number;
+		if (unit === 'percent') {
+			// Target percentage of the total container
+			const targetPercent = size / 100;
+			// Calculate total flex of all active (non-collapsed) children
+			let totalActiveFlex = 0;
+			for (let i = 0; i < parent.children.length; i++) {
+				const child = parent.children[i];
+				const isCollapsed = child.type === 'leaf' && child.size === 0;
+				if (!isCollapsed) {
+					totalActiveFlex += parent.flexes[i];
+				}
+			}
+			// The target pane's current flex
+			const currentFlex = parent.flexes[index];
+			// Other active flexes (excluding target pane)
+			const otherActiveFlex = totalActiveFlex - currentFlex;
+
+			// If target is 70%, then targetFlex / (targetFlex + otherActiveFlex) = 0.7
+			// Solving: targetFlex = 0.7 * (targetFlex + otherActiveFlex)
+			// targetFlex = 0.7 * targetFlex + 0.7 * otherActiveFlex
+			// targetFlex - 0.7 * targetFlex = 0.7 * otherActiveFlex
+			// 0.3 * targetFlex = 0.7 * otherActiveFlex
+			// targetFlex = (0.7 / 0.3) * otherActiveFlex = (targetPercent / (1 - targetPercent)) * otherActiveFlex
+			if (targetPercent >= 1) {
+				console.warn(`[setPaneSize] Cannot set pane to 100% or more`);
+				return;
+			}
+			targetFlex = (targetPercent / (1 - targetPercent)) * otherActiveFlex;
+
+			if (this.opts.debug) {
+				console.log(`[setPaneSize] percent mode: targetPercent=${targetPercent}, otherActiveFlex=${otherActiveFlex}, targetFlex=${targetFlex}`);
+			}
+		} else {
+			// Pixel mode: calculate what flex value gives us the target pixel size
+			// First, calculate total available space (container minus handle widths)
+			const handleWidth = 4; // Approximate handle width
+			const numHandles = parent.children.filter((c) => {
+				const isCollapsed = c.type === 'leaf' && c.size === 0;
+				return !isCollapsed;
+			}).length - 1;
+			const availableSpace = containerSize - (numHandles * handleWidth);
+
+			// Calculate total flex of all active children
+			let totalActiveFlex = 0;
+			for (let i = 0; i < parent.children.length; i++) {
+				const child = parent.children[i];
+				const isCollapsed = child.type === 'leaf' && child.size === 0;
+				if (!isCollapsed) {
+					totalActiveFlex += parent.flexes[i];
+				}
+			}
+
+			const currentFlex = parent.flexes[index];
+			const otherActiveFlex = totalActiveFlex - currentFlex;
+
+			// Target size as ratio of available space
+			const targetRatio = size / availableSpace;
+			// targetFlex / (targetFlex + otherActiveFlex) = targetRatio
+			// targetFlex = targetRatio * (targetFlex + otherActiveFlex)
+			// targetFlex * (1 - targetRatio) = targetRatio * otherActiveFlex
+			// targetFlex = (targetRatio / (1 - targetRatio)) * otherActiveFlex
+			if (targetRatio >= 1) {
+				console.warn(`[setPaneSize] Target size exceeds available space`);
+				return;
+			}
+			targetFlex = (targetRatio / (1 - targetRatio)) * otherActiveFlex;
+
+			if (this.opts.debug) {
+				console.log(`[setPaneSize] pixel mode: size=${size}, availableSpace=${availableSpace}, targetRatio=${targetRatio}, targetFlex=${targetFlex}`);
+			}
+		}
+
+		// Update the flex value
+		const newFlexes = new Float32Array(parent.flexes.length);
+		for (let i = 0; i < parent.flexes.length; i++) {
+			newFlexes[i] = parent.flexes[i];
+		}
+		newFlexes[index] = targetFlex;
+		parent.flexes = newFlexes;
+
+		if (this.opts.debug) {
+			console.log(`[setPaneSize] Updated flex for ${paneId} to ${targetFlex}, flexes:`, [...newFlexes]);
+		}
+
+		// Trigger recomputation
+		this.layoutState.updateContainerSize(
+			this.opts.containerWidth(),
+			this.opts.containerHeight()
+		);
+		this.layoutVersion++;
+	}
+
+	/**
+	 * Find a pane and its parent branch in the tree.
+	 */
+	#findPaneWithParent(
+		node: LayoutNode,
+		paneId: string,
+		parent: BranchNode | null,
+		indexInParent: number
+	): { leaf: LeafNode; parent: BranchNode | null; index: number } | null {
+		if (node.type === 'leaf') {
+			if (node.id === paneId) {
+				return { leaf: node, parent, index: indexInParent };
+			}
+			return null;
+		}
+
+		// Branch: search children
+		for (let i = 0; i < node.children.length; i++) {
+			const result = this.#findPaneWithParent(node.children[i], paneId, node, i);
+			if (result) return result;
+		}
+
+		return null;
 	}
 
 	// =========================================================================
@@ -889,6 +1072,7 @@ export class SplitPanelRootState {
 				collapsePane: (id) => this.collapsePane(id),
 				expandPane: (id) => this.expandPane(id),
 				togglePane: (id) => this.togglePane(id),
+				setPaneSize: (id, size, unit) => this.setPaneSize(id, size, unit),
 				removePane: (id) => this.removePane(id),
 				resetLayout: () => this.resetLayout(),
 				getPaneState: (id) => this.getPaneState(id),

@@ -17,14 +17,15 @@ Production-ready split panel layout system for Svelte 5 with advanced features.
 ## Installation
 
 ```bash
-bun add shellos-headless-ui
+bun add @hpd/hpd-agent-headless-ui
 ```
 
-Add the CSS (optional, for default styling):
-
-```typescript
-import 'shellos-headless-ui/split-panel/split-panel.css';
-```
+This is a headless UI library - you provide all styling via CSS targeting the data attributes:
+- `[data-split-panel-root]` - Root container
+- `[data-split-panel-split]` - Split containers
+- `[data-split-panel-pane]` - Pane containers
+- `[data-split-panel-handle]` - Resize handles
+- `[data-dragging]` - Added to root during drag operations
 
 ## Quick Start
 

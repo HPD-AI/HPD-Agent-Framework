@@ -37,6 +37,3 @@ export { default as Handle } from './components/split-panel-handle.svelte';
 
 // Actions
 export * from './actions/index.js';
-
-// CSS Styles (import in your app for default styling)
-// import 'shellos-headless-ui/split-panel/split-panel.css';

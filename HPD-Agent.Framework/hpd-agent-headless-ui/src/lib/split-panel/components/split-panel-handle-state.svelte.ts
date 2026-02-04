@@ -279,6 +279,8 @@ export class SplitPanelHandleState {
 				if (!this.#hasMoved) {
 					this.#hasMoved = true;
 					this.#isDragging = true;
+					// Notify root that dragging started (for user-select: none)
+					this.root._startDragging();
 					// Debug: log which path/divider this handle is using
 					console.log('[Handle] Drag started - parentPath:', this.parentPath, 'dividerIndex:', this.dividerIndex, 'axis:', this.axis);
 				}
@@ -311,6 +313,8 @@ export class SplitPanelHandleState {
 			// Trigger drag end callback
 			if (this.#isDragging) {
 				this.opts.onDragEnd?.();
+				// Notify root that dragging stopped
+				this.root._stopDragging();
 			}
 
 			// Cleanup
