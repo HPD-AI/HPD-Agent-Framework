@@ -58,6 +58,24 @@ export * from './storage/index.ts';
 export * as SplitPanel from './split-panel/index.ts';
 
 // ========================================
+// Artifact Component
+// ========================================
+export * as Artifact from './artifact/index.ts';
+export { ArtifactProviderState, ArtifactRootState, ArtifactPanelState } from './artifact/index.ts';
+export type {
+	ArtifactProviderProps,
+	ArtifactRootProps,
+	ArtifactSlotProps,
+	ArtifactTriggerProps,
+	ArtifactPanelProps,
+	ArtifactTitleProps,
+	ArtifactContentProps,
+	ArtifactCloseProps,
+	ArtifactPanelSnippetProps,
+	ArtifactRootSnippetProps
+} from './artifact/index.ts';
+
+// ========================================
 // Utilities (for extending the library)
 // ========================================
 

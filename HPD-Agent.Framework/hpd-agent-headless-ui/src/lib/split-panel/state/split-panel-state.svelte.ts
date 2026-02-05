@@ -1180,6 +1180,7 @@ export class SplitPanelState {
 
 		// Find nearest active child to the left (scan backward from dividerIndex)
 		let leftIdx = -1;
+		let leftIsCollapsed = false;
 		for (let i = dividerIndex; i >= 0; i--) {
 			if (parent.flexes[i] > SplitPanelState.FLEX_EPS) {
 				leftIdx = i;
@@ -1189,6 +1190,7 @@ export class SplitPanelState {
 
 		// Find nearest active child to the right (scan forward from dividerIndex + 1)
 		let rightIdx = -1;
+		let rightIsCollapsed = false;
 		for (let i = dividerIndex + 1; i < parent.children.length; i++) {
 			if (parent.flexes[i] > SplitPanelState.FLEX_EPS) {
 				rightIdx = i;
@@ -1198,10 +1200,22 @@ export class SplitPanelState {
 
 		console.log('[ApplyDividerResize] leftIdx:', leftIdx, 'rightIdx:', rightIdx);
 
-		// If either side has no active child, this divider is between collapsed panes
-		// or at an edge with no active neighbor - can't resize
-		if (leftIdx === -1 || rightIdx === -1) {
-			console.log('[ApplyDividerResize] EARLY RETURN: no active neighbor, leftIdx:', leftIdx, 'rightIdx:', rightIdx);
+		// Handle collapsed panes - allow handle to expand them
+		// If no active child on left side, use the immediate left neighbor (collapsed pane)
+		if (leftIdx === -1) {
+			leftIdx = dividerIndex; // Use the collapsed pane directly adjacent to the handle
+			leftIsCollapsed = true;
+		}
+		
+		// If no active child on right side, use the immediate right neighbor (collapsed pane)
+		if (rightIdx === -1) {
+			rightIdx = dividerIndex + 1; // Use the collapsed pane directly adjacent to the handle
+			rightIsCollapsed = true;
+		}
+
+		// If both sides are collapsed, we still can't resize (nothing to take from)
+		if (leftIsCollapsed && rightIsCollapsed) {
+			console.log('[ApplyDividerResize] EARLY RETURN: both sides collapsed');
 			return affectedPanels;
 		}
 

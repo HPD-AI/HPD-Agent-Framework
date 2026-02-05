@@ -135,12 +135,16 @@ export class SplitPanelHandleState {
 	/**
 	 * Get the parent path for resize operations.
 	 * Uses explicit value if provided, otherwise derives from parent split.
+	 * 
+	 * NOTE: Access _path directly (not through getter) to ensure Svelte 5 
+	 * properly tracks the $state dependency for reactive updates.
 	 */
 	readonly parentPath = $derived.by(() => {
 		if (this.opts.parentPath?.current) {
 			return this.opts.parentPath.current;
 		}
-		return this.parentSplit?.path ?? [];
+		// Access _path directly to ensure reactivity tracking
+		return this.parentSplit?._path ?? [];
 	});
 
 	/**

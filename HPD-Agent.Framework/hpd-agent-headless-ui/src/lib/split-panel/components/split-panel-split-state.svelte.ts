@@ -106,8 +106,10 @@ export class SplitPanelSplitState {
 	 * Computed lazily during tree sync using DOM order, not at construction time.
 	 * Initially empty for non-root splits until tree sync resolves DOM order.
 	 * Must be reactive ($state) so handles can react to path changes.
+	 * 
+	 * Exposed as a public $state so handles can reactively track path changes.
 	 */
-	#path = $state<number[]>([]);
+	_path = $state<number[]>([]);
 
 	/** Registered children (panes and nested splits) */
 	#registeredChildren = $state<RegisteredChild[]>([]);
@@ -140,9 +142,9 @@ export class SplitPanelSplitState {
 			// Register this split as a child of parent (for DOM order resolution)
 			parent._registerChildSplit(this);
 			// Path will be computed during tree sync
-			this.#path = [];
+			this._path = [];
 		} else {
-			this.#path = [];
+			this._path = [];
 		}
 
 		// Register this split with root state
@@ -154,7 +156,7 @@ export class SplitPanelSplitState {
 	 * Get the path (computed during tree sync).
 	 */
 	get path(): number[] {
-		return this.#path;
+		return this._path;
 	}
 
 	/**
@@ -162,7 +164,7 @@ export class SplitPanelSplitState {
 	 * @internal
 	 */
 	_setPath(path: number[]): void {
-		this.#path = path;
+		this._path = path;
 	}
 
 	/**
@@ -277,8 +279,13 @@ export class SplitPanelSplitState {
 		// Check if all children have element references
 		const allMounted = children.every(c => c.element !== null);
 		
+		// Debug: log mount state
+		console.log('[DOM Order] Split:', this.splitId, 'allMounted:', allMounted, 
+			'children:', children.map(c => ({ id: c.id, type: c.type, hasElement: c.element !== null })));
+		
 		if (!allMounted) {
 			// Can't sort by DOM order yet, return as-is
+			console.log('[DOM Order] Falling back to registration order (not all mounted)');
 			return children;
 		}
 
@@ -294,6 +301,7 @@ export class SplitPanelSplitState {
 			return 0;
 		});
 
+		console.log('[DOM Order] Sorted result:', children.map(c => c.id));
 		return children;
 	}
 
@@ -343,7 +351,7 @@ export class SplitPanelSplitState {
 				isRoot: this.isRoot,
 				axis: this.opts.axis.current,
 				childCount: this.#registeredChildren.length,
-				path: this.#path
+				path: this._path
 			}) as const
 	);
 
