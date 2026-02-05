@@ -9,7 +9,9 @@ using System.Text;
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using System.ComponentModel;
 using Microsoft.Extensions.Logging;
 using HPD.Agent.StructuredOutput;
 using HPD.Events;
@@ -592,6 +594,8 @@ public sealed class Agent
             AgentLoopState state;
             IEnumerable<ChatMessage> effectiveMessages;
             ChatOptions? effectiveOptions;
+            // Shared mutable message list - all contexts reference this same list (zero-sync architecture)
+            List<ChatMessage> sharedMessages;
 
             if (session?.ExecutionState is { } executionState)
             {
@@ -608,7 +612,10 @@ public sealed class Agent
                 };
 
                 // Use messages from restored state (already prepared - includes system instructions)
-                effectiveMessages = state.CurrentMessages;
+                // Create shared mutable list from deserialized messages for zero-sync architecture
+                sharedMessages = state.CurrentMessages.ToList();
+                state = state with { MessagesRef = sharedMessages };
+                effectiveMessages = sharedMessages;
 
                 // Use options from PreparedTurn (already merged and Middlewareed)
                 effectiveOptions = turn.Options;
@@ -677,7 +684,9 @@ public sealed class Agent
                 // Initialize state with FULL unreduced history
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
                 // We store the full history in state for proper message counting
-                state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name, persistentState);
+                // Create ONE shared mutable list for the entire turn - all contexts reference this same list
+                sharedMessages = new List<ChatMessage>(messages);
+                state = AgentLoopState.Initial(sharedMessages, messageTurnId, conversationId, this.Name, persistentState);
 
                 // Use PreparedTurn's already-prepared messages and options
                 effectiveMessages = turn.MessagesForLLM;
@@ -751,9 +760,10 @@ public sealed class Agent
             var effectiveRunOptions = runOptions ?? new AgentRunOptions();
 
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
+            // Pass shared message list - middleware mutations are visible to all immediately
             var beforeTurnContext = agentContext.AsBeforeMessageTurn(
                 userMessage: newInputMessages.FirstOrDefault(),
-                conversationHistory: effectiveMessages.ToList(),
+                conversationHistory: sharedMessages,  // SAME shared list, no copy
                 runOptions: effectiveRunOptions);
 
             await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(beforeTurnContext, effectiveCancellationToken);
@@ -780,13 +790,10 @@ public sealed class Agent
                 }
             }
 
-            // UPDATE EFFECTIVE MESSAGES: If middleware modified ConversationHistory (e.g., HistoryReductionMiddleware),
-            // update effectiveMessages to use the modified history
-            effectiveMessages = beforeTurnContext.ConversationHistory;
-
-            // UPDATE STATE MESSAGES: If middleware modified ConversationHistory (e.g., EnvironmentContextMiddleware),
-            // update state.CurrentMessages so subsequent iterations also see the changes
-            state = state.WithMessages(effectiveMessages.ToList());
+            // Shared reference architecture: No sync needed!
+            // state.CurrentMessages already sees middleware changes via MessagesRef
+            // effectiveMessages updated to point to same shared list for downstream use
+            effectiveMessages = sharedMessages;
 
             // Drain middleware events
             while (_eventCoordinator.TryRead(out var middlewareEvt))
@@ -947,9 +954,10 @@ public sealed class Agent
                     // CREATE TYPED ITERATION CONTEXT (V2)
                     // Note: Tool Collapsing is handled by ToolCollapsingMiddleware in BeforeIterationAsync
                     // The middleware will filter tools and emit CollapsedToolsVisibleEvent
+                    // Pass shared message list - middleware mutations visible to all immediately
                     var beforeIterationContext = agentContext.AsBeforeIteration(
                         iteration: state.Iteration,
-                        messages: messagesToSend.ToList(),
+                        messages: sharedMessages,  // SAME shared list, no copy
                         options: effectiveOptions ?? new ChatOptions(),
                         runOptions: effectiveRunOptions);  // Use the SAME instance from BeforeMessageTurnAsync
 
@@ -983,8 +991,8 @@ public sealed class Agent
                     // V2: State updates are immediate - no GetPendingState() needed!
                     state = agentContext.State;
 
-                    // Use potentially modified values from Middlewares
-                    messagesToSend = beforeIterationContext.Messages;
+                    // Shared reference architecture: messagesToSend already sees middleware changes
+                    // Only need to capture Options which may have been replaced
                     var CollapsedOptions = beforeIterationContext.Options;
 
                     // Helper for toolkit name lookup in events
@@ -1419,11 +1427,8 @@ public sealed class Agent
                         // Create assistant message with tool calls
                         var assistantMessage = new ChatMessage(ChatRole.Assistant, coalescedContents);
 
-                        var currentMessages = state.CurrentMessages.ToList();
-                        currentMessages.Add(assistantMessage);
-
-                        // Update state immediately after modifying messages
-                        state = state.WithMessages(currentMessages);
+                        // Add to shared message list - visible to all contexts immediately
+                        sharedMessages.Add(assistantMessage);
 
                         // Use messageCountToSend (actual messages sent to server)
                         if (_agentTurn.LastResponseConversationId != null)
@@ -1497,7 +1502,7 @@ public sealed class Agent
 
                         // Execute tools with event polling (CRITICAL for permissions)
                         var executeTask = _functionCallProcessor.ExecuteToolsAsync(
-                            currentMessages,
+                            sharedMessages,
                             toolRequests,
                             effectiveOptionsForTools,
                             state,
@@ -1599,12 +1604,12 @@ public sealed class Agent
                             state = state.CompleteFunction(functionName);
                         }
 
-                        // ALWAYS add unfiltered results to currentMessages (LLM needs to see container expansions)
-                        currentMessages.Add(toolResultMessage);
+                        // ALWAYS add unfiltered results to sharedMessages (LLM needs to see container expansions)
+                        sharedMessages.Add(toolResultMessage);
 
                         // Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
                         turnHistory.Add(toolResultMessage);
-     
+
                         // Build callId → toolkitName mapping for result events
                         var callIdToToolkit = toolRequests.ToDictionary(
                             tr => tr.CallId,
@@ -1620,11 +1625,10 @@ public sealed class Agent
                                 yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName);
                             }
                         }
-                        // Update state with new messages
-                        state = state.WithMessages(currentMessages);
+                        // Shared reference: state.CurrentMessages already sees the changes via MessagesRef
 
                         // Build ChatResponse for decision engine (after execution)
-                        lastResponse = new ChatResponse(currentMessages.Where(m => m.Role == ChatRole.Assistant).ToList());
+                        lastResponse = new ChatResponse(sharedMessages.Where(m => m.Role == ChatRole.Assistant).ToList());
 
                         // Clear responseUpdates after building the response
                         responseUpdates.Clear();
@@ -1658,10 +1662,8 @@ public sealed class Agent
                             var finalAssistantMessage = finalResponse.Messages[0];
                             if (finalAssistantMessage.Contents.Count > 0)
                             {
-                                // Add to state.CurrentMessages
-                                var currentMessages = state.CurrentMessages.ToList();
-                                currentMessages.Add(finalAssistantMessage);
-                                state = state.WithMessages(currentMessages);
+                                // Add to shared message list - visible to all contexts immediately
+                                sharedMessages.Add(finalAssistantMessage);
 
                                 // Add to turnHistory for session persistence
                                 turnHistory.Add(finalAssistantMessage);
@@ -1763,10 +1765,8 @@ public sealed class Agent
 
                     if (finalAssistantMessage.Contents.Count > 0)
                     {
-                        // Add final message to both state and turnHistory for consistency
-                        var currentMessages = state.CurrentMessages.ToList();
-                        currentMessages.Add(finalAssistantMessage);
-                        state = state.WithMessages(currentMessages);
+                        // Add final message to shared list and turnHistory for consistency
+                        sharedMessages.Add(finalAssistantMessage);
 
                         // Also add to turnHistory for session persistence
                         turnHistory.Add(finalAssistantMessage);
@@ -4034,10 +4034,48 @@ public sealed record AgentLoopState
     public required DateTime StartTime { get; init; }
 
     /// <summary>
+    /// Internal mutable reference to the shared message list used during runtime execution.
+    /// NOT serialized - only exists during active agent execution.
+    /// When middleware modifies this list, all contexts see the changes immediately.
+    /// Excluded from record equality comparison via [JsonIgnore].
+    /// </summary>
+    [JsonIgnore]
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    internal List<ChatMessage>? MessagesRef { get; init; }
+
+    /// <summary>
     /// Messages in the current conversation context (full history).
     /// This is the complete conversation that gets sent to the LLM.
+    ///
+    /// RUNTIME: Returns shared mutable reference (MessagesRef).
+    /// SERIALIZATION: Returns snapshot copy (_deserializedMessages).
+    /// DESERIALIZATION: Stores defensive copy in _deserializedMessages.
     /// </summary>
-    public required IReadOnlyList<ChatMessage> CurrentMessages { get; init; }
+    [JsonPropertyName("currentMessages")]
+    public IReadOnlyList<ChatMessage> CurrentMessages
+    {
+        get
+        {
+            // Runtime: return shared reference (everyone sees same list)
+            if (MessagesRef != null)
+                return MessagesRef;
+
+            // Deserialization: return stored defensive copy
+            return (IReadOnlyList<ChatMessage>?)_deserializedMessages ?? Array.Empty<ChatMessage>();
+        }
+        init
+        {
+            // Store defensive copy for deserialization path
+            // This is called by JsonSerializer.Deserialize when loading checkpoints
+            _deserializedMessages = value?.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Deserialized messages storage (used when loading from checkpoint).
+    /// Null during runtime execution (MessagesRef is used instead).
+    /// </summary>
+    private List<ChatMessage>? _deserializedMessages;
 
     /// <summary>
     /// Messages accumulated during this agent turn (for response history).
@@ -4133,20 +4171,17 @@ public sealed record AgentLoopState
     //
 
     /// <summary>
-    /// Creates initial state for a new agent execution.
-    /// All collections are empty, counters are zero.
+    /// Creates initial state for runtime execution with shared message reference.
+    /// This is the primary factory used by Agent.cs during normal execution.
     /// </summary>
-    /// <param name="messages">Initial conversation messages</param>
+    /// <param name="messagesRef">Shared mutable list - all contexts will reference this same list</param>
     /// <param name="runId">Unique identifier for this run</param>
     /// <param name="conversationId">Conversation identifier</param>
     /// <param name="agentName">Name of the agent</param>
-    /// <returns>Fresh state ready for first iteration</returns>
-    /// <remarks>
-    /// The messages collection is defensively copied to ensure immutability.
-    /// This prevents bugs where the caller modifies the original collection after state creation.
-    /// </remarks>
-    public static AgentLoopState Initial(
-        IReadOnlyList<ChatMessage> messages,
+    /// <param name="persistentState">Middleware state to restore (if resuming)</param>
+    /// <returns>State with shared reference to messages</returns>
+    internal static AgentLoopState Initial(
+        List<ChatMessage> messagesRef,
         string runId,
         string conversationId,
         string agentName,
@@ -4156,9 +4191,9 @@ public sealed record AgentLoopState
         ConversationId = conversationId,
         AgentName = agentName,
         StartTime = DateTime.UtcNow,
-        // Defensive copy: ToList() creates a new list to avoid reference sharing with mutable source.
-        // This is critical for checkpoint integrity - saved states must not change after saving.
-        CurrentMessages = messages.ToList(),
+        // Store shared reference (internal, not serialized)
+        // The getter will return MessagesRef automatically.
+        MessagesRef = messagesRef,
         TurnHistory = ImmutableList<ChatMessage>.Empty,
         Iteration = 0,
         IsTerminated = false,
@@ -4174,7 +4209,49 @@ public sealed record AgentLoopState
             Source = CheckpointSource.Input,
             Step = -1 // -1 indicates initial state before first iteration
         },
-        ETag = null, // Will be generated on first serialize
+        ETag = null,
+        MiddlewareState = persistentState ?? new MiddlewareState()
+    };
+
+    /// <summary>
+    /// Creates initial state with defensive copy (backward compatibility).
+    /// Used by tests, external code, or when loading from checkpoint.
+    /// </summary>
+    /// <param name="messages">Messages to copy (immutable snapshot)</param>
+    /// <param name="runId">Unique identifier for this run</param>
+    /// <param name="conversationId">Conversation identifier</param>
+    /// <param name="agentName">Name of the agent</param>
+    /// <param name="persistentState">Middleware state to restore (if resuming)</param>
+    /// <returns>State with defensive copy of messages (no shared reference)</returns>
+    public static AgentLoopState InitialSafe(
+        IReadOnlyList<ChatMessage> messages,
+        string runId,
+        string conversationId,
+        string agentName,
+        MiddlewareState? persistentState = null) => new()
+    {
+        RunId = runId,
+        ConversationId = conversationId,
+        AgentName = agentName,
+        StartTime = DateTime.UtcNow,
+        // No shared reference - use init setter (creates defensive copy)
+        CurrentMessages = messages,
+        TurnHistory = ImmutableList<ChatMessage>.Empty,
+        Iteration = 0,
+        IsTerminated = false,
+        TerminationReason = null,
+        CompletedFunctions = ImmutableHashSet<string>.Empty,
+        InnerClientTracksHistory = false,
+        MessagesSentToInnerClient = 0,
+        LastAssistantMessageId = null,
+        ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
+        Version = 1,
+        Metadata = new CheckpointMetadata
+        {
+            Source = CheckpointSource.Input,
+            Step = -1
+        },
+        ETag = null,
         MiddlewareState = persistentState ?? new MiddlewareState()
     };
 
@@ -4190,15 +4267,17 @@ public sealed record AgentLoopState
         this with { Iteration = Iteration + 1 };
 
     /// <summary>
-    /// Updates the current conversation messages.
-    /// Used after adding new messages from LLM or tool results.
+    /// Updates the current conversation messages (creates new state with defensive copy).
+    /// Used when need to replace the entire message list (rare).
+    /// WARNING: This breaks shared reference! Use with caution.
+    /// In most cases, middleware should mutate the shared list in-place.
     /// </summary>
-    /// <remarks>
-    /// For maximum safety, consider passing a fresh list. This method stores the reference directly
-    /// for performance, as internal callers already provide new list instances.
-    /// </remarks>
     public AgentLoopState WithMessages(IReadOnlyList<ChatMessage> messages) =>
-        this with { CurrentMessages = messages };
+        this with
+        {
+            MessagesRef = null,  // Clear shared reference
+            CurrentMessages = messages  // Calls init, creates defensive copy
+        };
 
     /// <summary>
     /// Appends a message to the turn history.

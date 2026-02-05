@@ -186,7 +186,7 @@ public class ImmutableRequestTests
 
     private static AgentLoopState CreateTestState()
     {
-        return AgentLoopState.Initial(
+        return AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",

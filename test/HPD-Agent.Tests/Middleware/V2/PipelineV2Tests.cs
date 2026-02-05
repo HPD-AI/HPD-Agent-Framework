@@ -337,7 +337,7 @@ public class PipelineV2Tests
 
     private static BeforeIterationContext CreateBeforeIterationContext()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",
@@ -360,7 +360,7 @@ public class PipelineV2Tests
 
     private static AfterIterationContext CreateAfterIterationContext()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",
@@ -379,7 +379,7 @@ public class PipelineV2Tests
 
     private static ErrorContext CreateErrorContext()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",
@@ -401,7 +401,7 @@ public class PipelineV2Tests
 
     private static ModelRequest CreateModelRequest()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",
@@ -419,7 +419,7 @@ public class PipelineV2Tests
 
     private static FunctionRequest CreateFunctionRequest()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",

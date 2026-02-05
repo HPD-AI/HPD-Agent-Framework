@@ -276,7 +276,7 @@ public class AssetUploadMiddlewareTests
         AgentSession session,
         ChatMessage userMessage)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             [],
             "test-run",
             "test-conv",

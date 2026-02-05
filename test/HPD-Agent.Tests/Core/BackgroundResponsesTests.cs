@@ -291,7 +291,7 @@ public class BackgroundResponsesTests : AgentTestBase
         var messages = new List<ChatMessage> { UserMessage("Test") };
 
         // Act
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Assert
         Assert.Null(state.ActiveBackgroundOperation);
@@ -302,7 +302,7 @@ public class BackgroundResponsesTests : AgentTestBase
     {
         // Arrange
         var messages = new List<ChatMessage> { UserMessage("Test") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
         var operation = new BackgroundOperationInfo
         {
             TokenData = "dGVzdA==",
@@ -325,7 +325,7 @@ public class BackgroundResponsesTests : AgentTestBase
     {
         // Arrange
         var messages = new List<ChatMessage> { UserMessage("Test") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent")
             .WithBackgroundOperation(new BackgroundOperationInfo
             {
                 TokenData = "dGVzdA==",
@@ -355,7 +355,7 @@ public class BackgroundResponsesTests : AgentTestBase
         };
 
         // Act
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent")
             .WithBackgroundOperation(operation)
             .NextIteration()
             .NextIteration();

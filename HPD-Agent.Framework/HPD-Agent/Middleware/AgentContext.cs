@@ -361,7 +361,7 @@ public sealed class AgentContext
     /// </summary>
     internal BeforeMessageTurnContext AsBeforeMessageTurn(
         ChatMessage? userMessage,
-        IList<ChatMessage> conversationHistory,
+        List<ChatMessage> conversationHistory,
         AgentRunOptions runOptions)
         => new(this, userMessage, conversationHistory, runOptions);
 

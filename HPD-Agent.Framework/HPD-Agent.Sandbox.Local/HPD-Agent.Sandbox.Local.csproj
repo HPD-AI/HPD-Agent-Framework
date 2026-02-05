@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net9.0;net8.0</TargetFrameworks>
     <RootNamespace>HPD.Sandbox.Local</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -18,10 +18,11 @@
 
   <ItemGroup>
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
+    <ProjectReference Include="../../HPD.Events/HPD.Events.csproj" />
 
     <!-- HTTP/SOCKS proxy for network filtering -->
     <PackageReference Include="Titanium.Web.Proxy" Version="3.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -448,7 +448,7 @@ Use `decimal` type for precision.";
     private static BeforeIterationContext CreateContext(
         ImmutableDictionary<string, ContainerInstructionSet> containerInstructions)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: new List<ChatMessage>(),
             runId: "test-run-id",
             conversationId: "test-conv-id",
@@ -504,7 +504,7 @@ Use `decimal` type for precision.";
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

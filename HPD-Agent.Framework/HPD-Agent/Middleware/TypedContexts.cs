@@ -10,7 +10,7 @@ namespace HPD.Agent.Middleware;
 /// Context for BeforeMessageTurn hook.
 /// Available properties: UserMessage, ConversationHistory, RunOptions
 /// </summary>
-public sealed record BeforeMessageTurnContext : HookContext
+public sealed class BeforeMessageTurnContext : HookContext
 {
     /// <summary>
     /// The user message that initiated this turn.
@@ -21,23 +21,24 @@ public sealed record BeforeMessageTurnContext : HookContext
     public ChatMessage? UserMessage { get; set; }
 
     /// <summary>
-    /// Complete conversation history prior to this turn.
+    /// Complete conversation history prior to this turn - shared mutable reference.
     ///   Always available (never NULL)
-    /// MUTABLE - middleware can modify history before processing
+    /// MUTABLE - middleware can modify history in-place (Insert, Add, Remove).
+    /// Changes are visible to all subsequent middleware and Agent.cs immediately.
     /// </summary>
-    public IList<ChatMessage> ConversationHistory { get; init; }
+    public List<ChatMessage> ConversationHistory { get; }
 
     /// <summary>
     /// Agent run options for this turn.
     ///   Always available (never NULL)
     /// Contains configuration like ClientToolInput, MaxIterations, etc.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     internal BeforeMessageTurnContext(
         AgentContext baseContext,
         ChatMessage? userMessage,
-        IList<ChatMessage> conversationHistory,
+        List<ChatMessage> conversationHistory,
         AgentRunOptions runOptions)
         : base(baseContext)
     {
@@ -51,20 +52,20 @@ public sealed record BeforeMessageTurnContext : HookContext
 /// Context for AfterMessageTurn hook.
 /// Available properties: FinalResponse, TurnHistory, RunOptions
 /// </summary>
-public sealed record AfterMessageTurnContext : HookContext
+public sealed class AfterMessageTurnContext : HookContext
 {
     /// <summary>
     /// Final assistant response for this turn.
     ///   Always available (never NULL)
     /// </summary>
-    public ChatResponse FinalResponse { get; init; }
+    public ChatResponse FinalResponse { get; }
 
     /// <summary>
     /// Messages that will be persisted to the thread after this turn completes.
     ///   Always available (never NULL)
     /// MUTABLE - middleware can filter/modify before persistence
     /// </summary>
-    public List<ChatMessage> TurnHistory { get; init; }
+    public List<ChatMessage> TurnHistory { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -72,7 +73,7 @@ public sealed record AfterMessageTurnContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for logging, metrics, and turn-level decisions based on user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     internal AfterMessageTurnContext(
         AgentContext baseContext,
@@ -95,27 +96,28 @@ public sealed record AfterMessageTurnContext : HookContext
 /// Context for BeforeIteration hook.
 /// Available properties: Iteration, Messages, Options, RunOptions
 /// </summary>
-public sealed record BeforeIterationContext : HookContext
+public sealed class BeforeIterationContext : HookContext
 {
     /// <summary>
     /// Current iteration number (0-based).
     ///   Always available
     /// </summary>
-    public int Iteration { get; init; }
+    public int Iteration { get; }
 
     /// <summary>
-    /// Messages to send to the LLM for this iteration.
+    /// Messages to send to the LLM for this iteration - shared mutable reference.
     ///   Always available (never NULL)
-    /// MUTABLE - add context, modify history
+    /// MUTABLE - add context, modify history in-place.
+    /// Changes are visible to Agent.cs LLM call immediately.
     /// </summary>
-    public List<ChatMessage> Messages { get; init; }
+    public List<ChatMessage> Messages { get; }
 
     /// <summary>
     /// Chat options for this LLM call.
     ///   Always available (never NULL)
     /// MUTABLE - modify tools, instructions, temperature
     /// </summary>
-    public ChatOptions Options { get; init; }
+    public ChatOptions Options { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -124,7 +126,7 @@ public sealed record BeforeIterationContext : HookContext
     /// Use for iteration-specific decisions based on user preferences and context.
     /// Examples: Adapt temperature, filter tools, access ContextOverrides for tenant/user info.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     //
     // CONTROL SIGNALS
@@ -169,19 +171,19 @@ public sealed record BeforeIterationContext : HookContext
 /// Context for BeforeToolExecution hook.
 /// Available properties: Response, ToolCalls, RunOptions
 /// </summary>
-public sealed record BeforeToolExecutionContext : HookContext
+public sealed class BeforeToolExecutionContext : HookContext
 {
     /// <summary>
     /// LLM response for this iteration.
     ///   Always available (never NULL)
     /// </summary>
-    public ChatMessage Response { get; init; }
+    public ChatMessage Response { get; }
 
     /// <summary>
     /// Tool calls requested by LLM in this iteration.
     ///   Always available (never NULL, but may be empty)
     /// </summary>
-    public IReadOnlyList<FunctionCallContent> ToolCalls { get; init; }
+    public IReadOnlyList<FunctionCallContent> ToolCalls { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -189,7 +191,7 @@ public sealed record BeforeToolExecutionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission checks, dry-run mode (SkipTools), and tool-level validation.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     //
     // CONTROL SIGNALS
@@ -223,19 +225,19 @@ public sealed record BeforeToolExecutionContext : HookContext
 /// Context for AfterIteration hook.
 /// Available properties: Iteration, ToolResults, RunOptions
 /// </summary>
-public sealed record AfterIterationContext : HookContext
+public sealed class AfterIterationContext : HookContext
 {
     /// <summary>
     /// Current iteration number (0-based).
     ///   Always available
     /// </summary>
-    public int Iteration { get; init; }
+    public int Iteration { get; }
 
     /// <summary>
     /// Results from tool execution.
     ///   Always available (never NULL, but may be empty)
     /// </summary>
-    public IReadOnlyList<FunctionResultContent> ToolResults { get; init; }
+    public IReadOnlyList<FunctionResultContent> ToolResults { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -243,7 +245,7 @@ public sealed record AfterIterationContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for error tracking, metrics collection, and iteration-level logging with user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     //
     // HELPERS
@@ -280,13 +282,13 @@ public sealed record AfterIterationContext : HookContext
 /// Context for BeforeParallelBatch hook.
 /// Available properties: ParallelFunctions, RunOptions
 /// </summary>
-public sealed record BeforeParallelBatchContext : HookContext
+public sealed class BeforeParallelBatchContext : HookContext
 {
     /// <summary>
     /// Information about functions being executed in parallel.
     ///   Always available (never NULL, always has at least 2 functions)
     /// </summary>
-    public IReadOnlyList<ParallelFunctionInfo> ParallelFunctions { get; init; }
+    public IReadOnlyList<ParallelFunctionInfo> ParallelFunctions { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -294,7 +296,7 @@ public sealed record BeforeParallelBatchContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for rate limiting, batch-level validation, and parallel execution control based on user tier/context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     internal BeforeParallelBatchContext(
         AgentContext baseContext,
@@ -311,37 +313,37 @@ public sealed record BeforeParallelBatchContext : HookContext
 /// Context for BeforeFunction hook.
 /// Available properties: Function, FunctionCallId, Arguments, ToolkitName, SkillName, RunOptions
 /// </summary>
-public sealed record BeforeFunctionContext : HookContext
+public sealed class BeforeFunctionContext : HookContext
 {
     /// <summary>
     /// The function being invoked.
     ///   Can be NULL when LLM calls an unknown/unavailable function (unless TerminateOnUnknownCalls is enabled)
     /// </summary>
-    public AIFunction? Function { get; init; }
+    public AIFunction? Function { get; }
 
     /// <summary>
     /// Unique call ID for this function invocation.
     ///   Always available (never NULL)
     /// </summary>
-    public string FunctionCallId { get; init; }
+    public string FunctionCallId { get; }
 
     /// <summary>
     /// Arguments passed to this function call.
     ///   Always available (never NULL, but may be empty)
     /// </summary>
-    public IReadOnlyDictionary<string, object?> Arguments { get; init; }
+    public IReadOnlyDictionary<string, object?> Arguments { get; }
 
     /// <summary>
     /// Name of the Toolkit that contains this function, if any.
     /// May be NULL if function is not part of a Toolkit.
     /// </summary>
-    public string? ToolkitName { get; init; }
+    public string? ToolkitName { get; }
 
     /// <summary>
     /// Name of the skill that referenced this function, if any.
     /// May be NULL if function is not part of a skill.
     /// </summary>
-    public string? SkillName { get; init; }
+    public string? SkillName { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -349,7 +351,7 @@ public sealed record BeforeFunctionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission validation, dry-run mode (SkipTools), and function-level authorization.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     //
     // CONTROL SIGNALS
@@ -403,19 +405,19 @@ public sealed record BeforeFunctionContext : HookContext
 /// Context for AfterFunction hook.
 /// Available properties: Function, FunctionCallId, Result, Exception, ToolkitName, SkillName, RunOptions
 /// </summary>
-public sealed record AfterFunctionContext : HookContext
+public sealed class AfterFunctionContext : HookContext
 {
     /// <summary>
     /// The function that was invoked.
     ///   Can be NULL when an unknown function was called
     /// </summary>
-    public AIFunction? Function { get; init; }
+    public AIFunction? Function { get; }
 
     /// <summary>
     /// Unique call ID for this function invocation.
     ///   Always available (never NULL)
     /// </summary>
-    public string FunctionCallId { get; init; }
+    public string FunctionCallId { get; }
 
     /// <summary>
     /// Result of the function execution (if successful).
@@ -435,13 +437,13 @@ public sealed record AfterFunctionContext : HookContext
     /// Name of the Toolkit that contains this function, if any.
     /// May be NULL if function is not part of a Toolkit.
     /// </summary>
-    public string? ToolkitName { get; init; }
+    public string? ToolkitName { get; }
 
     /// <summary>
     /// Name of the skill that referenced this function, if any.
     /// May be NULL if function is not part of a skill.
     /// </summary>
-    public string? SkillName { get; init; }
+    public string? SkillName { get; }
 
     /// <summary>
     /// Original run options for this turn.
@@ -449,7 +451,7 @@ public sealed record AfterFunctionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for audit logging, metrics, and result transformation based on user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; init; }
+    public AgentRunOptions RunOptions { get; }
 
     //
     // HELPERS

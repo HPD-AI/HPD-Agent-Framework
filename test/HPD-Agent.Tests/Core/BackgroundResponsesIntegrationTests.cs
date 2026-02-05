@@ -161,7 +161,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
             LastKnownStatus = OperationStatus.InProgress
         };
 
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent")
             .WithBackgroundOperation(backgroundOp);
 
         // Act: Serialize and deserialize
@@ -184,7 +184,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
     {
         // Arrange
         var messages = new List<ChatMessage> { UserMessage("Test") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Act: Serialize and deserialize
         var json = state.Serialize();

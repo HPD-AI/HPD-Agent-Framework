@@ -17,7 +17,7 @@ internal static class MiddlewareTestHelpers
     /// </summary>
     public static BeforeIterationContext CreateContext(int iteration = 0)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "test-run",
             "test-conv-id",

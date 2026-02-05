@@ -185,7 +185,7 @@ public class ErrorTrackingMiddlewareTests
 
     private static ErrorContext CreateErrorContext(ErrorSource source = ErrorSource.ToolCall)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",
@@ -207,7 +207,7 @@ public class ErrorTrackingMiddlewareTests
 
     private static AfterIterationContext CreateAfterIterationContext(bool allSucceeded)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",

@@ -776,7 +776,7 @@ public class ClientToolMiddlewareTests
 
     private static AgentLoopState CreateEmptyState()
     {
-        return AgentLoopState.Initial(
+        return AgentLoopState.InitialSafe(
             messages: new List<ChatMessage>(),
             runId: Guid.NewGuid().ToString(),
             conversationId: "test-conv-id",
@@ -807,7 +807,7 @@ public class ClientToolMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

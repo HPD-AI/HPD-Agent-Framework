@@ -121,7 +121,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Hello"));
 
         var CollapsingState = new CollapsingStateData().WithExpandedContainer("TestToolkit");
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -255,7 +255,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -312,7 +312,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -473,7 +473,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Message 1"));
         await thread.AddMessageAsync(AssistantMessage("Response 1"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -571,7 +571,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Manually create and save a checkpoint (simulating successful checkpoint before crash)
         // Use SaveSessionAtCheckpointAsync for crash recovery checkpoints
         var messages = await thread.GetMessagesAsync();
-        var checkpointState = AgentLoopState.Initial(
+        var checkpointState = AgentLoopState.InitialSafe(
             messages.ToList(),
             "run-123",
             "conv-456",
@@ -719,7 +719,7 @@ public class CheckpointingIntegrationTests : AgentTestBase
         // Manually create checkpoint and pending writes (simulating crash before checkpoint completes)
         // Use SaveSessionAtCheckpointAsync for crash recovery
         var messages = await thread.GetMessagesAsync();
-        var checkpointState = AgentLoopState.Initial(
+        var checkpointState = AgentLoopState.InitialSafe(
             messages.ToList(),
             "run-123",
             "conv-456",

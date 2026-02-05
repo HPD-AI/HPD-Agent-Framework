@@ -1,0 +1,46 @@
+### Test 1: Get Agent Card
+GET http://localhost:5266/.well-known/agent.json
+
+### Test 2: Send A2A Message
+POST http://localhost:5266/a2a-agent
+Content-Type: application/json
+
+{
+    "id": "1",
+    "jsonrpc": "2.0",
+    "method": "message/send",
+    "params": {
+        "message": {
+            "messageId": "msg-001",
+            "role": "user",
+            "parts": [
+                {
+                    "kind": "text",
+                    "text": "What is 5 plus 5?"
+                }
+            ]
+        }
+    }
+}
+
+### Test 3: Send A2A Message with Math Function
+POST http://localhost:5266/a2a-agent
+Content-Type: application/json
+
+{
+    "id": "2",
+    "jsonrpc": "2.0",
+    "method": "message/send",
+    "params": {
+        "message": {
+            "messageId": "msg-002",
+            "role": "user",
+            "parts": [
+                {
+                    "kind": "text",
+                    "text": "Calculate 15 multiplied by 7"
+                }
+            ]
+        }
+    }
+}

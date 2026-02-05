@@ -459,9 +459,9 @@ public class PIIMiddlewareTests
     // HELPER METHODS
     //      
 
-    private static BeforeMessageTurnContext CreateContext(IList<ChatMessage> messages)
+    private static BeforeMessageTurnContext CreateContext(List<ChatMessage> messages)
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
@@ -497,7 +497,7 @@ public class PIIMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

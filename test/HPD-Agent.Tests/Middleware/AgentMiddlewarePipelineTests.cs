@@ -510,7 +510,7 @@ public class AgentMiddlewarePipelineTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
@@ -561,7 +561,7 @@ public class AgentMiddlewarePipelineTests
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware });
 
         var mockChatClient = new MiddlewareTestHelpers.TestChatClient();
-        var agentState = AgentLoopState.Initial(
+        var agentState = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
@@ -617,7 +617,7 @@ public class AgentMiddlewarePipelineTests
         var pipeline = new AgentMiddlewarePipeline(new[] { middleware1, middleware2, middleware3 });
 
         var mockChatClient = new MiddlewareTestHelpers.TestChatClient();
-        var agentState = AgentLoopState.Initial(
+        var agentState = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

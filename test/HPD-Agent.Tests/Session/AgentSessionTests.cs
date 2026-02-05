@@ -242,7 +242,7 @@ public class AgentSessionTests : AgentTestBase
     {
         // Arrange
         var session = new AgentSession();
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(), "run-123", "conv-456", "TestAgent");
 
         // Act
@@ -264,7 +264,7 @@ public class AgentSessionTests : AgentTestBase
         var session = new AgentSession("session-123");
         session.AddMessage(UserMessage("Hello"));
         session.AddMetadata("key", "value");
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             session.Messages.ToList(), "run-123", "conv-456", "TestAgent");
 
         // Act
@@ -296,7 +296,7 @@ public class AgentSessionTests : AgentTestBase
     {
         // Arrange
         var session = new AgentSession("session-123");
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             new List<ChatMessage>(), "run-123", "conv-456", "TestAgent");
 
         // Act
@@ -312,7 +312,7 @@ public class AgentSessionTests : AgentTestBase
         // Arrange
         var original = new AgentSession("original-session");
         original.AddMessage(UserMessage("Test message"));
-        original.ExecutionState = AgentLoopState.Initial(
+        original.ExecutionState = AgentLoopState.InitialSafe(
             original.Messages.ToList(), "run-123", "conv-456", "TestAgent");
 
         var checkpoint = original.ToExecutionCheckpoint();
@@ -398,7 +398,7 @@ public class AgentSessionTests : AgentTestBase
         {
             SessionId = "session-123",
             ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.Initial(
+            ExecutionState = AgentLoopState.InitialSafe(
                 new List<ChatMessage> { UserMessage("Hello") }, "run-123", "conv-456", "TestAgent"),
             CreatedAt = DateTime.UtcNow
         };
@@ -417,7 +417,7 @@ public class AgentSessionTests : AgentTestBase
         {
             SessionId = "session-123",
             ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.Initial(
+            ExecutionState = AgentLoopState.InitialSafe(
                 new List<ChatMessage>(), "run-123", "conv-456", "TestAgent"),
             CreatedAt = DateTime.UtcNow
         };
@@ -431,7 +431,7 @@ public class AgentSessionTests : AgentTestBase
     {
         // Arrange
         var messages = new List<ChatMessage> { UserMessage("Hello"), AssistantMessage("Hi!") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Act
         var checkpoint = new ExecutionCheckpoint

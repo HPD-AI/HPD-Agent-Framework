@@ -51,7 +51,7 @@ public class AgentEventSerializerTests
             new TextDeltaEvent("text", "msg-1"),
             new ToolCallStartEvent("call-1", "TestTool", "msg-1"),
             new PermissionRequestEvent("perm-1", "Source", "TestFunc", null, "call-1", null),
-            new MessageTurnStartedEvent("turn-1", "conv-1", "Agent", DateTimeOffset.Now),
+            new MessageTurnStartedEvent("turn-1", "conv-1", "Agent"),
             new AgentTurnStartedEvent(1),
         };
 
@@ -197,13 +197,13 @@ public class AgentEventSerializerTests
     public void ToJson_MessageTurnEvents_SerializeCorrectly()
     {
         // MessageTurnStartedEvent
-        var startEvt = new MessageTurnStartedEvent("turn-1", "conv-1", "Agent", DateTimeOffset.Now);
+        var startEvt = new MessageTurnStartedEvent("turn-1", "conv-1", "Agent");
         var startJson = AgentEventSerializer.ToJson(startEvt);
         Assert.Contains("\"type\":\"MESSAGE_TURN_STARTED\"", startJson);
         Assert.Contains("\"messageTurnId\":\"turn-1\"", startJson);
 
         // MessageTurnFinishedEvent
-        var finishEvt = new MessageTurnFinishedEvent("turn-1", "conv-1", "Agent", TimeSpan.FromSeconds(5), DateTimeOffset.Now);
+        var finishEvt = new MessageTurnFinishedEvent("turn-1", "conv-1", "Agent", TimeSpan.FromSeconds(5));
         var finishJson = AgentEventSerializer.ToJson(finishEvt);
         Assert.Contains("\"type\":\"MESSAGE_TURN_FINISHED\"", finishJson);
 
@@ -358,7 +358,7 @@ public class AgentEventSerializerTests
             new TextDeltaEvent("hello", "msg-1"),
             new ToolCallStartEvent("call-1", "TestTool", "msg-1"),
             new PermissionRequestEvent("perm-1", "Source", "TestFunc", "desc", "call-1", new Dictionary<string, object?> { ["arg1"] = "value1" }),
-            new MessageTurnStartedEvent("turn-1", "conv-1", "Agent", DateTimeOffset.Now),
+            new MessageTurnStartedEvent("turn-1", "conv-1", "Agent"),
             new AgentTurnStartedEvent(1),
             new MiddlewareProgressEvent("TestMiddleware", "Processing...", 50),
         };
@@ -419,7 +419,7 @@ public class AgentEventSerializerTests
         Assert.Contains("\"consecutiveCount\":3", cbJson);
 
         // IterationStartEvent
-        var iterEvt = new IterationStartEvent("TestAgent", 1, 10, 5, 2, 3, 1, DateTimeOffset.Now);
+        var iterEvt = new IterationStartEvent("TestAgent", 1, 10, 5, 2, 3, 1);
         var iterJson = AgentEventSerializer.ToJson(iterEvt);
         Assert.Contains("\"type\":\"ITERATION_START\"", iterJson);
 

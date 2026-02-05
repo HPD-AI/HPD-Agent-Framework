@@ -17,7 +17,7 @@ public class AgentDecisionEngineTests
     public void DecideNextAction_InitialState_ReturnsCallLLM()
     {
         // Arrange: Fresh state, no previous response
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent");
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent");
         var config = AgentConfiguration.Default(maxIterations: 10);
 
         // Act: Make decision (pure function - no I/O, completes in microseconds)
@@ -32,7 +32,7 @@ public class AgentDecisionEngineTests
     {
         // Arrange: State at max iterations
         // NOTE: Max iterations is now enforced by loop condition, not decision engine
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
             .NextIteration()  // iteration = 1
             .NextIteration()  // iteration = 2
             .NextIteration(); // iteration = 3
@@ -51,7 +51,7 @@ public class AgentDecisionEngineTests
     public void DecideNextAction_AlreadyTerminated_ReturnsTerminate()
     {
         // Arrange: State that's been terminated
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
             .Terminate("Manual termination");
 
         var config = AgentConfiguration.Default();
@@ -69,7 +69,7 @@ public class AgentDecisionEngineTests
     {
         // Arrange: State already terminated by ErrorTrackingIterationMiddleware
         // NOTE: Consecutive failure checking is now handled by middleware, not the decision engine
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
             .Terminate("Maximum consecutive failures (3) exceeded");
 
         var config = AgentConfiguration.Default();
@@ -86,7 +86,7 @@ public class AgentDecisionEngineTests
     public void DecideNextAction_NoToolsInResponse_ReturnsComplete()
     {
         // Arrange: LLM returned text response with no tool calls
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
         var config = AgentConfiguration.Default();
 
         var responseMessage = new ChatMessage(ChatRole.Assistant, "Here's my answer.");
@@ -104,7 +104,7 @@ public class AgentDecisionEngineTests
     public void DecideNextAction_ToolsInResponse_ReturnsExecuteTools()
     {
         // Arrange: LLM returned a function call
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
         var config = AgentConfiguration.Default();
 
         var toolCall = new FunctionCallContent(
@@ -127,7 +127,7 @@ public class AgentDecisionEngineTests
     {
         // Arrange: State already terminated by CircuitBreakerIterationMiddleware
         // NOTE: Circuit breaker checking is now handled by middleware, not the decision engine
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent")
             .Terminate("Circuit breaker: 'get_weather' with same arguments would be called 5 times consecutively")
             .NextIteration();
 
@@ -154,7 +154,7 @@ public class AgentDecisionEngineTests
     {
         // Arrange: LLM requested a tool that doesn't exist
         var availableTools = new HashSet<string> { "get_weather" };
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
         var config = AgentConfiguration.Default(
             availableTools: availableTools,
             terminateOnUnknownCalls: true);
@@ -180,7 +180,7 @@ public class AgentDecisionEngineTests
     {
         // Arrange: LLM requested a tool that doesn't exist, but we allow pass-through (multi-agent)
         var availableTools = new HashSet<string> { "get_weather" };
-        var state = AgentLoopState.Initial(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
+        var state = AgentLoopState.InitialSafe(new List<ChatMessage>(), "test-run-id", "test-conversation-id", "TestAgent").NextIteration();
         var config = AgentConfiguration.Default(
             availableTools: availableTools,
             terminateOnUnknownCalls: false);  // Allow multi-agent handoffs

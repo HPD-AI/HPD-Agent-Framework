@@ -33,7 +33,7 @@ public class CheckpointRoundTripTests
         var permState = ContinuationPermissionStateData.WithInitialLimit(20)
             .ExtendLimit(10); // User approved continuation
 
-        var runtimeState = AgentLoopState.Initial(
+        var runtimeState = AgentLoopState.InitialSafe(
             messages: new[] { new ChatMessage(ChatRole.User, "Test message") },
             runId: "checkpoint-test-run",
             conversationId: "checkpoint-test-conv",
@@ -137,7 +137,7 @@ public class CheckpointRoundTripTests
     [Fact]
     public void EmptyMiddlewareState_RoundTrip_ReturnsNullForAllStates()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "empty-run",
             conversationId: "empty-conv",
@@ -158,7 +158,7 @@ public class CheckpointRoundTripTests
     [Fact]
     public void PartialMiddlewareState_RoundTrip_PreservesOnlySetStates()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "partial-run",
             conversationId: "partial-conv",
@@ -186,7 +186,7 @@ public class CheckpointRoundTripTests
     [Fact]
     public void RepeatedAccess_UsesCache_ReturnsSameInstance()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "cache-run",
             conversationId: "cache-conv",
@@ -222,7 +222,7 @@ public class CheckpointRoundTripTests
     public void ComplexScenario_MultipleUpdates_PreservesStateCorrectly()
     {
         // Initial state
-        var state1 = AgentLoopState.Initial(
+        var state1 = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "complex-run",
             conversationId: "complex-conv",
@@ -270,7 +270,7 @@ public class CheckpointRoundTripTests
     public async Task RealMiddlewareWorkflow_WithCheckpoint_WorksCorrectly()
     {
         // Setup: Initial state with some middleware state
-        var initialState = AgentLoopState.Initial(
+        var initialState = AgentLoopState.InitialSafe(
             messages: new[] { new ChatMessage(ChatRole.User, "Test") },
             runId: "workflow-run",
             conversationId: "workflow-conv",

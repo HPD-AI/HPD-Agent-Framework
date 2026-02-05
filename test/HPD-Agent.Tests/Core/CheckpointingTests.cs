@@ -27,7 +27,7 @@ public class CheckpointingTests : AgentTestBase
             UserMessage("Hello"),
             AssistantMessage("Hi there!")
         };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent")
             .NextIteration();
 
         // Act: Serialize to JSON
@@ -56,7 +56,7 @@ public class CheckpointingTests : AgentTestBase
             UserMessage("Test message"),
             AssistantMessage("Test response")
         };
-        var originalState = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent")
+        var originalState = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent")
             .NextIteration()
             .NextIteration();
 
@@ -108,7 +108,7 @@ public class CheckpointingTests : AgentTestBase
             UserMessage("2"),
             UserMessage("3")
         };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Act & Assert: Should not throw when message counts match
         state.ValidateConsistency(currentMessageCount: 3, allowStaleCheckpoint: false);
@@ -124,7 +124,7 @@ public class CheckpointingTests : AgentTestBase
             UserMessage("2"),
             UserMessage("3")
         };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Act & Assert: Should throw stale checkpoint exception
         var ex = Assert.Throws<CheckpointStaleException>(() =>
@@ -138,7 +138,7 @@ public class CheckpointingTests : AgentTestBase
     {
         // Arrange: State with mismatched message count
         var messages = new List<ChatMessage> { UserMessage("1") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
+        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
 
         // Act & Assert: Should not throw when allowStaleCheckpoint = true
         state.ValidateConsistency(currentMessageCount: 10, allowStaleCheckpoint: true);
@@ -156,7 +156,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -220,7 +220,7 @@ public class CheckpointingTests : AgentTestBase
         var checkpointer = new InMemorySessionStore();
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(),
             "run-123",
             "conv-456",
@@ -244,13 +244,13 @@ public class CheckpointingTests : AgentTestBase
 
         var thread1 = new AgentSession();
         await thread1.AddMessageAsync(UserMessage("Hello"));
-        thread1.ExecutionState = AgentLoopState.Initial(
+        thread1.ExecutionState = AgentLoopState.InitialSafe(
             await thread1.GetMessagesAsync(), "run-1", "conv-1", "Agent1");
         await checkpointer.SaveSessionAsync(thread1);
 
         var thread2 = new AgentSession();
         await thread2.AddMessageAsync(UserMessage("World"));
-        thread2.ExecutionState = AgentLoopState.Initial(
+        thread2.ExecutionState = AgentLoopState.InitialSafe(
             await thread2.GetMessagesAsync(), "run-2", "conv-2", "Agent2");
         await checkpointer.SaveSessionAsync(thread2);
 
@@ -275,7 +275,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state1 = AgentLoopState.Initial(
+        var state1 = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent");
         thread.ExecutionState = state1;
 
@@ -331,7 +331,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state1 = AgentLoopState.Initial(
+        var state1 = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent");
         thread.ExecutionState = state1;
 
@@ -375,7 +375,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent");
 
         for (int i = 0; i < 5; i++)
@@ -413,7 +413,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent");
 
         for (int i = 0; i < 10; i++)
@@ -449,7 +449,7 @@ public class CheckpointingTests : AgentTestBase
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "TestAgent");
 
         // Save 3 checkpoints
@@ -543,7 +543,7 @@ public class CheckpointingTests : AgentTestBase
 
         var oldThread = new AgentSession();
         await oldThread.AddMessageAsync(UserMessage("Old"));
-        oldThread.ExecutionState = AgentLoopState.Initial(
+        oldThread.ExecutionState = AgentLoopState.InitialSafe(
             await oldThread.GetMessagesAsync(), "run-old", "conv-old", "Agent");
         await checkpointer.SaveSessionAsync(oldThread);
 
@@ -554,7 +554,7 @@ public class CheckpointingTests : AgentTestBase
 
         var newThread = new AgentSession();
         await newThread.AddMessageAsync(UserMessage("New"));
-        newThread.ExecutionState = AgentLoopState.Initial(
+        newThread.ExecutionState = AgentLoopState.InitialSafe(
             await newThread.GetMessagesAsync(), "run-new", "conv-new", "Agent");
         await checkpointer.SaveSessionAsync(newThread);
 
@@ -576,7 +576,7 @@ public class CheckpointingTests : AgentTestBase
         var checkpointer = new InMemorySessionStore();
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
-        thread.ExecutionState = AgentLoopState.Initial(
+        thread.ExecutionState = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "Agent");
         await checkpointer.SaveSessionAsync(thread);
 
@@ -600,7 +600,7 @@ public class CheckpointingTests : AgentTestBase
         var checkpointer = new InMemorySessionStore();
         var thread = new AgentSession();
         await thread.AddMessageAsync(UserMessage("Hello"));
-        thread.ExecutionState = AgentLoopState.Initial(
+        thread.ExecutionState = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-123", "conv-456", "Agent");
         await checkpointer.SaveSessionAsync(thread);
 
@@ -906,7 +906,7 @@ public class CheckpointingTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Message 1"));
         await thread.AddMessageAsync(AssistantMessage("Response 1"));
 
-        var state1 = AgentLoopState.Initial(
+        var state1 = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-1", "conv-1", "TestAgent");
         thread.ExecutionState = state1;
         var checkpoint1Id = Guid.NewGuid().ToString();
@@ -957,7 +957,7 @@ public class CheckpointingTests : AgentTestBase
         await thread.AddMessageAsync(UserMessage("Hello"));
         await thread.AddMessageAsync(AssistantMessage("Hi!"));
 
-        var state1 = AgentLoopState.Initial(
+        var state1 = AgentLoopState.InitialSafe(
             await thread.GetMessagesAsync(), "run-1", "conv-1", "TestAgent");
         thread.ExecutionState = state1;
         var checkpoint1Id = Guid.NewGuid().ToString();

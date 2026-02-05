@@ -117,7 +117,7 @@ public class SessionStoreTests : AgentTestBase
         var store = new InMemorySessionStore();
         var session = new AgentSession("session-1");
         session.AddMessage(UserMessage("Hello"));
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             session.Messages.ToList(), "run-1", "session-1", "TestAgent");
 
         var checkpoint = session.ToExecutionCheckpoint("checkpoint-1");
@@ -148,7 +148,7 @@ public class SessionStoreTests : AgentTestBase
 
         // Save first checkpoint
         session.AddMessage(UserMessage("Message 1"));
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             session.Messages.ToList(), "run-1", "session-1", "TestAgent");
         var checkpoint1 = session.ToExecutionCheckpoint("checkpoint-1");
         await store.SaveCheckpointAsync(checkpoint1, new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0, MessageIndex = 1 });
@@ -174,7 +174,7 @@ public class SessionStoreTests : AgentTestBase
         // Arrange
         var store = new InMemorySessionStore();
         var session = new AgentSession("session-1");
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             new List<ChatMessage>(), "run-1", "session-1", "TestAgent");
 
         await store.SaveCheckpointAsync(
@@ -200,7 +200,7 @@ public class SessionStoreTests : AgentTestBase
         var session = new AgentSession("session-1");
 
         session.AddMessage(UserMessage("Message 1"));
-        session.ExecutionState = AgentLoopState.Initial(
+        session.ExecutionState = AgentLoopState.InitialSafe(
             session.Messages.ToList(), "run-1", "session-1", "TestAgent");
         await store.SaveCheckpointAsync(
             session.ToExecutionCheckpoint("cp-1"),
@@ -253,7 +253,7 @@ public class SessionStoreTests : AgentTestBase
         var session = new AgentSession("prune-session");
 
         // Create 5 execution checkpoints
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(), "run-1", "conv-1", "TestAgent");
 
         for (int i = 0; i < 5; i++)
@@ -490,7 +490,7 @@ public class SessionStoreTests : AgentTestBase
         var session = new AgentSession(sessionId);
         session.AddMessage(UserMessage("Test message"));
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             session.Messages.ToList(),
             "run-123",
             sessionId,

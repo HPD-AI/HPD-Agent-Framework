@@ -156,7 +156,7 @@ public class AgentContextTests
 
     private static AgentLoopState CreateTestState(int iteration)
     {
-        return AgentLoopState.Initial(
+        return AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",

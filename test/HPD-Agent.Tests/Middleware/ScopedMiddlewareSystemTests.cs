@@ -392,7 +392,7 @@ public class CollapsedMiddlewareSystemTests
             (args, ct) => Task.FromResult<object?>("test"),
             options);
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conv",
@@ -417,7 +417,7 @@ public class CollapsedMiddlewareSystemTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

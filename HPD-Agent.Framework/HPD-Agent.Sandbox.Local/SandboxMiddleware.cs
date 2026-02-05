@@ -25,7 +25,7 @@ namespace HPD.Sandbox.Local;
 /// <list type="bullet">
 /// <item><c>BeforeMessageTurnAsync</c> - Lazy initialization of sandbox infrastructure</item>
 /// <item><c>BeforeFunctionAsync</c> - Validate function is allowed to execute</item>
-/// <item><c>ExecuteFunctionAsync</c> - Wrap command execution with sandbox</item>
+/// <item><c>WrapFunctionCallAsync</c> - Wrap command execution with sandbox</item>
 /// <item><c>AfterFunctionAsync</c> - Report violations, cleanup</item>
 /// </list>
 ///
@@ -95,7 +95,7 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
     /// <summary>
     /// Lazy initialization of sandbox infrastructure.
     /// </summary>
-    public async Task BeforeMessageTurnAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public async Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
     {
         if (_initialized) return;
 
@@ -168,7 +168,7 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
     /// <summary>
     /// Validates function is allowed to execute.
     /// </summary>
-    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
     {
         if (context.Function == null) return Task.CompletedTask;
 
@@ -176,8 +176,8 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
         var state = GetSandboxState(context);
         if (state.BlockedFunctions.Contains(context.Function.Name))
         {
-            context.BlockFunctionExecution = true;
-            context.FunctionResult = "Function blocked due to sandbox policy violation";
+            context.BlockExecution = true;
+            context.OverrideResult = "Function blocked due to sandbox policy violation";
             context.TryEmit(new SandboxBlockedEvent(
                 context.Function.Name,
                 "Function blocked due to previous sandbox violations"));
@@ -189,49 +189,53 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
     /// <summary>
     /// Wraps function execution with sandbox restrictions.
     /// </summary>
-    public async ValueTask<object?> ExecuteFunctionAsync(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> next,
+    public async Task<object?> WrapFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler,
         CancellationToken cancellationToken)
     {
-        if (context.Function == null || !ShouldSandboxFunction(context.Function))
+        if (!ShouldSandboxFunction(request.Function))
         {
-            return await next();
+            return await handler(request);
         }
 
         if (!_initialized || _platformSandbox == null)
         {
-            return await HandleUninitializedExecution(context, next);
+            return await HandleUninitializedExecution(request, handler);
         }
 
         // Extract command from arguments
-        var command = ExtractCommand(context.FunctionArguments);
+        var command = ExtractCommand(request.Arguments);
         if (command == null)
         {
             // No command to sandbox, pass through
-            return await next();
+            return await handler(request);
         }
 
         // Wrap command with sandbox
         var wrappedCommand = await _platformSandbox.WrapCommandAsync(command, cancellationToken);
 
-        // Store wrapped command for function to use
-        context.Properties["SandboxedCommand"] = wrappedCommand;
-        context.Properties["OriginalCommand"] = command;
-
         _logger?.LogDebug("Sandboxing command: {Original} -> {Wrapped}",
             command, wrappedCommand);
 
-        // Execute with sandbox
-        var result = await next();
+        // Replace command argument with sandboxed version
+        var modifiedArgs = new Dictionary<string, object?>(request.Arguments);
+        var commandKey = FindCommandKey(request.Arguments);
+        if (commandKey != null)
+        {
+            modifiedArgs[commandKey] = wrappedCommand;
+        }
 
-        return result;
+        var sandboxedRequest = request.Override(arguments: modifiedArgs);
+
+        // Execute with sandbox
+        return await handler(sandboxedRequest);
     }
 
     /// <summary>
     /// Reports violations and updates state after function execution.
     /// </summary>
-    public async Task AfterFunctionAsync(AgentMiddlewareContext context, CancellationToken cancellationToken)
+    public async Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
     {
         if (_platformSandbox?.Violations == null) return;
         if (context.Function == null) return;
@@ -265,25 +269,29 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
     }
 
     // State management helpers
-    // Uses the public MiddlewareState.GetState/SetState API for proper state persistence
 
     private const string SandboxStateKey = "HPD.Sandbox.Local.State.SandboxStateData";
 
-    private static SandboxStateData GetSandboxState(AgentMiddlewareContext context)
+    private static SandboxStateData GetSandboxState(HookContext context)
     {
-        return context.State.MiddlewareState.GetState<SandboxStateData>(SandboxStateKey)
+        return context.Analyze(s =>
+            s.MiddlewareState.GetState<SandboxStateData>(SandboxStateKey))
             ?? new SandboxStateData();
     }
 
     private static void UpdateSandboxState(
-        AgentMiddlewareContext context,
+        HookContext context,
         Func<SandboxStateData, SandboxStateData> transform)
     {
-        var current = GetSandboxState(context);
-        var updated = transform(current);
-        context.UpdateState(s => s with
+        context.UpdateState(s =>
         {
-            MiddlewareState = s.MiddlewareState.SetState(SandboxStateKey, updated)
+            var current = s.MiddlewareState.GetState<SandboxStateData>(SandboxStateKey)
+                ?? new SandboxStateData();
+            var updated = transform(current);
+            return s with
+            {
+                MiddlewareState = s.MiddlewareState.SetState(SandboxStateKey, updated)
+            };
         });
     }
 
@@ -328,28 +336,33 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
         return name.Equals(pattern, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? ExtractCommand(IDictionary<string, object?>? arguments)
+    private static string? FindCommandKey(IReadOnlyDictionary<string, object?> arguments)
     {
-        if (arguments == null) return null;
-
-        // Try common parameter names
         var commandKeys = new[] { "command", "cmd", "shell", "script", "bash" };
         foreach (var key in commandKeys)
         {
-            if (arguments.TryGetValue(key, out var value))
-            {
-                if (value is string cmd)
-                    return cmd;
-
-                if (value is JsonElement elem && elem.ValueKind == JsonValueKind.String)
-                    return elem.GetString();
-            }
+            if (arguments.ContainsKey(key))
+                return key;
         }
+        return null;
+    }
+
+    private static string? ExtractCommand(IReadOnlyDictionary<string, object?> arguments)
+    {
+        var key = FindCommandKey(arguments);
+        if (key == null) return null;
+
+        var value = arguments[key];
+        if (value is string cmd)
+            return cmd;
+
+        if (value is JsonElement elem && elem.ValueKind == JsonValueKind.String)
+            return elem.GetString();
 
         return null;
     }
 
-    private void HandleInitializationFailure(AgentMiddlewareContext context, string message)
+    private void HandleInitializationFailure(HookContext context, string message)
     {
         switch (_config.OnInitializationFailure)
         {
@@ -369,19 +382,17 @@ public sealed class SandboxMiddleware : IAgentMiddleware, IAsyncDisposable
         }
     }
 
-    private async ValueTask<object?> HandleUninitializedExecution(
-        AgentMiddlewareContext context,
-        Func<ValueTask<object?>> next)
+    private async Task<object?> HandleUninitializedExecution(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler)
     {
         switch (_config.OnInitializationFailure)
         {
             case SandboxFailureBehavior.Block:
-                context.BlockFunctionExecution = true;
-                context.FunctionResult = "Sandbox not initialized - function blocked";
-                return null;
+                return "Sandbox not initialized - function blocked";
 
             default:
-                return await next();
+                return await handler(request);
         }
     }
 

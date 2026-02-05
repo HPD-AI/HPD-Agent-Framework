@@ -84,25 +84,25 @@ public enum ErrorSource
 /// }
 /// </code>
 /// </remarks>
-public sealed record ErrorContext : HookContext
+public sealed class ErrorContext : HookContext
 {
     /// <summary>
     /// The exception that occurred.
     ///   Always available (never NULL)
     /// </summary>
-    public Exception Error { get; init; }
+    public Exception Error { get; }
 
     /// <summary>
     /// Where the error originated.
     ///   Always available
     /// </summary>
-    public ErrorSource Source { get; init; }
+    public ErrorSource Source { get; }
 
     /// <summary>
     /// Current iteration number (if error during iteration).
     ///   Always available
     /// </summary>
-    public int Iteration { get; init; }
+    public int Iteration { get; }
 
     //
     // HELPERS

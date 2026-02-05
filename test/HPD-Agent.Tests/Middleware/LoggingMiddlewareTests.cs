@@ -533,7 +533,7 @@ public class LoggingMiddlewareTests
 
     private static AgentContext CreateAgentContext()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

@@ -200,7 +200,7 @@ public class FunctionTimeoutMiddlewareTests
         var middleware = new FunctionTimeoutMiddleware(timeout);
 
         // Create request with explicitly null function (not using helper default)
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "test-run",
             "test-conv",
@@ -360,7 +360,7 @@ public class FunctionTimeoutMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

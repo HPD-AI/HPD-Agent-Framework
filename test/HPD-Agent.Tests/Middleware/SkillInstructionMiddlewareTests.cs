@@ -259,7 +259,7 @@ public class SkillInstructionMiddlewareTests
             name: "DummyFunction",
             description: "Dummy");
 
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: new List<ChatMessage>(),
             runId: "test-run-id",
             conversationId: "test-conv-id",
@@ -292,7 +292,7 @@ public class SkillInstructionMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

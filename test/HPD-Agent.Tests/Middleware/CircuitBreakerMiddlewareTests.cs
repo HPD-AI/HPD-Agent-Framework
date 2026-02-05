@@ -225,7 +225,7 @@ public class CircuitBreakerMiddlewareTests
 
     private static AgentLoopState CreateEmptyState()
     {
-        return AgentLoopState.Initial(
+        return AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
@@ -279,7 +279,7 @@ public class CircuitBreakerMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",

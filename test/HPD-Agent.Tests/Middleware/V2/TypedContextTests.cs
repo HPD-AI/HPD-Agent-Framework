@@ -195,7 +195,7 @@ public class TypedContextTests
 
     private static AgentContext CreateTestContext()
     {
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "run123",
             "conv123",

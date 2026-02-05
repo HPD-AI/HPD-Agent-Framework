@@ -52,13 +52,14 @@ public class LayeredSuspensionTests
             }
         });
 
-        // Wait a bit for the approval request to be emitted
-        // Increased delay to 500ms for .NET 9 runtime timing variations
-        await Task.Delay(500);
-
-        // Get the emitted event
-        var events = coordinator.EmittedEvents.ToList();
-        var requestEvent = events.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+        // Poll for the approval request event with retry
+        NodeApprovalRequestEvent? requestEvent = null;
+        for (int i = 0; i < 50; i++)
+        {
+            await Task.Delay(100);
+            requestEvent = coordinator.EmittedEvents.OfType<NodeApprovalRequestEvent>().FirstOrDefault();
+            if (requestEvent != null) break;
+        }
         requestEvent.Should().NotBeNull("should emit approval request");
 
         // Send approval response

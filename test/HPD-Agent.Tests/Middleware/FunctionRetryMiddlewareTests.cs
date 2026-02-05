@@ -723,7 +723,7 @@ public class FunctionRetryMiddlewareTests
 
     private static AgentContext CreateAgentContext(AgentLoopState? state = null)
     {
-        var agentState = state ?? AgentLoopState.Initial(
+        var agentState = state ?? AgentLoopState.InitialSafe(
             messages: Array.Empty<ChatMessage>(),
             runId: "test-run",
             conversationId: "test-conversation",
@@ -764,7 +764,7 @@ public class FunctionRetryMiddlewareTests
         client ??= new FakeChatClient();
         var messages = new List<ChatMessage> { new ChatMessage(ChatRole.User, "Test") };
         var options = new ChatOptions();
-        var state = AgentLoopState.Initial(
+        var state = AgentLoopState.InitialSafe(
             messages: messages,
             runId: "test-run",
             conversationId: "test-conversation",

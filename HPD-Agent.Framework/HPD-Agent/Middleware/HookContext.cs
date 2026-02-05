@@ -22,12 +22,12 @@ namespace HPD.Agent.Middleware;
 /// <item>  Easier testing - mock only the properties that matter for each hook</item>
 /// </list>
 /// </remarks>
-public abstract record HookContext
+public abstract class HookContext
 {
     /// <summary>
     /// The underlying agent context (shared across all hooks).
     /// </summary>
-    internal AgentContext Base { get; init; }
+    internal AgentContext Base { get; }
 
     //
     // ALWAYS AVAILABLE (forwarded for convenience)

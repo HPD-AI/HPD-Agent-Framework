@@ -376,7 +376,7 @@ public class ContainerInstructionLifecycleStressTests
         };
         var runOptions = new AgentRunOptions();
 
-        var loopState = AgentLoopState.Initial(
+        var loopState = AgentLoopState.InitialSafe(
             messages: messages,
             runId: "test-run-id",
             conversationId: "test-conversation",
@@ -402,7 +402,7 @@ public class ContainerInstructionLifecycleStressTests
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(ContainerMiddlewareState state)
     {
         var messages = new List<ChatMessage>();
-        var loopState = AgentLoopState.Initial(
+        var loopState = AgentLoopState.InitialSafe(
             messages: messages,
             runId: "test-run-id",
             conversationId: "test-conversation",

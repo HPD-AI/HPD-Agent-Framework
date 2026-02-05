@@ -27,7 +27,7 @@ public static class MiddlewareTestHelpers
         AgentSession? session = null,
         CancellationToken cancellationToken = default)
     {
-        state ??= AgentLoopState.Initial(
+        state ??= AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "test-run",
             conversationId ?? "test-conv",
@@ -202,7 +202,7 @@ public static class MiddlewareTestHelpers
         AgentLoopState? state = null,
         int iteration = 0)
     {
-        state ??= AgentLoopState.Initial(
+        state ??= AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "test-run",
             "test-conv",
@@ -227,7 +227,7 @@ public static class MiddlewareTestHelpers
         IReadOnlyDictionary<string, object?>? arguments = null,
         AgentLoopState? state = null)
     {
-        state ??= AgentLoopState.Initial(
+        state ??= AgentLoopState.InitialSafe(
             new List<ChatMessage>(),
             "test-run",
             "test-conv",
