@@ -175,29 +175,11 @@ public class LoggingEventObserver : IAgentEventObserver
                             e.SessionId, e.Iteration, e.MessageCount, e.Duration?.TotalMilliseconds ?? 0);
                         break;
 
-                    case CheckpointOperation.PendingWritesSaved:
+                    case CheckpointOperation.Cleared:
                         if (_logger.IsEnabled(LogLevel.Debug))
                         {
                             _logger.LogDebug(
-                                "Pending writes saved for thread '{SessionId}': {Count} writes",
-                                e.SessionId, e.WriteCount);
-                        }
-                        break;
-
-                    case CheckpointOperation.PendingWritesLoaded:
-                        if (_logger.IsEnabled(LogLevel.Debug))
-                        {
-                            _logger.LogDebug(
-                                "Pending writes loaded for thread '{SessionId}': {Count} writes",
-                                e.SessionId, e.WriteCount);
-                        }
-                        break;
-
-                    case CheckpointOperation.PendingWritesDeleted:
-                        if (_logger.IsEnabled(LogLevel.Debug))
-                        {
-                            _logger.LogDebug(
-                                "Pending writes deleted for thread '{SessionId}'",
+                                "Uncommitted turn cleared for thread '{SessionId}'",
                                 e.SessionId);
                         }
                         break;

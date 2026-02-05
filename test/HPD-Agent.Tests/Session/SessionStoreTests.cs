@@ -1,7 +1,6 @@
 using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
-using HPD.Agent;
 
 using HPD.Agent.Tests.Infrastructure;
 
@@ -9,7 +8,7 @@ namespace HPD.Agent.Tests.Session;
 
 /// <summary>
 /// Tests for ISessionStore implementations (InMemorySessionStore, JsonSessionStore).
-/// Covers CRUD operations, checkpoint history, pending writes, and cleanup.
+/// Covers CRUD operations, uncommitted turns, and cleanup.
 /// </summary>
 public class SessionStoreTests : AgentTestBase
 {
@@ -25,7 +24,6 @@ public class SessionStoreTests : AgentTestBase
         var session = new AgentSession("test-session-1");
         session.AddMessage(UserMessage("Hello"));
         session.AddMessage(AssistantMessage("Hi there!"));
-        // Note: SaveSessionAsync saves snapshots (no ExecutionState required)
 
         // Act
         await store.SaveSessionAsync(session);
@@ -34,7 +32,6 @@ public class SessionStoreTests : AgentTestBase
         // Assert
         Assert.NotNull(loaded);
         Assert.Equal("test-session-1", loaded.Id);
-        Assert.Null(loaded.ExecutionState); // Snapshots don't include ExecutionState
         Assert.Equal(2, loaded.MessageCount);
     }
 
@@ -56,7 +53,7 @@ public class SessionStoreTests : AgentTestBase
     {
         // Arrange
         var store = new InMemorySessionStore();
-        var session = CreateSessionWithState("session-to-delete");
+        var session = CreateSessionWithMessages("session-to-delete");
         await store.SaveSessionAsync(session);
 
         // Act
@@ -72,9 +69,9 @@ public class SessionStoreTests : AgentTestBase
     {
         // Arrange
         var store = new InMemorySessionStore();
-        await store.SaveSessionAsync(CreateSessionWithState("session-1"));
-        await store.SaveSessionAsync(CreateSessionWithState("session-2"));
-        await store.SaveSessionAsync(CreateSessionWithState("session-3"));
+        await store.SaveSessionAsync(CreateSessionWithMessages("session-1"));
+        await store.SaveSessionAsync(CreateSessionWithMessages("session-2"));
+        await store.SaveSessionAsync(CreateSessionWithMessages("session-3"));
 
         // Act
         var ids = await store.ListSessionIdsAsync();
@@ -93,286 +90,55 @@ public class SessionStoreTests : AgentTestBase
         var store = new InMemorySessionStore();
         var session = new AgentSession("empty-session");
         session.AddMessage(UserMessage("Hello"));
-        // Note: No ExecutionState set - this is the normal case after a turn completes
 
         // Act
         await store.SaveSessionAsync(session);
         var loaded = await store.LoadSessionAsync("empty-session");
 
         // Assert
-        Assert.NotNull(loaded); // Should be saved as snapshot
+        Assert.NotNull(loaded);
         Assert.Equal("empty-session", loaded.Id);
-        Assert.Null(loaded.ExecutionState); // No ExecutionState in snapshots
-        Assert.Equal(1, loaded.MessageCount); // Messages are preserved
+        Assert.Equal(1, loaded.MessageCount);
     }
 
-    //──────────────────────────────────────────────────────────────────
-    // INMEMORY SESSION STORE - EXECUTION CHECKPOINTS (NEW API)
-    //──────────────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task InMemoryStore_SaveCheckpointAsync_SavesExecutionCheckpoint()
+    public async Task InMemoryStore_SaveOverwrites_PreviousSnapshot()
     {
         // Arrange
         var store = new InMemorySessionStore();
-        var session = new AgentSession("session-1");
+        var session = new AgentSession("overwrite-session");
+        session.AddMessage(UserMessage("Message 1"));
+        await store.SaveSessionAsync(session);
+
+        // Update with new message
+        session.AddMessage(AssistantMessage("Response 1"));
+        await store.SaveSessionAsync(session);
+
+        // Act
+        var loaded = await store.LoadSessionAsync("overwrite-session");
+
+        // Assert: Should have latest state with 2 messages
+        Assert.NotNull(loaded);
+        Assert.Equal(2, loaded.MessageCount);
+    }
+
+    //──────────────────────────────────────────────────────────────────
+    // INMEMORY SESSION STORE - BACKWARD COMPAT CONSTRUCTOR
+    //──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task InMemoryStore_BackwardCompatConstructor_Works()
+    {
+        // The old constructor with enableHistory/enablePendingWrites still compiles
+        var store = new InMemorySessionStore(enableHistory: true, enablePendingWrites: true);
+        var session = new AgentSession("compat-session");
         session.AddMessage(UserMessage("Hello"));
-        session.ExecutionState = AgentLoopState.Initial(
-            session.Messages.ToList(), "run-1", "session-1", "TestAgent");
 
-        var checkpoint = session.ToExecutionCheckpoint("checkpoint-1");
-        var metadata = new CheckpointMetadata
-        {
-            Source = CheckpointSource.Loop,
-            Step = 0,
-            MessageIndex = 1
-        };
+        await store.SaveSessionAsync(session);
+        var loaded = await store.LoadSessionAsync("compat-session");
 
-        // Act
-        await store.SaveCheckpointAsync(checkpoint, metadata);
-        var loaded = await store.LoadCheckpointAsync("session-1");
-
-        // Assert
         Assert.NotNull(loaded);
-        Assert.Equal("session-1", loaded.SessionId);
-        Assert.Equal("checkpoint-1", loaded.ExecutionCheckpointId);
-        Assert.Single(loaded.ExecutionState.CurrentMessages);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_LoadCheckpointAsync_ReturnsLatest()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var session = new AgentSession("session-1");
-
-        // Save first checkpoint
-        session.AddMessage(UserMessage("Message 1"));
-        session.ExecutionState = AgentLoopState.Initial(
-            session.Messages.ToList(), "run-1", "session-1", "TestAgent");
-        var checkpoint1 = session.ToExecutionCheckpoint("checkpoint-1");
-        await store.SaveCheckpointAsync(checkpoint1, new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0, MessageIndex = 1 });
-
-        // Save second checkpoint
-        session.AddMessage(AssistantMessage("Response 1"));
-        session.ExecutionState = session.ExecutionState.WithMessages(session.Messages.ToList());
-        var checkpoint2 = session.ToExecutionCheckpoint("checkpoint-2");
-        await store.SaveCheckpointAsync(checkpoint2, new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1, MessageIndex = 2 });
-
-        // Act
-        var loaded = await store.LoadCheckpointAsync("session-1");
-
-        // Assert: Should return latest (checkpoint-2)
-        Assert.NotNull(loaded);
-        Assert.Equal("checkpoint-2", loaded.ExecutionCheckpointId);
-        Assert.Equal(2, loaded.ExecutionState.CurrentMessages.Count);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_DeleteAllCheckpointsAsync_RemovesAllCheckpoints()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var session = new AgentSession("session-1");
-        session.ExecutionState = AgentLoopState.Initial(
-            new List<ChatMessage>(), "run-1", "session-1", "TestAgent");
-
-        await store.SaveCheckpointAsync(
-            session.ToExecutionCheckpoint("cp-1"),
-            new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0, MessageIndex = 0 });
-        await store.SaveCheckpointAsync(
-            session.ToExecutionCheckpoint("cp-2"),
-            new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1, MessageIndex = 0 });
-
-        // Act
-        await store.DeleteAllCheckpointsAsync("session-1");
-        var loaded = await store.LoadCheckpointAsync("session-1");
-
-        // Assert
-        Assert.Null(loaded);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_LoadCheckpointAtAsync_ReturnsSpecificCheckpoint()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var session = new AgentSession("session-1");
-
-        session.AddMessage(UserMessage("Message 1"));
-        session.ExecutionState = AgentLoopState.Initial(
-            session.Messages.ToList(), "run-1", "session-1", "TestAgent");
-        await store.SaveCheckpointAsync(
-            session.ToExecutionCheckpoint("cp-1"),
-            new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0, MessageIndex = 1 });
-
-        session.AddMessage(AssistantMessage("Response 1"));
-        session.ExecutionState = session.ExecutionState.WithMessages(session.Messages.ToList());
-        await store.SaveCheckpointAsync(
-            session.ToExecutionCheckpoint("cp-2"),
-            new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1, MessageIndex = 2 });
-
-        // Act: Load the first checkpoint specifically
-        var loaded = await store.LoadCheckpointAtAsync("session-1", "cp-1");
-
-        // Assert
-        Assert.NotNull(loaded);
-        Assert.Equal("cp-1", loaded.ExecutionCheckpointId);
-        Assert.Single(loaded.ExecutionState.CurrentMessages);
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // INMEMORY SESSION STORE - HISTORY MODE
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void InMemoryStore_WithHistory_SupportsHistory()
-    {
-        // Arrange & Act
-        var store = new InMemorySessionStore(enableHistory: true);
-
-        // Assert
-        Assert.True(store.SupportsHistory);
-    }
-
-    [Fact]
-    public void InMemoryStore_WithoutHistory_DoesNotSupportHistory()
-    {
-        // Arrange & Act
-        var store = new InMemorySessionStore(enableHistory: false);
-
-        // Assert
-        Assert.False(store.SupportsHistory);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_History_PruneCheckpoints_KeepsLatestN()
-    {
-        // Arrange
-        var store = new InMemorySessionStore(enableHistory: true);
-        var session = new AgentSession("prune-session");
-
-        // Create 5 execution checkpoints
-        var state = AgentLoopState.Initial(
-            new List<ChatMessage>(), "run-1", "conv-1", "TestAgent");
-
-        for (int i = 0; i < 5; i++)
-        {
-            session.AddMessage(UserMessage($"Message {i}"));
-            state = state.NextIteration().WithMessages(session.Messages.ToList());
-            session.ExecutionState = state;
-
-            var checkpoint = session.ToExecutionCheckpoint($"cp-{i}");
-            await store.SaveCheckpointAsync(checkpoint,
-                new CheckpointMetadata { Source = CheckpointSource.Loop, Step = i, MessageIndex = i + 1 });
-        }
-
-        // Act: Prune to keep 3
-        await store.PruneCheckpointsAsync("prune-session", keepLatest: 3);
-
-        // Assert
-        var manifest = await store.GetCheckpointManifestAsync("prune-session");
-        Assert.Equal(3, manifest.Count);
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // INMEMORY SESSION STORE - PENDING WRITES
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void InMemoryStore_WithPendingWrites_SupportsPendingWrites()
-    {
-        // Arrange & Act
-        var store = new InMemorySessionStore(enablePendingWrites: true);
-
-        // Assert
-        Assert.True(store.SupportsPendingWrites);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_PendingWrites_SaveAndLoad_RoundTrip()
-    {
-        // Arrange
-        var store = new InMemorySessionStore(enablePendingWrites: true);
-        var writes = new List<PendingWrite>
-        {
-            new PendingWrite
-            {
-                CallId = "call-1",
-                FunctionName = "GetWeather",
-                ResultJson = "{\"temp\": 72}",
-                CompletedAt = DateTime.UtcNow,
-                Iteration = 1,
-                SessionId = "session-1"
-            }
-        };
-
-        // Act
-        await store.SavePendingWritesAsync("session-1", "checkpoint-1", writes);
-        var loaded = await store.LoadPendingWritesAsync("session-1", "checkpoint-1");
-
-        // Assert
-        Assert.Single(loaded);
-        Assert.Equal("call-1", loaded[0].CallId);
-        Assert.Equal("GetWeather", loaded[0].FunctionName);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_PendingWrites_Delete_RemovesWrites()
-    {
-        // Arrange
-        var store = new InMemorySessionStore(enablePendingWrites: true);
-        var writes = new List<PendingWrite>
-        {
-            new PendingWrite
-            {
-                CallId = "call-1",
-                FunctionName = "Test",
-                ResultJson = "{}",
-                CompletedAt = DateTime.UtcNow,
-                Iteration = 1,
-                SessionId = "session-1"
-            }
-        };
-        await store.SavePendingWritesAsync("session-1", "checkpoint-1", writes);
-
-        // Act
-        await store.DeletePendingWritesAsync("session-1", "checkpoint-1");
-        var loaded = await store.LoadPendingWritesAsync("session-1", "checkpoint-1");
-
-        // Assert
-        Assert.Empty(loaded);
-    }
-
-    [Fact]
-    public async Task InMemoryStore_PendingWrites_DifferentCheckpoints_AreIsolated()
-    {
-        // Arrange
-        var store = new InMemorySessionStore(enablePendingWrites: true);
-
-        var writes1 = new List<PendingWrite>
-        {
-            new PendingWrite { CallId = "call-1", FunctionName = "Func1", ResultJson = "{}",
-                CompletedAt = DateTime.UtcNow, Iteration = 1, SessionId = "session-1" }
-        };
-        var writes2 = new List<PendingWrite>
-        {
-            new PendingWrite { CallId = "call-2", FunctionName = "Func2", ResultJson = "{}",
-                CompletedAt = DateTime.UtcNow, Iteration = 2, SessionId = "session-1" }
-        };
-
-        // Act
-        await store.SavePendingWritesAsync("session-1", "checkpoint-1", writes1);
-        await store.SavePendingWritesAsync("session-1", "checkpoint-2", writes2);
-
-        var loaded1 = await store.LoadPendingWritesAsync("session-1", "checkpoint-1");
-        var loaded2 = await store.LoadPendingWritesAsync("session-1", "checkpoint-2");
-
-        // Assert
-        Assert.Single(loaded1);
-        Assert.Equal("call-1", loaded1[0].CallId);
-        Assert.Single(loaded2);
-        Assert.Equal("call-2", loaded2[0].CallId);
+        Assert.Equal(1, loaded.MessageCount);
     }
 
     //──────────────────────────────────────────────────────────────────
@@ -380,34 +146,11 @@ public class SessionStoreTests : AgentTestBase
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task InMemoryStore_DeleteOlderThan_RemovesOldCheckpoints()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var oldSession = CreateSessionWithState("old-session");
-        await store.SaveSessionAsync(oldSession);
-
-        await Task.Delay(50);
-        var cutoff = DateTime.UtcNow;
-        await Task.Delay(50);
-
-        var newSession = CreateSessionWithState("new-session");
-        await store.SaveSessionAsync(newSession);
-
-        // Act
-        await store.DeleteOlderThanAsync(cutoff);
-
-        // Assert
-        Assert.Null(await store.LoadSessionAsync("old-session"));
-        Assert.NotNull(await store.LoadSessionAsync("new-session"));
-    }
-
-    [Fact]
     public async Task InMemoryStore_DeleteInactiveSessions_DryRun_DoesNotDelete()
     {
         // Arrange
         var store = new InMemorySessionStore();
-        var session = CreateSessionWithState("inactive-session");
+        var session = CreateSessionWithMessages("inactive-session");
         await store.SaveSessionAsync(session);
         await Task.Delay(50);
 
@@ -425,7 +168,7 @@ public class SessionStoreTests : AgentTestBase
     {
         // Arrange
         var store = new InMemorySessionStore();
-        var session = CreateSessionWithState("inactive-session");
+        var session = CreateSessionWithMessages("inactive-session");
         await store.SaveSessionAsync(session);
         await Task.Delay(50);
 
@@ -438,65 +181,49 @@ public class SessionStoreTests : AgentTestBase
         Assert.Null(await store.LoadSessionAsync("inactive-session"));
     }
 
-    //──────────────────────────────────────────────────────────────────
-    // INMEMORY SESSION STORE - NO HISTORY MODE
-    //──────────────────────────────────────────────────────────────────
-
     [Fact]
-    public async Task InMemoryStore_NoHistory_OverwritesPreviousState()
+    public async Task InMemoryStore_DeleteSession_AlsoRemovesUncommittedTurn()
     {
         // Arrange
-        var store = new InMemorySessionStore(enableHistory: false);
-        var session = new AgentSession("no-history-session");
-        session.AddMessage(UserMessage("Message 1"));
-
-        // SaveSessionAsync saves snapshots (no ExecutionState required)
+        var store = new InMemorySessionStore();
+        var session = CreateSessionWithMessages("session-with-turn");
         await store.SaveSessionAsync(session);
 
-        // Update with new message
-        session.AddMessage(AssistantMessage("Response 1"));
-        await store.SaveSessionAsync(session);
+        var turn = CreateUncommittedTurn("session-with-turn");
+        await store.SaveUncommittedTurnAsync(turn);
 
         // Act
-        var loaded = await store.LoadSessionAsync("no-history-session");
-
-        // Assert: Should have latest state with 2 messages (snapshot overwrites previous)
-        Assert.NotNull(loaded);
-        Assert.Equal(2, loaded.MessageCount);
-        Assert.Null(loaded.ExecutionState); // Snapshots don't include ExecutionState
-    }
-
-    [Fact]
-    public async Task InMemoryStore_NoHistory_GetCheckpointManifest_ReturnsEmpty()
-    {
-        // Arrange
-        var store = new InMemorySessionStore(enableHistory: false);
-        var session = CreateSessionWithState("no-history-session");
-        await store.SaveSessionAsync(session);
-
-        // Act
-        var manifest = await store.GetCheckpointManifestAsync("no-history-session");
+        await store.DeleteSessionAsync("session-with-turn");
 
         // Assert
-        Assert.Empty(manifest);
+        Assert.Null(await store.LoadSessionAsync("session-with-turn"));
+        Assert.Null(await store.LoadUncommittedTurnAsync("session-with-turn"));
     }
 
     //──────────────────────────────────────────────────────────────────
     // HELPERS
     //──────────────────────────────────────────────────────────────────
 
-    private AgentSession CreateSessionWithState(string sessionId)
+    private AgentSession CreateSessionWithMessages(string sessionId)
     {
         var session = new AgentSession(sessionId);
         session.AddMessage(UserMessage("Test message"));
-
-        var state = AgentLoopState.Initial(
-            session.Messages.ToList(),
-            "run-123",
-            sessionId,
-            "TestAgent");
-        session.ExecutionState = state;
-
         return session;
+    }
+
+    private UncommittedTurn CreateUncommittedTurn(string sessionId)
+    {
+        return new UncommittedTurn
+        {
+            SessionId = sessionId,
+            BranchId = UncommittedTurn.DefaultBranch,
+            TurnMessages = new List<ChatMessage> { UserMessage("test") },
+            Iteration = 1,
+            CompletedFunctions = System.Collections.Immutable.ImmutableHashSet<string>.Empty,
+            MiddlewareState = new MiddlewareState(),
+            IsTerminated = false,
+            CreatedAt = DateTime.UtcNow,
+            LastUpdatedAt = DateTime.UtcNow,
+        };
     }
 }

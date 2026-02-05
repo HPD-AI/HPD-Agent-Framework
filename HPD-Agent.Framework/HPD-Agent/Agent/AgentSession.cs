@@ -355,7 +355,7 @@ public class AgentSession
     /// </summary>
     /// <remarks>
     /// Use this for normal session persistence after a turn completes.
-    /// For crash recovery during execution, use <see cref="ToExecutionCheckpoint"/> instead.
+    /// For crash recovery during execution, the agent loop uses UncommittedTurn instead.
     /// </remarks>
     public SessionSnapshot ToSnapshot()
     {
@@ -373,39 +373,6 @@ public class AgentSession
             ConversationId = ConversationId,
         };
     }
-
-    /// <summary>
-    /// Convert this session to an execution checkpoint for crash recovery.
-    /// Only works when ExecutionState is set (during agent execution).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// This creates an <see cref="ExecutionCheckpoint"/> which contains only ExecutionState.
-    /// Messages are stored in ExecutionState.CurrentMessages (no duplication).
-    /// </para>
-    /// <para>
-    /// Use this for crash recovery during execution.
-    /// For normal session persistence after completion, use <see cref="ToSnapshot"/> instead.
-    /// </para>
-    /// </remarks>
-    /// <param name="checkpointId">Optional checkpoint ID. If not provided, a new GUID is generated.</param>
-    /// <exception cref="InvalidOperationException">Thrown when ExecutionState is null.</exception>
-    public ExecutionCheckpoint ToExecutionCheckpoint(string? checkpointId = null)
-    {
-        if (ExecutionState == null)
-            throw new InvalidOperationException(
-                "Cannot create ExecutionCheckpoint without ExecutionState. " +
-                "Use ToSnapshot() for saving session state after completion.");
-
-        return new ExecutionCheckpoint
-        {
-            SessionId = Id,
-            ExecutionCheckpointId = checkpointId ?? Guid.NewGuid().ToString(),
-            ExecutionState = ExecutionState,
-            CreatedAt = DateTime.UtcNow,
-        };
-    }
-
 
     /// <summary>
     /// Create an AgentSession from a snapshot (messages + metadata only).
@@ -442,31 +409,6 @@ public class AgentSession
         return session;
     }
 
-    /// <summary>
-    /// Create an AgentSession from an execution checkpoint (for crash recovery).
-    /// Messages are restored from ExecutionState.CurrentMessages.
-    /// </summary>
-    public static AgentSession FromExecutionCheckpoint(ExecutionCheckpoint checkpoint)
-    {
-        ArgumentNullException.ThrowIfNull(checkpoint);
-
-        var session = new AgentSession(
-            checkpoint.SessionId,
-            checkpoint.CreatedAt,
-            DateTime.UtcNow); // LastActivity = now (we're resuming)
-
-        // Restore messages from ExecutionState (single source of truth)
-        if (checkpoint.ExecutionState.CurrentMessages != null)
-        {
-            session._messages.AddRange(checkpoint.ExecutionState.CurrentMessages);
-        }
-
-        // Restore ExecutionState for resumption
-        session.ExecutionState = checkpoint.ExecutionState;
-
-        return session;
-    }
-
 }
 
 //──────────────────────────────────────────────────────────────────
@@ -480,12 +422,7 @@ public class AgentSession
 /// <remarks>
 /// <para>
 /// Use this for normal session persistence after successful completion.
-/// For crash recovery during execution, use <see cref="ExecutionCheckpoint"/> instead.
-/// </para>
-/// <para>
-/// <strong>Key difference from ExecutionCheckpoint:</strong>
-/// SessionSnapshot stores messages directly, while ExecutionCheckpoint stores them
-/// inside ExecutionState.CurrentMessages. This separation eliminates duplication.
+/// For crash recovery during execution, the agent loop uses UncommittedTurn instead.
 /// </para>
 /// </remarks>
 public record SessionSnapshot
@@ -540,60 +477,4 @@ public record SessionSnapshot
     public int Version { get; init; } = 1;
 }
 
-//──────────────────────────────────────────────────────────────────
-// EXECUTION CHECKPOINT: For crash recovery during execution (~100KB)
-//──────────────────────────────────────────────────────────────────
-
-/// <summary>
-/// Checkpoint for crash recovery during agent execution.
-/// Contains only ExecutionState - messages are inside ExecutionState.CurrentMessages.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This type is separate from <see cref="SessionSnapshot"/> to avoid message duplication.
-/// Messages exist only in ExecutionState.CurrentMessages, not stored separately.
-/// </para>
-/// <para>
-/// <strong>When to use:</strong>
-/// <list type="bullet">
-/// <item>During agent execution for crash recovery (DurableExecution)</item>
-/// <item>For time-travel debugging and resumption</item>
-/// </list>
-/// </para>
-/// <para>
-/// <strong>When NOT to use:</strong>
-/// <list type="bullet">
-/// <item>After turn completes - use <see cref="SessionSnapshot"/> instead</item>
-/// <item>For normal conversation persistence</item>
-/// </list>
-/// </para>
-/// </remarks>
-public record ExecutionCheckpoint
-{
-    /// <summary>
-    /// Session ID this checkpoint belongs to.
-    /// </summary>
-    public required string SessionId { get; init; }
-
-    /// <summary>
-    /// Unique identifier for this execution checkpoint.
-    /// </summary>
-    public required string ExecutionCheckpointId { get; init; }
-
-    /// <summary>
-    /// Agent execution state containing all runtime data including messages.
-    /// Messages are in ExecutionState.CurrentMessages (single source of truth).
-    /// </summary>
-    public required AgentLoopState ExecutionState { get; init; }
-
-    /// <summary>
-    /// When this checkpoint was created (UTC).
-    /// </summary>
-    public required DateTime CreatedAt { get; init; }
-
-    /// <summary>
-    /// Version for schema evolution.
-    /// </summary>
-    public int Version { get; init; } = 1;
-}
 

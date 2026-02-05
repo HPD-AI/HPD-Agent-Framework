@@ -998,90 +998,9 @@ public class AgentBuilder
         return this;
     }
 
-    //   
-    // DURABLE EXECUTION (Crash Recovery)
-    //   
-
-    /// <summary>
-    /// Enables durable execution with automatic checkpointing for crash recovery.
-    /// The agent will automatically save state during execution, allowing recovery after failures.
-    /// </summary>
-    /// <param name="store">The checkpoint store for persisting state</param>
-    /// <param name="frequency">How often to checkpoint (default: PerTurn - after each message turn)</param>
-    /// <returns>The builder for chaining</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>What is Durable Execution?</b>
-    /// Durable execution ensures that long-running agent operations can survive process crashes,
-    /// network failures, or restarts. The agent automatically saves checkpoints during execution
-    /// and can resume from the last checkpoint after a failure.
-    /// </para>
-    /// <para>
-    /// <b>Checkpoint Frequency Options:</b>
-    /// <list type="bullet">
-    /// <item><description><c>PerTurn</c> (default): Save after each complete message turn. Good balance of durability and performance.</description></item>
-    /// <item><description><c>PerIteration</c>: Save after each tool call cycle. Maximum durability but higher overhead.</description></item>
-    /// <item><description><c>Never</c>: No automatic checkpoints. Use for explicit/manual checkpointing only.</description></item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// <b>Note:</b> For explicit checkpointing without automatic saves (e.g., for branching/message editing),
-    /// use <see cref="Checkpointing.BranchingConversation"/> instead. It provides a clean API for
-    /// fork-based conversation branching without enabling automatic durable execution.
-    /// </para>
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// // Enable durable execution with file-based storage
-    /// var store = new JsonAgentSessionStore("./checkpoints", CheckpointRetentionMode.LatestOnly);
-    /// var agent = new AgentBuilder()
-    ///     .WithProvider("openai", "gpt-4")
-    ///     .WithDurableExecution(store)
-    ///     .Build();
-    ///
-    /// // Resume after crash
-    /// var thread = await store.LoadThreadAsync(threadId);
-    /// if (thread?.ExecutionState != null)
-    /// {
-    ///     // Resume from checkpoint
-    ///     await agent.RunAsync(Array.Empty&lt;ChatMessage&gt;(), thread: thread);
-    /// }
-    /// </code>
-    /// </example>
-    public AgentBuilder WithDurableExecution(
-        ISessionStore store,
-        CheckpointFrequency frequency = CheckpointFrequency.PerTurn)
-    {
-        ArgumentNullException.ThrowIfNull(store);
-        _config.SessionStore = store;
-        _config.DurableExecutionConfig = new DurableExecutionConfig
-        {
-            Enabled = true,
-            Frequency = frequency,
-            Retention = RetentionPolicy.LatestOnly
-        };
-        return this;
-    }
-
-    /// <summary>
-    /// Enables durable execution with a simple file-based store.
-    /// Convenience overload that creates a JsonAgentSessionStore internally.
-    /// </summary>
-    /// <param name="storagePath">Directory to store checkpoint files</param>
-    /// <param name="frequency">How often to checkpoint (default: PerTurn)</param>
-    /// <returns>The builder for chaining</returns>
-    public AgentBuilder WithDurableExecution(
-        string storagePath,
-        CheckpointFrequency frequency = CheckpointFrequency.PerTurn)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);
-        var store = new JsonSessionStore(storagePath);
-        return WithDurableExecution(store, frequency);
-    }
-
-    //   
+    //
     // PROTOCOL-SPECIFIC CONFIGURATION
-    //   
+    //
     // Protocol-specific configuration methods (WithContextProviderFactory, etc.) are now
     // provided via extension methods in protocol adapter projects (HPD-Agent.Microsoft, etc.)
 

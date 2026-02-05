@@ -7,8 +7,8 @@ using HPD.Agent.Tests.Infrastructure;
 namespace HPD.Agent.Tests.Session;
 
 /// <summary>
-/// Tests for AgentSession, SessionSnapshot, and ExecutionCheckpoint types.
-/// Covers message operations, metadata, checkpoint conversion, and serialization.
+/// Tests for AgentSession and SessionSnapshot types.
+/// Covers message operations, metadata, snapshot conversion, and serialization.
 /// </summary>
 public class AgentSessionTests : AgentTestBase
 {
@@ -254,80 +254,6 @@ public class AgentSessionTests : AgentTestBase
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - EXECUTION CHECKPOINT CONVERSION (NEW API)
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AgentSession_ToExecutionCheckpoint_CreatesCheckpoint()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMetadata("key", "value");
-        session.ExecutionState = AgentLoopState.Initial(
-            session.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = session.ToExecutionCheckpoint();
-
-        // Assert
-        Assert.Equal("session-123", checkpoint.SessionId);
-        Assert.NotNull(checkpoint.ExecutionCheckpointId);
-        Assert.NotNull(checkpoint.ExecutionState);
-        Assert.Equal("run-123", checkpoint.ExecutionState.RunId);
-        // Messages are inside ExecutionState.CurrentMessages (no duplication)
-        Assert.Single(checkpoint.ExecutionState.CurrentMessages);
-    }
-
-    [Fact]
-    public void AgentSession_ToExecutionCheckpoint_ThrowsWithoutExecutionState()
-    {
-        // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Hello"));
-        // Note: No ExecutionState set
-
-        // Act & Assert
-        Assert.Throws<InvalidOperationException>(() => session.ToExecutionCheckpoint());
-    }
-
-    [Fact]
-    public void AgentSession_ToExecutionCheckpoint_WithCustomId()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.ExecutionState = AgentLoopState.Initial(
-            new List<ChatMessage>(), "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = session.ToExecutionCheckpoint("custom-checkpoint-id");
-
-        // Assert
-        Assert.Equal("custom-checkpoint-id", checkpoint.ExecutionCheckpointId);
-    }
-
-    [Fact]
-    public void AgentSession_FromExecutionCheckpoint_RestoresSession()
-    {
-        // Arrange
-        var original = new AgentSession("original-session");
-        original.AddMessage(UserMessage("Test message"));
-        original.ExecutionState = AgentLoopState.Initial(
-            original.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        var checkpoint = original.ToExecutionCheckpoint();
-
-        // Act
-        var restored = AgentSession.FromExecutionCheckpoint(checkpoint);
-
-        // Assert
-        Assert.Equal("original-session", restored.Id);
-        Assert.Single(restored.Messages); // Restored from ExecutionState.CurrentMessages
-        Assert.NotNull(restored.ExecutionState);
-        Assert.Equal("run-123", restored.ExecutionState.RunId);
-    }
-
-    //──────────────────────────────────────────────────────────────────
     // AGENTSESSION - SNAPSHOT CONVERSION
     //──────────────────────────────────────────────────────────────────
 
@@ -384,67 +310,6 @@ public class AgentSessionTests : AgentTestBase
         Assert.Equal("testValue", restored.Metadata["testKey"]);
         Assert.Equal("conv_456", restored.ConversationId);
         Assert.Null(restored.ExecutionState); // Snapshots don't include ExecutionState
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // EXECUTIONCHECKPOINT
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ExecutionCheckpoint_RequiredProperties_AreSet()
-    {
-        // Arrange & Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.Initial(
-                new List<ChatMessage> { UserMessage("Hello") }, "run-123", "conv-456", "TestAgent"),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert
-        Assert.Equal("session-123", checkpoint.SessionId);
-        Assert.Equal("checkpoint-456", checkpoint.ExecutionCheckpointId);
-        Assert.Single(checkpoint.ExecutionState.CurrentMessages); // Messages inside ExecutionState
-    }
-
-    [Fact]
-    public void ExecutionCheckpoint_Version_HasDefaultValue()
-    {
-        // Arrange & Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.Initial(
-                new List<ChatMessage>(), "run-123", "conv-456", "TestAgent"),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert
-        Assert.Equal(1, checkpoint.Version);
-    }
-
-    [Fact]
-    public void ExecutionCheckpoint_NoMessageDuplication()
-    {
-        // Arrange
-        var messages = new List<ChatMessage> { UserMessage("Hello"), AssistantMessage("Hi!") };
-        var state = AgentLoopState.Initial(messages, "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = state,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert: Messages exist ONLY in ExecutionState.CurrentMessages
-        // There's no separate Messages property on ExecutionCheckpoint
-        Assert.Equal(2, checkpoint.ExecutionState.CurrentMessages.Count);
     }
 
     //──────────────────────────────────────────────────────────────────

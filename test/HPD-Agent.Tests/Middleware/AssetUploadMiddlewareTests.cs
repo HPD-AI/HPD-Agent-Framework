@@ -299,10 +299,6 @@ public class AssetUploadMiddlewareTests
     // Test session store without asset support
     private class TestSessionStoreWithoutAssets : ISessionStore
     {
-        public bool SupportsHistory => false;
-        public bool SupportsPendingWrites => false;
-        public IAssetStore? AssetStore => null; // No asset store
-
         public IAssetStore? GetAssetStore(string sessionId) => null;
 
         public Task<AgentSession?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
@@ -317,52 +313,16 @@ public class AssetUploadMiddlewareTests
         public Task DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<ExecutionCheckpoint?> LoadCheckpointAsync(string sessionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
+        public Task<UncommittedTurn?> LoadUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UncommittedTurn?>(null);
 
-        public Task SaveCheckpointAsync(ExecutionCheckpoint checkpoint, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
+        public Task SaveUncommittedTurnAsync(UncommittedTurn turn, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task DeleteAllCheckpointsAsync(string sessionId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task SavePendingWritesAsync(string sessionId, string executionCheckpointId, IEnumerable<PendingWrite> writes, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<List<PendingWrite>> LoadPendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<PendingWrite>());
-
-        public Task DeletePendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<ExecutionCheckpoint?> LoadCheckpointAtAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
-
-        public Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(string sessionId, int? limit = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<CheckpointManifestEntry>());
-
-        public Task PruneCheckpointsAsync(string sessionId, int keepLatest = 10, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task DeleteOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default)
+        public Task DeleteUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<int> DeleteInactiveSessionsAsync(TimeSpan inactivityThreshold, bool dryRun = false, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
-
-        public Task DeleteCheckpointsAsync(string sessionId, IEnumerable<string> checkpointIds, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task<AgentSession?> LoadSessionAtCheckpointAsync(string sessionId, string checkpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<AgentSession?>(null);
-
-        [Obsolete]
-        public Task SaveSessionAtCheckpointAsync(AgentSession session, string checkpointId, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task UpdateCheckpointManifestEntryAsync(string sessionId, string checkpointId, Action<CheckpointManifestEntry> update, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

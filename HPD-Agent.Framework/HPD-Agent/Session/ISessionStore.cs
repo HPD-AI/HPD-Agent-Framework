@@ -8,27 +8,24 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Interface for persisting and loading AgentSession state.
-/// Supports two distinct persistence concerns:
+/// Supports three persistence concerns:
 /// <list type="bullet">
-/// <item><strong>Session Persistence:</strong> Snapshots for conversation history (after turn completes)</item>
-/// <item><strong>Execution Checkpoints:</strong> For crash recovery during execution</item>
+/// <item><strong>Session:</strong> Conversation snapshots (messages + metadata, saved after turn completes)</item>
+/// <item><strong>Uncommitted Turn:</strong> Crash recovery buffer (delta of in-flight turn)</item>
+/// <item><strong>Assets:</strong> Binary content per session</item>
 /// </list>
 /// </summary>
 /// <remarks>
 /// <para>
 /// <strong>Design Note:</strong> This interface is a CRUD-only layer. The store is "dumb" -
-/// it just reads/writes data. Business logic (retention policies, auto-save) lives in services.
-/// </para>
-/// <para>
-/// <strong>Architecture:</strong> Based on LangGraph's separation of Checkpointer (execution state)
-/// and Store (conversation history). This eliminates message duplication that occurred when
-/// messages were stored in both SessionSnapshot and AgentLoopState.CurrentMessages.
+/// it just reads/writes data. Crash recovery is automatic: if a session store is configured,
+/// uncommitted turns are saved after each tool batch and deleted on turn completion.
 /// </para>
 /// </remarks>
 public interface ISessionStore
 {
     // ═══════════════════════════════════════════════════════════════════
-    // SESSION PERSISTENCE (Snapshots - conversation history)
+    // SESSION (Metadata/Container)
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -43,251 +40,76 @@ public interface ISessionStore
     /// <summary>
     /// Save a session snapshot to persistent storage.
     /// This persists messages, metadata, and middleware persistent state.
-    /// Does NOT require ExecutionState - use for normal conversation persistence.
     /// </summary>
-    /// <remarks>
-    /// For stores with history support, this creates a new snapshot entry.
-    /// </remarks>
     Task SaveSessionAsync(
         AgentSession session,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// List all session IDs in storage.
-    /// Useful for admin UIs, cleanup jobs, etc.
-    /// </summary>
-    Task<List<string>> ListSessionIdsAsync(
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete a session and all its checkpoints from persistent storage.
+    /// Delete a session and all its data (including uncommitted turns and assets).
     /// </summary>
     Task DeleteSessionAsync(
         string sessionId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// List all session IDs in storage.
+    /// </summary>
+    Task<List<string>> ListSessionIdsAsync(
+        CancellationToken cancellationToken = default);
+
     // ═══════════════════════════════════════════════════════════════════
-    // EXECUTION CHECKPOINTS (Crash Recovery)
+    // UNCOMMITTED TURN (Crash Recovery — one per session)
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Load the latest execution checkpoint for crash recovery.
-    /// Returns null if no checkpoint exists or session completed normally.
+    /// Load the uncommitted turn for a session, if one exists.
+    /// Returns null if no turn is in progress (session is idle).
     /// </summary>
-    /// <remarks>
-    /// ExecutionCheckpoint contains AgentLoopState with messages inside
-    /// ExecutionState.CurrentMessages (single source of truth during execution).
-    /// </remarks>
-    Task<ExecutionCheckpoint?> LoadCheckpointAsync(
+    Task<UncommittedTurn?> LoadUncommittedTurnAsync(
         string sessionId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Save an execution checkpoint for crash recovery.
-    /// Called during agent execution (DurableExecution).
+    /// Save (overwrite) the uncommitted turn for a session.
+    /// Called after each tool batch completes (fire-and-forget from agent loop).
+    /// The UncommittedTurn object contains the sessionId and branchId internally.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// ExecutionCheckpoint stores ONLY ExecutionState - messages are inside
-    /// ExecutionState.CurrentMessages, eliminating duplication.
-    /// </para>
-    /// <para>
-    /// Size: ~100KB (optimized to avoid message duplication).
-    /// </para>
-    /// </remarks>
-    Task SaveCheckpointAsync(
-        ExecutionCheckpoint checkpoint,
-        CheckpointMetadata metadata,
+    Task SaveUncommittedTurnAsync(
+        UncommittedTurn turn,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Delete all execution checkpoints for a session.
-    /// Called after successful completion (checkpoints no longer needed).
+    /// Delete the uncommitted turn for a session.
+    /// Called when a message turn completes successfully.
     /// </summary>
-    Task DeleteAllCheckpointsAsync(
+    Task DeleteUncommittedTurnAsync(
         string sessionId,
         CancellationToken cancellationToken = default);
 
     // ═══════════════════════════════════════════════════════════════════
-    // CAPABILITY DETECTION
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Whether this store supports checkpoint history (multiple checkpoints per session).
-    /// When false, only the latest checkpoint is stored.
-    /// </summary>
-    bool SupportsHistory { get; }
-
-    /// <summary>
-    /// Whether this store supports pending writes for partial failure recovery.
-    /// </summary>
-    bool SupportsPendingWrites { get; }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // ASSET STORAGE (Binary Content)
+    // ASSETS (Session-scoped, shared by all branches)
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
     /// Get the asset store for a specific session.
     /// Returns null if this store doesn't support asset storage.
     /// </summary>
-    /// <param name="sessionId">The session ID to get the asset store for</param>
-    /// <returns>An IAssetStore scoped to the specified session, or null if not supported</returns>
-    /// <remarks>
-    /// <para>
-    /// When null, AssetUploadMiddleware will skip asset upload operations (zero cost).
-    /// When non-null, DataContent in messages will be automatically uploaded to this store
-    /// and replaced with UriContent references (asset:// URIs).
-    /// </para>
-    /// <para>
-    /// Assets are stored per-session, allowing for clean isolation and easy cleanup.
-    /// When a session is deleted, its assets are automatically removed.
-    /// </para>
-    /// <para><b>Example usage:</b></para>
-    /// <code>
-    /// var store = new JsonSessionStore("./data");
-    /// var assetStore = store.GetAssetStore(sessionId); // May be null
-    /// if (assetStore != null)
-    /// {
-    ///     var assetId = await assetStore.UploadAssetAsync(bytes, mediaType);
-    ///     var uri = new Uri($"asset://{assetId}");
-    /// }
-    /// </code>
-    /// </remarks>
     IAssetStore? GetAssetStore(string sessionId);
 
     // ═══════════════════════════════════════════════════════════════════
-    // PENDING WRITES (Partial Iteration Recovery)
+    // CLEANUP
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Save pending writes for a specific execution checkpoint.
-    /// Pending writes are function call results saved before the iteration checkpoint completes.
-    /// Used for partial failure recovery in parallel execution scenarios.
-    /// </summary>
-    Task SavePendingWritesAsync(
-        string sessionId,
-        string executionCheckpointId,
-        IEnumerable<PendingWrite> writes,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Load pending writes for a specific execution checkpoint.
-    /// Returns empty list if no pending writes exist.
-    /// </summary>
-    Task<List<PendingWrite>> LoadPendingWritesAsync(
-        string sessionId,
-        string executionCheckpointId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete pending writes for a specific execution checkpoint.
-    /// Called after a successful checkpoint save to clean up temporary data.
-    /// </summary>
-    Task DeletePendingWritesAsync(
-        string sessionId,
-        string executionCheckpointId,
-        CancellationToken cancellationToken = default);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // CHECKPOINT HISTORY (Optional - check SupportsHistory first)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Load a specific execution checkpoint by ID (requires SupportsHistory).
-    /// Returns null if checkpoint doesn't exist.
-    /// </summary>
-    Task<ExecutionCheckpoint?> LoadCheckpointAtAsync(
-        string sessionId,
-        string executionCheckpointId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Get checkpoint manifest entries for a session (requires SupportsHistory).
-    /// Returns list of checkpoint metadata ordered by creation time (newest first).
-    /// </summary>
-    Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(
-        string sessionId,
-        int? limit = null,
-        CancellationToken cancellationToken = default);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // CLEANUP METHODS
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// Prune old checkpoints for a session.
-    /// Keeps the N most recent checkpoints and deletes the rest.
-    /// </summary>
-    /// <param name="sessionId">Session to prune checkpoints for</param>
-    /// <param name="keepLatest">Number of most recent checkpoints to keep (default: 10)</param>
-    Task PruneCheckpointsAsync(
-        string sessionId,
-        int keepLatest = 10,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete all checkpoints older than the specified cutoff date.
-    /// Useful for compliance and storage management.
-    /// </summary>
-    Task DeleteOlderThanAsync(
-        DateTime cutoff,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete sessions that have been inactive for longer than the threshold.
-    /// A session is considered inactive if its LastActivity timestamp is older than threshold.
+    /// Delete sessions inactive longer than the threshold.
+    /// Also cleans up any orphaned uncommitted turns.
     /// </summary>
     /// <param name="inactivityThreshold">Sessions inactive longer than this will be deleted</param>
-    /// <param name="dryRun">If true, returns count of sessions that would be deleted without deleting them</param>
+    /// <param name="dryRun">If true, returns count without deleting</param>
     /// <returns>Number of sessions deleted (or would be deleted in dry-run mode)</returns>
     Task<int> DeleteInactiveSessionsAsync(
         TimeSpan inactivityThreshold,
         bool dryRun = false,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete specific checkpoints by ID.
-    /// Used by services for pruning operations.
-    /// </summary>
-    Task DeleteCheckpointsAsync(
-        string sessionId,
-        IEnumerable<string> checkpointIds,
-        CancellationToken cancellationToken = default);
-
-    // ═══════════════════════════════════════════════════════════════════
-    // LEGACY METHODS (Deprecated - for backward compatibility)
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// <summary>
-    /// [DEPRECATED] Use LoadCheckpointAtAsync instead.
-    /// Load a specific checkpoint by ID (requires SupportsHistory).
-    /// </summary>
-    [Obsolete("Use LoadCheckpointAtAsync for execution checkpoints")]
-    Task<AgentSession?> LoadSessionAtCheckpointAsync(
-        string sessionId,
-        string checkpointId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// [DEPRECATED] Use SaveCheckpointAsync instead.
-    /// Save a session at a specific checkpoint ID.
-    /// </summary>
-    [Obsolete("Use SaveCheckpointAsync for execution checkpoints")]
-    Task SaveSessionAtCheckpointAsync(
-        AgentSession session,
-        string checkpointId,
-        CheckpointMetadata metadata,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// [DEPRECATED] Use GetCheckpointManifestAsync instead.
-    /// Update checkpoint manifest entry (e.g., to change branch name).
-    /// </summary>
-    [Obsolete("Use GetCheckpointManifestAsync for reading checkpoint history")]
-    Task UpdateCheckpointManifestEntryAsync(
-        string sessionId,
-        string checkpointId,
-        Action<CheckpointManifestEntry> update,
         CancellationToken cancellationToken = default);
 }
