@@ -350,8 +350,7 @@ public class ThreadSafetyTests
             LastAssistantMessageId = null,
             ResponseUpdates = System.Collections.Immutable.ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = new MiddlewareState(),
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0 }
+            Version = 3
         };
     }
 

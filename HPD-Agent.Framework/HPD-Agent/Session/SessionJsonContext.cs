@@ -18,28 +18,20 @@ namespace HPD.Agent;
 )]
 // Session types
 [JsonSerializable(typeof(SessionSnapshot))]
-[JsonSerializable(typeof(ExecutionCheckpoint))]
-[JsonSerializable(typeof(CheckpointManifestEntry))]
-[JsonSerializable(typeof(List<CheckpointManifestEntry>))]
-[JsonSerializable(typeof(PendingWrite))]
-[JsonSerializable(typeof(List<PendingWrite>))]
-[JsonSerializable(typeof(CheckpointMetadata))]
-[JsonSerializable(typeof(CheckpointTuple))]
+[JsonSerializable(typeof(UncommittedTurn))]
 
 // HPD-specific types
 [JsonSerializable(typeof(AgentLoopState))]
 [JsonSerializable(typeof(ValidationErrorResponse))]
 
 // M.E.AI types (explicitly added for session persistence)
-// Note: Most M.E.AI types are registered via AIJsonUtilities.DefaultOptions
 [JsonSerializable(typeof(ChatMessage))]
 [JsonSerializable(typeof(List<ChatMessage>))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(JsonElement))]
 
-// HPD-Agent Typed Content Classes (Phase 1 - Typed Content)
-// These must be serializable for session persistence
+// HPD-Agent Typed Content Classes
 [JsonSerializable(typeof(HPD.Agent.ImageContent))]
 [JsonSerializable(typeof(HPD.Agent.AudioContent))]
 [JsonSerializable(typeof(HPD.Agent.VideoContent))]
@@ -84,7 +76,6 @@ public partial class SessionJsonContext : JsonSerializerContext
         }
 
         // Register HPD-Agent custom content types as AIContent derived types
-        // These extend DataContent but need explicit registration for polymorphic serialization
         options.AddAIContentType<ImageContent>("hpd:image");
         options.AddAIContentType<AudioContent>("hpd:audio");
         options.AddAIContentType<VideoContent>("hpd:video");

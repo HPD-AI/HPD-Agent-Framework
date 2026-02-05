@@ -717,9 +717,7 @@ public enum CheckpointOperation
 {
     Saved,
     Restored,
-    PendingWritesSaved,
-    PendingWritesLoaded,
-    PendingWritesDeleted
+    Cleared
 }
 
 /// <summary>

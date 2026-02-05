@@ -227,7 +227,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = middlewareState,
             Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
+            Version = 3
         };
     }
 
@@ -266,7 +266,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = middlewareState,
             Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
+            Version = 3
         };
     }
 
@@ -308,7 +308,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = middlewareState,
             Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
+            Version = 3
         };
     }
 
@@ -349,7 +349,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = middlewareState,
             Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
+            Version = 3
         };
     }
 

@@ -98,11 +98,8 @@ using HPD.Agent;
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]
 
-// --- Checkpointing types ---
-[JsonSerializable(typeof(HPD.Agent.PendingWrite))]
-[JsonSerializable(typeof(List<HPD.Agent.PendingWrite>))]
-[JsonSerializable(typeof(HPD.Agent.CheckpointManifestEntry))]
-[JsonSerializable(typeof(List<HPD.Agent.CheckpointManifestEntry>))]
+// --- Crash recovery types ---
+[JsonSerializable(typeof(HPD.Agent.UncommittedTurn))]
 
 // --- Document store types ---
 [JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]

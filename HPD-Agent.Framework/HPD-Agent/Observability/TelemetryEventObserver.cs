@@ -23,9 +23,6 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
     private readonly Counter<int> _documentProcessing;
     private readonly Counter<int> _nestedAgentCalls;
     private readonly Counter<int> _completions;
-    private readonly Counter<int> _pendingWritesSaves;
-    private readonly Counter<int> _pendingWritesLoads;
-    private readonly Counter<int> _pendingWritesDeletes;
     private readonly Counter<int> _stateSnapshots;
     private readonly Counter<int> _parallelToolExecutions;
     private readonly Counter<int> _permissionDenials;
@@ -126,18 +123,6 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
         _completions = _meter.CreateCounter<int>(
             "agent.completions",
             description: "Number of successful agent completions");
-
-        _pendingWritesSaves = _meter.CreateCounter<int>(
-            "agent.pending_writes.saves",
-            description: "Number of pending writes save operations");
-
-        _pendingWritesLoads = _meter.CreateCounter<int>(
-            "agent.pending_writes.loads",
-            description: "Number of pending writes load operations");
-
-        _pendingWritesDeletes = _meter.CreateCounter<int>(
-            "agent.pending_writes.deletes",
-            description: "Number of pending writes delete operations");
 
         _stateSnapshots = _meter.CreateCounter<int>(
             "agent.state_snapshots",
@@ -397,21 +382,8 @@ public class TelemetryEventObserver : IAgentEventObserver, IDisposable
                         }
                         break;
 
-                    case CheckpointOperation.PendingWritesSaved:
-                        _pendingWritesSaves.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.SessionId),
-                            new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
-                        break;
-
-                    case CheckpointOperation.PendingWritesLoaded:
-                        _pendingWritesLoads.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.SessionId),
-                            new KeyValuePair<string, object?>("count", e.WriteCount ?? 0));
-                        break;
-
-                    case CheckpointOperation.PendingWritesDeleted:
-                        _pendingWritesDeletes.Add(1,
-                            new KeyValuePair<string, object?>("thread.id", e.SessionId));
+                    case CheckpointOperation.Cleared:
+                        // Uncommitted turn deleted on successful turn completion — no metric needed
                         break;
                 }
                 break;

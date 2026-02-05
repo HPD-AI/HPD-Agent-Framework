@@ -49,8 +49,6 @@ public sealed class Agent
     private readonly ILogger? _observerErrorLogger;
     private readonly Counter<long>? _observerErrorCounter;
 
-    // Durable execution service for checkpointing (optional, created when DurableExecutionConfig is set)
-    private readonly DurableExecution? _durableExecutionService;
 
     // Provider registry for runtime provider switching via AgentRunOptions.ProviderKey/ModelId
     private readonly Providers.IProviderRegistry? _providerRegistry;
@@ -276,14 +274,6 @@ public sealed class Agent
                 observabilityConfig.SuccessesToResetCircuitBreaker);
         }
 
-        // Initialize DurableExecutionService if configured
-        // This provides retention policy enforcement and cleaner checkpointing API
-        if (config.DurableExecutionConfig != null && config.SessionStore != null)
-        {
-            _durableExecutionService = new DurableExecution(
-                config.SessionStore,
-                config.DurableExecutionConfig);
-        }
     }
 
     /// <summary>
@@ -593,24 +583,54 @@ public sealed class Agent
             IEnumerable<ChatMessage> effectiveMessages;
             ChatOptions? effectiveOptions;
 
-            if (session?.ExecutionState is { } executionState)
+            // Check for uncommitted turn (crash recovery)
+            UncommittedTurn? uncommittedTurn = null;
+            if (session != null && Config.SessionStore != null)
             {
-                var checkpointRestoreStart = DateTimeOffset.UtcNow;
+                try
+                {
+                    uncommittedTurn = await Config.SessionStore.LoadUncommittedTurnAsync(
+                        session.Id, effectiveCancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort — if loading fails, proceed with fresh run
+                }
+            }
+
+            // Track the number of session messages before this turn starts
+            // Used to compute the delta for uncommitted turn saves
+            int sessionMessageCountAtStart = 0;
+            DateTime turnStartTime = DateTime.UtcNow;
+
+            if (uncommittedTurn != null && newInputMessages.Count == 0)
+            {
+                // RESUME PATH: Restore from uncommitted turn (crash recovery)
                 var restoreStopwatch = Stopwatch.StartNew();
 
-                state = executionState;
+                // Reconstruct full message list: session messages + turn delta
+                var fullMessages = new List<ChatMessage>(session!.Messages);
+                fullMessages.AddRange(uncommittedTurn.TurnMessages);
+                sessionMessageCountAtStart = session.Messages.Count;
 
-                // Validate and migrate middleware schema when resuming from checkpoint
-                // This detects added/removed middleware and logs changes for operational visibility
+                // Reconstruct state from uncommitted turn
+                var restoredMiddlewareState = ValidateAndMigrateSchema(uncommittedTurn.MiddlewareState);
+
+                state = AgentLoopState.Initial(fullMessages, messageTurnId, conversationId, this.Name, restoredMiddlewareState);
                 state = state with
                 {
-                    MiddlewareState = ValidateAndMigrateSchema(state.MiddlewareState)
+                    Iteration = uncommittedTurn.Iteration,
+                    CompletedFunctions = uncommittedTurn.CompletedFunctions,
+                    IsTerminated = uncommittedTurn.IsTerminated,
+                    TerminationReason = uncommittedTurn.TerminationReason,
+                    // Reset server-side history tracking — first LLM call after crash recovery
+                    // sends full history instead of delta; one-call perf hit, correct behavior
+                    InnerClientTracksHistory = false,
+                    MessagesSentToInnerClient = 0
                 };
 
-                // Use messages from restored state (already prepared - includes system instructions)
+                // Use messages from restored state
                 effectiveMessages = state.CurrentMessages;
-
-                // Use options from PreparedTurn (already merged and Middlewareed)
                 effectiveOptions = turn.Options;
 
                 restoreStopwatch.Stop();
@@ -623,53 +643,22 @@ public sealed class Agent
                     Duration: restoreStopwatch.Elapsed,
                     Iteration: state.Iteration,
                     MessageCount: state.CurrentMessages.Count);
-
-                //
-                // RESTORE PENDING WRITES (partial failure recovery via DurableExecutionService)
-                //
-                if (_durableExecutionService != null && state.ETag != null)
-                {
-                    int pendingWritesCount = 0;
-                    bool pendingWritesLoaded = false;
-
-                    try
-                    {
-                        var pendingWrites = await _durableExecutionService.LoadPendingWritesAsync(
-                            session.Id,
-                            state.ETag,
-                            effectiveCancellationToken).ConfigureAwait(false);
-
-                        pendingWritesCount = pendingWrites.Count;
-                        pendingWritesLoaded = true;
-
-                        if (pendingWrites.Count > 0)
-                        {
-                            state = state with { PendingWrites = pendingWrites.ToImmutableList() };
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // Swallow errors - pending writes are an optimization
-                    }
-
-                    if (pendingWritesLoaded)
-                    {
-                        yield return new CheckpointEvent(
-                            Operation: CheckpointOperation.PendingWritesLoaded,
-                            SessionId: session.Id,
-                            Timestamp: DateTimeOffset.UtcNow,
-                            WriteCount: pendingWritesCount);
-                    }
-                }
-
-                // Log resume (logging deferred until after config is built below)
-                // Observability will happen after the common configuration section
             }
             else
             {
                 //
                 // FRESH RUN PATH: Use PreparedTurn directly (all preparation already done)
                 //
+
+                // If there was an old uncommitted turn but user sent a new message, discard it
+                if (uncommittedTurn != null && session != null && Config.SessionStore != null)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await Config.SessionStore.DeleteUncommittedTurnAsync(session.Id); }
+                        catch { /* best-effort */ }
+                    });
+                }
 
                 // Load persistent middleware state from session (cross-run caching)
                 var persistentState = MiddlewareState.LoadFromSession(session, _stateFactories);
@@ -678,6 +667,9 @@ public sealed class Agent
                 // PreparedTurn.MessagesForLLM contains the reduced version (for LLM calls)
                 // We store the full history in state for proper message counting
                 state = AgentLoopState.Initial(messages.ToList(), messageTurnId, conversationId, this.Name, persistentState);
+
+                // Track session message count for uncommitted turn delta computation
+                sessionMessageCountAtStart = session?.Messages.Count ?? 0;
 
                 // Use PreparedTurn's already-prepared messages and options
                 effectiveMessages = turn.MessagesForLLM;
@@ -1580,17 +1572,36 @@ public sealed class Agent
                         }
 
                         //
-                        // PENDING WRITES (save successful function results immediately via DurableExecutionService)
+                        // SAVE UNCOMMITTED TURN (crash recovery — fire-and-forget after tool batch)
                         //
-                        if (_durableExecutionService != null &&
-                            session != null &&
-                            state.ETag != null)
+                        if (session != null && Config.SessionStore != null)
                         {
-                            _durableExecutionService.SavePendingWriteFireAndForget(
-                                session.Id,
-                                state.ETag,
-                                toolResultMessage,
-                                state.Iteration);
+                            var turnState = state;
+                            var turnMsgs = currentMessages.Skip(sessionMessageCountAtStart).ToList();
+                            var store = Config.SessionStore;
+                            var sid = session.Id;
+                            var tStart = turnStartTime;
+
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await store.SaveUncommittedTurnAsync(new UncommittedTurn
+                                    {
+                                        SessionId = sid,
+                                        BranchId = UncommittedTurn.DefaultBranch,
+                                        TurnMessages = turnMsgs,
+                                        Iteration = turnState.Iteration,
+                                        CompletedFunctions = turnState.CompletedFunctions,
+                                        MiddlewareState = turnState.MiddlewareState,
+                                        IsTerminated = turnState.IsTerminated,
+                                        TerminationReason = turnState.TerminationReason,
+                                        CreatedAt = tStart,
+                                        LastUpdatedAt = DateTime.UtcNow
+                                    });
+                                }
+                                catch { /* best-effort, same as current pending writes */ }
+                            });
                         }
      
                         // UPDATE STATE WITH COMPLETED FUNCTIONS   
@@ -1710,48 +1721,8 @@ public sealed class Agent
                 // Advance to next iteration
                 state = state.NextIteration();
 
-                //
-                // CHECKPOINT AFTER EACH ITERATION (via DurableExecutionService)
-                //
-
-                if (session != null && _durableExecutionService != null &&
-                    _durableExecutionService.ShouldCheckpoint(state.Iteration, turnComplete: false))
-                {
-                    // Fire-and-forget async checkpoint via DurableExecutionService
-                    var checkpointState = state;
-                    var service = _durableExecutionService;
-
-                    _ = Task.Run(async () =>
-                    {
-                        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                        try
-                        {
-                            await service.SaveCheckpointAsync(session, checkpointState, CancellationToken.None);
-                            stopwatch.Stop();
-
-                            NotifyObservers(new CheckpointEvent(
-                                Operation: CheckpointOperation.Saved,
-                                SessionId: session.Id,
-                                Timestamp: DateTimeOffset.UtcNow,
-                                Duration: stopwatch.Elapsed,
-                                Iteration: checkpointState.Iteration,
-                                Success: true));
-                        }
-                        catch (Exception ex)
-                        {
-                            stopwatch.Stop();
-
-                            NotifyObservers(new CheckpointEvent(
-                                Operation: CheckpointOperation.Saved,
-                                SessionId: session.Id,
-                                Timestamp: DateTimeOffset.UtcNow,
-                                Duration: stopwatch.Elapsed,
-                                Iteration: checkpointState.Iteration,
-                                Success: false,
-                                ErrorMessage: ex.Message));
-                        }
-                    }, CancellationToken.None);
-                }
+                // Note: Uncommitted turn is saved after each tool batch (above),
+                // which is more granular than per-iteration. No separate iteration checkpoint needed.
             }
 
             if (responseUpdates.Any())
@@ -1800,43 +1771,23 @@ public sealed class Agent
                 turnStopwatch.Elapsed,
                 DateTimeOffset.UtcNow);
     
-            // FINAL CHECKPOINT (PerTurn - via DurableExecutionService)
-            if (session != null && _durableExecutionService != null)
+            // DELETE UNCOMMITTED TURN (turn completed successfully — no crash recovery needed)
+            if (session != null && Config.SessionStore != null)
             {
-                var finalState = state;
-                var service = _durableExecutionService;
-
-                var checkpointTask = Task.Run(async () =>
+                _ = Task.Run(async () =>
                 {
-                    var stopwatch = Stopwatch.StartNew();
-                    bool success = false;
-                    string? errorMessage = null;
-
                     try
                     {
-                        await service.SaveCheckpointAsync(session, finalState, CancellationToken.None);
-                        success = true;
-                    }
-                    catch (Exception ex)
-                    {
-                        errorMessage = ex.Message;
-                    }
-                    finally
-                    {
-                        stopwatch.Stop();
+                        await Config.SessionStore.DeleteUncommittedTurnAsync(session.Id);
 
                         NotifyObservers(new CheckpointEvent(
-                            Operation: CheckpointOperation.Saved,
+                            Operation: CheckpointOperation.Cleared,
                             SessionId: session.Id,
                             Timestamp: DateTimeOffset.UtcNow,
-                            Duration: stopwatch.Elapsed,
-                            Iteration: finalState.Iteration,
-                            Success: success,
-                            ErrorMessage: errorMessage));
+                            Success: true));
                     }
+                    catch { /* best-effort */ }
                 });
-
-                await checkpointTask;
             }
 
             // MIDDLEWARE: AfterMessageTurnAsync (V2 - turn-level hook)
@@ -2350,25 +2301,24 @@ public sealed class Agent
         if (session != null)
         {
             var hasMessages = messages?.Any() ?? false;
-            var hasCheckpoint = session.ExecutionState != null;
             var currentMessageCount = (await session.GetMessagesAsync(cancellationToken)).Count;
             var hasHistory = currentMessageCount > 0;
 
-            if (!hasCheckpoint && !hasMessages && !hasHistory)
+            if (!hasMessages && !hasHistory)
             {
-                throw new InvalidOperationException(
-                    "Cannot run agent with empty session and no messages.");
-            }
+                // Check for uncommitted turn (crash recovery) before throwing
+                UncommittedTurn? uncommitted = null;
+                if (Config.SessionStore != null)
+                {
+                    try { uncommitted = await Config.SessionStore.LoadUncommittedTurnAsync(session.Id, cancellationToken); }
+                    catch { /* best-effort */ }
+                }
 
-            if (hasCheckpoint && hasMessages)
-            {
-                throw new InvalidOperationException(
-                    "Cannot add new messages when resuming mid-execution.");
-            }
-
-            if (hasCheckpoint && !hasMessages)
-            {
-                session.ExecutionState?.ValidateConsistency(currentMessageCount);
+                if (uncommitted == null)
+                {
+                    throw new InvalidOperationException(
+                        "Cannot run agent with empty session and no messages.");
+                }
             }
         }
 
@@ -3597,16 +3547,8 @@ public sealed class Agent
     /// <returns>The loaded session, or a new empty session if not found</returns>
     /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
     /// <remarks>
-    /// <para>
     /// This method loads <see cref="SessionSnapshot"/> data (messages, metadata).
-    /// It does NOT automatically check for execution checkpoints.
-    /// </para>
-    /// <para>
-    /// <strong>For crash recovery:</strong> Use <see cref="GetCheckpointManifestAsync"/> to list
-    /// available checkpoints, then <see cref="LoadSessionAtCheckpointAsync"/> to load a specific one.
-    /// Automatic checkpoint loading is intentionally not supported because checkpoints are tied
-    /// to specific message states and may be stale if turns ran without DurableExecution enabled.
-    /// </para>
+    /// Crash recovery from uncommitted turns is handled automatically during RunAsync.
     /// </remarks>
     public async Task<AgentSession> LoadSessionAsync(
         string sessionId,
@@ -3620,73 +3562,6 @@ public sealed class Agent
 
         var session = await store.LoadSessionAsync(sessionId, cancellationToken);
         return session ?? new AgentSession(sessionId);
-    }
-
-    /// <summary>
-    /// Gets the checkpoint manifest for a session.
-    /// Returns list of checkpoint metadata ordered by creation time (newest first).
-    /// </summary>
-    /// <param name="sessionId">Session identifier</param>
-    /// <param name="limit">Maximum number of entries to return (optional)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of checkpoint manifest entries</returns>
-    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or store doesn't support history</exception>
-    public async Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(
-        string sessionId,
-        int? limit = null,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-
-        var store = Config.SessionStore
-            ?? throw new InvalidOperationException(
-                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
-
-        if (!store.SupportsHistory)
-        {
-            throw new InvalidOperationException(
-                "Session store does not support checkpoint history. " +
-                "Use a store with SupportsHistory=true (e.g., JsonSessionStore with history enabled).");
-        }
-
-        return await store.GetCheckpointManifestAsync(sessionId, limit, cancellationToken);
-    }
-
-    /// <summary>
-    /// Loads a session from a specific execution checkpoint.
-    /// Use this for time-travel debugging or resuming from a specific point.
-    /// </summary>
-    /// <param name="sessionId">Session identifier</param>
-    /// <param name="executionCheckpointId">The specific checkpoint ID to load</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Session restored from the checkpoint, or null if checkpoint doesn't exist</returns>
-    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or store doesn't support history</exception>
-    public async Task<AgentSession?> LoadSessionAtCheckpointAsync(
-        string sessionId,
-        string executionCheckpointId,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(executionCheckpointId);
-
-        var store = Config.SessionStore
-            ?? throw new InvalidOperationException(
-                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
-
-        if (!store.SupportsHistory)
-        {
-            throw new InvalidOperationException(
-                "Session store does not support checkpoint history. " +
-                "Use a store with SupportsHistory=true (e.g., JsonSessionStore with history enabled).");
-        }
-
-        var checkpoint = await store.LoadCheckpointAtAsync(sessionId, executionCheckpointId, cancellationToken);
-        if (checkpoint == null)
-        {
-            return null;
-        }
-
-        return AgentSession.FromExecutionCheckpoint(checkpoint);
     }
 
     /// <summary>
@@ -3707,67 +3582,6 @@ public sealed class Agent
                 "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
 
         await store.SaveSessionAsync(session, cancellationToken);
-
-        // Apply retention policy if configured
-        var options = Config.SessionStoreOptions;
-        if (options?.Retention != null)
-        {
-            await options.Retention.ApplyAsync(store, session.Id, cancellationToken);
-        }
-    }
-
-    /// <summary>
-    /// Manually saves an execution checkpoint for the current session.
-    /// Use this when DurableExecution is configured with <see cref="CheckpointFrequency.Manual"/>.
-    /// </summary>
-    /// <param name="session">Session to checkpoint (must have ExecutionState set)</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The checkpoint ID that was created</returns>
-    /// <exception cref="InvalidOperationException">Thrown if no session store is configured or session has no ExecutionState</exception>
-    /// <remarks>
-    /// <para>
-    /// This method is for manual checkpoint control. The session must have an active
-    /// <see cref="AgentLoopState"/> (i.e., be mid-execution) to create a checkpoint.
-    /// </para>
-    /// <para>
-    /// For normal session persistence after a turn completes, use <see cref="SaveSessionAsync"/> instead.
-    /// </para>
-    /// </remarks>
-    public async Task<string> SaveCheckpointAsync(
-        AgentSession session,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(session);
-
-        var store = Config.SessionStore
-            ?? throw new InvalidOperationException(
-                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
-
-        if (session.ExecutionState == null)
-        {
-            throw new InvalidOperationException(
-                "Cannot create checkpoint without ExecutionState. " +
-                "Use SaveSessionAsync() for saving session state after completion.");
-        }
-
-        var checkpoint = session.ToExecutionCheckpoint();
-        var metadata = new CheckpointMetadata
-        {
-            Source = CheckpointSource.Manual,
-            Step = session.ExecutionState.Iteration,
-            MessageIndex = session.ExecutionState.CurrentMessages.Count
-        };
-
-        await store.SaveCheckpointAsync(checkpoint, metadata, cancellationToken);
-
-        // Apply retention policy if configured
-        var durableConfig = Config.DurableExecutionConfig;
-        if (durableConfig?.Retention != null)
-        {
-            await durableConfig.Retention.ApplyAsync(store, session.Id, cancellationToken);
-        }
-
-        return checkpoint.ExecutionCheckpointId;
     }
 
     //
@@ -4168,13 +3982,6 @@ public sealed record AgentLoopState
         MessagesSentToInnerClient = 0,
         LastAssistantMessageId = null,
         ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-        Version = 1,
-        Metadata = new CheckpointMetadata
-        {
-            Source = CheckpointSource.Input,
-            Step = -1 // -1 indicates initial state before first iteration
-        },
-        ETag = null, // Will be generated on first serialize
         MiddlewareState = persistentState ?? new MiddlewareState()
     };
 
@@ -4217,20 +4024,6 @@ public sealed record AgentLoopState
         this with { IsTerminated = true, TerminationReason = reason };
 
 
-
-    /// <summary>
-    /// Adds a pending write for a completed function call.
-    /// Used during execution to track successful operations before checkpoint.
-    /// </summary>
-    public AgentLoopState WithPendingWrite(PendingWrite write) =>
-        this with { PendingWrites = PendingWrites.Add(write) };
-
-    /// <summary>
-    /// Clears all pending writes.
-    /// Called after successful checkpoint (writes are now captured in checkpoint).
-    /// </summary>
-    public AgentLoopState ClearPendingWrites() =>
-        this with { PendingWrites = ImmutableList<PendingWrite>.Empty };
 
     /// <summary>
     /// Records a function completion for telemetry tracking (successful calls only).
@@ -4293,120 +4086,27 @@ public sealed record AgentLoopState
         this with { ActiveBackgroundOperation = operation };
 
     /// <summary>
-    /// Pending writes from function calls that completed successfully
-    /// but before the iteration checkpoint was saved.
-    /// Used for partial failure recovery in parallel execution scenarios.
-    /// </summary>
-    public ImmutableList<PendingWrite> PendingWrites { get; init; }
-        = ImmutableList<PendingWrite>.Empty;
-
-    /// <summary>
     /// Schema version for forward/backward compatibility.
-    /// Increment when making breaking changes to this record.
     /// </summary>
-    public int Version { get; init; } = 2;
+    public int Version { get; init; } = 3;
 
     /// <summary>
-    /// Metadata about how this checkpoint was created.
-    /// Used for time-travel debugging and audit trails.
-    /// </summary>
-    public CheckpointMetadata? Metadata { get; init; }
-
-    /// <summary>
-    /// ETag for optimistic concurrency control (future).
-    /// Generated on each checkpoint save to prevent concurrent modification conflicts.
-    /// Format: GUID string
-    /// </summary>
-    public string? ETag { get; init; }
-    
-    /// <summary>
-    /// Serializes this state to JSON for checkpointing.
+    /// Serializes this state to JSON.
     /// Uses Microsoft.Extensions.AI's built-in serialization for ChatMessage and AIContent.
-    /// Handles immutable collections, polymorphic content, and all message types automatically.
     /// </summary>
     public string Serialize()
     {
-        // Generate new ETag for optimistic concurrency
-        var stateWithETag = this with { ETag = Guid.NewGuid().ToString() };
-        return JsonSerializer.Serialize(stateWithETag, (JsonTypeInfo<object?>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(object)));
+        return JsonSerializer.Serialize(this, (JsonTypeInfo<object?>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(object)));
     }
 
     /// <summary>
-    /// Deserializes state from JSON checkpoint.
-    /// Includes version migration logic for backward compatibility.
+    /// Deserializes state from JSON.
     /// Uses Microsoft.Extensions.AI's built-in deserialization.
     /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when deserialization fails</exception>
-    /// <exception cref="NotSupportedException">Thrown when version is not supported</exception>
-    /// <exception cref="CheckpointVersionTooNewException">Thrown when checkpoint version is newer than supported</exception>
     public static AgentLoopState Deserialize(string json)
     {
-        var doc = JsonDocument.Parse(json);
-        var version = doc.RootElement.TryGetProperty(nameof(Version), out var vProp)
-            ? vProp.GetInt32()
-            : 1;
-
-        // Fail-fast if version is too new (prevents silent data corruption)
-        const int MaxSupportedVersion = 2;
-        if (version > MaxSupportedVersion)
-        {
-            throw new CheckpointVersionTooNewException(
-                $"Checkpoint version {version} is newer than supported version {MaxSupportedVersion}. " +
-                $"Please upgrade HPD-Agent to deserialize this checkpoint.");
-        }
-
-        // Handle version-specific deserialization
-        if (version == 1)
-        {
-            // v1: No pending writes support
-            var state = JsonSerializer.Deserialize<AgentLoopState>(json, (JsonTypeInfo<AgentLoopState>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(AgentLoopState)))
-                ?? throw new InvalidOperationException("Failed to deserialize AgentLoopState v1");
-
-            // v1 checkpoints don't have PendingWrites - initialize to empty
-            return state with { PendingWrites = ImmutableList<PendingWrite>.Empty };
-        }
-        else if (version == 2)
-        {
-            // v2: Pending writes support
-            return JsonSerializer.Deserialize<AgentLoopState>(json, (JsonTypeInfo<AgentLoopState>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(AgentLoopState)))
-                ?? throw new InvalidOperationException("Failed to deserialize AgentLoopState v2");
-        }
-        else
-        {
-            throw new NotSupportedException($"AgentLoopState version {version} is not supported by this version of HPD-Agent");
-        }
-    }
-
-    /// <summary>
-    /// Validates that this checkpoint state is compatible with the current conversation state.
-    /// Checks for staleness, iteration continuity, and message count consistency.
-    /// </summary>
-    /// <param name="currentMessageCount">Number of messages currently in the conversation</param>
-    /// <param name="allowStaleCheckpoint">If true, allows resuming from older checkpoint (time-travel scenario)</param>
-    /// <exception cref="CheckpointStaleException">Thrown when checkpoint is stale and allowStaleCheckpoint is false</exception>
-    public void ValidateConsistency(int currentMessageCount, bool allowStaleCheckpoint = false)
-    {
-        // Check message count consistency
-        if (!allowStaleCheckpoint && currentMessageCount != CurrentMessages.Count)
-        {
-            throw new CheckpointStaleException(
-                $"Checkpoint is stale. Conversation has {currentMessageCount} messages " +
-                $"but checkpoint expects {CurrentMessages.Count}. " +
-                $"This checkpoint was created at iteration {Iteration} but conversation has progressed.");
-        }
-
-        // Check for corrupted state
-        if (Iteration < 0)
-        {
-            throw new InvalidOperationException($"Checkpoint has invalid iteration: {Iteration}");
-        }
-
-        // Check error tracking state from MiddlewareState (new pattern)
-        var errorState = this.MiddlewareState.ErrorTracking();
-        if (errorState != null && errorState.ConsecutiveFailures < 0)
-        {
-            throw new InvalidOperationException($"Checkpoint has invalid ConsecutiveFailures: {errorState.ConsecutiveFailures}");
-        }
+        return JsonSerializer.Deserialize<AgentLoopState>(json, (JsonTypeInfo<AgentLoopState>)AIJsonUtilities.DefaultOptions.GetTypeInfo(typeof(AgentLoopState)))
+            ?? throw new InvalidOperationException("Failed to deserialize AgentLoopState");
     }
 }
 
