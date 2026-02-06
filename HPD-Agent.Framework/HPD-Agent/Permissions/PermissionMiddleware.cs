@@ -52,8 +52,8 @@ public class PermissionMiddleware : IAgentMiddleware
     /// <param name="middlewareName">Optional name for this middleware instance (for event correlation)</param>
     /// <param name="overrideRegistry">Optional registry for runtime permission overrides</param>
     /// <remarks>
-    /// Permission choices are now automatically persisted in MiddlewareState
-    /// (PermissionPersistentStateData) and saved to AgentSession. No external
+    /// Permission choices are automatically persisted in MiddlewareState
+    /// (PermissionPersistentStateData) and saved to Session. No external
     /// storage is needed.
     /// </remarks>
     public PermissionMiddleware(

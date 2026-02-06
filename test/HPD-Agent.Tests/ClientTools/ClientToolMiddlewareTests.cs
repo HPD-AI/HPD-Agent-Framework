@@ -740,12 +740,16 @@ public class ClientToolMiddlewareTests
     {
         var agentState = state ?? CreateEmptyState();
 
+        var session = new global::HPD.Agent.Session("test-session");
+        var branch = new global::HPD.Agent.Branch("test-session");
+
         var agentContext = new AgentContext(
             "TestAgent",
             "test-conv-id",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            session,
+            branch,
             CancellationToken.None);
 
         var userMessage = new ChatMessage(ChatRole.User, "test");
@@ -759,12 +763,16 @@ public class ClientToolMiddlewareTests
     {
         var agentState = state ?? CreateEmptyState();
 
+        var session = new global::HPD.Agent.Session("test-session");
+        var branch = new global::HPD.Agent.Branch("test-session");
+
         var agentContext = new AgentContext(
             "TestAgent",
             "test-conv-id",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            session,
+            branch,
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(
@@ -813,12 +821,16 @@ public class ClientToolMiddlewareTests
             conversationId: "test-conversation",
             agentName: "TestAgent");
 
+        var session = new global::HPD.Agent.Session("test-session");
+        var branch = new global::HPD.Agent.Branch("test-session");
+
         return new AgentContext(
             "TestAgent",
             "test-conversation",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            session,
+            branch,
             CancellationToken.None);
     }
 

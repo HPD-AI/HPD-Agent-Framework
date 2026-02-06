@@ -231,14 +231,6 @@ public class AgentConfig
     public bool CoalesceDeltas { get; set; } = false;
 
     /// <summary>
-    /// Configuration for the DurableExecutionService.
-    /// When set via WithDurableExecution(frequency, retention), enables the service layer.
-    /// </summary>
-    [JsonIgnore]
-    [Obsolete("Use SessionStore and SessionStoreOptions instead. This will be removed in a future version.")]
-    public DurableExecutionConfig? DurableExecutionConfig { get; set; }
-
-    /// <summary>
     /// Optional session store for durable execution and crash recovery.
     /// Use InMemorySessionStore for development/testing or JsonSessionStore for production.
     /// </summary>

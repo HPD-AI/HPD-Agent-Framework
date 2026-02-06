@@ -67,90 +67,6 @@ public class SessionBuilderExtensionTests : AgentTestBase
     }
 
     //──────────────────────────────────────────────────────────────────
-    // WithSessionStore(ISessionStore, CheckpointFrequency, RetentionPolicy?)
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void WithSessionStore_WithFrequency_EnablesAutoSave()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var builder = new AgentBuilder();
-
-        // Act
-        builder.WithSessionStore(store, CheckpointFrequency.PerTurn);
-
-        // Assert
-        Assert.Same(store, builder.Config.SessionStore);
-        Assert.True(builder.Config.SessionStoreOptions?.PersistAfterTurn);
-        Assert.Equal(CheckpointFrequency.PerTurn, builder.Config.SessionStoreOptions?.Frequency);
-    }
-
-    [Fact]
-    public void WithSessionStore_WithFrequencyPerIteration_SetsCorrectFrequency()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var builder = new AgentBuilder();
-
-        // Act
-        builder.WithSessionStore(store, CheckpointFrequency.PerIteration);
-
-        // Assert
-        Assert.Equal(CheckpointFrequency.PerIteration, builder.Config.SessionStoreOptions?.Frequency);
-    }
-
-    [Fact]
-    public void WithSessionStore_WithFrequencyManual_SetsCorrectFrequency()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var builder = new AgentBuilder();
-
-        // Act
-        builder.WithSessionStore(store, CheckpointFrequency.Manual);
-
-        // Assert
-        Assert.Equal(CheckpointFrequency.Manual, builder.Config.SessionStoreOptions?.Frequency);
-        Assert.True(builder.Config.SessionStoreOptions?.PersistAfterTurn); // Still enables persist for this overload
-    }
-
-    [Fact]
-    public void WithSessionStore_WithFrequencyAndRetention_SetsRetention()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var builder = new AgentBuilder();
-
-        // Act
-        builder.WithSessionStore(store, CheckpointFrequency.PerTurn, RetentionPolicy.LastN(5));
-
-        // Assert
-        var retention = builder.Config.SessionStoreOptions?.Retention;
-        Assert.NotNull(retention);
-        Assert.IsType<RetentionPolicy.LastNPolicy>(retention);
-    }
-
-    [Fact]
-    public void WithSessionStore_WithFrequencyNoRetention_DefaultsToLastN3()
-    {
-        // Arrange
-        var store = new InMemorySessionStore();
-        var builder = new AgentBuilder();
-
-        // Act
-        builder.WithSessionStore(store, CheckpointFrequency.PerTurn);
-
-        // Assert
-        var retention = builder.Config.SessionStoreOptions?.Retention;
-        Assert.NotNull(retention);
-        Assert.IsType<RetentionPolicy.LastNPolicy>(retention);
-        // Verify it's LastN(3)
-        var lastNPolicy = (RetentionPolicy.LastNPolicy)retention;
-        Assert.Equal(3, lastNPolicy.N);
-    }
-
-    //──────────────────────────────────────────────────────────────────
     // WithSessionStore(ISessionStore, Action<SessionStoreOptions>)
     //──────────────────────────────────────────────────────────────────
 
@@ -165,18 +81,12 @@ public class SessionBuilderExtensionTests : AgentTestBase
         builder.WithSessionStore(store, options =>
         {
             options.PersistAfterTurn = true;
-            options.Frequency = CheckpointFrequency.PerIteration;
-            options.Retention = RetentionPolicy.FullHistory;
-            options.EnablePendingWrites = true;
         });
 
         // Assert
         var opts = builder.Config.SessionStoreOptions;
         Assert.NotNull(opts);
         Assert.True(opts.PersistAfterTurn);
-        Assert.Equal(CheckpointFrequency.PerIteration, opts.Frequency);
-        Assert.Same(RetentionPolicy.FullHistory, opts.Retention);
-        Assert.True(opts.EnablePendingWrites);
     }
 
     //──────────────────────────────────────────────────────────────────
@@ -232,86 +142,6 @@ public class SessionBuilderExtensionTests : AgentTestBase
     }
 
     //──────────────────────────────────────────────────────────────────
-    // WithSessionStore(string storagePath, CheckpointFrequency, RetentionPolicy?)
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void WithSessionStore_WithPathAndFrequency_CreatesJsonSessionStore()
-    {
-        // Arrange
-        var builder = new AgentBuilder();
-        var tempPath = Path.Combine(Path.GetTempPath(), $"session-test-{Guid.NewGuid()}");
-
-        try
-        {
-            // Act
-            builder.WithSessionStore(tempPath, CheckpointFrequency.PerTurn, RetentionPolicy.LastN(10));
-
-            // Assert
-            Assert.NotNull(builder.Config.SessionStore);
-            Assert.IsType<JsonSessionStore>(builder.Config.SessionStore);
-            Assert.True(builder.Config.SessionStoreOptions?.PersistAfterTurn);
-            Assert.Equal(CheckpointFrequency.PerTurn, builder.Config.SessionStoreOptions?.Frequency);
-        }
-        finally
-        {
-            // Cleanup
-            if (Directory.Exists(tempPath))
-                Directory.Delete(tempPath, recursive: true);
-        }
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // RETENTION POLICY TESTS
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void RetentionPolicy_LatestOnly_IsSingleton()
-    {
-        // Arrange & Act
-        var policy1 = RetentionPolicy.LatestOnly;
-        var policy2 = RetentionPolicy.LatestOnly;
-
-        // Assert
-        Assert.Same(policy1, policy2);
-    }
-
-    [Fact]
-    public void RetentionPolicy_FullHistory_IsSingleton()
-    {
-        // Arrange & Act
-        var policy1 = RetentionPolicy.FullHistory;
-        var policy2 = RetentionPolicy.FullHistory;
-
-        // Assert
-        Assert.Same(policy1, policy2);
-    }
-
-    [Fact]
-    public void RetentionPolicy_LastN_CreatesNewInstance()
-    {
-        // Arrange & Act
-        var policy1 = RetentionPolicy.LastN(5);
-        var policy2 = RetentionPolicy.LastN(5);
-
-        // Assert
-        Assert.NotSame(policy1, policy2);
-        Assert.Equal(policy1, policy2); // Should be equal by value
-    }
-
-    [Fact]
-    public void RetentionPolicy_TimeBased_CreatesNewInstance()
-    {
-        // Arrange & Act
-        var policy1 = RetentionPolicy.TimeBased(TimeSpan.FromDays(30));
-        var policy2 = RetentionPolicy.TimeBased(TimeSpan.FromDays(30));
-
-        // Assert
-        Assert.NotSame(policy1, policy2);
-        Assert.Equal(policy1, policy2); // Should be equal by value
-    }
-
-    //──────────────────────────────────────────────────────────────────
     // SESSION STORE OPTIONS DEFAULTS
     //──────────────────────────────────────────────────────────────────
 
@@ -323,9 +153,6 @@ public class SessionBuilderExtensionTests : AgentTestBase
 
         // Assert
         Assert.False(options.PersistAfterTurn);
-        Assert.Equal(CheckpointFrequency.PerTurn, options.Frequency);
-        Assert.IsType<RetentionPolicy.LastNPolicy>(options.Retention);
-        Assert.False(options.EnablePendingWrites);
     }
 
     //──────────────────────────────────────────────────────────────────

@@ -233,20 +233,29 @@ public sealed partial class MiddlewareState
     }
 
     //
-    // PERSISTENCE API (Session Synchronization)
+    // PERSISTENCE API (Session + Branch Synchronization)
     //
-    // LoadFromSession and SaveToSession use the agent's registered factories
-    // to determine which states are persistent and how to serialize them.
+    // V3 Architecture: State is split by scope
+    // - Session-scoped: LoadFromSession/SaveToSession (filters Scope == Session)
+    // - Branch-scoped: LoadFromBranch/SaveToBranch (filters Scope == Branch)
 
     /// <summary>
-    /// Load persistent middleware state from session.
+    /// Load session-scoped persistent middleware state from session.
+    /// Only loads states marked with Scope = StateScope.Session.
     /// Uses the agent's registered factories to deserialize correctly.
     /// </summary>
     /// <param name="session">Session to load state from (null returns empty state).</param>
     /// <param name="factories">Middleware state factories from the agent's registry.</param>
-    /// <returns>MiddlewareState with restored persistent states.</returns>
+    /// <returns>MiddlewareState with restored session-scoped persistent states.</returns>
+    /// <remarks>
+    /// <para><b>V3 Change:</b> Now filters by Scope == StateScope.Session.</para>
+    /// <para>
+    /// Session-scoped states (permissions, preferences) are shared across all branches.
+    /// Branch-scoped states (plan progress, history cache) use LoadFromBranch instead.
+    /// </para>
+    /// </remarks>
     public static MiddlewareState LoadFromSession(
-        AgentSession? session,
+        Session? session,
         IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
     {
         if (session == null)
@@ -254,12 +263,12 @@ public sealed partial class MiddlewareState
 
         var state = new MiddlewareState();
 
-        // Load all registered persistent states
+        // Load all registered session-scoped persistent states
         foreach (var (key, factory) in factories)
         {
-            if (factory.Persistent)
+            if (factory.Persistent && factory.Scope == StateScope.Session)
             {
-                var json = session.GetMiddlewarePersistentState(key);
+                var json = session.GetMiddlewareState(key);
                 if (json != null)
                 {
                     try
@@ -289,28 +298,95 @@ public sealed partial class MiddlewareState
     }
 
     /// <summary>
-    /// Save persistent middleware state to session.
+    /// Load branch-scoped persistent middleware state from branch.
+    /// Only loads states marked with Scope = StateScope.Branch (the default).
+    /// Uses the agent's registered factories to deserialize correctly.
+    /// </summary>
+    /// <param name="branch">Branch to load state from (null returns empty state).</param>
+    /// <param name="factories">Middleware state factories from the agent's registry.</param>
+    /// <returns>MiddlewareState with restored branch-scoped persistent states.</returns>
+    /// <remarks>
+    /// <para><b>V3 Addition:</b> Branch-scoped state loading.</para>
+    /// <para>
+    /// Branch-scoped states (plan progress, history cache) are per-conversation path.
+    /// Session-scoped states (permissions, preferences) use LoadFromSession instead.
+    /// </para>
+    /// </remarks>
+    public static MiddlewareState LoadFromBranch(
+        Branch? branch,
+        IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
+    {
+        if (branch == null)
+            return new MiddlewareState();
+
+        var state = new MiddlewareState();
+
+        // Load all registered branch-scoped persistent states
+        foreach (var (key, factory) in factories)
+        {
+            if (factory.Persistent && factory.Scope == StateScope.Branch)
+            {
+                var json = branch.GetMiddlewareState(key);
+                if (json != null)
+                {
+                    try
+                    {
+                        var data = factory.Deserialize(json);
+                        if (data != null)
+                        {
+                            state = new MiddlewareState
+                            {
+                                States = state.States.SetItem(key, data),
+                                SchemaSignature = state.SchemaSignature,
+                                SchemaVersion = state.SchemaVersion,
+                                StateVersions = state.StateVersions
+                            };
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore deserialization errors - state will be missing
+                        // This handles schema evolution gracefully
+                    }
+                }
+            }
+        }
+
+        return state;
+    }
+
+    /// <summary>
+    /// Save session-scoped persistent middleware state to session.
+    /// Only saves states marked with Scope = StateScope.Session.
     /// Uses the agent's registered factories to determine which states are persistent.
     /// </summary>
     /// <param name="session">Session to save state to.</param>
     /// <param name="factories">Middleware state factories from the agent's registry.</param>
     /// <exception cref="ArgumentNullException">Thrown if session is null.</exception>
+    /// <remarks>
+    /// <para><b>V3 Change:</b> Now filters by Scope == StateScope.Session.</para>
+    /// <para>
+    /// Session-scoped states (permissions, preferences) are shared across all branches.
+    /// Branch-scoped states (plan progress, history cache) use SaveToBranch instead.
+    /// </para>
+    /// </remarks>
     public void SaveToSession(
-        AgentSession session,
+        Session session,
         IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
     {
         if (session == null)
             throw new ArgumentNullException(nameof(session));
 
-        // Save all registered persistent states
+        // Save all registered session-scoped persistent states
         foreach (var (key, factory) in factories)
         {
-            if (factory.Persistent && States.TryGetValue(key, out var value) && value != null)
+            if (factory.Persistent && factory.Scope == StateScope.Session &&
+                States.TryGetValue(key, out var value) && value != null)
             {
                 try
                 {
                     var json = factory.Serialize(value);
-                    session.SetMiddlewarePersistentState(key, json);
+                    session.SetMiddlewareState(key, json);
                 }
                 catch
                 {
@@ -319,5 +395,77 @@ public sealed partial class MiddlewareState
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Save branch-scoped persistent middleware state to branch.
+    /// Only saves states marked with Scope = StateScope.Branch (the default).
+    /// Uses the agent's registered factories to determine which states are persistent.
+    /// </summary>
+    /// <param name="branch">Branch to save state to.</param>
+    /// <param name="factories">Middleware state factories from the agent's registry.</param>
+    /// <exception cref="ArgumentNullException">Thrown if branch is null.</exception>
+    /// <remarks>
+    /// <para><b>V3 Addition:</b> Branch-scoped state saving.</para>
+    /// <para>
+    /// Branch-scoped states (plan progress, history cache) are per-conversation path.
+    /// Session-scoped states (permissions, preferences) use SaveToSession instead.
+    /// </para>
+    /// </remarks>
+    public void SaveToBranch(
+        Branch branch,
+        IReadOnlyDictionary<string, MiddlewareStateFactory> factories)
+    {
+        if (branch == null)
+            throw new ArgumentNullException(nameof(branch));
+
+        // Save all registered branch-scoped persistent states
+        foreach (var (key, factory) in factories)
+        {
+            if (factory.Persistent && factory.Scope == StateScope.Branch &&
+                States.TryGetValue(key, out var value) && value != null)
+            {
+                try
+                {
+                    var json = factory.Serialize(value);
+                    branch.SetMiddlewareState(key, json);
+                }
+                catch
+                {
+                    // Ignore serialization errors - state will not be persisted
+                    // This handles schema evolution gracefully
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Merges another MiddlewareState into this one.
+    /// States from the other container override states in this container for the same key.
+    /// Used to combine session-scoped and branch-scoped states at load time.
+    /// </summary>
+    /// <param name="other">The other middleware state to merge in.</param>
+    /// <returns>New MiddlewareState containing states from both containers.</returns>
+    public MiddlewareState Merge(MiddlewareState other)
+    {
+        if (other == null || other.States.IsEmpty)
+            return this;
+
+        if (States.IsEmpty)
+            return other;
+
+        var merged = States;
+        foreach (var (key, value) in other.States)
+        {
+            merged = merged.SetItem(key, value);
+        }
+
+        return new MiddlewareState
+        {
+            States = merged,
+            SchemaSignature = SchemaSignature ?? other.SchemaSignature,
+            SchemaVersion = Math.Max(SchemaVersion, other.SchemaVersion),
+            StateVersions = StateVersions ?? other.StateVersions
+        };
     }
 }

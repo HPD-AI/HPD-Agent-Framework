@@ -20,26 +20,27 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new AgentSession();
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id");
 
         // Act - use sync API to build conversation
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Hello"));
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Hello"));
 
         // Verify sync API works before agent run
-        Assert.Equal(1, thread.MessageCount);
-        Assert.Single(thread.Messages);
+        Assert.Equal(1, branch.MessageCount);
+        Assert.Single(branch.Messages);
 
         // Run agent (async for LLM)
         var events = new List<AgentEvent>();
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
             events.Add(evt);
         }
 
         // Assert - sync API works after agent run
-        Assert.True(thread.MessageCount >= 2);  // User message + agent response
-        Assert.NotEmpty(thread.Messages);
-        Assert.Contains(thread.Messages, m => m.Role == ChatRole.Assistant);
+        Assert.True(branch.MessageCount >= 2);  // User message + agent response
+        Assert.NotEmpty(branch.Messages);
+        Assert.Contains(branch.Messages, m => m.Role == ChatRole.Assistant);
     }
 
     [Fact]
@@ -51,7 +52,8 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new AgentSession();
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id");
 
         // Act - load conversation history using sync batch API
         var history = new[]
@@ -62,37 +64,38 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
             new ChatMessage(ChatRole.User, "Tell me about yourself")
         };
 
-        thread.AddMessages(history);
+        branch.AddMessages(history);
 
         // Verify batch add worked
-        Assert.Equal(4, thread.MessageCount);
+        Assert.Equal(4, branch.MessageCount);
 
         // Run agent
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
             // Just consume events
         }
 
         // Assert - agent processed the history
-        Assert.True(thread.MessageCount > 4);
+        Assert.True(branch.MessageCount > 4);
     }
 
     [Fact]
     public void Sync_API_Does_Not_Interfere_With_Thread_Properties()
     {
         // Arrange
-        var thread = new AgentSession
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id")
         {
-            DisplayName = "Test Conversation"
+            Description = "Test Conversation"
         };
 
         // Act - use sync API
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Test"));
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Test"));
 
-        // Assert - other thread properties still work
-        Assert.Equal("Test Conversation", thread.DisplayName);
-        Assert.NotEqual(default, thread.CreatedAt);
-        Assert.NotEqual(default, thread.LastActivity);
+        // Assert - other properties still work
+        Assert.Equal("Test Conversation", branch.Description);
+        Assert.NotEqual(default, session.CreatedAt);
+        Assert.NotEqual(default, session.LastActivity);
     }
 
     [Fact]
@@ -105,27 +108,28 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new AgentSession();
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id");
 
         // Act - add message and run agent
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Question 1"));
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Question 1"));
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
         }
 
-        var countAfterFirstRun = thread.MessageCount;
+        var countAfterFirstRun = branch.MessageCount;
 
         // Add another message and run again
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Question 2"));
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Question 2"));
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
         }
 
-        var countAfterSecondRun = thread.MessageCount;
+        var countAfterSecondRun = branch.MessageCount;
 
         // Assert - message count increases after each run
         Assert.True(countAfterSecondRun > countAfterFirstRun);
-        Assert.Contains(thread.Messages, m => m.Text == "Response 2");
+        Assert.Contains(branch.Messages, m => m.Text == "Response 2");
     }
 
     [Fact]
@@ -137,21 +141,22 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new AgentSession();
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id");
 
         // Act
-        var initialCount = thread.MessageCount;
+        var initialCount = branch.MessageCount;
         Assert.Equal(0, initialCount);
 
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Hello"));
-        var countAfterUserMessage = thread.MessageCount;
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Hello"));
+        var countAfterUserMessage = branch.MessageCount;
         Assert.Equal(1, countAfterUserMessage);
 
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
         }
 
-        var countAfterAgentRun = thread.MessageCount;
+        var countAfterAgentRun = branch.MessageCount;
 
         // Assert
         Assert.True(countAfterAgentRun > countAfterUserMessage);
@@ -166,26 +171,27 @@ public class SyncMessageAPIIntegrationTests : AgentTestBase
 
         var config = DefaultConfig();
         var agent = CreateAgent(config, client);
-        var thread = new AgentSession();
+        var session = new global::HPD.Agent.Session("test-session-id");
+        var branch = new global::HPD.Agent.Branch("test-session-id");
 
-        // Act - mix sync and async
-        thread.AddMessage(new ChatMessage(ChatRole.User, "Message 1"));  // Sync
-        await thread.AddMessageAsync(new ChatMessage(ChatRole.User, "Message 2"));  // Async
-        thread.AddMessages(new[]  // Sync batch
+        // Act - add messages using sync API
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Message 1"));
+        branch.AddMessage(new ChatMessage(ChatRole.User, "Message 2"));
+        branch.AddMessages(new[]
         {
             new ChatMessage(ChatRole.User, "Message 3"),
             new ChatMessage(ChatRole.User, "Message 4")
         });
 
         // Assert - all messages present
-        Assert.Equal(4, thread.MessageCount);
-        Assert.Equal(4, thread.Messages.Count);
+        Assert.Equal(4, branch.MessageCount);
+        Assert.Equal(4, branch.Messages.Count);
 
         // Run agent with mixed history
-        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), thread, options: null, cancellationToken: TestCancellationToken))
+        await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), session: session, branch: branch, cancellationToken: TestCancellationToken))
         {
         }
 
-        Assert.True(thread.MessageCount > 4);
+        Assert.True(branch.MessageCount > 4);
     }
 }

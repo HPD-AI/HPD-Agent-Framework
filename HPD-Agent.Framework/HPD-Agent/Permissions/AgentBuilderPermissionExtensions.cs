@@ -20,8 +20,8 @@ public static class AgentBuilderPermissionExtensions
     /// // Then handle events in your event loop (see Middleware_EVENTS_USAGE.md)
     /// </example>
     /// <remarks>
-    /// Permission choices are now automatically persisted in MiddlewareState
-    /// (PermissionPersistentStateData) and saved to AgentSession. No external
+    /// Permission choices are automatically persisted in MiddlewareState
+    /// (PermissionPersistentStateData) and saved to Session. No external
     /// storage is needed - permissions are session-scoped and persist across runs.
     /// </remarks>
     public static AgentBuilder WithPermissions(this AgentBuilder builder)

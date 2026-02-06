@@ -48,6 +48,23 @@ public record MiddlewareStateFactory(
     bool Persistent,
 
     /// <summary>
+    /// The scope of this middleware state.
+    /// Determines whether state is shared across all branches (Session) or per-branch (Branch).
+    /// From [MiddlewareState(Scope = StateScope.Session)] attribute.
+    /// Defaults to StateScope.Branch (per-conversation path).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Usage by Framework:</b></para>
+    /// <list type="bullet">
+    /// <item>LoadFromSession() filters for Scope == StateScope.Session</item>
+    /// <item>LoadFromBranch() filters for Scope == StateScope.Branch</item>
+    /// <item>SaveToSession() persists only Session-scoped states</item>
+    /// <item>SaveToBranch() persists only Branch-scoped states</item>
+    /// </list>
+    /// </remarks>
+    StateScope Scope,
+
+    /// <summary>
     /// AOT-safe deserializer delegate.
     /// Example: json => JsonSerializer.Deserialize&lt;MyStateData&gt;(json, options)
     /// </summary>

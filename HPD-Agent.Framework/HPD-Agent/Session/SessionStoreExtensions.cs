@@ -29,7 +29,7 @@ public static class SessionStoreExtensions
     /// // session.Store is now set to the JsonSessionStore instance
     /// </code>
     /// </remarks>
-    public static async Task<AgentSession> LoadOrCreateSessionAsync(
+    public static async Task<Session> LoadOrCreateSessionAsync(
         this ISessionStore store,
         string sessionId,
         CancellationToken cancellationToken = default)
@@ -41,12 +41,44 @@ public static class SessionStoreExtensions
 
         if (session == null)
         {
-            session = new AgentSession(sessionId);
+            session = new Session(sessionId);
         }
 
         // Set store reference for middleware/checkpointing
         session.Store = store;
 
         return session;
+    }
+
+    /// <summary>
+    /// Load session and branch, creating them if they don't exist.
+    /// Sets session.Store reference for infrastructure operations.
+    /// </summary>
+    /// <param name="store">The session store to load from</param>
+    /// <param name="sessionId">The session identifier</param>
+    /// <param name="branchId">The branch identifier (defaults to "main")</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>Tuple of (Session, Branch) with Store property set</returns>
+    public static async Task<(Session session, Branch branch)> LoadOrCreateSessionAndBranchAsync(
+        this ISessionStore store,
+        string sessionId,
+        string branchId = "main",
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(branchId);
+
+        var session = await store.LoadSessionAsync(sessionId, cancellationToken)
+            ?? new Session(sessionId);
+        session.Store = store;
+
+        var branch = await store.LoadBranchAsync(sessionId, branchId, cancellationToken)
+            ?? session.CreateBranch(branchId);
+
+        // Ensure back-reference is set
+        branch.Session = session;
+
+        return (session, branch);
     }
 }

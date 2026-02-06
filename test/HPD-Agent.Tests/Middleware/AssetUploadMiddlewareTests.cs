@@ -2,6 +2,7 @@ using HPD.Agent;
 using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
 using Xunit;
+using SessionModel = global::HPD.Agent.Session;
 
 namespace HPD.Agent.Tests.Middleware;
 
@@ -12,7 +13,7 @@ public class AssetUploadMiddlewareTests
     {
         // Arrange
         var middleware = new AssetUploadMiddleware();
-        var session = new AgentSession("test-session");
+        var session = new SessionModel("test-session");
         // session.Store is null (no store associated)
 
         var userMessage = new ChatMessage(ChatRole.User, "Hello");
@@ -273,7 +274,7 @@ public class AssetUploadMiddlewareTests
 
     // Helper method to create BeforeMessageTurnContext
     private static BeforeMessageTurnContext CreateBeforeMessageTurnContext(
-        AgentSession session,
+        SessionModel session,
         ChatMessage userMessage)
     {
         var state = AgentLoopState.InitialSafe(
@@ -288,6 +289,7 @@ public class AssetUploadMiddlewareTests
             state,
             eventCoordinator,
             session,
+            branch: null,
             CancellationToken.None);
 
         var conversationHistory = new List<ChatMessage>();
@@ -299,16 +301,12 @@ public class AssetUploadMiddlewareTests
     // Test session store without asset support
     private class TestSessionStoreWithoutAssets : ISessionStore
     {
-        public bool SupportsHistory => false;
-        public bool SupportsPendingWrites => false;
-        public IAssetStore? AssetStore => null; // No asset store
+        public IAssetStore? GetAssetStore(string sessionId) => null; // No asset store
 
-        public IAssetStore? GetAssetStore(string sessionId) => null;
+        public Task<SessionModel?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<SessionModel?>(new SessionModel(sessionId));
 
-        public Task<AgentSession?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<AgentSession?>(new AgentSession(sessionId));
-
-        public Task SaveSessionAsync(AgentSession session, CancellationToken cancellationToken = default)
+        public Task SaveSessionAsync(SessionModel session, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<List<string>> ListSessionIdsAsync(CancellationToken cancellationToken = default)
@@ -317,52 +315,28 @@ public class AssetUploadMiddlewareTests
         public Task DeleteSessionAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<ExecutionCheckpoint?> LoadCheckpointAsync(string sessionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
+        public Task<Branch?> LoadBranchAsync(string sessionId, string branchId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Branch?>(null);
 
-        public Task SaveCheckpointAsync(ExecutionCheckpoint checkpoint, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
+        public Task SaveBranchAsync(string sessionId, Branch branch, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task DeleteAllCheckpointsAsync(string sessionId, CancellationToken cancellationToken = default)
+        public Task<List<string>> ListBranchIdsAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<string>());
+
+        public Task DeleteBranchAsync(string sessionId, string branchId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task SavePendingWritesAsync(string sessionId, string executionCheckpointId, IEnumerable<PendingWrite> writes, CancellationToken cancellationToken = default)
+        public Task<UncommittedTurn?> LoadUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UncommittedTurn?>(null);
+
+        public Task SaveUncommittedTurnAsync(UncommittedTurn turn, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<List<PendingWrite>> LoadPendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<PendingWrite>());
-
-        public Task DeletePendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<ExecutionCheckpoint?> LoadCheckpointAtAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
-
-        public Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(string sessionId, int? limit = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<CheckpointManifestEntry>());
-
-        public Task PruneCheckpointsAsync(string sessionId, int keepLatest = 10, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task DeleteOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default)
+        public Task DeleteUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<int> DeleteInactiveSessionsAsync(TimeSpan inactivityThreshold, bool dryRun = false, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
-
-        public Task DeleteCheckpointsAsync(string sessionId, IEnumerable<string> checkpointIds, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task<AgentSession?> LoadSessionAtCheckpointAsync(string sessionId, string checkpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<AgentSession?>(null);
-
-        [Obsolete]
-        public Task SaveSessionAtCheckpointAsync(AgentSession session, string checkpointId, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task UpdateCheckpointManifestEntryAsync(string sessionId, string checkpointId, Action<CheckpointManifestEntry> update, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

@@ -278,13 +278,14 @@ public class SkillInstructionMiddlewareTests
             Tools = new List<AITool> { dummyTool }
         };
 
-        // V2: Use AgentContext factory pattern
+        // V3: Use AgentContext factory pattern with Session + Branch
         var agentContext = new AgentContext(
             "TestAgent",
             "test-conv-id",
             state,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
@@ -303,7 +304,8 @@ public class SkillInstructionMiddlewareTests
             "test-conversation",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
     }
 

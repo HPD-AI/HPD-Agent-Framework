@@ -127,14 +127,15 @@ That's it! Your agent is running and can use tools.
 
 ### Step 3b: Run the Agent (Stateful)
 
-For multi-turn conversations, use a session to maintain history:
+For multi-turn conversations, use a session and branch to maintain history:
 
 ```csharp
-// Create a session to maintain conversation history
-var session = new AgentSession();
+// Create a session (metadata) and branch (messages) to maintain conversation history
+var session = new Session();
+var branch = session.CreateBranch();
 
-// Each call reuses the same session - agent remembers previous messages
-var userMessages = new[] 
+// Each call reuses the same branch - agent remembers previous messages
+var userMessages = new[]
 {
     "Add 10 and 20",      // First tool call
     "Now multiply the result by 5"  // References previous result
@@ -142,7 +143,7 @@ var userMessages = new[]
 
 foreach (var message in userMessages)
 {
-    await foreach (var evt in agent.RunAsync(message, session))
+    await foreach (var evt in agent.RunAsync(message, branch))
     {
         if (evt is TextDeltaEvent textDelta)
             Console.Write(textDelta.Text);
@@ -151,12 +152,12 @@ foreach (var message in userMessages)
 }
 ```
 
-The session maintains conversation history across turns, so the agent remembers the previous calculation.
+The branch maintains conversation history across turns, so the agent remembers the previous calculation.
 
 ## Key Concepts
 
-### Agent Session
-The session holds your conversation state - messages, metadata, and execution context. It lets you resume conversations and persist them to storage.
+### Session + Branch
+A **Session** holds metadata and session-scoped state (permissions, assets). A **Branch** holds the conversation messages. Together they let you resume conversations, persist them to storage, and explore alternative conversation paths via branching.
 
 → Learn more: [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md)
 
@@ -185,7 +186,7 @@ Agents can leverage memory systems to persist and recall information across conv
 The agent doesn't just return a final answer - it streams **events** as it works:
 
 ```csharp
-await foreach (var evt in agent.RunAsync("Do something", session))
+await foreach (var evt in agent.RunAsync("Do something", branch))
 {
     if (evt is TextDeltaEvent textDelta)
     {
@@ -208,9 +209,10 @@ This means you can:
 
 ### Stateless (Default)
 ```csharp
-var session = new AgentSession();
-await foreach (var evt in agent.RunAsync("First message", session)) { }
-await foreach (var evt in agent.RunAsync("Second message", session)) { }
+var session = new Session();
+var branch = session.CreateBranch();
+await foreach (var evt in agent.RunAsync("First message", branch)) { }
+await foreach (var evt in agent.RunAsync("Second message", branch)) { }
 // Session is lost when process ends
 ```
 
@@ -218,12 +220,11 @@ Use this for: Testing, scripts, one-off tasks.
 
 ### Persistent
 ```csharp
-var store = new JsonSessionStore("./sessions");
 var agent = new AgentBuilder()
-    .WithSessionStore(store, persistAfterTurn: true)
+    .WithSessionStore(new JsonSessionStore("./sessions"))
     .Build();
 
-// Agent auto-loads, runs, and saves
+// Agent auto-loads, runs, and saves using sessionId + branchId
 await foreach (var evt in agent.RunAsync("Message", sessionId: "user-123")) { }
 ```
 

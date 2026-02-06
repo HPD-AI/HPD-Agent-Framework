@@ -31,7 +31,7 @@ namespace HPD.Agent.Memory;
 ///
 /// <para><b>Session Persistence:</b></para>
 /// <para>
-/// Plans are automatically saved to AgentSession.MiddlewarePersistentState at the end of each run
+/// Plans are automatically saved to Branch.MiddlewareState at the end of each run
 /// and restored at agent start via LoadFromSession/SaveToSession (source-generated).
 /// </para>
 /// </remarks>

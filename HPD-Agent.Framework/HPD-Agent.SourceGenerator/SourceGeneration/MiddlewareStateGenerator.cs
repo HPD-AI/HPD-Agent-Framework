@@ -120,6 +120,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 Namespace: "",
                 Version: 1,
                 Persistent: false,
+                Scope: "Branch",
                 Diagnostics: diagnostics);
         }
 
@@ -139,9 +140,10 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         var namespaceName = typeSymbol.ContainingNamespace?.ToDisplayString() ?? "";
         var propertyName = GetPropertyName(typeName);
 
-        // Extract version and persistent from [MiddlewareState(Version = X, Persistent = Y)] attribute
+        // Extract version, persistent, and scope from [MiddlewareState(Version = X, Persistent = Y, Scope = Z)] attribute
         int version = 1; // Default
         bool persistent = false; // Default
+        string scope = "Branch"; // Default (StateScope.Branch = 0)
         var attribute = context.Attributes.FirstOrDefault();
         if (attribute != null)
         {
@@ -154,6 +156,11 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 else if (namedArg.Key == "Persistent" && namedArg.Value.Value is bool p)
                 {
                     persistent = p;
+                }
+                else if (namedArg.Key == "Scope" && namedArg.Value.Value is int s)
+                {
+                    // StateScope enum: Branch = 0, Session = 1
+                    scope = s == 1 ? "Session" : "Branch";
                 }
             }
         }
@@ -173,6 +180,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
                 Namespace: namespaceName,
                 Version: version,
                 Persistent: persistent,
+                Scope: scope,
                 Diagnostics: diagnostics);
         }
 
@@ -183,6 +191,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             Namespace: namespaceName,
             Version: version,
             Persistent: persistent,
+            Scope: scope,
             Diagnostics: diagnostics);
     }
 
@@ -307,6 +316,7 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
             sb.AppendLine($"            PropertyName: \"{stateInfo.PropertyName}\",");
             sb.AppendLine($"            Version: {stateInfo.Version},");
             sb.AppendLine($"            Persistent: {(stateInfo.Persistent ? "true" : "false")},");
+            sb.AppendLine($"            Scope: StateScope.{stateInfo.Scope},");
             sb.AppendLine($"            Deserialize: json => JsonSerializer.Deserialize<{stateInfo.FullyQualifiedName}>(json, AIJsonUtilities.DefaultOptions),");
             sb.AppendLine($"            Serialize: state => JsonSerializer.Serialize(({stateInfo.FullyQualifiedName})state, AIJsonUtilities.DefaultOptions)");
             sb.AppendLine($"        ),");
@@ -419,5 +429,6 @@ public class MiddlewareStateGenerator : IIncrementalGenerator
         string Namespace,
         int Version,
         bool Persistent,
+        string Scope,
         List<Diagnostic> Diagnostics);
 }

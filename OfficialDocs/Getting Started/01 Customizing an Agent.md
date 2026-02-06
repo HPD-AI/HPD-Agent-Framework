@@ -171,7 +171,7 @@ var agent1 = new AgentBuilder()
     .WithCaching(TimeSpan.FromHours(1))
     .WithMaxFunctionCallTurns(10)
     .WithContinuationExtensionAmount(3)
-    .WithDurableExecution("./checkpoints")
+    .WithSessionStore("./sessions", persistAfterTurn: true)
     .WithMiddleware<MyCustomMiddleware>()
     .WithMiddleware<ErrorHandlingMiddleware>()
     .WithMiddleware<HistoryReductionMiddleware>()
@@ -194,7 +194,7 @@ var agent2 = new AgentBuilder()
     .WithCaching(TimeSpan.FromHours(1))  // Repeated!
     .WithMaxFunctionCallTurns(10)  // Repeated!
     .WithContinuationExtensionAmount(3)  // Repeated!
-    .WithDurableExecution("./checkpoints")  // Repeated!
+    .WithSessionStore("./sessions", persistAfterTurn: true)  // Repeated!
     .WithMiddleware<MyCustomMiddleware>()
     .WithMiddleware<ErrorHandlingMiddleware>()  
     .WithMiddleware<HistoryReductionMiddleware>()  

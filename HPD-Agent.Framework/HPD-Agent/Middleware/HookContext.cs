@@ -44,15 +44,16 @@ public abstract class HookContext
     public string? ConversationId => Base.ConversationId;
 
     /// <summary>
-    /// The agent session being executed.
+    /// The session metadata container.
     /// Access session.Store for infrastructure operations (asset upload, etc.).
+    /// Does NOT contain messages - messages are in <see cref="Branch"/>.
     /// </summary>
     /// <remarks>
     /// <para><b>Example - Asset Upload:</b></para>
     /// <code>
     /// public async Task BeforeIterationAsync(BeforeIterationContext context, ...)
     /// {
-    ///     var assetStore = context.Session.Store?.AssetStore;
+    ///     var assetStore = context.Session?.Store?.GetAssetStore(context.Session.Id);
     ///     if (assetStore != null)
     ///     {
     ///         var assetId = await assetStore.UploadAssetAsync(bytes, "image/jpeg");
@@ -60,7 +61,33 @@ public abstract class HookContext
     /// }
     /// </code>
     /// </remarks>
-    public AgentSession Session => Base.Session;
+    public Session? Session => Base.Session;
+
+    /// <summary>
+    /// The current branch being executed.
+    /// Contains conversation messages and branch-scoped middleware state.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Example - Access Messages:</b></para>
+    /// <code>
+    /// public async Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, ...)
+    /// {
+    ///     var messages = context.Branch?.Messages;
+    ///     var branchId = context.BranchId;
+    /// }
+    /// </code>
+    /// </remarks>
+    public Branch? Branch => Base.Branch;
+
+    /// <summary>
+    /// Convenience property for getting the session ID.
+    /// </summary>
+    public string? SessionId => Session?.Id;
+
+    /// <summary>
+    /// Convenience property for getting the branch ID.
+    /// </summary>
+    public string? BranchId => Branch?.Id;
 
     /// <summary>
     /// Service provider for dependency injection (may be null if not configured).

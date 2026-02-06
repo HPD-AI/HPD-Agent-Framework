@@ -734,7 +734,8 @@ public class FunctionRetryMiddlewareTests
             "test-conversation",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
     }
 

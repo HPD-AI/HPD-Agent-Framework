@@ -196,7 +196,8 @@ public class ErrorTrackingMiddlewareTests
             "conv123",
             state,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new HPD.Agent.Session("test-session"),
+            new HPD.Agent.Session("test-session").CreateBranch(),
             CancellationToken.None);
 
         return agentContext.AsError(
@@ -218,7 +219,8 @@ public class ErrorTrackingMiddlewareTests
             "conv123",
             state,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new HPD.Agent.Session("test-session"),
+            new HPD.Agent.Session("test-session").CreateBranch(),
             CancellationToken.None);
 
         if (allSucceeded)

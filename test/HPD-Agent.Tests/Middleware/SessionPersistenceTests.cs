@@ -15,6 +15,8 @@ namespace HPD.Agent.Tests.Middleware;
 public class SessionPersistenceTests
 {
     // Create test factories for persistent states
+    // PermissionPersistentStateData is session-scoped (shared across branches)
+    // HistoryReductionStateData is branch-scoped (per-conversation path, the default)
     private static readonly IReadOnlyDictionary<string, MiddlewareStateFactory> TestFactories =
         new Dictionary<string, MiddlewareStateFactory>
         {
@@ -24,6 +26,7 @@ public class SessionPersistenceTests
                 PropertyName: "PermissionPersistent",
                 Version: 1,
                 Persistent: true,
+                Scope: StateScope.Session,
                 Deserialize: json => JsonSerializer.Deserialize<PermissionPersistentStateData>(json, AIJsonUtilities.DefaultOptions),
                 Serialize: state => JsonSerializer.Serialize((PermissionPersistentStateData)state, AIJsonUtilities.DefaultOptions)
             ),
@@ -33,6 +36,7 @@ public class SessionPersistenceTests
                 PropertyName: "HistoryReduction",
                 Version: 1,
                 Persistent: true,
+                Scope: StateScope.Branch,
                 Deserialize: json => JsonSerializer.Deserialize<HistoryReductionStateData>(json, AIJsonUtilities.DefaultOptions),
                 Serialize: state => JsonSerializer.Serialize((HistoryReductionStateData)state, AIJsonUtilities.DefaultOptions)
             )
@@ -54,7 +58,7 @@ public class SessionPersistenceTests
     public void LoadFromSession_RestoresPermissionState()
     {
         // Arrange: Create session with permission state
-        var session = new AgentSession();
+        var session = new global::HPD.Agent.Session();
         var permState = new PermissionPersistentStateData()
             .WithPermission("Bash", PermissionChoice.AlwaysAllow)
             .WithPermission("Read", PermissionChoice.AlwaysDeny);
@@ -78,10 +82,10 @@ public class SessionPersistenceTests
     }
 
     [Fact]
-    public void LoadFromSession_RestoresHistoryReduction()
+    public void LoadFromBranch_RestoresHistoryReduction()
     {
-        // Arrange: Create session with history reduction state
-        var session = new AgentSession();
+        // Arrange: Create branch with history reduction state (branch-scoped)
+        var branch = new global::HPD.Agent.Branch("test-session");
         // Create enough messages for the test
         var messages = new List<Microsoft.Extensions.AI.ChatMessage>();
         for (int i = 0; i < 100; i++)
@@ -99,10 +103,10 @@ public class SessionPersistenceTests
         var hrState = new HistoryReductionStateData().WithReduction(reduction);
         var middlewareState = new MiddlewareState().WithHistoryReduction(hrState);
 
-        middlewareState.SaveToSession(session, TestFactories);
+        middlewareState.SaveToBranch(branch, TestFactories);
 
-        // Act: Load from session
-        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
+        // Act: Load from branch
+        var restored = MiddlewareState.LoadFromBranch(branch, TestFactories);
 
         // Assert: History reduction is restored
         restored.HistoryReduction().Should().NotBeNull();
@@ -113,10 +117,11 @@ public class SessionPersistenceTests
     }
 
     [Fact]
-    public void SaveToSession_PersistsMultipleStates()
+    public void SavePersistsMultipleStates_AcrossSessionAndBranch()
     {
-        // Arrange: Create multiple persistent states
-        var session = new AgentSession();
+        // Arrange: Create multiple persistent states with different scopes
+        var session = new global::HPD.Agent.Session();
+        var branch = new global::HPD.Agent.Branch(session.Id);
 
         var permState = new PermissionPersistentStateData()
             .WithPermission("Bash", PermissionChoice.AlwaysAllow);
@@ -138,26 +143,29 @@ public class SessionPersistenceTests
             .WithPermissionPersistent(permState)
             .WithHistoryReduction(hrState);
 
-        // Act: Save to session
+        // Act: Save session-scoped to session, branch-scoped to branch
         middlewareState.SaveToSession(session, TestFactories);
+        middlewareState.SaveToBranch(branch, TestFactories);
 
-        // Load back
-        var restored = MiddlewareState.LoadFromSession(session, TestFactories);
+        // Load back from respective stores
+        var restoredFromSession = MiddlewareState.LoadFromSession(session, TestFactories);
+        var restoredFromBranch = MiddlewareState.LoadFromBranch(branch, TestFactories);
 
-        // Assert: Both states are restored
-        restored.PermissionPersistent().Should().NotBeNull();
-        restored.PermissionPersistent()!.GetPermission("Bash")
+        // Assert: Permission state restored from session (session-scoped)
+        restoredFromSession.PermissionPersistent().Should().NotBeNull();
+        restoredFromSession.PermissionPersistent()!.GetPermission("Bash")
             .Should().Be(PermissionChoice.AlwaysAllow);
 
-        restored.HistoryReduction().Should().NotBeNull();
-        restored.HistoryReduction()!.LastReduction!.SummarizedUpToIndex.Should().Be(50);
+        // Assert: History reduction restored from branch (branch-scoped)
+        restoredFromBranch.HistoryReduction().Should().NotBeNull();
+        restoredFromBranch.HistoryReduction()!.LastReduction!.SummarizedUpToIndex.Should().Be(50);
     }
 
     [Fact]
     public void SaveToSession_DoesNotPersistTransientStates()
     {
         // Arrange: Create transient batch permission state
-        var session = new AgentSession();
+        var session = new global::HPD.Agent.Session();
         var batchState = new BatchPermissionStateData()
             .RecordApproval("Bash")
             .RecordApproval("Read");
@@ -179,7 +187,7 @@ public class SessionPersistenceTests
     public void SaveToSession_WithNullState_DoesNotSaveAnything()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new global::HPD.Agent.Session();
         var middlewareState = new MiddlewareState(); // All states null
 
         // Act
@@ -208,7 +216,7 @@ public class SessionPersistenceTests
     public void PermissionState_RoundTrip_PreservesAllData()
     {
         // Arrange: Create complex permission state
-        var session = new AgentSession();
+        var session = new global::HPD.Agent.Session();
         var permState = new PermissionPersistentStateData()
             .WithPermission("Bash", PermissionChoice.AlwaysAllow)
             .WithPermission("Read", PermissionChoice.AlwaysAllow)
@@ -232,7 +240,7 @@ public class SessionPersistenceTests
     public void SessionPersistence_MultipleRoundTrips_PreservesData()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new global::HPD.Agent.Session();
         var permState1 = new PermissionPersistentStateData()
             .WithPermission("Bash", PermissionChoice.AlwaysAllow);
 

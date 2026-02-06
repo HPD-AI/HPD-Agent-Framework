@@ -1,26 +1,25 @@
 using Microsoft.Extensions.AI;
 using Xunit;
 using HPD.Agent;
-using HPD.Agent;
 using HPD.Agent.Tests.Infrastructure;
 
 namespace HPD.Agent.Tests.Session;
 
 /// <summary>
-/// Tests for AgentSession, SessionSnapshot, and ExecutionCheckpoint types.
-/// Covers message operations, metadata, checkpoint conversion, and serialization.
+/// Tests for V3 Session and Branch types.
+/// Covers construction, message operations, metadata, display name, execution state, and store property.
 /// </summary>
 public class AgentSessionTests : AgentTestBase
 {
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - CONSTRUCTION
+    // SESSION - CONSTRUCTION
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_DefaultConstructor_GeneratesId()
+    public void Session_DefaultConstructor_GeneratesId()
     {
         // Arrange & Act
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session();
 
         // Assert
         Assert.NotNull(session.Id);
@@ -29,33 +28,31 @@ public class AgentSessionTests : AgentTestBase
     }
 
     [Fact]
-    public void AgentSession_WithId_UsesProvidedId()
+    public void Session_WithId_UsesProvidedId()
     {
         // Arrange & Act
-        var session = new AgentSession("custom-session-id");
+        var session = new HPD.Agent.Session("custom-session-id");
 
         // Assert
         Assert.Equal("custom-session-id", session.Id);
     }
 
     [Fact]
-    public void AgentSession_WithId_ThrowsOnNullOrWhitespace()
+    public void Session_WithId_ThrowsOnNullOrWhitespace()
     {
-        // Arrange & Act & Assert
-        // ThrowIfNullOrWhiteSpace throws ArgumentNullException for null, ArgumentException for empty/whitespace
-        Assert.Throws<ArgumentNullException>(() => new AgentSession(null!));
-        Assert.Throws<ArgumentException>(() => new AgentSession(""));
-        Assert.Throws<ArgumentException>(() => new AgentSession("   "));
+        Assert.Throws<ArgumentNullException>(() => new HPD.Agent.Session(null!));
+        Assert.Throws<ArgumentException>(() => new HPD.Agent.Session(""));
+        Assert.Throws<ArgumentException>(() => new HPD.Agent.Session("   "));
     }
 
     [Fact]
-    public void AgentSession_CreatedAt_SetToNow()
+    public void Session_CreatedAt_SetToNow()
     {
         // Arrange
         var before = DateTime.UtcNow;
 
         // Act
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session();
 
         // Assert
         var after = DateTime.UtcNow;
@@ -63,30 +60,55 @@ public class AgentSessionTests : AgentTestBase
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - MESSAGE OPERATIONS
+    // BRANCH - CONSTRUCTION
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_AddMessage_AddsToCollection()
+    public void Branch_Constructor_GeneratesId()
     {
-        // Arrange
-        var session = new AgentSession();
-
-        // Act
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMessage(AssistantMessage("Hi!"));
-
-        // Assert
-        Assert.Equal(2, session.MessageCount);
-        Assert.Equal("Hello", session.Messages[0].Text);
-        Assert.Equal("Hi!", session.Messages[1].Text);
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+        Assert.NotNull(branch.Id);
+        Assert.NotEmpty(branch.Id);
+        Assert.Equal("session-1", branch.SessionId);
     }
 
     [Fact]
-    public void AgentSession_AddMessages_AddsMultiple()
+    public void Branch_WithId_UsesProvidedId()
+    {
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch("branch-1");
+        Assert.Equal("branch-1", branch.Id);
+        Assert.Equal("session-1", branch.SessionId);
+    }
+
+    //──────────────────────────────────────────────────────────────────
+    // BRANCH - MESSAGE OPERATIONS
+    //──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Branch_AddMessage_AddsToCollection()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+
+        // Act
+        branch.AddMessage(UserMessage("Hello"));
+        branch.AddMessage(AssistantMessage("Hi!"));
+
+        // Assert
+        Assert.Equal(2, branch.MessageCount);
+        Assert.Equal("Hello", branch.Messages[0].Text);
+        Assert.Equal("Hi!", branch.Messages[1].Text);
+    }
+
+    [Fact]
+    public void Branch_AddMessages_AddsMultiple()
+    {
+        // Arrange
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
         var messages = new List<ChatMessage>
         {
             UserMessage("One"),
@@ -95,81 +117,52 @@ public class AgentSessionTests : AgentTestBase
         };
 
         // Act
-        session.AddMessages(messages);
+        branch.AddMessages(messages);
 
         // Assert
-        Assert.Equal(3, session.MessageCount);
+        Assert.Equal(3, branch.MessageCount);
     }
 
     [Fact]
-    public async Task AgentSession_AddMessageAsync_AddsToCollection()
+    public void Branch_Clear_RemovesAllMessages()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+        branch.AddMessage(UserMessage("Hello"));
 
         // Act
-        await session.AddMessageAsync(UserMessage("Async message"));
+        branch.Clear();
 
         // Assert
-        Assert.Single(session.Messages);
-        Assert.Equal("Async message", session.Messages[0].Text);
+        Assert.Empty(branch.Messages);
     }
 
     [Fact]
-    public async Task AgentSession_GetMessagesAsync_ReturnsAllMessages()
+    public void Branch_AddMessage_UpdatesLastActivity()
     {
         // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("One"));
-        session.AddMessage(AssistantMessage("Two"));
-
-        // Act
-        var messages = await session.GetMessagesAsync();
-
-        // Assert
-        Assert.Equal(2, messages.Count);
-    }
-
-    [Fact]
-    public void AgentSession_Clear_RemovesAllMessages()
-    {
-        // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMetadata("key", "value");
-
-        // Act
-        session.Clear();
-
-        // Assert
-        Assert.Empty(session.Messages);
-        Assert.Empty(session.Metadata);
-    }
-
-    [Fact]
-    public void AgentSession_AddMessage_UpdatesLastActivity()
-    {
-        // Arrange
-        var session = new AgentSession();
-        var initialActivity = session.LastActivity;
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+        var initialActivity = branch.LastActivity;
         System.Threading.Thread.Sleep(10);
 
         // Act
-        session.AddMessage(UserMessage("Hello"));
+        branch.AddMessage(UserMessage("Hello"));
 
         // Assert
-        Assert.True(session.LastActivity > initialActivity);
+        Assert.True(branch.LastActivity > initialActivity);
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - METADATA
+    // SESSION - METADATA
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_AddMetadata_StoresValue()
+    public void Session_AddMetadata_StoresValue()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session();
 
         // Act
         session.AddMetadata("customKey", "customValue");
@@ -178,294 +171,95 @@ public class AgentSessionTests : AgentTestBase
         Assert.Equal("customValue", session.Metadata["customKey"]);
     }
 
-    [Fact]
-    public void AgentSession_DisplayName_GetSet()
-    {
-        // Arrange
-        var session = new AgentSession();
-
-        // Act
-        session.DisplayName = "My Custom Name";
-
-        // Assert
-        Assert.Equal("My Custom Name", session.DisplayName);
-    }
+    //──────────────────────────────────────────────────────────────────
+    // BRANCH - DISPLAY NAME
+    //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_GetDisplayName_FromFirstUserMessage()
+    public void Branch_GetDisplayName_FromFirstUserMessage()
     {
         // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Hello, how are you today?"));
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+        branch.AddMessage(UserMessage("Hello, how are you today?"));
 
         // Act
-        var displayName = session.GetDisplayName(maxLength: 15);
+        var displayName = branch.GetDisplayName(maxLength: 15);
 
         // Assert
         Assert.Equal("Hello, how a...", displayName);
     }
 
     [Fact]
-    public void AgentSession_GetDisplayName_FallsBackToDefault()
+    public void Branch_GetDisplayName_FallsBackToId()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
 
         // Act
-        var displayName = session.GetDisplayName();
+        var displayName = branch.GetDisplayName();
 
-        // Assert
-        Assert.Equal("New Conversation", displayName);
+        // Assert — falls back to branch ID when no messages
+        Assert.Equal(branch.Id, displayName);
     }
 
     [Fact]
-    public void AgentSession_GetDisplayName_PreferExplicitName()
+    public void Branch_GetDisplayName_PreferDescription()
     {
         // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Some user message"));
-        session.DisplayName = "Custom Name";
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
+        branch.AddMessage(UserMessage("Some user message"));
+        branch.Description = "Custom Name";
 
         // Act
-        var displayName = session.GetDisplayName();
+        var displayName = branch.GetDisplayName();
 
         // Assert
         Assert.Equal("Custom Name", displayName);
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - EXECUTION STATE
+    // BRANCH - EXECUTION STATE
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_ExecutionState_GetSet()
+    public void Branch_ExecutionState_GetSet()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session("session-1");
+        var branch = session.CreateBranch();
         var state = AgentLoopState.InitialSafe(
             new List<ChatMessage>(), "run-123", "conv-456", "TestAgent");
 
         // Act
-        session.ExecutionState = state;
+        branch.ExecutionState = state;
 
         // Assert
-        Assert.NotNull(session.ExecutionState);
-        Assert.Equal("run-123", session.ExecutionState.RunId);
+        Assert.NotNull(branch.ExecutionState);
+        Assert.Equal("run-123", branch.ExecutionState.RunId);
     }
 
     //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - EXECUTION CHECKPOINT CONVERSION (NEW API)
+    // SESSION - STORE PROPERTY
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void AgentSession_ToExecutionCheckpoint_CreatesCheckpoint()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMetadata("key", "value");
-        session.ExecutionState = AgentLoopState.InitialSafe(
-            session.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = session.ToExecutionCheckpoint();
-
-        // Assert
-        Assert.Equal("session-123", checkpoint.SessionId);
-        Assert.NotNull(checkpoint.ExecutionCheckpointId);
-        Assert.NotNull(checkpoint.ExecutionState);
-        Assert.Equal("run-123", checkpoint.ExecutionState.RunId);
-        // Messages are inside ExecutionState.CurrentMessages (no duplication)
-        Assert.Single(checkpoint.ExecutionState.CurrentMessages);
-    }
-
-    [Fact]
-    public void AgentSession_ToExecutionCheckpoint_ThrowsWithoutExecutionState()
-    {
-        // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Hello"));
-        // Note: No ExecutionState set
-
-        // Act & Assert
-        Assert.Throws<InvalidOperationException>(() => session.ToExecutionCheckpoint());
-    }
-
-    [Fact]
-    public void AgentSession_ToExecutionCheckpoint_WithCustomId()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.ExecutionState = AgentLoopState.InitialSafe(
-            new List<ChatMessage>(), "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = session.ToExecutionCheckpoint("custom-checkpoint-id");
-
-        // Assert
-        Assert.Equal("custom-checkpoint-id", checkpoint.ExecutionCheckpointId);
-    }
-
-    [Fact]
-    public void AgentSession_FromExecutionCheckpoint_RestoresSession()
-    {
-        // Arrange
-        var original = new AgentSession("original-session");
-        original.AddMessage(UserMessage("Test message"));
-        original.ExecutionState = AgentLoopState.InitialSafe(
-            original.Messages.ToList(), "run-123", "conv-456", "TestAgent");
-
-        var checkpoint = original.ToExecutionCheckpoint();
-
-        // Act
-        var restored = AgentSession.FromExecutionCheckpoint(checkpoint);
-
-        // Assert
-        Assert.Equal("original-session", restored.Id);
-        Assert.Single(restored.Messages); // Restored from ExecutionState.CurrentMessages
-        Assert.NotNull(restored.ExecutionState);
-        Assert.Equal("run-123", restored.ExecutionState.RunId);
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // AGENTSESSION - SNAPSHOT CONVERSION
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AgentSession_ToSnapshot_CreatesSnapshot()
-    {
-        // Arrange
-        var session = new AgentSession("session-123");
-        session.AddMessage(UserMessage("Hello"));
-        session.AddMetadata("key", "value");
-
-        // Act
-        var snapshot = session.ToSnapshot();
-
-        // Assert
-        Assert.Equal("session-123", snapshot.SessionId);
-        Assert.Single(snapshot.Messages);
-        Assert.Equal("value", snapshot.Metadata["key"]);
-    }
-
-    [Fact]
-    public void AgentSession_ToSnapshot_WorksWithoutExecutionState()
-    {
-        // Arrange
-        var session = new AgentSession();
-        session.AddMessage(UserMessage("Hello"));
-        // Note: No ExecutionState set - this is the normal case after turn completes
-
-        // Act
-        var snapshot = session.ToSnapshot();
-
-        // Assert
-        Assert.NotNull(snapshot);
-        Assert.Single(snapshot.Messages);
-    }
-
-    [Fact]
-    public void AgentSession_FromSnapshot_RestoresSession()
-    {
-        // Arrange
-        var original = new AgentSession("original-session");
-        original.AddMessage(UserMessage("Test message"));
-        original.AddMetadata("testKey", "testValue");
-        original.ConversationId = "conv_456";
-
-        var snapshot = original.ToSnapshot();
-
-        // Act
-        var restored = AgentSession.FromSnapshot(snapshot);
-
-        // Assert
-        Assert.Equal("original-session", restored.Id);
-        Assert.Single(restored.Messages);
-        Assert.Equal("testValue", restored.Metadata["testKey"]);
-        Assert.Equal("conv_456", restored.ConversationId);
-        Assert.Null(restored.ExecutionState); // Snapshots don't include ExecutionState
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // EXECUTIONCHECKPOINT
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ExecutionCheckpoint_RequiredProperties_AreSet()
+    public void Session_Store_DefaultsToNull()
     {
         // Arrange & Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.InitialSafe(
-                new List<ChatMessage> { UserMessage("Hello") }, "run-123", "conv-456", "TestAgent"),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert
-        Assert.Equal("session-123", checkpoint.SessionId);
-        Assert.Equal("checkpoint-456", checkpoint.ExecutionCheckpointId);
-        Assert.Single(checkpoint.ExecutionState.CurrentMessages); // Messages inside ExecutionState
-    }
-
-    [Fact]
-    public void ExecutionCheckpoint_Version_HasDefaultValue()
-    {
-        // Arrange & Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = AgentLoopState.InitialSafe(
-                new List<ChatMessage>(), "run-123", "conv-456", "TestAgent"),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert
-        Assert.Equal(1, checkpoint.Version);
-    }
-
-    [Fact]
-    public void ExecutionCheckpoint_NoMessageDuplication()
-    {
-        // Arrange
-        var messages = new List<ChatMessage> { UserMessage("Hello"), AssistantMessage("Hi!") };
-        var state = AgentLoopState.InitialSafe(messages, "run-123", "conv-456", "TestAgent");
-
-        // Act
-        var checkpoint = new ExecutionCheckpoint
-        {
-            SessionId = "session-123",
-            ExecutionCheckpointId = "checkpoint-456",
-            ExecutionState = state,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        // Assert: Messages exist ONLY in ExecutionState.CurrentMessages
-        // There's no separate Messages property on ExecutionCheckpoint
-        Assert.Equal(2, checkpoint.ExecutionState.CurrentMessages.Count);
-    }
-
-    //──────────────────────────────────────────────────────────────────
-    // SESSION.STORE PROPERTY
-    //──────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void AgentSession_Store_DefaultsToNull()
-    {
-        // Arrange & Act
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session();
 
         // Assert
         Assert.Null(session.Store);
     }
 
     [Fact]
-    public void AgentSession_Store_CanBeSet()
+    public void Session_Store_CanBeSet()
     {
         // Arrange
-        var session = new AgentSession();
+        var session = new HPD.Agent.Session();
         var store = new InMemorySessionStore();
 
         // Act
@@ -476,61 +270,21 @@ public class AgentSessionTests : AgentTestBase
     }
 
     [Fact]
-    public void AgentSession_Store_NotSerializedToJson()
+    public void Session_Store_NotSerializedToJson()
     {
         // Arrange
-        var session = new AgentSession("test-session");
-        session.AddMessage(UserMessage("Hello"));
+        var session = new HPD.Agent.Session("test-session");
         session.AddMetadata("key", "value");
 
         // Set a store reference
         var store = new InMemorySessionStore();
         session.Store = store;
 
-        // Act - Convert to snapshot and serialize
-        var snapshot = session.ToSnapshot();
-        var json = System.Text.Json.JsonSerializer.Serialize(snapshot);
+        // Act — Serialize the session
+        var json = System.Text.Json.JsonSerializer.Serialize(session);
 
-        // Assert - JSON should NOT contain "Store" property
+        // Assert — JSON should NOT contain "Store" property
         Assert.DoesNotContain("\"Store\"", json);
         Assert.DoesNotContain("\"store\"", json, StringComparison.OrdinalIgnoreCase);
-
-        // Deserialize and verify
-        var deserialized = System.Text.Json.JsonSerializer.Deserialize<SessionSnapshot>(json);
-        Assert.NotNull(deserialized);
-        Assert.Equal("test-session", deserialized.SessionId);
     }
-
-    [Fact]
-    public async Task AgentSession_SaveAsync_ThrowsWhenStoreIsNull()
-    {
-        // Arrange
-        var session = new AgentSession();
-
-        // Act & Assert
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await session.SaveAsync());
-
-        Assert.Contains("no associated store", exception.Message);
-    }
-
-    [Fact]
-    public async Task AgentSession_SaveAsync_CallsStoreWhenSet()
-    {
-        // Arrange
-        var session = new AgentSession("test-session");
-        session.AddMessage(UserMessage("Test"));
-
-        var store = new InMemorySessionStore();
-        session.Store = store;
-
-        // Act
-        await session.SaveAsync();
-
-        // Assert - Session should be saved to store
-        var loaded = await store.LoadSessionAsync("test-session");
-        Assert.NotNull(loaded);
-        Assert.Single(loaded.Messages);
-    }
-
 }

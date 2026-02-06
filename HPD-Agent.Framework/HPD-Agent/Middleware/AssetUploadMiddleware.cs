@@ -116,7 +116,7 @@ public class AssetUploadMiddleware : IAgentMiddleware
         };
 
         // Update the user message in the context
-        // The agent will handle persisting this to session.Messages via turnHistory
+        // The agent will handle persisting this to branch.Messages via turnHistory
         context.UserMessage = updatedMessage;
     }
 }

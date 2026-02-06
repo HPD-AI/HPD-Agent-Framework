@@ -6,9 +6,24 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.Extensions.AI;
 using HPD.Agent;
-using AgentSession = HPD.Agent.AgentSession;
 
 namespace HPD.Agent.FFI;
+
+/// <summary>
+/// Wrapper holding V3 Session + Branch pair for FFI thread handles.
+/// FFI consumers see a single "thread" handle; internally we maintain the V3 split.
+/// </summary>
+internal sealed class FFIConversationThread
+{
+    public Session Session { get; }
+    public Branch Branch { get; }
+
+    public FFIConversationThread()
+    {
+        Session = new Session();
+        Branch = Session.CreateBranch();
+    }
+}
 
 
 /// <summary>
@@ -299,13 +314,13 @@ public static partial class NativeExports
     /// <summary>
     /// Creates a new conversation thread for managing conversation state.
     /// </summary>
-    /// <returns>Handle to the created AgentSession, or IntPtr.Zero on failure</returns>
+    /// <returns>Handle to the created conversation thread, or IntPtr.Zero on failure</returns>
     [UnmanagedCallersOnly(EntryPoint = "create_conversation_thread")]
     public static IntPtr CreateAgentSession()
     {
         try
         {
-            var thread = new AgentSession();
+            var thread = new FFIConversationThread();
             return ObjectManager.Add(thread);
         }
         catch (Exception ex)
@@ -335,10 +350,10 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
+            var thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             if (thread == null) return IntPtr.Zero;
 
-            return MarshalString(thread.Id);
+            return MarshalString(thread.Session.Id);
         }
         catch (Exception ex)
         {
@@ -357,10 +372,10 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
+            var thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             if (thread == null) return -1;
 
-            return thread.MessageCount;
+            return thread.Branch.MessageCount;
         }
         catch (Exception ex)
         {
@@ -379,10 +394,10 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
+            var thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             if (thread == null) return IntPtr.Zero;
 
-            var json = JsonSerializer.Serialize(thread.Messages, HPDFFIJsonContext.Default.IEnumerableChatMessage);
+            var json = JsonSerializer.Serialize(thread.Branch.Messages, HPDFFIJsonContext.Default.IEnumerableChatMessage);
             return MarshalString(json);
         }
         catch (Exception ex)
@@ -403,7 +418,7 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
+            var thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             if (thread == null) return 0;
 
             string? messageJson = Marshal.PtrToStringUTF8(messageJsonPtr);
@@ -412,7 +427,7 @@ public static partial class NativeExports
             var message = JsonSerializer.Deserialize(messageJson, HPDFFIJsonContext.Default.ChatMessage);
             if (message == null) return 0;
 
-            thread.AddMessage(message);
+            thread.Branch.AddMessage(message);
             return 1;
         }
         catch (Exception ex)
@@ -432,10 +447,10 @@ public static partial class NativeExports
     {
         try
         {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
+            var thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             if (thread == null) return 0;
 
-            thread.Clear();
+            thread.Branch.Clear();
             return 1;
         }
         catch (Exception ex)
@@ -473,10 +488,10 @@ public static partial class NativeExports
             var messages = new[] { userMessage };
 
             // Get thread if provided
-            AgentSession? thread = null;
+            FFIConversationThread? thread = null;
             if (threadHandle != IntPtr.Zero)
             {
-                thread = ObjectManager.Get<AgentSession>(threadHandle);
+                thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             }
 
             // Run agent and collect all events
@@ -485,7 +500,7 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, session: thread, options: null);
+                eventStream = agent.RunAsync(messages, session: thread.Session, branch: thread.Branch, options: null);
             }
             else
             {
@@ -549,10 +564,10 @@ public static partial class NativeExports
             var messages = new[] { userMessage };
 
             // Get thread if provided
-            AgentSession? thread = null;
+            FFIConversationThread? thread = null;
             if (threadHandle != IntPtr.Zero)
             {
-                thread = ObjectManager.Get<AgentSession>(threadHandle);
+                thread = ObjectManager.Get<FFIConversationThread>(threadHandle);
             }
 
             // Run agent and stream events
@@ -560,7 +575,7 @@ public static partial class NativeExports
 
             if (thread != null)
             {
-                eventStream = agent.RunAsync(messages, session: thread, options: null);
+                eventStream = agent.RunAsync(messages, session: thread.Session, branch: thread.Branch, options: null);
             }
             else
             {
@@ -603,69 +618,7 @@ public static partial class NativeExports
         }
     }
 
-    //    
-    // CHECKPOINTING & RESUME APIs (Durable Execution) - DISABLED (Snapshot functionality removed)
-    //    
-
-    /*
-    /// <summary>
-    /// Serializes a conversation thread to JSON for persistence (checkpointing).
-    /// Enables crash recovery and durable execution.
-    /// </summary>
-    /// <param name="threadHandle">Handle to the conversation thread</param>
-    /// <returns>Pointer to UTF-8 encoded JSON snapshot, or IntPtr.Zero on failure</returns>
-    [UnmanagedCallersOnly(EntryPoint = "serialize_thread")]
-    public static IntPtr SerializeThread(IntPtr threadHandle)
-    {
-        try
-        {
-            var thread = ObjectManager.Get<AgentSession>(threadHandle);
-            if (thread == null) return IntPtr.Zero;
-
-            // Serialize thread to snapshot
-            var snapshot = thread.Serialize();
-
-            // Convert snapshot to JSON
-            var json = JsonSerializer.Serialize(snapshot, HPDFFIJsonContext.Default.AgentSessionSnapshot);
-            return MarshalString(json);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to serialize session: {ex.Message}");
-            return IntPtr.Zero;
-        }
-    }
-
-    /// <summary>
-    /// Deserializes a conversation thread from JSON (resume from checkpoint).
-    /// Enables crash recovery and cross-session continuation.
-    /// </summary>
-    /// <param name="snapshotJsonPtr">Pointer to UTF-8 encoded JSON snapshot</param>
-    /// <returns>Handle to the restored AgentSession, or IntPtr.Zero on failure</returns>
-    [UnmanagedCallersOnly(EntryPoint = "deserialize_thread")]
-    public static IntPtr DeserializeThread(IntPtr snapshotJsonPtr)
-    {
-        try
-        {
-            string? snapshotJson = Marshal.PtrToStringUTF8(snapshotJsonPtr);
-            if (string.IsNullOrEmpty(snapshotJson)) return IntPtr.Zero;
-
-            // Deserialize snapshot from JSON
-            var snapshot = JsonSerializer.Deserialize(snapshotJson, HPDFFIJsonContext.Default.AgentSessionSnapshot);
-            if (snapshot == null) return IntPtr.Zero;
-
-            // Restore thread from snapshot
-            var thread = AgentSession.Deserialize(snapshot);
-            return ObjectManager.Add(thread);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to deserialize session: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
-            return IntPtr.Zero;
-        }
-    }
-    */
+    // V2 serialize_thread / deserialize_thread APIs removed — crash recovery is now automatic via UncommittedTurn.
 
     //    
     // PERMISSION SYSTEM APIs (Human-in-the-Loop)

@@ -758,16 +758,10 @@ public static class BuiltInCommands
                     AnsiConsole.MarkupLine($"  Modified: [dim]{fileInfo.LastWriteTime:g}[/]");
                 }
 
-                // Get message count from thread if available
-                if (ctx.Data.TryGetValue("Thread", out var threadObj) && threadObj != null)
+                // Get message count from branch if available
+                if (ctx.Data.TryGetValue("Branch", out var branchObj) && branchObj is HPD.Agent.Branch currentBranch)
                 {
-                    var thread = threadObj as dynamic;
-                    try
-                    {
-                        var messageCount = thread?.Messages?.Count ?? 0;
-                        AnsiConsole.MarkupLine($"  Messages: [dim]{messageCount}[/]");
-                    }
-                    catch { /* ignore */ }
+                    AnsiConsole.MarkupLine($"  Messages: [dim]{currentBranch.Messages.Count}[/]");
                 }
 
                 AnsiConsole.WriteLine();
@@ -935,8 +929,11 @@ public static class BuiltInCommands
 
                     // Step 2: Agent - Send to agent and get response
                     AnsiConsole.MarkupLine("[cyan]Step 2/3:[/] Sending to agent...");
+                    var sessionId = ctx.Data.TryGetValue("CurrentSessionId", out var sidObj)
+                        ? sidObj?.ToString() ?? Guid.NewGuid().ToString()
+                        : Guid.NewGuid().ToString();
                     string responseText = string.Empty;
-                    await foreach (var evt in agent.RunAsync(transcribedText))
+                    await foreach (var evt in agent.RunAsync(transcribedText, sessionId))
                     {
                         if (evt is HPD.Agent.TextDeltaEvent textDelta)
                         {

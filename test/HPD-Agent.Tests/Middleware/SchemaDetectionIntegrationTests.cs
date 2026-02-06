@@ -19,20 +19,21 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
 {
     private readonly TestLoggerProvider _loggerProvider = new();
     private readonly TestEventObserver _eventObserver = new();
+    private InMemorySessionStore? _sessionStore;
 
     [Fact]
     public async Task Resume_WithPreVersioningCheckpoint_UpgradesSchema()
     {
         // Arrange: Create checkpoint without schema metadata (simulate old version)
         var preVersioningState = CreatePreVersioningCheckpoint();
-        var session = CreateSessionWithCheckpoint(preVersioningState);
-        var agent = CreateTestAgentWithLogging();
+        var (session, branch) = await CreateSessionWithCheckpoint(preVersioningState);
+        var agent = CreateTestAgentWithLogging(_sessionStore!);
 
         // Act: Resume from pre-versioning checkpoint
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
-            options: null,
             session: session,
+            branch: branch,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -61,15 +62,15 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint with middleware that no longer exists
         var checkpointWithOldMiddleware = CreateCheckpointWithRemovedMiddleware();
-        var session = CreateSessionWithCheckpoint(checkpointWithOldMiddleware);
+        var (session, branch) = await CreateSessionWithCheckpoint(checkpointWithOldMiddleware);
 
-        var agent = CreateTestAgentWithLogging();
+        var agent = CreateTestAgentWithLogging(_sessionStore!);
 
         // Act: Resume
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
-            options: null,
             session: session,
+            branch: branch,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -95,15 +96,15 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint without new middleware
         var checkpointBeforeNewMiddleware = CreateCheckpointWithFewerMiddleware();
-        var session = CreateSessionWithCheckpoint(checkpointBeforeNewMiddleware);
+        var (session, branch) = await CreateSessionWithCheckpoint(checkpointBeforeNewMiddleware);
 
-        var agent = CreateTestAgentWithLogging();
+        var agent = CreateTestAgentWithLogging(_sessionStore!);
 
         // Act: Resume (agent now has more middleware)
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
-            options: null,
             session: session,
+            branch: branch,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -129,15 +130,15 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     {
         // Arrange: Checkpoint with current schema
         var currentCheckpoint = CreateCheckpointWithCurrentSchema();
-        var session = CreateSessionWithCheckpoint(currentCheckpoint);
+        var (session, branch) = await CreateSessionWithCheckpoint(currentCheckpoint);
 
-        var agent = CreateTestAgentWithLogging();
+        var agent = CreateTestAgentWithLogging(_sessionStore!);
 
         // Act: Resume
         await foreach (var evt in agent.RunAsync(
             Array.Empty<ChatMessage>(),
-            options: null,
             session: session,
+            branch: branch,
             cancellationToken: TestCancellationToken))
         {
             // Consume events
@@ -159,7 +160,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
     // HELPER METHODS
     //      
 
-    private Agent CreateTestAgentWithLogging()
+    private Agent CreateTestAgentWithLogging(ISessionStore store)
     {
         var client = new FakeChatClient();
         client.EnqueueTextResponse("Test response");
@@ -184,61 +185,63 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         var agent = new AgentBuilder(config, providerRegistry)
             .WithObserver(_eventObserver)
             .WithServiceProvider(serviceProvider)
+            .WithSessionStore(store)
             .Build(CancellationToken.None).GetAwaiter().GetResult();
 
         return agent;
     }
 
-    private AgentSession CreateSessionWithCheckpoint(AgentLoopState checkpoint)
+    private async Task<(global::HPD.Agent.Session session, global::HPD.Agent.Branch branch)> CreateSessionWithCheckpoint(MiddlewareState middlewareState)
     {
-        var session = new AgentSession()
+        var sessionId = "test-session";
+        var session = new global::HPD.Agent.Session(sessionId);
+        var branch = new global::HPD.Agent.Branch(sessionId);
+
+        // V3 resume path: save an UncommittedTurn to an InMemorySessionStore.
+        // The agent loads this from the store during RunAsync when no new messages are provided.
+        _sessionStore = new InMemorySessionStore();
+
+        var uncommittedTurn = new UncommittedTurn
         {
-            ExecutionState = checkpoint
+            SessionId = sessionId,
+            BranchId = UncommittedTurn.DefaultBranch,
+            TurnMessages = new List<ChatMessage>
+            {
+                new ChatMessage(ChatRole.Assistant, "Resuming from checkpoint")
+            },
+            Iteration = 1,
+            CompletedFunctions = ImmutableHashSet<string>.Empty,
+            MiddlewareState = middlewareState,
+            IsTerminated = false,
+            CreatedAt = DateTime.UtcNow,
+            LastUpdatedAt = DateTime.UtcNow
         };
 
-        return session;
+        await _sessionStore.SaveUncommittedTurnAsync(uncommittedTurn);
+
+        return (session, branch);
     }
 
-    private AgentLoopState CreatePreVersioningCheckpoint()
+    private MiddlewareState CreatePreVersioningCheckpoint()
     {
-        // Create a checkpoint without schema metadata (SchemaSignature = null)
-        var middlewareState = new MiddlewareState
+        // Create middleware state without schema metadata (SchemaSignature = null)
+        return new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = null,  // Pre-versioning
             SchemaVersion = 0,
             StateVersions = null
         };
-
-        return new AgentLoopState
-        {
-            RunId = Guid.NewGuid().ToString(),
-            ConversationId = Guid.NewGuid().ToString(),
-            AgentName = "test-agent",
-            StartTime = DateTime.UtcNow,
-            CurrentMessages = new List<ChatMessage>().AsReadOnly(),
-            TurnHistory = ImmutableList<ChatMessage>.Empty,
-            Iteration = 1,
-            IsTerminated = false,
-            CompletedFunctions = ImmutableHashSet<string>.Empty,
-            InnerClientTracksHistory = false,
-            MessagesSentToInnerClient = 0,
-            LastAssistantMessageId = null,
-            ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-            MiddlewareState = middlewareState,
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
-        };
     }
 
-    private AgentLoopState CreateCheckpointWithRemovedMiddleware()
+    private MiddlewareState CreateCheckpointWithRemovedMiddleware()
     {
-        // Create a checkpoint with a fake middleware that doesn't exist in current schema
+        // Create middleware state with a fake middleware that doesn't exist in current schema
         // Use a known state type name + a fake obsolete one
         var currentSignature = "HPD.Agent.ErrorTrackingStateData";
         var fakeOldSignature = currentSignature + ",HPD.Agent.ObsoleteMiddlewareStateData";
 
-        var middlewareState = new MiddlewareState
+        return new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", new { }),
@@ -248,31 +251,11 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
                 .Add("HPD.Agent.ErrorTrackingStateData", 1)
                 .Add("HPD.Agent.ObsoleteMiddlewareStateData", 1)
         };
-
-        return new AgentLoopState
-        {
-            RunId = Guid.NewGuid().ToString(),
-            ConversationId = Guid.NewGuid().ToString(),
-            AgentName = "test-agent",
-            StartTime = DateTime.UtcNow,
-            CurrentMessages = new List<ChatMessage>().AsReadOnly(),
-            TurnHistory = ImmutableList<ChatMessage>.Empty,
-            Iteration = 1,
-            IsTerminated = false,
-            CompletedFunctions = ImmutableHashSet<string>.Empty,
-            InnerClientTracksHistory = false,
-            MessagesSentToInnerClient = 0,
-            LastAssistantMessageId = null,
-            ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-            MiddlewareState = middlewareState,
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
-        };
     }
 
-    private AgentLoopState CreateCheckpointWithFewerMiddleware()
+    private MiddlewareState CreateCheckpointWithFewerMiddleware()
     {
-        // Create a checkpoint with fewer middleware than would be registered at runtime
+        // Create middleware state with fewer middleware than would be registered at runtime.
         // This simulates a checkpoint from an older version with fewer state types.
         // We use a subset of the current schema to trigger the "new middleware added" case.
         var currentSignature = GetExpectedSchemaSignature();
@@ -281,7 +264,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
         // Take only the first type (or just one type) to create an "older" checkpoint
         var olderSignature = currentTypes.Count > 0 ? currentTypes[0] : "";
 
-        var middlewareState = new MiddlewareState
+        return new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = olderSignature,
@@ -290,66 +273,25 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
                 ? ImmutableDictionary<string, int>.Empty
                 : ImmutableDictionary<string, int>.Empty.Add(olderSignature, 1)
         };
-
-        return new AgentLoopState
-        {
-            RunId = Guid.NewGuid().ToString(),
-            ConversationId = Guid.NewGuid().ToString(),
-            AgentName = "test-agent",
-            StartTime = DateTime.UtcNow,
-            CurrentMessages = new List<ChatMessage>().AsReadOnly(),
-            TurnHistory = ImmutableList<ChatMessage>.Empty,
-            Iteration = 1,
-            IsTerminated = false,
-            CompletedFunctions = ImmutableHashSet<string>.Empty,
-            InnerClientTracksHistory = false,
-            MessagesSentToInnerClient = 0,
-            LastAssistantMessageId = null,
-            ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-            MiddlewareState = middlewareState,
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
-        };
     }
 
-    private AgentLoopState CreateCheckpointWithCurrentSchema()
+    private MiddlewareState CreateCheckpointWithCurrentSchema()
     {
-        // Create a checkpoint with a schema signature that matches what the agent will compute.
+        // Create middleware state with a schema signature that matches what the agent will compute.
         // The agent computes schema from its registered _stateFactories at runtime.
         // For a default AgentBuilder, this includes all [MiddlewareState] types from HPD-Agent.
         // We need to provide a signature that matches to avoid triggering schema change detection.
         //
         // The key insight: When schema signatures match exactly, ValidateAndMigrateSchema
         // returns the checkpoint state unchanged (no logging, no events).
-        // We use a placeholder that the test agent will also have registered.
         var currentSignature = GetExpectedSchemaSignature();
 
-        var middlewareState = new MiddlewareState
+        return new MiddlewareState
         {
             States = ImmutableDictionary<string, object?>.Empty,
             SchemaSignature = currentSignature,
             SchemaVersion = 1,
             StateVersions = ImmutableDictionary<string, int>.Empty
-        };
-
-        return new AgentLoopState
-        {
-            RunId = Guid.NewGuid().ToString(),
-            ConversationId = Guid.NewGuid().ToString(),
-            AgentName = "test-agent",
-            StartTime = DateTime.UtcNow,
-            CurrentMessages = new List<ChatMessage>().AsReadOnly(),
-            TurnHistory = ImmutableList<ChatMessage>.Empty,
-            Iteration = 1,
-            IsTerminated = false,
-            CompletedFunctions = ImmutableHashSet<string>.Empty,
-            InnerClientTracksHistory = false,
-            MessagesSentToInnerClient = 0,
-            LastAssistantMessageId = null,
-            ResponseUpdates = ImmutableList<ChatResponseUpdate>.Empty,
-            MiddlewareState = middlewareState,
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 1 }
         };
     }
 

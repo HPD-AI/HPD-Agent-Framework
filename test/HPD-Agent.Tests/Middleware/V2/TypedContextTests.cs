@@ -208,7 +208,8 @@ public class TypedContextTests
             "conv123",
             state,
             eventCoordinator,
-            new AgentSession("test-session"),
+            new HPD.Agent.Session("test-session"),
+            new HPD.Agent.Session("test-session").CreateBranch(),
             CancellationToken.None);
     }
 }

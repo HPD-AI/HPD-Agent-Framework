@@ -329,7 +329,7 @@ public class ThreadSafetyTests
     {
         var initialState = CreateTestState();
         var eventCoordinator = new HPD.Events.Core.EventCoordinator();
-        return new AgentContext("TestAgent", null, initialState, eventCoordinator, new AgentSession("test-session"), CancellationToken.None);
+        return new AgentContext("TestAgent", null, initialState, eventCoordinator, new global::HPD.Agent.Session("test-session"), new global::HPD.Agent.Branch("test-session"), CancellationToken.None);
     }
 
     private static AgentLoopState CreateTestState()
@@ -350,8 +350,7 @@ public class ThreadSafetyTests
             LastAssistantMessageId = null,
             ResponseUpdates = System.Collections.Immutable.ImmutableList<ChatResponseUpdate>.Empty,
             MiddlewareState = new MiddlewareState(),
-            Version = 1,
-            Metadata = new CheckpointMetadata { Source = CheckpointSource.Loop, Step = 0 }
+            Version = 1
         };
     }
 

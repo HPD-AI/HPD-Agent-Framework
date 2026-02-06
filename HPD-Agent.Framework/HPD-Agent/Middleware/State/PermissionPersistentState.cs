@@ -7,15 +7,15 @@ namespace HPD.Agent;
 /// <remarks>
 /// <para><b>Session Scoping:</b></para>
 /// <para>
-/// Permission preferences are stored per-session in AgentSession.MiddlewarePersistentState.
-/// This means each session has its own independent permission choices.
+/// Permission preferences are stored per-session in Session.MiddlewareState.
+/// This means each session has its own independent permission choices, shared across all branches.
 /// There is NO global permission storage - all permissions are session-scoped.
 /// </para>
 ///
 /// <para><b>Storage Format:</b></para>
 /// <para>
 /// Dictionary&lt;string, PermissionChoice&gt; where key is function name.
-/// Serialized as JSON and stored in AgentSession.MiddlewarePersistentState.
+/// Serialized as JSON and stored in Session.MiddlewareState (session-scoped, shared by all branches).
 /// </para>
 ///
 /// <para><b>Usage:</b></para>
@@ -34,12 +34,12 @@ namespace HPD.Agent;
 ///
 /// <para><b>Persistence:</b></para>
 /// <para>
-/// This state is automatically saved to AgentSession.MiddlewarePersistentState
-/// at the end of each agent run via the auto-generated SaveToSession() method.
+/// This state is automatically saved to Session.MiddlewareState
+/// at the end of each agent run via SaveToSession() (session-scoped).
 /// It is loaded back via LoadFromSession() at agent start.
 /// </para>
 /// </remarks>
-[MiddlewareState(Persistent = true)]
+[MiddlewareState(Persistent = true, Scope = StateScope.Session)]
 public sealed record PermissionPersistentStateData
 {
     /// <summary>

@@ -141,22 +141,33 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine();
 
         // Handle session mode
-        sb.AppendLine("        // Handle session based on mode");
-        sb.AppendLine("        AgentSession session;");
+        sb.AppendLine("        // Handle session/branch based on mode");
+        sb.AppendLine("        Session session;");
+        sb.AppendLine("        Branch branch;");
         sb.AppendLine("        switch (subAgentDef.ThreadMode)");
         sb.AppendLine("        {");
         sb.AppendLine("            case SubAgentThreadMode.SharedThread:");
-        sb.AppendLine("                session = subAgentDef.SharedSession ?? new AgentSession();");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var sid = subAgentDef.SharedSession?.Id ?? System.Guid.NewGuid().ToString(\"N\");");
+        sb.AppendLine("                session = subAgentDef.SharedSession ?? new Session(sid);");
+        sb.AppendLine("                branch = subAgentDef.SharedBranch ?? session.CreateBranch();");
         sb.AppendLine("                break;");
+        sb.AppendLine("            }");
         sb.AppendLine("            case SubAgentThreadMode.PerSession:");
-        sb.AppendLine("                // For PerSession, use SharedSession if provided, else create new");
-        sb.AppendLine("                session = subAgentDef.SharedSession ?? new AgentSession();");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var sid = subAgentDef.SharedSession?.Id ?? System.Guid.NewGuid().ToString(\"N\");");
+        sb.AppendLine("                session = subAgentDef.SharedSession ?? new Session(sid);");
+        sb.AppendLine("                branch = subAgentDef.SharedBranch ?? session.CreateBranch();");
         sb.AppendLine("                break;");
+        sb.AppendLine("            }");
         sb.AppendLine("            case SubAgentThreadMode.Stateless:");
         sb.AppendLine("            default:");
-        sb.AppendLine("                // Create new session for each invocation");
-        sb.AppendLine("                session = new AgentSession();");
+        sb.AppendLine("            {");
+        sb.AppendLine("                var sid = System.Guid.NewGuid().ToString(\"N\");");
+        sb.AppendLine("                session = new Session(sid);");
+        sb.AppendLine("                branch = session.CreateBranch();");
         sb.AppendLine("                break;");
+        sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();
 
@@ -168,12 +179,11 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            : string.Empty;");
         sb.AppendLine();
         sb.AppendLine("        // Create user message and run agent with event streaming");
-        sb.AppendLine("        var message = new ChatMessage(ChatRole.User, query);");
         sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
         sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
-        sb.AppendLine("            new[] { message },");
-        sb.AppendLine("            options: null,");
+        sb.AppendLine("            query,");
         sb.AppendLine("            session: session,");
+        sb.AppendLine("            branch: branch,");
         sb.AppendLine("            cancellationToken: cancellationToken))");
         sb.AppendLine("        {");
         sb.AppendLine("            // Stream events to parent coordinator for real-time rendering");
@@ -189,14 +199,13 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        }");
         sb.AppendLine();
 
-        // Return response - prefer captured text, fall back to session
-        sb.AppendLine("        // Return captured text or fall back to last assistant message from session");
+        // Return response - prefer captured text, fall back to branch messages
+        sb.AppendLine("        // Return captured text or fall back to last assistant message from branch");
         sb.AppendLine("        if (textResult.Length > 0)");
         sb.AppendLine("        {");
         sb.AppendLine("            return textResult.ToString();");
         sb.AppendLine("        }");
-        sb.AppendLine("        var messages = await session.GetMessagesAsync(cancellationToken);");
-        sb.AppendLine("        return messages");
+        sb.AppendLine("        return branch.Messages");
         sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");
         sb.AppendLine("            ?.Text ?? string.Empty;");
         sb.AppendLine("    },");

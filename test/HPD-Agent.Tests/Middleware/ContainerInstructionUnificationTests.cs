@@ -478,7 +478,8 @@ Use `decimal` type for precision.";
             "test-conv-id",
             state,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
 
         return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
@@ -515,7 +516,8 @@ Use `decimal` type for precision.";
             "test-conversation",
             agentState,
             new HPD.Events.Core.EventCoordinator(),
-            new AgentSession("test-session"),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
     }
 

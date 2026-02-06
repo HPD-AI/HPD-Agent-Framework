@@ -34,7 +34,8 @@ public sealed class AgentContext
     private readonly IEventCoordinator _events;
     private readonly CancellationToken _cancellationToken;
     private readonly IChatClient? _parentChatClient;
-    private readonly AgentSession? _session;
+    private readonly Session? _session;
+    private readonly Branch? _branch;
     private readonly IServiceProvider? _services;
 
     //
@@ -67,14 +68,15 @@ public sealed class AgentContext
     public string? ConversationId { get; }
 
     /// <summary>
-    /// The agent session being executed.
+    /// The session metadata container.
     /// Provides access to session.Store for middleware infrastructure operations.
     /// May be null if no session was provided.
     /// </summary>
     /// <remarks>
     /// <para>
+    /// Session contains metadata and session-scoped middleware state (permissions, preferences).
+    /// Messages live in <see cref="Branch"/> instead.
     /// Middleware can access session?.Store.GetAssetStore(sessionId) for binary asset storage operations.
-    /// This enables multi-tenant scenarios where each session knows its own store.
     /// </para>
     /// <para><b>Example:</b></para>
     /// <code>
@@ -88,7 +90,28 @@ public sealed class AgentContext
     /// }
     /// </code>
     /// </remarks>
-    public AgentSession? Session => _session;
+    public Session? Session => _session;
+
+    /// <summary>
+    /// The current branch being executed.
+    /// Contains conversation messages and branch-scoped middleware state.
+    /// May be null if no session was provided.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Branch contains the conversation messages for this specific conversation path.
+    /// Multiple branches can exist in one session (for exploring alternatives).
+    /// </para>
+    /// <para><b>Example:</b></para>
+    /// <code>
+    /// public async Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, ...)
+    /// {
+    ///     var messages = context.Branch?.Messages;
+    ///     var branchId = context.Branch?.Id;
+    /// }
+    /// </code>
+    /// </remarks>
+    public Branch? Branch => _branch;
 
     /// <summary>
     /// Service provider for dependency injection (may be null if not configured).
@@ -328,7 +351,8 @@ public sealed class AgentContext
     /// <param name="conversationId">Unique identifier for the conversation</param>
     /// <param name="initialState">Initial agent loop state</param>
     /// <param name="eventCoordinator">Event coordinator for event emission</param>
-    /// <param name="session">Agent session (may be null)</param>
+    /// <param name="session">Session metadata (may be null)</param>
+    /// <param name="branch">Current branch (may be null)</param>
     /// <param name="cancellationToken">Cancellation token for the operation</param>
     /// <param name="parentChatClient">Parent agent's chat client (for SubAgent inheritance)</param>
     /// <param name="services">Service provider for dependency injection (may be null)</param>
@@ -337,7 +361,8 @@ public sealed class AgentContext
         string? conversationId,
         AgentLoopState initialState,
         IEventCoordinator eventCoordinator,
-        AgentSession? session,
+        Session? session,
+        Branch? branch,
         CancellationToken cancellationToken,
         IChatClient? parentChatClient = null,
         IServiceProvider? services = null)
@@ -347,6 +372,7 @@ public sealed class AgentContext
         _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
         _events = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
         _session = session;
+        _branch = branch;
         _cancellationToken = cancellationToken;
         _parentChatClient = parentChatClient;
         _services = services;

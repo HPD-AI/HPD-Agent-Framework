@@ -58,7 +58,7 @@ if (isProduction)
 }
 else
 {
-    // Development: Use project sessions folder at the AgentConsoleTest level
+    // Development: Use project sessions folder at the CLI project level
     // Find the .csproj file to identify project root
     var projectRoot = appDirectory;
     DirectoryInfo? parent = Directory.GetParent(projectRoot);
@@ -66,7 +66,7 @@ else
     while (parent != null)
     {
         // Check if this directory contains the .csproj file
-        if (File.Exists(Path.Combine(parent.FullName, "AgentConsoleTest.csproj")))
+        if (File.Exists(Path.Combine(parent.FullName, "HPD-Agent.CLI.csproj")))
         {
             projectRoot = parent.FullName;
             break;
@@ -164,7 +164,7 @@ AnsiConsole.WriteLine();
 
 // Generate a unique session ID for this run
 var sessionId = $"console-{DateTime.Now:yyyy-MM-dd-HHmmss}-{Guid.NewGuid().ToString()[..8]}";
-var thread = await agent.LoadSessionAsync(sessionId);
+var (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
 
 // Initialize UI with slash command support
 var ui = new AgentUIRenderer();
@@ -177,7 +177,7 @@ var commandContextData = new Dictionary<string, object>
     { "Agent", agent },
     { "Configuration", configuration },
     { "CurrentSessionId", sessionId },
-    { "Thread", thread },
+    { "Branch", branch },
     { "AuthManager", authManager }
 };
 
@@ -185,15 +185,15 @@ var commandContextData = new Dictionary<string, object>
 commandContextData["OnSessionSwitch"] = new Func<string, Task>(async (newSessionId) =>
 {
     sessionId = newSessionId;
-    thread = await agent.LoadSessionAsync(sessionId);
+    (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
     // Update context data with new session info
     commandContextData["CurrentSessionId"] = sessionId;
-    commandContextData["Thread"] = thread;
+    commandContextData["Branch"] = branch;
     AnsiConsole.MarkupLine($"[green]✓ Switched to session:[/] [cyan]{sessionId}[/]");
-    AnsiConsole.MarkupLine($"[dim]Messages in session: {thread.Messages.Count}[/]");
+    AnsiConsole.MarkupLine($"[dim]Messages in session: {branch.Messages.Count}[/]");
 
     // Render conversation history - group by conversation turns
-    var allMessages = thread.Messages.ToList();
+    var allMessages = branch.Messages.ToList();
 
     if (allMessages.Count > 0)
     {
@@ -331,9 +331,9 @@ while (true)
         
         if (result.ShouldClearHistory)
         {
-            thread = await agent.LoadSessionAsync(sessionId);
+            (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
         }
-        
+
         AnsiConsole.WriteLine();
         continue;
     }
@@ -442,7 +442,7 @@ while (true)
         {
             try
             {
-                await foreach (var evt in agent.RunAsync(message, sessionId, currentRunOptions, escape.Token))
+                await foreach (var evt in agent.RunAsync(message, sessionId, branchId: null, currentRunOptions, escape.Token))
                 {
                     ui.RenderEvent(evt);
                 }
@@ -493,8 +493,8 @@ while (true)
             }
         }
 
-        // Reload thread
-        thread = await agent.LoadSessionAsync(sessionId);
+        // Reload branch
+        (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
         AnsiConsole.WriteLine();
         continue;
     }
@@ -512,8 +512,8 @@ while (true)
 
         if (result.ShouldClearHistory)
         {
-            // History cleared, reload thread
-            thread = await agent.LoadSessionAsync(sessionId);
+            // History cleared, reload branch
+            (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
         }
 
         // Handle model switch request
@@ -561,9 +561,9 @@ while (true)
             && newSessionObj is string newSessionId && !string.IsNullOrEmpty(newSessionId))
         {
             sessionId = newSessionId;
-            thread = await agent.LoadSessionAsync(sessionId);
+            (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
             commandContextData["CurrentSessionId"] = sessionId;
-            commandContextData["Thread"] = thread;
+            commandContextData["Branch"] = branch;
             AnsiConsole.MarkupLine($"[green]✓ New session created:[/] [cyan]{sessionId}[/]");
 
             // Clear the request
@@ -585,8 +585,8 @@ while (true)
     // Stream agent response with real-time rendering using sessionId for auto-save
     // DEBUG: Show session info before running (helps diagnose session restore issues)
     #if DEBUG
-    var debugSession = await agent.LoadSessionAsync(sessionId);
-    AnsiConsole.MarkupLine($"[dim]≡ Session: {sessionId} ({debugSession.Messages.Count} messages)[/]");
+    var (debugSession, debugBranch) = await agent.LoadSessionAndBranchAsync(sessionId);
+    AnsiConsole.MarkupLine($"[dim]≡ Session: {sessionId} ({debugBranch.Messages.Count} messages)[/]");
     if (currentRunOptions != null && !string.IsNullOrEmpty(currentRunOptions.ProviderKey))
     {
         AnsiConsole.MarkupLine($"[dim]→ Using override: {currentRunOptions.ProviderKey}:{currentRunOptions.ModelId}[/]");
@@ -619,7 +619,7 @@ while (true)
     {
         try
         {
-            await foreach (var evt in agent.RunAsync(userInput, sessionId, effectiveRunOptions, escape.Token))
+            await foreach (var evt in agent.RunAsync(userInput, sessionId, branchId: null, effectiveRunOptions, escape.Token))
             {
                 ui.RenderEvent(evt);
             }
@@ -673,8 +673,8 @@ while (true)
         }
     }
 
-    // Reload thread
-    thread = await agent.LoadSessionAsync(sessionId);
+    // Reload branch
+    (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId);
 }
 
 // Helper class to log HTTP requests/responses

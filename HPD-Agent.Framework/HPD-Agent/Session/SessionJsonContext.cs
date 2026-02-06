@@ -17,14 +17,10 @@ namespace HPD.Agent;
     UseStringEnumConverter = true
 )]
 // Session types
+[JsonSerializable(typeof(Session))]
+[JsonSerializable(typeof(Branch))]
 [JsonSerializable(typeof(SessionSnapshot))]
-[JsonSerializable(typeof(ExecutionCheckpoint))]
-[JsonSerializable(typeof(CheckpointManifestEntry))]
-[JsonSerializable(typeof(List<CheckpointManifestEntry>))]
-[JsonSerializable(typeof(PendingWrite))]
-[JsonSerializable(typeof(List<PendingWrite>))]
-[JsonSerializable(typeof(CheckpointMetadata))]
-[JsonSerializable(typeof(CheckpointTuple))]
+[JsonSerializable(typeof(UncommittedTurn))]
 
 // HPD-specific types
 [JsonSerializable(typeof(AgentLoopState))]

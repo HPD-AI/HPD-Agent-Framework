@@ -3,6 +3,7 @@ using HPD.Agent.Middleware;
 using HPD.Agent.Tests.Infrastructure;
 using Microsoft.Extensions.AI;
 using Xunit;
+using SessionModel = global::HPD.Agent.Session;
 
 namespace HPD.Agent.Tests.Integration;
 
@@ -35,8 +36,8 @@ public class AssetStorageIntegrationTests
                 .WithChatClient(chatClient)
                 .Build();
 
-            // Load session (sets session.Store automatically)
-            var session = await store.LoadOrCreateSessionAsync("test-session");
+            // Load session and branch (sets session.Store automatically)
+            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("test-session");
             Assert.NotNull(session.Store);
             Assert.Same(store, session.Store);
 
@@ -56,7 +57,7 @@ public class AssetStorageIntegrationTests
 
             // Track events emitted during execution
             var events = new List<AgentEvent>();
-            await foreach (var evt in agent.RunAsync([userMessage], session))
+            await foreach (var evt in agent.RunAsync([userMessage], session, branch))
             {
                 events.Add(evt);
             }
@@ -68,7 +69,7 @@ public class AssetStorageIntegrationTests
             Assert.Equal(imageBytes.Length, uploadEvent.SizeBytes);
 
             // Assert: Verify message was transformed (DataContent → UriContent)
-            var messages = session.Messages;
+            var messages = branch.Messages;
             var transformedMessage = messages.First(m => m.Role == ChatRole.User);
 
             // Should have 2 contents: TextContent + UriContent
@@ -97,15 +98,16 @@ public class AssetStorageIntegrationTests
             Assert.Single(assetFiles);
             Assert.EndsWith(".png", assetFiles[0]);
 
-            // Save session (uses session.Store)
+            // Save session and branch (V3: messages live in Branch, not Session)
             await session.SaveAsync();
+            await store.SaveBranchAsync(session.Id, branch);
 
-            // Assert: Verify session was saved with URI reference (not bytes)
-            var sessionFile = Path.Combine(tempDir, session.Id, "session.json");
-            Assert.True(File.Exists(sessionFile));
-            var sessionJson = await File.ReadAllTextAsync(sessionFile);
-            Assert.Contains($"asset://{assetId}", sessionJson);
-            Assert.DoesNotContain("\"Data\":", sessionJson); // Binary data NOT in session JSON
+            // Assert: Verify branch was saved with URI reference (not bytes)
+            var branchFile = Path.Combine(tempDir, session.Id, "branches", branch.Id, "branch.json");
+            Assert.True(File.Exists(branchFile));
+            var branchJson = await File.ReadAllTextAsync(branchFile);
+            Assert.Contains($"asset://{assetId}", branchJson);
+            Assert.DoesNotContain("\"Data\":", branchJson); // Binary data NOT in branch JSON
         }
         finally
         {
@@ -135,7 +137,7 @@ public class AssetStorageIntegrationTests
                 .WithChatClient(chatClient)
                 .Build();
 
-            var session = await store.LoadOrCreateSessionAsync("multi-asset-session");
+            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("multi-asset-session");
 
             // Create different asset types
             var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG
@@ -155,7 +157,7 @@ public class AssetStorageIntegrationTests
 
             // Act
             var events = new List<AgentEvent>();
-            await foreach (var evt in agent.RunAsync([message], session))
+            await foreach (var evt in agent.RunAsync([message], session, branch))
             {
                 events.Add(evt);
             }
@@ -168,7 +170,7 @@ public class AssetStorageIntegrationTests
             Assert.Contains(uploadEvents, e => e.MediaType == "application/pdf");
 
             // Assert: Message transformed correctly
-            var transformedMessage = session.Messages.First(m => m.Role == ChatRole.User);
+            var transformedMessage = branch.Messages.First(m => m.Role == ChatRole.User);
             Assert.Equal(6, transformedMessage.Contents.Count); // 3 text + 3 URI
 
             var uriContents = transformedMessage.Contents.OfType<UriContent>().ToList();
@@ -212,7 +214,7 @@ public class AssetStorageIntegrationTests
             .WithChatClient(chatClient)
             .Build();
 
-        var session = await store.LoadOrCreateSessionAsync("no-asset-session");
+        var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("no-asset-session");
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var message = new ChatMessage(ChatRole.User,
@@ -223,7 +225,7 @@ public class AssetStorageIntegrationTests
 
         // Act
         var events = new List<AgentEvent>();
-        await foreach (var evt in agent.RunAsync([message], session))
+        await foreach (var evt in agent.RunAsync([message], session, branch))
         {
             events.Add(evt);
         }
@@ -233,7 +235,7 @@ public class AssetStorageIntegrationTests
         Assert.Empty(uploadEvents);
 
         // Assert: DataContent still present (not transformed)
-        var userMessage = session.Messages.First(m => m.Role == ChatRole.User);
+        var userMessage = branch.Messages.First(m => m.Role == ChatRole.User);
         var dataContent = userMessage.Contents.OfType<DataContent>().FirstOrDefault();
         Assert.NotNull(dataContent);
         Assert.Equal(imageBytes, dataContent.Data.ToArray());
@@ -260,7 +262,7 @@ public class AssetStorageIntegrationTests
                 .Build();
 
             // First run: Upload asset
-            var session1 = await store.LoadOrCreateSessionAsync("roundtrip-session");
+            var (session1, branch1) = await store.LoadOrCreateSessionAndBranchAsync("roundtrip-session");
             var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x01, 0x02, 0x03 };
 
             var userMessage = new ChatMessage(ChatRole.User,
@@ -269,19 +271,20 @@ public class AssetStorageIntegrationTests
                 new DataContent(imageBytes, "image/png")
             ]);
 
-            await foreach (var _ in agent.RunAsync([userMessage], session1)) { }
+            await foreach (var _ in agent.RunAsync([userMessage], session1, branch1)) { }
             await session1.SaveAsync();
+            await store.SaveBranchAsync(session1.Id, branch1);
 
-            // Get asset ID from first session
-            var msg1 = session1.Messages.First(m => m.Role == ChatRole.User);
+            // Get asset ID from first branch
+            var msg1 = branch1.Messages.First(m => m.Role == ChatRole.User);
             var uri1 = msg1.Contents.OfType<UriContent>().First();
             var assetId = uri1.Uri.Host;
 
-            // Second run: Load session and verify asset still accessible
-            var session2 = await store.LoadOrCreateSessionAsync("roundtrip-session");
+            // Second run: Load session and branch, verify asset still accessible
+            var (session2, branch2) = await store.LoadOrCreateSessionAndBranchAsync("roundtrip-session");
             Assert.NotNull(session2);
 
-            var msg2 = session2.Messages.First(m => m.Role == ChatRole.User);
+            var msg2 = branch2.Messages.First(m => m.Role == ChatRole.User);
             var uri2 = msg2.Contents.OfType<UriContent>().FirstOrDefault();
             Assert.NotNull(uri2);
             Assert.Equal(assetId, uri2.Uri.Host);
@@ -310,9 +313,9 @@ public class AssetStorageIntegrationTests
         try
         {
             var store = new JsonSessionStore(tempDir);
-            var session = await store.LoadOrCreateSessionAsync("convenience-session");
+            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("convenience-session");
 
-            session.AddMessage(new ChatMessage(ChatRole.User, "Test message"));
+            branch.AddMessage(new ChatMessage(ChatRole.User, "Test message"));
 
             // Act: Use convenience method
             await session.SaveAsync();
@@ -332,7 +335,7 @@ public class AssetStorageIntegrationTests
     public async Task EndToEnd_SessionWithoutStore_SaveAsyncThrows()
     {
         // Tests: session.SaveAsync() throws when Store is null
-        var session = new AgentSession("no-store-session");
+        var session = new SessionModel("no-store-session");
         Assert.Null(session.Store);
 
         // Act & Assert
@@ -340,26 +343,23 @@ public class AssetStorageIntegrationTests
             async () => await session.SaveAsync());
 
         Assert.Contains("no associated store", ex.Message);
-        Assert.Contains("LoadOrCreateSessionAsync", ex.Message);
+        Assert.Contains("LoadSessionAsync", ex.Message);
     }
 
     // Test helper: Session store without asset support
     private class TestSessionStoreWithoutAssets : ISessionStore
     {
-        private readonly Dictionary<string, AgentSession> _sessions = new();
-
-        public bool SupportsHistory => false;
-        public bool SupportsPendingWrites => false;
+        private readonly Dictionary<string, SessionModel> _sessions = new();
 
         public IAssetStore? GetAssetStore(string sessionId) => null; // No asset store
 
-        public Task<AgentSession?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        public Task<SessionModel?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             _sessions.TryGetValue(sessionId, out var session);
             return Task.FromResult(session);
         }
 
-        public Task SaveSessionAsync(AgentSession session, CancellationToken cancellationToken = default)
+        public Task SaveSessionAsync(SessionModel session, CancellationToken cancellationToken = default)
         {
             _sessions[session.Id] = session;
             return Task.CompletedTask;
@@ -374,52 +374,28 @@ public class AssetStorageIntegrationTests
             return Task.CompletedTask;
         }
 
-        public Task<ExecutionCheckpoint?> LoadCheckpointAsync(string sessionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
+        public Task<Branch?> LoadBranchAsync(string sessionId, string branchId, CancellationToken cancellationToken = default)
+            => Task.FromResult<Branch?>(null);
 
-        public Task SaveCheckpointAsync(ExecutionCheckpoint checkpoint, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
+        public Task SaveBranchAsync(string sessionId, Branch branch, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task DeleteAllCheckpointsAsync(string sessionId, CancellationToken cancellationToken = default)
+        public Task<List<string>> ListBranchIdsAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult(new List<string>());
+
+        public Task DeleteBranchAsync(string sessionId, string branchId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task SavePendingWritesAsync(string sessionId, string executionCheckpointId, IEnumerable<PendingWrite> writes, CancellationToken cancellationToken = default)
+        public Task<UncommittedTurn?> LoadUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UncommittedTurn?>(null);
+
+        public Task SaveUncommittedTurnAsync(UncommittedTurn turn, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
-        public Task<List<PendingWrite>> LoadPendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<PendingWrite>());
-
-        public Task DeletePendingWritesAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<ExecutionCheckpoint?> LoadCheckpointAtAsync(string sessionId, string executionCheckpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionCheckpoint?>(null);
-
-        public Task<List<CheckpointManifestEntry>> GetCheckpointManifestAsync(string sessionId, int? limit = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(new List<CheckpointManifestEntry>());
-
-        public Task PruneCheckpointsAsync(string sessionId, int keepLatest = 10, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task DeleteOlderThanAsync(DateTime cutoff, CancellationToken cancellationToken = default)
+        public Task DeleteUncommittedTurnAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
         public Task<int> DeleteInactiveSessionsAsync(TimeSpan inactivityThreshold, bool dryRun = false, CancellationToken cancellationToken = default)
             => Task.FromResult(0);
-
-        public Task DeleteCheckpointsAsync(string sessionId, IEnumerable<string> checkpointIds, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task<AgentSession?> LoadSessionAtCheckpointAsync(string sessionId, string checkpointId, CancellationToken cancellationToken = default)
-            => Task.FromResult<AgentSession?>(null);
-
-        [Obsolete]
-        public Task SaveSessionAtCheckpointAsync(AgentSession session, string checkpointId, CheckpointMetadata metadata, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        [Obsolete]
-        public Task UpdateCheckpointManifestEntryAsync(string sessionId, string checkpointId, Action<CheckpointManifestEntry> update, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

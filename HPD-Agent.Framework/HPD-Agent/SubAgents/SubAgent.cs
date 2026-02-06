@@ -38,7 +38,14 @@ public class SubAgent
     /// Only used when ThreadMode = SharedThread.
     /// WARNING: Do not use shared sessions concurrently - can cause race conditions.
     /// </summary>
-    public AgentSession? SharedSession { get; set; }
+    public Session? SharedSession { get; set; }
+
+    /// <summary>
+    /// Optional: Shared branch for stateful multi-turn conversations.
+    /// Only used when ThreadMode = SharedThread.
+    /// WARNING: Do not use shared branches concurrently - can cause race conditions.
+    /// </summary>
+    public Branch? SharedBranch { get; set; }
 
     /// <summary>
     /// Toolkit types to register with the sub-agent (e.g., typeof(FileSystemToolkit), typeof(WebSearchToolkit)).
