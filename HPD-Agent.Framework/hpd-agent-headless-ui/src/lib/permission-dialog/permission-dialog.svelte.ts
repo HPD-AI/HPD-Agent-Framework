@@ -28,7 +28,7 @@ import type {
 } from '$lib/internal/types.js';
 import { createHPDAttrs, getDataOpenClosed } from '$lib/internal/attrs.js';
 import { PresenceManager } from '$lib/internal/presence-manager.svelte.js';
-import type { Agent } from '$lib/agent/create-agent.svelte.js';
+import type { Workspace } from '$lib/workspace/types.js';
 import type { PermissionRequest, PermissionChoice } from '$lib/agent/types.js';
 
 // ============================================
@@ -52,7 +52,7 @@ const PermissionDialogRootContext = new Context<PermissionDialogRootState>('Perm
 
 interface PermissionDialogRootStateOpts
 	extends ReadableBoxedValues<{
-		agent: Agent;
+		agent: Workspace;
 		onOpenChangeComplete?: OnChangeFn<boolean>;
 	}> {}
 

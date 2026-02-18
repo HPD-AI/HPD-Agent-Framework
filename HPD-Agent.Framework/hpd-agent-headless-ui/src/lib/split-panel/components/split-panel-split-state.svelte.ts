@@ -20,8 +20,8 @@
  */
 
 import { Context } from 'runed';
-import { attachRef, type RefAttachment } from 'svelte-toolbelt';
-import type { WithRefOpts, ReadableBoxedValues } from '$lib/internal';
+import { attachRef } from 'svelte-toolbelt';
+import type { ReadableBoxedValues, RefAttachment } from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { splitPanelAttrs } from './split-panel-attrs.js';
 import type { SplitPanelRootState } from './split-panel-root-state.svelte.js';
@@ -38,14 +38,16 @@ export const SplitPanelSplitContext = new Context<SplitPanelSplitState>('SplitPa
  */
 export interface SplitPanelSplitStateOpts
 	extends
-		WithRefOpts,
 		ReadableBoxedValues<{
 			/** Layout axis: 'horizontal' (row) or 'vertical' (column) */
 			axis: 'horizontal' | 'vertical';
 
 			/** Initial flex values for children (optional, defaults to equal distribution) */
 			initialFlexes?: number[];
-		}> {}
+		}> {
+	/** Ref to the split element */
+	ref: import('svelte-toolbelt').WritableBox<HTMLElement | null>;
+}
 
 /**
  * Registered child info for DOM order resolution.

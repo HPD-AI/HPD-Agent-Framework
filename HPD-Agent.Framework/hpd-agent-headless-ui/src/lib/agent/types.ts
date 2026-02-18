@@ -91,8 +91,11 @@ export interface CreateAgentOptions {
 	/** Base URL of the HPD Agent API */
 	baseUrl: string;
 
-	/** Conversation ID (optional, will be generated if not provided) */
-	conversationId?: string;
+	/** Session ID (optional, will be generated if not provided) */
+	sessionId?: string;
+
+	/** Branch ID (default: 'main') */
+	branchId?: string;
 
 	/** Transport type (default: 'sse') */
 	transport?: 'sse' | 'websocket';

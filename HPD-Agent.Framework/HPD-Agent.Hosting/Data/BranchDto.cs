@@ -47,7 +47,7 @@ public record BranchDto(
 /// Lightweight sibling branch metadata for navigation UI.
 /// Includes only fields needed for sibling selection and display.
 /// </summary>
-/// <param name="BranchId">Unique identifier for this branch</param>
+/// <param name="Id">Unique identifier for this branch</param>
 /// <param name="Name">Display name for this branch</param>
 /// <param name="SiblingIndex">Position among siblings (0-based)</param>
 /// <param name="TotalSiblings">Total number of siblings at this fork point</param>
@@ -56,7 +56,7 @@ public record BranchDto(
 /// <param name="CreatedAt">When this branch was created</param>
 /// <param name="LastActivity">Last time this branch was updated</param>
 public record SiblingBranchDto(
-    string BranchId,
+    string Id,
     string Name,
     int SiblingIndex,
     int TotalSiblings,

@@ -14,12 +14,13 @@
  */
 
 import { watch } from 'runed';
-import { attachRef, type RefAttachment } from 'svelte-toolbelt';
+import { attachRef } from 'svelte-toolbelt';
 import type {
 	WithRefOpts,
 	ReadableBoxedValues,
-	WritableBoxedValues
-} from '$lib/internal';
+	WritableBoxedValues,
+	RefAttachment
+} from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { SplitPanelSplitContext, type SplitPanelSplitState } from './split-panel-split-state.svelte.js';
 import { splitPanelAttrs } from './split-panel-attrs.js';
@@ -32,68 +33,66 @@ import type { LeafNode } from '../types/index.js';
  */
 export interface SplitPanelPaneStateOpts
 	extends
-		WithRefOpts,
-		ReadableBoxedValues<{
-			/** Unique identifier for this pane */
-			id: string;
+		WithRefOpts<
+			ReadableBoxedValues<{
+				/** Minimum size in pixels */
+				minSize?: number;
 
-			/** Minimum size in pixels */
-			minSize?: number;
+				/** Maximum size in pixels */
+				maxSize?: number;
 
-			/** Maximum size in pixels */
-			maxSize?: number;
+				/** Resize priority (high = keeps size better during resizes) */
+				priority?: 'high' | 'normal' | 'low';
 
-			/** Resize priority (high = keeps size better during resizes) */
-			priority?: 'high' | 'normal' | 'low';
+				/** Auto-collapse threshold in pixels */
+				autoCollapseThreshold?: number;
 
-			/** Auto-collapse threshold in pixels */
-			autoCollapseThreshold?: number;
+				/** Snap points for resize operations */
+				snapPoints?: number[];
 
-			/** Snap points for resize operations */
-			snapPoints?: number[];
+				/** Snap threshold in pixels */
+				snapThreshold?: number;
 
-			/** Snap threshold in pixels */
-			snapThreshold?: number;
+				/** Panel type for content state serialization */
+				panelType?: string;
+				/** Initial size of pane (percentage or pixels based on initialSizeUnit) */
+				initialSize?: number;
 
-			/** Panel type for content state serialization */
-			panelType?: string;
-		/** Initial size of pane (percentage or pixels based on initialSizeUnit) */
-		initialSize?: number;
+				/** Unit for initial size: 'percent' or 'pixels' */
+				initialSizeUnit?: 'percent' | 'pixels';
+				/**
+				 * Strategy for animating collapse/expand transitions.
+				 *
+				 * - 'unmount': Content is unmounted when collapsed (default, best performance)
+				 * - 'force-mount': Content stays in DOM, user controls animation via snippet
+				 * - 'view-transition': Uses CSS View Transitions API for smooth animations
+				 *
+				 * @default 'unmount'
+				 */
+				collapseStrategy?: 'unmount' | 'force-mount' | 'view-transition';
 
-		/** Unit for initial size: 'percent' or 'pixels' */
-		initialSizeUnit?: 'percent' | 'pixels';
-			/**
-			 * Strategy for animating collapse/expand transitions.
-			 *
-			 * - 'unmount': Content is unmounted when collapsed (default, best performance)
-			 * - 'force-mount': Content stays in DOM, user controls animation via snippet
-			 * - 'view-transition': Uses CSS View Transitions API for smooth animations
-			 *
-			 * @default 'unmount'
-			 */
-			collapseStrategy?: 'unmount' | 'force-mount' | 'view-transition';
+				/**
+				 * Custom view-transition-name for this pane.
+				 * Only used when collapseStrategy is 'view-transition'.
+				 *
+				 * @default `split-panel-${id}`
+				 */
+				viewTransitionName?: string;
 
-			/**
-			 * Custom view-transition-name for this pane.
-			 * Only used when collapseStrategy is 'view-transition'.
-			 *
-			 * @default `split-panel-${id}`
-			 */
-			viewTransitionName?: string;
-
-			/**
-			 * Legacy: Force mount content regardless of collapsed state.
-			 * Equivalent to collapseStrategy="force-mount".
-			 *
-			 * @deprecated Use collapseStrategy="force-mount" instead
-			 * @default false
-			 */
-			forceMount?: boolean;
-		}>,
-		WritableBoxedValues<{
-			/** Whether pane is collapsed */
-			collapsed?: boolean;
-		}> {}
+				/**
+				 * Legacy: Force mount content regardless of collapsed state.
+				 * Equivalent to collapseStrategy="force-mount".
+				 *
+				 * @deprecated Use collapseStrategy="force-mount" instead
+				 * @default false
+				 */
+				forceMount?: boolean;
+			}> &
+				WritableBoxedValues<{
+					/** Whether pane is collapsed */
+					collapsed?: boolean;
+				}>
+		> {}
 
 /**
  * SplitPanelPaneState - Component state wrapper for individual panes.
@@ -150,10 +149,14 @@ export class SplitPanelPaneState {
 
 		// Register this pane with parent split for DOM ordering
 		// Element is null initially, will be updated when mounted
-		this.#splitCleanupFn = this.split._registerChildPane(opts.id.current, null);
+		const initialId = opts.id.current ?? '';
+		this.#splitCleanupFn = this.split._registerChildPane(initialId, null);
 
 		// Watch ID changes and register with root state
 		watch([() => this.opts.id.current], ([id]) => {
+			// Skip if id is null/undefined
+			if (!id) return;
+
 			// Unregister previous pane if ID changed
 			if (this.#rootCleanupFn) {
 				this.#rootCleanupFn();
@@ -217,12 +220,15 @@ export class SplitPanelPaneState {
 	_setElement(element: HTMLElement | null): void {
 		// Skip if element hasn't changed
 		if (this.#element === element) return;
-		
+
+		const id = this.opts.id.current;
+		if (!id) return;
+
 		const wasNull = this.#element === null;
 		this.#element = element;
-		
+
 		// Update parent split with element reference for DOM ordering
-		this.split._updateChildPaneElement(this.opts.id.current, element);
+		this.split._updateChildPaneElement(id, element);
 		
 		// Only trigger tree sync on first mount (null -> element)
 		if (wasNull && element) {
@@ -241,7 +247,8 @@ export class SplitPanelPaneState {
 	 * Check if this pane is currently focused.
 	 */
 	readonly isFocused = $derived.by(() => {
-		return this.root.isPaneFocused(this.opts.id.current);
+		const id = this.opts.id.current;
+		return id ? this.root.isPaneFocused(id) : false;
 	});
 
 	/**
@@ -250,7 +257,8 @@ export class SplitPanelPaneState {
 	readonly isCollapsed = $derived.by(() => {
 		// Read layoutVersion to trigger re-computation when layout changes
 		const _version = this.root.layoutVersion;
-		const state = this.root.getPaneState(this.opts.id.current);
+		const id = this.opts.id.current;
+		const state = id ? this.root.getPaneState(id) : null;
 		return state?.isCollapsed ?? false;
 	});
 
@@ -362,7 +370,9 @@ export class SplitPanelPaneState {
 	 * Toggle pane collapsed state.
 	 */
 	toggle(): void {
-		this.root.togglePane(this.opts.id.current);
+		const id = this.opts.id.current;
+		if (!id) return;
+		this.root.togglePane(id);
 		// Sync local collapsed state from layout (will be updated reactively)
 	}
 
@@ -370,24 +380,31 @@ export class SplitPanelPaneState {
 	 * Collapse this pane.
 	 */
 	collapse(): void {
-		this.root.collapsePane(this.opts.id.current);
+		const id = this.opts.id.current;
+		if (!id) return;
+		this.root.collapsePane(id);
 	}
 
 	/**
 	 * Expand this pane.
 	 */
 	expand(): void {
-		this.root.expandPane(this.opts.id.current);
+		const id = this.opts.id.current;
+		if (!id) return;
+		this.root.expandPane(id);
 	}
 
 	/**
 	 * Focus this pane.
 	 */
 	focus(): void {
-		this.root.focusPane(this.opts.id.current);
+		const id = this.opts.id.current;
+		if (!id) return;
+
+		this.root.focusPane(id);
 		// Also focus the DOM element if available
-		if (this.attachment.current) {
-			this.attachment.current.focus();
+		if (this.opts.ref.current) {
+			this.opts.ref.current.focus();
 		}
 	}
 

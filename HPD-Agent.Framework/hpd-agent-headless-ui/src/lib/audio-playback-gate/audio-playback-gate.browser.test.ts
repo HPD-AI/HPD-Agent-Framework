@@ -3,20 +3,49 @@
  * Following Bits UI testing patterns with comprehensive accessibility checks
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { userEvent } from '@vitest/browser/context';
 import AudioGateTest from './audio-playback-gate.test.svelte';
 
+// ============================================
+// Mock factory helpers
+// ============================================
+
+/**
+ * Create a mock AudioContext constructor whose instances:
+ * - start in 'suspended' state
+ * - transition to 'running' after resume() resolves
+ * - record close() calls
+ */
+function makeMockAudioContextClass(opts: { failResume?: boolean } = {}) {
+	const mockClose = vi.fn().mockResolvedValue(undefined);
+	const instances: { state: string; resume: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }[] = [];
+
+	const MockClass = vi.fn(function (this: any) {
+		this.state = 'suspended';
+		this.close = mockClose;
+		this.resume = vi.fn(async () => {
+			if (opts.failResume) throw new Error('resume failed');
+			this.state = 'running';
+		});
+		instances.push(this);
+	});
+
+	return { MockClass, mockClose, instances };
+}
+
 describe('AudioPlaybackGate', () => {
-	// Mock AudioContext for testing
+	// Use vi.stubGlobal so the stub is properly restored after each test.
+	// globalThis.AudioContext = ... does not affect window.AudioContext in a real
+	// browser frame, so we must use the official Vitest stub API.
 	beforeEach(() => {
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		(globalThis as any).AudioContext = vi.fn().mockImplementation(() => ({
-			state: 'suspended',
-			resume: vi.fn().mockResolvedValue(undefined),
-			close: vi.fn().mockResolvedValue(undefined)
-		}));
+		const { MockClass } = makeMockAudioContextClass();
+		vi.stubGlobal('AudioContext', MockClass);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
 	});
 
 	describe('ARIA Attributes & Accessibility', () => {
@@ -97,34 +126,31 @@ describe('AudioPlaybackGate', () => {
 
 	describe('Enable Audio Interaction', () => {
 		it('should update status when enable button is clicked', async () => {
-			// Mock AudioContext as a proper constructor
-			const mockResume = vi.fn().mockResolvedValue(undefined);
-			const mockClose = vi.fn().mockResolvedValue(undefined);
-
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(globalThis as any).AudioContext = vi.fn(function (this: any) {
-				this.state = 'suspended';
-				this.resume = mockResume;
-				this.close = mockClose;
+			// Inject a suspended AudioContext whose resume() transitions state to 'running'.
+			// Using prop injection bypasses window.AudioContext (a native browser API that
+			// cannot be replaced via vi.stubGlobal in a real Chromium context).
+			const mockResume = vi.fn(async function (this: { state: string }) {
+				this.state = 'running';
 			});
+			const mockAudioContext = {
+				state: 'suspended',
+				resume: mockResume,
+				close: vi.fn().mockResolvedValue(undefined),
+			} as unknown as AudioContext;
 
-			const { container } = render(AudioGateTest);
+			const { container } = render(AudioGateTest, { audioContext: mockAudioContext });
 			const enableBtn = container.querySelector('[data-testid="audio-gate-enable-btn"]') as HTMLElement;
 
-			// Click enable button
 			await userEvent.click(enableBtn!);
+			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Wait for state update
-			await new Promise((resolve) => setTimeout(resolve, 100));
-
-			// Check that AudioContext was created and resumed
 			expect(mockResume).toHaveBeenCalled();
 		});
 
 		it('should call onStatusChange callback when status changes', async () => {
 			const onStatusChange = vi.fn();
 
-			const { container } = render(AudioGateTest, { onStatusChange });
+			render(AudioGateTest, { onStatusChange });
 
 			// onStatusChange should be called with initial status
 			expect(onStatusChange).toHaveBeenCalledWith('blocked');
@@ -132,21 +158,22 @@ describe('AudioPlaybackGate', () => {
 	});
 
 	describe('Error Handling', () => {
-		it('should handle AudioContext creation failure', async () => {
-			// Mock AudioContext to throw error
-			// @ts-expect-error - mocking AudioContext
-			globalThis.AudioContext = undefined;
+		it('should handle AudioContext resume failure', async () => {
+			// Inject an AudioContext whose resume() rejects, triggering the error state.
+			// We can't remove window.AudioContext in a real browser (native, read-only),
+			// so we simulate failure through prop injection instead.
+			const mockAudioContext = {
+				state: 'suspended',
+				resume: vi.fn().mockRejectedValue(new Error('AudioContext resume failed')),
+				close: vi.fn().mockResolvedValue(undefined),
+			} as unknown as AudioContext;
 
-			const { container } = render(AudioGateTest);
+			const { container } = render(AudioGateTest, { audioContext: mockAudioContext });
 			const enableBtn = container.querySelector('[data-testid="audio-gate-enable-btn"]') as HTMLElement;
 
-			// Click enable button
 			await userEvent.click(enableBtn!);
-
-			// Wait for error state
 			await new Promise((resolve) => setTimeout(resolve, 100));
 
-			// Check for error display
 			const errorEl = container.querySelector('[data-testid="audio-gate-error"]') as HTMLElement;
 			await expect.element(errorEl).toBeInTheDocument();
 		});
@@ -187,22 +214,23 @@ describe('AudioPlaybackGate', () => {
 			const { container } = render(AudioGateTest);
 			const enableBtn = container.querySelector('[data-testid="audio-gate-enable-btn"]') as HTMLElement;
 
-			// enableAudio function should be callable via button
 			await expect.element(enableBtn).toBeInTheDocument();
 		});
 
 		it('should expose error to snippet when error occurs', async () => {
-			// @ts-expect-error - mocking AudioContext
-			globalThis.AudioContext = undefined;
+			// Inject an AudioContext that fails on resume() to trigger the error state.
+			const mockAudioContext = {
+				state: 'suspended',
+				resume: vi.fn().mockRejectedValue(new Error('resume failed')),
+				close: vi.fn().mockResolvedValue(undefined),
+			} as unknown as AudioContext;
 
-			const { container } = render(AudioGateTest);
+			const { container } = render(AudioGateTest, { audioContext: mockAudioContext });
 			const enableBtn = container.querySelector('[data-testid="audio-gate-enable-btn"]') as HTMLElement;
 
-			// Trigger error
 			await userEvent.click(enableBtn!);
 			await new Promise((resolve) => setTimeout(resolve, 100));
 
-			// Error should be exposed
 			const errorEl = container.querySelector('[data-testid="audio-gate-error"]') as HTMLElement;
 			await expect.element(errorEl).toBeInTheDocument();
 		});
@@ -210,33 +238,18 @@ describe('AudioPlaybackGate', () => {
 
 	describe('Cleanup', () => {
 		it('should close AudioContext on unmount', async () => {
-			const mockClose = vi.fn().mockResolvedValue(undefined);
-			const mockResume = vi.fn().mockResolvedValue(undefined);
-
-			// Mock AudioContext as a proper constructor
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(globalThis as any).AudioContext = vi.fn(function (this: any) {
-				this.state = 'suspended';
-				this.resume = mockResume;
-				this.close = mockClose;
-			});
+			const { MockClass, mockClose } = makeMockAudioContextClass();
+			vi.stubGlobal('AudioContext', MockClass);
 
 			const { container, unmount } = render(AudioGateTest);
 
-			// Enable audio first (so AudioContext is created)
 			const enableBtn = container.querySelector('[data-testid="audio-gate-enable-btn"]') as HTMLElement;
 			await userEvent.click(enableBtn!);
+			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Wait for AudioContext to be created
-			await new Promise((resolve) => setTimeout(resolve, 100));
-
-			// Unmount component
 			unmount();
+			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			// Wait for cleanup
-			await new Promise((resolve) => setTimeout(resolve, 100));
-
-			// Close should be called
 			expect(mockClose).toHaveBeenCalled();
 		});
 	});

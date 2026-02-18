@@ -310,6 +310,8 @@ public class Branch
     public void AddMessage(ChatMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
+        message.MessageId ??= Guid.NewGuid().ToString();
+        message.CreatedAt ??= DateTimeOffset.UtcNow;
         Messages.Add(message);
         LastActivity = DateTime.UtcNow;
     }
@@ -320,7 +322,13 @@ public class Branch
     public void AddMessages(IEnumerable<ChatMessage> messages)
     {
         ArgumentNullException.ThrowIfNull(messages);
-        Messages.AddRange(messages);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var message in messages)
+        {
+            message.MessageId ??= Guid.NewGuid().ToString();
+            message.CreatedAt ??= now;
+            Messages.Add(message);
+        }
         LastActivity = DateTime.UtcNow;
     }
 

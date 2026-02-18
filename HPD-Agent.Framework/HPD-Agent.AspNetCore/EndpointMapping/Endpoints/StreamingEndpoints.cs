@@ -5,6 +5,8 @@ using HPD.Agent;
 using HPD.Agent.AspNetCore.Lifecycle;
 using HPD.Agent.AspNetCore.Streaming;
 using HPD.Agent.Hosting.Data;
+using HPD.Agent.Hosting.Extensions;
+using HPD.Agent.Serialization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -71,6 +73,7 @@ internal static class StreamingEndpoints
 
                 // Build run configuration from request
                 var runConfig = BuildRunConfig(request.RunConfig);
+                runConfig.ClientToolInput = request.ToAgentRunInput();
 
                 // Stream events using SSE - this sends headers and starts streaming
                 // After this call, we cannot return a typed result
@@ -202,12 +205,13 @@ internal static class StreamingEndpoints
 
             // Build run configuration
             var runConfig = BuildRunConfig(request.RunConfig);
+            runConfig.ClientToolInput = request.ToAgentRunInput();
 
             // Stream events via WebSocket with ID-based API
             var events = agent.RunAsync(userMessage, sid, bid, options: runConfig, cancellationToken: ct);
             await foreach (var evt in events.WithCancellation(ct))
             {
-                var eventJson = JsonSerializer.Serialize(evt);
+                var eventJson = AgentEventSerializer.ToJson(evt);
                 var bytes = Encoding.UTF8.GetBytes(eventJson);
 
                 await webSocket.SendAsync(

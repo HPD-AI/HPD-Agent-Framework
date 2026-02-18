@@ -11,7 +11,7 @@
 	import { SplitPanelHandleState } from './split-panel-handle-state.svelte.js';
 	import { SplitPanelSplitContext } from './split-panel-split-state.svelte.js';
 
-	interface Props extends HTMLAttributes<HTMLDivElement> {
+	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		/** Whether handle is disabled */
 		disabled?: boolean;
 

@@ -79,7 +79,7 @@ var agent = await new AgentBuilder()
     .WithPIIProtection()                            // Filter sensitive data
     .WithHistoryReduction(config => {
         config.Strategy = HistoryReductionStrategy.Summarizing;
-        config.TargetMessageCount = 30;
+        config.TargetCount = 30;
     })
     .WithCircuitBreaker(maxConsecutiveCalls: 5)
     .WithFunctionRetry()

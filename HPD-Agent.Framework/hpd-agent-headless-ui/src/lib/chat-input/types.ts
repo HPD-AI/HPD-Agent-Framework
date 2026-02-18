@@ -38,6 +38,11 @@ export type ChatInputRootPropsWithoutHTML = WithChild<{
 	 * Callback when value changes
 	 */
 	onChange?: OnChangeFn<string>;
+
+	/**
+	 * Rest props support
+	 */
+	[key: string]: unknown;
 }>;
 
 export type ChatInputRootProps = ChatInputRootPropsWithoutHTML &
@@ -116,6 +121,11 @@ export type ChatInputInputPropsWithoutHTML = {
 	 * Children snippet
 	 */
 	children?: import('svelte').Snippet<[ChatInputInputSnippetProps]>;
+
+	/**
+	 * Rest props support
+	 */
+	[key: string]: unknown;
 };
 
 export type ChatInputInputProps = ChatInputInputPropsWithoutHTML &
@@ -213,6 +223,11 @@ export type ChatInputAccessoryPropsWithoutHTML = {
 	 * ```
 	 */
 	children?: import('svelte').Snippet<[ChatInputAccessorySnippetProps]>;
+
+	/**
+	 * Rest props support
+	 */
+	[key: string]: unknown;
 };
 
 export type ChatInputAccessoryProps = ChatInputAccessoryPropsWithoutHTML &

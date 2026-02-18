@@ -25,7 +25,13 @@ internal static class SessionEndpoints
             .WithName("CreateSession")
             .WithSummary("Create a new session with a default 'main' branch");
 
-        // POST /sessions/search - List/search sessions (POST for filter body)
+        // GET /sessions - List all sessions
+        endpoints.MapGet("/sessions", (CancellationToken ct) =>
+                SearchSessions(manager, null, ct))
+            .WithName("ListSessions")
+            .WithSummary("List all sessions");
+
+        // POST /sessions/search - List/search sessions with filtering
         endpoints.MapPost("/sessions/search", (SearchSessionsRequest? request, CancellationToken ct) =>
                 SearchSessions(manager, request, ct))
             .WithName("SearchSessions")
@@ -57,27 +63,12 @@ internal static class SessionEndpoints
     {
         try
         {
-            // Generate session ID if not provided
-            var sessionId = request?.SessionId ?? Guid.NewGuid().ToString();
-
-            // Use agent to create session and branch (Agent has access to internal constructors)
-            var agent = await manager.GetOrCreateAgentAsync(sessionId, ct);
-            var (session, branch) = await agent.LoadSessionAndBranchAsync(sessionId, "main", ct);
-
-            session.Store = manager.Store;
-
-            // Apply metadata if provided
-            if (request?.Metadata != null)
-            {
-                foreach (var kvp in request.Metadata)
-                {
-                    session.AddMetadata(kvp.Key, kvp.Value);
-                }
-            }
-
-            // Save session and branch
-            await manager.Store.SaveSessionAsync(session, ct);
-            await manager.Store.SaveBranchAsync(session.Id, branch, ct);
+            // Create session directly in the store — no agent/provider needed.
+            // Sessions are provider-agnostic; the agent is only needed during streaming.
+            var (session, _) = await manager.CreateSessionAsync(
+                request?.SessionId,
+                request?.Metadata,
+                ct);
 
             var dto = new SessionDto(
                 session.Id,

@@ -67,4 +67,7 @@ public sealed class MauiSessionManager : AgentSessionManager
 
     protected override TimeSpan GetIdleTimeout() =>
         _optionsMonitor.Get(_name).AgentIdleTimeout;
+
+    public override bool AllowRecursiveBranchDelete =>
+        _optionsMonitor.Get(_name).AllowRecursiveBranchDelete;
 }

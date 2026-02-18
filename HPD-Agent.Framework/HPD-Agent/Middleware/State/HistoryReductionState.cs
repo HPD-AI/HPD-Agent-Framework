@@ -14,31 +14,14 @@ namespace HPD.Agent;
 /// <para><b>Caching Strategy:</b></para>
 /// <list type="bullet">
 /// <item>Cache key: Message hash (first N messages)</item>
-/// <item>Cache validity: Based on message count + threshold</item>
+/// <item>Cache validity: Based on count + threshold (unit determined by CountingUnit)</item>
 /// <item>Cache hit: Reuse summary, no LLM call</item>
 /// <item>Cache miss: Re-summarize, update cache</item>
 /// </list>
-///
-/// <para><b>Usage:</b></para>
-/// <code>
-/// // Read state
-/// var hrState = context.State.MiddlewareState.HistoryReduction ?? new();
-/// if (hrState.LastReduction?.IsValidFor(messages.Count) == true)
-/// {
-///     // Cache hit - use hrState.LastReduction
-/// }
-///
-/// // Update state
-/// context.UpdateState(s => s with
-/// {
-///     MiddlewareState = s.MiddlewareState.WithHistoryReduction(hrState.WithReduction(newReduction))
-/// });
-/// </code>
 /// </remarks>
 [MiddlewareState(Persistent = true)]
 public sealed record HistoryReductionStateData
 {
-
     /// <summary>
     /// Last successful reduction (null if no reduction performed yet).
     /// Contains the summary, metadata, and validity information.
@@ -46,12 +29,23 @@ public sealed record HistoryReductionStateData
     public CachedReduction? LastReduction { get; init; }
 
     /// <summary>
+    /// Number of completed exchanges (RunAsync calls) on this branch.
+    /// Incremented by AfterMessageTurnAsync after each successful exchange.
+    /// Used by HistoryReductionMiddleware when CountingUnit == Exchanges.
+    /// </summary>
+    public int ExchangeCount { get; init; }
+
+    /// <summary>
     /// Records a new reduction, replacing the previous cache entry.
     /// </summary>
-    /// <param name="reduction">New reduction to cache</param>
-    /// <returns>New state with updated cache</returns>
     public HistoryReductionStateData WithReduction(CachedReduction reduction) =>
         this with { LastReduction = reduction };
+
+    /// <summary>
+    /// Increments the exchange counter by one.
+    /// </summary>
+    public HistoryReductionStateData WithIncrementedExchangeCount() =>
+        this with { ExchangeCount = ExchangeCount + 1 };
 }
 
 /// <summary>
@@ -63,30 +57,30 @@ public sealed record HistoryReductionStateData
 /// <para>
 /// This record captures everything needed to reuse a reduction across multiple turns:
 /// - Summary content (to inject in place of old messages)
-/// - Metadata for cache validation (message count, hash, threshold)
+/// - Metadata for cache validation (count, hash, threshold, counting unit)
 /// - Integrity checking (to detect message modifications)
 /// </para>
 ///
 /// <para><b>Cache Validity:</b></para>
 /// <code>
 /// ┌────────────────────────────────────────────────────────┐
-/// │ Turn 1: 100 messages → Reduce → Summary (0-89)        │
-/// │         Cache: MessageCountAtReduction=100             │
-/// │                SummarizedUpToIndex=90                  │
+/// │ Turn 1: 20 exchanges → Reduce → Summary               │
+/// │         Cache: CountAtReduction=20                     │
+/// │                SummarizedUpToIndex=N (message index)  │
 /// │                ReductionThreshold=5                    │
 /// └────────────────────────────────────────────────────────┘
 ///                          ↓
-///              IsValidFor(currentCount)?
+///              IsValidFor(currentCount, unit)?
 ///                          ↓
 /// ┌────────────────────────────────────────────────────────┐
-/// │ Turn 2: 104 messages                                   │
-/// │         104 - 100 = 4 new messages                     │
+/// │ Turn 2: 24 exchanges                                   │
+/// │         24 - 20 = 4 new exchanges                      │
 /// │         4 &lt;= 5 (threshold) → CACHE HIT               │
 /// └────────────────────────────────────────────────────────┘
 ///                          ↓
 /// ┌────────────────────────────────────────────────────────┐
-/// │ Turn 3: 106 messages                                   │
-/// │         106 - 100 = 6 new messages                     │
+/// │ Turn 3: 26 exchanges                                   │
+/// │         26 - 20 = 6 new exchanges                      │
 /// │         6 &gt; 5 (threshold) → CACHE MISS                  │
 /// │         Re-summarize required                          │
 /// └────────────────────────────────────────────────────────┘
@@ -98,14 +92,15 @@ public sealed record CachedReduction
     /// Message index where summary ends (exclusive).
     /// Messages [0..SummarizedUpToIndex) were summarized.
     /// Messages [SummarizedUpToIndex..end) are kept verbatim.
+    /// Always a message index regardless of CountingUnit.
     /// </summary>
     public int SummarizedUpToIndex { get; init; }
 
     /// <summary>
-    /// Total message count when this reduction was performed.
-    /// Used to detect how many NEW messages have been added since reduction.
+    /// Count value (in the unit specified by CountingUnit) when this reduction was performed.
+    /// Used to detect how many new exchanges/messages have been added since reduction.
     /// </summary>
-    public int MessageCountAtReduction { get; init; }
+    public int CountAtReduction { get; init; }
 
     /// <summary>
     /// Generated summary text (replaces messages 0..SummarizedUpToIndex).
@@ -124,42 +119,37 @@ public sealed record CachedReduction
     public string MessageHash { get; init; } = string.Empty;
 
     /// <summary>
-    /// Target message count from configuration (for reference).
+    /// Target count from configuration (for reference). Unit determined by CountingUnit.
     /// </summary>
-    public int TargetMessageCount { get; init; }
+    public int TargetCount { get; init; }
 
     /// <summary>
     /// Threshold for triggering re-reduction.
-    /// Number of new messages allowed before cache expires.
+    /// Number of new units (exchanges or messages) allowed before cache expires.
     /// </summary>
     public int ReductionThreshold { get; init; }
 
     /// <summary>
-    /// Checks if this reduction is still valid for the given message count.
-    /// Returns true if new messages are within threshold, false if re-reduction needed.
+    /// The counting unit that was active when this reduction was created.
+    /// Cache is invalid if the unit changes.
     /// </summary>
-    /// <param name="currentMessageCount">Current total message count</param>
-    /// <returns>True if cache can be reused, false if re-reduction needed</returns>
-    public bool IsValidFor(int currentMessageCount)
+    public HistoryCountingUnit CountingUnit { get; init; }
+
+    /// <summary>
+    /// Checks if this reduction is still valid for the given count and unit.
+    /// Returns true if new units are within threshold and unit hasn't changed.
+    /// </summary>
+    public bool IsValidFor(int currentCount, HistoryCountingUnit currentUnit)
     {
-        // If messages were deleted, cache is invalid
-        if (currentMessageCount < MessageCountAtReduction)
-            return false;
-
-        // Calculate new messages added since reduction
-        var newMessagesCount = currentMessageCount - MessageCountAtReduction;
-
-        // Valid if new messages are within threshold
-        return newMessagesCount <= ReductionThreshold;
+        if (currentUnit != CountingUnit) return false;
+        if (currentCount < CountAtReduction) return false;
+        return (currentCount - CountAtReduction) <= ReductionThreshold;
     }
 
     /// <summary>
     /// Validates that the summarized portion of messages hasn't been modified.
     /// Compares hash of first N messages against stored hash.
     /// </summary>
-    /// <param name="messages">Current message list to validate</param>
-    /// <returns>True if messages are unchanged, false if modified</returns>
-    /// <exception cref="ArgumentException">If message count is less than SummarizedUpToIndex</exception>
     public bool ValidateIntegrity(IReadOnlyList<Microsoft.Extensions.AI.ChatMessage> messages)
     {
         if (messages.Count < SummarizedUpToIndex)
@@ -167,11 +157,9 @@ public sealed record CachedReduction
                 $"Message count ({messages.Count}) is less than SummarizedUpToIndex ({SummarizedUpToIndex}). " +
                 "This indicates messages were deleted, which invalidates the cache.");
 
-        // If no messages were summarized, integrity is always valid
         if (SummarizedUpToIndex == 0)
             return true;
 
-        // Compute hash of summarized portion and compare
         var currentHash = ComputeMessageHash(messages.Take(SummarizedUpToIndex));
         return currentHash == MessageHash;
     }
@@ -180,17 +168,12 @@ public sealed record CachedReduction
     /// Applies this reduction to a message list, returning reduced messages.
     /// Replaces summarized messages with summary, keeps recent messages verbatim.
     /// </summary>
-    /// <param name="allMessages">Full message history (non-system messages only)</param>
-    /// <param name="systemMessage">Optional system message to prepend</param>
-    /// <returns>Reduced message list: [System?] [Summary] [Recent messages...]</returns>
-    /// <exception cref="InvalidOperationException">If integrity check fails</exception>
     public IEnumerable<Microsoft.Extensions.AI.ChatMessage> ApplyToMessages(
         IEnumerable<Microsoft.Extensions.AI.ChatMessage> allMessages,
         Microsoft.Extensions.AI.ChatMessage? systemMessage = null)
     {
         var messagesList = allMessages.ToList();
 
-        // Validate integrity before applying
         if (!ValidateIntegrity(messagesList))
         {
             throw new InvalidOperationException(
@@ -198,19 +181,15 @@ public sealed record CachedReduction
                 "Messages have been modified since reduction was created.");
         }
 
-        // Build reduced list
         var result = new List<Microsoft.Extensions.AI.ChatMessage>();
 
-        // 1. System message (if provided)
         if (systemMessage != null)
             result.Add(systemMessage);
 
-        // 2. Summary message (replaces 0..SummarizedUpToIndex)
         result.Add(new Microsoft.Extensions.AI.ChatMessage(
             Microsoft.Extensions.AI.ChatRole.Assistant,
             SummaryContent));
 
-        // 3. Recent messages (SummarizedUpToIndex..end)
         result.AddRange(messagesList.Skip(SummarizedUpToIndex));
 
         return result;
@@ -223,20 +202,23 @@ public sealed record CachedReduction
         IReadOnlyList<Microsoft.Extensions.AI.ChatMessage> messages,
         string summaryContent,
         int summarizedUpToIndex,
-        int targetMessageCount,
-        int reductionThreshold)
+        int targetCount,
+        int reductionThreshold,
+        int countAtReduction,
+        HistoryCountingUnit countingUnit)
     {
         var messageHash = ComputeMessageHash(messages.Take(summarizedUpToIndex));
 
         return new CachedReduction
         {
             SummarizedUpToIndex = summarizedUpToIndex,
-            MessageCountAtReduction = messages.Count,
+            CountAtReduction = countAtReduction,
             SummaryContent = summaryContent,
             CreatedAt = DateTime.UtcNow,
             MessageHash = messageHash,
-            TargetMessageCount = targetMessageCount,
-            ReductionThreshold = reductionThreshold
+            TargetCount = targetCount,
+            ReductionThreshold = reductionThreshold,
+            CountingUnit = countingUnit
         };
     }
 
@@ -246,11 +228,6 @@ public sealed record CachedReduction
     /// </summary>
     private static string ComputeMessageHash(IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages)
     {
-        // Use Microsoft's official hashing utility instead of custom SHA256
-        // Benefits:
-        // - Handles JSON normalization automatically (property order, whitespace)
-        // - Properly handles AIContent polymorphism (TextContent, FunctionCallContent, etc.)
-        // - More robust than string concatenation (e.g., role:text collision: "user:hello|assistant" vs "user|hello:assistant")
         return Microsoft.Extensions.AI.AIJsonUtilities.HashDataToString(
             messages.ToArray(),
             Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);

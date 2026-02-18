@@ -147,7 +147,6 @@ export class RovingFocusGroup {
 		const anyActive = this.#currentTabStopId.current !== null;
 
 		if (node && !anyActive && items[0] === node) {
-			this.#currentTabStopId.current = node.id;
 			return 0;
 		} else if (node?.id === this.#currentTabStopId.current) {
 			return 0;

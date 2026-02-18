@@ -9,16 +9,25 @@ namespace HPD.Agent.Hosting.Configuration;
 public class HPDAgentOptions
 {
     /// <summary>
-    /// Pre-configured session store instance.
-    /// Takes priority over SessionStorePath.
+    /// The session store to use for this agent.
+    /// Owns session lifecycle (list, create, delete) and is shared with the agent for branch persistence.
+    /// Defaults to <see cref="InMemorySessionStore"/> if not set.
+    /// Use <see cref="JsonSessionStore"/> for persistence across restarts.
     /// </summary>
+    /// <remarks>
+    /// The hosting layer owns the store, not the AgentBuilder. The store is created at startup
+    /// so that session/branch endpoints work before any agent is built. When a stream request
+    /// arrives, the same store is passed into the AgentBuilder automatically — do not also
+    /// call WithSessionStore() inside <see cref="ConfigureAgent"/>.
+    /// </remarks>
     public ISessionStore? SessionStore { get; set; }
 
     /// <summary>
-    /// Directory path for JsonSessionStore.
-    /// Ignored if SessionStore is set.
+    /// Whether to automatically persist conversation history after each completed turn.
+    /// Only meaningful when <see cref="SessionStore"/> is a durable store (e.g. <see cref="JsonSessionStore"/>).
+    /// Default: false.
     /// </summary>
-    public string? SessionStorePath { get; set; }
+    public bool PersistAfterTurn { get; set; } = false;
 
     /// <summary>
     /// Serializable agent configuration.
@@ -41,10 +50,10 @@ public class HPDAgentOptions
     /// Use this for runtime-only concerns (compiled type references, DI services).
     /// </summary>
     /// <remarks>
-    /// The AgentBuilder is pre-configured with the registered ISessionStore
-    /// and any AgentConfig/AgentConfigPath settings. Use this callback to
-    /// layer on runtime-only concerns that JSON can't express (compiled type
-    /// references, DI-resolved services, etc.).
+    /// The AgentBuilder is pre-configured with the <see cref="SessionStore"/> and any
+    /// AgentConfig/AgentConfigPath settings. Use this callback for agent behavior only —
+    /// providers, tools, middleware, instructions. Do not call WithSessionStore() here;
+    /// set <see cref="SessionStore"/> directly instead.
     /// </remarks>
     public Action<AgentBuilder>? ConfigureAgent { get; set; }
 
@@ -54,4 +63,13 @@ public class HPDAgentOptions
     /// Default: 30 minutes.
     /// </summary>
     public TimeSpan AgentIdleTimeout { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Whether to allow recursive branch deletion via DELETE /branches/{id}?recursive=true.
+    /// When false (default), deleting a branch with children is rejected — callers must
+    /// delete leaf branches manually. When true, the entire subtree is deleted atomically.
+    /// Enable only if your UI explicitly surfaces this as a deliberate "delete subtree" action.
+    /// Default: false.
+    /// </summary>
+    public bool AllowRecursiveBranchDelete { get; set; } = false;
 }

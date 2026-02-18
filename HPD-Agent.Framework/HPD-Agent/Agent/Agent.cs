@@ -1657,6 +1657,10 @@ public sealed class Agent
                         var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
                         lastResponse = finalResponse;
 
+                        // Accumulate token usage across iterations
+                        state = state.WithAccumulatedUsage(finalResponse.Usage);
+                        agentContext.SyncState(state);
+
                         // Add final assistant message to turnHistory before clearing responseUpdates
                         // This ensures the assistant's response is persisted to the session
                         if (finalResponse.Messages.Count > 0)
@@ -1721,6 +1725,10 @@ public sealed class Agent
             if (responseUpdates.Any())
             {
                 var finalResponse = ConstructChatResponseFromUpdates(responseUpdates, Config?.PreserveReasoningInHistory ?? false);
+
+                // Accumulate usage from this final response
+                state = state.WithAccumulatedUsage(finalResponse.Usage);
+
                 if (finalResponse.Messages.Count > 0)
                 {
                     var finalAssistantMessage = finalResponse.Messages[0];
@@ -1988,6 +1996,9 @@ public sealed class Agent
     /// <summary>
     /// Coalesces consecutive TextContent items into single TextContent items.
     /// Non-text content (FunctionCallContent, etc.) is preserved as-is and acts as a boundary.
+    /// TextReasoningContent items are never coalesced — each chunk is passed through as-is
+    /// to preserve ProtectedData (the encrypted blob used by Anthropic extended thinking and
+    /// OpenAI o-series Responses API that must be round-tripped verbatim to the provider).
     /// </summary>
     private static List<AIContent> CoalesceTextContents(List<AIContent> contents)
     {
@@ -1996,46 +2007,32 @@ public sealed class Agent
 
         var result = new List<AIContent>();
         var textBuilder = new System.Text.StringBuilder();
-        var reasoningBuilder = new System.Text.StringBuilder();
 
         foreach (var content in contents)
         {
-            if (content is TextReasoningContent reasoningContent)
+            if (content is TextReasoningContent)
             {
-                // Flush any accumulated regular text first
+                // Flush any accumulated regular text first, then pass reasoning through as-is.
+                // Do NOT merge reasoning chunks — ProtectedData must be preserved per-chunk.
                 if (textBuilder.Length > 0)
                 {
                     result.Add(new TextContent(textBuilder.ToString()));
                     textBuilder.Clear();
                 }
-                // Accumulate reasoning content
-                reasoningBuilder.Append(reasoningContent.Text);
+                result.Add(content);
             }
             else if (content is TextContent textContent)
             {
-                // Flush any accumulated reasoning first
-                if (reasoningBuilder.Length > 0)
-                {
-                    result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
-                    reasoningBuilder.Clear();
-                }
-                // Accumulate text content
                 textBuilder.Append(textContent.Text);
             }
             else
             {
-                // Non-text content - flush any accumulated text first
+                // Non-text content — flush accumulated text, then pass through as-is.
                 if (textBuilder.Length > 0)
                 {
                     result.Add(new TextContent(textBuilder.ToString()));
                     textBuilder.Clear();
                 }
-                if (reasoningBuilder.Length > 0)
-                {
-                    result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
-                    reasoningBuilder.Clear();
-                }
-                // Add the non-text content
                 result.Add(content);
             }
         }
@@ -2044,10 +2041,6 @@ public sealed class Agent
         if (textBuilder.Length > 0)
         {
             result.Add(new TextContent(textBuilder.ToString()));
-        }
-        if (reasoningBuilder.Length > 0)
-        {
-            result.Add(new TextReasoningContent(reasoningBuilder.ToString()));
         }
 
         return result;
@@ -2396,8 +2389,15 @@ public sealed class Agent
             }
         }
 
-        // Resolve chat options from AgentRunConfig and apply system instruction overrides
-        var chatOptions = options?.Chat?.MergeWith(Config?.Provider?.DefaultChatOptions);
+        // Resolve chat options from AgentRunConfig and apply system instruction overrides.
+        // Apply DefaultReasoning from AgentConfig as the base if no run-level reasoning is set.
+        var baseDefaultOptions = Config?.Provider?.DefaultChatOptions;
+        if (Config?.DefaultReasoning != null && (options?.Chat?.Reasoning == null))
+        {
+            baseDefaultOptions ??= new ChatOptions();
+            baseDefaultOptions.Reasoning = Config.DefaultReasoning.ToMicrosoftReasoningOptions();
+        }
+        var chatOptions = options?.Chat?.MergeWith(baseDefaultOptions) ?? baseDefaultOptions;
         chatOptions = ApplySystemInstructionOverrides(chatOptions, options);
 
         // Prepare turn
@@ -4548,6 +4548,26 @@ public sealed record AgentLoopState
     public BackgroundOperationInfo? ActiveBackgroundOperation { get; init; }
 
     //
+    // USAGE TRACKING
+    //
+
+    /// <summary>
+    /// Token usage accumulated across all LLM iterations in this turn.
+    /// Sums InputTokenCount, OutputTokenCount, CachedInputTokenCount, ReasoningTokenCount, etc.
+    /// Null until the first iteration completes with usage data.
+    /// For per-iteration breakdown see <see cref="IterationUsage"/>.
+    /// </summary>
+    public UsageDetails? AccumulatedUsage { get; init; }
+
+    /// <summary>
+    /// Per-iteration token usage, one entry per LLM call in this turn.
+    /// Index 0 = first LLM call, index 1 = after first tool round-trip, etc.
+    /// Entries are null if the provider did not return usage for that iteration.
+    /// </summary>
+    public ImmutableList<UsageDetails?> IterationUsage { get; init; }
+        = ImmutableList<UsageDetails?>.Empty;
+
+    //
     // FACTORY METHOD
     //
 
@@ -4723,6 +4743,25 @@ public sealed record AgentLoopState
     /// Called when an LLM call returns a continuation token (backgrounded operation).
     /// </summary>
     /// <param name="operation">The background operation info, or null to clear.</param>
+    /// <summary>
+    /// Records usage from a completed iteration:
+    /// - Appends to <see cref="IterationUsage"/> (per-iteration breakdown)
+    /// - Adds into <see cref="AccumulatedUsage"/> (running total across the turn)
+    /// No-ops if iterationUsage is null (provider returned no usage data) but still
+    /// appends a null entry so IterationUsage indices stay aligned with iteration numbers.
+    /// </summary>
+    public AgentLoopState WithAccumulatedUsage(UsageDetails? iterationUsage)
+    {
+        var newIterationUsage = IterationUsage.Add(iterationUsage);
+
+        if (iterationUsage == null)
+            return this with { IterationUsage = newIterationUsage };
+
+        var total = AccumulatedUsage ?? new UsageDetails();
+        total.Add(iterationUsage);
+        return this with { AccumulatedUsage = total, IterationUsage = newIterationUsage };
+    }
+
     public AgentLoopState WithBackgroundOperation(BackgroundOperationInfo? operation) =>
         this with { ActiveBackgroundOperation = operation };
 

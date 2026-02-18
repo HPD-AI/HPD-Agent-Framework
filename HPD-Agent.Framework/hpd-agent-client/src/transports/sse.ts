@@ -1,5 +1,20 @@
 import type { AgentEvent } from '../types/events.js';
-import type { AgentTransport, ClientMessage, ConnectOptions } from '../types/transport.js';
+import type {
+  AgentTransport,
+  ClientMessage,
+  ConnectOptions,
+} from '../types/transport.js';
+import type {
+  Session,
+  Branch,
+  SiblingBranch,
+  BranchMessage,
+  CreateSessionRequest,
+  UpdateSessionRequest,
+  ListSessionsOptions,
+  CreateBranchRequest,
+  ForkBranchRequest,
+} from '../types/session.js';
 import { SseParser } from '../parser.js';
 
 /**
@@ -9,7 +24,8 @@ import { SseParser } from '../parser.js';
  */
 export class SseTransport implements AgentTransport {
   private baseUrl: string;
-  private conversationId?: string;
+  private sessionId?: string;
+  private branchId?: string;
   private abortController?: AbortController;
   private eventHandler?: (event: AgentEvent) => void;
   private errorHandler?: (error: Error) => void;
@@ -26,7 +42,12 @@ export class SseTransport implements AgentTransport {
   }
 
   async connect(options: ConnectOptions): Promise<void> {
-    this.conversationId = options.conversationId;
+    if (this._connected) {
+      throw new Error('Already connected. Call disconnect() first.');
+    }
+
+    this.sessionId = options.sessionId;
+    this.branchId = options.branchId || 'main';
     this.abortController = new AbortController();
 
     // Combine user signal with our internal abort controller
@@ -34,7 +55,7 @@ export class SseTransport implements AgentTransport {
       ? this.combineSignals(options.signal, this.abortController.signal)
       : this.abortController.signal;
 
-    const url = `${this.baseUrl}/agent/conversations/${options.conversationId}/stream`;
+    const url = `${this.baseUrl}/sessions/${this.sessionId}/branches/${this.branchId}/stream`;
 
     // Build request body with all stream options
     const requestBody: Record<string, unknown> = {
@@ -59,6 +80,9 @@ export class SseTransport implements AgentTransport {
     }
     if (options.resetClientState) {
       requestBody.resetClientState = options.resetClientState;
+    }
+    if (options.runConfig !== undefined) {
+      requestBody.runConfig = options.runConfig;
     }
 
     const response = await fetch(url, {
@@ -119,7 +143,7 @@ export class SseTransport implements AgentTransport {
   }
 
   async send(message: ClientMessage): Promise<void> {
-    if (!this.conversationId) {
+    if (!this.sessionId || !this.branchId) {
       throw new Error('Not connected');
     }
 
@@ -141,13 +165,13 @@ export class SseTransport implements AgentTransport {
   private getEndpointForMessage(message: ClientMessage): string {
     switch (message.type) {
       case 'permission_response':
-        return `/agent/conversations/${this.conversationId}/permissions/respond`;
+        return `/sessions/${this.sessionId}/branches/${this.branchId}/permissions/respond`;
       case 'clarification_response':
-        return `/agent/conversations/${this.conversationId}/clarifications/respond`;
+        return `/sessions/${this.sessionId}/branches/${this.branchId}/clarifications/respond`;
       case 'continuation_response':
-        return `/agent/conversations/${this.conversationId}/continuations/respond`;
+        return `/sessions/${this.sessionId}/branches/${this.branchId}/continuations/respond`;
       case 'client_tool_response':
-        return `/agent/conversations/${this.conversationId}/client-tools/respond`;
+        return `/sessions/${this.sessionId}/branches/${this.branchId}/client-tools/respond`;
       default:
         throw new Error(`Unknown message type: ${(message as { type: string }).type}`);
     }
@@ -186,5 +210,223 @@ export class SseTransport implements AgentTransport {
     }
 
     return controller.signal;
+  }
+
+  // ============================================
+  // SESSION CRUD (V3)
+  // ============================================
+
+  async listSessions(options?: ListSessionsOptions): Promise<Session[]> {
+    const url = new URL(`${this.baseUrl}/sessions`);
+
+    if (options?.limit) url.searchParams.set('limit', options.limit.toString());
+    if (options?.offset) url.searchParams.set('offset', options.offset.toString());
+    if (options?.sortBy) url.searchParams.set('sortBy', options.sortBy);
+    if (options?.sortDirection) url.searchParams.set('sortDirection', options.sortDirection);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to list sessions: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getSession(sessionId: string): Promise<Session | null> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get session: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async createSession(options?: CreateSessionRequest): Promise<Session> {
+    const response = await fetch(`${this.baseUrl}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {}),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to create session: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async updateSession(sessionId: string, request: UpdateSessionRequest): Promise<Session> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to update session: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to delete session: HTTP ${response.status}: ${text}`);
+    }
+  }
+
+  // ============================================
+  // BRANCH CRUD (V3)
+  // ============================================
+
+  async listBranches(sessionId: string): Promise<Branch[]> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to list branches: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getBranch(sessionId: string, branchId: string): Promise<Branch | null> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches/${branchId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get branch: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async createBranch(sessionId: string, options?: CreateBranchRequest): Promise<Branch> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options || {}),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to create branch: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async forkBranch(
+    sessionId: string,
+    branchId: string,
+    options: ForkBranchRequest
+  ): Promise<Branch> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches/${branchId}/fork`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to fork branch: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async deleteBranch(sessionId: string, branchId: string, options?: { recursive?: boolean }): Promise<void> {
+    const url = new URL(`${this.baseUrl}/sessions/${sessionId}/branches/${branchId}`);
+    if (options?.recursive) url.searchParams.set('recursive', 'true');
+    const response = await fetch(url.toString(), {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to delete branch: HTTP ${response.status}: ${text}`);
+    }
+  }
+
+  async getBranchMessages(sessionId: string, branchId: string): Promise<BranchMessage[]> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches/${branchId}/messages`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get branch messages: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  // ============================================
+  // SIBLING NAVIGATION (V3)
+  // ============================================
+
+  async getBranchSiblings(sessionId: string, branchId: string): Promise<SiblingBranch[]> {
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/branches/${branchId}/siblings`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get siblings: HTTP ${response.status}: ${text}`);
+    }
+
+    // Backend returns ordered SiblingBranchDto[] (already sorted by siblingIndex)
+    return response.json();
+  }
+
+  async getNextSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    const branch = await this.getBranch(sessionId, branchId);
+    if (!branch?.nextSiblingId) {
+      return null;
+    }
+
+    return this.getBranch(sessionId, branch.nextSiblingId);
+  }
+
+  async getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    const branch = await this.getBranch(sessionId, branchId);
+    if (!branch?.previousSiblingId) {
+      return null;
+    }
+
+    return this.getBranch(sessionId, branch.previousSiblingId);
   }
 }

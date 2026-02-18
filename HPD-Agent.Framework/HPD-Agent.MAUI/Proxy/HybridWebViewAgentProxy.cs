@@ -19,6 +19,7 @@ public abstract class HybridWebViewAgentProxy
     protected readonly MauiSessionManager Manager;
     protected readonly IHybridWebView HybridWebView;
     protected readonly EventStreamManager EventStreamManager;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _activeStreams = new();
 
     protected HybridWebViewAgentProxy(
         MauiSessionManager manager,
@@ -36,6 +37,7 @@ public abstract class HybridWebViewAgentProxy
     /// <summary>
     /// Start streaming agent responses. Returns stream ID immediately.
     /// Events sent via HybridWebViewMessageReceived listener.
+    /// Call StopStream(streamId) to cancel a running stream.
     /// </summary>
     public async Task<string> StartStream(
         string message,
@@ -48,9 +50,13 @@ public abstract class HybridWebViewAgentProxy
         if (string.IsNullOrWhiteSpace(message))
             throw new ArgumentException("Message cannot be empty", nameof(message));
 
+        var cts = new CancellationTokenSource();
+        _activeStreams[streamId] = cts;
+
         // Fire and forget - events sent via SendRawMessage
         _ = Task.Run(async () =>
         {
+            string? lockedBranchId = null;
             try
             {
                 var agent = await Manager.GetOrCreateAgentAsync(sessionId);
@@ -79,6 +85,8 @@ public abstract class HybridWebViewAgentProxy
                     return;
                 }
 
+                lockedBranchId = branch.Id;
+
                 try
                 {
                     Manager.SetStreaming(sessionId, true);
@@ -92,8 +100,9 @@ public abstract class HybridWebViewAgentProxy
                         [chatMessage],
                         session: session,
                         branch: branch,
-                        options: runConfig))
+                        options: runConfig).WithCancellation(cts.Token))
                     {
+                        if (cts.Token.IsCancellationRequested) break;
                         EventStreamManager.SendEvent(streamId, evt);
                     }
 
@@ -102,24 +111,37 @@ public abstract class HybridWebViewAgentProxy
 
                     EventStreamManager.SendComplete(streamId);
                 }
+                catch (OperationCanceledException)
+                {
+                    EventStreamManager.SendError(streamId, "Stream cancelled");
+                }
                 finally
                 {
                     Manager.SetStreaming(sessionId, false);
-                    Manager.ReleaseStreamLock(sessionId, branch.Id);
+                    Manager.ReleaseStreamLock(sessionId, lockedBranchId);
                 }
             }
             catch (Exception ex)
             {
                 EventStreamManager.SendError(streamId, ex.Message);
             }
+            finally
+            {
+                _activeStreams.TryRemove(streamId, out var s);
+                s?.Dispose();
+            }
         });
 
         return streamId;
     }
 
+    /// <summary>
+    /// Cancel a running stream by its stream ID.
+    /// </summary>
     public void StopStream(string streamId)
     {
-        // TODO: Track cancellation tokens by stream ID
+        if (_activeStreams.TryGetValue(streamId, out var cts))
+            cts.Cancel();
     }
 
     // ============================================================
@@ -399,8 +421,6 @@ public abstract class HybridWebViewAgentProxy
             if (sourceBranch == null)
                 throw new InvalidOperationException($"Source branch '{sourceBranchId}' not found");
 
-            sourceBranch.Session = session;
-
             // Generate new branch ID if not provided
             var newBranchId = string.IsNullOrWhiteSpace(request.NewBranchId)
                 ? Guid.NewGuid().ToString()
@@ -437,7 +457,29 @@ public abstract class HybridWebViewAgentProxy
         });
     }
 
-    public async Task DeleteBranch(string sessionId, string branchId)
+    public async Task<string> UpdateBranch(string sessionId, string branchId, string updateBranchRequestJson)
+    {
+        var request = JsonSerializer.Deserialize<UpdateBranchRequest>(updateBranchRequestJson);
+        if (request == null)
+            throw new ArgumentException("Invalid update branch request JSON", nameof(updateBranchRequestJson));
+
+        var branch = await Manager.Store.LoadBranchAsync(sessionId, branchId);
+        if (branch == null)
+            throw new InvalidOperationException($"Branch '{branchId}' not found in session '{sessionId}'");
+
+        return await Manager.WithSessionLockAsync(sessionId, async () =>
+        {
+            if (request.Name != null) branch.Name = request.Name;
+            if (request.Description != null) branch.Description = request.Description;
+            if (request.Tags != null) branch.Tags = request.Tags;
+            branch.LastActivity = DateTime.UtcNow;
+
+            await Manager.Store.SaveBranchAsync(sessionId, branch);
+            return JsonSerializer.Serialize(ToBranchDto(branch, sessionId));
+        });
+    }
+
+    public async Task DeleteBranch(string sessionId, string branchId, bool recursive = false)
     {
         // 1. Protect "main" branch from deletion
         if (branchId == "main")
@@ -448,97 +490,123 @@ public abstract class HybridWebViewAgentProxy
         if (branch == null)
             throw new InvalidOperationException($"Branch '{branchId}' not found in session '{sessionId}'");
 
-        // 3. V3: Prevent deletion if branch has children (referential integrity)
+        // 3. V3: Guard children — reject unless recursive is explicitly requested and permitted
         if (branch.ChildBranches.Count > 0)
         {
-            throw new InvalidOperationException(
-                $"Cannot delete branch with {branch.ChildBranches.Count} child branches. " +
-                $"Delete children first: {string.Join(", ", branch.ChildBranches)}");
+            if (!recursive)
+                throw new InvalidOperationException(
+                    $"Cannot delete branch with {branch.ChildBranches.Count} child branches. " +
+                    $"Use recursive=true to delete the entire subtree, or delete children first: " +
+                    $"{string.Join(", ", branch.ChildBranches)}");
+
+            if (!Manager.AllowRecursiveBranchDelete)
+                throw new InvalidOperationException(
+                    "Recursive branch deletion is not enabled. " +
+                    "Set AllowRecursiveBranchDelete = true in HPDAgentOptions to enable it.");
         }
 
-        // 4. MAUI: Check if branch is actively streaming
-        // In MAUI, we track streaming per session+branch
+        // 4. Acquire and HOLD stream lock through the entire delete
         if (!Manager.TryAcquireStreamLock(sessionId, branchId))
-        {
             throw new InvalidOperationException(
                 "Branch is actively streaming and cannot be deleted. Try again later.");
+
+        // 5. V3: Perform atomic deletion with sibling reindexing (stream lock held throughout)
+        try
+        {
+            await Manager.WithSessionLockAsync(sessionId, async () =>
+            {
+                // 5a. Recursively delete all descendants first (if requested)
+                if (recursive)
+                {
+                    foreach (var childId in branch.ChildBranches.ToList())
+                        await DeleteSubtreeAsync(sessionId, childId);
+                }
+
+                // 5b. Reindex siblings and remove from parent's ChildBranches
+                await ReindexSiblingsAfterDeleteAsync(sessionId, branchId, branch);
+
+                // 5c. Update session's LastActivity
+                var session = await Manager.Store.LoadSessionAsync(sessionId);
+                if (session != null)
+                {
+                    session.LastActivity = DateTime.UtcNow;
+                    await Manager.Store.SaveSessionAsync(session);
+                }
+
+                // 5d. Delete the branch (after all updates complete)
+                await Manager.Store.DeleteBranchAsync(sessionId, branchId);
+            });
+        }
+        finally
+        {
+            Manager.ReleaseStreamLock(sessionId, branchId);
+            Manager.RemoveBranchStreamLock(sessionId, branchId);
+        }
+    }
+
+    /// <summary>
+    /// Depth-first recursive delete of a branch subtree.
+    /// Caller is responsible for holding the session lock.
+    /// </summary>
+    private async Task DeleteSubtreeAsync(string sessionId, string branchId)
+    {
+        var branch = await Manager.Store.LoadBranchAsync(sessionId, branchId);
+        if (branch == null) return;
+
+        foreach (var childId in branch.ChildBranches.ToList())
+            await DeleteSubtreeAsync(sessionId, childId);
+
+        await ReindexSiblingsAfterDeleteAsync(sessionId, branchId, branch);
+        await Manager.Store.DeleteBranchAsync(sessionId, branchId);
+    }
+
+    /// <summary>
+    /// Removes a branch from its parent's ChildBranches list and reindexes remaining siblings.
+    /// Caller is responsible for holding the session lock.
+    /// </summary>
+    private async Task ReindexSiblingsAfterDeleteAsync(string sessionId, string branchId, Branch branch)
+    {
+        // Remove from parent's ChildBranches list
+        if (branch.ForkedFrom != null)
+        {
+            var parent = await Manager.Store.LoadBranchAsync(sessionId, branch.ForkedFrom);
+            if (parent != null && parent.ChildBranches.Contains(branchId))
+            {
+                parent.ChildBranches.Remove(branchId);
+                parent.LastActivity = DateTime.UtcNow;
+                await Manager.Store.SaveBranchAsync(sessionId, parent);
+            }
         }
 
-        // Release immediately - we just needed to check
-        Manager.ReleaseStreamLock(sessionId, branchId);
+        // Load remaining siblings (same forkedFrom + same forkedAtMessageIndex)
+        var allBranchIds = await Manager.Store.ListBranchIdsAsync(sessionId);
+        var remainingSiblings = new List<Branch>();
 
-        // 5. V3: Perform atomic deletion with sibling reindexing
-        await Manager.WithSessionLockAsync(sessionId, async () =>
+        foreach (var bid in allBranchIds)
         {
-            // 5a. Remove from parent's ChildBranches list
-            if (branch.ForkedFrom != null)
+            if (bid == branchId) continue;
+
+            var sibling = await Manager.Store.LoadBranchAsync(sessionId, bid);
+            if (sibling != null &&
+                sibling.ForkedFrom == branch.ForkedFrom &&
+                sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex)
             {
-                var parent = await Manager.Store.LoadBranchAsync(sessionId, branch.ForkedFrom);
-                if (parent != null && parent.ChildBranches.Contains(branchId))
-                {
-                    parent.ChildBranches.Remove(branchId);
-                    parent.LastActivity = DateTime.UtcNow;
-                    await Manager.Store.SaveBranchAsync(sessionId, parent);
-                }
+                remainingSiblings.Add(sibling);
             }
+        }
 
-            // 5b. Get all remaining siblings
-            var branchIds = await Manager.Store.ListBranchIdsAsync(sessionId);
-            var remainingSiblings = new List<Branch>();
+        remainingSiblings = remainingSiblings.OrderBy(b => b.SiblingIndex).ToList();
 
-            foreach (var bid in branchIds)
-            {
-                if (bid == branchId) continue; // Skip branch being deleted
-
-                var sibling = await Manager.Store.LoadBranchAsync(sessionId, bid);
-                if (sibling != null &&
-                    sibling.ForkedFrom == branch.ForkedFrom &&
-                    sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex)
-                {
-                    remainingSiblings.Add(sibling);
-                }
-            }
-
-            // 5c. Sort siblings by current index (to maintain order)
-            remainingSiblings = remainingSiblings
-                .OrderBy(b => b.SiblingIndex)
-                .ToList();
-
-            // 5d. Reindex siblings (shift indices down)
-            for (int i = 0; i < remainingSiblings.Count; i++)
-            {
-                var sibling = remainingSiblings[i];
-
-                // Update sibling metadata
-                sibling.SiblingIndex = i;
-                sibling.TotalSiblings = remainingSiblings.Count;
-                sibling.LastActivity = DateTime.UtcNow;
-
-                // Update navigation pointers
-                sibling.PreviousSiblingId = i > 0
-                    ? remainingSiblings[i - 1].Id
-                    : null;
-
-                sibling.NextSiblingId = i < remainingSiblings.Count - 1
-                    ? remainingSiblings[i + 1].Id
-                    : null;
-
-                await Manager.Store.SaveBranchAsync(sessionId, sibling);
-            }
-
-            // 5e. Update session's LastActivity
-            var session = await Manager.Store.LoadSessionAsync(sessionId);
-            if (session != null)
-            {
-                session.LastActivity = DateTime.UtcNow;
-                await Manager.Store.SaveSessionAsync(session);
-            }
-
-            // 5f. Delete the branch (after all updates complete)
-            await Manager.Store.DeleteBranchAsync(sessionId, branchId);
-
-            return Task.CompletedTask;
-        });
+        for (int i = 0; i < remainingSiblings.Count; i++)
+        {
+            var sibling = remainingSiblings[i];
+            sibling.SiblingIndex = i;
+            sibling.TotalSiblings = remainingSiblings.Count;
+            sibling.PreviousSiblingId = i > 0 ? remainingSiblings[i - 1].Id : null;
+            sibling.NextSiblingId = i < remainingSiblings.Count - 1 ? remainingSiblings[i + 1].Id : null;
+            sibling.LastActivity = DateTime.UtcNow;
+            await Manager.Store.SaveBranchAsync(sessionId, sibling);
+        }
     }
 
     public async Task<string> GetBranchMessages(string sessionId, string branchId)
@@ -552,10 +620,10 @@ public abstract class HybridWebViewAgentProxy
         {
             var msg = branch.Messages[i];
             dtos.Add(new MessageDto(
-                $"msg-{i}",
+                msg.MessageId ?? $"msg-{i}",
                 msg.Role.ToString().ToLower(),
                 msg.Text ?? "",
-                DateTime.UtcNow.ToString("O"))); // Using ISO 8601 format
+                msg.CreatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O")));
         }
 
         return JsonSerializer.Serialize(dtos);
@@ -589,7 +657,7 @@ public abstract class HybridWebViewAgentProxy
             if (isSibling)
             {
                 siblingDtos.Add(new SiblingBranchDto(
-                    BranchId: branch.Id,
+                    Id: branch.Id,
                     Name: branch.GetDisplayName(),
                     SiblingIndex: branch.SiblingIndex,
                     TotalSiblings: branch.TotalSiblings,
@@ -773,7 +841,7 @@ public abstract class HybridWebViewAgentProxy
         return new BranchDto(
             branch.Id,
             sessionId,
-            branch.Name ?? branch.Id,
+            branch.GetDisplayName(),
             branch.Description,
             branch.ForkedFrom,
             branch.ForkedAtMessageIndex,

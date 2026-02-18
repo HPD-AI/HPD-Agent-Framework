@@ -1583,6 +1583,32 @@ public class AgentBuilder
     }
 
     /// <summary>
+    /// Sets the default reasoning options applied to every LLM call made by this agent.
+    /// Can be overridden per-run via <see cref="AgentRunConfig.Chat"/>'s Reasoning property.
+    /// </summary>
+    /// <param name="effort">How much reasoning effort the model should apply.</param>
+    /// <param name="output">Whether reasoning content is returned in the response.</param>
+    /// <returns>The builder instance for chaining</returns>
+    public AgentBuilder WithReasoning(ReasoningEffort effort = ReasoningEffort.Medium, ReasoningOutput output = ReasoningOutput.Full)
+    {
+        _config.DefaultReasoning = new ReasoningOptions { Effort = effort, Output = output };
+        return this;
+    }
+
+    /// <summary>
+    /// Preserves reasoning/thinking content in conversation history across turns.
+    /// When true, reasoning blocks are included when sending history back to the provider,
+    /// which is required for Anthropic extended thinking to work correctly across turns
+    /// (ProtectedData must be round-tripped verbatim).
+    /// Default: false (reasoning shown during streaming but excluded from history to save tokens).
+    /// </summary>
+    public AgentBuilder WithPreserveReasoningInHistory(bool preserve = true)
+    {
+        _config.PreserveReasoningInHistory = preserve;
+        return this;
+    }
+
+    /// <summary>
     /// Adds middleware to wrap the IChatClient for custom processing.
     /// Middleware is applied dynamically on each request, so runtime provider switching still works.
     /// </summary>
@@ -2811,7 +2837,7 @@ public class AgentBuilder
         return historyConfig.Strategy switch
         {
             HistoryReductionStrategy.MessageCounting =>
-                new MessageCountingChatReducer(historyConfig.TargetMessageCount),
+                new MessageCountingChatReducer(historyConfig.TargetCount),
 
             HistoryReductionStrategy.Summarizing =>
                 CreateSummarizingReducer(baseClient, historyConfig, summarizerClient),
@@ -2836,7 +2862,7 @@ public class AgentBuilder
 
         var reducer = new SummarizingChatReducer(
             clientForSummarization,
-            historyConfig.TargetMessageCount,
+            historyConfig.TargetCount,
             historyConfig.SummarizationThreshold);
 
         if (!string.IsNullOrEmpty(historyConfig.CustomSummarizationPrompt))
@@ -3690,7 +3716,7 @@ public static class AgentBuilderMemoryExtensions
     /// builder.WithHistoryReduction(config => {
     ///     config.Enabled = true;
     ///     config.Strategy = HistoryReductionStrategy.Summarizing;
-    ///     config.TargetMessageCount = 30;
+    ///     config.TargetCount = 30;
     ///     config.SummarizationThreshold = 10;
     /// });
     /// </code>
@@ -3718,7 +3744,7 @@ public static class AgentBuilderMemoryExtensions
         {
             config.Enabled = true;
             config.Strategy = HistoryReductionStrategy.MessageCounting;
-            config.TargetMessageCount = targetMessageCount;
+            config.TargetCount = targetMessageCount;
             config.SummarizationThreshold = threshold;
         });
     }
@@ -3738,7 +3764,7 @@ public static class AgentBuilderMemoryExtensions
         {
             config.Enabled = true;
             config.Strategy = HistoryReductionStrategy.Summarizing;
-            config.TargetMessageCount = targetMessageCount;
+            config.TargetCount = targetMessageCount;
             config.SummarizationThreshold = threshold;
             config.CustomSummarizationPrompt = customPrompt;
         });

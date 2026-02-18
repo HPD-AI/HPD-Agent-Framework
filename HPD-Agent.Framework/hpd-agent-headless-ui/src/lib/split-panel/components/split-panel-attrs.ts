@@ -5,7 +5,7 @@
  * Provides consistent CSS selector patterns.
  */
 
-import { createHPDAttrs } from '$lib/internal';
+import { createHPDAttrs } from '../../internal/index.js';
 
 /**
  * Data attributes for split-panel component parts.
@@ -13,5 +13,5 @@ import { createHPDAttrs } from '$lib/internal';
  */
 export const splitPanelAttrs = createHPDAttrs({
 	component: 'split-panel',
-	parts: ['root', 'pane', 'handle']
+	parts: ['root', 'split', 'pane', 'handle']
 });

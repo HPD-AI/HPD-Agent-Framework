@@ -34,6 +34,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new PermissionResponseRequest(
+            null,
             "perm-123",
             true,
             "Approved for testing",
@@ -55,7 +56,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // This test would require a running agent with active permission request
         // For now, verifies the endpoint exists and handles the request
         var sessionId = await CreateTestSession();
-        var request = new PermissionResponseRequest("perm-123", true, null, null);
+        var request = new PermissionResponseRequest(null, "perm-123", true, null, null);
 
         // Act
         var response = await _client.PostAsJsonAsync(
@@ -71,7 +72,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
     {
         // Arrange
         var sessionId = await CreateTestSession();
-        var request = new PermissionResponseRequest("perm-123", false, "Denied", null);
+        var request = new PermissionResponseRequest(null, "perm-123", false, "Denied", null);
 
         // Act
         var response = await _client.PostAsJsonAsync(
@@ -87,7 +88,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
     {
         // Arrange
         var sessionId = await CreateTestSession();
-        var request = new PermissionResponseRequest("perm-123", true, null, null);
+        var request = new PermissionResponseRequest(null, "perm-123", true, null, null);
 
         // Act
         var response = await _client.PostAsJsonAsync(
@@ -104,6 +105,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new PermissionResponseRequest(
+            null,
             "perm-123",
             false,
             "User denied access",
@@ -124,6 +126,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new PermissionResponseRequest(
+            null,
             "perm-123",
             true,
             null,
@@ -148,6 +151,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new ClientToolResponseRequest(
+            null,
             "tool-req-123",
             true,
             new List<ClientToolContentDto> { new("text", "Result", null, null) },
@@ -168,6 +172,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new ClientToolResponseRequest(
+            null,
             "tool-req-123",
             false,
             new List<ClientToolContentDto>(),
@@ -188,6 +193,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // This would require a running agent with active client tool request
         var sessionId = await CreateTestSession();
         var request = new ClientToolResponseRequest(
+            null,
             "tool-123",
             true,
             new List<ClientToolContentDto> { new("text", "Success", null, null) },
@@ -208,6 +214,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new ClientToolResponseRequest(
+            null,
             "tool-123",
             true,
             new List<ClientToolContentDto>(),
@@ -232,7 +239,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
             new("text", "Result 1", null, null),
             new("text", "Result 2", null, null)
         };
-        var request = new ClientToolResponseRequest("tool-123", true, content, null);
+        var request = new ClientToolResponseRequest(null, "tool-123", true, content, null);
 
         // Act
         var response = await _client.PostAsJsonAsync(
@@ -249,6 +256,7 @@ public class MiddlewareResponseEndpointsTests : IClassFixture<TestWebApplication
         // Arrange
         var sessionId = await CreateTestSession();
         var request = new ClientToolResponseRequest(
+            null,
             "tool-123",
             false,
             new List<ClientToolContentDto>(),

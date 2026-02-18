@@ -5,6 +5,7 @@
  * the event handler methods that EventMapper calls when HPD protocol events arrive.
  */
 
+import type { AgentEvent } from '@hpd/hpd-agent-client';
 import type {
 	Message,
 	MessageRole,
@@ -130,17 +131,21 @@ export class AgentState {
 	// --- Text Content Events ---
 
 	onTextMessageStart(messageId: string, role: string) {
-		const message: Message = {
-			id: messageId,
-			role: role as MessageRole,
-			content: '',
-			streaming: true,
-			thinking: false,
-			timestamp: new Date(),
-			toolCalls: []
-		};
-
-		this.#messages.push(message);
+		const existing = this.#messages.findIndex((m) => m.id === messageId);
+		if (existing !== -1) {
+			// Same message already created (reasoning came first) — transition to text streaming
+			this.#messages[existing] = { ...this.#messages[existing], streaming: true, thinking: false };
+		} else {
+			this.#messages.push({
+				id: messageId,
+				role: role as MessageRole,
+				content: '',
+				streaming: true,
+				thinking: false,
+				timestamp: new Date(),
+				toolCalls: []
+			});
+		}
 		this.#streaming = true;
 	}
 
@@ -170,18 +175,21 @@ export class AgentState {
 	// --- Reasoning Events ---
 
 	onReasoningMessageStart(messageId: string, role: string) {
-		const message: Message = {
-			id: messageId,
-			role: role as MessageRole,
-			content: '',
-			streaming: true,
-			thinking: true,
-			timestamp: new Date(),
-			toolCalls: [],
-			reasoning: ''
-		};
-
-		this.#messages.push(message);
+		const existing = this.#messages.findIndex((m) => m.id === messageId);
+		if (existing !== -1) {
+			this.#messages[existing] = { ...this.#messages[existing], streaming: true, thinking: true, reasoning: this.#messages[existing].reasoning ?? '' };
+		} else {
+			this.#messages.push({
+				id: messageId,
+				role: role as MessageRole,
+				content: '',
+				streaming: true,
+				thinking: true,
+				timestamp: new Date(),
+				toolCalls: [],
+				reasoning: ''
+			});
+		}
 		this.#reasoning = true;
 	}
 
@@ -478,6 +486,56 @@ export class AgentState {
 	// ============================================
 
 	/**
+	 * Dispatch a transport event to the correct handler.
+	 * Single entry point — protocol knowledge lives here, not in callers.
+	 */
+	dispatch(event: AgentEvent): void {
+		switch (event.type) {
+			case 'TEXT_MESSAGE_START':
+				this.onTextMessageStart(event.messageId, event.role);
+				break;
+			case 'TEXT_DELTA':
+				this.onTextDelta(event.text, event.messageId);
+				break;
+			case 'TEXT_MESSAGE_END':
+				this.onTextMessageEnd(event.messageId);
+				break;
+			case 'REASONING_MESSAGE_START':
+				this.onReasoningMessageStart(event.messageId, event.role);
+				break;
+			case 'REASONING_DELTA':
+				this.onReasoningDelta(event.text, event.messageId);
+				break;
+			case 'REASONING_MESSAGE_END':
+				this.onReasoningMessageEnd(event.messageId);
+				break;
+			case 'TOOL_CALL_START':
+				this.onToolCallStart(event.callId, event.name, event.messageId);
+				break;
+			case 'TOOL_CALL_ARGS':
+				this.onToolCallArgs(event.callId, event.argsJson);
+				break;
+			case 'TOOL_CALL_END':
+				this.onToolCallEnd(event.callId);
+				break;
+			case 'TOOL_CALL_RESULT':
+				this.onToolCallResult(event.callId, event.result);
+				break;
+			case 'MESSAGE_TURN_STARTED':
+				this.onMessageTurnStarted(event.messageTurnId, event.conversationId, event.agentName, event.timestamp);
+				break;
+			case 'MESSAGE_TURN_FINISHED':
+				this.onMessageTurnFinished(event.messageTurnId, event.conversationId, event.duration, event.timestamp);
+				break;
+			case 'MESSAGE_TURN_ERROR':
+				this.onMessageTurnError(event.message);
+				break;
+			// All other event types (audio, VAD, permissions, etc.) are handled
+			// by callers that need them (e.g. createAgent). BranchManager ignores them.
+		}
+	}
+
+	/**
 	 * Clear error state
 	 */
 	clearError() {
@@ -487,6 +545,16 @@ export class AgentState {
 	/**
 	 * Add a user message (for local display before sending to backend)
 	 */
+
+	/**
+	 * Directly load a history of fully-formed messages.
+	 * Used when restoring a branch from the backend — bypasses streaming state.
+	 * Does NOT affect #streaming, #reasoning, or #activeTools.
+	 */
+	loadHistory(messages: Message[]): void {
+		this.#messages = messages;
+	}
+
 	addUserMessage(content: string): Message {
 		const message: Message = {
 			id: `user-${Date.now()}`,

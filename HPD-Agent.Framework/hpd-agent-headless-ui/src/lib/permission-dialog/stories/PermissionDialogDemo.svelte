@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMockAgent } from '$lib/testing/mock-agent.js';
+	import { createMockAgent } from '$lib/testing/mock-agent.svelte.js';
 	import * as PermissionDialog from '../index.js';
 	import type { PermissionRequest } from '$lib/agent/types.js';
 

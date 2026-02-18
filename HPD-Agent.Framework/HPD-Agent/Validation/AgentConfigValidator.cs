@@ -174,10 +174,10 @@ public static class AgentConfigValidator
             }
         }
 
-        // Message count validation
-        if (hr.TargetMessageCount <= 1 || hr.TargetMessageCount > 1000)
+        // Count validation
+        if (hr.TargetCount <= 1 || hr.TargetCount > 1000)
         {
-            errors.Add("TargetMessageCount must be between 2 and 1,000 messages.");
+            errors.Add("TargetCount must be between 2 and 1,000.");
         }
 
         if (hr.SummarizationThreshold.HasValue)
@@ -282,7 +282,7 @@ public static class AgentConfigValidator
     {
         // Check if the combination of settings might cause issues
         var maxFunctionCalls = config.MaxAgenticIterations;
-        var maxHistory = config.HistoryReduction?.TargetMessageCount ?? 20;
+        var maxHistory = config.HistoryReduction?.TargetCount ?? 20;
 
         // Warn if total potential token usage is very high
         var estimatedMaxTokens = (maxHistory * 500) + (maxFunctionCalls * 200);

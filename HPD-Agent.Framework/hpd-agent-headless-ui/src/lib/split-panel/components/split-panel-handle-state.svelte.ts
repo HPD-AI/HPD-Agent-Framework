@@ -14,8 +14,8 @@
  */
 
 import { watch } from 'runed';
-import { attachRef, type RefAttachment } from 'svelte-toolbelt';
-import type { WithRefOpts, ReadableBoxedValues } from '$lib/internal';
+import { attachRef } from 'svelte-toolbelt';
+import type { ReadableBoxedValues, RefAttachment } from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { splitPanelAttrs } from './split-panel-attrs.js';
 import type { SplitPanelRootState } from './split-panel-root-state.svelte.js';
@@ -26,7 +26,6 @@ import type { SplitPanelSplitState } from './split-panel-split-state.svelte.js';
  */
 export interface SplitPanelHandleStateOpts
 	extends
-		WithRefOpts,
 		ReadableBoxedValues<{
 			/** Whether handle is disabled */
 			disabled?: boolean;
@@ -71,6 +70,9 @@ export interface SplitPanelHandleStateOpts
 
 	/** Callback before double-click reset. Return false to prevent. */
 	onDoubleClick?: () => boolean | void;
+
+	/** Ref to the handle element */
+	ref: import('svelte-toolbelt').WritableBox<HTMLElement | null>;
 }
 
 /**

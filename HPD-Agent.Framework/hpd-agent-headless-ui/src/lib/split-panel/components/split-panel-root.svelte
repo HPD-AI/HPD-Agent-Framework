@@ -11,8 +11,9 @@
 	import { SplitPanelRootState } from './split-panel-root-state.svelte.js';
 	import { SplitPanelRootContext } from './split-panel-context.js';
 	import type { LayoutPreset, StorageBackend } from './split-panel-root-state.svelte.js';
+	import type { LayoutNode } from '../types/index.js';
 
-	interface Props extends HTMLAttributes<HTMLDivElement> {
+	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		/** Unique ID for this layout instance */
 		id: string;
 
@@ -32,7 +33,7 @@
 		debug?: boolean;
 
 		/** Callback when layout changes */
-		onLayoutChange?: (event: CustomEvent) => void;
+		onLayoutChange?: (layout: LayoutNode) => void;
 
 		/** Callback when pane closes */
 		onPaneClose?: (paneId: string) => void;
@@ -106,9 +107,10 @@
 		if (!ref) return;
 
 		// Trigger initial size computation when element is mounted
+		const element = ref; // Capture ref for closure
 		const updateSize = () => {
-			const width = ref.clientWidth;
-			const height = ref.clientHeight;
+			const width = element.clientWidth;
+			const height = element.clientHeight;
 
 			// Only update if size actually changed
 			if (width === lastWidth && height === lastHeight) {

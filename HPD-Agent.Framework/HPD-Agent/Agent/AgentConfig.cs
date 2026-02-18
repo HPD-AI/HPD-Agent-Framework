@@ -201,6 +201,27 @@ public class AgentConfig
     public bool PreserveReasoningInHistory { get; set; } = false;
 
     /// <summary>
+    /// Default reasoning options applied to every LLM call made by this agent.
+    /// Controls reasoning effort and output exposure for the underlying model.
+    /// Can be overridden per-run via <see cref="AgentRunConfig.Chat"/>'s <see cref="ChatRunConfig.Reasoning"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Effort:</b> None, Low, Medium, High, ExtraHigh — how much thinking the model applies.
+    /// </para>
+    /// <para>
+    /// <b>Output:</b> None, Summary, Full — whether reasoning content is returned in the response
+    /// and therefore visible during streaming and (if <see cref="PreserveReasoningInHistory"/> is true) persisted.
+    /// </para>
+    /// <para>
+    /// <b>Provider support:</b> Anthropic (extended thinking via ThinkingBudgetTokens),
+    /// OpenAI o-series (native), DeepSeek-R1, Google Gemini thinking models.
+    /// Providers that do not support reasoning ignore this setting.
+    /// </para>
+    /// </remarks>
+    public ReasoningOptions? DefaultReasoning { get; set; }
+
+    /// <summary>
     /// When true, coalesces streaming text and reasoning deltas into single complete events.
     /// - Without: Emits multiple TextDeltaEvent for each chunk ("Hello", " ", "world")
     /// - With: Emits single TextDeltaEvent with complete text ("Hello world")
@@ -798,14 +819,22 @@ public class HistoryReductionConfig
     public HistoryReductionBehavior Behavior { get; set; } = HistoryReductionBehavior.Continue;
 
     /// <summary>
-    /// Target number of messages to retain after reduction.
-    /// Default is 20 messages.
+    /// Unit used to measure history depth for threshold comparisons.
+    /// Default: Exchanges (one RunAsync call = one user↔agent exchange).
     /// </summary>
-    public int TargetMessageCount { get; set; } = 20;
+    public HistoryCountingUnit CountingUnit { get; set; } = HistoryCountingUnit.Exchanges;
+
+    /// <summary>
+    /// Target count to retain after reduction. Unit determined by <see cref="CountingUnit"/>.
+    /// With CountingUnit.Exchanges (default): number of user↔agent exchanges to keep.
+    /// With CountingUnit.Messages: number of raw ChatMessage objects to keep.
+    /// Default is 20.
+    /// </summary>
+    public int TargetCount { get; set; } = 20;
 
     /// <summary>
     /// Threshold count for SummarizingChatReducer.
-    /// Number of messages allowed beyond TargetMessageCount before summarization is triggered.
+    /// Number of units (exchanges or messages, per CountingUnit) allowed beyond TargetCount before summarization is triggered.
     /// Only used when Strategy is Summarizing. Default is 5.
     /// </summary>
     public int? SummarizationThreshold { get; set; } = 5;
@@ -831,7 +860,7 @@ public class HistoryReductionConfig
     /// Example: 0.7 = trigger reduction at 70% of context window.
     ///
     ///   CURRENTLY IGNORED - Token tracking is not implemented.
-    /// Use TargetMessageCount instead for reliable history reduction.
+    /// Use TargetCount instead for reliable history reduction.
     /// </summary>
     public double? TokenBudgetTriggerPercentage { get; set; } = null;
 
@@ -912,6 +941,25 @@ public enum HistoryReductionBehavior
     /// Use when: Users need to be aware of context loss, review summary, or save important info.
     /// </summary>
     CircuitBreaker
+}
+
+/// <summary>
+/// Unit used to measure conversation history depth for history reduction thresholds.
+/// </summary>
+public enum HistoryCountingUnit
+{
+    /// <summary>
+    /// Count RunAsync calls (one per user↔agent exchange, regardless of internal tool call depth).
+    /// Default. TargetCount=20 means "keep 20 conversation exchanges."
+    /// </summary>
+    Exchanges,
+
+    /// <summary>
+    /// Count raw ChatMessage protocol objects.
+    /// Use if you need fine-grained control and understand the LLM message protocol.
+    /// Equivalent to the behaviour before this feature was introduced.
+    /// </summary>
+    Messages
 }
 
 

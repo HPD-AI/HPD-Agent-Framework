@@ -106,7 +106,7 @@ Be helpful, thorough, and conversational.",
     {
         Enabled = true,
         Strategy = HistoryReductionStrategy.Summarizing,  // LLM summarizes old messages
-        TargetMessageCount = 3,      // Keep last 3 messages (small for testing)
+        TargetCount = 3,      // Keep last 3 exchanges (small for testing)
         SummarizationThreshold = 100,  // Re-summarize when 2 new messages added
         
     },
@@ -123,7 +123,16 @@ Be helpful, thorough, and conversational.",
     {
         ProviderKey = "openrouter",
         ModelName = "z-ai/glm-4.7",  // Switched from Mistral to Claude - avoids chat_template issue
-    }
+    },
+
+    PreserveReasoningInHistory = true,
+    DefaultReasoning = new ReasoningOptions
+    {
+        Effort = ReasoningEffort.Medium,
+        Output = ReasoningOutput.Full,
+    },
+
+
 };
 // Configure logging to show Information level logs including HTTP details
 var loggerFactory = LoggerFactory.Create(builder =>
@@ -147,7 +156,7 @@ var codingToolkit = new CodingToolkit();
 var mcpManifestPath = Path.Combine(appDirectory, "MCP.json");
 
 var agentBuilder = new AgentBuilder(config)
-    //.WithLogging(loggerFactory)
+    .WithLogging(loggerFactory)
     .WithMiddleware(new EnvironmentContextMiddleware(new[] { userWorkingDirectory }))
     // Register CodingToolkit as instance to enable chat client injection after build
     .WithSessionStore(sessionStore, persistAfterTurn: true)

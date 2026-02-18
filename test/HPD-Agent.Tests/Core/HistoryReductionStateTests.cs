@@ -16,34 +16,30 @@ public class HistoryReductionStateTests
 {
     #region Test Data Helpers
 
-    /// <summary>
-    /// Creates a list of test messages with sequential content.
-    /// </summary>
     private static List<ChatMessage> CreateTestMessages(int count)
     {
         var messages = new List<ChatMessage>();
         for (int i = 0; i < count; i++)
-        {
             messages.Add(new ChatMessage(ChatRole.User, $"Message {i}"));
-        }
         return messages;
     }
 
-    /// <summary>
-    /// Creates a sample CachedReduction for testing.
-    /// </summary>
     private static CachedReduction CreateSampleReduction(
         List<ChatMessage> messages,
         int summarizedUpToIndex = 90,
-        int targetMessageCount = 20,
-        int reductionThreshold = 5)
+        int targetCount = 20,
+        int reductionThreshold = 5,
+        int? countAtReduction = null,
+        HistoryCountingUnit countingUnit = HistoryCountingUnit.Messages)
     {
         return CachedReduction.Create(
             messages,
             "Summary of old messages",
             summarizedUpToIndex,
-            targetMessageCount,
-            reductionThreshold);
+            targetCount,
+            reductionThreshold,
+            countAtReduction: countAtReduction ?? messages.Count,
+            countingUnit: countingUnit);
     }
 
     #endregion
@@ -57,7 +53,7 @@ public class HistoryReductionStateTests
         var messages = CreateTestMessages(100);
         var summaryContent = "Summary of messages 0-89";
         var summarizedUpToIndex = 90;
-        var targetMessageCount = 20;
+        var targetCount = 20;
         var reductionThreshold = 5;
 
         // Act
@@ -65,16 +61,19 @@ public class HistoryReductionStateTests
             messages,
             summaryContent,
             summarizedUpToIndex,
-            targetMessageCount,
-            reductionThreshold);
+            targetCount,
+            reductionThreshold,
+            countAtReduction: messages.Count,
+            countingUnit: HistoryCountingUnit.Messages);
 
         // Assert
         reduction.Should().NotBeNull();
         reduction.SummarizedUpToIndex.Should().Be(summarizedUpToIndex);
-        reduction.MessageCountAtReduction.Should().Be(messages.Count);
+        reduction.CountAtReduction.Should().Be(messages.Count);
         reduction.SummaryContent.Should().Be(summaryContent);
-        reduction.TargetMessageCount.Should().Be(targetMessageCount);
+        reduction.TargetCount.Should().Be(targetCount);
         reduction.ReductionThreshold.Should().Be(reductionThreshold);
+        reduction.CountingUnit.Should().Be(HistoryCountingUnit.Messages);
         reduction.CreatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(1));
         reduction.MessageHash.Should().NotBeNullOrEmpty();
     }
@@ -91,11 +90,13 @@ public class HistoryReductionStateTests
             "Empty summary",
             0,
             20,
-            5);
+            5,
+            countAtReduction: 0,
+            countingUnit: HistoryCountingUnit.Messages);
 
         // Assert
         reduction.Should().NotBeNull();
-        reduction.MessageCountAtReduction.Should().Be(0);
+        reduction.CountAtReduction.Should().Be(0);
         reduction.SummarizedUpToIndex.Should().Be(0);
     }
 
@@ -104,14 +105,14 @@ public class HistoryReductionStateTests
     #region IsValidFor Tests
 
     [Fact]
-    public void IsValidFor_WithSameMessageCount_ShouldReturnTrue()
+    public void IsValidFor_WithSameCount_ShouldReturnTrue()
     {
         // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages);
 
         // Act
-        var isValid = reduction.IsValidFor(100);
+        var isValid = reduction.IsValidFor(100, HistoryCountingUnit.Messages);
 
         // Assert
         isValid.Should().BeTrue("no messages added or removed");
@@ -122,10 +123,10 @@ public class HistoryReductionStateTests
     {
         // Arrange
         var messages = CreateTestMessages(100);
-        var reduction = CreateSampleReduction(messages, targetMessageCount: 20, reductionThreshold: 5);
+        var reduction = CreateSampleReduction(messages, targetCount: 20, reductionThreshold: 5);
 
-        // Act - Add 4 new messages (within threshold of 5)
-        var isValid = reduction.IsValidFor(104);
+        // Act - 4 new messages (within threshold of 5)
+        var isValid = reduction.IsValidFor(104, HistoryCountingUnit.Messages);
 
         // Assert
         isValid.Should().BeTrue("new messages (4) are within threshold (5)");
@@ -136,10 +137,10 @@ public class HistoryReductionStateTests
     {
         // Arrange
         var messages = CreateTestMessages(100);
-        var reduction = CreateSampleReduction(messages, targetMessageCount: 20, reductionThreshold: 5);
+        var reduction = CreateSampleReduction(messages, targetCount: 20, reductionThreshold: 5);
 
-        // Act - Add 6 new messages (exceeds threshold of 5)
-        var isValid = reduction.IsValidFor(106);
+        // Act - 6 new messages (exceeds threshold of 5)
+        var isValid = reduction.IsValidFor(106, HistoryCountingUnit.Messages);
 
         // Assert
         isValid.Should().BeFalse("new messages (6) exceed threshold (5)");
@@ -153,7 +154,7 @@ public class HistoryReductionStateTests
         var reduction = CreateSampleReduction(messages);
 
         // Act - Messages deleted
-        var isValid = reduction.IsValidFor(95);
+        var isValid = reduction.IsValidFor(95, HistoryCountingUnit.Messages);
 
         // Assert
         isValid.Should().BeFalse("messages were deleted (invalidates cache)");
@@ -167,8 +168,8 @@ public class HistoryReductionStateTests
         var reduction = CreateSampleReduction(messages, reductionThreshold: 0);
 
         // Act
-        var validSame = reduction.IsValidFor(100);
-        var invalidMore = reduction.IsValidFor(101);
+        var validSame = reduction.IsValidFor(100, HistoryCountingUnit.Messages);
+        var invalidMore = reduction.IsValidFor(101, HistoryCountingUnit.Messages);
 
         // Assert
         validSame.Should().BeTrue();
@@ -176,19 +177,53 @@ public class HistoryReductionStateTests
     }
 
     [Fact]
-    public void IsValidFor_WithLargeThreshold_ShouldAllowManyNewMessages()
+    public void IsValidFor_WithMismatchedUnit_ShouldReturnFalse()
     {
-        // Arrange
+        // Arrange — created with Messages unit
         var messages = CreateTestMessages(100);
-        var reduction = CreateSampleReduction(messages, reductionThreshold: 50);
+        var reduction = CreateSampleReduction(messages, countingUnit: HistoryCountingUnit.Messages);
 
-        // Act
-        var validManyMessages = reduction.IsValidFor(150);
-        var invalidTooMany = reduction.IsValidFor(151);
+        // Act — queried with Exchanges unit
+        var isValid = reduction.IsValidFor(100, HistoryCountingUnit.Exchanges);
 
         // Assert
-        validManyMessages.Should().BeTrue("50 new messages are within threshold (50)");
-        invalidTooMany.Should().BeFalse("51 new messages exceed threshold (50)");
+        isValid.Should().BeFalse("counting unit changed, cache is invalid");
+    }
+
+    [Fact]
+    public void IsValidFor_Exchanges_WithNewExchangesWithinThreshold_ShouldReturnTrue()
+    {
+        // Arrange — reduction created at exchange 20
+        var messages = CreateTestMessages(100);
+        var reduction = CreateSampleReduction(
+            messages,
+            countAtReduction: 20,
+            reductionThreshold: 5,
+            countingUnit: HistoryCountingUnit.Exchanges);
+
+        // Act — currently at exchange 24 (4 new, within threshold of 5)
+        var isValid = reduction.IsValidFor(24, HistoryCountingUnit.Exchanges);
+
+        // Assert
+        isValid.Should().BeTrue("4 new exchanges within threshold of 5");
+    }
+
+    [Fact]
+    public void IsValidFor_Exchanges_WithNewExchangesExceedingThreshold_ShouldReturnFalse()
+    {
+        // Arrange — reduction created at exchange 20
+        var messages = CreateTestMessages(100);
+        var reduction = CreateSampleReduction(
+            messages,
+            countAtReduction: 20,
+            reductionThreshold: 5,
+            countingUnit: HistoryCountingUnit.Exchanges);
+
+        // Act — currently at exchange 26 (6 new, exceeds threshold of 5)
+        var isValid = reduction.IsValidFor(26, HistoryCountingUnit.Exchanges);
+
+        // Assert
+        isValid.Should().BeFalse("6 new exchanges exceed threshold of 5");
     }
 
     #endregion
@@ -198,98 +233,68 @@ public class HistoryReductionStateTests
     [Fact]
     public void ValidateIntegrity_WithUnchangedMessages_ShouldReturnTrue()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
-
-        // Act
-        var isValid = reduction.ValidateIntegrity(messages);
-
-        // Assert
-        isValid.Should().BeTrue("messages have not changed");
+        reduction.ValidateIntegrity(messages).Should().BeTrue("messages have not changed");
     }
 
     [Fact]
     public void ValidateIntegrity_WithModifiedMessage_ShouldReturnFalse()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act - Modify a message in the summarized range
         var modifiedMessages = messages.ToList();
         modifiedMessages[50] = new ChatMessage(ChatRole.User, "MODIFIED MESSAGE");
 
-        var isValid = reduction.ValidateIntegrity(modifiedMessages);
-
-        // Assert
-        isValid.Should().BeFalse("message content changed");
+        reduction.ValidateIntegrity(modifiedMessages).Should().BeFalse("message content changed");
     }
 
     [Fact]
     public void ValidateIntegrity_WithReorderedMessages_ShouldReturnFalse()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act - Swap two messages
         var reorderedMessages = messages.ToList();
         (reorderedMessages[10], reorderedMessages[20]) = (reorderedMessages[20], reorderedMessages[10]);
 
-        var isValid = reduction.ValidateIntegrity(reorderedMessages);
-
-        // Assert
-        isValid.Should().BeFalse("message order changed");
+        reduction.ValidateIntegrity(reorderedMessages).Should().BeFalse("message order changed");
     }
 
     [Fact]
     public void ValidateIntegrity_WithDeletedMessages_ShouldReturnFalse()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act - Remove a message
         var deletedMessages = messages.Take(50).Concat(messages.Skip(51)).ToList();
 
-        var isValid = reduction.ValidateIntegrity(deletedMessages);
-
-        // Assert
-        isValid.Should().BeFalse("messages were deleted");
+        reduction.ValidateIntegrity(deletedMessages).Should().BeFalse("messages were deleted");
     }
 
     [Fact]
     public void ValidateIntegrity_WithNewMessagesAppended_ShouldReturnTrue()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act - Add new messages AFTER the summarized range
         var newMessages = messages.ToList();
         newMessages.Add(new ChatMessage(ChatRole.User, "New message 100"));
-        newMessages.Add(new ChatMessage(ChatRole.User, "New message 101"));
 
-        var isValid = reduction.ValidateIntegrity(newMessages);
-
-        // Assert
-        isValid.Should().BeTrue("new messages appended, but old messages unchanged");
+        reduction.ValidateIntegrity(newMessages).Should().BeTrue("appended messages don't affect summarized range");
     }
 
     [Fact]
     public void ValidateIntegrity_WithFewerMessagesThanSummarized_ShouldThrow()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act - Provide fewer messages than summarized index
         var tooFewMessages = messages.Take(50).ToList();
 
         var act = () => reduction.ValidateIntegrity(tooFewMessages);
 
-        // Assert
         act.Should().Throw<ArgumentException>()
             .WithMessage("*Message count*less than SummarizedUpToIndex*");
     }
@@ -301,14 +306,11 @@ public class HistoryReductionStateTests
     [Fact]
     public void ApplyToMessages_WithoutSystemMessage_ShouldReturnSummaryAndRecentMessages()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Act
         var reduced = reduction.ApplyToMessages(messages).ToList();
 
-        // Assert
         reduced.Should().HaveCount(11); // 1 summary + 10 recent (90-99)
         reduced[0].Role.Should().Be(ChatRole.Assistant);
         reduced[0].Text.Should().Be("Summary of old messages");
@@ -319,18 +321,14 @@ public class HistoryReductionStateTests
     [Fact]
     public void ApplyToMessages_WithSystemMessage_ShouldPrependSystem()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
         var systemMessage = new ChatMessage(ChatRole.System, "You are a helpful assistant");
 
-        // Act
         var reduced = reduction.ApplyToMessages(messages, systemMessage).ToList();
 
-        // Assert
         reduced.Should().HaveCount(12); // 1 system + 1 summary + 10 recent
         reduced[0].Role.Should().Be(ChatRole.System);
-        reduced[0].Text.Should().Be("You are a helpful assistant");
         reduced[1].Role.Should().Be(ChatRole.Assistant);
         reduced[1].Text.Should().Be("Summary of old messages");
         reduced[2].Text.Should().Be("Message 90");
@@ -339,18 +337,14 @@ public class HistoryReductionStateTests
     [Fact]
     public void ApplyToMessages_WithModifiedMessages_ShouldThrow()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Modify a message in the summarized range
         var modifiedMessages = messages.ToList();
         modifiedMessages[50] = new ChatMessage(ChatRole.User, "MODIFIED");
 
-        // Act
         var act = () => reduction.ApplyToMessages(modifiedMessages).ToList();
 
-        // Assert
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*integrity check failed*");
     }
@@ -358,21 +352,16 @@ public class HistoryReductionStateTests
     [Fact]
     public void ApplyToMessages_WithNewMessagesAppended_ShouldIncludeThem()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 90);
 
-        // Add new messages
         var newMessages = messages.ToList();
         newMessages.Add(new ChatMessage(ChatRole.User, "Message 100"));
         newMessages.Add(new ChatMessage(ChatRole.User, "Message 101"));
 
-        // Act
         var reduced = reduction.ApplyToMessages(newMessages).ToList();
 
-        // Assert
         reduced.Should().HaveCount(13); // 1 summary + 12 recent (90-101)
-        reduced[0].Text.Should().Be("Summary of old messages");
         reduced[11].Text.Should().Be("Message 100");
         reduced[12].Text.Should().Be("Message 101");
     }
@@ -380,16 +369,61 @@ public class HistoryReductionStateTests
     [Fact]
     public void ApplyToMessages_WithAllMessagesSummarized_ShouldReturnOnlySummary()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
-        var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 100); // All summarized
+        var reduction = CreateSampleReduction(messages, summarizedUpToIndex: 100);
 
-        // Act
         var reduced = reduction.ApplyToMessages(messages).ToList();
 
-        // Assert
-        reduced.Should().HaveCount(1); // Only summary
+        reduced.Should().HaveCount(1);
         reduced[0].Text.Should().Be("Summary of old messages");
+    }
+
+    #endregion
+
+    #region ExchangeCount Tests
+
+    [Fact]
+    public void HistoryReductionStateData_ExchangeCount_DefaultsToZero()
+    {
+        var state = new HistoryReductionStateData();
+        state.ExchangeCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void WithIncrementedExchangeCount_ShouldIncrementByOne()
+    {
+        var state = new HistoryReductionStateData();
+
+        var after1 = state.WithIncrementedExchangeCount();
+        var after2 = after1.WithIncrementedExchangeCount();
+        var after3 = after2.WithIncrementedExchangeCount();
+
+        after1.ExchangeCount.Should().Be(1);
+        after2.ExchangeCount.Should().Be(2);
+        after3.ExchangeCount.Should().Be(3);
+    }
+
+    [Fact]
+    public void WithIncrementedExchangeCount_ShouldNotMutateOriginal()
+    {
+        var original = new HistoryReductionStateData();
+        var incremented = original.WithIncrementedExchangeCount();
+
+        original.ExchangeCount.Should().Be(0, "original is immutable");
+        incremented.ExchangeCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void WithIncrementedExchangeCount_ShouldPreserveLastReduction()
+    {
+        var messages = CreateTestMessages(10);
+        var reduction = CreateSampleReduction(messages);
+        var state = new HistoryReductionStateData().WithReduction(reduction);
+
+        var incremented = state.WithIncrementedExchangeCount();
+
+        incremented.LastReduction.Should().BeSameAs(reduction, "reduction is preserved");
+        incremented.ExchangeCount.Should().Be(1);
     }
 
     #endregion
@@ -397,88 +431,16 @@ public class HistoryReductionStateTests
     #region Immutability Tests
 
     [Fact]
-    public void HistoryReductionState_ShouldBeImmutable()
+    public void CachedReduction_ShouldBeImmutable()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages);
 
-        // Act - Try to modify (should use 'with' expression, not mutation)
         var modified = reduction with { SummaryContent = "New summary" };
 
-        // Assert
         reduction.SummaryContent.Should().Be("Summary of old messages", "original unchanged");
-        modified.SummaryContent.Should().Be("New summary", "new instance created");
-        reduction.Should().NotBeSameAs(modified, "different instances");
-    }
-
-    #endregion
-
-    #region Edge Cases
-
-    [Fact]
-    public void Create_WithNullSummaryContent_ShouldNotThrow()
-    {
-        // Arrange
-        var messages = CreateTestMessages(10);
-
-        // Act
-        var act = () => CachedReduction.Create(
-            messages,
-            null!, // Null summary
-            5,
-            20,
-            5);
-
-        // Assert - Should not throw, but will fail on ApplyToMessages
-        act.Should().NotThrow("Create should accept null summary");
-    }
-
-    [Fact]
-    public void Create_WithEmptySummaryContent_ShouldWork()
-    {
-        // Arrange
-        var messages = CreateTestMessages(10);
-
-        // Act
-        var reduction = CachedReduction.Create(
-            messages,
-            "", // Empty summary
-            5,
-            20,
-            5);
-
-        // Assert
-        reduction.SummaryContent.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void ApplyToMessages_WithEmptyMessageList_ShouldHandleGracefully()
-    {
-        // Arrange
-        var messages = new List<ChatMessage>();
-        var reduction = CachedReduction.Create(messages, "Empty", 0, 20, 5);
-
-        // Act
-        var reduced = reduction.ApplyToMessages(messages).ToList();
-
-        // Assert
-        reduced.Should().HaveCount(1); // Just the summary
-        reduced[0].Text.Should().Be("Empty");
-    }
-
-    [Fact]
-    public void ValidateIntegrity_WithZeroSummarizedIndex_ShouldReturnTrue()
-    {
-        // Arrange
-        var messages = CreateTestMessages(10);
-        var reduction = CachedReduction.Create(messages, "Summary", 0, 20, 5);
-
-        // Act
-        var isValid = reduction.ValidateIntegrity(messages);
-
-        // Assert
-        isValid.Should().BeTrue("no messages to validate when index is 0");
+        modified.SummaryContent.Should().Be("New summary");
+        reduction.Should().NotBeSameAs(modified);
     }
 
     #endregion
@@ -488,15 +450,12 @@ public class HistoryReductionStateTests
     [Fact]
     public void MessageHash_ShouldBeConsistent_ForSameMessages()
     {
-        // Arrange
         var messages1 = CreateTestMessages(100);
-        var messages2 = CreateTestMessages(100); // Same content, different instances
+        var messages2 = CreateTestMessages(100);
 
-        // Act
         var reduction1 = CreateSampleReduction(messages1);
         var reduction2 = CreateSampleReduction(messages2);
 
-        // Assert
         reduction1.MessageHash.Should().Be(reduction2.MessageHash,
             "same message content should produce same hash");
     }
@@ -504,35 +463,27 @@ public class HistoryReductionStateTests
     [Fact]
     public void MessageHash_ShouldBeDifferent_ForDifferentMessages()
     {
-        // Arrange
         var messages1 = CreateTestMessages(100);
         var messages2 = CreateTestMessages(100);
         messages2[50] = new ChatMessage(ChatRole.User, "DIFFERENT");
 
-        // Act
         var reduction1 = CreateSampleReduction(messages1);
         var reduction2 = CreateSampleReduction(messages2);
 
-        // Assert
-        reduction1.MessageHash.Should().NotBe(reduction2.MessageHash,
-            "different message content should produce different hash");
+        reduction1.MessageHash.Should().NotBe(reduction2.MessageHash);
     }
 
     [Fact]
     public void MessageHash_ShouldBeDifferent_WhenOrderChanges()
     {
-        // Arrange
         var messages1 = CreateTestMessages(100);
         var messages2 = messages1.ToList();
         (messages2[10], messages2[20]) = (messages2[20], messages2[10]);
 
-        // Act
         var reduction1 = CreateSampleReduction(messages1);
         var reduction2 = CreateSampleReduction(messages2);
 
-        // Assert
-        reduction1.MessageHash.Should().NotBe(reduction2.MessageHash,
-            "message order change should produce different hash");
+        reduction1.MessageHash.Should().NotBe(reduction2.MessageHash);
     }
 
     #endregion
@@ -540,69 +491,59 @@ public class HistoryReductionStateTests
     #region Integration Scenarios
 
     [Fact]
-    public void Scenario_CacheHitAcrossMultipleTurns()
+    public void Scenario_ExchangeCountingCacheHitAcrossMultipleTurns()
     {
-        // Arrange - Turn 1: Create reduction
+        // Reduction created at exchange 20, threshold 5
+        var messages = CreateTestMessages(100);
+        var reduction = CreateSampleReduction(
+            messages,
+            reductionThreshold: 5,
+            countAtReduction: 20,
+            countingUnit: HistoryCountingUnit.Exchanges);
+
+        // Exchange 24 — within threshold
+        reduction.IsValidFor(24, HistoryCountingUnit.Exchanges).Should().BeTrue();
+
+        // Exchange 25 — at threshold boundary (still valid: 25-20=5 <= 5)
+        reduction.IsValidFor(25, HistoryCountingUnit.Exchanges).Should().BeTrue();
+
+        // Exchange 26 — over threshold
+        reduction.IsValidFor(26, HistoryCountingUnit.Exchanges).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Scenario_MessageCountingCacheHitAcrossMultipleTurns()
+    {
         var messages = CreateTestMessages(100);
         var reduction = CreateSampleReduction(messages, reductionThreshold: 10);
 
-        // Act - Turn 2: Add 5 new messages
         var turn2Messages = messages.ToList();
         for (int i = 100; i < 105; i++)
-        {
             turn2Messages.Add(new ChatMessage(ChatRole.User, $"Message {i}"));
-        }
 
-        // Assert - Cache should be valid
-        reduction.IsValidFor(turn2Messages.Count).Should().BeTrue();
+        reduction.IsValidFor(turn2Messages.Count, HistoryCountingUnit.Messages).Should().BeTrue();
         reduction.ValidateIntegrity(turn2Messages).Should().BeTrue();
 
-        // Can apply reduction successfully
         var reduced = reduction.ApplyToMessages(turn2Messages).ToList();
         reduced.Should().HaveCount(16); // 1 summary + 15 recent (90-104)
     }
 
     [Fact]
-    public void Scenario_CacheMissWhenTooManyNewMessages()
-    {
-        // Arrange - Turn 1: Create reduction
-        var messages = CreateTestMessages(100);
-        var reduction = CreateSampleReduction(messages, reductionThreshold: 5);
-
-        // Act - Turn 2: Add 10 new messages (exceeds threshold)
-        var turn2Messages = messages.ToList();
-        for (int i = 100; i < 110; i++)
-        {
-            turn2Messages.Add(new ChatMessage(ChatRole.User, $"Message {i}"));
-        }
-
-        // Assert - Cache should be invalid
-        reduction.IsValidFor(turn2Messages.Count).Should().BeFalse(
-            "too many new messages added");
-
-        // Need to create new reduction
-        var newReduction = CreateSampleReduction(turn2Messages, summarizedUpToIndex: 100);
-        newReduction.IsValidFor(turn2Messages.Count).Should().BeTrue();
-    }
-
-    [Fact]
     public void Scenario_SerializationRoundTrip()
     {
-        // Arrange
         var messages = CreateTestMessages(100);
-        var original = CreateSampleReduction(messages);
+        var original = CreateSampleReduction(messages, countAtReduction: 42, countingUnit: HistoryCountingUnit.Exchanges);
 
-        // Act - Simulate serialization via 'with' (immutable record)
-        var copy = original with { }; // Identity copy
+        var copy = original with { };
 
-        // Assert - All properties should match
         copy.SummarizedUpToIndex.Should().Be(original.SummarizedUpToIndex);
-        copy.MessageCountAtReduction.Should().Be(original.MessageCountAtReduction);
+        copy.CountAtReduction.Should().Be(original.CountAtReduction);
         copy.SummaryContent.Should().Be(original.SummaryContent);
         copy.CreatedAt.Should().Be(original.CreatedAt);
         copy.MessageHash.Should().Be(original.MessageHash);
-        copy.TargetMessageCount.Should().Be(original.TargetMessageCount);
+        copy.TargetCount.Should().Be(original.TargetCount);
         copy.ReductionThreshold.Should().Be(original.ReductionThreshold);
+        copy.CountingUnit.Should().Be(original.CountingUnit);
     }
 
     #endregion

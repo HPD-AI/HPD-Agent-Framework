@@ -3,12 +3,14 @@
 	import { ChatInputRootState } from '../chat-input.svelte.js';
 	import type { ChatInputBottomProps } from '../types.js';
 
+	interface Props extends ChatInputBottomProps {}
+
 	let {
 		ref = $bindable(null),
 		child,
 		children,
 		...restProps
-	}: ChatInputBottomProps = $props();
+	}: Props = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();

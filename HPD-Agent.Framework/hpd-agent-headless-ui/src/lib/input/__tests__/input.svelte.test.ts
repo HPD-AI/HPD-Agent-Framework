@@ -120,7 +120,7 @@ describe('Input', () => {
 
 		it('should track rows count in data-rows attribute', async () => {
 			render(InputTest, {
-				props: {},
+				props: { autoResize: true },
 			});
 
 			const input = page.getByTestId('input');
@@ -215,7 +215,7 @@ describe('Input', () => {
 
 		it('should auto-resize based on content', async () => {
 			const { container } = render(InputTest, {
-				props: { maxRows: 3 },
+				props: { maxRows: 3, autoResize: true },
 			});
 
 			const input = container.querySelector('[data-input]') as HTMLTextAreaElement;

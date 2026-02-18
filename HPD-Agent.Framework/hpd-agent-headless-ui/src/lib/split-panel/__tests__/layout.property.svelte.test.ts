@@ -113,10 +113,7 @@ describe.skip('SplitPanelState Property-Based Tests', () => {
 		fc.assert(
 			fc.property(fc.array(arbOperation([]), { minLength: 1, maxLength: 50 }), (operations) => {
 				// Create fresh state
-				const state = new SplitPanelState({
-					getContainerWidth: () => 1000,
-					getContainerHeight: () => 800
-				});
+				const state = new SplitPanelState();
 				const history = new LayoutHistory(state);
 
 				// Initialize with a valid root
@@ -144,10 +141,7 @@ describe.skip('SplitPanelState Property-Based Tests', () => {
 	it('undo followed by redo restores state', () => {
 		fc.assert(
 			fc.property(fc.array(arbOperation([]), { minLength: 1, maxLength: 20 }), (operations) => {
-				const state = new SplitPanelState({
-					getContainerWidth: () => 1000,
-					getContainerHeight: () => 800
-				});
+				const state = new SplitPanelState();
 				const history = new LayoutHistory(state);
 				state.updateContainerSize(1000, 800);
 
@@ -188,10 +182,7 @@ describe.skip('SplitPanelState Property-Based Tests', () => {
 				fc.integer({ min: 200, max: 2000 }),
 				fc.integer({ min: 200, max: 1500 }),
 				(w1, h1, w2, h2) => {
-					const state = new SplitPanelState({
-						getContainerWidth: () => w1,
-						getContainerHeight: () => h1
-					});
+					const state = new SplitPanelState();
 					state.updateContainerSize(w1, h1);
 
 					// Add some panels
@@ -233,10 +224,7 @@ describe.skip('SplitPanelState Property-Based Tests', () => {
 	it('serialization round-trip preserves state', () => {
 		fc.assert(
 			fc.property(fc.array(arbOperation([]), { minLength: 1, maxLength: 30 }), (operations) => {
-				const state = new SplitPanelState({
-					getContainerWidth: () => 1000,
-					getContainerHeight: () => 800
-				});
+				const state = new SplitPanelState();
 				state.updateContainerSize(1000, 800);
 
 				// Apply operations

@@ -350,6 +350,393 @@ describe('MauiTransport', () => {
       const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
       expect(lastCall[1][1]).toContain('key');
     });
+
+    it('updateSession calls InvokeDotNet with UpdateSession', async () => {
+      const updatedSession = {
+        id: 's1',
+        metadata: { updated: true },
+        createdAt: '2024-01-01',
+        lastActivity: '2024-01-01'
+      };
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(updatedSession));
+
+      const result = await transport.updateSession('s1', {
+        metadata: { updated: true }
+      });
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith(
+        'UpdateSession',
+        expect.arrayContaining(['s1'])
+      );
+      expect(result.metadata.updated).toBe(true);
+    });
+
+    it('updateSession serializes metadata as JSON', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify({ id: 's1' }));
+
+      await transport.updateSession('s1', {
+        metadata: { key: 'value' }
+      });
+
+      const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      const metadataJson = lastCall[1][1];
+      expect(metadataJson).toContain('key');
+      expect(metadataJson).toContain('value');
+    });
+
+    it('deleteSession calls InvokeDotNet with DeleteSession', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(undefined);
+
+      await transport.deleteSession('s1');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('DeleteSession', ['s1']);
+    });
+
+    it('listSessions passes pagination parameters', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify([]));
+
+      await transport.listSessions({ limit: 10, offset: 5 });
+
+      const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(lastCall[1]).toContain(5); // offset
+      expect(lastCall[1]).toContain(10); // limit
+    });
+
+    it('throws error when HybridWebView not available for session operations', async () => {
+      delete (global as any).window.HybridWebView;
+
+      await expect(transport.listSessions()).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.getSession('s1')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.createSession()).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.deleteSession('s1')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+    });
+  });
+
+  // ============================================
+  // Branch CRUD Tests
+  // ============================================
+
+  describe('Branch CRUD', () => {
+    it('listBranches calls InvokeDotNet with ListBranches', async () => {
+      const branches = [
+        { id: 'main', sessionId: 's1', messageCount: 5 },
+        { id: 'fork-1', sessionId: 's1', messageCount: 3 },
+      ];
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(branches));
+
+      const result = await transport.listBranches('s1');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('ListBranches', ['s1']);
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('main');
+    });
+
+    it('getBranch calls InvokeDotNet with GetBranch', async () => {
+      const branch = {
+        id: 'main',
+        sessionId: 's1',
+        name: 'Main',
+        createdAt: '2024-01-01',
+        lastActivity: '2024-01-01',
+        messageCount: 5,
+        siblingIndex: 0,
+        totalSiblings: 1,
+        isOriginal: true,
+        childBranches: [],
+        totalForks: 0,
+      };
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(branch));
+
+      const result = await transport.getBranch('s1', 'main');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('GetBranch', ['s1', 'main']);
+      expect(result?.id).toBe('main');
+      expect(result?.siblingIndex).toBe(0);
+    });
+
+    it('getBranch returns null on error', async () => {
+      mockHybridWebView.InvokeDotNet.mockRejectedValue(new Error('Not found'));
+
+      const result = await transport.getBranch('s1', 'nonexistent');
+
+      expect(result).toBeNull();
+    });
+
+    it('createBranch calls InvokeDotNet with CreateBranch', async () => {
+      const newBranch = {
+        id: 'new-branch',
+        sessionId: 's1',
+        name: 'New Branch',
+        messageCount: 0,
+        siblingIndex: 0,
+        totalSiblings: 1,
+        isOriginal: true,
+        childBranches: [],
+        totalForks: 0,
+      };
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(newBranch));
+
+      const result = await transport.createBranch('s1', {
+        branchId: 'new-branch',
+        name: 'New Branch',
+      });
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith(
+        'CreateBranch',
+        expect.arrayContaining(['s1'])
+      );
+      expect(result.id).toBe('new-branch');
+    });
+
+    it('createBranch passes parameters separately', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(
+        JSON.stringify({ id: 'new', sessionId: 's1' })
+      );
+
+      await transport.createBranch('s1', {
+        branchId: 'new-branch',
+        name: 'New Branch',
+        description: 'Test branch',
+      });
+
+      const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(lastCall[1]).toEqual(['s1', 'new-branch', 'New Branch', 'Test branch']);
+    });
+
+    it('forkBranch calls InvokeDotNet with ForkBranch', async () => {
+      const forkedBranch = {
+        id: 'forked',
+        sessionId: 's1',
+        name: 'Forked Branch',
+        forkedFrom: 'main',
+        forkedAtMessageIndex: 3,
+        messageCount: 3,
+        siblingIndex: 1,
+        totalSiblings: 2,
+        isOriginal: false,
+        originalBranchId: 'main',
+        previousSiblingId: 'main',
+        childBranches: [],
+        totalForks: 0,
+      };
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(forkedBranch));
+
+      const result = await transport.forkBranch('s1', 'main', {
+        fromMessageIndex: 3,
+        name: 'Forked Branch',
+      });
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith(
+        'ForkBranch',
+        expect.arrayContaining(['s1', 'main'])
+      );
+      expect(result.forkedFrom).toBe('main');
+      expect(result.forkedAtMessageIndex).toBe(3);
+      expect(result.siblingIndex).toBe(1);
+    });
+
+    it('forkBranch passes parameters separately', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(
+        JSON.stringify({ id: 'forked', sessionId: 's1' })
+      );
+
+      await transport.forkBranch('s1', 'main', {
+        fromMessageIndex: 5,
+        name: 'Fork at 5',
+        newBranchId: 'custom-fork-id',
+      });
+
+      const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(lastCall[1]).toEqual(['s1', 'main', 'custom-fork-id', 5, 'Fork at 5', undefined]);
+    });
+
+    it('deleteBranch calls InvokeDotNet with DeleteBranch', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(undefined);
+
+      await transport.deleteBranch('s1', 'branch-to-delete');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('DeleteBranch', [
+        's1',
+        'branch-to-delete',
+      ]);
+    });
+
+    it('getBranchMessages calls InvokeDotNet with GetBranchMessages', async () => {
+      const messages = [
+        { id: 'msg-1', role: 'user', content: 'Hello', timestamp: '2024-01-01' },
+        { id: 'msg-2', role: 'assistant', content: 'Hi!', timestamp: '2024-01-01' },
+      ];
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(messages));
+
+      const result = await transport.getBranchMessages('s1', 'main');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('GetBranchMessages', [
+        's1',
+        'main',
+      ]);
+      expect(result).toHaveLength(2);
+      expect(result[0].role).toBe('user');
+    });
+
+    it('getBranchSiblings calls InvokeDotNet with GetBranchSiblings', async () => {
+      const siblings = [
+        {
+          branchId: 'main',
+          name: 'Main',
+          siblingIndex: 0,
+          totalSiblings: 3,
+          isOriginal: true,
+          messageCount: 5,
+          createdAt: '2024-01-01',
+          lastActivity: '2024-01-01',
+        },
+        {
+          branchId: 'fork-1',
+          name: 'Fork 1',
+          siblingIndex: 1,
+          totalSiblings: 3,
+          isOriginal: false,
+          messageCount: 5,
+          createdAt: '2024-01-01',
+          lastActivity: '2024-01-01',
+        },
+        {
+          branchId: 'fork-2',
+          name: 'Fork 2',
+          siblingIndex: 2,
+          totalSiblings: 3,
+          isOriginal: false,
+          messageCount: 5,
+          createdAt: '2024-01-01',
+          lastActivity: '2024-01-01',
+        },
+      ];
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(JSON.stringify(siblings));
+
+      const result = await transport.getBranchSiblings('s1', 'main');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('GetBranchSiblings', [
+        's1',
+        'main',
+      ]);
+      expect(result).toHaveLength(3);
+      expect(result[0].isOriginal).toBe(true);
+      expect(result[0].siblingIndex).toBe(0);
+      expect(result[1].siblingIndex).toBe(1);
+      expect(result[2].siblingIndex).toBe(2);
+    });
+
+    it('getNextSibling fetches branch then next sibling', async () => {
+      const mainBranch = {
+        id: 'main',
+        sessionId: 's1',
+        nextSiblingId: 'fork-1',
+        childBranches: [],
+        totalForks: 0,
+      };
+      const nextSibling = {
+        id: 'fork-1',
+        sessionId: 's1',
+        siblingIndex: 1,
+        totalSiblings: 2,
+        isOriginal: false,
+        previousSiblingId: 'main',
+        childBranches: [],
+        totalForks: 0,
+      };
+
+      mockHybridWebView.InvokeDotNet
+        .mockResolvedValueOnce(JSON.stringify(mainBranch))
+        .mockResolvedValueOnce(JSON.stringify(nextSibling));
+
+      const result = await transport.getNextSibling('s1', 'main');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledTimes(2);
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenNthCalledWith(1, 'GetBranch', ['s1', 'main']);
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenNthCalledWith(2, 'GetBranch', ['s1', 'fork-1']);
+      expect(result?.id).toBe('fork-1');
+    });
+
+    it('getNextSibling returns null when no next sibling', async () => {
+      mockHybridWebView.InvokeDotNet.mockRejectedValue(new Error('Not found'));
+
+      const result = await transport.getNextSibling('s1', 'last-sibling');
+
+      expect(result).toBeNull();
+    });
+
+    it('getPreviousSibling fetches branch then previous sibling', async () => {
+      const forkBranch = {
+        id: 'fork-1',
+        sessionId: 's1',
+        previousSiblingId: 'main',
+        childBranches: [],
+        totalForks: 0,
+      };
+      const prevSibling = {
+        id: 'main',
+        sessionId: 's1',
+        siblingIndex: 0,
+        totalSiblings: 2,
+        isOriginal: true,
+        nextSiblingId: 'fork-1',
+        childBranches: [],
+        totalForks: 0,
+      };
+
+      mockHybridWebView.InvokeDotNet
+        .mockResolvedValueOnce(JSON.stringify(forkBranch))
+        .mockResolvedValueOnce(JSON.stringify(prevSibling));
+
+      const result = await transport.getPreviousSibling('s1', 'fork-1');
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledTimes(2);
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenNthCalledWith(1, 'GetBranch', ['s1', 'fork-1']);
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenNthCalledWith(2, 'GetBranch', ['s1', 'main']);
+      expect(result?.id).toBe('main');
+    });
+
+    it('getPreviousSibling returns null when no previous sibling', async () => {
+      mockHybridWebView.InvokeDotNet.mockRejectedValue(new Error('Not found'));
+
+      const result = await transport.getPreviousSibling('s1', 'main');
+
+      expect(result).toBeNull();
+    });
+
+    it('throws error when HybridWebView not available for branch operations', async () => {
+      delete (global as any).window.HybridWebView;
+
+      await expect(transport.listBranches('s1')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.getBranch('s1', 'main')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.createBranch('s1')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(
+        transport.forkBranch('s1', 'main', { fromMessageIndex: 0 })
+      ).rejects.toThrow('MAUI HybridWebView not available');
+      await expect(transport.deleteBranch('s1', 'main')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.getBranchMessages('s1', 'main')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+      await expect(transport.getBranchSiblings('s1', 'main')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+    });
   });
 
   describe('disconnect()', () => {

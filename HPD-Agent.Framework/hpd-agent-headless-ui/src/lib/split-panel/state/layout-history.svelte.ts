@@ -12,7 +12,7 @@
  * - Svelte 5 reactive state management
  */
 
-import { debounce } from '$lib/internal';
+import { debounce } from '../../internal/index.js';
 import type { LayoutSnapshot, LayoutNode, PanelDescriptor } from '../types/index.js';
 import type { SplitPanelState } from './split-panel-state.svelte.js';
 import type { LayoutChangeDetail } from './split-panel-state.svelte.js';
@@ -136,6 +136,20 @@ export class LayoutHistory {
 	clear(): void {
 		this.#undoStack = [];
 		this.#redoStack = [];
+	}
+
+	/**
+	 * Check if undo is available.
+	 */
+	get canUndo(): boolean {
+		return this.#undoStack.length > 0;
+	}
+
+	/**
+	 * Check if redo is available.
+	 */
+	get canRedo(): boolean {
+		return this.#redoStack.length > 0;
 	}
 
 	// ===== Snapshot Capture =====

@@ -9,7 +9,7 @@ namespace HPD.Agent.Hosting.Data;
 /// <param name="Description">Optional description</param>
 /// <param name="Tags">Optional tags</param>
 public record ForkBranchRequest(
-    string NewBranchId,
+    string? NewBranchId,
     int FromMessageIndex,
     string? Name,
     string? Description,

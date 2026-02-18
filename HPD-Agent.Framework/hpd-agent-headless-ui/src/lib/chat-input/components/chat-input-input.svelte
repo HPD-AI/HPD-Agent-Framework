@@ -4,6 +4,8 @@
 	import InputRoot from '$lib/input/components/input.svelte';
 	import type { ChatInputInputProps } from '../types.js';
 
+	interface Props extends ChatInputInputProps {}
+
 	let {
 		placeholder = 'Type a message...',
 		maxRows = 5,
@@ -13,7 +15,7 @@
 		child,
 		children,
 		...restProps
-	}: ChatInputInputProps = $props();
+	}: Props = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();
@@ -56,7 +58,16 @@
 	// Controlled value for Input.Root
 	const controlledValue = $derived(rootState.value);
 
-	// Merge props
+	// Merge all props for the InputRoot component
+	// This ensures data-testid and other attributes go directly to the textarea
+	const inputProps = $derived(
+		mergeProps(restProps, {
+			[rootState.getHPDAttr('input')]: '',
+			...rootState.sharedProps
+		})
+	);
+
+	// Props for child components
 	const props = $derived(
 		mergeProps(restProps, {
 			[rootState.getHPDAttr('input')]: '',
@@ -72,19 +83,17 @@
 		{@render children(snippetProps)}
 	</div>
 {:else}
-	<!-- Default: Use existing Input.Root component wrapped in div with data-chat-input-input -->
-	<div {...props}>
-		<InputRoot
-			bind:ref
-			value={controlledValue}
-			{placeholder}
-			{maxRows}
-			disabled={resolvedDisabled}
-			onSubmit={handleSubmit}
-			onChange={handleChange}
-			onfocus={handleFocus}
-			onblur={handleBlur}
-			{...restProps}
-		/>
-	</div>
+	<!-- Default: Use existing Input.Root component with all attributes forwarded -->
+	<InputRoot
+		bind:ref
+		value={controlledValue}
+		{placeholder}
+		{maxRows}
+		disabled={resolvedDisabled}
+		onSubmit={handleSubmit}
+		onChange={handleChange}
+		onfocus={handleFocus}
+		onblur={handleBlur}
+		{...inputProps}
+	/>
 {/if}

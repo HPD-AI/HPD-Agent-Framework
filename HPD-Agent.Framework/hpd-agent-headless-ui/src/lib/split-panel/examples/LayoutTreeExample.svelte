@@ -41,9 +41,9 @@
 			type: 'branch',
 			axis: 'row',
 			children: [
-				{ type: 'leaf', id: 'sidebar', size: 250, isCollapsed: false, maximized: false },
-				{ type: 'leaf', id: 'main', size: 400, isCollapsed: false, maximized: false },
-				{ type: 'leaf', id: 'panel', size: 250, isCollapsed: false, maximized: false }
+				{ type: 'leaf', id: 'sidebar', size: 250, priority: 'normal' as const, maximized: false },
+				{ type: 'leaf', id: 'main', size: 400, priority: 'normal' as const, maximized: false },
+				{ type: 'leaf', id: 'panel', size: 250, priority: 'normal' as const, maximized: false }
 			],
 			flexes: new Float32Array([250, 400, 250])
 		};
@@ -66,7 +66,7 @@
 				props: {
 					[splitPanelAttrs.pane]: '',
 					'data-panel-id': node.id,
-					'data-collapsed': node.isCollapsed ? '' : undefined,
+					'data-collapsed': node.size === 0 ? '' : undefined,
 					'data-maximized': node.maximized ? '' : undefined,
 					role: 'region',
 					'aria-label': `Panel ${node.id}`,
@@ -201,9 +201,9 @@
 		<!-- Leaf node: render panel -->
 		<div
 			use:registerPanel={{ layoutState: rootState.layoutState, panelId: node.id }}
-			{...splitPanelAttrs.pane}
+			data-split-panel-pane=""
 			data-panel-id={node.id}
-			data-collapsed={node.isCollapsed ? '' : undefined}
+			data-collapsed={node.size === 0 ? '' : undefined}
 			data-maximized={node.maximized ? '' : undefined}
 			role="region"
 			aria-label="Panel {node.id}"
@@ -218,7 +218,7 @@
 			<div class="panel-content">
 				<p>Panel content for <strong>{node.id}</strong></p>
 				<p>Size: {node.size}px</p>
-				<p>Collapsed: {node.isCollapsed}</p>
+				<p>Collapsed: {node.size === 0}</p>
 			</div>
 		</div>
 	{:else}
@@ -241,7 +241,7 @@
 				<!-- Render handle between active children -->
 				{#if activeIndex < totalActive - 1}
 					<div
-						{...splitPanelAttrs.handle}
+						data-split-panel-handle=""
 						class="resize-handle"
 						data-parent-axis={node.axis}
 						data-resize-handle={encodeResizeHandle(parentPath, activeIndex)}
@@ -269,7 +269,7 @@
 		<button onclick={() => rootState.resetLayout()}> Reset </button>
 	</div>
 
-	<div bind:this={containerElement} class="layout-root" {...splitPanelAttrs.root}>
+	<div bind:this={containerElement} class="layout-root" data-split-panel-root="">
 		{@render renderNode(rootState.layoutState.root, 'column', [])}
 	</div>
 </div>

@@ -66,7 +66,7 @@ export class ChatInputRootState {
 	#focused = $state(false);
 
 	// Whether value is controlled by parent
-	#isControlled = $derived(this.opts.value?.current !== undefined);
+	#isControlled = $derived.by(() => this.opts.value?.current !== undefined);
 
 	// Current value (controlled or uncontrolled)
 	readonly value = $derived.by(() => {
@@ -78,7 +78,7 @@ export class ChatInputRootState {
 	});
 
 	// Disabled state
-	readonly disabled = $derived(this.opts.disabled?.current ?? false);
+	readonly disabled = $derived.by(() => this.opts.disabled?.current ?? false);
 
 	// Derived state
 	readonly focused = $derived(this.#focused);

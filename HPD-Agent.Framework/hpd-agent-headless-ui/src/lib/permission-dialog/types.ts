@@ -4,7 +4,7 @@
  * Type definitions for the PermissionDialog component.
  */
 
-import type { Agent } from '$lib/agent/create-agent.svelte.js';
+import type { Workspace } from '$lib/workspace/types.js';
 import type { PermissionChoice, PermissionRequest } from '$lib/agent/types.js';
 import type { OnChangeFn, WithChild } from '$lib/internal/types.js';
 import type { HPDPrimitiveDivAttributes } from '$lib/shared/types.js';
@@ -67,7 +67,7 @@ export type PermissionDialogRootPropsWithoutHTML = {
 	/**
 	 * The agent instance to watch for permission requests
 	 */
-	agent: Agent;
+	agent: Workspace;
 
 	/**
 	 * Callback when dialog open state changes (after animation completes)

@@ -462,13 +462,13 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var siblings = await response.Content.ReadFromJsonAsync<List<string>>();
+        var siblings = await response.Content.ReadFromJsonAsync<List<SiblingBranchDto>>();
         siblings.Should().NotBeNull();
-        siblings!.Should().Contain("sibling2");
+        siblings!.Should().Contain(s => s.BranchId == "sibling2");
     }
 
     [Fact]
-    public async Task GetSiblings_ReturnsEmptyArray_WhenNoSiblings()
+    public async Task GetSiblings_ReturnsSelf_WhenNoForks()
     {
         // Arrange
         var sessionId = await CreateTestSession();
@@ -477,9 +477,11 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var response = await _client.GetAsync($"/sessions/{sessionId}/branches/main/siblings");
 
         // Assert
-        var siblings = await response.Content.ReadFromJsonAsync<List<string>>();
+        var siblings = await response.Content.ReadFromJsonAsync<List<SiblingBranchDto>>();
         siblings.Should().NotBeNull();
-        siblings!.Should().BeEmpty();
+        siblings!.Should().HaveCount(1);
+        siblings![0].BranchId.Should().Be("main");
+        siblings![0].IsOriginal.Should().BeTrue();
     }
 
     [Fact]
@@ -493,6 +495,170 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    #endregion
+
+    #region GET /sessions/{sid}/branches/{bid}/messages — Fix 1: stable IDs and timestamps
+
+    [Fact]
+    public async Task GetBranchMessages_MessageIds_AreStable_AcrossMultipleCalls()
+    {
+        // If IDs were positional (msg-0, msg-1) they would still be stable,
+        // but this test also guards against any future regression where IDs change per-request.
+        var sessionId = await CreateTestSession();
+
+        var response1 = await _client.GetAsync($"/sessions/{sessionId}/branches/main/messages");
+        var response2 = await _client.GetAsync($"/sessions/{sessionId}/branches/main/messages");
+
+        var messages1 = await response1.Content.ReadFromJsonAsync<List<MessageDto>>();
+        var messages2 = await response2.Content.ReadFromJsonAsync<List<MessageDto>>();
+
+        messages1.Should().NotBeNull();
+        messages2.Should().NotBeNull();
+        messages1!.Count.Should().Be(messages2!.Count);
+
+        for (int i = 0; i < messages1.Count; i++)
+            messages1[i].Id.Should().Be(messages2[i].Id, "message IDs must be stable across calls");
+    }
+
+    [Fact]
+    public async Task GetBranchMessages_Timestamps_AreNotCurrentTime()
+    {
+        // Arrange — add a message by streaming (requires a queued response)
+        // For a branch with no messages, there is nothing to verify.
+        // This test confirms empty-branch response is fine and timestamps are ISO 8601.
+        var sessionId = await CreateTestSession();
+
+        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        var response = await _client.GetAsync($"/sessions/{sessionId}/branches/main/messages");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var after = DateTimeOffset.UtcNow.AddSeconds(1);
+
+        var messages = await response.Content.ReadFromJsonAsync<List<MessageDto>>();
+        messages.Should().NotBeNull();
+
+        // For any messages present, their timestamp should be parseable as ISO 8601
+        // and not be in the future (i.e., not set to "now at response time")
+        foreach (var msg in messages!)
+        {
+            if (msg.Timestamp != null)
+            {
+                DateTimeOffset.TryParse(msg.Timestamp, out var ts).Should().BeTrue();
+                ts.Should().BeBefore(after, "timestamp should not be set to the response time");
+            }
+        }
+    }
+
+    #endregion
+
+    #region PATCH /sessions/{sid}/branches/{bid} — Fix 4: update branch metadata
+
+    [Fact]
+    public async Task UpdateBranch_Returns200_WithUpdatedDto()
+    {
+        // Arrange
+        var sessionId = await CreateTestSession();
+        var createReq = new CreateBranchRequest("upd-test", "Original Name", "Original Desc", null);
+        await _client.PostAsJsonAsync($"/sessions/{sessionId}/branches", createReq);
+
+        // Act
+        var patchReq = new UpdateBranchRequest("Renamed Branch", null, null);
+        var response = await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/upd-test", patchReq);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var branch = await response.Content.ReadFromJsonAsync<BranchDto>();
+        branch.Should().NotBeNull();
+        branch!.Name.Should().Be("Renamed Branch");
+    }
+
+    [Fact]
+    public async Task UpdateBranch_OnlyUpdatesProvidedFields_LeavesOthersUnchanged()
+    {
+        // Arrange
+        var sessionId = await CreateTestSession();
+        var createReq = new CreateBranchRequest("partial-upd", "Original Name", "Keep This Desc", null);
+        await _client.PostAsJsonAsync($"/sessions/{sessionId}/branches", createReq);
+
+        // Act — only update name, leave description null (omitted)
+        var patchReq = new UpdateBranchRequest("New Name", null, null);
+        var response = await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/partial-upd", patchReq);
+
+        // Assert
+        var branch = await response.Content.ReadFromJsonAsync<BranchDto>();
+        branch!.Name.Should().Be("New Name");
+        branch.Description.Should().Be("Keep This Desc");
+    }
+
+    [Fact]
+    public async Task UpdateBranch_Returns404_WhenBranchNotFound()
+    {
+        var sessionId = await CreateTestSession();
+
+        var patchReq = new UpdateBranchRequest("X", null, null);
+        var response = await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/nonexistent", patchReq);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task UpdateBranch_UpdatesTags()
+    {
+        // Arrange
+        var sessionId = await CreateTestSession();
+        await _client.PostAsJsonAsync($"/sessions/{sessionId}/branches",
+            new CreateBranchRequest("tag-test", "T", null, null));
+
+        // Act
+        var patchReq = new UpdateBranchRequest(null, null, ["alpha", "beta"]);
+        await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/tag-test", patchReq);
+
+        // Assert — reload the branch and check tags
+        var getResp = await _client.GetAsync($"/sessions/{sessionId}/branches/tag-test");
+        var branch = await getResp.Content.ReadFromJsonAsync<BranchDto>();
+        branch!.Tags.Should().NotBeNull();
+        branch.Tags!.Should().BeEquivalentTo(["alpha", "beta"]);
+    }
+
+    [Fact]
+    public async Task UpdateBranch_UpdatesLastActivity()
+    {
+        // Arrange
+        var sessionId = await CreateTestSession();
+        await _client.PostAsJsonAsync($"/sessions/{sessionId}/branches",
+            new CreateBranchRequest("ts-test", "T", null, null));
+
+        var before = DateTime.UtcNow.AddSeconds(-1);
+
+        // Act
+        var patchReq = new UpdateBranchRequest("Renamed", null, null);
+        var response = await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/ts-test", patchReq);
+
+        // Assert
+        var branch = await response.Content.ReadFromJsonAsync<BranchDto>();
+        branch!.LastActivity.Should().BeAfter(before);
+    }
+
+    [Fact]
+    public async Task UpdateBranch_PersistedAcrossGetBranch()
+    {
+        // Arrange
+        var sessionId = await CreateTestSession();
+        await _client.PostAsJsonAsync($"/sessions/{sessionId}/branches",
+            new CreateBranchRequest("persist-test", "Before", null, null));
+
+        // Act
+        await _client.PatchAsJsonAsync($"/sessions/{sessionId}/branches/persist-test",
+            new UpdateBranchRequest("After", "New desc", null));
+
+        // Assert — reload via GET, not from PATCH response
+        var getResp = await _client.GetAsync($"/sessions/{sessionId}/branches/persist-test");
+        var branch = await getResp.Content.ReadFromJsonAsync<BranchDto>();
+        branch!.Name.Should().Be("After");
+        branch.Description.Should().Be("New desc");
     }
 
     #endregion

@@ -1,7 +1,7 @@
 using HPD.Agent;
+using HPD.Agent.Serialization;
 using Microsoft.AspNetCore.Http;
 using System.Text;
-using System.Text.Json;
 
 namespace HPD.Agent.AspNetCore.Streaming;
 
@@ -29,8 +29,7 @@ internal static class SseEventHandler
 
         await foreach (var evt in events.WithCancellation(cancellationToken))
         {
-            // Serialize event without type info resolver (AgentEvent not in HPDJsonContext)
-            var json = JsonSerializer.Serialize(evt);
+            var json = AgentEventSerializer.ToJson(evt);
             var data = $"data: {json}\n\n";
             var bytes = Encoding.UTF8.GetBytes(data);
 

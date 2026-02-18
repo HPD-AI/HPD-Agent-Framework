@@ -21,7 +21,7 @@
 		type SplitPanelSplitStateOpts
 	} from './split-panel-split-state.svelte.js';
 
-	interface Props extends HTMLAttributes<HTMLDivElement> {
+	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		/**
 		 * Layout axis for children.
 		 * - 'horizontal': children arranged left-to-right (row in CSS Grid)

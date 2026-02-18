@@ -60,7 +60,7 @@ internal class AspNetCoreSessionManager : AgentSessionManager
             builder = new AgentBuilder();
         }
 
-        builder.WithSessionStore(Store);
+        builder.WithSessionStore(Store, opts.PersistAfterTurn);
         opts.ConfigureAgent?.Invoke(builder);
 
         return await builder.Build(ct);
@@ -68,4 +68,7 @@ internal class AspNetCoreSessionManager : AgentSessionManager
 
     protected override TimeSpan GetIdleTimeout() =>
         _optionsMonitor.Get(_name).AgentIdleTimeout;
+
+    public override bool AllowRecursiveBranchDelete =>
+        _optionsMonitor.Get(_name).AllowRecursiveBranchDelete;
 }

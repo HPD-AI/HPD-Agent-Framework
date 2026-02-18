@@ -68,6 +68,12 @@ export interface InputProps extends Omit<HTMLTextareaAttributes, 'value' | 'chil
 	disabled?: boolean;
 
 	/**
+	 * Whether to auto-resize the textarea based on content.
+	 * @default false
+	 */
+	autoResize?: boolean;
+
+	/**
 	 * Maximum number of rows before scrolling.
 	 * @default 5
 	 */

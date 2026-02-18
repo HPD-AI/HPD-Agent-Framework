@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Middleware;
@@ -50,7 +51,7 @@ public sealed class BeforeMessageTurnContext : HookContext
 
 /// <summary>
 /// Context for AfterMessageTurn hook.
-/// Available properties: FinalResponse, TurnHistory, RunConfig
+/// Available properties: FinalResponse, TurnHistory, RunConfig, TurnUsage
 /// </summary>
 public sealed class AfterMessageTurnContext : HookContext
 {
@@ -75,6 +76,21 @@ public sealed class AfterMessageTurnContext : HookContext
     /// </summary>
     public AgentRunConfig RunConfig { get; }
 
+    /// <summary>
+    /// Token usage accumulated across all LLM iterations in this turn.
+    /// Sums InputTokenCount, OutputTokenCount, CachedInputTokenCount, ReasoningTokenCount, etc.
+    /// Null if the provider did not return usage data for any iteration.
+    /// For per-iteration breakdown see <see cref="IterationUsage"/>.
+    /// </summary>
+    public UsageDetails? TurnUsage => State.AccumulatedUsage;
+
+    /// <summary>
+    /// Per-iteration token usage, one entry per LLM call in this turn.
+    /// Index 0 = first LLM call, index 1 = after first tool round-trip, etc.
+    /// Entries are null if the provider did not return usage for that iteration.
+    /// </summary>
+    public ImmutableList<UsageDetails?> IterationUsage => State.IterationUsage;
+
     internal AfterMessageTurnContext(
         AgentContext baseContext,
         ChatResponse finalResponse,
@@ -94,7 +110,7 @@ public sealed class AfterMessageTurnContext : HookContext
 
 /// <summary>
 /// Context for BeforeIteration hook.
-/// Available properties: Iteration, Messages, Options, RunConfig
+/// Available properties: Iteration, Messages, Options, RunConfig, PreviousIterationsUsage, PreviousIterationUsage
 /// </summary>
 public sealed class BeforeIterationContext : HookContext
 {
@@ -151,6 +167,20 @@ public sealed class BeforeIterationContext : HookContext
     /// True if this is the first iteration (before any tool calls).
     /// </summary>
     public bool IsFirstIteration => Iteration == 0;
+
+    /// <summary>
+    /// Token usage accumulated from all previous iterations in this turn.
+    /// Useful for making cost-aware decisions before launching the next LLM call —
+    /// e.g. trigger history reduction or bail early if tokens are already high.
+    /// Null on the first iteration (no previous LLM calls yet).
+    /// </summary>
+    public UsageDetails? PreviousIterationsUsage => State.AccumulatedUsage;
+
+    /// <summary>
+    /// Per-iteration token usage for all completed iterations so far.
+    /// Empty on the first iteration. Indices align with iteration numbers.
+    /// </summary>
+    public ImmutableList<UsageDetails?> PreviousIterationUsage => State.IterationUsage;
 
     internal BeforeIterationContext(
         AgentContext baseContext,

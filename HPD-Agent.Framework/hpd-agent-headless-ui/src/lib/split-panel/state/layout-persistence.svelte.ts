@@ -13,7 +13,7 @@
  * - Cleanup lifecycle for proper resource disposal
  */
 
-import { debounce } from '$lib/internal';
+import { debounce } from '../../internal/index.js';
 import { SplitPanelState } from './split-panel-state.svelte.js';
 import type { LayoutChangeDetail } from './split-panel-state.svelte.js';
 import type { SerializedLayout } from '../types/index.js';

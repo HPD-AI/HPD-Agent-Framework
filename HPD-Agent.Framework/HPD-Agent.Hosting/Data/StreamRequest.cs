@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace HPD.Agent.Hosting.Data;
 
 /// <summary>
@@ -14,9 +16,9 @@ namespace HPD.Agent.Hosting.Data;
 /// <param name="RunConfig">Optional agent run configuration</param>
 public record StreamRequest(
     List<StreamMessage> Messages,
-    List<object>? ClientToolGroups,
-    List<object>? Context,
-    object? State,
+    List<JsonElement>? ClientToolGroups,
+    List<JsonElement>? Context,
+    JsonElement? State,
     List<string>? ExpandedContainers,
     List<string>? HiddenTools,
     bool ResetClientState,

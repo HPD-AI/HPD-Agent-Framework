@@ -35,7 +35,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onTextDelta: (text) => textDeltas.push(text),
     });
 
@@ -63,7 +63,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onComplete: completeHandler,
     });
 
@@ -96,7 +96,7 @@ describe('AgentClient', () => {
         text: async () => '',
       } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onPermissionRequest: async (request) => {
         expect(request.functionName).toBe('read_file');
         return { approved: true, choice: 'allow_always' };
@@ -109,7 +109,7 @@ describe('AgentClient', () => {
     // Verify permission response was sent
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy).toHaveBeenLastCalledWith(
-      'http://localhost:5135/agent/conversations/conv-123/permissions/respond',
+      'http://localhost:5135/sessions/session-123/branches/main/permissions/respond',
       expect.objectContaining({
         method: 'POST',
       })
@@ -156,7 +156,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onToolCallStart: (callId, name) => toolCalls.push({ callId, name }),
     });
 
@@ -185,7 +185,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onReasoning: (text) => reasoningTexts.push(text),
     });
 
@@ -215,7 +215,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onTurnStart: (iteration) => turns.start.push(iteration),
       onTurnEnd: (iteration) => turns.end.push(iteration),
     });
@@ -246,7 +246,7 @@ describe('AgentClient', () => {
     } as Response);
 
     await expect(
-      client.stream('conv-123', [{ content: 'Hi' }], {
+      client.stream('session-123', 'main', [{ content: 'Hi' }], {
         onError: errorHandler,
       })
     ).rejects.toThrow('Something went wrong');
@@ -276,7 +276,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    await client.stream('conv-123', [{ content: 'Hi' }], {
+    await client.stream('session-123', 'main', [{ content: 'Hi' }], {
       onEvent: (event) => allEvents.push(event),
     });
 
@@ -318,7 +318,7 @@ describe('AgentClient', () => {
       } as Response;
     });
 
-    const streamPromise = client.stream('conv-123', [{ content: 'Hi' }], {}, { signal: controller.signal });
+    const streamPromise = client.stream('session-123', 'main', [{ content: 'Hi' }], {}, { signal: controller.signal });
 
     // Abort after a short delay
     setTimeout(() => controller.abort(), 10);
@@ -345,7 +345,7 @@ describe('AgentClient', () => {
       text: async () => '',
     } as Response);
 
-    const streamPromise = client.stream('conv-123', [{ content: 'Hi' }], {});
+    const streamPromise = client.stream('session-123', 'main', [{ content: 'Hi' }], {});
 
     // Wait for connection
     await new Promise((r) => setTimeout(r, 10));

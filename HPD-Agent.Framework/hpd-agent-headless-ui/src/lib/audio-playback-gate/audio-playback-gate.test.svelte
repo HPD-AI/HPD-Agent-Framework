@@ -4,12 +4,13 @@
 	interface Props {
 		onStatusChange?: (status: 'blocked' | 'ready' | 'error') => void;
 		testId?: string;
+		audioContext?: AudioContext;
 	}
 
-	let { onStatusChange, testId = 'audio-gate' }: Props = $props();
+	let { onStatusChange, testId = 'audio-gate', audioContext }: Props = $props();
 </script>
 
-<AudioGate.Root {onStatusChange} data-testid={testId}>
+<AudioGate.Root {onStatusChange} {audioContext} data-testid={testId}>
 	{#snippet children({ canPlayAudio, enableAudio, status, error })}
 		<div data-testid="{testId}-content">
 			<div data-testid="{testId}-status" data-status={status}>
@@ -27,7 +28,7 @@
 			{/if}
 
 			{#if !canPlayAudio}
-				<button data-testid="{testId}-enable-btn" onclick={() => enableAudio()}>
+				<button data-testid="{testId}-enable-btn" onclick={() => enableAudio().catch(() => {})}>
 					Enable Audio
 				</button>
 			{:else}

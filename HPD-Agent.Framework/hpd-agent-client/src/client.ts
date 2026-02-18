@@ -16,6 +16,7 @@ import type {
 } from './types/client-tools.js';
 import { SseTransport } from './transports/sse.js';
 import { WebSocketTransport } from './transports/websocket.js';
+import { MauiTransport } from './transports/maui.js';
 
 // ============================================
 // Event Handler Interfaces
@@ -209,7 +210,7 @@ export interface EventHandlers {
 // Client Configuration
 // ============================================
 
-export type TransportType = 'sse' | 'websocket';
+export type TransportType = 'sse' | 'websocket' | 'maui';
 
 export interface AgentClientConfig {
   /** Base URL of the HPD-Agent API */
@@ -258,6 +259,8 @@ export class AgentClient {
     switch (type) {
       case 'websocket':
         return new WebSocketTransport(this.config.baseUrl);
+      case 'maui':
+        return new MauiTransport();
       case 'sse':
       default:
         return new SseTransport(this.config.baseUrl);
@@ -268,13 +271,15 @@ export class AgentClient {
    * Stream agent events with typed handlers.
    * Returns a promise that resolves on completion or rejects on error.
    *
-   * @param conversationId The conversation to stream from
+   * @param sessionId The session to stream from
+   * @param branchId The branch to stream from (default: 'main')
    * @param messages Messages to send to the agent
    * @param handlers Event handlers
    * @param options Streaming options (e.g., abort signal)
    */
   async stream(
-    conversationId: string,
+    sessionId: string,
+    branchId: string | undefined,
     messages: Array<{ content: string; role?: string }>,
     handlers: EventHandlers,
     options?: StreamOptions
@@ -354,7 +359,8 @@ export class AgentClient {
       // Connect
       this.transport
         .connect({
-          conversationId,
+          sessionId,
+          branchId: branchId || 'main',
           messages,
           signal: options?.signal,
           clientToolGroups: mergedToolGroups.length > 0 ? mergedToolGroups : undefined,

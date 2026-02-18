@@ -97,8 +97,10 @@ public class SessionPersistenceTests
             messages: messages,
             summaryContent: "Test summary",
             summarizedUpToIndex: 90,
-            targetMessageCount: 100,
-            reductionThreshold: 5);
+            targetCount: 100,
+            reductionThreshold: 5,
+            countAtReduction: messages.Count,
+            countingUnit: HistoryCountingUnit.Messages);
 
         var hrState = new HistoryReductionStateData().WithReduction(reduction);
         var middlewareState = new MiddlewareState().WithHistoryReduction(hrState);
@@ -112,7 +114,7 @@ public class SessionPersistenceTests
         restored.HistoryReduction().Should().NotBeNull();
         restored.HistoryReduction()!.LastReduction.Should().NotBeNull();
         restored.HistoryReduction().LastReduction!.SummarizedUpToIndex.Should().Be(90);
-        restored.HistoryReduction().LastReduction.MessageCountAtReduction.Should().Be(100);
+        restored.HistoryReduction().LastReduction.CountAtReduction.Should().Be(100);
         restored.HistoryReduction().LastReduction.SummaryContent.Should().Be("Test summary");
     }
 
@@ -135,8 +137,10 @@ public class SessionPersistenceTests
             messages: messages,
             summaryContent: "Summary",
             summarizedUpToIndex: 50,
-            targetMessageCount: 60,
-            reductionThreshold: 10);
+            targetCount: 60,
+            reductionThreshold: 10,
+            countAtReduction: messages.Count,
+            countingUnit: HistoryCountingUnit.Messages);
         var hrState = new HistoryReductionStateData().WithReduction(reduction);
 
         var middlewareState = new MiddlewareState()

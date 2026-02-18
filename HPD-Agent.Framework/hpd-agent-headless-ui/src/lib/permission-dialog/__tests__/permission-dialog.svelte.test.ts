@@ -10,7 +10,7 @@ import { expect, it, describe } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import PermissionDialogTest from './permission-dialog-test.svelte';
 import PermissionDialogTestRender from './permission-dialog-test-render.svelte';
-import { createMockAgent } from '$lib/testing/mock-agent.js';
+import { createMockAgent } from '$lib/testing/mock-agent.svelte.js';
 import type { PermissionRequest } from '$lib/agent/types.js';
 
 // Helper to wait for element existence

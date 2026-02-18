@@ -363,7 +363,7 @@ public class AgentRunConfig
     /// </summary>
     /// <remarks>
     /// When true, history reduction will be performed even if the automatic
-    /// thresholds (TargetMessageCount + SummarizationThreshold) are not met.
+    /// thresholds (TargetCount + SummarizationThreshold) are not met.
     /// The reduction will use the configured strategy (Summarizing or MessageCounting).
     /// </remarks>
     public bool TriggerHistoryReduction { get; set; } = false;

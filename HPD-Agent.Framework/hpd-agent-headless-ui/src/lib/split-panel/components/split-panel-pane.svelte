@@ -10,7 +10,7 @@
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
 	import { SplitPanelPaneState } from './split-panel-pane-state.svelte.js';
 
-	interface Props extends HTMLAttributes<HTMLDivElement> {
+	interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
 		/** Unique pane ID */
 		id: string;
 

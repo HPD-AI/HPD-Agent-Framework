@@ -13,8 +13,7 @@
  * - Dimension caching for BEAR 3 constraint validation
  */
 
-import { createId } from '$lib/internal';
-import { CustomEventDispatcher } from '$lib/internal';
+import { createId, CustomEventDispatcher } from '../../internal/index.js';
 import { Spring } from 'svelte/motion';
 import type {
 	LayoutNode,

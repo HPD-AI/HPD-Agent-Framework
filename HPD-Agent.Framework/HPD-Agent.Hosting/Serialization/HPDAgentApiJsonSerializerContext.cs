@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using HPD.Agent.Hosting.Data;
+using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Hosting.Serialization;
 
@@ -23,6 +24,17 @@ namespace HPD.Agent.Hosting.Serialization;
 [JsonSerializable(typeof(MessageDto))]
 [JsonSerializable(typeof(MessageDto[]))]
 [JsonSerializable(typeof(List<MessageDto>))]
+// M.E.AI content types carried by MessageDto.Contents
+[JsonSerializable(typeof(AIContent))]
+[JsonSerializable(typeof(List<AIContent>))]
+[JsonSerializable(typeof(TextContent))]
+[JsonSerializable(typeof(TextReasoningContent))]
+[JsonSerializable(typeof(FunctionCallContent))]
+[JsonSerializable(typeof(FunctionResultContent))]
+[JsonSerializable(typeof(DataContent))]
+[JsonSerializable(typeof(ErrorContent))]
+[JsonSerializable(typeof(UriContent))]
+[JsonSerializable(typeof(UsageContent))]
 // Asset DTOs
 [JsonSerializable(typeof(AssetDto))]
 [JsonSerializable(typeof(AssetDto[]))]
@@ -32,6 +44,7 @@ namespace HPD.Agent.Hosting.Serialization;
 [JsonSerializable(typeof(UpdateSessionRequest))]
 [JsonSerializable(typeof(SearchSessionsRequest))]
 [JsonSerializable(typeof(CreateBranchRequest))]
+[JsonSerializable(typeof(UpdateBranchRequest))]
 [JsonSerializable(typeof(ForkBranchRequest))]
 [JsonSerializable(typeof(StreamRequest))]
 [JsonSerializable(typeof(StreamMessage))]

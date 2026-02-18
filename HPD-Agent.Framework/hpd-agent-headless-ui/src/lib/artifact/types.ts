@@ -29,6 +29,11 @@ export type ArtifactProviderPropsWithoutHTML = WithChild<{
 	 * Callback when any artifact opens/closes
 	 */
 	onOpenChange?: (open: boolean, id: string | null) => void;
+
+	/**
+	 * Rest props support
+	 */
+	[key: string]: unknown;
 }>;
 
 export type ArtifactProviderProps = ArtifactProviderPropsWithoutHTML &
@@ -72,6 +77,11 @@ export type ArtifactRootPropsWithoutHTML = WithChild<
 		 * Callback when this artifact opens/closes
 		 */
 		onOpenChange?: OnChangeFn<boolean>;
+
+		/**
+		 * Rest props support
+		 */
+		[key: string]: unknown;
 	},
 	ArtifactRootSnippetProps
 >;
@@ -114,6 +124,11 @@ export type ArtifactTriggerPropsWithoutHTML = WithChild<
 		 * Override disabled state
 		 */
 		disabled?: boolean;
+
+		/**
+		 * Rest props support
+		 */
+		[key: string]: unknown;
 	},
 	ArtifactTriggerSnippetProps
 >;
@@ -152,7 +167,7 @@ export type ArtifactPanelSnippetProps = {
 	close: () => void;
 };
 
-export type ArtifactPanelPropsWithoutHTML = WithChild<{}, ArtifactPanelSnippetProps>;
+export type ArtifactPanelPropsWithoutHTML = WithChild<{ [key: string]: unknown }, ArtifactPanelSnippetProps>;
 
 export type ArtifactPanelProps = ArtifactPanelPropsWithoutHTML &
 	Without<HPDPrimitiveDivAttributes, ArtifactPanelPropsWithoutHTML>;
@@ -161,7 +176,7 @@ export type ArtifactPanelProps = ArtifactPanelPropsWithoutHTML &
 // Title Component Props (Render Target)
 // ============================================
 
-export type ArtifactTitlePropsWithoutHTML = WithChild<{}>;
+export type ArtifactTitlePropsWithoutHTML = WithChild<{ [key: string]: unknown }>;
 
 export type ArtifactTitleProps = ArtifactTitlePropsWithoutHTML &
 	Without<HPDPrimitiveDivAttributes, ArtifactTitlePropsWithoutHTML>;
@@ -170,7 +185,7 @@ export type ArtifactTitleProps = ArtifactTitlePropsWithoutHTML &
 // Content Component Props (Render Target)
 // ============================================
 
-export type ArtifactContentPropsWithoutHTML = WithChild<{}>;
+export type ArtifactContentPropsWithoutHTML = WithChild<{ [key: string]: unknown }>;
 
 export type ArtifactContentProps = ArtifactContentPropsWithoutHTML &
 	Without<HPDPrimitiveDivAttributes, ArtifactContentPropsWithoutHTML>;
@@ -192,6 +207,11 @@ export type ArtifactClosePropsWithoutHTML = WithChild<
 		 * Override disabled state
 		 */
 		disabled?: boolean;
+
+		/**
+		 * Rest props support
+		 */
+		[key: string]: unknown;
 	},
 	ArtifactCloseSnippetProps
 >;

@@ -1,4 +1,6 @@
+using System.Text.Json;
 using HPD.Agent;
+using HPD.Agent.ClientTools;
 using HPD.Agent.Hosting.Data;
 using Microsoft.Extensions.AI;
 
@@ -42,7 +44,14 @@ public static class DtoMappingExtensions
             branch.LastActivity,
             branch.MessageCount,
             branch.Tags,
-            branch.Ancestors);
+            branch.Ancestors,
+            branch.SiblingIndex,
+            branch.TotalSiblings,
+            branch.IsOriginal,
+            branch.OriginalBranchId,
+            branch.PreviousSiblingId,
+            branch.NextSiblingId,
+            branch.TotalForks);
     }
 
     /// <summary>
@@ -52,11 +61,16 @@ public static class DtoMappingExtensions
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        var contents = message.Contents
+            .Where(c => c is not UsageContent)
+            .ToList();
+
         return new MessageDto(
-            $"msg-{index}",
+            message.MessageId ?? $"msg-{index}",
             message.Role.Value,
-            message.Text ?? "",
-            timestamp.ToString("O"));
+            contents,
+            message.AuthorName,
+            (message.CreatedAt?.UtcDateTime ?? timestamp).ToString("O"));
     }
 
     /// <summary>
@@ -149,5 +163,62 @@ public static class DtoMappingExtensions
         }
 
         return config;
+    }
+
+    /// <summary>
+    /// Convert a StreamRequest's client tool fields into an AgentRunInput.
+    /// Returns null if no client tool data is present.
+    /// </summary>
+    public static AgentRunInput? ToAgentRunInput(this StreamRequest request)
+    {
+        if (request.ClientToolGroups == null &&
+            request.Context == null &&
+            request.State == null &&
+            request.ExpandedContainers == null &&
+            request.HiddenTools == null &&
+            !request.ResetClientState)
+        {
+            return null;
+        }
+
+        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        List<ClientToolGroupDefinition>? groups = null;
+        if (request.ClientToolGroups is { Count: > 0 })
+        {
+            groups = new List<ClientToolGroupDefinition>(request.ClientToolGroups.Count);
+            foreach (var element in request.ClientToolGroups)
+            {
+                var group = JsonSerializer.Deserialize<ClientToolGroupDefinition>(element, options);
+                if (group != null)
+                    groups.Add(group);
+            }
+        }
+
+        List<ContextItem>? context = null;
+        if (request.Context is { Count: > 0 })
+        {
+            context = new List<ContextItem>(request.Context.Count);
+            foreach (var element in request.Context)
+            {
+                var item = JsonSerializer.Deserialize<ContextItem>(element, options);
+                if (item != null)
+                    context.Add(item);
+            }
+        }
+
+        return new AgentRunInput
+        {
+            ClientToolGroups = groups,
+            Context = context,
+            State = request.State,
+            ExpandedContainers = request.ExpandedContainers is { Count: > 0 }
+                ? new HashSet<string>(request.ExpandedContainers)
+                : null,
+            HiddenTools = request.HiddenTools is { Count: > 0 }
+                ? new HashSet<string>(request.HiddenTools)
+                : null,
+            ResetClientState = request.ResetClientState,
+        };
     }
 }

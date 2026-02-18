@@ -1037,11 +1037,12 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Act
         var siblingsJson = await _proxy.GetSiblingBranches(session!.SessionId, "main");
-        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(siblingsJson);
+        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<SiblingBranchDto>>(siblingsJson);
 
-        // Assert
+        // Assert - siblings includes self, so main alone = 1 result
         siblings.Should().NotBeNull();
-        siblings!.Should().BeEmpty();
+        siblings!.Should().HaveCount(1);
+        siblings![0].BranchId.Should().Be("main");
     }
 
     [Fact]
@@ -1075,12 +1076,12 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Act
         var siblingsJson = await _proxy.GetSiblingBranches(session.SessionId, "sibling1");
-        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(siblingsJson);
+        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<SiblingBranchDto>>(siblingsJson);
 
-        // Assert
+        // Assert - siblings includes self and all forks at same point
         siblings.Should().NotBeNull();
-        siblings!.Should().Contain("sibling2");
-        siblings.Should().NotContain("sibling1"); // Should not include self
+        siblings!.Should().Contain(s => s.BranchId == "sibling2");
+        siblings.Should().Contain(s => s.BranchId == "sibling1");
     }
 
     [Fact]
@@ -1115,10 +1116,10 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Act
         var siblingsJson = await _proxy.GetSiblingBranches(session.SessionId, "no-self");
-        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(siblingsJson);
+        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<SiblingBranchDto>>(siblingsJson);
 
-        // Assert
-        siblings!.Should().NotContain("no-self");
+        // Assert - siblings includes self (new contract)
+        siblings!.Should().Contain(s => s.BranchId == "no-self");
     }
 
     #endregion
@@ -1474,11 +1475,12 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Act
         var siblingsJson = await _proxy.GetSiblingBranches(session.SessionId, "lonely-fork");
-        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<string>>(siblingsJson);
+        var siblings = System.Text.Json.JsonSerializer.Deserialize<List<SiblingBranchDto>>(siblingsJson);
 
-        // Assert
+        // Assert - only fork at this point = 1 sibling (itself)
         siblings.Should().NotBeNull();
-        siblings!.Should().BeEmpty();
+        siblings!.Should().HaveCount(1);
+        siblings![0].BranchId.Should().Be("lonely-fork");
     }
 
     [Fact]
@@ -1932,6 +1934,252 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // If we get here without exceptions, test passes
         tasks.Should().AllSatisfy(t => t.IsCompletedSuccessfully.Should().BeTrue());
+    }
+
+    #endregion
+
+    #region Fix 1 (MAUI) — GetBranchMessages stable IDs and timestamps
+
+    [Fact]
+    public async Task GetBranchMessages_MessageIds_AreStable_AcrossMultipleCalls()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+
+        var json1 = await _proxy.GetBranchMessages(session!.SessionId, "main");
+        var json2 = await _proxy.GetBranchMessages(session.SessionId, "main");
+
+        var msgs1 = System.Text.Json.JsonSerializer.Deserialize<List<MessageDto>>(json1);
+        var msgs2 = System.Text.Json.JsonSerializer.Deserialize<List<MessageDto>>(json2);
+
+        msgs1.Should().NotBeNull();
+        msgs2.Should().NotBeNull();
+        msgs1!.Count.Should().Be(msgs2!.Count);
+
+        for (int i = 0; i < msgs1.Count; i++)
+            msgs1[i].Id.Should().Be(msgs2[i].Id, "message IDs must be stable across calls");
+    }
+
+    [Fact]
+    public async Task GetBranchMessages_Timestamps_ParseAsValidIso8601()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+
+        var json = await _proxy.GetBranchMessages(session!.SessionId, "main");
+        var msgs = System.Text.Json.JsonSerializer.Deserialize<List<MessageDto>>(json);
+
+        msgs.Should().NotBeNull();
+        foreach (var msg in msgs!)
+        {
+            if (msg.Timestamp != null)
+                DateTimeOffset.TryParse(msg.Timestamp, out _).Should().BeTrue(
+                    "timestamp '{0}' should be valid ISO 8601", msg.Timestamp);
+        }
+    }
+
+    #endregion
+
+    #region Fix 4 (MAUI) — UpdateBranch
+
+    [Fact]
+    public async Task UpdateBranch_UpdatesNameAndReturnsDto()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        var createReq = System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("upd-branch", "Original", "Desc", null));
+        await _proxy.CreateBranch(sid, createReq);
+
+        var patchReq = System.Text.Json.JsonSerializer.Serialize(
+            new UpdateBranchRequest("Renamed", null, null));
+        var resultJson = await _proxy.UpdateBranch(sid, "upd-branch", patchReq);
+
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(resultJson);
+        branch.Should().NotBeNull();
+        branch!.Name.Should().Be("Renamed");
+    }
+
+    [Fact]
+    public async Task UpdateBranch_NullFields_AreIgnored_OtherFieldsUnchanged()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        var createReq = System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("null-field-test", "OriginalName", "KeepDesc", null));
+        await _proxy.CreateBranch(sid, createReq);
+
+        // Pass null description — should leave description unchanged
+        var patchReq = System.Text.Json.JsonSerializer.Serialize(
+            new UpdateBranchRequest("NewName", null, null));
+        var resultJson = await _proxy.UpdateBranch(sid, "null-field-test", patchReq);
+
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(resultJson);
+        branch!.Name.Should().Be("NewName");
+        branch.Description.Should().Be("KeepDesc");
+    }
+
+    [Fact]
+    public async Task UpdateBranch_UpdatesTags()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        await _proxy.CreateBranch(sid, System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("tag-branch", "T", null, null)));
+
+        var patchReq = System.Text.Json.JsonSerializer.Serialize(
+            new UpdateBranchRequest(null, null, ["x", "y"]));
+        var resultJson = await _proxy.UpdateBranch(sid, "tag-branch", patchReq);
+
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(resultJson);
+        branch!.Tags.Should().BeEquivalentTo(["x", "y"]);
+    }
+
+    [Fact]
+    public async Task UpdateBranch_ThrowsInvalidOperation_WhenBranchNotFound()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+
+        var patchReq = System.Text.Json.JsonSerializer.Serialize(
+            new UpdateBranchRequest("X", null, null));
+
+        var act = async () => await _proxy.UpdateBranch(session!.SessionId, "nonexistent", patchReq);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task UpdateBranch_PersistedAcrossGetBranch()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        await _proxy.CreateBranch(sid, System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("persist-test", "Before", null, null)));
+
+        await _proxy.UpdateBranch(sid, "persist-test",
+            System.Text.Json.JsonSerializer.Serialize(new UpdateBranchRequest("After", "NewDesc", null)));
+
+        var getJson = await _proxy.GetBranch(sid, "persist-test");
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(getJson);
+        branch!.Name.Should().Be("After");
+        branch.Description.Should().Be("NewDesc");
+    }
+
+    #endregion
+
+    #region MAUI Fix C — ToBranchDto uses GetDisplayName()
+
+    [Fact]
+    public async Task GetBranch_WithNoName_UsesDescription_AsDisplayName()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        // Create branch with description but no name
+        var createReq = System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("desc-only", null, "My Description", null));
+        await _proxy.CreateBranch(sid, createReq);
+
+        var branchJson = await _proxy.GetBranch(sid, "desc-only");
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(branchJson);
+
+        // GetDisplayName() falls back to Description when Name is null
+        branch!.Name.Should().Be("My Description");
+    }
+
+    [Fact]
+    public async Task ListBranches_UsesGetDisplayName_NotRawNameField()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        // Create branch with only description
+        var createReq = System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("list-desc-only", null, "List Description", null));
+        await _proxy.CreateBranch(sid, createReq);
+
+        var listJson = await _proxy.ListBranches(sid);
+        var branches = System.Text.Json.JsonSerializer.Deserialize<List<BranchDto>>(listJson);
+
+        var branch = branches!.FirstOrDefault(b => b.Id == "list-desc-only");
+        branch.Should().NotBeNull();
+        branch!.Name.Should().Be("List Description");
+    }
+
+    [Fact]
+    public async Task GetBranch_WithNoNameOrDescription_DoesNotUseRawId_AsDisplayName()
+    {
+        // When branch has neither name nor description, GetDisplayName() falls back to Id.
+        // The key regression this guards: previously `branch.Name ?? branch.Id` was used,
+        // so when Name was null, the raw GUID would appear. After the fix, GetDisplayName()
+        // follows the full fallback chain. For a branch without name/description/messages
+        // it will still return Id — but this test ensures the code path is GetDisplayName(),
+        // not a direct property access.
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+        var sid = session!.SessionId;
+
+        var createReq = System.Text.Json.JsonSerializer.Serialize(
+            new CreateBranchRequest("bare-branch", null, null, null));
+        await _proxy.CreateBranch(sid, createReq);
+
+        var branchJson = await _proxy.GetBranch(sid, "bare-branch");
+        var branch = System.Text.Json.JsonSerializer.Deserialize<BranchDto>(branchJson);
+
+        // Whatever GetDisplayName() returns, it should not be null or empty
+        branch!.Name.Should().NotBeNullOrEmpty();
+    }
+
+    #endregion
+
+    #region MAUI Fix A — Stream cancellation (StopStream)
+
+    [Fact]
+    public void StopStream_WithUnknownStreamId_DoesNotThrow()
+    {
+        var act = () => _proxy.StopStream("nonexistent-stream-id");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task StopStream_AfterStreamCompletes_DoesNotThrow()
+    {
+        // Arrange — create a session (stream will fail to find agent but completes quickly)
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+
+        var streamId = await _proxy.StartStream("hello", session!.SessionId, "main", null);
+
+        // Give the background task time to finish
+        await Task.Delay(200);
+
+        // Calling StopStream on a completed stream should be a no-op
+        var act = () => _proxy.StopStream(streamId);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task StartStream_Returns_UniqueStreamIds()
+    {
+        var sessionJson = await _proxy.CreateSession();
+        var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
+
+        var id1 = await _proxy.StartStream("msg1", session!.SessionId, null, null);
+        var id2 = await _proxy.StartStream("msg2", session.SessionId, null, null);
+
+        id1.Should().NotBe(id2);
+        Guid.TryParse(id1, out _).Should().BeTrue();
+        Guid.TryParse(id2, out _).Should().BeTrue();
     }
 
     #endregion

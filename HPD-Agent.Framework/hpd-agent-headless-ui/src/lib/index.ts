@@ -7,9 +7,111 @@
 // Agent state and utilities (includes Message type)
 export * from './agent/index.ts';
 
+// Workspace (V3 - Unified session/branch/streaming factory)
+export { createWorkspace } from './workspace/index.ts';
+export type { Workspace, CreateWorkspaceOptions } from './workspace/index.ts';
+
+// Re-exports from hpd-agent-client — users only need to import from this package
+export type {
+	Session,
+	Branch,
+	BranchMessage,
+	CreateSessionRequest,
+	CreateBranchRequest,
+	ClientToolGroupDefinition,
+	ClientToolDefinition,
+	ClientSkillDefinition,
+	ClientToolInvokeResponse,
+	ClientToolInvokeRequestEvent,
+	PermissionChoice,
+	PermissionResponse,
+} from '@hpd/hpd-agent-client';
+export {
+	createSuccessResponse,
+	createErrorResponse,
+	createExpandedToolGroup,
+} from '@hpd/hpd-agent-client';
+
+// BranchSwitcher component (V3 - Sibling navigation UI)
+export * as BranchSwitcher from './branch-switcher/index.ts';
+export {
+	BranchSwitcherRootState,
+	BranchSwitcherPrevState,
+	BranchSwitcherNextState,
+	BranchSwitcherPositionState,
+	branchSwitcherAttrs,
+} from './branch-switcher/index.ts';
+
+// SessionList component (V3 - Session management UI)
+export * as SessionList from './session-list/index.ts';
+export {
+	SessionListRootState,
+	SessionListItemState,
+	SessionListEmptyState,
+	SessionListCreateButtonState,
+	sessionListAttrs,
+} from './session-list/index.ts';
+export type {
+	SessionListRootProps,
+	SessionListItemProps,
+	SessionListEmptyProps,
+	SessionListCreateButtonProps,
+	SessionListRootSnippetProps,
+	SessionListItemSnippetProps,
+} from './session-list/index.ts';
+
 // Message component (explicit exports to avoid conflicts)
 export { Message, MessageState, createMessageState } from './message/index.ts';
 export type { MessageProps, MessageHTMLProps, MessageSnippetProps } from './message/index.ts';
+
+// MessageActions component (edit + retry buttons)
+export * as MessageActions from './message-actions/index.ts';
+export {
+	MessageActionsRootState,
+	MessageActionsEditButtonState,
+	MessageActionsRetryButtonState,
+	MessageActionsCopyButtonState,
+	MessageActionsPrevState,
+	MessageActionsNextState,
+	MessageActionsPositionState,
+	messageActionsAttrs,
+} from './message-actions/index.ts';
+export type {
+	MessageActionsRootProps,
+	MessageActionsEditButtonProps,
+	MessageActionsRetryButtonProps,
+	MessageActionsCopyButtonProps,
+	MessageActionsPrevProps,
+	MessageActionsNextProps,
+	MessageActionsPositionProps,
+	MessageActionsRootSnippetProps,
+	MessageActionsEditButtonSnippetProps,
+	MessageActionsRetryButtonSnippetProps,
+	MessageActionsCopyButtonSnippetProps,
+	MessageActionsPositionSnippetProps,
+	MessageActionStatus,
+} from './message-actions/index.ts';
+
+// MessageEdit component (inline message editing)
+export * as MessageEdit from './message-edit/index.ts';
+export {
+	MessageEditRootState,
+	MessageEditTextareaState,
+	MessageEditSaveButtonState,
+	MessageEditCancelButtonState,
+	messageEditAttrs,
+} from './message-edit/index.ts';
+export type {
+	MessageEditRootProps,
+	MessageEditRootHTMLProps,
+	MessageEditRootSnippetProps,
+	MessageEditTextareaProps,
+	MessageEditTextareaSnippetProps,
+	MessageEditSaveButtonProps,
+	MessageEditSaveButtonSnippetProps,
+	MessageEditCancelButtonProps,
+	MessageEditCancelButtonSnippetProps,
+} from './message-edit/index.ts';
 
 // MessageList component
 export * as MessageList from './message-list/index.ts';
@@ -43,9 +145,9 @@ export * as InterruptionIndicator from './interruption-indicator/index.ts';
 export * as TurnIndicator from './turn-indicator/index.ts';
 export * as AudioVisualizer from './audio-visualizer/index.ts';
 
-// Testing utilities (mock agent)
-export { createMockAgent } from './testing/mock-agent.ts';
-export type { MockAgentOptions } from './testing/mock-agent.ts';
+// Testing utilities (mock workspace)
+export { createMockWorkspace } from './testing/mock-agent.svelte.ts';
+export type { MockWorkspaceOptions } from './testing/mock-agent.svelte.ts';
 
 // ========================================
 // Storage System

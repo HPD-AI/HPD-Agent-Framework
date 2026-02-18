@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { createMockAgent, Message, MessageList, Input, ToolExecution, PermissionDialog } from '$lib/index.js';
+	import { createMockWorkspace, Message, MessageList, Input, ToolExecution, PermissionDialog } from '$lib/index.js';
 	import type { PermissionRequest } from '$lib/agent/types.js';
 
-	// Create mock agent instance
-	const agent = createMockAgent({
+	// Create mock workspace instance
+	const agent = createMockWorkspace({
 		typingDelay: 30,
 		enableReasoning: false
 	});

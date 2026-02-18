@@ -1,8 +1,16 @@
 import type { AgentEvent } from '../types/events.js';
 import type { AgentTransport, ClientMessage, ConnectOptions } from '../types/transport.js';
-import type { Session, CreateSessionOptions, UpdateSessionOptions, ListSessionsOptions } from '../types/session.js';
-import type { Branch, CreateBranchOptions, ForkBranchOptions, BranchMessage } from '../types/branch.js';
-import type { Asset } from '../types/assets.js';
+import type {
+  Session,
+  Branch,
+  SiblingBranch,
+  BranchMessage,
+  CreateSessionRequest,
+  UpdateSessionRequest,
+  ListSessionsOptions,
+  CreateBranchRequest,
+  ForkBranchRequest,
+} from '../types/session.js';
 
 declare global {
   interface Window {
@@ -30,6 +38,10 @@ export class MauiTransport implements AgentTransport {
     if (!window.HybridWebView) {
       throw new Error('MAUI HybridWebView not available');
     }
+
+    // Always clean up any previous listener before registering a new one.
+    // Handles the case where a prior stream ended without a clean close event.
+    this.cleanup();
 
     this.messageListener = (event: Event) => {
       const customEvent = event as CustomEvent<{ message: string }>;
@@ -65,7 +77,7 @@ export class MauiTransport implements AgentTransport {
         [
           options.messages[0]?.content ?? '',
           options.sessionId,
-          options.branchId,
+          options.branchId || 'main',
           options.runConfig ? JSON.stringify(options.runConfig) : undefined,
         ]
       );
@@ -160,11 +172,8 @@ export class MauiTransport implements AgentTransport {
   // Session CRUD
   async listSessions(options?: ListSessionsOptions): Promise<Session[]> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
-    const json = await window.HybridWebView.InvokeDotNet<string>('SearchSessions', [
-      options?.metadata ? JSON.stringify(options.metadata) : undefined,
-      options?.offset ?? 0,
-      options?.limit ?? 50,
-    ]);
+    const request = options ? JSON.stringify({ offset: options.offset, limit: options.limit }) : undefined;
+    const json = await window.HybridWebView.InvokeDotNet<string>('SearchSessions', [request]);
     return JSON.parse(json);
   }
 
@@ -178,7 +187,7 @@ export class MauiTransport implements AgentTransport {
     }
   }
 
-  async createSession(options?: CreateSessionOptions): Promise<Session> {
+  async createSession(options?: CreateSessionRequest): Promise<Session> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('CreateSession', [
       options?.sessionId,
@@ -187,11 +196,11 @@ export class MauiTransport implements AgentTransport {
     return JSON.parse(json);
   }
 
-  async updateSession(sessionId: string, options: UpdateSessionOptions): Promise<Session> {
+  async updateSession(sessionId: string, request: UpdateSessionRequest): Promise<Session> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('UpdateSession', [
       sessionId,
-      options.metadata ? JSON.stringify(options.metadata) : undefined,
+      request.metadata ? JSON.stringify(request.metadata) : undefined,
     ]);
     return JSON.parse(json);
   }
@@ -218,18 +227,18 @@ export class MauiTransport implements AgentTransport {
     }
   }
 
-  async createBranch(sessionId: string, options: CreateBranchOptions): Promise<Branch> {
+  async createBranch(sessionId: string, options?: CreateBranchRequest): Promise<Branch> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('CreateBranch', [
       sessionId,
-      options.branchId,
-      options.name,
-      options.description,
+      options?.branchId,
+      options?.name,
+      options?.description,
     ]);
     return JSON.parse(json);
   }
 
-  async forkBranch(sessionId: string, branchId: string, options: ForkBranchOptions): Promise<Branch> {
+  async forkBranch(sessionId: string, branchId: string, options: ForkBranchRequest): Promise<Branch> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('ForkBranch', [
       sessionId,
@@ -242,9 +251,9 @@ export class MauiTransport implements AgentTransport {
     return JSON.parse(json);
   }
 
-  async deleteBranch(sessionId: string, branchId: string): Promise<void> {
+  async deleteBranch(sessionId: string, branchId: string, options?: { recursive?: boolean }): Promise<void> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
-    await window.HybridWebView.InvokeDotNet('DeleteBranch', [sessionId, branchId]);
+    await window.HybridWebView.InvokeDotNet('DeleteBranch', [sessionId, branchId, options?.recursive ?? false]);
   }
 
   async getBranchMessages(sessionId: string, branchId: string): Promise<BranchMessage[]> {
@@ -253,8 +262,34 @@ export class MauiTransport implements AgentTransport {
     return JSON.parse(json);
   }
 
-  // Asset CRUD
-  async uploadAsset(sessionId: string, file: File): Promise<Asset> {
+  // ============================================
+  // SIBLING NAVIGATION (V3)
+  // ============================================
+
+  async getBranchSiblings(sessionId: string, branchId: string): Promise<SiblingBranch[]> {
+    if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
+    const json = await window.HybridWebView.InvokeDotNet<string>('GetBranchSiblings', [sessionId, branchId]);
+    return JSON.parse(json);
+  }
+
+  async getNextSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    const branch = await this.getBranch(sessionId, branchId);
+    if (!branch?.nextSiblingId) {
+      return null;
+    }
+    return this.getBranch(sessionId, branch.nextSiblingId);
+  }
+
+  async getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    const branch = await this.getBranch(sessionId, branchId);
+    if (!branch?.previousSiblingId) {
+      return null;
+    }
+    return this.getBranch(sessionId, branch.previousSiblingId);
+  }
+
+  // Asset CRUD (not part of AgentTransport interface)
+  async uploadAsset(sessionId: string, file: File): Promise<unknown> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
 
     // Convert file to base64
@@ -270,7 +305,7 @@ export class MauiTransport implements AgentTransport {
     return JSON.parse(json);
   }
 
-  async listAssets(sessionId: string): Promise<Asset[]> {
+  async listAssets(sessionId: string): Promise<unknown[]> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('ListAssets', [sessionId]);
     return JSON.parse(json);

@@ -41,6 +41,33 @@ public abstract class AgentSessionManager : IDisposable
     public ISessionStore Store => _store;
 
     /// <summary>
+    /// Create a new session and its default "main" branch directly in the store,
+    /// without requiring a configured AI provider. Sessions are provider-agnostic
+    /// containers; the agent/provider is only needed during streaming.
+    /// </summary>
+    public async Task<(Session session, Branch branch)> CreateSessionAsync(
+        string? sessionId = null,
+        Dictionary<string, object>? metadata = null,
+        CancellationToken ct = default)
+    {
+        var id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString() : sessionId;
+        var session = new Session(id);
+        var branch = session.CreateBranch("main");
+        session.Store = _store;
+
+        if (metadata != null)
+        {
+            foreach (var kvp in metadata)
+                session.AddMetadata(kvp.Key, kvp.Value);
+        }
+
+        await _store.SaveSessionAsync(session, ct);
+        await _store.SaveBranchAsync(id, branch, ct);
+
+        return (session, branch);
+    }
+
+    /// <summary>
     /// Get or create an Agent for the given session.
     /// Uses async-safe per-session locking to prevent duplicate builds.
     /// </summary>
@@ -90,6 +117,7 @@ public abstract class AgentSessionManager : IDisposable
 
     /// <summary>
     /// Remove an agent from the cache (e.g., when session is deleted).
+    /// Also cleans up all stream lock semaphores for the session.
     /// </summary>
     public void RemoveAgent(string sessionId)
     {
@@ -97,6 +125,26 @@ public abstract class AgentSessionManager : IDisposable
         _agents.TryRemove(sessionId, out _);
         _buildLocks.TryRemove(sessionId, out _);
         _sessionLocks.TryRemove(sessionId, out _);
+
+        var prefix = $"{sessionId}:";
+        var keysToRemove = _streamLocks.Keys.Where(k => k.StartsWith(prefix)).ToList();
+        foreach (var key in keysToRemove)
+            if (_streamLocks.TryRemove(key, out var sem))
+                sem.Dispose();
+    }
+
+    /// <summary>
+    /// Remove and dispose the stream lock for a single branch (called after branch delete).
+    /// Must be called AFTER ReleaseStreamLock, never before.
+    /// </summary>
+    public void RemoveBranchStreamLock(string sessionId, string branchId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(branchId);
+
+        var key = $"{sessionId}:{branchId}";
+        if (_streamLocks.TryRemove(key, out var sem))
+            sem.Dispose();
     }
 
     /// <summary>
@@ -170,6 +218,36 @@ public abstract class AgentSessionManager : IDisposable
     }
 
     /// <summary>
+    /// Execute a void action with exclusive session-level lock.
+    /// </summary>
+    public async Task WithSessionLockAsync(
+        string sessionId,
+        Func<Task> action,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentNullException.ThrowIfNull(action);
+
+        var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync(ct);
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            sessionLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Whether recursive branch deletion is permitted on this manager.
+    /// Platform implementations override this to read from their options.
+    /// Default: false (safe — prevents accidental subtree deletion).
+    /// </summary>
+    public virtual bool AllowRecursiveBranchDelete => false;
+
+    /// <summary>
     /// Platform-specific agent building logic.
     /// Called when an agent needs to be created for a session.
     /// </summary>
@@ -195,6 +273,12 @@ public abstract class AgentSessionManager : IDisposable
                 _agents.TryRemove(kvp.Key, out _);
                 _buildLocks.TryRemove(kvp.Key, out _);
                 _sessionLocks.TryRemove(kvp.Key, out _);
+
+                var prefix = $"{kvp.Key}:";
+                var keysToRemove = _streamLocks.Keys.Where(k => k.StartsWith(prefix)).ToList();
+                foreach (var key in keysToRemove)
+                    if (_streamLocks.TryRemove(key, out var sem))
+                        sem.Dispose();
             }
         }
     }

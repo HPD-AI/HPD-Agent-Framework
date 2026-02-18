@@ -674,16 +674,34 @@ internal sealed class OpenRouterChatClient : IChatClient
             Stream = stream
         };
 
-        // ✨ FIX: Only enable reasoning for models that support it
-        // Models that support reasoning typically have "reasoning" or "o1"/"o3" in the name
-        // or are explicitly configured to support it
-        if (SupportsReasoning(_modelName) || 
+        // Enable reasoning when: model natively supports it, ChatOptions.Reasoning is set, or
+        // AdditionalProperties["reasoning_effort"] is set. Map M.E.AI ReasoningEffort enum → string.
+        var meaiEffort = options?.Reasoning?.Effort;
+        var meaiOutput = options?.Reasoning?.Output;
+        bool reasoningRequested = meaiEffort != null && meaiEffort != Microsoft.Extensions.AI.ReasoningEffort.None;
+        if (SupportsReasoning(_modelName) || reasoningRequested ||
             (options?.AdditionalProperties?.TryGetValue("reasoning_effort", out _) == true))
         {
+            var effortStr = meaiEffort switch
+            {
+                Microsoft.Extensions.AI.ReasoningEffort.Low => "low",
+                Microsoft.Extensions.AI.ReasoningEffort.Medium => "medium",
+                Microsoft.Extensions.AI.ReasoningEffort.High => "high",
+                Microsoft.Extensions.AI.ReasoningEffort.ExtraHigh => "xhigh",
+                _ => null
+            };
+            var summaryStr = meaiOutput switch
+            {
+                Microsoft.Extensions.AI.ReasoningOutput.Summary => "concise",
+                Microsoft.Extensions.AI.ReasoningOutput.Full => "detailed",
+                _ => null
+            };
             request.Reasoning = new OpenRouterReasoningConfig
             {
-                Enabled = true,  // Enable reasoning for the model
-                Exclude = false  // Include reasoning in responses so users can see thinking
+                Enabled = true,
+                Effort = effortStr,
+                Summary = summaryStr,
+                Exclude = meaiOutput == Microsoft.Extensions.AI.ReasoningOutput.None
             };
         }
 
@@ -874,15 +892,11 @@ internal sealed class OpenRouterChatClient : IChatClient
                     }
                 }
 
-                // Support reasoning configuration - only for models that support it
+                // Support reasoning configuration via AdditionalProperties (overrides ChatOptions.Reasoning effort)
                 if (options.AdditionalProperties.TryGetValue("reasoning_effort", out var effort) && effort is string effortVal && SupportsReasoning(_modelName))
                 {
-                    request.Reasoning = new OpenRouterReasoningConfig
-                    {
-                        Enabled = true,
-                        Effort = effortVal,
-                        Exclude = false
-                    };
+                    request.Reasoning ??= new OpenRouterReasoningConfig { Enabled = true, Exclude = false };
+                    request.Reasoning.Effort = effortVal;
                 }
 
                 // Support PDF engine configuration

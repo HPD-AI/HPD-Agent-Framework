@@ -1,21 +1,8 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
-using Microsoft.Extensions.AI;
 using HPD.Agent;
-using HPD.Agent.ClientTools;
+using HPD.Agent.AspNetCore;
 using HPD.Agent.Memory;
-using HPD.Agent.Audio;
-using HPD.Agent.Audio.ElevenLabs;
 
 var builder = WebApplication.CreateSlimBuilder(args);
-
-
-// Configure JSON serialization - chain app context with library context
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
-    options.SerializerOptions.TypeInfoResolverChain.Insert(1, HPDJsonContext.Default);
-});
 
 // CORS Configuration
 builder.Services.AddCors(options =>
@@ -39,391 +26,62 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register checkpointing services
-var threadStore = new JsonSessionStore(
-    Path.Combine(Environment.CurrentDirectory, "threads"));
+// Register HPD Agent with the new simplified API
+builder.Services.AddHPDAgent(options =>
+{
+    options.AgentIdleTimeout = TimeSpan.FromMinutes(30);
+    options.SessionStore = new JsonSessionStore(Path.Combine(Environment.CurrentDirectory, "sessions"));
+    options.PersistAfterTurn = true;
 
-builder.Services.AddSingleton<ISessionStore>(threadStore);
-
-// Create and register Agent
-var agent = await new AgentBuilder()
-    .WithProvider("openrouter", "z-ai/glm-4.6")
-    .WithName("AI Assistant")
-    .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
-    .WithDynamicMemory(opts => opts
-        .WithStorageDirectory("./agent-memory-storage")
-        .WithMaxTokens(6000))
-    .WithToolkit<MathTools>()
-    .WithPermissions()
-    .WithSessionStore(threadStore)
-    .Build();
-
-builder.Services.AddSingleton(agent);
-
-// Track running agents for middleware responses
-var runningAgents = new System.Collections.Concurrent.ConcurrentDictionary<string, Agent>();
-builder.Services.AddSingleton(runningAgents);
+    options.ConfigureAgent = agent => agent
+        .WithProvider("openrouter", "z-ai/glm-4.6")
+        .WithName("AI Assistant")
+        .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
+        .WithDynamicMemory(opts => opts
+            .WithStorageDirectory("./agent-memory-storage")
+            .WithMaxTokens(6000))
+        .WithToolkit<MathTools>()
+        .WithPermissions()
+        .WithPreserveReasoningInHistory();
+});
 
 var app = builder.Build();
 
-// Validate checkpointing configuration on startup
-ValidateCheckpointingConfiguration(app.Services);
+// Validate configuration on startup
+ValidateConfiguration(app.Services);
 
 app.UseCors("AllowClient");
 app.UseWebSockets();
 
-// Conversation API
-var conversationsApi = app.MapGroup("/conversations").WithTags("Conversations");
-
-conversationsApi.MapPost("/", () =>
-{
-    // Generate new session ID - session will be created on first RunAsync
-    var sessionId = Guid.NewGuid().ToString();
-    return Results.Created($"/conversations/{sessionId}", new ConversationDto(
-        sessionId,
-        "New Conversation",
-        DateTime.UtcNow,
-        DateTime.UtcNow,
-        0));
-});
-
-conversationsApi.MapGet("/{conversationId}", async (string conversationId, Agent agent) =>
-{
-    var (session, branch) = await agent.LoadSessionAndBranchAsync(conversationId, "main");
-    if (session == null || branch == null) return Results.NotFound();
-
-    return Results.Ok(new ConversationDto(
-        session.Id,
-        branch.GetDisplayName(),
-        session.CreatedAt,
-        session.LastActivity,
-        branch.MessageCount));
-});
-
-conversationsApi.MapDelete("/{conversationId}", async (string conversationId, Agent agent, System.Collections.Concurrent.ConcurrentDictionary<string, Agent> runningAgents) =>
-{
-    await agent.DeleteSessionAsync(conversationId);
-    runningAgents.TryRemove(conversationId, out _);
-    return Results.NoContent();
-});
-
-// List all persisted conversations
-conversationsApi.MapGet("/", async (Agent agent) =>
-{
-    var sessions = await agent.ListSessionsAsync();
-    var conversations = new List<ConversationDto>();
-
-    foreach (var session in sessions)
-    {
-        // Load the main branch to get message count and display name
-        var (_, branch) = await agent.LoadSessionAndBranchAsync(session.Id, "main");
-        if (branch != null)
-        {
-            conversations.Add(new ConversationDto(
-                session.Id,
-                branch.GetDisplayName(),
-                session.CreatedAt,
-                session.LastActivity,
-                branch.MessageCount));
-        }
-    }
-
-    return Results.Ok(conversations);
-});
-
-// Get messages for a conversation
-conversationsApi.MapGet("/{conversationId}/messages", async (string conversationId, Agent agent) =>
-{
-    Console.WriteLine($"[MESSAGES] Getting messages for conversation {conversationId}");
-
-    var (session, branch) = await agent.LoadSessionAndBranchAsync(conversationId, "main");
-    if (session == null || branch == null)
-    {
-        Console.WriteLine($"[MESSAGES] Conversation not found");
-        return Results.NotFound(new ErrorResponse("Conversation not found"));
-    }
-
-    Console.WriteLine($"[MESSAGES] Branch has {branch.MessageCount} messages");
-    var messages = branch.Messages.Select((m, i) => new MessageDto(
-        i,
-        m.Role.Value,
-        m.Text ?? "",
-        m.AdditionalProperties?.TryGetValue("thinking", out var thinking) == true ? thinking?.ToString() : null
-    )).ToList();
-
-    foreach (var msg in messages.Take(10))
-    {
-        var preview = msg.Content?.Length > 50 ? msg.Content.Substring(0, 50) + "..." : msg.Content;
-        Console.WriteLine($"[MESSAGES]   [{msg.Index}] {msg.Role}: {preview}");
-    }
-
-    return Results.Ok(messages);
-});
-
-// Agent API
-var agentApi = app.MapGroup("/agent").WithTags("Agent");
-
-// Permission response endpoint
-agentApi.MapPost("/conversations/{conversationId}/permissions/respond",
-    (string conversationId, PermissionResponseRequest request, Agent agent) =>
-{
-    // Convert string choice to PermissionChoice enum
-    var choice = request.Choice?.ToLower() switch
-    {
-        "allow_always" => PermissionChoice.AlwaysAllow,
-        "deny_always" => PermissionChoice.AlwaysDeny,
-        _ => PermissionChoice.Ask
-    };
-
-    // Send response to waiting permission middleware
-    agent.SendMiddlewareResponse(
-        request.PermissionId,
-        new PermissionResponseEvent(
-            request.PermissionId,
-            "PermissionMiddleware",
-            request.Approved,
-            request.Reason,
-            choice));
-
-    return Results.Ok(new SuccessResponse(true));
-});
-
-// Client tool response endpoint
-agentApi.MapPost("/conversations/{conversationId}/Client-tools/respond",
-    (string conversationId, ClientToolResponseRequest request, Agent agent) =>
-{
-    // Convert content to IToolResultContent list
-    var content = request.Content?.Select<ClientToolContentDto, HPD.Agent.ClientTools.IToolResultContent>(c => c.Type switch
-    {
-        "text" => new HPD.Agent.ClientTools.TextContent(c.Text ?? ""),
-        "json" => new HPD.Agent.ClientTools.JsonContent(
-            JsonSerializer.SerializeToElement(c.Value ?? new object())),
-        "binary" => new BinaryContent(
-            c.MimeType ?? "application/octet-stream",
-            c.Data,
-            c.Url,
-            c.Id,
-            c.Filename),
-        _ => new HPD.Agent.ClientTools.TextContent(c.Text ?? "")
-    }).ToList() ?? new List<IToolResultContent>();
-
-    // Send response to waiting ClientToolMiddleware
-    agent.SendMiddlewareResponse(
-        request.RequestId,
-        new ClientToolInvokeResponseEvent(
-            RequestId: request.RequestId,
-            Content: content,
-            Success: request.Success,
-            ErrorMessage: request.ErrorMessage,
-            Augmentation: null)); // TODO: Add augmentation support if needed
-
-    return Results.Ok(new SuccessResponse(true));
-});
-
-// Streaming SSE endpoint
-agentApi.MapPost("/conversations/{conversationId}/stream",
-    async (string conversationId, StreamRequest request, Agent agent, HttpContext context) =>
-{
-    // SSE headers
-    context.Response.Headers.Append("Content-Type", "text/event-stream");
-    context.Response.Headers.Append("Cache-Control", "no-cache");
-    context.Response.Headers.Append("Connection", "keep-alive");
-
-    var writer = new StreamWriter(context.Response.Body, System.Text.Encoding.UTF8, 8192, leaveOpen: true);
-    var sseHandler = new SseEventHandler(writer);
-
-    try
-    {
-        var message = request.Messages.Select(m => m.Content).FirstOrDefault() ?? "";
-
-        var runInput = BuildRunInput(request);
-
-        Console.WriteLine($"[ENDPOINT] Starting agent.RunAsync for conversation {conversationId}");
-        if (runInput?.ClientToolGroups?.Count > 0)
-        {
-            Console.WriteLine($"[ENDPOINT] Registered {runInput.ClientToolGroups.Count} Client Toolkit(s)");
-            foreach (var Toolkit in runInput.ClientToolGroups)
-            {
-                Console.WriteLine($"[ENDPOINT]   - {Toolkit.Name}: {Toolkit.Tools.Count} tools");
-            }
-        }
-
-        int eventCount = 0;
-        var runConfig = runInput != null ? new AgentRunConfig { ClientToolInput = runInput } : null;
-        await foreach (var evt in agent.RunAsync(message, conversationId, "main", options: runConfig, cancellationToken: context.RequestAborted))
-        {
-            eventCount++;
-            Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
-
-            await sseHandler.OnEventAsync(evt, context.RequestAborted);
-        }
-
-        Console.WriteLine($"[ENDPOINT] Completed agent.RunAsync - total events: {eventCount}");
-
-        await writer.WriteAsync("data: {\"version\":\"1.0\",\"type\":\"COMPLETE\"}\n\n");
-        await writer.FlushAsync();
-    }
-    catch (Exception ex)
-    {
-        var errorMessage = ex.Message.Replace("\"", "\\\"");
-        await writer.WriteAsync($"data: {{\"version\":\"1.0\",\"type\":\"ERROR\",\"message\":\"{errorMessage}\"}}\n\n");
-        await writer.FlushAsync();
-    }
-    finally
-    {
-        await writer.DisposeAsync();
-    }
-});
-
-// WebSocket endpoint
-agentApi.MapGet("/conversations/{conversationId}/ws",
-    async (string conversationId, HttpContext context, Agent agent) =>
-{
-    if (!context.WebSockets.IsWebSocketRequest)
-    {
-        context.Response.StatusCode = 400;
-        return;
-    }
-
-    using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-
-    try
-    {
-        var jsonOptions = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
-        };
-
-        // Wait for initial message
-        var buffer = new byte[1024 * 4];
-        var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-        var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-
-        await foreach (var evt in agent.RunAsync(userMessage, conversationId, "main", options: null, cancellationToken: CancellationToken.None))
-        {
-            if (evt is TextDeltaEvent textDelta)
-            {
-                var response = new { text = textDelta.Text };
-                var message = JsonSerializer.Serialize(response, jsonOptions);
-                var messageBytes = System.Text.Encoding.UTF8.GetBytes(message);
-                await webSocket.SendAsync(
-                    new ArraySegment<byte>(messageBytes),
-                    System.Net.WebSockets.WebSocketMessageType.Text,
-                    true,
-                    CancellationToken.None);
-            }
-            else if (evt is MessageTurnFinishedEvent)
-            {
-                var response = new { finished = true, reason = "Stop" };
-                var finishMessage = JsonSerializer.Serialize(response, jsonOptions);
-                var finishBytes = System.Text.Encoding.UTF8.GetBytes(finishMessage);
-                await webSocket.SendAsync(
-                    new ArraySegment<byte>(finishBytes),
-                    System.Net.WebSockets.WebSocketMessageType.Text,
-                    true,
-                    CancellationToken.None);
-            }
-        }
-
-        await webSocket.CloseAsync(
-            System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
-            "Completed",
-            CancellationToken.None);
-    }
-    catch (Exception ex)
-    {
-        await webSocket.CloseAsync(
-            System.Net.WebSockets.WebSocketCloseStatus.InternalServerError,
-            $"Error: {ex.Message}",
-            CancellationToken.None);
-    }
-});
-
-// Build AgentRunInput directly from StreamRequest
-static AgentRunInput? BuildRunInput(StreamRequest request)
-{
-    if (request.ClientToolGroups == null && request.Context == null &&
-        request.State == null && request.ExpandedContainers == null && request.HiddenTools == null)
-    {
-        return null;
-    }
-
-    return new AgentRunInput
-    {
-        ClientToolGroups = request.ClientToolGroups?.ToList(),
-        Context = request.Context?.ToList(),
-        State = request.State,
-        ExpandedContainers = request.ExpandedContainers?.ToHashSet(),
-        HiddenTools = request.HiddenTools?.ToHashSet(),
-        ResetClientState = request.ResetClientState
-    };
-}
+// Map all HPD-Agent API endpoints
+// This provides 20+ endpoints:
+// - Sessions: POST/GET/PATCH/DELETE /sessions
+// - Branches: GET/POST/DELETE /sessions/{sid}/branches
+// - Assets: POST/GET/DELETE /sessions/{sid}/assets
+// - Streaming: POST /sessions/{sid}/branches/{bid}/stream (SSE)
+//              GET /sessions/{sid}/branches/{bid}/ws (WebSocket)
+// - Middleware: POST /sessions/{sid}/branches/{bid}/permissions/respond
+//               POST /sessions/{sid}/branches/{bid}/client-tools/respond
+app.MapHPDAgentApi();
 
 app.Run();
 
 /// <summary>
-/// Validates that session store is properly configured.
+/// Validates that HPD Agent is properly configured.
 /// </summary>
-static void ValidateCheckpointingConfiguration(IServiceProvider services)
+static void ValidateConfiguration(IServiceProvider services)
 {
     try
     {
-        var threadStore = services.GetRequiredService<ISessionStore>();
-        Console.WriteLine("\n✓ Thread store configured:");
-        Console.WriteLine($"  - Thread store: {threadStore.GetType().Name}");
+        Console.WriteLine("\n✓ HPD-Agent AspNetCore configured:");
+        Console.WriteLine("  - Endpoints: /sessions, /sessions/{sid}/branches, /sessions/{sid}/assets");
+        Console.WriteLine("  - Streaming: SSE (/stream) + WebSocket (/ws)");
+        Console.WriteLine("  - Middleware: Permissions + Client Tools");
+        Console.WriteLine("  - Session persistence: threads/");
         Console.WriteLine();
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"\n⚠ Warning: Could not validate thread store configuration: {ex.Message}\n");
+        Console.WriteLine($"\n⚠ Warning: Could not validate configuration: {ex.Message}\n");
     }
 }
-
-// DTOs
-public record ConversationDto(
-    string Id,
-    string Name,
-    DateTime CreatedAt,
-    DateTime LastActivity,
-    int MessageCount,
-    string? ActiveBranch = null,
-    List<string>? BranchNames = null);
-public record StreamRequest(
-    StreamMessage[] Messages,
-    ClientToolGroupDefinition[]? ClientToolGroups = null,
-    ContextItem[]? Context = null,
-    JsonElement? State = null,
-    string[]? ExpandedContainers = null,
-    string[]? HiddenTools = null,
-    bool ResetClientState = false);
-public record StreamMessage(string Content);
-public record PermissionResponseRequest(
-    string PermissionId,
-    bool Approved,
-    string? Choice = null,
-    string? Reason = null);
-
-// API Response DTOs for AOT serialization
-public record SuccessResponse(bool Success);
-public record ErrorResponse(string Message);
-
-// Client tool response DTOs
-public record ClientToolResponseRequest(
-    string RequestId,
-    ClientToolContentDto[]? Content,
-    bool Success = true,
-    string? ErrorMessage = null);
-
-public record ClientToolContentDto(
-    string Type,
-    string? Text = null,
-    object? Value = null,
-    string? MimeType = null,
-    string? Data = null,
-    string? Url = null,
-    string? Id = null,
-    string? Filename = null);
-
-public record MessageDto(int Index, string Role, string Content, string? Thinking = null);
-

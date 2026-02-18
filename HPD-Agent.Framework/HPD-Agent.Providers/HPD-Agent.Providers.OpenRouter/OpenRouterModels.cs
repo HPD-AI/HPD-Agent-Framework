@@ -279,7 +279,10 @@ internal class OpenRouterReasoningConfig
     public bool? Enabled { get; set; }
 
     [JsonPropertyName("effort")]
-    public string? Effort { get; set; } // "high", "medium", "low"
+    public string? Effort { get; set; } // "xhigh", "high", "medium", "low", "minimal", "none"
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; set; } // "detailed", "concise", "auto"
 
     [JsonPropertyName("max_tokens")]
     public int? MaxTokens { get; set; }

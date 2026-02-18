@@ -12,7 +12,17 @@ export type {
 export * from './types/index.js';
 
 // Transports (for advanced usage)
-export { SseTransport, WebSocketTransport } from './transports/index.js';
+export { SseTransport, WebSocketTransport, MauiTransport } from './transports/index.js';
 
 // Parser (for advanced usage)
 export { SseParser } from './parser.js';
+
+// Error handling
+export {
+  AgentError,
+  parseErrorResponse,
+  createNetworkError,
+  createValidationError,
+  createTimeoutError,
+  createAbortError,
+} from './errors.js';

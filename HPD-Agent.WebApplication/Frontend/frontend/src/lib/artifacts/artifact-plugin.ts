@@ -1,13 +1,11 @@
 import type {
-  ClientToolDefinition,
   ClientToolInvokeResponse,
-  ClientToolAugmentation
-} from '@hpd/hpd-agent-client';
+} from '@hpd/hpd-agent-headless-ui';
 import {
   createExpandedToolGroup,
   createSuccessResponse,
-  createErrorResponse
-} from '@hpd/hpd-agent-client';
+  createErrorResponse,
+} from '@hpd/hpd-agent-headless-ui';
 import { artifactStore, type ArtifactType } from './artifact-store.js';
 
 /**
