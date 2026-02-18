@@ -2,18 +2,18 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Local file system storage for binary assets.
-/// Stores assets as individual files in a directory.
+/// Stores assets as individual files in a directory structure organized by scope.
 /// </summary>
 /// <remarks>
 /// <para><b>Storage Layout:</b></para>
 /// <code>
 /// basePath/
-///   assets/
-///     {assetId}.jpg    (JPEG images)
-///     {assetId}.png    (PNG images)
-///     {assetId}.mp3    (Audio files)
-///     {assetId}.pdf    (PDF documents)
-///     {assetId}.bin    (Unknown types)
+///   {scope}/
+///     {contentId}.jpg    (JPEG images)
+///     {contentId}.png    (PNG images)
+///     {contentId}.mp3    (Audio files)
+///     {contentId}.pdf    (PDF documents)
+///     {contentId}.bin    (Unknown types)
 /// </code>
 /// <para><b>Features:</b></para>
 /// <list type="bullet">
@@ -21,6 +21,7 @@ namespace HPD.Agent;
 /// <item>Content-type based file extensions</item>
 /// <item>Thread-safe (file system handles concurrency)</item>
 /// <item>Simple cleanup (just delete files)</item>
+/// <item>Per-scope isolation (sessionId-based)</item>
 /// </list>
 /// <para><b>Limitations:</b></para>
 /// <list type="bullet">
@@ -41,43 +42,72 @@ public class LocalFileAssetStore : IAssetStore
     {
         _basePath = basePath ?? throw new ArgumentNullException(nameof(basePath));
 
-        // Ensure assets directory exists
-        Directory.CreateDirectory(Path.Combine(basePath, "assets"));
+        // Ensure base directory exists
+        Directory.CreateDirectory(basePath);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // IContentStore Implementation
+    // ═══════════════════════════════════════════════════════════════════
+
     /// <inheritdoc />
-    public async Task<string> UploadAssetAsync(
+    public async Task<string> PutAsync(
+        string? scope,
         byte[] data,
         string contentType,
-        CancellationToken cancellationToken)
+        ContentMetadata? metadata = null,
+        CancellationToken cancellationToken = default)
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
         if (string.IsNullOrWhiteSpace(contentType))
             contentType = "application/octet-stream";
 
+        // Use "global" as default scope if null
+        var actualScope = scope ?? "global";
+
+        // Ensure scope directory exists
+        var scopePath = Path.Combine(_basePath, actualScope);
+        Directory.CreateDirectory(scopePath);
+
         // Generate unique asset ID
-        var assetId = Guid.NewGuid().ToString("N");
+        var contentId = Guid.NewGuid().ToString("N");
         var extension = GetExtensionFromContentType(contentType);
-        var filePath = Path.Combine(_basePath, "assets", $"{assetId}{extension}");
+        var filePath = Path.Combine(scopePath, $"{contentId}{extension}");
 
         // Write to disk
         await File.WriteAllBytesAsync(filePath, data, cancellationToken);
 
-        return assetId;
+        // If metadata is provided, write it to a companion .meta file
+        if (metadata != null)
+        {
+            var metaPath = Path.Combine(scopePath, $"{contentId}.meta");
+            var metaJson = System.Text.Json.JsonSerializer.Serialize(metadata);
+            await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
+        }
+
+        return contentId;
     }
 
     /// <inheritdoc />
-    public async Task<AssetData?> DownloadAssetAsync(
-        string assetId,
-        CancellationToken cancellationToken)
+    public async Task<ContentData?> GetAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(assetId))
+        if (string.IsNullOrWhiteSpace(contentId))
             return null;
 
-        // Find file with this asset ID (extension may vary)
-        var files = Directory.GetFiles(
-            Path.Combine(_basePath, "assets"),
-            $"{assetId}.*");
+        // Use "global" as default scope if null
+        var actualScope = scope ?? "global";
+        var scopePath = Path.Combine(_basePath, actualScope);
+
+        if (!Directory.Exists(scopePath))
+            return null;
+
+        // Find file with this content ID (extension may vary)
+        var files = Directory.GetFiles(scopePath, $"{contentId}.*")
+            .Where(f => !f.EndsWith(".meta")) // Exclude metadata files
+            .ToArray();
 
         if (files.Length == 0)
             return null;
@@ -86,25 +116,66 @@ public class LocalFileAssetStore : IAssetStore
         var filePath = files[0];
         var data = await File.ReadAllBytesAsync(filePath, cancellationToken);
         var contentType = GetContentTypeFromExtension(Path.GetExtension(filePath));
-        var createdAt = File.GetCreationTimeUtc(filePath);
+        var fileInfo = new FileInfo(filePath);
 
-        return new AssetData(
-            AssetId: assetId,
-            Data: data,
-            ContentType: contentType,
-            CreatedAt: createdAt);
+        // Try to read metadata from companion .meta file
+        ContentMetadata? metadata = null;
+        var metaPath = Path.Combine(scopePath, $"{contentId}.meta");
+        if (File.Exists(metaPath))
+        {
+            try
+            {
+                var metaJson = await File.ReadAllTextAsync(metaPath, cancellationToken);
+                metadata = System.Text.Json.JsonSerializer.Deserialize<ContentMetadata>(metaJson);
+            }
+            catch
+            {
+                // Ignore metadata read errors
+            }
+        }
+
+        // Map to ContentData
+        return new ContentData
+        {
+            Id = contentId,
+            Data = data,
+            ContentType = contentType,
+            Info = new ContentInfo
+            {
+                Id = contentId,
+                Name = metadata?.Name ?? contentId,
+                ContentType = contentType,
+                SizeBytes = fileInfo.Length,
+                CreatedAt = fileInfo.CreationTimeUtc,
+                Origin = metadata?.Origin ?? ContentSource.User,
+                Description = metadata?.Description,
+                LastModified = fileInfo.LastWriteTimeUtc,
+                LastAccessed = null, // File system doesn't reliably track this
+                Tags = metadata?.Tags,
+                OriginalSource = metadata?.OriginalSource,
+                ExtendedMetadata = null
+            }
+        };
     }
 
     /// <inheritdoc />
-    public Task DeleteAssetAsync(string assetId, CancellationToken cancellationToken)
+    public Task DeleteAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(assetId))
+        if (string.IsNullOrWhiteSpace(contentId))
             return Task.CompletedTask;
 
-        // Find and delete all files with this asset ID
-        var files = Directory.GetFiles(
-            Path.Combine(_basePath, "assets"),
-            $"{assetId}.*");
+        // Use "global" as default scope if null
+        var actualScope = scope ?? "global";
+        var scopePath = Path.Combine(_basePath, actualScope);
+
+        if (!Directory.Exists(scopePath))
+            return Task.CompletedTask;
+
+        // Find and delete all files with this content ID (including .meta)
+        var files = Directory.GetFiles(scopePath, $"{contentId}.*");
 
         foreach (var file in files)
         {
@@ -121,6 +192,110 @@ public class LocalFileAssetStore : IAssetStore
 
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<ContentInfo>> QueryAsync(
+        string? scope = null,
+        ContentQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        IEnumerable<string> scopePaths;
+
+        if (scope == null)
+        {
+            // Query across ALL scopes
+            if (!Directory.Exists(_basePath))
+            {
+                return Task.FromResult<IReadOnlyList<ContentInfo>>(Array.Empty<ContentInfo>());
+            }
+            scopePaths = Directory.GetDirectories(_basePath);
+        }
+        else
+        {
+            // Query within specific scope
+            var scopePath = Path.Combine(_basePath, scope);
+            if (!Directory.Exists(scopePath))
+            {
+                return Task.FromResult<IReadOnlyList<ContentInfo>>(Array.Empty<ContentInfo>());
+            }
+            scopePaths = new[] { scopePath };
+        }
+
+        // Collect all asset files across scopes
+        var allFiles = scopePaths
+            .SelectMany(scopePath => Directory.Exists(scopePath) ? Directory.GetFiles(scopePath) : Array.Empty<string>())
+            .Where(f => !f.EndsWith(".meta")); // Exclude metadata files
+
+        // Group by content ID (files may have different extensions)
+        var assetGroups = allFiles
+            .GroupBy(f => Path.GetFileNameWithoutExtension(f))
+            .Select(g => g.First()); // Take first file for each content ID
+
+        // Build ContentInfo for each asset
+        var results = assetGroups.Select(filePath =>
+        {
+            var contentId = Path.GetFileNameWithoutExtension(filePath);
+            var extension = Path.GetExtension(filePath);
+            var contentType = GetContentTypeFromExtension(extension);
+            var fileInfo = new FileInfo(filePath);
+
+            // Try to read metadata from companion .meta file
+            ContentMetadata? metadata = null;
+            var metaPath = Path.Combine(Path.GetDirectoryName(filePath)!, $"{contentId}.meta");
+            if (File.Exists(metaPath))
+            {
+                try
+                {
+                    var metaJson = File.ReadAllText(metaPath);
+                    metadata = System.Text.Json.JsonSerializer.Deserialize<ContentMetadata>(metaJson);
+                }
+                catch
+                {
+                    // Ignore metadata read errors
+                }
+            }
+
+            return new ContentInfo
+            {
+                Id = contentId,
+                Name = metadata?.Name ?? contentId,
+                ContentType = contentType,
+                SizeBytes = fileInfo.Length,
+                CreatedAt = fileInfo.CreationTimeUtc,
+                Origin = metadata?.Origin ?? ContentSource.User,
+                Description = metadata?.Description,
+                LastModified = fileInfo.LastWriteTimeUtc,
+                LastAccessed = null, // File system doesn't reliably track this
+                Tags = metadata?.Tags,
+                OriginalSource = metadata?.OriginalSource,
+                ExtendedMetadata = null
+            };
+        }).AsEnumerable();
+
+        // Apply filters (ContentType, CreatedAfter, Limit)
+        if (query?.ContentType != null)
+        {
+            results = results.Where(info =>
+                info.ContentType.Equals(query.ContentType, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (query?.CreatedAfter != null)
+        {
+            results = results.Where(info => info.CreatedAt >= query.CreatedAfter.Value);
+        }
+
+        // Apply limit
+        if (query?.Limit != null)
+        {
+            results = results.Take(query.Limit.Value);
+        }
+
+        return Task.FromResult<IReadOnlyList<ContentInfo>>(results.ToList());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Helper Methods
+    // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
     /// Map content type to file extension.

@@ -64,6 +64,13 @@ public class Branch
     public DateTime LastActivity { get; set; }
 
     /// <summary>
+    /// Optional display name for this branch.
+    /// Used as the primary label in UI (e.g., "Feature Branch", "Experiment 1").
+    /// If not set, GetDisplayName() will fall back to Description or generate a name from first message.
+    /// </summary>
+    public string? Name { get; set; }
+
+    /// <summary>
     /// Optional user-friendly description of this branch.
     /// Useful for explaining the purpose or approach of this conversation variant.
     /// </summary>
@@ -82,6 +89,75 @@ public class Branch
     /// Enables UI to show "main → experimental → formal" lineage.
     /// </summary>
     public Dictionary<string, string>? Ancestors { get; set; }
+
+    // ============================================
+    // NEW: Tree Structure Navigation (V3)
+    // ============================================
+
+    /// <summary>
+    /// Position among siblings at this fork point (0-based).
+    /// Siblings are branches that forked from the same parent at the same message index.
+    /// Stable ordering: original branch = 0, subsequent forks ordered chronologically.
+    /// </summary>
+    public int SiblingIndex { get; set; }
+
+    /// <summary>
+    /// Total number of sibling branches at this fork point (including this branch).
+    /// Updated atomically when siblings are added or removed.
+    /// </summary>
+    public int TotalSiblings { get; set; }
+
+    /// <summary>
+    /// True if this is the original branch (not forked from another).
+    /// Equivalent to: ForkedFrom == null
+    /// Denormalized for query convenience.
+    /// </summary>
+    public bool IsOriginal { get; set; }
+
+    /// <summary>
+    /// ID of the original branch in this sibling group.
+    /// For original branches: null
+    /// For forked branches: ID of the branch they forked from
+    /// </summary>
+    public string? OriginalBranchId { get; set; }
+
+    // ============================================
+    // NEW: Navigation Pointers
+    // ============================================
+
+    /// <summary>
+    /// ID of the previous sibling (sibling at index - 1).
+    /// Null if this is the first sibling (SiblingIndex == 0).
+    /// Enables O(1) previous sibling navigation without scanning.
+    /// </summary>
+    public string? PreviousSiblingId { get; set; }
+
+    /// <summary>
+    /// ID of the next sibling (sibling at index + 1).
+    /// Null if this is the last sibling (SiblingIndex == TotalSiblings - 1).
+    /// Enables O(1) next sibling navigation without scanning.
+    /// </summary>
+    public string? NextSiblingId { get; set; }
+
+    // ============================================
+    // NEW: Child Tracking
+    // ============================================
+
+    /// <summary>
+    /// IDs of branches that forked directly from this branch.
+    /// Updated when:
+    /// - A branch forks from this one (add to list)
+    /// - A child branch is deleted (remove from list)
+    /// Enables O(1) "show forks" without scanning all branches.
+    /// </summary>
+    public List<string> ChildBranches { get; set; } = new();
+
+    /// <summary>
+    /// Count of direct child branches (forks from this branch).
+    /// Computed property: ChildBranches.Count
+    /// Denormalized for API convenience.
+    /// </summary>
+    public int TotalForks => ChildBranches.Count;
 
     /// <summary>
     /// Branch-scoped middleware persistent state.
@@ -115,7 +191,6 @@ public class Branch
     /// Parameterless constructor for JSON deserialization.
     /// Properties are populated via init setters.
     /// </summary>
-    [JsonConstructor]
     internal Branch()
     {
         Id = Guid.NewGuid().ToString();
@@ -124,10 +199,17 @@ public class Branch
         MiddlewareState = [];
         CreatedAt = DateTime.UtcNow;
         LastActivity = DateTime.UtcNow;
+
+        // V3: Initialize tree navigation properties with safe defaults
+        SiblingIndex = 0;
+        TotalSiblings = 1;
+        IsOriginal = true;
+        ChildBranches = [];
     }
 
     /// <summary>
     /// Creates a new branch with a generated ID.
+    /// Internal - only the framework creates branches via Session.CreateBranch() or Agent methods.
     /// </summary>
     internal Branch(string sessionId)
     {
@@ -138,10 +220,17 @@ public class Branch
         MiddlewareState = [];
         CreatedAt = DateTime.UtcNow;
         LastActivity = DateTime.UtcNow;
+
+        // V3: Initialize tree navigation properties with safe defaults
+        SiblingIndex = 0;
+        TotalSiblings = 1;
+        IsOriginal = true;
+        ChildBranches = [];
     }
 
     /// <summary>
     /// Creates a new branch with a specific ID.
+    /// Internal - only the framework creates branches via Session.CreateBranch() or Agent methods.
     /// </summary>
     internal Branch(string sessionId, string branchId)
     {
@@ -153,11 +242,18 @@ public class Branch
         MiddlewareState = [];
         CreatedAt = DateTime.UtcNow;
         LastActivity = DateTime.UtcNow;
+
+        // V3: Initialize tree navigation properties with safe defaults
+        SiblingIndex = 0;
+        TotalSiblings = 1;
+        IsOriginal = true;
+        ChildBranches = [];
     }
 
     /// <summary>
     /// Creates a branch with specific values (for deserialization).
     /// </summary>
+    [JsonConstructor]
     internal Branch(
         string id,
         string sessionId,
@@ -166,10 +262,19 @@ public class Branch
         int? forkedAtMessageIndex,
         DateTime createdAt,
         DateTime lastActivity,
+        string? name,
         string? description,
         List<string>? tags,
         Dictionary<string, string>? ancestors,
-        Dictionary<string, string> middlewareState)
+        Dictionary<string, string> middlewareState,
+        // V3: Tree navigation properties (with safe defaults for backward compatibility)
+        int siblingIndex = 0,
+        int totalSiblings = 1,
+        bool isOriginal = true,
+        string? originalBranchId = null,
+        string? previousSiblingId = null,
+        string? nextSiblingId = null,
+        List<string>? childBranches = null)
     {
         Id = id;
         SessionId = sessionId;
@@ -178,10 +283,20 @@ public class Branch
         ForkedAtMessageIndex = forkedAtMessageIndex;
         CreatedAt = createdAt;
         LastActivity = lastActivity;
+        Name = name;
         Description = description;
         Tags = tags;
         Ancestors = ancestors;
         MiddlewareState = middlewareState;
+
+        // V3: Tree navigation properties
+        SiblingIndex = siblingIndex;
+        TotalSiblings = totalSiblings;
+        IsOriginal = isOriginal;
+        OriginalBranchId = originalBranchId;
+        PreviousSiblingId = previousSiblingId;
+        NextSiblingId = nextSiblingId;
+        ChildBranches = childBranches ?? [];
     }
 
     /// <summary>
@@ -236,12 +351,20 @@ public class Branch
     }
 
     /// <summary>
-    /// Get a display name for this branch based on first user message or description.
+    /// Get a display name for this branch based on Name, Description, or first user message.
     /// Useful for UI display in branch lists.
     /// </summary>
     public string GetDisplayName(int maxLength = 30)
     {
-        // Check for explicit description first
+        // Check for explicit name first
+        if (!string.IsNullOrEmpty(Name))
+        {
+            return Name.Length <= maxLength
+                ? Name
+                : Name.Substring(0, maxLength - 3) + "...";
+        }
+
+        // Fall back to description
         if (!string.IsNullOrEmpty(Description))
         {
             return Description.Length <= maxLength
@@ -259,5 +382,78 @@ public class Branch
             return text;
 
         return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    /// <summary>
+    /// V3: Check if this branch is a leaf (has no children).
+    /// </summary>
+    public bool IsLeaf => ChildBranches.Count == 0;
+
+    /// <summary>
+    /// V3: Check if this branch is the root (no parent).
+    /// </summary>
+    public bool IsRoot => ForkedFrom == null;
+
+    /// <summary>
+    /// V3: Validate branch tree invariants.
+    /// Throws InvalidOperationException if any invariant is violated.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when tree invariants are violated</exception>
+    public void ValidateTreeInvariants()
+    {
+        // Invariant 1: Original branches
+        if ((ForkedFrom == null) != IsOriginal)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: IsOriginal={IsOriginal} but ForkedFrom={ForkedFrom ?? "null"}");
+        }
+
+        // Invariant 2: Sibling index range
+        if (SiblingIndex < 0 || SiblingIndex >= TotalSiblings)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: SiblingIndex={SiblingIndex} out of range [0, {TotalSiblings})");
+        }
+
+        // Invariant 3: Total siblings must be positive
+        if (TotalSiblings <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: TotalSiblings={TotalSiblings} must be positive");
+        }
+
+        // Invariant 4: First sibling
+        if (SiblingIndex == 0 && PreviousSiblingId != null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: First sibling (index=0) has PreviousSiblingId={PreviousSiblingId}");
+        }
+
+        // Invariant 5: Last sibling
+        if (SiblingIndex == TotalSiblings - 1 && NextSiblingId != null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: Last sibling (index={TotalSiblings - 1}) has NextSiblingId={NextSiblingId}");
+        }
+
+        // Invariant 6: Middle siblings must have both pointers
+        if (SiblingIndex > 0 && PreviousSiblingId == null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: Middle sibling (index={SiblingIndex}) has null PreviousSiblingId");
+        }
+
+        if (SiblingIndex < TotalSiblings - 1 && NextSiblingId == null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: Middle sibling (index={SiblingIndex}) has null NextSiblingId");
+        }
+
+        // Invariant 7: Original branch ID consistency
+        if (IsOriginal && OriginalBranchId != null)
+        {
+            throw new InvalidOperationException(
+                $"Branch {Id}: Original branch should have OriginalBranchId=null, but has {OriginalBranchId}");
+        }
     }
 }

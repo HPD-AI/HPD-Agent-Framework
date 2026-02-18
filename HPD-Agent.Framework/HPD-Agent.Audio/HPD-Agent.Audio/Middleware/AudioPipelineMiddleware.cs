@@ -357,10 +357,10 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     /// </summary>
     public async Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken cancellationToken)
     {
-        // Support both AudioRunOptions (new slim API) and AudioConfig (legacy full API)
-        AudioConfig? audioOptions = context.RunOptions?.Audio switch
+        // Support both AudioRunConfig (new slim API) and AudioConfig (legacy full API)
+        AudioConfig? audioOptions = context.RunConfig?.Audio switch
         {
-            AudioRunOptions runOpts => runOpts.ToFullConfig(),
+            AudioRunConfig runOpts => runOpts.ToFullConfig(),
             AudioConfig cfg => cfg,
             _ => null
         };
@@ -563,7 +563,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         [EnumeratorCancellation] CancellationToken ct)
     {
         // Resolve audio options from request
-        var audioOptions = request.RunOptions?.Audio as AudioConfig;
+        var audioOptions = request.RunConfig?.Audio as AudioConfig;
 
         // Check if audio is disabled for this request
         if (audioOptions?.Disabled == true || TextToSpeechClient == null || !HasAudioOutput)
@@ -584,7 +584,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var audioOptions = request.RunOptions?.Audio as AudioConfig;
+        var audioOptions = request.RunConfig?.Audio as AudioConfig;
 
         // Create stream handle for interruption support (from Priority Streaming)
         var stream = request.Streams?.Create();

@@ -157,7 +157,7 @@ public static class SseHelper
         ArgumentNullException.ThrowIfNull(writeAsync);
         ArgumentNullException.ThrowIfNull(flushAsync);
 
-        await foreach (var evt in agent.RunAsync(messages, options: (AgentRunOptions?)null, cancellationToken: cancellationToken))
+        await foreach (var evt in agent.RunAsync(messages, options: (AgentRunConfig?)null, cancellationToken: cancellationToken))
         {
             var json = AgentEventSerializer.ToJson(evt);
             await writeAsync($"data: {json}\n\n");
@@ -188,7 +188,7 @@ public static class SseHelper
         ArgumentNullException.ThrowIfNull(flushAsync);
         ArgumentNullException.ThrowIfNull(eventSerializer);
 
-        await foreach (var evt in agent.RunAsync(messages, options: (AgentRunOptions?)null, cancellationToken: cancellationToken))
+        await foreach (var evt in agent.RunAsync(messages, options: (AgentRunConfig?)null, cancellationToken: cancellationToken))
         {
             var json = eventSerializer(evt);
             await writeAsync($"data: {json}\n\n");

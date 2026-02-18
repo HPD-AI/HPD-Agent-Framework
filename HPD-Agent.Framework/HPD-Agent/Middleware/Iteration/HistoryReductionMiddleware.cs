@@ -90,11 +90,11 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     {
         var startTime = DateTimeOffset.UtcNow;
 
-        // Check for explicit skip flag in RunOptions (highest priority)
-        if (context.RunOptions.SkipHistoryReduction)
+        // Check for explicit skip flag in RunConfig (highest priority)
+        if (context.RunConfig.SkipHistoryReduction)
         {
             EmitHistoryReductionEvent(context, HistoryReductionStatus.Skipped,
-                reason: "Explicitly skipped via RunOptions.SkipHistoryReduction", startTime: startTime);
+                reason: "Explicitly skipped via RunConfig.SkipHistoryReduction", startTime: startTime);
             return;
         }
 
@@ -106,8 +106,8 @@ public class HistoryReductionMiddleware : IAgentMiddleware
             return;
         }
 
-        // Check for explicit trigger flag in RunOptions (bypasses threshold checks)
-        var shouldTrigger = context.RunOptions.TriggerHistoryReduction;
+        // Check for explicit trigger flag in RunConfig (bypasses threshold checks)
+        var shouldTrigger = context.RunConfig.TriggerHistoryReduction;
 
         // If not explicitly triggered, check automatic thresholds
         if (!shouldTrigger)
@@ -289,8 +289,8 @@ public class HistoryReductionMiddleware : IAgentMiddleware
     /// </summary>
     private void TerminateIfCircuitBreaker(BeforeMessageTurnContext context, string reason)
     {
-        // Determine effective behavior (RunOptions override takes precedence)
-        var effectiveBehavior = context.RunOptions.HistoryReductionBehaviorOverride ?? Config.Behavior;
+        // Determine effective behavior (RunConfig override takes precedence)
+        var effectiveBehavior = context.RunConfig.HistoryReductionBehaviorOverride ?? Config.Behavior;
 
         // If circuit breaker mode, terminate the turn
         if (effectiveBehavior == HistoryReductionBehavior.CircuitBreaker)

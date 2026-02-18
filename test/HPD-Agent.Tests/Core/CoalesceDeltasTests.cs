@@ -26,7 +26,7 @@ public class CoalesceDeltasTests : AgentTestBase
         fakeClient.EnqueueStreamingResponse("Hello", " ", "world", "!");
 
         var agent = CreateAgent(client: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             CoalesceDeltas = false // Explicit, though this is default
         };
@@ -60,7 +60,7 @@ public class CoalesceDeltasTests : AgentTestBase
         fakeClient.EnqueueStreamingResponse("Hello", " ", "world", "!");
 
         var agent = CreateAgent(client: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             CoalesceDeltas = true
         };
@@ -89,7 +89,7 @@ public class CoalesceDeltasTests : AgentTestBase
         fakeClient.EnqueueStreamingResponse("Test", " ", "message");
 
         var agent = CreateAgent(client: fakeClient);
-        var options = new AgentRunOptions { CoalesceDeltas = true };
+        var options = new AgentRunConfig { CoalesceDeltas = true };
 
         // Act
         var events = new List<AgentEvent>();
@@ -137,10 +137,10 @@ public class CoalesceDeltasTests : AgentTestBase
     }
 
     /// <summary>
-    /// Test that AgentRunOptions.CoalesceDeltas overrides AgentConfig.CoalesceDeltas
+    /// Test that AgentRunConfig.CoalesceDeltas overrides AgentConfig.CoalesceDeltas
     /// </summary>
     [Fact]
-    public async Task CoalesceDeltas_RunOptions_OverridesConfig()
+    public async Task CoalesceDeltas_RunConfig_OverridesConfig()
     {
         // Arrange: Config says coalesce=true, but run options says false
         var config = DefaultConfig();
@@ -150,7 +150,7 @@ public class CoalesceDeltasTests : AgentTestBase
         fakeClient.EnqueueStreamingResponse("Override", " ", "test");
 
         var agent = CreateAgent(config: config, client: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             CoalesceDeltas = false  // Run options overrides to false
         };

@@ -94,7 +94,30 @@ public class DynamicMemoryAgentMiddleware : IAgentMiddleware
 
         // Use MemoryId if set, otherwise fall back to agent name
         var storageKey = _memoryId ?? agentName;
-        var memories = await _store.GetMemoriesAsync(storageKey);
+
+        // Use V2 ContentStore API - query all memories for this agent
+        var contentInfoList = await _store.QueryAsync(scope: storageKey);
+
+        // Fetch full content for each memory and reconstruct DynamicMemory objects
+        var memories = new List<DynamicMemory>();
+        foreach (var info in contentInfoList)
+        {
+            var contentData = await _store.GetAsync(scope: storageKey, contentId: info.Id);
+            if (contentData != null)
+            {
+                var memory = new DynamicMemory
+                {
+                    Id = contentData.Id,
+                    Title = info.Name,
+                    Content = System.Text.Encoding.UTF8.GetString(contentData.Data),
+                    Created = info.CreatedAt,
+                    LastUpdated = info.LastModified ?? info.CreatedAt,
+                    LastAccessed = info.LastAccessed ?? info.CreatedAt
+                };
+                memories.Add(memory);
+            }
+        }
+
         var memoryTag = BuildMemoryTag(memories);
 
         lock (_cacheLock)

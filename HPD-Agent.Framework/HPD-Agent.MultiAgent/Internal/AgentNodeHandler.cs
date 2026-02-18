@@ -216,12 +216,12 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
 
         // Build per-invocation options (with fallback chat client from parent)
-        var runOptions = BuildRunOptions(options, context);
+        var runConfig = BuildRunConfig(options, context);
 
         await foreach (var evt in agent.RunAsync(
             messages: messages,
             session: null,
-            options: runOptions,
+            options: runConfig,
             cancellationToken: ct))
         {
             // Bubble agent events up to graph event stream
@@ -253,10 +253,10 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         }
 
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
-        var runOptions = BuildRunOptions(options, context);
+        var runConfig = BuildRunConfig(options, context);
 
         // Configure structured output
-        runOptions.StructuredOutput = new StructuredOutputOptions
+        runConfig.StructuredOutput = new StructuredOutputOptions
         {
             Mode = options.StructuredOutputMode == StructuredOutputMode.Native ? "native" : "tool",
             SchemaName = options.StructuredType.Name
@@ -267,7 +267,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         await foreach (var evt in agent.RunAsync(
             messages: messages,
             session: null,
-            options: runOptions,
+            options: runConfig,
             cancellationToken: ct))
         {
             context.EventCoordinator?.Emit(evt);
@@ -308,10 +308,10 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         }
 
         var messages = new[] { new ChatMessage(ChatRole.User, input) };
-        var runOptions = BuildRunOptions(options, context);
+        var runConfig = BuildRunConfig(options, context);
 
         // Configure union output
-        runOptions.StructuredOutput = new StructuredOutputOptions
+        runConfig.StructuredOutput = new StructuredOutputOptions
         {
             Mode = options.StructuredOutputMode == StructuredOutputMode.Native ? "union" : "tool",
             UnionTypes = options.UnionTypes
@@ -323,7 +323,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         await foreach (var evt in agent.RunAsync(
             messages: messages,
             session: null,
-            options: runOptions,
+            options: runConfig,
             cancellationToken: ct))
         {
             context.EventCoordinator?.Emit(evt);
@@ -376,31 +376,31 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         string? selectedHandoff = null;
         var responseText = new StringBuilder();
 
-        var runOptions = BuildRunOptions(options, context);
+        var runConfig = BuildRunConfig(options, context);
 
         // Generate and inject handoff tools via public AdditionalTools API
         var handoffTools = HandoffToolGenerator.CreateHandoffTools(options.HandoffTargets);
         if (handoffTools.Count > 0)
         {
-            runOptions.AdditionalTools = handoffTools;
+            runConfig.AdditionalTools = handoffTools;
 
             // Force tool calling mode so the agent must call a handoff
-            runOptions.ToolModeOverride = ChatToolMode.RequireAny;
+            runConfig.ToolModeOverride = ChatToolMode.RequireAny;
         }
 
         // Append handoff instructions to system prompt
         var handoffInstructions = HandoffToolGenerator.CreateHandoffSystemPrompt(options.HandoffTargets);
         if (!string.IsNullOrEmpty(handoffInstructions))
         {
-            runOptions.AdditionalSystemInstructions = string.IsNullOrEmpty(runOptions.AdditionalSystemInstructions)
+            runConfig.AdditionalSystemInstructions = string.IsNullOrEmpty(runConfig.AdditionalSystemInstructions)
                 ? handoffInstructions
-                : runOptions.AdditionalSystemInstructions + handoffInstructions;
+                : runConfig.AdditionalSystemInstructions + handoffInstructions;
         }
 
         await foreach (var evt in agent.RunAsync(
             messages: messages,
             session: null,
-            options: runOptions,
+            options: runConfig,
             cancellationToken: ct))
         {
             context.EventCoordinator?.Emit(evt);
@@ -439,39 +439,39 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         return outputs;
     }
 
-    private static AgentRunOptions BuildRunOptions(AgentNodeOptions options, AgentGraphContext? graphContext = null)
+    private static AgentRunConfig BuildRunConfig(AgentNodeOptions options, AgentGraphContext? graphContext = null)
     {
-        var runOptions = new AgentRunOptions();
+        var runConfig = new AgentRunConfig();
 
         if (!string.IsNullOrEmpty(options.AdditionalSystemInstructions))
         {
-            runOptions.AdditionalSystemInstructions = options.AdditionalSystemInstructions;
+            runConfig.AdditionalSystemInstructions = options.AdditionalSystemInstructions;
         }
 
         if (options.ContextInstances != null && options.ContextInstances.Count > 0)
         {
-            runOptions.ContextInstances = new Dictionary<string, IToolMetadata>();
+            runConfig.ContextInstances = new Dictionary<string, IToolMetadata>();
             foreach (var kvp in options.ContextInstances)
             {
                 if (kvp.Value is IToolMetadata metadata)
                 {
-                    runOptions.ContextInstances[kvp.Key] = metadata;
+                    runConfig.ContextInstances[kvp.Key] = metadata;
                 }
             }
         }
 
         if (options.Timeout.HasValue)
         {
-            runOptions.RunTimeout = options.Timeout.Value;
+            runConfig.RunTimeout = options.Timeout.Value;
         }
 
         // Use fallback chat client from parent agent if available
         if (graphContext?.FallbackChatClient != null)
         {
-            runOptions.OverrideChatClient = graphContext.FallbackChatClient;
+            runConfig.OverrideChatClient = graphContext.FallbackChatClient;
         }
 
-        return runOptions;
+        return runConfig;
     }
 
     private static Dictionary<string, object> FlattenToOutputs(object? result, Type? type)

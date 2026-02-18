@@ -171,7 +171,7 @@ describe('AgentClient', () => {
       start(controller) {
         controller.enqueue(
           new TextEncoder().encode(
-            'data: {"version":"1.0","type":"REASONING","phase":"Delta","messageId":"msg-1","text":"Let me think about this..."}\n\n' +
+            'data: {"version":"1.0","type":"REASONING_DELTA","messageId":"msg-1","text":"Let me think about this..."}\n\n' +
               'data: {"version":"1.0","type":"MESSAGE_TURN_FINISHED","messageTurnId":"turn-1","conversationId":"conv-1","agentName":"TestAgent","duration":"00:00:01","timestamp":"2024-01-01T00:00:00Z"}\n\n'
           )
         );

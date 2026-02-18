@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.OpenAI;
 
@@ -30,5 +31,10 @@ public static class OpenAIProviderModule
             "azure-openai",
             json => JsonSerializer.Deserialize(json, OpenAIJsonContext.Default.OpenAIProviderConfig),
             config => JsonSerializer.Serialize(config, OpenAIJsonContext.Default.OpenAIProviderConfig));
+
+        // Register environment variable aliases for unified secret resolution
+        SecretAliasRegistry.Register("openai:ApiKey", "OPENAI_API_KEY");
+        SecretAliasRegistry.Register("azure-openai:ApiKey", "AZURE_OPENAI_API_KEY");
+        SecretAliasRegistry.Register("azure-openai:Endpoint", "AZURE_OPENAI_ENDPOINT");
     }
 }

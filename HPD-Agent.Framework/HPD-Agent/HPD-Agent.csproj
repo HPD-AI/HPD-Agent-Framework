@@ -25,11 +25,11 @@
   <ItemGroup>
     <!-- Core AI Framework (Protocol-Agnostic) -->
     <!-- Microsoft.Agents.AI.Abstractions removed - core is now protocol-agnostic -->
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
-        <PackageReference Include="Microsoft.Extensions.AI" Version="10.1.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+        <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.1" />
@@ -52,9 +52,10 @@
     </ItemGroup>
   </Target>
 
-  <!-- Expose internals to test project -->
+  <!-- Expose internals to test projects -->
   <ItemGroup>
     <InternalsVisibleTo Include="HPD-Agent.Tests" />
+    <InternalsVisibleTo Include="HPD-Agent.Hosting.Tests" />
   </ItemGroup>
 
 </Project>

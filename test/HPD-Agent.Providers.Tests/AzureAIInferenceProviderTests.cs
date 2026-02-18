@@ -113,7 +113,7 @@ public class AzureAIInferenceProviderTests
 
         // Assert
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.Contains("API Key is required"));
+        result.Errors.Should().Contain(e => e.Contains("API key is required")); // Note: lowercase 'k'
     }
 
     [Fact]

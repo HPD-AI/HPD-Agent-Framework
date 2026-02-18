@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Azure;
 using Azure.AI.Inference;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.AzureAIInference;
 
@@ -36,35 +39,22 @@ internal class AzureAIInferenceProvider : IProviderFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        string? endpoint = config.Endpoint;
-        if (string.IsNullOrEmpty(endpoint))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
-            if (config.AdditionalProperties?.TryGetValue("Endpoint", out var endpointObj) == true)
-            {
-                endpoint = endpointObj?.ToString();
-            }
-        }
-        endpoint ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_ENDPOINT");
-
-        string? apiKey = config.ApiKey;
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            if (config.AdditionalProperties?.TryGetValue("ApiKey", out var apiKeyObj) == true)
-            {
-                apiKey = apiKeyObj?.ToString();
-            }
-        }
-        apiKey ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_API_KEY");
-
-        if (string.IsNullOrEmpty(endpoint))
-        {
-            throw new InvalidOperationException("For AzureAIInference, the Endpoint must be configured.");
+            throw new InvalidOperationException(
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
         }
 
-        if (string.IsNullOrEmpty(apiKey))
-        {
-             throw new InvalidOperationException("For AzureAIInference, the ApiKey must be configured.");
-        }
+        // Resolve required endpoint using ISecretResolver (Azure AI Inference requires endpoint)
+        var endpointTask = secrets.RequireAsync("azure-ai-inference:Endpoint", "Azure AI Inference", config.Endpoint, CancellationToken.None);
+        string endpoint = endpointTask.GetAwaiter().GetResult();
+
+        // Resolve required API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("azure-ai-inference:ApiKey", "Azure AI Inference", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         var client = new ChatCompletionsClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
         IChatClient chatClient = client.AsIChatClient(config.ModelName);
@@ -108,31 +98,19 @@ internal class AzureAIInferenceProvider : IProviderFeatures
         if (string.IsNullOrEmpty(config.ModelName))
             errors.Add("Model name is required for Azure AI Inference");
 
-        string? endpoint = config.Endpoint;
-        if (string.IsNullOrEmpty(endpoint))
+        // Note: Endpoint and API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.Endpoint))
         {
-            if (config.AdditionalProperties?.TryGetValue("Endpoint", out var endpointObj) == true)
-            {
-                endpoint = endpointObj?.ToString();
-            }
+            errors.Add("Endpoint is required for Azure AI Inference. " +
+                      "Set it via the endpoint parameter, AZURE_AI_INFERENCE_ENDPOINT environment variable, or configuration.");
         }
-        endpoint ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_ENDPOINT");
 
-        string? apiKey = config.ApiKey;
-        if (string.IsNullOrEmpty(apiKey))
+        if (string.IsNullOrEmpty(config.ApiKey))
         {
-            if (config.AdditionalProperties?.TryGetValue("ApiKey", out var apiKeyObj) == true)
-            {
-                apiKey = apiKeyObj?.ToString();
-            }
+            errors.Add("API key is required for Azure AI Inference. " +
+                      "Set it via the apiKey parameter, AZURE_AI_INFERENCE_API_KEY environment variable, or configuration.");
         }
-        apiKey ??= Environment.GetEnvironmentVariable("AZURE_AI_INFERENCE_API_KEY");
-
-        if (string.IsNullOrEmpty(endpoint))
-            errors.Add("Endpoint is required. Configure it in ProviderConfig, AdditionalProperties, or via the AZURE_AI_INFERENCE_ENDPOINT environment variable.");
-
-        if (string.IsNullOrEmpty(apiKey))
-            errors.Add("API Key is required. Configure it in ProviderConfig, AdditionalProperties, or via the AZURE_AI_INFERENCE_API_KEY environment variable.");
 
         // Validate provider-specific config if present
         var azureConfig = config.GetTypedProviderConfig<AzureAIInferenceProviderConfig>();

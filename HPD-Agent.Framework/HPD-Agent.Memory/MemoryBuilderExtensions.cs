@@ -95,17 +95,17 @@ public static class MemoryBuilderExtensions
         {
             var store = options.Store;
             // Get existing documents to avoid re-extracting
-            var existingDocs = store.GetDocumentsAsync(knowledgeId).GetAwaiter().GetResult();
-            
+            var existingDocs = store.QueryAsync(scope: knowledgeId).GetAwaiter().GetResult();
+
             foreach (var doc in options.DocumentsToAdd)
             {
                 if (store is JsonStaticMemoryStore jsonStore)
                 {
                     // Check if document with this path already exists
                     var fileName = Path.GetFileName(doc.PathOrUrl);
-                    var alreadyExists = existingDocs.Any(d => 
-                        d.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase) ||
-                        d.OriginalPath.Equals(doc.PathOrUrl, StringComparison.OrdinalIgnoreCase));
+                    var alreadyExists = existingDocs.Any(d =>
+                        d.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase) ||
+                        (d.OriginalSource != null && d.OriginalSource.Equals(doc.PathOrUrl, StringComparison.OrdinalIgnoreCase)));
                     
                     if (alreadyExists)
                     {

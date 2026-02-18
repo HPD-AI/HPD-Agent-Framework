@@ -139,7 +139,7 @@ public class ChatClientInheritanceTests
         var builder = new AgentBuilder(config).WithDeferredProvider();
 
         // Act & Assert - deferred provider skips provider validation but still needs client at runtime
-        // The client must be provided via OverrideChatClient in RunOptions
+        // The client must be provided via OverrideChatClient in RunConfig
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
             await builder.Build(CancellationToken.None));
     }

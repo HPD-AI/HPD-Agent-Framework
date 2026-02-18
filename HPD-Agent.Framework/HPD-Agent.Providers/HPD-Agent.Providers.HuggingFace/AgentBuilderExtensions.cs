@@ -113,8 +113,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model repository ID is required for HuggingFace provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "huggingface");
+        // Note: API key resolution is now handled by ISecretResolver in the provider's CreateChatClient method
+        // We store the explicit override (if provided) in config.ApiKey, and ISecretResolver will handle the resolution chain
 
         // Create provider config
         var providerConfig = new HuggingFaceProviderConfig();
@@ -130,7 +130,7 @@ public static class AgentBuilderExtensions
         {
             ProviderKey = "huggingface",
             ModelName = model,
-            ApiKey = resolvedApiKey
+            ApiKey = apiKey // Store explicit override; ISecretResolver will handle resolution
         };
 
         // Store the typed config

@@ -16,12 +16,18 @@
     <ProjectReference Include="../../HPD-Agent.ServiceDefaults/HPD-Agent.ServiceDefaults.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj" />
+    <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.AspNetCore/HPD-Agent.AspNetCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.9.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.9.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exclude WIP files from compilation -->
+    <Compile Remove="Program_New.cs" />
   </ItemGroup>
 
 </Project>

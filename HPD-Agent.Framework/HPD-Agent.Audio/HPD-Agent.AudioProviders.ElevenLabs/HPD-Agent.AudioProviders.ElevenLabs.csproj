@@ -26,8 +26,8 @@
 
   <ItemGroup>
     <PackageReference Include="ElevenLabs" Version="0.9.0" />
-    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.1.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
   </ItemGroup>
 
   <!-- Expose internals to test project -->

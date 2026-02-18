@@ -1,11 +1,14 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
+using System.Threading;
 using GenerativeAI.Microsoft;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.GoogleAI;
 
@@ -32,19 +35,35 @@ internal class GoogleAIProvider : IProviderFeatures
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        // Resolve API key using the helper utility (handles env vars, config, etc.)
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "google-ai");
-
-        // Fallback: Try "gemini" as alternative environment variable key
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            apiKey = ProviderConfigurationHelper.ResolveApiKey(null, "gemini");
-        }
-
-        if (string.IsNullOrEmpty(apiKey))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
             throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetApiKeyErrorMessage("google-ai", "Google AI"));
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
+        }
+
+        // Resolve API key using ISecretResolver
+        // Try "google-ai:ApiKey" first, then fallback to "gemini:ApiKey" for compatibility
+        string? apiKey = null;
+        try
+        {
+            var apiKeyTask = secrets.RequireAsync("google-ai:ApiKey", "Google AI", config.ApiKey, CancellationToken.None);
+            apiKey = apiKeyTask.GetAwaiter().GetResult();
+        }
+        catch (SecretNotFoundException)
+        {
+            // Fallback: Try "gemini" as alternative key
+            if (config.ApiKey == null)
+            {
+                var apiKeyTask = secrets.RequireAsync("gemini:ApiKey", "Google AI (Gemini)", null, CancellationToken.None);
+                apiKey = apiKeyTask.GetAwaiter().GetResult();
+            }
+            else
+            {
+                throw; // Re-throw if explicit config.ApiKey was provided but failed
+            }
         }
 
         string? modelName = config.ModelName;
@@ -94,17 +113,13 @@ internal class GoogleAIProvider : IProviderFeatures
     {
         var errors = new List<string>();
 
-        // Validate API key using the helper utility
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "google-ai");
-
-        // Fallback: Try "gemini" as alternative environment variable key
-        if (string.IsNullOrEmpty(apiKey))
+        // Note: API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.ApiKey))
         {
-            apiKey = ProviderConfigurationHelper.ResolveApiKey(null, "gemini");
+            errors.Add("API key is required for Google AI. " +
+                      "Set it via the apiKey parameter, GOOGLE_AI_API_KEY or GEMINI_API_KEY environment variable, or configuration.");
         }
-
-        if (string.IsNullOrEmpty(apiKey))
-            errors.Add(ProviderConfigurationHelper.GetApiKeyErrorMessage("google-ai", "Google AI"));
 
         if (string.IsNullOrEmpty(config.ModelName))
             errors.Add("Model name is required");

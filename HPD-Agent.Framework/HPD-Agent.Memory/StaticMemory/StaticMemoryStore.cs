@@ -10,42 +10,35 @@ namespace HPD.Agent.Memory;
 /// Follows the same pattern as ConversationThread/AgentThread and DynamicMemoryStore.
 /// Implementations can store knowledge in-memory, JSON files, databases, etc.
 /// </summary>
-public abstract class StaticMemoryStore
+/// <remarks>
+/// <para><b>IContentStore Integration (V2):</b></para>
+/// <para>
+/// StaticMemoryStore extends IContentStore for unified content operations. All IContentStore
+/// methods (Put/Get/Delete/Query) use the scope parameter (agentName) for per-agent isolation.
+/// </para>
+/// <para><b>Unique Features:</b></para>
+/// <para>
+/// Beyond the base IContentStore methods, StaticMemoryStore provides specialized features:
+/// - GetCombinedKnowledgeTextAsync: Combines all documents into a single text (for context injection)
+/// </para>
+/// <para><b>Example Usage:</b></para>
+/// <code>
+/// // Store knowledge document
+/// var docId = await staticMemory.PutAsync(
+///     scope: "agent1",
+///     data: Encoding.UTF8.GetBytes(markdownText),
+///     contentType: "text/markdown",
+///     metadata: new ContentMetadata { Name = "API Docs" });
+///
+/// // Query agent's knowledge
+/// var docs = await staticMemory.QueryAsync(scope: "agent1");
+///
+/// // Get combined knowledge text for context injection
+/// var knowledge = await staticMemory.GetCombinedKnowledgeTextAsync("agent1", maxTokens: 4000);
+/// </code>
+/// </remarks>
+public abstract class StaticMemoryStore : IContentStore
 {
-    /// <summary>
-    /// Asynchronously retrieves all knowledge documents for a specific agent.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse knowledge to</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of documents ordered by LastAccessed (most recent first)</returns>
-    public abstract Task<List<StaticMemoryDocument>> GetDocumentsAsync(string agentName, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Asynchronously retrieves a specific document by ID.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse knowledge to</param>
-    /// <param name="documentId">The document ID to retrieve</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The document if found, null otherwise</returns>
-    public abstract Task<StaticMemoryDocument?> GetDocumentAsync(string agentName, string documentId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Adds a new knowledge document for the agent.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse knowledge to</param>
-    /// <param name="document">The document to add</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The added document</returns>
-    public abstract Task<StaticMemoryDocument> AddDocumentAsync(string agentName, StaticMemoryDocument document, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Deletes a knowledge document.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse knowledge to</param>
-    /// <param name="documentId">The document ID to delete</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    public abstract Task DeleteDocumentAsync(string agentName, string documentId, CancellationToken cancellationToken = default);
-
     /// <summary>
     /// Gets combined text from all knowledge documents up to a token limit.
     /// Used for FullTextInjection strategy.
@@ -68,6 +61,37 @@ public abstract class StaticMemoryStore
     /// </summary>
     /// <returns>Serializable snapshot of the store's state</returns>
     public abstract StaticMemoryStoreSnapshot SerializeToSnapshot();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // IContentStore Implementation
+    // ═══════════════════════════════════════════════════════════════════
+    // Note: scope parameter = agentName for StaticMemoryStore
+
+    /// <inheritdoc />
+    public abstract Task<string> PutAsync(
+        string? scope,
+        byte[] data,
+        string contentType,
+        ContentMetadata? metadata = null,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<ContentData?> GetAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task DeleteAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<ContentInfo>> QueryAsync(
+        string? scope = null,
+        ContentQuery? query = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deserialize a store from a snapshot.

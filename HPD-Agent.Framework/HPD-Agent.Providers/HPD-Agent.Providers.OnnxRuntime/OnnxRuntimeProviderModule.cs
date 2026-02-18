@@ -23,5 +23,7 @@ public static class OnnxRuntimeProviderModule
             "onnx-runtime",
             json => JsonSerializer.Deserialize(json, OnnxRuntimeJsonContext.Default.OnnxRuntimeProviderConfig),
             config => JsonSerializer.Serialize(config, OnnxRuntimeJsonContext.Default.OnnxRuntimeProviderConfig));
+
+        // No API key registration needed - ONNX Runtime is a local inference engine
     }
 }

@@ -58,9 +58,9 @@ using HPD.Agent;
 [JsonSerializable(typeof(MiddlewareReference))]
 [JsonSerializable(typeof(List<MiddlewareReference>))]
 
-// --- Per-invocation run options (AgentRunOptions) ---
-[JsonSerializable(typeof(AgentRunOptions))]
-[JsonSerializable(typeof(ChatRunOptions))]
+// --- Per-invocation run options (AgentRunConfig) ---
+[JsonSerializable(typeof(AgentRunConfig))]
+[JsonSerializable(typeof(ChatRunConfig))]
 [JsonSerializable(typeof(Dictionary<string, bool>))]  // For PermissionOverrides
 
 // --- Conversation and messaging types ---
@@ -75,6 +75,7 @@ using HPD.Agent;
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatMessage))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatRole))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatOptions))]
+[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningOptions))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.UsageDetails))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.AdditionalPropertiesDictionary))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatFinishReason))]

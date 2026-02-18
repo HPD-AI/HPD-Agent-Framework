@@ -1,7 +1,10 @@
 using System;
+using System.Threading;
 using HPD.Agent;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.AzureAI;
 
@@ -157,8 +160,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for Azure AI provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "azure-ai");
+        // Note: API key resolution is deferred to CreateChatClient where ISecretResolver is available
+        // This allows the builder to work with env vars, config, and auth storage
 
         // Create provider config
         var providerConfig = new AzureAIProviderConfig();
@@ -174,7 +177,7 @@ public static class AgentBuilderExtensions
         {
             ProviderKey = "azure-ai",
             Endpoint = endpoint,
-            ApiKey = resolvedApiKey, // May be null - will use DefaultAzureCredential
+            ApiKey = apiKey, // May be null - will be resolved by ISecretResolver or use DefaultAzureCredential
             ModelName = model
         };
 

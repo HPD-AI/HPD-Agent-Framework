@@ -50,7 +50,7 @@ public class AgentContextTests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
 
         // Act - update via typed context
         typedContext.UpdateState(s => s with { Iteration = 10 });
@@ -69,7 +69,7 @@ public class AgentContextTests
         var options = new ChatOptions { Temperature = 0.7f };
 
         // Act
-        var iterContext = context.AsBeforeIteration(5, messages, options, new AgentRunOptions());
+        var iterContext = context.AsBeforeIteration(5, messages, options, new AgentRunConfig());
 
         // Assert
         Assert.Equal(5, iterContext.Iteration);
@@ -89,7 +89,7 @@ public class AgentContextTests
         };
 
         // Act
-        var afterContext = context.AsAfterIteration(1, toolResults, new AgentRunOptions());
+        var afterContext = context.AsAfterIteration(1, toolResults, new AgentRunConfig());
 
         // Assert
         Assert.Single(afterContext.ToolResults);
@@ -110,7 +110,7 @@ public class AgentContextTests
             function,
             "call123",
             args,
-            new AgentRunOptions(),
+            new AgentRunConfig(),
             "TestToolkit",
             "TestSkill");
 

@@ -482,7 +482,7 @@ Use `decimal` type for precision.";
             new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
 
-        return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runOptions: new AgentRunOptions());
+        return agentContext.AsBeforeIteration(iteration: 0, messages: messages, options: options, runConfig: new AgentRunConfig());
     }
 
     private static ContainerMiddleware CreateContainerMiddleware()
@@ -529,7 +529,7 @@ Use `decimal` type for precision.";
         var agentContext = CreateAgentContext(state);
         response ??= new ChatMessage(ChatRole.Assistant, []);
         toolCalls ??= new List<FunctionCallContent>();
-        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunConfig());
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(
@@ -539,7 +539,7 @@ Use `decimal` type for precision.";
         var agentContext = CreateAgentContext(state);
         var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
-        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunConfig());
     }
 
 }

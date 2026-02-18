@@ -167,7 +167,7 @@ public class ThreadSafetyTests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
 
         // Act
         await pipeline.ExecuteBeforeIterationAsync(iterationContext, CancellationToken.None);
@@ -189,7 +189,7 @@ public class ThreadSafetyTests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
 
         // Act
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -216,7 +216,7 @@ public class ThreadSafetyTests
         var beforeMsgTurnCtx = context.AsBeforeMessageTurn(
             null,
             new List<ChatMessage>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteBeforeMessageTurnAsync(beforeMsgTurnCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -224,7 +224,7 @@ public class ThreadSafetyTests
         var afterMsgTurnCtx = context.AsAfterMessageTurn(
             new ChatResponse(new ChatMessage(ChatRole.Assistant, "test")),
             new List<ChatMessage>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteAfterMessageTurnAsync(afterMsgTurnCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -233,7 +233,7 @@ public class ThreadSafetyTests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteBeforeIterationAsync(beforeIterCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -241,7 +241,7 @@ public class ThreadSafetyTests
         var beforeToolExecCtx = context.AsBeforeToolExecution(
             new ChatMessage(ChatRole.Assistant, new List<AIContent>()),
             new List<FunctionCallContent>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteBeforeToolExecutionAsync(beforeToolExecCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -249,14 +249,14 @@ public class ThreadSafetyTests
         var afterIterCtx = context.AsAfterIteration(
             0,
             new List<FunctionResultContent>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteAfterIterationAsync(afterIterCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
         // Test ExecuteBeforeParallelBatchAsync
         var beforeBatchCtx = context.AsBeforeParallelBatch(
             new List<ParallelFunctionInfo>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteBeforeParallelBatchAsync(beforeBatchCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -265,7 +265,7 @@ public class ThreadSafetyTests
             null,
             "test-call-id",
             new Dictionary<string, object?>(),
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteBeforeFunctionAsync(beforeFuncCtx, CancellationToken.None);
         AssertFlagCleared(context);
 
@@ -275,7 +275,7 @@ public class ThreadSafetyTests
             "test-call-id",
             null,
             null,
-            new AgentRunOptions());
+            new AgentRunConfig());
         await pipeline.ExecuteAfterFunctionAsync(afterFuncCtx, CancellationToken.None);
         AssertFlagCleared(context);
 

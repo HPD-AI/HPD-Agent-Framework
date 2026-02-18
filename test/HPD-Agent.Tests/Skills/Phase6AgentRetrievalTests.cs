@@ -182,5 +182,18 @@ public class Phase6AgentRetrievalTests : IDisposable
 
         public Task<bool> HealthCheckAsync(CancellationToken ct = default)
             => throw new NotImplementedException();
+
+        // IContentStore methods
+        public Task<string> PutAsync(string? scope, byte[] data, string contentType, ContentMetadata? metadata = null, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<ContentData?> GetAsync(string? scope, string contentId, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        Task IContentStore.DeleteAsync(string? scope, string contentId, CancellationToken cancellationToken)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ContentInfo>> QueryAsync(string? scope = null, ContentQuery? query = null, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 }

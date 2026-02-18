@@ -29,11 +29,15 @@ public class JsonSessionStore : ISessionStore
 {
     private readonly string _basePath;
     private readonly object _lock = new();
+    private readonly LocalFileAssetStore _assetStore;
 
     public JsonSessionStore(string basePath)
     {
         _basePath = basePath ?? throw new ArgumentNullException(nameof(basePath));
         Directory.CreateDirectory(_basePath);
+
+        // Create a single shared asset store - sessions will use scope parameter for isolation
+        _assetStore = new LocalFileAssetStore(_basePath);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -253,8 +257,8 @@ public class JsonSessionStore : ISessionStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        var sessionPath = GetSessionDirectoryPath(sessionId);
-        return new LocalFileAssetStore(sessionPath);
+        // Return the shared asset store - caller will use sessionId as scope parameter
+        return _assetStore;
     }
 
     // ═══════════════════════════════════════════════════════════════════

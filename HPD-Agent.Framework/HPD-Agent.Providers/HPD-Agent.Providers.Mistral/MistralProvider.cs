@@ -2,11 +2,15 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Mistral.SDK;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.Mistral;
 
@@ -36,14 +40,18 @@ internal class MistralProvider : IProviderFeatures
     [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in provider module")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        // Resolve API key using the helper utility (handles env vars, config, etc.)
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "mistral");
-
-        if (string.IsNullOrEmpty(apiKey))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
             throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetApiKeyErrorMessage("mistral", "Mistral"));
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
         }
+
+        // Resolve API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("mistral:ApiKey", "Mistral", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         string? modelName = config.ModelName;
         if (string.IsNullOrEmpty(modelName))
@@ -94,11 +102,13 @@ internal class MistralProvider : IProviderFeatures
         if (string.IsNullOrEmpty(config.ModelName))
             errors.Add("Model name is required for Mistral");
 
-        // Resolve API key using the helper utility
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "mistral");
-
-        if (string.IsNullOrEmpty(apiKey))
-            errors.Add(ProviderConfigurationHelper.GetApiKeyErrorMessage("mistral", "Mistral"));
+        // Note: API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.ApiKey))
+        {
+            errors.Add("API key is required for Mistral. " +
+                      "Set it via the apiKey parameter, MISTRAL_API_KEY environment variable, or configuration.");
+        }
 
         // Validate Mistral-specific config if present
         var mistralConfig = config.GetTypedProviderConfig<MistralProviderConfig>();

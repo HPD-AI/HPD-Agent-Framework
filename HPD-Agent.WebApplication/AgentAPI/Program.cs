@@ -44,7 +44,25 @@ var threadStore = new JsonSessionStore(
     Path.Combine(Environment.CurrentDirectory, "threads"));
 
 builder.Services.AddSingleton<ISessionStore>(threadStore);
-builder.Services.AddSingleton<ConversationManager>();
+
+// Create and register Agent
+var agent = await new AgentBuilder()
+    .WithProvider("openrouter", "z-ai/glm-4.6")
+    .WithName("AI Assistant")
+    .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
+    .WithDynamicMemory(opts => opts
+        .WithStorageDirectory("./agent-memory-storage")
+        .WithMaxTokens(6000))
+    .WithToolkit<MathTools>()
+    .WithPermissions()
+    .WithSessionStore(threadStore)
+    .Build();
+
+builder.Services.AddSingleton(agent);
+
+// Track running agents for middleware responses
+var runningAgents = new System.Collections.Concurrent.ConcurrentDictionary<string, Agent>();
+builder.Services.AddSingleton(runningAgents);
 
 var app = builder.Build();
 
@@ -57,22 +75,23 @@ app.UseWebSockets();
 // Conversation API
 var conversationsApi = app.MapGroup("/conversations").WithTags("Conversations");
 
-conversationsApi.MapPost("/", async (ConversationManager cm) =>
+conversationsApi.MapPost("/", () =>
 {
-    var (session, branch) = await cm.CreateConversationAsync();
-    return Results.Created($"/conversations/{session.Id}", new ConversationDto(
-        session.Id,
+    // Generate new session ID - session will be created on first RunAsync
+    var sessionId = Guid.NewGuid().ToString();
+    return Results.Created($"/conversations/{sessionId}", new ConversationDto(
+        sessionId,
         "New Conversation",
-        session.CreatedAt,
-        session.LastActivity,
-        branch.MessageCount));
+        DateTime.UtcNow,
+        DateTime.UtcNow,
+        0));
 });
 
-conversationsApi.MapGet("/{conversationId}", async (string conversationId, ConversationManager cm) =>
+conversationsApi.MapGet("/{conversationId}", async (string conversationId, Agent agent) =>
 {
-    var conversation = await cm.GetConversationAsync(conversationId);
-    if (conversation is null) return Results.NotFound();
-    var (session, branch) = conversation.Value;
+    var (session, branch) = await agent.LoadSessionAndBranchAsync(conversationId, "main");
+    if (session == null || branch == null) return Results.NotFound();
+
     return Results.Ok(new ConversationDto(
         session.Id,
         branch.GetDisplayName(),
@@ -81,24 +100,25 @@ conversationsApi.MapGet("/{conversationId}", async (string conversationId, Conve
         branch.MessageCount));
 });
 
-conversationsApi.MapDelete("/{conversationId}", async (string conversationId, ConversationManager cm) =>
+conversationsApi.MapDelete("/{conversationId}", async (string conversationId, Agent agent, System.Collections.Concurrent.ConcurrentDictionary<string, Agent> runningAgents) =>
 {
-    var deleted = await cm.DeleteConversationAsync(conversationId);
-    return deleted ? Results.NoContent() : Results.NotFound();
+    await agent.DeleteSessionAsync(conversationId);
+    runningAgents.TryRemove(conversationId, out _);
+    return Results.NoContent();
 });
 
 // List all persisted conversations
-conversationsApi.MapGet("/", async (ConversationManager cm) =>
+conversationsApi.MapGet("/", async (Agent agent) =>
 {
-    var ids = await cm.ListConversationIdsAsync();
+    var sessions = await agent.ListSessionsAsync();
     var conversations = new List<ConversationDto>();
 
-    foreach (var id in ids)
+    foreach (var session in sessions)
     {
-        var conversation = await cm.GetConversationAsync(id);
-        if (conversation is not null)
+        // Load the main branch to get message count and display name
+        var (_, branch) = await agent.LoadSessionAndBranchAsync(session.Id, "main");
+        if (branch != null)
         {
-            var (session, branch) = conversation.Value;
             conversations.Add(new ConversationDto(
                 session.Id,
                 branch.GetDisplayName(),
@@ -112,18 +132,17 @@ conversationsApi.MapGet("/", async (ConversationManager cm) =>
 });
 
 // Get messages for a conversation
-conversationsApi.MapGet("/{conversationId}/messages", async (string conversationId, ConversationManager cm) =>
+conversationsApi.MapGet("/{conversationId}/messages", async (string conversationId, Agent agent) =>
 {
     Console.WriteLine($"[MESSAGES] Getting messages for conversation {conversationId}");
 
-    var conversation = await cm.GetConversationAsync(conversationId);
-    if (conversation is null)
+    var (session, branch) = await agent.LoadSessionAndBranchAsync(conversationId, "main");
+    if (session == null || branch == null)
     {
         Console.WriteLine($"[MESSAGES] Conversation not found");
         return Results.NotFound(new ErrorResponse("Conversation not found"));
     }
 
-    var (_, branch) = conversation.Value;
     Console.WriteLine($"[MESSAGES] Branch has {branch.MessageCount} messages");
     var messages = branch.Messages.Select((m, i) => new MessageDto(
         i,
@@ -146,12 +165,8 @@ var agentApi = app.MapGroup("/agent").WithTags("Agent");
 
 // Permission response endpoint
 agentApi.MapPost("/conversations/{conversationId}/permissions/respond",
-    (string conversationId, PermissionResponseRequest request, ConversationManager cm) =>
+    (string conversationId, PermissionResponseRequest request, Agent agent) =>
 {
-    var agent = cm.GetRunningAgent(conversationId);
-    if (agent == null)
-        return Results.NotFound(new ErrorResponse("No active agent for this conversation"));
-
     // Convert string choice to PermissionChoice enum
     var choice = request.Choice?.ToLower() switch
     {
@@ -175,12 +190,8 @@ agentApi.MapPost("/conversations/{conversationId}/permissions/respond",
 
 // Client tool response endpoint
 agentApi.MapPost("/conversations/{conversationId}/Client-tools/respond",
-    (string conversationId, ClientToolResponseRequest request, ConversationManager cm) =>
+    (string conversationId, ClientToolResponseRequest request, Agent agent) =>
 {
-    var agent = cm.GetRunningAgent(conversationId);
-    if (agent == null)
-        return Results.NotFound(new ErrorResponse("No active agent for this conversation"));
-
     // Convert content to IToolResultContent list
     var content = request.Content?.Select<ClientToolContentDto, HPD.Agent.ClientTools.IToolResultContent>(c => c.Type switch
     {
@@ -211,17 +222,8 @@ agentApi.MapPost("/conversations/{conversationId}/Client-tools/respond",
 
 // Streaming SSE endpoint
 agentApi.MapPost("/conversations/{conversationId}/stream",
-    async (string conversationId, StreamRequest request, ConversationManager cm, HttpContext context) =>
+    async (string conversationId, StreamRequest request, Agent agent, HttpContext context) =>
 {
-    var conversation = await cm.GetConversationAsync(conversationId);
-    if (conversation is null)
-    {
-        context.Response.StatusCode = 404;
-        return;
-    }
-
-    var (session, branch) = conversation.Value;
-
     // SSE headers
     context.Response.Headers.Append("Content-Type", "text/event-stream");
     context.Response.Headers.Append("Cache-Control", "no-cache");
@@ -232,8 +234,7 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
 
     try
     {
-        var agent = await cm.GetAgentAsync(conversationId);
-        var chatMessages = request.Messages.Select(m => new ChatMessage(ChatRole.User, m.Content)).ToList();
+        var message = request.Messages.Select(m => m.Content).FirstOrDefault() ?? "";
 
         var runInput = BuildRunInput(request);
 
@@ -248,8 +249,8 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
         }
 
         int eventCount = 0;
-        var runOptions = runInput != null ? new AgentRunOptions { ClientToolInput = runInput } : null;
-        await foreach (var evt in agent.RunAsync(chatMessages, session: session, branch: branch, options: runOptions, cancellationToken: context.RequestAborted))
+        var runConfig = runInput != null ? new AgentRunConfig { ClientToolInput = runInput } : null;
+        await foreach (var evt in agent.RunAsync(message, conversationId, "main", options: runConfig, cancellationToken: context.RequestAborted))
         {
             eventCount++;
             Console.WriteLine($"[ENDPOINT] Yielded event #{eventCount}: {evt.GetType().Name}");
@@ -276,7 +277,7 @@ agentApi.MapPost("/conversations/{conversationId}/stream",
 
 // WebSocket endpoint
 agentApi.MapGet("/conversations/{conversationId}/ws",
-    async (string conversationId, HttpContext context, ConversationManager cm) =>
+    async (string conversationId, HttpContext context, Agent agent) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -285,22 +286,9 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
     }
 
     using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-    var conversation = await cm.GetConversationAsync(conversationId);
-
-    if (conversation is null)
-    {
-        await webSocket.CloseAsync(
-            System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
-            "Conversation not found",
-            CancellationToken.None);
-        return;
-    }
-
-    var (session, branch) = conversation.Value;
 
     try
     {
-        var agent = await cm.GetAgentAsync(conversationId);
         var jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -312,9 +300,7 @@ agentApi.MapGet("/conversations/{conversationId}/ws",
         var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
         var userMessage = System.Text.Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
 
-        var chatMessage = new ChatMessage(ChatRole.User, userMessage);
-
-        await foreach (var evt in agent.RunAsync(new[] { chatMessage }, session: session, branch: branch, options: null, cancellationToken: CancellationToken.None))
+        await foreach (var evt in agent.RunAsync(userMessage, conversationId, "main", options: null, cancellationToken: CancellationToken.None))
         {
             if (evt is TextDeltaEvent textDelta)
             {
@@ -392,86 +378,6 @@ static void ValidateCheckpointingConfiguration(IServiceProvider services)
     {
         Console.WriteLine($"\n⚠ Warning: Could not validate thread store configuration: {ex.Message}\n");
     }
-}
-
-// Conversation Manager
-internal class ConversationManager
-{
-    private readonly ISessionStore _threadStore;
-    private readonly Dictionary<string, (Session Session, Branch Branch)> _threadCache = new();
-    private readonly Dictionary<string, Agent> _runningAgents = new();
-
-    public ConversationManager(ISessionStore threadStore)
-    {
-        _threadStore = threadStore;
-    }
-
-    public async Task<(Session Session, Branch Branch)> CreateConversationAsync()
-    {
-        var session = new Session();
-        var branch = session.CreateBranch();
-        await _threadStore.SaveSessionAsync(session);
-        await _threadStore.SaveBranchAsync(session.Id, branch);
-        _threadCache[session.Id] = (session, branch);
-        return (session, branch);
-    }
-
-    public async Task<(Session Session, Branch Branch)?> GetConversationAsync(string conversationId)
-    {
-        // Check cache first
-        if (_threadCache.TryGetValue(conversationId, out var cached))
-            return cached;
-
-        var session = await _threadStore.LoadSessionAsync(conversationId);
-        if (session == null) return null;
-
-        var branchIds = await _threadStore.ListBranchIdsAsync(conversationId);
-        var branchId = branchIds.FirstOrDefault() ?? "main";
-        var branch = await _threadStore.LoadBranchAsync(conversationId, branchId);
-        branch ??= session.CreateBranch(branchId);
-
-        var result = (session, branch);
-        _threadCache[conversationId] = result;
-        return result;
-    }
-
-    public async Task<bool> DeleteConversationAsync(string conversationId)
-    {
-        _threadCache.Remove(conversationId);
-        _runningAgents.Remove(conversationId);
-        await _threadStore.DeleteSessionAsync(conversationId);
-        return true;
-    }
-
-    public async Task<List<string>> ListConversationIdsAsync()
-    {
-        return await _threadStore.ListSessionIdsAsync();
-    }
-
-    public async Task<Agent> GetAgentAsync(string conversationId, IAgentEventHandler? eventHandler = null)
-    {
-        var builder = new AgentBuilder()
-            .WithProvider("openrouter", "z-ai/glm-4.6")
-            .WithName("AI Assistant")
-            .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
-            .WithDynamicMemory(opts => opts
-                .WithStorageDirectory("./agent-memory-storage")
-                .WithMaxTokens(6000))
-            .WithToolkit<MathTools>()
-            .WithPermissions();
-
-        if (eventHandler != null)
-            builder = builder.WithEventHandler(eventHandler);
-
-        var agent = await builder.Build();
-
-        _runningAgents[conversationId] = agent;
-
-        return agent;
-    }
-
-    public Agent? GetRunningAgent(string conversationId) =>
-        _runningAgents.GetValueOrDefault(conversationId);
 }
 
 // DTOs

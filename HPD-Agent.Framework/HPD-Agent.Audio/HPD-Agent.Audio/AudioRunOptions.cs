@@ -13,7 +13,7 @@ namespace HPD.Agent.Audio;
 /// <remarks>
 /// <para><b>Design Philosophy:</b></para>
 /// <para>
-/// AudioRunOptions provides per-request audio customization for common scenarios:
+/// AudioRunConfig provides per-request audio customization for common scenarios:
 /// - Voice switching (per-user preferences, multi-voice narratives)
 /// - Provider switching (multi-tenant SaaS with different TTS budgets)
 /// - Language switching (multilingual conversations)
@@ -27,28 +27,28 @@ namespace HPD.Agent.Audio;
 /// <para><b>Common Use Cases:</b></para>
 /// <code>
 /// // Voice switching for different users
-/// var options = new AgentRunOptions
+/// var options = new AgentRunConfig
 /// {
-///     Audio = new AudioRunOptions { Voice = "alloy" }
+///     Audio = new AudioRunConfig { Voice = "alloy" }
 /// };
 ///
 /// // Provider switching for multilingual
-/// var options = new AgentRunOptions
+/// var options = new AgentRunConfig
 /// {
-///     Audio = new AudioRunOptions
+///     Audio = new AudioRunConfig
 ///     {
 ///         Tts = new TtsConfig { Provider = "elevenlabs", Voice = "Rachel" }
 ///     }
 /// };
 ///
 /// // Disable audio for specific request
-/// var options = new AgentRunOptions
+/// var options = new AgentRunConfig
 /// {
-///     Audio = new AudioRunOptions { Disabled = true }
+///     Audio = new AudioRunConfig { Disabled = true }
 /// };
 /// </code>
 /// </remarks>
-public class AudioRunOptions
+public class AudioRunConfig
 {
     //
     // ROLE-BASED PROVIDER SWITCHING (most common)

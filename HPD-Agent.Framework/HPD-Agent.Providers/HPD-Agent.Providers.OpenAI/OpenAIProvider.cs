@@ -4,11 +4,14 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Threading;
 using Azure.AI.OpenAI;
 using Azure;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.OpenAI;
 
@@ -30,14 +33,18 @@ internal class OpenAIProvider : IProviderFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        // Resolve API key using the helper utility
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "openai");
-
-        if (string.IsNullOrEmpty(apiKey))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
             throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetApiKeyErrorMessage("openai", "OpenAI"));
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
         }
+
+        // Resolve API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("openai:ApiKey", "OpenAI", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         string? modelName = config.ModelName;
         if (string.IsNullOrEmpty(modelName))
@@ -45,8 +52,9 @@ internal class OpenAIProvider : IProviderFeatures
             throw new InvalidOperationException("For OpenAI, the ModelName must be configured.");
         }
 
-        // Check if we have custom endpoint or custom headers
-        var endpoint = ProviderConfigurationHelper.ResolveEndpoint(config.Endpoint, "openai");
+        // Resolve optional endpoint using ISecretResolver
+        var endpointTask = secrets.ResolveOrDefaultAsync("openai:Endpoint", config.Endpoint, CancellationToken.None);
+        var endpoint = endpointTask.GetAwaiter().GetResult();
         var hasCustomEndpoint = !string.IsNullOrEmpty(endpoint);
         var hasCustomHeaders = config.CustomHeaders?.Count > 0;
 
@@ -118,10 +126,13 @@ internal class OpenAIProvider : IProviderFeatures
     {
         var errors = new List<string>();
 
-        // Validate API key
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "openai");
-        if (string.IsNullOrEmpty(apiKey))
-            errors.Add(ProviderConfigurationHelper.GetApiKeyErrorMessage("openai", "OpenAI"));
+        // Note: API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.ApiKey))
+        {
+            errors.Add("API key is required for OpenAI. " +
+                      "Set it via the apiKey parameter, OPENAI_API_KEY environment variable, or configuration.");
+        }
 
         // Validate model name
         if (string.IsNullOrEmpty(config.ModelName))
@@ -259,23 +270,22 @@ internal class AzureOpenAIProvider : IProviderFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        // Resolve endpoint
-        string? endpoint = ProviderConfigurationHelper.ResolveEndpoint(config.Endpoint, "azure-openai");
-
-        if (string.IsNullOrEmpty(endpoint))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
             throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetEndpointErrorMessage("azure-openai", "Azure OpenAI"));
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
         }
 
-        // Resolve API key
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "azure-openai");
+        // Resolve required endpoint using ISecretResolver (Azure requires endpoint)
+        var endpointTask = secrets.RequireAsync("azure-openai:Endpoint", "Azure OpenAI", config.Endpoint, CancellationToken.None);
+        string endpoint = endpointTask.GetAwaiter().GetResult();
 
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetApiKeyErrorMessage("azure-openai", "Azure OpenAI"));
-        }
+        // Resolve required API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("azure-openai:ApiKey", "Azure OpenAI", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         string? modelName = config.ModelName;
         if (string.IsNullOrEmpty(modelName))
@@ -326,15 +336,19 @@ internal class AzureOpenAIProvider : IProviderFeatures
     {
         var errors = new List<string>();
 
-        // Validate endpoint
-        string? endpoint = ProviderConfigurationHelper.ResolveEndpoint(config.Endpoint, "azure-openai");
-        if (string.IsNullOrEmpty(endpoint))
-            errors.Add(ProviderConfigurationHelper.GetEndpointErrorMessage("azure-openai", "Azure OpenAI"));
+        // Note: Endpoint and API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.Endpoint))
+        {
+            errors.Add("Endpoint is required for Azure OpenAI. " +
+                      "Set it via the endpoint parameter, AZURE_OPENAI_ENDPOINT environment variable, or configuration.");
+        }
 
-        // Validate API key
-        string? apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "azure-openai");
-        if (string.IsNullOrEmpty(apiKey))
-            errors.Add(ProviderConfigurationHelper.GetApiKeyErrorMessage("azure-openai", "Azure OpenAI"));
+        if (string.IsNullOrEmpty(config.ApiKey))
+        {
+            errors.Add("API key is required for Azure OpenAI. " +
+                      "Set it via the apiKey parameter, AZURE_OPENAI_API_KEY environment variable, or configuration.");
+        }
 
         // Validate model name
         if (string.IsNullOrEmpty(config.ModelName))

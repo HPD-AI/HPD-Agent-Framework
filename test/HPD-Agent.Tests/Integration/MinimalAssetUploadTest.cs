@@ -18,7 +18,8 @@ public class MinimalAssetUploadTest
         try
         {
             var store = new JsonSessionStore(tempDir);
-            var session = await store.LoadOrCreateSessionAsync("minimal-session");
+            var session = await store.LoadSessionAsync("minimal-session") ?? new HPD.Agent.Session("minimal-session");
+            session.Store = store;
 
             // Verify session has store
             Assert.NotNull(session.Store);

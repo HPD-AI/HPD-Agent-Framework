@@ -388,8 +388,8 @@ public sealed class AgentContext
     internal BeforeMessageTurnContext AsBeforeMessageTurn(
         ChatMessage? userMessage,
         List<ChatMessage> conversationHistory,
-        AgentRunOptions runOptions)
-        => new(this, userMessage, conversationHistory, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, userMessage, conversationHistory, runConfig);
 
     /// <summary>
     /// Creates a typed context for AfterMessageTurn hook.
@@ -397,8 +397,8 @@ public sealed class AgentContext
     internal AfterMessageTurnContext AsAfterMessageTurn(
         ChatResponse finalResponse,
         List<ChatMessage> turnHistory,
-        AgentRunOptions runOptions)
-        => new(this, finalResponse, turnHistory, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, finalResponse, turnHistory, runConfig);
 
     /// <summary>
     /// Creates a typed context for BeforeIteration hook.
@@ -407,8 +407,8 @@ public sealed class AgentContext
         int iteration,
         List<ChatMessage> messages,
         ChatOptions options,
-        AgentRunOptions runOptions)
-        => new(this, iteration, messages, options, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, iteration, messages, options, runConfig);
 
     /// <summary>
     /// Creates a typed context for BeforeToolExecution hook.
@@ -416,8 +416,8 @@ public sealed class AgentContext
     internal BeforeToolExecutionContext AsBeforeToolExecution(
         ChatMessage response,
         IReadOnlyList<FunctionCallContent> toolCalls,
-        AgentRunOptions runOptions)
-        => new(this, response, toolCalls, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, response, toolCalls, runConfig);
 
     /// <summary>
     /// Creates a typed context for AfterIteration hook.
@@ -425,16 +425,16 @@ public sealed class AgentContext
     internal AfterIterationContext AsAfterIteration(
         int iteration,
         IReadOnlyList<FunctionResultContent> toolResults,
-        AgentRunOptions runOptions)
-        => new(this, iteration, toolResults, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, iteration, toolResults, runConfig);
 
     /// <summary>
     /// Creates a typed context for BeforeParallelBatch hook.
     /// </summary>
     internal BeforeParallelBatchContext AsBeforeParallelBatch(
         IReadOnlyList<ParallelFunctionInfo> parallelFunctions,
-        AgentRunOptions runOptions)
-        => new(this, parallelFunctions, runOptions);
+        AgentRunConfig runConfig)
+        => new(this, parallelFunctions, runConfig);
 
     /// <summary>
     /// Creates a typed context for BeforeFunction hook.
@@ -443,10 +443,10 @@ public sealed class AgentContext
         AIFunction? function,
         string callId,
         IReadOnlyDictionary<string, object?> arguments,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         string? toolkitName = null,
         string? skillName = null)
-        => new(this, function, callId, arguments, toolkitName, skillName, runOptions);
+        => new(this, function, callId, arguments, toolkitName, skillName, runConfig);
 
     /// <summary>
     /// Creates a typed context for AfterFunction hook.
@@ -456,10 +456,10 @@ public sealed class AgentContext
         string callId,
         object? result,
         Exception? exception,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         string? toolkitName = null,
         string? skillName = null)
-        => new(this, function, callId, result, exception, runOptions, toolkitName, skillName);
+        => new(this, function, callId, result, exception, runConfig, toolkitName, skillName);
 
     /// <summary>
     /// Creates a typed context for OnError hook.

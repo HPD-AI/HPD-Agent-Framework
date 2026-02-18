@@ -205,7 +205,7 @@ public class AgentConfig
     /// - Without: Emits multiple TextDeltaEvent for each chunk ("Hello", " ", "world")
     /// - With: Emits single TextDeltaEvent with complete text ("Hello world")
     /// Reduces event count and simplifies processing at the cost of increased latency.
-    /// Can be overridden per-run via AgentRunOptions.CoalesceDeltas.
+    /// Can be overridden per-run via AgentRunConfig.CoalesceDeltas.
     /// Default: false (immediate streaming for progressive rendering)
     /// </summary>
     /// <remarks>
@@ -793,7 +793,7 @@ public class HistoryReductionConfig
     /// Behavior when history reduction is triggered.
     /// - Continue (default): Reduction happens transparently, agent continues immediately
     /// - CircuitBreaker: Reduction terminates the turn, user must explicitly continue
-    /// Can be overridden per-turn via AgentRunOptions.HistoryReductionBehaviorOverride.
+    /// Can be overridden per-turn via AgentRunConfig.HistoryReductionBehaviorOverride.
     /// </summary>
     public HistoryReductionBehavior Behavior { get; set; } = HistoryReductionBehavior.Continue;
 

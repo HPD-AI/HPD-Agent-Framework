@@ -5,40 +5,42 @@ using System.Threading.Tasks;
 namespace HPD.Agent.Memory;
 /// <summary>
 /// Abstract base class for storing and managing dynamic memories (agent's working memory).
-/// Follows the same pattern as ConversationThread/AgentThread.
+/// Follows the same pattern as ConversationThread/AgentThread and StaticMemoryStore.
 /// Implementations can store memories in-memory, JSON files, SQL, Redis, etc.
 /// </summary>
-public abstract class DynamicMemoryStore
+/// <remarks>
+/// <para><b>IContentStore Integration (V2):</b></para>
+/// <para>
+/// DynamicMemoryStore extends IContentStore for unified content operations. All IContentStore
+/// methods (Put/Get/Delete/Query) use the scope parameter (agentName) for per-agent isolation.
+/// </para>
+/// <para><b>Unique Features:</b></para>
+/// <para>
+/// Beyond the base IContentStore methods, DynamicMemoryStore provides:
+/// - UpdateMemoryAsync: Updates memory with structured title + content (avoids full content replacement)
+/// </para>
+/// <para><b>Example Usage:</b></para>
+/// <code>
+/// // Create memory
+/// var memoryData = Encoding.UTF8.GetBytes($"Title: {title}\n\n{content}");
+/// var memoryId = await dynamicMemory.PutAsync(
+///     scope: "agent1",
+///     data: memoryData,
+///     contentType: "text/plain",
+///     metadata: new ContentMetadata { Name = title });
+///
+/// // Update memory (specialized method)
+/// await dynamicMemory.UpdateMemoryAsync("agent1", memoryId, "New Title", "New Content");
+///
+/// // Query agent's memories
+/// var memories = await dynamicMemory.QueryAsync(scope: "agent1");
+/// </code>
+/// </remarks>
+public abstract class DynamicMemoryStore : IContentStore
 {
     /// <summary>
-    /// Asynchronously retrieves all memories for a specific agent.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse memories to</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of memories ordered by LastAccessed (most recent first)</returns>
-    public abstract Task<List<DynamicMemory>> GetMemoriesAsync(string agentName, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Asynchronously retrieves a specific memory by ID.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse memories to</param>
-    /// <param name="memoryId">The memory ID to retrieve</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The memory if found, null otherwise</returns>
-    public abstract Task<DynamicMemory?> GetMemoryAsync(string agentName, string memoryId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Creates a new memory for the agent.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse memories to</param>
-    /// <param name="title">Memory title</param>
-    /// <param name="content">Memory content</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The created memory</returns>
-    public abstract Task<DynamicMemory> CreateMemoryAsync(string agentName, string title, string content, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Updates an existing memory.
+    /// Updates an existing memory with structured title + content.
+    /// This is a specialized operation that avoids full content replacement.
     /// </summary>
     /// <param name="agentName">The agent name to Collapse memories to</param>
     /// <param name="memoryId">The memory ID to update</param>
@@ -47,14 +49,6 @@ public abstract class DynamicMemoryStore
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>The updated memory</returns>
     public abstract Task<DynamicMemory> UpdateMemoryAsync(string agentName, string memoryId, string title, string content, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Deletes a memory.
-    /// </summary>
-    /// <param name="agentName">The agent name to Collapse memories to</param>
-    /// <param name="memoryId">The memory ID to delete</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    public abstract Task DeleteMemoryAsync(string agentName, string memoryId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Registers a callback to be invoked when the store's data changes.
@@ -68,6 +62,37 @@ public abstract class DynamicMemoryStore
     /// </summary>
     /// <returns>Serializable snapshot of the store's state</returns>
     public abstract DynamicMemoryStoreSnapshot SerializeToSnapshot();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // IContentStore Implementation
+    // ═══════════════════════════════════════════════════════════════════
+    // Note: scope parameter = agentName for DynamicMemoryStore
+
+    /// <inheritdoc />
+    public abstract Task<string> PutAsync(
+        string? scope,
+        byte[] data,
+        string contentType,
+        ContentMetadata? metadata = null,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<ContentData?> GetAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task DeleteAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default);
+
+    /// <inheritdoc />
+    public abstract Task<IReadOnlyList<ContentInfo>> QueryAsync(
+        string? scope = null,
+        ContentQuery? query = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deserialize a store from a snapshot.

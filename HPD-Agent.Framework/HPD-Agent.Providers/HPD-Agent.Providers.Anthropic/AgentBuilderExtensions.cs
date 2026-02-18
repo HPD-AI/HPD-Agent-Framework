@@ -85,10 +85,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for Anthropic provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "anthropic");
-
         // Create provider config
+        // Note: API key resolution is deferred to Build() time via ISecretResolver
         var providerConfig = new AnthropicProviderConfig();
 
         // Allow user to configure additional options
@@ -109,7 +107,7 @@ public static class AgentBuilderExtensions
         builder.Config.Provider = new ProviderConfig
         {
             ProviderKey = "anthropic",
-            ApiKey = resolvedApiKey, // May be null - AgentBuilder.Build() will handle resolution from appsettings.json
+            ApiKey = apiKey, // May be null - AgentBuilder.Build() will resolve via ISecretResolver
             ModelName = model
         };
 

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.HuggingFace;
 
@@ -23,5 +24,8 @@ public static class HuggingFaceProviderModule
             "huggingface",
             json => JsonSerializer.Deserialize(json, HuggingFaceJsonContext.Default.HuggingFaceProviderConfig),
             config => JsonSerializer.Serialize(config, HuggingFaceJsonContext.Default.HuggingFaceProviderConfig));
+
+        // Register environment variable aliases for secret resolution
+        SecretAliasRegistry.Register("huggingface:ApiKey", "HUGGINGFACE_API_KEY", "HF_TOKEN");
     }
 }

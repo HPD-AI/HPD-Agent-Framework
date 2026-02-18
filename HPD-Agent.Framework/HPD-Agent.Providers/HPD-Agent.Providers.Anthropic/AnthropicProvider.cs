@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 using Anthropic;
 using Anthropic.Models.Messages;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.Anthropic;
 
@@ -18,13 +21,23 @@ internal class AnthropicProvider : IProviderFeatures
     [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in AnthropicProviderModule")]
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        if (string.IsNullOrEmpty(config.ApiKey))
-            throw new ArgumentException("Anthropic requires an API key");
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
+        {
+            throw new InvalidOperationException(
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
+        }
+
+        // Resolve API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("anthropic:ApiKey", "Anthropic", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         // Create the official Anthropic client
         var anthropicClient = new AnthropicClient
         {
-            ApiKey = config.ApiKey,
+            ApiKey = apiKey,
             BaseUrl = config.Endpoint ?? "https://api.anthropic.com"
         };
 
@@ -79,8 +92,13 @@ internal class AnthropicProvider : IProviderFeatures
     [UnconditionalSuppressMessage("Trimming", "IL2026:Members annotated with 'RequiresUnreferencedCodeAttribute' require dynamic access otherwise can break functionality when trimming application code", Justification = "Provider properly registers AOT-compatible deserializer in AnthropicProviderModule")]
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
+        // Note: API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
         if (string.IsNullOrEmpty(config.ApiKey))
-            return ProviderValidationResult.Failure("API key is required for Anthropic");
+        {
+            return ProviderValidationResult.Failure("API key is required for Anthropic. " +
+                "Set it via the apiKey parameter, ANTHROPIC_API_KEY environment variable, or configuration.");
+        }
 
         if (string.IsNullOrEmpty(config.ModelName))
             return ProviderValidationResult.Failure("Model name is required");

@@ -2,6 +2,7 @@ using System;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Collections.Generic;
+using System.Threading;
 using Azure;
 using Azure.AI.OpenAI;
 using Azure.AI.Projects;
@@ -10,7 +11,9 @@ using Azure.Identity;
 using HPD.Agent;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace HPD.Agent.Providers.AzureAI;
 
@@ -43,14 +46,18 @@ internal class AzureAIProvider : IProviderFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        // Resolve endpoint using the helper utility (handles env vars, config, etc.)
-        string? endpoint = ProviderConfigurationHelper.ResolveEndpoint(config.Endpoint, "azure-ai");
-
-        if (string.IsNullOrEmpty(endpoint))
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
         {
             throw new InvalidOperationException(
-                ProviderConfigurationHelper.GetEndpointErrorMessage("azure-ai", "Azure AI"));
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
         }
+
+        // Resolve required endpoint using ISecretResolver (Azure requires endpoint)
+        var endpointTask = secrets.RequireAsync("azure-ai:Endpoint", "Azure AI", config.Endpoint, CancellationToken.None);
+        string endpoint = endpointTask.GetAwaiter().GetResult();
 
         string? modelName = config.ModelName;
         if (string.IsNullOrEmpty(modelName))
@@ -64,15 +71,12 @@ internal class AzureAIProvider : IProviderFeatures
         // Determine authentication method
         bool useOAuth = azureConfig?.UseDefaultAzureCredential ?? false;
 
-        // Resolve API key using the helper utility (handles env vars, config, etc.)
+        // Resolve API key using ISecretResolver (unless OAuth is requested)
         string? apiKey = null;
         if (!useOAuth)
         {
-            // ProviderConfigurationHelper handles:
-            // 1. config.ApiKey
-            // 2. AZURE_AI_API_KEY or AzureAi_API_KEY env vars
-            // 3. appsettings.json "azureAI:ApiKey" or "AzureAI:ApiKey"
-            apiKey = ProviderConfigurationHelper.ResolveApiKey(config.ApiKey, "azure-ai");
+            var apiKeyTask = secrets.RequireAsync("azure-ai:ApiKey", "Azure AI", config.ApiKey, CancellationToken.None);
+            apiKey = apiKeyTask.GetAwaiter().GetResult();
         }
 
         // Create chat client based on endpoint type
@@ -184,11 +188,13 @@ internal class AzureAIProvider : IProviderFeatures
         if (string.IsNullOrEmpty(config.ModelName))
             errors.Add("Model name (deployment name) is required for Azure AI");
 
-        // Validate endpoint using the helper utility
-        string? endpoint = ProviderConfigurationHelper.ResolveEndpoint(config.Endpoint, "azure-ai");
-
-        if (string.IsNullOrEmpty(endpoint))
-            errors.Add(ProviderConfigurationHelper.GetEndpointErrorMessage("azure-ai", "Azure AI"));
+        // Note: Endpoint and API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
+        if (string.IsNullOrEmpty(config.Endpoint))
+        {
+            errors.Add("Endpoint is required for Azure AI. " +
+                      "Set it via the endpoint parameter, AZURE_AI_ENDPOINT environment variable, or configuration.");
+        }
 
         // Validate Azure-specific config if present
         var azureConfig = config.GetTypedProviderConfig<AzureAIProviderConfig>();

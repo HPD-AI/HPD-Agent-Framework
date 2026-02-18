@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.Anthropic;
 
@@ -23,5 +24,8 @@ public static class AnthropicProviderModule
             "anthropic",
             json => JsonSerializer.Deserialize(json, AnthropicJsonContext.Default.AnthropicProviderConfig),
             config => JsonSerializer.Serialize(config, AnthropicJsonContext.Default.AnthropicProviderConfig));
+
+        // Register environment variable aliases for secret resolution
+        SecretAliasRegistry.Register("anthropic:ApiKey", "ANTHROPIC_API_KEY");
     }
 }

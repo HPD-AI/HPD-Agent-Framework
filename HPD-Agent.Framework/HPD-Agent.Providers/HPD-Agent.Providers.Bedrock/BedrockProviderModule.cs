@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.Bedrock;
 
@@ -23,5 +24,11 @@ public static class BedrockProviderModule
             "bedrock",
             json => JsonSerializer.Deserialize(json, BedrockJsonContext.Default.BedrockProviderConfig),
             config => JsonSerializer.Serialize(config, BedrockJsonContext.Default.BedrockProviderConfig));
+
+        // Register environment variable aliases
+        SecretAliasRegistry.Register("bedrock:AccessKeyId", "AWS_ACCESS_KEY_ID");
+        SecretAliasRegistry.Register("bedrock:SecretAccessKey", "AWS_SECRET_ACCESS_KEY");
+        SecretAliasRegistry.Register("bedrock:SessionToken", "AWS_SESSION_TOKEN");
+        SecretAliasRegistry.Register("bedrock:Region", "AWS_REGION", "AWS_DEFAULT_REGION");
     }
 }

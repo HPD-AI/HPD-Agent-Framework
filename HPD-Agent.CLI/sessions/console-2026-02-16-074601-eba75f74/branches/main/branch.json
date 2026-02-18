@@ -1,0 +1,29 @@
+{
+  "id": "main",
+  "sessionId": "console-2026-02-16-074601-eba75f74",
+  "messages": [
+    {
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "Hello! I\u0027m an AI assistant designed to help you with various tasks. I have access to several specialized toolkits that allow me to:\n\n- **Code and file operations**: Read, write, search, and analyze code files\n- **Mathematical calculations**: Perform basic math operations\n- **Documentation access**: Look up library documentation and code examples\n- **Task planning**: Create and track multi-step work plans\n- **Shell execution**: Run commands in your environment\n\nI can help you with things like:\n- Writing and debugging code\n- Analyzing project structure\n- Running tests and commands\n- Searching for specific code patterns\n- Planning complex tasks\n- Answering technical questions\n\nI see you\u0027re working in a project called \u0060HPD-Agent.CLI\u0060 which appears to be a CLI application with various modules like Anthropic, Audio, Auth, Codex, and more. \n\nHow can I help you today?"
+        }
+      ],
+      "messageId": "gen-1771249567-BjgoVocx8eKzApMqrGk6"
+    }
+  ],
+  "createdAt": "2026-02-16T13:46:07.152703Z",
+  "lastActivity": "2026-02-16T13:46:09.996344Z",
+  "middlewareState": {},
+  "messageCount": 2
+}

@@ -133,16 +133,9 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for Google AI provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "google-ai");
-
-        // Fallback: Try "gemini" as alternative environment variable key
-        if (string.IsNullOrEmpty(resolvedApiKey))
-        {
-            resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(null, "gemini");
-        }
-
         // Create provider config
+        // Note: API key resolution is deferred to Build() time via ISecretResolver
+        // The resolver will try both "google-ai:ApiKey" and "gemini:ApiKey" keys
         var providerConfig = new GoogleAIProviderConfig();
 
         // Allow user to configure additional options
@@ -155,7 +148,7 @@ public static class AgentBuilderExtensions
         builder.Config.Provider = new ProviderConfig
         {
             ProviderKey = "google-ai",
-            ApiKey = resolvedApiKey, // May be null - will be validated later
+            ApiKey = apiKey, // May be null - AgentBuilder.Build() will resolve via ISecretResolver
             ModelName = model
         };
 

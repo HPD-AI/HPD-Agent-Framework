@@ -555,7 +555,7 @@ public class LoggingMiddlewareTests
         return agentContext.AsBeforeMessageTurn(
             userMessage: new ChatMessage(ChatRole.User, "Test message"),
             conversationHistory: new List<ChatMessage>(),
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext()
@@ -564,7 +564,7 @@ public class LoggingMiddlewareTests
         return agentContext.AsAfterMessageTurn(
             finalResponse: new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response")),
             turnHistory: new List<ChatMessage>(),
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static BeforeIterationContext CreateBeforeIterationContext(int iteration = 0)
@@ -574,7 +574,7 @@ public class LoggingMiddlewareTests
             iteration: iteration,
             messages: new List<ChatMessage>(),
             options: new ChatOptions(),
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static AfterIterationContext CreateAfterIterationContext(int iteration = 0, List<FunctionResultContent>? toolResults = null)
@@ -583,7 +583,7 @@ public class LoggingMiddlewareTests
         return agentContext.AsAfterIteration(
             iteration: iteration,
             toolResults: toolResults ?? new List<FunctionResultContent>(),
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static BeforeFunctionContext CreateBeforeFunctionContext(
@@ -599,7 +599,7 @@ public class LoggingMiddlewareTests
             function: function,
             callId: callId,
             arguments: arguments,
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static AfterFunctionContext CreateAfterFunctionContext(
@@ -616,7 +616,7 @@ public class LoggingMiddlewareTests
             callId: callId,
             result: result,
             exception: exception,
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static ILoggerFactory CreateTestLoggerFactory(List<string> output)

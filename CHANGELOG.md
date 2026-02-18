@@ -1,3 +1,22 @@
+# HPD-Agent 0.2.1 Release Notes (In Progress)
+
+## 🎉 New Features
+
+### HPD-Agent.MAUI - Feature Parity Achieved
+- ✅ **Asset Management**: Added `UploadAsset()`, `ListAssets()`, and `DeleteAsset()` methods to `HybridWebViewAgentProxy`
+- ✅ **Middleware Responses**: Implemented `RespondToPermission()` and `RespondToClientTool()` for full middleware integration
+- ✅ **TypeScript Transport**: Updated `maui.ts` transport to properly serialize middleware requests with session tracking
+- 🎯 **Full Feature Parity**: MAUI now has 100% feature parity with ASP.NET Core hosting
+
+### HPD-Agent.Hosting - DTO Enhancements
+- Added `SessionId` field to `PermissionResponseRequest` and `ClientToolResponseRequest` to support MAUI transport pattern
+- Maintains backward compatibility with ASP.NET Core (SessionId is optional when using route parameters)
+
+## 📚 Documentation
+- Added `MAUI_COMPLETION_SUMMARY.md` with detailed implementation guide
+
+---
+
 # HPD-Agent 0.2.0 Release Notes
 
 ## 🚨 Breaking Changes
@@ -77,7 +96,7 @@ All provider packages now use a standardized module pattern:
 
 ### Audio Improvements
 - Modular STT/TTS/VAD architecture
-- Builder pattern for AudioRunOptions
+- Builder pattern for AudioRunConfig
 - Validation system for audio configurations
 - Provider-specific factories for audio capabilities
 

@@ -28,9 +28,17 @@ public class DynamicMemoryToolkit
         {
             return "Error: Title and content are required for creating a memory.";
         }
-        
-        var created = await _store.CreateMemoryAsync(_memoryId, title, content);
-        return $"Created memory {created.Id}";
+
+        // Use V2 ContentStore API - PutAsync with scope = agentName
+        var contentData = System.Text.Encoding.UTF8.GetBytes(content);
+        var memoryId = await _store.PutAsync(
+            scope: _memoryId,
+            data: contentData,
+            contentType: "text/plain",
+            metadata: new ContentMetadata { Name = title },
+            cancellationToken: default);
+
+        return $"Created memory {memoryId}";
     }
 
     [AIFunction]
@@ -63,7 +71,7 @@ public class DynamicMemoryToolkit
             return "Error: Memory ID is required for deleting a memory.";
         }
 
-        await _store.DeleteMemoryAsync(_memoryId, memoryId);
+        await _store.DeleteAsync(_memoryId, memoryId);
         return $"Deleted memory {memoryId}";
     }
 }

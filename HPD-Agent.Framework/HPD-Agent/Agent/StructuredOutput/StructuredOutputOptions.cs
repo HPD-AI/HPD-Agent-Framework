@@ -155,7 +155,7 @@ public class StructuredOutputOptions
     /// public sealed record ErrorResponse(string Code, string Message) : ApiResponse;
     ///
     /// // Native mode (with streaming):
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     StructuredOutput = new StructuredOutputOptions
     ///     {

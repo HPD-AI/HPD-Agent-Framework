@@ -30,7 +30,7 @@ public class StructuredOutputToolModeTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -70,7 +70,7 @@ public class StructuredOutputToolModeTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -108,7 +108,7 @@ public class StructuredOutputToolModeTests
         fakeClient.EnqueueToolCall("return_TestResponse", "call_1", expectedArgs);
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };
@@ -146,7 +146,7 @@ public class StructuredOutputToolModeTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -214,7 +214,7 @@ public class StructuredOutputToolModeTests
             }
         };
         var agent = TestAgentFactory.Create(config: config, chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };
@@ -255,7 +255,7 @@ public class StructuredOutputToolModeTests
         fakeClient.EnqueueTextResponse("This should not be reached");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };
@@ -293,7 +293,7 @@ public class StructuredOutputToolModeTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };
@@ -327,7 +327,7 @@ public class StructuredOutputToolModeTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };

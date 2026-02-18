@@ -356,7 +356,7 @@ public class PipelineV2Tests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
     }
 
     private static AfterIterationContext CreateAfterIterationContext()
@@ -376,7 +376,7 @@ public class PipelineV2Tests
             new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
 
-        return agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunOptions());
+        return agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunConfig());
     }
 
     private static ErrorContext CreateErrorContext()

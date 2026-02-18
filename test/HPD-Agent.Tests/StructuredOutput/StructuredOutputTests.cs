@@ -31,7 +31,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -71,7 +71,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "final", "value": 100}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -111,7 +111,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -146,7 +146,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": 1}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -174,7 +174,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": 1}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -207,7 +207,7 @@ public class StructuredOutputTests
 """);
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -236,7 +236,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("not valid json at all");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -264,7 +264,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": "not a number"}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -291,7 +291,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test"}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -318,7 +318,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -348,7 +348,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -395,7 +395,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -437,7 +437,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -485,7 +485,7 @@ public class StructuredOutputTests
             TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
         };
 
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -526,7 +526,7 @@ public class StructuredOutputTests
         """);
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -559,7 +559,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "aot-test", "value": 123}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -592,7 +592,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"id": 1, "fullName": "Tigger", "species": "Tiger"}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -630,7 +630,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("null");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -656,7 +656,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("[]");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -682,7 +682,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("   \n\t  ");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -711,7 +711,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse(expectedJson);
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -740,7 +740,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse(invalidJson);
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -770,7 +770,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": 1}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -799,7 +799,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": 42}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -832,7 +832,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -872,7 +872,7 @@ public class StructuredOutputTests
         );
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -916,7 +916,7 @@ public class StructuredOutputTests
             });
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "tool" }
         };
@@ -943,7 +943,7 @@ public class StructuredOutputTests
         fakeClient.EnqueueTextResponse("""{"name": "test", "value": 1}""");
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions { Mode = "native" }
         };
@@ -982,7 +982,7 @@ public class StructuredOutputTests
             });
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -1024,7 +1024,7 @@ public class StructuredOutputTests
             });
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -1066,7 +1066,7 @@ public class StructuredOutputTests
             });
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -1103,7 +1103,7 @@ public class StructuredOutputTests
             });
 
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {
@@ -1131,7 +1131,7 @@ public class StructuredOutputTests
         // Arrange
         var fakeClient = new FakeChatClient();
         var agent = TestAgentFactory.Create(chatClient: fakeClient);
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             StructuredOutput = new StructuredOutputOptions
             {

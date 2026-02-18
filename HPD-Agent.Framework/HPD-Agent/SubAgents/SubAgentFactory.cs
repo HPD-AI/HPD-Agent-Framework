@@ -59,9 +59,7 @@ public static class SubAgentFactory
     {
         var subAgent = Create(name, description, agentConfig, toolTypes);
         subAgent.ThreadMode = SubAgentThreadMode.SharedThread;
-        var sessionId = Guid.NewGuid().ToString("N");
-        subAgent.SharedSession = new Session(sessionId);
-        subAgent.SharedBranch = subAgent.SharedSession.CreateBranch();
+        subAgent.SharedSessionId = Guid.NewGuid().ToString("N");
         return subAgent;
     }
 

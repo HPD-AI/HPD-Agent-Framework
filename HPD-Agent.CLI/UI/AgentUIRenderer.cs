@@ -105,7 +105,7 @@ public class AgentUIRenderer
 
     /// <summary>
     /// Updates the model info displayed in response headers.
-    /// Used when switching models via AgentRunOptions (without rebuilding agent).
+    /// Used when switching models via AgentRunConfig (without rebuilding agent).
     /// </summary>
     public void SetModelInfo(string provider, string model)
     {

@@ -50,7 +50,7 @@ public sealed class Agent
     private readonly ILogger? _observerErrorLogger;
     private readonly Counter<long>? _observerErrorCounter;
 
-    // Provider registry for runtime provider switching via AgentRunOptions.ProviderKey/ModelId
+    // Provider registry for runtime provider switching via AgentRunConfig.ProviderKey/ModelId
     private readonly Providers.IProviderRegistry? _providerRegistry;
 
     // Service provider for creating new clients
@@ -169,7 +169,7 @@ public sealed class Agent
     /// <param name="executionContext">The execution context to attach to events</param>
 
     /// <summary>
-    /// Extracts and merges ChatOptions from AgentRunOptions (for workflow compatibility).
+    /// Extracts and merges ChatOptions from AgentRunConfig (for workflow compatibility).
     /// Preserves workflow-provided tools (e.g., handoff functions) while injecting conversation context.
     /// </summary>
     /// <param name="workflowOptions">Options from workflow (may contain handoff tools)</param>
@@ -495,7 +495,7 @@ public sealed class Agent
         Session? session = null,
         Branch? branch = null,
         Dictionary<string, object>? initialContextProperties = null,
-        AgentRunOptions? runOptions = null,
+        AgentRunConfig? runConfig = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var orchestrationStartTime = DateTime.UtcNow;
@@ -691,27 +691,27 @@ public sealed class Agent
             // Collect all response updates to build final history
             var responseUpdates = new List<ChatResponseUpdate>();
 
-            // Resolve override client from AgentRunOptions (if any)
+            // Resolve override client from AgentRunConfig (if any)
             // This enables runtime provider switching without rebuilding the agent
-            var overrideClient = ResolveClientForOptions(runOptions);
+            var overrideClient = ResolveClientForOptions(runConfig);
 
-            // Resolve background responses settings from AgentRunOptions → Config → false
-            var allowBackgroundResponses = runOptions?.AllowBackgroundResponses
+            // Resolve background responses settings from AgentRunConfig → Config → false
+            var allowBackgroundResponses = runConfig?.AllowBackgroundResponses
                 ?? Config?.BackgroundResponses?.DefaultAllow
                 ?? false;
 
             // BACKGROUND RESPONSES VALIDATION: Log warnings for common mistakes
             // Philosophy: "Let it flow" - warn via logging but don't block, allow graceful degradation
-            ValidateBackgroundResponsesUsage(runOptions, allowBackgroundResponses, newInputMessages.Count);
+            ValidateBackgroundResponsesUsage(runConfig, allowBackgroundResponses, newInputMessages.Count);
 
             // Apply background responses settings to effectiveOptions
             // Note: This requires pragma suppression for experimental M.E.AI feature
-            if (allowBackgroundResponses || runOptions?.ContinuationToken != null)
+            if (allowBackgroundResponses || runConfig?.ContinuationToken != null)
             {
                 effectiveOptions = ApplyBackgroundResponsesOptions(
                     effectiveOptions,
                     allowBackgroundResponses,
-                    runOptions?.ContinuationToken);
+                    runConfig?.ContinuationToken);
             }
 
             // OBSERVABILITY: Start telemetry and logging
@@ -732,17 +732,17 @@ public sealed class Agent
                 parentChatClient: _baseClient,  // Pass chat client for SubAgent inheritance
                 services: _serviceProvider);  // Pass service provider for DI
 
-            // IMPORTANT: Create runOptions instance ONCE and reuse it throughout the entire turn
-            // Middleware may modify runOptions (e.g., AgentPlanAgentMiddleware sets AdditionalSystemInstructions)
+            // IMPORTANT: Create runConfig instance ONCE and reuse it throughout the entire turn
+            // Middleware may modify runConfig (e.g., AgentPlanAgentMiddleware sets AdditionalSystemInstructions)
             // We must use the SAME instance for BeforeMessageTurnAsync and BeforeIterationAsync
-            var effectiveRunOptions = runOptions ?? new AgentRunOptions();
+            var effectiveRunConfig = runConfig ?? new AgentRunConfig();
 
             // MIDDLEWARE: BeforeMessageTurnAsync (turn-level hook)
             // Pass shared message list - middleware mutations are visible to all immediately
             var beforeTurnContext = agentContext.AsBeforeMessageTurn(
                 userMessage: newInputMessages.FirstOrDefault(),
                 conversationHistory: sharedMessages,  // SAME shared list, no copy
-                runOptions: effectiveRunOptions);
+                runConfig: effectiveRunConfig);
 
             await _middlewarePipeline.ExecuteBeforeMessageTurnAsync(beforeTurnContext, effectiveCancellationToken);
 
@@ -889,8 +889,8 @@ public sealed class Agent
                     // Must happen BEFORE BeforeIterationAsync so middleware sees the output tool
                     // Only merge once - subsequent iterations reuse the merged options
                     // ═══════════════════════════════════════════════════════════════
-                    var hasRuntimeTools = runOptions?.RuntimeTools?.Count > 0;
-                    var hasAdditionalTools = runOptions?.AdditionalTools?.Count > 0;
+                    var hasRuntimeTools = runConfig?.RuntimeTools?.Count > 0;
+                    var hasAdditionalTools = runConfig?.AdditionalTools?.Count > 0;
 
                     if ((hasRuntimeTools || hasAdditionalTools) && state.Iteration == 0)
                     {
@@ -904,11 +904,11 @@ public sealed class Agent
 
                         // Add internal runtime tools (from structured output)
                         if (hasRuntimeTools)
-                            allTools.AddRange(runOptions!.RuntimeTools!);
+                            allTools.AddRange(runConfig!.RuntimeTools!);
 
                         // Add user-provided additional tools
                         if (hasAdditionalTools)
-                            allTools.AddRange(runOptions!.AdditionalTools!);
+                            allTools.AddRange(runConfig!.AdditionalTools!);
 
                         effectiveOptions.Tools = allTools;
                     }
@@ -919,7 +919,7 @@ public sealed class Agent
                     // Only apply on first iteration - subsequent iterations follow same mode
                     // ═══════════════════════════════════════════════════════════════
                     // Public ToolModeOverride takes precedence over internal RuntimeToolMode
-                    var toolModeOverride = runOptions?.ToolModeOverride ?? runOptions?.RuntimeToolMode;
+                    var toolModeOverride = runConfig?.ToolModeOverride ?? runConfig?.RuntimeToolMode;
                     if (toolModeOverride != null && state.Iteration == 0)
                     {
                         effectiveOptions = effectiveOptions?.Clone() ?? new ChatOptions();
@@ -937,7 +937,7 @@ public sealed class Agent
                         iteration: state.Iteration,
                         messages: sharedMessages,  // SAME shared list, no copy
                         options: effectiveOptions ?? new ChatOptions(),
-                        runOptions: effectiveRunOptions);  // Use the SAME instance from BeforeMessageTurnAsync
+                        runConfig: effectiveRunConfig);  // Use the SAME instance from BeforeMessageTurnAsync
 
                     // EXECUTE BEFORE ITERATION MIDDLEWARES
                     // Run with event polling to support bidirectional events (e.g., ContinuationPermissionMiddleware)
@@ -1063,7 +1063,7 @@ public sealed class Agent
                             State = agentContext.State,
                             Iteration = state.Iteration,
                             Streams = _eventCoordinator.Streams,
-                            RunOptions = effectiveRunOptions,
+                            RunConfig = effectiveRunConfig,
                             EventCoordinator = _eventCoordinator
                         };
 
@@ -1088,7 +1088,7 @@ public sealed class Agent
                         }
 
                         // Check if we should coalesce deltas (run options override config default)
-                        bool coalesceDeltas = effectiveRunOptions.CoalesceDeltas ?? Config?.CoalesceDeltas ?? false;
+                        bool coalesceDeltas = effectiveRunConfig.CoalesceDeltas ?? Config?.CoalesceDeltas ?? false;
 
                         if (coalesceDeltas)
                         {
@@ -1446,7 +1446,7 @@ public sealed class Agent
                         var beforeToolContext = agentContext.AsBeforeToolExecution(
                             response: assistantResponse,
                             toolCalls: toolRequests.AsReadOnly(),
-                            runOptions: effectiveRunOptions);
+                            runConfig: effectiveRunConfig);
 
                         await _middlewarePipeline.ExecuteBeforeToolExecutionAsync(
                             beforeToolContext,
@@ -1485,7 +1485,7 @@ public sealed class Agent
                             toolRequests,
                             effectiveOptionsForTools,
                             state,
-                            effectiveRunOptions,
+                            effectiveRunConfig,
                             agentContext,
                             effectiveCancellationToken);
 
@@ -1543,7 +1543,7 @@ public sealed class Agent
                                 .OfType<FunctionResultContent>()
                                 .ToList()
                                 .AsReadOnly(),
-                            runOptions: effectiveRunOptions);
+                            runConfig: effectiveRunConfig);
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
                             afterIterationContext,
@@ -1645,7 +1645,7 @@ public sealed class Agent
                         var afterIterationContext = agentContext.AsAfterIteration(
                             iteration: state.Iteration,
                             toolResults: Array.Empty<FunctionResultContent>(),
-                            runOptions: effectiveRunOptions);
+                            runConfig: effectiveRunConfig);
 
                         await _middlewarePipeline.ExecuteAfterIterationAsync(
                             afterIterationContext,
@@ -1802,7 +1802,7 @@ public sealed class Agent
                 var afterTurnContext = agentContext.AsAfterMessageTurn(
                     finalResponse: lastResponse,
                     turnHistory: turnHistory,
-                    runOptions: effectiveRunOptions);
+                    runConfig: effectiveRunConfig);
 
                 // Execute AfterMessageTurnAsync in REVERSE order (stack unwinding)
                 await _middlewarePipeline.ExecuteAfterMessageTurnAsync(afterTurnContext, effectiveCancellationToken);
@@ -2181,11 +2181,11 @@ public sealed class Agent
     /// await agent.RunAsync("Hello", session, branch);
     ///
     /// // With options
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     ProviderKey = "anthropic",
     ///     ModelId = "claude-opus",
-    ///     Chat = new ChatRunOptions { Temperature = 0.7 }
+    ///     Chat = new ChatRunConfig { Temperature = 0.7 }
     /// };
     /// await agent.RunAsync("Hello", session, options);
     /// </code>
@@ -2195,7 +2195,7 @@ public sealed class Agent
         string userMessage,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         CancellationToken cancellationToken = default)
     {
         return RunAsync(
@@ -2218,7 +2218,7 @@ public sealed class Agent
     public IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
         Branch branch,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(branch);
@@ -2241,7 +2241,7 @@ public sealed class Agent
     public IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         Branch branch,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(branch);
@@ -2275,7 +2275,7 @@ public sealed class Agent
     /// <para>
     /// <b>Example - Text + Attachments:</b>
     /// <code>
-    /// await agent.RunAsync(new AgentRunOptions
+    /// await agent.RunAsync(new AgentRunConfig
     /// {
     ///     UserMessage = "Analyze this document",
     ///     Attachments = [await DocumentContent.FromFileAsync("report.pdf")]
@@ -2285,7 +2285,7 @@ public sealed class Agent
     /// <para>
     /// <b>Example - Audio Only:</b>
     /// <code>
-    /// await agent.RunAsync(new AgentRunOptions
+    /// await agent.RunAsync(new AgentRunConfig
     /// {
     ///     Attachments = [new AudioContent(audioBytes)]
     /// });
@@ -2294,7 +2294,7 @@ public sealed class Agent
     /// <para>
     /// <b>Example - Multiple Attachments:</b>
     /// <code>
-    /// await agent.RunAsync(new AgentRunOptions
+    /// await agent.RunAsync(new AgentRunConfig
     /// {
     ///     Attachments = [
     ///         new ImageContent(screenshotBytes),
@@ -2305,7 +2305,7 @@ public sealed class Agent
     /// </para>
     /// </remarks>
     public IAsyncEnumerable<AgentEvent> RunAsync(
-        AgentRunOptions options,
+        AgentRunConfig options,
         Session? session = null,
         Branch? branch = null,
         CancellationToken cancellationToken = default)
@@ -2323,7 +2323,7 @@ public sealed class Agent
         if (contents.Count == 0)
         {
             throw new ArgumentException(
-                "AgentRunOptions must provide UserMessage or Attachments (at least one).",
+                "AgentRunConfig must provide UserMessage or Attachments (at least one).",
                 nameof(options));
         }
 
@@ -2348,7 +2348,7 @@ public sealed class Agent
     /// </para>
     /// <para>
     /// <b>Options:</b>
-    /// Use <see cref="AgentRunOptions"/> for per-invocation customization:
+    /// Use <see cref="AgentRunConfig"/> for per-invocation customization:
     /// - Provider switching via ProviderKey/ModelId or OverrideChatClient
     /// - System instruction overrides
     /// - Chat parameters (temperature, tokens, etc.) via Chat property
@@ -2360,7 +2360,7 @@ public sealed class Agent
         IEnumerable<ChatMessage> messages,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // Validation
@@ -2396,7 +2396,7 @@ public sealed class Agent
             }
         }
 
-        // Resolve chat options from AgentRunOptions and apply system instruction overrides
+        // Resolve chat options from AgentRunConfig and apply system instruction overrides
         var chatOptions = options?.Chat?.MergeWith(Config?.Provider?.DefaultChatOptions);
         chatOptions = ApplySystemInstructionOverrides(chatOptions, options);
 
@@ -2412,7 +2412,7 @@ public sealed class Agent
         var turnHistory = new List<ChatMessage>();
         var historyCompletionSource = new TaskCompletionSource<IReadOnlyList<ChatMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // Build initial context properties from AgentRunOptions
+        // Build initial context properties from AgentRunConfig
         var initialProperties = BuildInitialContextProperties(options);
 
         // Execute agentic loop
@@ -2423,7 +2423,7 @@ public sealed class Agent
             session: session,
             branch: branch,
             initialContextProperties: initialProperties,
-            runOptions: options,
+            runConfig: options,
             cancellationToken: cancellationToken);
 
         await foreach (var evt in internalStream.WithCancellation(cancellationToken))
@@ -2468,11 +2468,11 @@ public sealed class Agent
         IEnumerable<ChatMessage> messages,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default) where T : class
     {
         // Ensure StructuredOutput options exist
-        options ??= new AgentRunOptions();
+        options ??= new AgentRunConfig();
         options.StructuredOutput ??= new StructuredOutputOptions();
 
         var structuredOpts = options.StructuredOutput;
@@ -2703,7 +2703,7 @@ public sealed class Agent
         string userMessage,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         CancellationToken cancellationToken = default) where T : class
         => RunStructuredAsync<T>(
             new[] { new ChatMessage(ChatRole.User, userMessage) },
@@ -2725,10 +2725,10 @@ public sealed class Agent
     }
 
     private void ConfigureStructuredOutputOptions<T>(
-        AgentRunOptions options,
+        AgentRunConfig options,
         JsonSerializerOptions serializerOptions) where T : class
     {
-        options.Chat ??= new ChatRunOptions();
+        options.Chat ??= new ChatRunConfig();
         var chatOptions = options.Chat;
         var structuredOpts = options.StructuredOutput!;
         var schemaName = structuredOpts.SchemaName ?? typeof(T).Name;
@@ -3105,10 +3105,10 @@ public sealed class Agent
     #endregion
 
     /// <summary>
-    /// Builds initial context properties dictionary from AgentRunOptions.
+    /// Builds initial context properties dictionary from AgentRunConfig.
     /// Merges ClientToolInput and ContextOverrides into a single dictionary.
     /// </summary>
-    private static Dictionary<string, object>? BuildInitialContextProperties(AgentRunOptions? options)
+    private static Dictionary<string, object>? BuildInitialContextProperties(AgentRunConfig? options)
     {
         if (options == null)
             return null;
@@ -3122,9 +3122,9 @@ public sealed class Agent
             properties["AgentRunInput"] = options.ClientToolInput;
         }
 
-        // Add AgentRunOptions itself for middleware access
+        // Add AgentRunConfig itself for middleware access
         properties ??= new Dictionary<string, object>();
-        properties["AgentRunOptions"] = options;
+        properties["AgentRunConfig"] = options;
 
         // Merge context overrides
         if (options.ContextOverrides != null)
@@ -3140,12 +3140,12 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Resolves the effective chat client for this run based on AgentRunOptions.
+    /// Resolves the effective chat client for this run based on AgentRunConfig.
     /// Priority: OverrideChatClient > ProviderKey/ModelId > null (use default)
     /// </summary>
     /// <param name="options">Per-invocation options</param>
     /// <returns>Override client if specified, null to use default</returns>
-    private IChatClient? ResolveClientForOptions(AgentRunOptions? options)
+    private IChatClient? ResolveClientForOptions(AgentRunConfig? options)
     {
         // Direct override: highest priority (for C# power users)
         if (options?.OverrideChatClient != null)
@@ -3200,13 +3200,13 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Resolves system instructions considering AgentRunOptions overrides.
-    /// Priority: AgentRunOptions.SystemInstructions > Config.SystemInstructions
+    /// Resolves system instructions considering AgentRunConfig overrides.
+    /// Priority: AgentRunConfig.SystemInstructions > Config.SystemInstructions
     /// If AdditionalSystemInstructions is set, it's appended.
     /// </summary>
     /// <param name="options">Per-invocation options</param>
     /// <returns>Resolved system instructions</returns>
-    private string? ResolveSystemInstructions(AgentRunOptions? options)
+    private string? ResolveSystemInstructions(AgentRunConfig? options)
     {
         // Use override if provided, otherwise fall back to config
         var instructions = options?.SystemInstructions
@@ -3225,23 +3225,23 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Applies system instruction overrides from AgentRunOptions to ChatOptions.
+    /// Applies system instruction overrides from AgentRunConfig to ChatOptions.
     /// Creates a new ChatOptions instance with the resolved instructions.
     /// </summary>
     /// <param name="chatOptions">Base chat options (can be null)</param>
-    /// <param name="runOptions">Per-invocation options</param>
+    /// <param name="runConfig">Per-invocation options</param>
     /// <returns>ChatOptions with resolved system instructions</returns>
-    private ChatOptions? ApplySystemInstructionOverrides(ChatOptions? chatOptions, AgentRunOptions? runOptions)
+    private ChatOptions? ApplySystemInstructionOverrides(ChatOptions? chatOptions, AgentRunConfig? runConfig)
     {
         // If no overrides, return as-is
-        if (runOptions == null ||
-            (string.IsNullOrEmpty(runOptions.SystemInstructions) &&
-             string.IsNullOrEmpty(runOptions.AdditionalSystemInstructions)))
+        if (runConfig == null ||
+            (string.IsNullOrEmpty(runConfig.SystemInstructions) &&
+             string.IsNullOrEmpty(runConfig.AdditionalSystemInstructions)))
         {
             return chatOptions;
         }
 
-        var resolvedInstructions = ResolveSystemInstructions(runOptions);
+        var resolvedInstructions = ResolveSystemInstructions(runConfig);
         if (string.IsNullOrEmpty(resolvedInstructions))
             return chatOptions;
 
@@ -3284,20 +3284,20 @@ public sealed class Agent
     /// Validates background responses usage and logs warnings for common mistakes.
     /// Philosophy: "Let it flow" - warn but don't block, allow graceful degradation.
     /// </summary>
-    /// <param name="runOptions">Per-run options</param>
+    /// <param name="runConfig">Per-run options</param>
     /// <param name="allowBackgroundResponses">Resolved background responses setting</param>
     /// <param name="messageCount">Number of input messages</param>
     private void ValidateBackgroundResponsesUsage(
-        AgentRunOptions? runOptions,
+        AgentRunConfig? runConfig,
         bool allowBackgroundResponses,
         int messageCount)
     {
         // Skip validation if no background-related settings are used
-        if (!allowBackgroundResponses && runOptions?.ContinuationToken == null)
+        if (!allowBackgroundResponses && runConfig?.ContinuationToken == null)
             return;
 
         // Warning 1: Messages provided with ContinuationToken (messages will be ignored)
-        if (runOptions?.ContinuationToken != null && messageCount > 0)
+        if (runConfig?.ContinuationToken != null && messageCount > 0)
         {
             _observerErrorLogger?.LogWarning(
                 "Background responses: Messages provided with ContinuationToken will be ignored during polling. " +
@@ -3306,7 +3306,7 @@ public sealed class Agent
 
         // Warning 2: ContinuationToken provided without AllowBackgroundResponses explicitly set
         // This might indicate the user doesn't realize they're in polling mode
-        if (runOptions?.ContinuationToken != null && runOptions.AllowBackgroundResponses != true)
+        if (runConfig?.ContinuationToken != null && runConfig.AllowBackgroundResponses != true)
         {
             _observerErrorLogger?.LogInformation(
                 "Background responses: ContinuationToken provided without AllowBackgroundResponses=true. " +
@@ -3315,7 +3315,7 @@ public sealed class Agent
 
         // Warning 3: AutoPollToCompletion enabled with manual ContinuationToken
         // Auto-poll handles polling automatically - manual token might cause confusion
-        if (Config?.BackgroundResponses?.AutoPollToCompletion == true && runOptions?.ContinuationToken != null)
+        if (Config?.BackgroundResponses?.AutoPollToCompletion == true && runConfig?.ContinuationToken != null)
         {
             _observerErrorLogger?.LogWarning(
                 "Background responses: Manual ContinuationToken provided with AutoPollToCompletion enabled. " +
@@ -3409,7 +3409,7 @@ public sealed class Agent
         IEnumerable<ChatMessage> messages,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var config = Config?.BackgroundResponses;
@@ -3426,7 +3426,7 @@ public sealed class Agent
         }
 
         // Auto-poll mode: Enable background responses and poll until completion
-        options ??= new AgentRunOptions();
+        options ??= new AgentRunConfig();
         options.AllowBackgroundResponses = true;
 
         var pollInterval = options.BackgroundPollingInterval ?? config!.DefaultPollingInterval;
@@ -3512,7 +3512,7 @@ public sealed class Agent
         string userMessage,
         Session? session = null,
         Branch? branch = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         CancellationToken cancellationToken = default)
     {
         return RunWithAutoPollAsync(
@@ -3563,7 +3563,7 @@ public sealed class Agent
         string userMessage,
         string sessionId,
         string? branchId = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var (session, branch) = await LoadSessionAndBranchAsync(sessionId, branchId, cancellationToken);
@@ -3604,7 +3604,7 @@ public sealed class Agent
         ChatMessage message,
         string sessionId,
         string? branchId = null,
-        AgentRunOptions? options = null,
+        AgentRunConfig? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var (session, branch) = await LoadSessionAndBranchAsync(sessionId, branchId, cancellationToken);
@@ -3798,19 +3798,77 @@ public sealed class Agent
         ArgumentNullException.ThrowIfNull(sourceBranch);
         ArgumentException.ThrowIfNullOrWhiteSpace(newBranchId);
 
-        if (fromMessageIndex < 0 || fromMessageIndex >= sourceBranch.Messages.Count)
+        // Validate fork index
+        if (fromMessageIndex < 0)
             throw new ArgumentOutOfRangeException(nameof(fromMessageIndex),
-                $"Message index {fromMessageIndex} out of range (0-{sourceBranch.Messages.Count - 1})");
+                "Message index cannot be negative");
+
+        if (sourceBranch.Messages.Count == 0)
+        {
+            // Empty branch: only allow fork at index 0
+            if (fromMessageIndex != 0)
+                throw new ArgumentOutOfRangeException(nameof(fromMessageIndex),
+                    $"Cannot fork empty branch at index {fromMessageIndex} (must be 0)");
+        }
+        else
+        {
+            // Non-empty branch: index must be within message range
+            if (fromMessageIndex >= sourceBranch.Messages.Count)
+                throw new ArgumentOutOfRangeException(nameof(fromMessageIndex),
+                    $"Message index {fromMessageIndex} out of range (0-{sourceBranch.Messages.Count - 1})");
+        }
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        // V3: Get all existing siblings at this fork point
+        // IMPORTANT: We want siblings of the NEW branch, not the source branch!
+        // New branch will have: ForkedFrom=sourceBranch.Id, ForkedAtMessageIndex=fromMessageIndex
+        var siblings = await GetSiblingsAsync(
+            sourceBranch.SessionId,
+            sourceBranch.Id,  // This is just for potential filtering, not used in sibling matching
+            sourceBranch.Id,  // NEW branch's ForkedFrom = source branch ID
+            fromMessageIndex, // NEW branch's ForkedAtMessageIndex = fork point
+            cancellationToken);
+
+        // V3: Sort siblings (original first, then chronological)
+        var sortedSiblings = siblings
+            .OrderBy(b => b.ForkedFrom != null)  // Original first
+            .ThenBy(b => b.CreatedAt)
+            .ToList();
 
         // Create new branch with copied messages and branch-scoped state
+        var now = DateTime.UtcNow;
         var newBranch = new Branch(sourceBranch.SessionId, newBranchId)
         {
             ForkedFrom = sourceBranch.Id,
             ForkedAtMessageIndex = fromMessageIndex,
             Session = sourceBranch.Session, // Inherit Session back-reference
-            CreatedAt = DateTime.UtcNow,
-            LastActivity = DateTime.UtcNow
+            CreatedAt = now,
+            LastActivity = now,
+
+            // V3: Sibling metadata
+            SiblingIndex = sortedSiblings.Count,      // Next available index
+            TotalSiblings = sortedSiblings.Count + 1, // Include new branch
+            IsOriginal = false,
+            OriginalBranchId = sourceBranch.ForkedFrom ?? sourceBranch.Id,
+            ChildBranches = new List<string>()
         };
+
+        // Build ancestor chain: copy parent's ancestors and add parent
+        var ancestors = new Dictionary<string, string>();
+        if (sourceBranch.Ancestors != null)
+        {
+            foreach (var kvp in sourceBranch.Ancestors)
+            {
+                ancestors[kvp.Key] = kvp.Value;
+            }
+        }
+        // Add the source branch as an ancestor
+        var depth = ancestors.Count;
+        ancestors[depth.ToString()] = sourceBranch.Id;
+        newBranch.Ancestors = ancestors;
 
         // Copy messages up to and including fork point
         newBranch.Messages.AddRange(sourceBranch.Messages.Take(fromMessageIndex + 1));
@@ -3821,10 +3879,276 @@ public sealed class Agent
             newBranch.MiddlewareState[kvp.Key] = kvp.Value;
         }
 
+        // V3: Update ALL existing siblings' TotalSiblings count (ATOMIC)
+        foreach (var sibling in sortedSiblings)
+        {
+            sibling.TotalSiblings = sortedSiblings.Count + 1;
+            sibling.LastActivity = now;
+            await store.SaveBranchAsync(sourceBranch.SessionId, sibling, cancellationToken);
+        }
+
+        // V3: Set navigation pointers
+        if (sortedSiblings.Count > 0)
+        {
+            // Link to previous sibling (last in sorted list)
+            var previousSibling = sortedSiblings.Last();
+            newBranch.PreviousSiblingId = previousSibling.Id;
+
+            // Update previous sibling's NextSiblingId
+            previousSibling.NextSiblingId = newBranch.Id;
+            previousSibling.LastActivity = now;
+            await store.SaveBranchAsync(sourceBranch.SessionId, previousSibling, cancellationToken);
+        }
+
+        // V3: Update source branch's ChildBranches list
+        if (!sourceBranch.ChildBranches.Contains(newBranch.Id))
+        {
+            sourceBranch.ChildBranches.Add(newBranch.Id);
+            sourceBranch.LastActivity = now;
+            await store.SaveBranchAsync(sourceBranch.SessionId, sourceBranch, cancellationToken);
+        }
+
+        // V3: Update session's LastActivity
+        if (sourceBranch.Session != null)
+        {
+            sourceBranch.Session.LastActivity = now;
+            await store.SaveSessionAsync(sourceBranch.Session, cancellationToken);
+        }
+
         // Save the new branch
-        await SaveBranchAsync(newBranch, cancellationToken);
+        await store.SaveBranchAsync(sourceBranch.SessionId, newBranch, cancellationToken);
 
         return newBranch;
+    }
+
+    /// <summary>
+    /// Helper: Get all siblings at a fork point.
+    /// Siblings share the same ForkedFrom and ForkedAtMessageIndex.
+    /// </summary>
+    private async Task<List<Branch>> GetSiblingsAsync(
+        string sessionId,
+        string targetBranchId,
+        string? forkedFrom,
+        int? forkedAtMessageIndex,
+        CancellationToken ct)
+    {
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        var branchIds = await store.ListBranchIdsAsync(sessionId, ct);
+        var siblings = new List<Branch>();
+
+        foreach (var branchId in branchIds)
+        {
+            var branch = await store.LoadBranchAsync(sessionId, branchId, ct);
+            if (branch == null) continue;
+
+            // Include target branch and all siblings (same ForkedFrom + ForkedAtMessageIndex)
+            bool isSibling = branch.ForkedFrom == forkedFrom &&
+                             branch.ForkedAtMessageIndex == forkedAtMessageIndex;
+
+            if (isSibling)
+            {
+                siblings.Add(branch);
+            }
+        }
+
+        return siblings;
+    }
+
+    /// <summary>
+    /// Fork a branch at a specific message index (string-based API).
+    /// Creates a new branch with messages up to the fork point, plus branch-scoped middleware state.
+    /// Returns the new branch ID.
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="sourceBranchId">Source branch to fork from</param>
+    /// <param name="newBranchId">New branch identifier</param>
+    /// <param name="fromMessageIndex">Message index to fork at (0-based, inclusive)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>The new branch ID (same as newBranchId parameter)</returns>
+    public async Task<string> ForkBranchAsync(
+        string sessionId,
+        string sourceBranchId,
+        string newBranchId,
+        int fromMessageIndex,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceBranchId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newBranchId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        // Load session and source branch
+        var session = await store.LoadSessionAsync(sessionId, cancellationToken)
+            ?? throw new InvalidOperationException($"Session '{sessionId}' not found.");
+        session.Store = store;
+
+        var sourceBranch = await store.LoadBranchAsync(sessionId, sourceBranchId, cancellationToken)
+            ?? throw new InvalidOperationException($"Branch '{sourceBranchId}' not found in session '{sessionId}'.");
+        sourceBranch.Session = session;
+
+        // Fork using the object-based method
+        var newBranch = await ForkBranchAsync(sourceBranch, newBranchId, fromMessageIndex, cancellationToken);
+
+        return newBranch.Id;
+    }
+
+    /// <summary>
+    /// Delete a specific branch (string-based API).
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="branchId">Branch identifier to delete</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task DeleteBranchAsync(
+        string sessionId,
+        string branchId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(branchId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        // V3: Protect "main" branch from deletion
+        if (branchId == "main")
+        {
+            throw new InvalidOperationException("Cannot delete the 'main' branch.");
+        }
+
+        // Load the branch to delete
+        var branch = await store.LoadBranchAsync(sessionId, branchId, cancellationToken);
+        if (branch == null)
+        {
+            throw new InvalidOperationException($"Branch '{branchId}' not found in session '{sessionId}'.");
+        }
+
+        // V3: Prevent deletion if branch has children (referential integrity)
+        if (branch.ChildBranches.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot delete branch with {branch.ChildBranches.Count} child branches. " +
+                $"Delete children first: {string.Join(", ", branch.ChildBranches)}");
+        }
+
+        // V3: Perform deletion with sibling reindexing
+        // Note: No session locking at Agent level - locking should be done by the caller (e.g., BranchEndpoints)
+
+        // Remove from parent's ChildBranches list
+        if (branch.ForkedFrom != null)
+        {
+            var parent = await store.LoadBranchAsync(sessionId, branch.ForkedFrom, cancellationToken);
+            if (parent != null && parent.ChildBranches.Contains(branchId))
+            {
+                parent.ChildBranches.Remove(branchId);
+                parent.LastActivity = DateTime.UtcNow;
+                await store.SaveBranchAsync(sessionId, parent, cancellationToken);
+            }
+        }
+
+        // Get all remaining siblings
+        var branchIds = await store.ListBranchIdsAsync(sessionId, cancellationToken);
+        var remainingSiblings = new List<Branch>();
+
+        foreach (var bid in branchIds)
+        {
+            if (bid == branchId) continue; // Skip branch being deleted
+
+            var sibling = await store.LoadBranchAsync(sessionId, bid, cancellationToken);
+            if (sibling != null &&
+                sibling.ForkedFrom == branch.ForkedFrom &&
+                sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex)
+            {
+                remainingSiblings.Add(sibling);
+            }
+        }
+
+        // Sort siblings by current index (to maintain order)
+        remainingSiblings = remainingSiblings
+            .OrderBy(b => b.SiblingIndex)
+            .ToList();
+
+        // Reindex siblings (shift indices down)
+        for (int i = 0; i < remainingSiblings.Count; i++)
+        {
+            var sibling = remainingSiblings[i];
+
+            // Update sibling metadata
+            sibling.SiblingIndex = i;
+            sibling.TotalSiblings = remainingSiblings.Count;
+            sibling.LastActivity = DateTime.UtcNow;
+
+            // Update navigation pointers
+            sibling.PreviousSiblingId = i > 0
+                ? remainingSiblings[i - 1].Id
+                : null;
+
+            sibling.NextSiblingId = i < remainingSiblings.Count - 1
+                ? remainingSiblings[i + 1].Id
+                : null;
+
+            await store.SaveBranchAsync(sessionId, sibling, cancellationToken);
+        }
+
+        // Delete the branch (after all updates complete)
+        await store.DeleteBranchAsync(sessionId, branchId, cancellationToken);
+    }
+
+    /// <summary>
+    /// Save session metadata manually (advanced use).
+    /// </summary>
+    /// <param name="session">Session to save</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task SaveSessionAsync(
+        Session session,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        await store.SaveSessionAsync(session, cancellationToken);
+    }
+
+    /// <summary>
+    /// Delete entire session (all branches + assets).
+    /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task DeleteSessionAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        await store.DeleteSessionAsync(sessionId, cancellationToken);
+    }
+
+    /// <summary>
+    /// List all session IDs.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of session IDs</returns>
+    public async Task<List<string>> ListSessionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var store = Config.SessionStore;
+        if (store == null)
+            return [];
+
+        return await store.ListSessionIdsAsync(cancellationToken);
     }
 
     //
@@ -4847,7 +5171,7 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
@@ -4861,14 +5185,14 @@ internal class FunctionCallProcessor
         if (toolRequests.Count <= 1)
         {
             var result = await ExecuteSequentiallyAsync(
-                currentHistory, toolRequests, options, agentLoopState, runOptions, agentContext,
+                currentHistory, toolRequests, options, agentLoopState, runConfig, agentContext,
                 cancellationToken).ConfigureAwait(false);
             return result with { OutputToolCalled = outputToolCalled };
         }
 
         // For multiple tools, use parallel execution with throttling
         var parallelResult = await ExecuteInParallelAsync(
-            currentHistory, toolRequests, options, agentLoopState, runOptions, agentContext,
+            currentHistory, toolRequests, options, agentLoopState, runConfig, agentContext,
             cancellationToken).ConfigureAwait(false);
         return parallelResult with { OutputToolCalled = outputToolCalled };
     }
@@ -4882,14 +5206,14 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
         var allContents = new List<AIContent>();
         // Process ALL tools (containers + regular) through the existing processor
         var resultMessages = await ProcessFunctionCallsAsync(
-            currentHistory, options, toolRequests, agentLoopState, runOptions, agentContext, cancellationToken).ConfigureAwait(false);
+            currentHistory, options, toolRequests, agentLoopState, runConfig, agentContext, cancellationToken).ConfigureAwait(false);
 
         // Combine results
         foreach (var message in resultMessages)
@@ -4917,7 +5241,7 @@ internal class FunctionCallProcessor
         List<FunctionCallContent> toolRequests,
         ChatOptions? options,
         AgentLoopState agentLoopState,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
@@ -4975,7 +5299,7 @@ internal class FunctionCallProcessor
 
         var batchContext = batchAgentContext.AsBeforeParallelBatch(
             parallelFunctions,
-            runOptions);
+            runConfig);
 
         // Execute BeforeParallelBatchAsync middleware hooks
         await _middlewarePipeline.ExecuteBeforeParallelBatchAsync(
@@ -5002,7 +5326,7 @@ internal class FunctionCallProcessor
                 // NO permission check here - already done in batch above
                 var singleToolList = new List<FunctionCallContent> { toolRequest };
                 var resultMessages = await ProcessFunctionCallsAsync(
-                    currentHistory, options, singleToolList, agentLoopState, runOptions, agentContext, cancellationToken).ConfigureAwait(false);
+                    currentHistory, options, singleToolList, agentLoopState, runConfig, agentContext, cancellationToken).ConfigureAwait(false);
 
                 return (Success: true, Messages: resultMessages, Error: (Exception?)null, ToolRequest: toolRequest);
             }
@@ -5127,7 +5451,7 @@ internal class FunctionCallProcessor
         ChatOptions? options,
         List<FunctionCallContent> functionCallContents,
         AgentLoopState agentLoopState,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         Middleware.AgentContext agentContext,
         CancellationToken cancellationToken)
     {
@@ -5211,7 +5535,7 @@ internal class FunctionCallProcessor
                 function: function!,  // Will be null for unknown functions
                 callId: functionCall.CallId,
                 arguments: (IReadOnlyDictionary<string, object?>?)(functionCall.Arguments ?? new Dictionary<string, object?>()),
-                runOptions: runOptions,
+                runConfig: runConfig,
                 toolkitName: toolTypeName,
                 skillName: skillName);
 
@@ -5316,7 +5640,7 @@ internal class FunctionCallProcessor
                 callId: functionCall.CallId,
                 result: executionResult,
                 exception: executionException,
-                runOptions: runOptions,
+                runConfig: runConfig,
                 toolkitName: toolTypeName,
                 skillName: skillName);
 
@@ -5651,7 +5975,7 @@ internal class AgentTurn
     /// </summary>
     /// <param name="messages">The conversation history to send to the LLM</param>
     /// <param name="options">Optional chat options</param>
-    /// <param name="overrideClient">Optional override client (for AgentRunOptions provider switching)</param>
+    /// <param name="overrideClient">Optional override client (for AgentRunConfig provider switching)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of ChatResponseUpdates representing the LLM's response</returns>
     public async IAsyncEnumerable<ChatResponseUpdate> RunAsync(
@@ -5689,7 +6013,7 @@ internal class AgentTurn
 
         // Apply middleware dynamically (if any)
         // This allows runtime provider switching - new providers automatically get wrapped
-        // Use override client if provided (from AgentRunOptions), otherwise use base client
+        // Use override client if provided (from AgentRunConfig), otherwise use base client
         var effectiveClient = overrideClient ?? _baseClient;
         if (_middleware != null && _middleware.Count > 0)
         {

@@ -2,6 +2,7 @@ namespace HPD.Agent;
 
 /// <summary>
 /// Storage interface for binary assets (images, audio, videos, PDFs).
+/// Extends IContentStore for unified content operations.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,7 +14,7 @@ namespace HPD.Agent;
 /// <item>Assets are stored separately from conversation messages</item>
 /// <item>Messages reference assets via URI (asset://assetId)</item>
 /// <item>Enables efficient storage (e.g., S3, blob storage, local files)</item>
-/// <item>Supports multi-tenant scenarios (per-session isolation)</item>
+/// <item>Supports multi-tenant scenarios (per-session isolation via scope parameter)</item>
 /// </list>
 /// <para><b>Usage:</b></para>
 /// <para>
@@ -21,63 +22,31 @@ namespace HPD.Agent;
 /// binary asset storage. The AssetUploadMiddleware automatically uploads
 /// DataContent bytes to the asset store before LLM processing.
 /// </para>
+/// <para><b>IContentStore Integration (V2):</b></para>
+/// <para>
+/// IAssetStore extends IContentStore, providing unified Put/Get/Delete/Query operations.
+/// All operations use the scope parameter (sessionId) for per-session isolation.
+/// </para>
+/// <para><b>Example Usage:</b></para>
+/// <code>
+/// // Store asset in session scope
+/// var assetId = await assetStore.PutAsync(
+///     scope: sessionId,
+///     data: imageBytes,
+///     contentType: "image/jpeg");
+///
+/// // Retrieve asset from session scope
+/// var content = await assetStore.GetAsync(sessionId, assetId);
+///
+/// // Query all assets in session
+/// var assets = await assetStore.QueryAsync(scope: sessionId);
+/// </code>
 /// </remarks>
-public interface IAssetStore
+public interface IAssetStore : IContentStore
 {
-    /// <summary>
-    /// Upload binary asset and return unique identifier.
-    /// </summary>
-    /// <param name="data">Binary data to upload</param>
-    /// <param name="contentType">MIME type (e.g., "image/jpeg", "audio/mp3")</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Unique asset identifier for later retrieval</returns>
-    /// <remarks>
-    /// The returned asset ID should be stable and usable in URIs (e.g., "asset://assetId").
-    /// Implementations should handle duplicate uploads efficiently (e.g., content-based deduplication).
-    /// </remarks>
-    Task<string> UploadAssetAsync(
-        byte[] data,
-        string contentType,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Download asset by identifier.
-    /// Returns null if not found.
-    /// </summary>
-    /// <param name="assetId">Asset identifier returned by UploadAssetAsync</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Asset data, or null if not found</returns>
-    /// <remarks>
-    /// Implementations should handle missing assets gracefully (return null, not throw).
-    /// </remarks>
-    Task<AssetData?> DownloadAssetAsync(
-        string assetId,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Delete asset by identifier.
-    /// No-op if asset doesn't exist.
-    /// </summary>
-    /// <param name="assetId">Asset identifier to delete</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <remarks>
-    /// This method should be idempotent - calling it multiple times or on
-    /// non-existent assets should not throw exceptions.
-    /// </remarks>
-    Task DeleteAssetAsync(
-        string assetId,
-        CancellationToken cancellationToken = default);
+    // Clean interface - all methods inherited from IContentStore
+    // Use PutAsync(scope, data, contentType) to upload assets
+    // Use GetAsync(scope, assetId) to download assets
+    // Use DeleteAsync(scope, assetId) to delete assets
+    // Use QueryAsync(scope) to list assets
 }
-
-/// <summary>
-/// Represents downloaded asset data.
-/// </summary>
-/// <param name="AssetId">Unique identifier for this asset</param>
-/// <param name="Data">Binary data</param>
-/// <param name="ContentType">MIME type (e.g., "image/jpeg", "audio/mp3")</param>
-/// <param name="CreatedAt">When this asset was created (UTC)</param>
-public record AssetData(
-    string AssetId,
-    byte[] Data,
-    string ContentType,
-    DateTime CreatedAt);

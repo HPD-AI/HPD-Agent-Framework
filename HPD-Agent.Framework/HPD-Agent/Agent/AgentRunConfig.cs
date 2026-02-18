@@ -17,7 +17,7 @@ namespace HPD.Agent;
 /// <remarks>
 /// <para>
 /// <b>Design Philosophy:</b>
-/// AgentRunOptions provides per-invocation customization that doesn't require rebuilding the agent.
+/// AgentRunConfig provides per-invocation customization that doesn't require rebuilding the agent.
 /// This enables scenarios like:
 /// - Runtime provider switching (OpenAI → Claude → local)
 /// - Per-request temperature/token adjustments
@@ -32,13 +32,13 @@ namespace HPD.Agent;
 /// - ContextInstances > Builder-time contexts > Default context
 /// </para>
 /// </remarks>
-public class AgentRunOptions
+public class AgentRunConfig
 {
     /// <summary>
     /// Chat parameters (temperature, tokens, etc.)
     /// JSON-serializable, no Microsoft.Extensions.AI dependency.
     /// </summary>
-    public ChatRunOptions? Chat { get; set; }
+    public ChatRunConfig? Chat { get; set; }
 
     /// <summary>
     /// Provider key to switch to (e.g., "openai", "anthropic", "ollama").
@@ -202,7 +202,7 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example:</b>
     /// <code>
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     ContextInstances = new()
     ///     {
@@ -282,7 +282,7 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example:</b>
     /// <code>
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     UserMessage = "Analyze this document",
     ///     Attachments = [await DocumentContent.FromFileAsync("report.pdf")]
@@ -314,9 +314,9 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example - Voice Switching:</b>
     /// <code>
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
-    ///     Audio = new AudioRunOptions { Voice = "alloy" }
+    ///     Audio = new AudioRunConfig { Voice = "alloy" }
     /// };
     /// await agent.RunAsync(messages, options);
     /// </code>
@@ -324,9 +324,9 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example - Provider Switching:</b>
     /// <code>
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
-    ///     Audio = new AudioRunOptions
+    ///     Audio = new AudioRunConfig
     ///     {
     ///         Tts = new TtsConfig { Provider = "elevenlabs", Voice = "Rachel" }
     ///     }
@@ -336,14 +336,14 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example - Extension Methods:</b>
     /// <code>
-    /// var options = new AgentRunOptions()
+    /// var options = new AgentRunConfig()
     ///     .WithVoice("nova")
     ///     .WithTtsSpeed(1.2f);
     /// </code>
     /// </para>
     /// <para>
-    /// Supports both AudioRunOptions (slim runtime API) and AudioConfig (legacy full API).
-    /// AudioRunOptions is recommended for runtime customization as it exposes only
+    /// Supports both AudioRunConfig (slim runtime API) and AudioConfig (legacy full API).
+    /// AudioRunConfig is recommended for runtime customization as it exposes only
     /// commonly-changed settings (voice, provider, language, I/O mode).
     /// </para>
     /// </remarks>
@@ -421,7 +421,7 @@ public class AgentRunOptions
     /// <para>
     /// <b>Example:</b>
     /// <code>
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     StructuredOutput = new StructuredOutputOptions { Mode = "native" }
     /// };
@@ -451,7 +451,7 @@ public class AgentRunOptions
     /// <b>Example:</b>
     /// <code>
     /// var handoffTool = AIFunctionFactory.Create(() => "solver", "handoff_to_solver", "Route to math solver");
-    /// var options = new AgentRunOptions
+    /// var options = new AgentRunConfig
     /// {
     ///     AdditionalTools = new List&lt;AIFunction&gt; { handoffTool }
     /// };
@@ -499,29 +499,31 @@ public class AgentRunOptions
 /// Subset of Microsoft.Extensions.AI.ChatOptions with only JSON primitives.
 /// FFI-friendly - no complex types, no dependencies.
 /// </summary>
-public class ChatRunOptions
+public class ChatRunConfig
 {
     /// <summary>
-    /// Creates a new instance of ChatRunOptions.
+    /// Creates a new instance of ChatRunConfig.
     /// </summary>
-    public ChatRunOptions() { }
+    public ChatRunConfig() { }
 
     /// <summary>
-    /// Creates a new instance of ChatRunOptions from Microsoft.Extensions.AI.ChatOptions.
+    /// Creates a new instance of ChatRunConfig from Microsoft.Extensions.AI.ChatOptions.
     /// </summary>
     /// <param name="options">The ChatOptions to convert from</param>
-    public ChatRunOptions(ChatOptions options)
+    public ChatRunConfig(ChatOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        
+
         Temperature = options.Temperature.HasValue ? (double)options.Temperature.Value : null;
         TopP = options.TopP.HasValue ? (double)options.TopP.Value : null;
+        TopK = options.TopK;
         MaxOutputTokens = options.MaxOutputTokens;
         FrequencyPenalty = options.FrequencyPenalty.HasValue ? (double)options.FrequencyPenalty.Value : null;
         PresencePenalty = options.PresencePenalty.HasValue ? (double)options.PresencePenalty.Value : null;
         ModelId = options.ModelId;
         StopSequences = options.StopSequences as IReadOnlyList<string>;
-        
+        Reasoning = ReasoningOptions.FromMicrosoftReasoningOptions(options.Reasoning);
+
         if (options.AdditionalProperties?.Count > 0)
         {
             AdditionalProperties = new Dictionary<string, object>();
@@ -547,6 +549,14 @@ public class ChatRunOptions
     public double? TopP { get; set; }
 
     /// <summary>
+    /// Top-K sampling. The number of most probable tokens that the model considers when generating the next part of the text.
+    /// This property reduces the probability of generating nonsense. A higher value gives more diverse answers, while a lower value is more conservative.
+    /// Null = use config default.
+    /// </summary>
+    [JsonPropertyName("topK")]
+    public int? TopK { get; set; }
+
+    /// <summary>
     /// Maximum output tokens for this run.
     /// Null = use config default.
     /// </summary>
@@ -569,7 +579,7 @@ public class ChatRunOptions
 
     /// <summary>
     /// Model ID to use (e.g., "gpt-4-turbo").
-    /// Note: Prefer using ProviderKey/ModelId in AgentRunOptions for provider switching.
+    /// Note: Prefer using ProviderKey/ModelId in AgentRunConfig for provider switching.
     /// This is for fine-tuning within a provider.
     /// Null = use config default.
     /// </summary>
@@ -589,11 +599,23 @@ public class ChatRunOptions
     public Dictionary<string, object>? AdditionalProperties { get; set; }
 
     /// <summary>
+    /// Reasoning options for the chat request.
+    /// Controls how much computational effort the model should put into reasoning
+    /// and how that reasoning should be exposed.
+    /// </summary>
+    /// <remarks>
+    /// Use <see cref="ReasoningEffort"/> values: None, Low, Medium, High, ExtraHigh.
+    /// Use <see cref="ReasoningOutput"/> values: None, Summary, Full.
+    /// </remarks>
+    [JsonPropertyName("reasoning")]
+    public ReasoningOptions? Reasoning { get; set; }
+
+    /// <summary>
     /// Response format configuration for structured output.
     /// When set, instructs the provider to return JSON matching a schema.
     /// </summary>
     /// <remarks>
-    /// For structured output, prefer using <see cref="AgentRunOptions.StructuredOutput"/>
+    /// For structured output, prefer using <see cref="AgentRunConfig.StructuredOutput"/>
     /// which handles this automatically via RunStructuredAsync&lt;T&gt;().
     /// </remarks>
     [JsonIgnore] // Not FFI-serializable (ChatResponseFormat contains complex types)
@@ -605,10 +627,10 @@ public class ChatRunOptions
     /// </summary>
     public ChatOptions? ToMicrosoftChatOptions()
     {
-        if (Temperature == null && TopP == null && MaxOutputTokens == null &&
+        if (Temperature == null && TopP == null && TopK == null && MaxOutputTokens == null &&
             FrequencyPenalty == null && PresencePenalty == null &&
             string.IsNullOrEmpty(ModelId) && StopSequences == null &&
-            ResponseFormat == null &&
+            ResponseFormat == null && Reasoning == null &&
             (AdditionalProperties == null || AdditionalProperties.Count == 0))
         {
             return null;  // No overrides
@@ -620,6 +642,8 @@ public class ChatRunOptions
             options.Temperature = (float)Temperature.Value;
         if (TopP.HasValue)
             options.TopP = (float)TopP.Value;
+        if (TopK.HasValue)
+            options.TopK = TopK.Value;
         if (MaxOutputTokens.HasValue)
             options.MaxOutputTokens = MaxOutputTokens.Value;
         if (FrequencyPenalty.HasValue)
@@ -636,6 +660,9 @@ public class ChatRunOptions
 
         if (ResponseFormat != null)
             options.ResponseFormat = ResponseFormat;
+
+        if (Reasoning != null)
+            options.Reasoning = Reasoning.ToMicrosoftReasoningOptions();
 
         if (AdditionalProperties?.Count > 0)
         {
@@ -673,6 +700,7 @@ public class ChatRunOptions
         {
             Temperature = thisOptions.Temperature ?? baseOptions.Temperature,
             TopP = thisOptions.TopP ?? baseOptions.TopP,
+            TopK = thisOptions.TopK ?? baseOptions.TopK,
             MaxOutputTokens = thisOptions.MaxOutputTokens ?? baseOptions.MaxOutputTokens,
             FrequencyPenalty = thisOptions.FrequencyPenalty ?? baseOptions.FrequencyPenalty,
             PresencePenalty = thisOptions.PresencePenalty ?? baseOptions.PresencePenalty,
@@ -681,6 +709,7 @@ public class ChatRunOptions
             Tools = baseOptions.Tools,  // Always from base (tools are agent-level)
             ToolMode = baseOptions.ToolMode,
             ResponseFormat = thisOptions.ResponseFormat ?? baseOptions.ResponseFormat,
+            Reasoning = thisOptions.Reasoning ?? baseOptions.Reasoning,
             Seed = baseOptions.Seed
         };
 
@@ -710,4 +739,120 @@ public class ChatRunOptions
 
         return merged;
     }
+}
+
+/// <summary>
+/// Specifies the level of reasoning effort that should be applied when generating chat responses.
+/// </summary>
+/// <remarks>
+/// This value suggests how much computational effort the model should put into reasoning.
+/// Higher values may result in more thoughtful responses but with increased latency and token usage.
+/// The specific interpretation and support for each level may vary between providers or even between models from the same provider.
+/// </remarks>
+public enum ReasoningEffort
+{
+    /// <summary>
+    /// No reasoning effort.
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// Low reasoning effort. Minimal reasoning for faster responses.
+    /// </summary>
+    Low = 1,
+
+    /// <summary>
+    /// Medium reasoning effort. Balanced reasoning for most use cases.
+    /// </summary>
+    Medium = 2,
+
+    /// <summary>
+    /// High reasoning effort. Extensive reasoning for complex tasks.
+    /// </summary>
+    High = 3,
+
+    /// <summary>
+    /// Extra high reasoning effort. Maximum reasoning for the most demanding tasks.
+    /// </summary>
+    ExtraHigh = 4,
+}
+
+/// <summary>
+/// Specifies how reasoning content should be included in the response.
+/// </summary>
+/// <remarks>
+/// Some providers support including reasoning or thinking traces in the response.
+/// This setting controls whether and how that reasoning content is exposed.
+/// </remarks>
+public enum ReasoningOutput
+{
+    /// <summary>
+    /// No reasoning output. Do not include reasoning content in the response.
+    /// </summary>
+    None = 0,
+
+    /// <summary>
+    /// Summary reasoning output. Include a summary of the reasoning process.
+    /// </summary>
+    Summary = 1,
+
+    /// <summary>
+    /// Full reasoning output. Include all reasoning content in the response.
+    /// </summary>
+    Full = 2,
+}
+
+/// <summary>
+/// Represents options for configuring reasoning behavior in chat requests.
+/// Wrapper around Microsoft.Extensions.AI.ReasoningOptions for FFI-friendly usage.
+/// </summary>
+public class ReasoningOptions
+{
+    /// <summary>
+    /// Gets or sets the level of reasoning effort to apply.
+    /// </summary>
+    [JsonPropertyName("effort")]
+    public ReasoningEffort? Effort { get; set; }
+
+    /// <summary>
+    /// Gets or sets how reasoning content should be included in the response.
+    /// </summary>
+    [JsonPropertyName("output")]
+    public ReasoningOutput? Output { get; set; }
+
+    /// <summary>
+    /// Converts to Microsoft.Extensions.AI.ReasoningOptions for internal use.
+    /// </summary>
+    internal Microsoft.Extensions.AI.ReasoningOptions ToMicrosoftReasoningOptions()
+    {
+        return new Microsoft.Extensions.AI.ReasoningOptions
+        {
+            Effort = Effort.HasValue ? (Microsoft.Extensions.AI.ReasoningEffort)Effort.Value : null,
+            Output = Output.HasValue ? (Microsoft.Extensions.AI.ReasoningOutput)Output.Value : null,
+        };
+    }
+
+    /// <summary>
+    /// Creates from Microsoft.Extensions.AI.ReasoningOptions.
+    /// </summary>
+    internal static ReasoningOptions? FromMicrosoftReasoningOptions(Microsoft.Extensions.AI.ReasoningOptions? options)
+    {
+        if (options == null)
+            return null;
+
+        return new ReasoningOptions
+        {
+            Effort = options.Effort.HasValue ? (ReasoningEffort)options.Effort.Value : null,
+            Output = options.Output.HasValue ? (ReasoningOutput)options.Output.Value : null,
+        };
+    }
+
+    /// <summary>
+    /// Creates a shallow clone of this instance.
+    /// </summary>
+    public ReasoningOptions Clone() => new()
+    {
+        Effort = Effort,
+        Output = Output,
+    };
 }

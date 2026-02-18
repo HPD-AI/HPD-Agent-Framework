@@ -17,7 +17,7 @@ public class TypedContextTests
         var options = new ChatOptions { Temperature = 0.7f };
 
         // Act
-        var iterContext = context.AsBeforeIteration(0, messages, options, new AgentRunOptions());
+        var iterContext = context.AsBeforeIteration(0, messages, options, new AgentRunConfig());
 
         // Assert - no NULL checks needed!
         Assert.NotNull(iterContext.Messages);
@@ -34,7 +34,7 @@ public class TypedContextTests
         var options = new ChatOptions();
 
         // Act
-        var iterContext = context.AsBeforeIteration(0, messages, options, new AgentRunOptions());
+        var iterContext = context.AsBeforeIteration(0, messages, options, new AgentRunConfig());
 
         // Mutate properties (by design for 90% use case)
         iterContext.Messages.Add(new ChatMessage(ChatRole.System, "Added message"));
@@ -54,7 +54,7 @@ public class TypedContextTests
             0,
             new List<ChatMessage>(),
             new ChatOptions(),
-            new AgentRunOptions());
+            new AgentRunConfig());
 
         // Act
         iterContext.SkipLLMCall = true;
@@ -78,7 +78,7 @@ public class TypedContextTests
         };
 
         // Act
-        var afterContext = context.AsAfterIteration(0, toolResults, new AgentRunOptions());
+        var afterContext = context.AsAfterIteration(0, toolResults, new AgentRunConfig());
 
         // Assert - no NULL checks!
         Assert.Equal(2, afterContext.ToolResults.Count);
@@ -99,7 +99,7 @@ public class TypedContextTests
             function,
             "call1",
             args,
-            new AgentRunOptions(),
+            new AgentRunConfig(),
             "Toolkit1",
             "Skill1");
 
@@ -117,7 +117,7 @@ public class TypedContextTests
         // Arrange
         var context = CreateTestContext();
         var function = AIFunctionFactory.Create(() => "test", "TestFunc");
-        var funcContext = context.AsBeforeFunction(function, "call1", new Dictionary<string, object?>(), new AgentRunOptions(), null, null);
+        var funcContext = context.AsBeforeFunction(function, "call1", new Dictionary<string, object?>(), new AgentRunConfig(), null, null);
 
         // Act
         funcContext.BlockExecution = true;
@@ -137,7 +137,7 @@ public class TypedContextTests
         var exception = new InvalidOperationException("Test error");
 
         // Act
-        var afterContext = context.AsAfterFunction(function, "call1", "original result", exception, new AgentRunOptions());
+        var afterContext = context.AsAfterFunction(function, "call1", "original result", exception, new AgentRunConfig());
 
         // Middleware can transform result/exception
         afterContext.Result = "transformed result";
@@ -181,7 +181,7 @@ public class TypedContextTests
         };
 
         // Act
-        var turnContext = context.AsAfterMessageTurn(response, turnHistory, new AgentRunOptions());
+        var turnContext = context.AsAfterMessageTurn(response, turnHistory, new AgentRunConfig());
 
         // Middleware can filter history (e.g., remove ephemeral messages)
         turnContext.TurnHistory.RemoveAll(m => m.Role == ChatRole.Tool);

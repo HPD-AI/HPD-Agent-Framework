@@ -49,8 +49,8 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// </summary>
     public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken ct)
     {
-        // Get AgentRunInput from RunOptions (if provided)
-        var runInput = context.RunOptions.ClientToolInput;
+        // Get AgentRunInput from RunConfig (if provided)
+        var runInput = context.RunConfig.ClientToolInput;
 
         if (runInput == null)
             return Task.CompletedTask;

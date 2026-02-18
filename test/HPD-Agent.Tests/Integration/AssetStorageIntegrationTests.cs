@@ -37,7 +37,10 @@ public class AssetStorageIntegrationTests
                 .Build();
 
             // Load session and branch (sets session.Store automatically)
-            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("test-session");
+            var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+            session.Store = store;
+            var branch = await store.LoadBranchAsync("test-session", "main") ?? session.CreateBranch("main");
+            branch.Session = session;
             Assert.NotNull(session.Store);
             Assert.Same(store, session.Store);
 
@@ -87,14 +90,14 @@ public class AssetStorageIntegrationTests
             // Assert: Verify asset was stored and is retrievable
             var assetId = uriContent.Uri.Host;
             var assetStore = store.GetAssetStore(session.Id)!;
-            var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+            var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
             Assert.NotNull(retrievedAsset);
             Assert.Equal(imageBytes, retrievedAsset.Data);
             Assert.Equal("image/png", retrievedAsset.ContentType);
-            Assert.Equal(assetId, retrievedAsset.AssetId);
+            Assert.Equal(assetId, retrievedAsset.Id);
 
             // Assert: Verify asset file exists on disk
-            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id, "assets"), $"{assetId}.*");
+            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id), $"{assetId}.*");
             Assert.Single(assetFiles);
             Assert.EndsWith(".png", assetFiles[0]);
 
@@ -137,7 +140,10 @@ public class AssetStorageIntegrationTests
                 .WithChatClient(chatClient)
                 .Build();
 
-            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("multi-asset-session");
+            var session = await store.LoadSessionAsync("multi-asset-session") ?? new SessionModel("multi-asset-session");
+            session.Store = store;
+            var branch = await store.LoadBranchAsync("multi-asset-session", "main") ?? session.CreateBranch("main");
+            branch.Session = session;
 
             // Create different asset types
             var pngBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG
@@ -181,13 +187,13 @@ public class AssetStorageIntegrationTests
             foreach (var uriContent in uriContents)
             {
                 var assetId = uriContent.Uri.Host;
-                var asset = await assetStore.DownloadAssetAsync(assetId);
+                var asset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
                 Assert.NotNull(asset);
                 Assert.Equal(uriContent.MediaType, asset.ContentType);
             }
 
             // Assert: Correct file extensions on disk
-            var assetDir = Path.Combine(tempDir, session.Id, "assets");
+            var assetDir = Path.Combine(tempDir, session.Id);
             Assert.True(Directory.GetFiles(assetDir, "*.png").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.jpg").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.pdf").Length >= 1);
@@ -214,7 +220,10 @@ public class AssetStorageIntegrationTests
             .WithChatClient(chatClient)
             .Build();
 
-        var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("no-asset-session");
+        var session = await store.LoadSessionAsync("no-asset-session") ?? new SessionModel("no-asset-session");
+        session.Store = store;
+        var branch = await store.LoadBranchAsync("no-asset-session", "main") ?? session.CreateBranch("main");
+        branch.Session = session;
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var message = new ChatMessage(ChatRole.User,
@@ -262,7 +271,10 @@ public class AssetStorageIntegrationTests
                 .Build();
 
             // First run: Upload asset
-            var (session1, branch1) = await store.LoadOrCreateSessionAndBranchAsync("roundtrip-session");
+            var session1 = await store.LoadSessionAsync("roundtrip-session") ?? new SessionModel("roundtrip-session");
+            session1.Store = store;
+            var branch1 = await store.LoadBranchAsync("roundtrip-session", "main") ?? session1.CreateBranch("main");
+            branch1.Session = session1;
             var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x01, 0x02, 0x03 };
 
             var userMessage = new ChatMessage(ChatRole.User,
@@ -281,7 +293,10 @@ public class AssetStorageIntegrationTests
             var assetId = uri1.Uri.Host;
 
             // Second run: Load session and branch, verify asset still accessible
-            var (session2, branch2) = await store.LoadOrCreateSessionAndBranchAsync("roundtrip-session");
+            var session2 = await store.LoadSessionAsync("roundtrip-session") ?? new SessionModel("roundtrip-session");
+            session2.Store = store;
+            var branch2 = await store.LoadBranchAsync("roundtrip-session", "main") ?? session2.CreateBranch("main");
+            branch2.Session = session2;
             Assert.NotNull(session2);
 
             var msg2 = branch2.Messages.First(m => m.Role == ChatRole.User);
@@ -291,7 +306,7 @@ public class AssetStorageIntegrationTests
 
             // Assert: Asset still retrievable after roundtrip
             var assetStore = store.GetAssetStore(session2.Id)!;
-            var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+            var retrievedAsset = await assetStore.GetAsync(session2.Id, assetId, CancellationToken.None);
             Assert.NotNull(retrievedAsset);
             Assert.Equal(imageBytes, retrievedAsset.Data);
             Assert.Equal("image/png", retrievedAsset.ContentType);
@@ -313,7 +328,10 @@ public class AssetStorageIntegrationTests
         try
         {
             var store = new JsonSessionStore(tempDir);
-            var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("convenience-session");
+            var session = await store.LoadSessionAsync("convenience-session") ?? new SessionModel("convenience-session");
+            session.Store = store;
+            var branch = await store.LoadBranchAsync("convenience-session", "main") ?? session.CreateBranch("main");
+            branch.Session = session;
 
             branch.AddMessage(new ChatMessage(ChatRole.User, "Test message"));
 

@@ -42,7 +42,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
     }
 
     [Fact]
-    public async Task Agent_RunOptions_AllowBackgroundResponses_OverridesConfig()
+    public async Task Agent_RunConfig_AllowBackgroundResponses_OverridesConfig()
     {
         // Arrange
         var fakeClient = new FakeChatClient();
@@ -57,7 +57,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
         branch.AddMessage(UserMessage("Test"));
 
         // Act: Override at run level to disable
-        var options = new AgentRunOptions { AllowBackgroundResponses = false };
+        var options = new AgentRunConfig { AllowBackgroundResponses = false };
         var events = new List<AgentEvent>();
         var messages = branch.Messages;
         await foreach (var evt in agent.RunAsync(messages, session: session, branch: branch, options: options, cancellationToken: TestCancellationToken))
@@ -80,7 +80,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
             DefaultPollingInterval = TimeSpan.FromSeconds(10)
         };
 
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             BackgroundPollingInterval = TimeSpan.FromSeconds(1)
         };
@@ -104,7 +104,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
             DefaultTimeout = TimeSpan.FromMinutes(30)
         };
 
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             BackgroundTimeout = TimeSpan.FromMinutes(5)
         };
@@ -308,7 +308,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
         var token = ResponseContinuationToken.FromBytes(new byte[] { 0x01, 0x02, 0x03 });
         #pragma warning restore MEAI001
 
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             AllowBackgroundResponses = true,
             ContinuationToken = token
@@ -397,7 +397,7 @@ public class BackgroundResponsesIntegrationTests : AgentTestBase
         var session2 = new global::HPD.Agent.Session("test-session-2");
         var branch2 = new global::HPD.Agent.Branch("test-session-2");
         branch2.AddMessage(UserMessage("Request 2"));
-        var options2 = new AgentRunOptions { AllowBackgroundResponses = false };
+        var options2 = new AgentRunConfig { AllowBackgroundResponses = false };
         var events2 = new List<AgentEvent>();
         var messages2 = branch2.Messages;
         await foreach (var evt in agent.RunAsync(messages2, session: session2, branch: branch2, options: options2, cancellationToken: TestCancellationToken))

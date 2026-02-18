@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
 using HPD.Agent;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent;
 
@@ -103,6 +104,10 @@ public class AgentBuilder
     /// Used to avoid repeated reflection calls for the same assembly.
     /// </summary>
     internal readonly HashSet<Assembly> _loadedAssemblies = new();
+
+    // Secret resolution (Proposal 007)
+    private ISecretResolver? _secretResolver;
+    private readonly List<ISecretResolver> _additionalResolvers = new();
 
     /// <summary>
     /// Selected Toolkits for this agent (from WithToolkit calls).
@@ -965,6 +970,31 @@ public class AgentBuilder
         return this;
     }
 
+    /// <summary>
+    /// Replaces the entire secret resolver chain with a custom resolver.
+    /// </summary>
+    public AgentBuilder WithSecretResolver(ISecretResolver resolver)
+    {
+        _secretResolver = resolver;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a resolver to the default chain.
+    /// Inserted after env vars, before IConfiguration.
+    /// Use for vault resolvers, custom secret sources, or CLI auth storage.
+    /// </summary>
+    public AgentBuilder AddSecretResolver(ISecretResolver resolver)
+    {
+        _additionalResolvers.Add(resolver);
+        return this;
+    }
+
+    /// <summary>
+    /// Gets the configured secret resolver (available after Build).
+    /// Exposed so toolkits and connectors can resolve secrets.
+    /// </summary>
+    public ISecretResolver? SecretResolver => _secretResolver;
 
     /// <summary>
     /// Configures the maximum number of turns the agent can take to call functions before requiring continuation permission
@@ -1495,7 +1525,7 @@ public class AgentBuilder
     /// by allowing the provider to start the operation and return a token for polling.
     /// </para>
     /// <para>
-    /// This setting can be overridden per-request via <see cref="AgentRunOptions.AllowBackgroundResponses"/>.
+    /// This setting can be overridden per-request via <see cref="AgentRunConfig.AllowBackgroundResponses"/>.
     /// </para>
     /// </remarks>
     public AgentBuilder WithBackgroundResponses(bool enabled = true)
@@ -1605,7 +1635,7 @@ public class AgentBuilder
 
     /// <summary>
     /// Marks this agent as using a deferred provider - the chat client will be provided at runtime
-    /// via AgentRunOptions.OverrideChatClient (typically inherited from a parent agent in workflows).
+    /// via AgentRunConfig.OverrideChatClient (typically inherited from a parent agent in workflows).
     /// This skips provider validation during Build() and allows building agents without configuring a provider.
     /// </summary>
     /// <remarks>
@@ -1669,11 +1699,34 @@ public class AgentBuilder
     /// </summary>
     public async Task<Agent> Build(CancellationToken cancellationToken = default)
     {
+        // Build the secret resolver chain FIRST (before BuildDependenciesAsync)
+        // Providers need ISecretResolver available in the service provider during CreateChatClient
+        if (_secretResolver is null)
+        {
+            var resolvers = new List<ISecretResolver>();
+            resolvers.Add(new EnvironmentSecretResolver());
+            resolvers.AddRange(_additionalResolvers);
+            if (_configuration != null)
+                resolvers.Add(new ConfigurationSecretResolver(_configuration));
+            _secretResolver = new ChainedSecretResolver(resolvers);
+        }
+
+        // Wrap the service provider to make ISecretResolver available to providers
+        // This allows providers to resolve secrets during CreateChatClient without
+        // replacing the user's service provider
+        _serviceProvider = new CompositeServiceProvider(_serviceProvider, _secretResolver);
+
         var buildData = await BuildDependenciesAsync(cancellationToken).ConfigureAwait(false);
 
         // Default session store: InMemorySessionStore for zero-config out-of-the-box experience (V3)
         // Users can override with WithSessionStore() for persistent storage (JsonSessionStore, etc.)
-        _config.SessionStore ??= new InMemorySessionStore();
+        if (_config.SessionStore == null)
+        {
+            _config.SessionStore = new InMemorySessionStore();
+            _logger?.CreateLogger<AgentBuilder>().LogInformation(
+                "Using default InMemorySessionStore (in-memory, ephemeral). " +
+                "Use .WithSessionStore() for persistence.");
+        }
         _config.SessionStoreOptions ??= new SessionStoreOptions();
 
         // Resolve config middlewares before auto-middleware registration
@@ -1890,7 +1943,7 @@ public class AgentBuilder
         // Used for agents in multi-agent workflows that inherit the parent's chat client
         if (_deferredProvider)
         {
-            // Return null client - will be provided via AgentRunOptions.OverrideChatClient at runtime
+            // Return null client - will be provided via AgentRunConfig.OverrideChatClient at runtime
             var deferredErrorHandler = new HPD.Agent.ErrorHandling.GenericErrorHandler();
             return new AgentBuildDependencies(
                 null!, // Client will be provided at runtime via OverrideChatClient
@@ -1988,16 +2041,13 @@ public class AgentBuilder
             if (string.IsNullOrEmpty(providerKeyForConfig))
                 providerKeyForConfig = "openai"; // fallback default
 
-            // Use centralized helper to resolve API key
-            var apiKey = ProviderConfigurationHelper.ResolveApiKey(
+            var apiKey = await _secretResolver!.ResolveOrDefaultAsync(
+                $"{providerKeyForConfig}:ApiKey",
                 _config.Provider.ApiKey,
-                providerKeyForConfig,
-                _configuration);
+                cancellationToken);
 
             if (!string.IsNullOrEmpty(apiKey))
-            {
                 _config.Provider.ApiKey = apiKey;
-            }
         }
 
         // Also try to resolve endpoint if not set
@@ -2007,15 +2057,13 @@ public class AgentBuilder
             if (string.IsNullOrEmpty(providerKeyForConfig))
                 providerKeyForConfig = "openai"; // fallback default
 
-            var endpoint = ProviderConfigurationHelper.ResolveEndpoint(
+            var endpoint = await _secretResolver!.ResolveOrDefaultAsync(
+                $"{providerKeyForConfig}:Endpoint",
                 _config.Provider.Endpoint,
-                providerKeyForConfig,
-                _configuration);
+                cancellationToken);
 
             if (!string.IsNullOrEmpty(endpoint))
-            {
                 _config.Provider.Endpoint = endpoint;
-            }
         }
 
         // Resolve provider from registry

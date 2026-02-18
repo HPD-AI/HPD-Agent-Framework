@@ -250,9 +250,9 @@ public class LoggingMiddleware : IAgentMiddleware
         }
 
         // Show additional instructions if present (e.g., plan mode, custom overrides)
-        if (_options.IncludeInstructions && !string.IsNullOrEmpty(context.RunOptions?.AdditionalSystemInstructions))
+        if (_options.IncludeInstructions && !string.IsNullOrEmpty(context.RunConfig?.AdditionalSystemInstructions))
         {
-            var additional = TruncateString(context.RunOptions.AdditionalSystemInstructions);
+            var additional = TruncateString(context.RunConfig.AdditionalSystemInstructions);
             sb.AppendLine($"  Additional Instructions: {additional}");
         }
 

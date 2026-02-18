@@ -237,14 +237,14 @@ The agent has a consolidated API with optional parameters:
 IAsyncEnumerable<AgentEvent> RunAsync(
     IEnumerable<ChatMessage> messages,
     Branch? branch = null,
-    AgentRunOptions? options = null,
+    AgentRunConfig? options = null,
     CancellationToken cancellationToken = default)
 
 // String convenience (wraps message as ChatMessage)
 IAsyncEnumerable<AgentEvent> RunAsync(
     string userMessage,
     Branch? branch = null,
-    AgentRunOptions? options = null,
+    AgentRunConfig? options = null,
     CancellationToken cancellationToken = default)
 
 // SessionId convenience (auto-loads/saves session + branch)
@@ -252,7 +252,7 @@ IAsyncEnumerable<AgentEvent> RunAsync(
     string userMessage,
     string sessionId,
     string branchId = "main",
-    AgentRunOptions? options = null,
+    AgentRunConfig? options = null,
     CancellationToken cancellationToken = default)
 ```
 
@@ -266,7 +266,7 @@ await foreach (var evt in agent.RunAsync("Hello")) { }
 await foreach (var evt in agent.RunAsync("Hello", branch)) { }
 
 // With options
-var options = new AgentRunOptions { Chat = new ChatRunOptions { Temperature = 0.7f } };
+var options = new AgentRunConfig { Chat = new ChatRunConfig { Temperature = 0.7f } };
 await foreach (var evt in agent.RunAsync("Hello", branch, options)) { }
 
 // Auto-load session by ID

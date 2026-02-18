@@ -141,31 +141,24 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine();
 
         // Handle session mode
-        sb.AppendLine("        // Handle session/branch based on mode");
-        sb.AppendLine("        Session session;");
-        sb.AppendLine("        Branch branch;");
+        sb.AppendLine("        // Determine sessionId based on mode");
+        sb.AppendLine("        string sessionId;");
         sb.AppendLine("        switch (subAgentDef.ThreadMode)");
         sb.AppendLine("        {");
         sb.AppendLine("            case SubAgentThreadMode.SharedThread:");
         sb.AppendLine("            {");
-        sb.AppendLine("                var sid = subAgentDef.SharedSession?.Id ?? System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                session = subAgentDef.SharedSession ?? new Session(sid);");
-        sb.AppendLine("                branch = subAgentDef.SharedBranch ?? session.CreateBranch();");
+        sb.AppendLine("                sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
         sb.AppendLine("                break;");
         sb.AppendLine("            }");
         sb.AppendLine("            case SubAgentThreadMode.PerSession:");
         sb.AppendLine("            {");
-        sb.AppendLine("                var sid = subAgentDef.SharedSession?.Id ?? System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                session = subAgentDef.SharedSession ?? new Session(sid);");
-        sb.AppendLine("                branch = subAgentDef.SharedBranch ?? session.CreateBranch();");
+        sb.AppendLine("                sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
         sb.AppendLine("                break;");
         sb.AppendLine("            }");
         sb.AppendLine("            case SubAgentThreadMode.Stateless:");
         sb.AppendLine("            default:");
         sb.AppendLine("            {");
-        sb.AppendLine("                var sid = System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                session = new Session(sid);");
-        sb.AppendLine("                branch = session.CreateBranch();");
+        sb.AppendLine("                sessionId = System.Guid.NewGuid().ToString(\"N\");");
         sb.AppendLine("                break;");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
@@ -182,8 +175,8 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
         sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
         sb.AppendLine("            query,");
-        sb.AppendLine("            session: session,");
-        sb.AppendLine("            branch: branch,");
+        sb.AppendLine("            sessionId: sessionId,");
+        sb.AppendLine("            branchId: \"main\",");
         sb.AppendLine("            cancellationToken: cancellationToken))");
         sb.AppendLine("        {");
         sb.AppendLine("            // Stream events to parent coordinator for real-time rendering");
@@ -205,6 +198,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        {");
         sb.AppendLine("            return textResult.ToString();");
         sb.AppendLine("        }");
+        sb.AppendLine("        var (_, branch) = await agent.LoadSessionAndBranchAsync(sessionId, \"main\", cancellationToken);");
         sb.AppendLine("        return branch.Messages");
         sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");
         sb.AppendLine("            ?.Text ?? string.Empty;");

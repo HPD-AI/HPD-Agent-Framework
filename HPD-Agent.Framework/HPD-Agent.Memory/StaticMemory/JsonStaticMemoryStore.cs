@@ -44,51 +44,10 @@ public class JsonStaticMemoryStore : StaticMemoryStore
         EnsureDirectoryExists();
     }
 
-    public override async Task<List<StaticMemoryDocument>> GetDocumentsAsync(string agentName, CancellationToken cancellationToken = default)
-    {
-        var file = GetFilePath(agentName);
-        
-        if (!File.Exists(file))
-        {
-            return new List<StaticMemoryDocument>();
-        }
-
-        try
-        {
-            using var stream = File.OpenRead(file);
-            var documents = await JsonSerializer.DeserializeAsync(
-                stream,
-                MemoryJsonContext.Default.ListStaticMemoryDocument,
-                cancellationToken: cancellationToken)
-                ?? new List<StaticMemoryDocument>();
-            return documents.OrderByDescending(d => d.LastAccessed).ToList();
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogWarning(ex, "Failed to read knowledge documents from {File}", file);
-            return new List<StaticMemoryDocument>();
-        }
-    }
-
-    public override async Task<StaticMemoryDocument?> GetDocumentAsync(string agentName, string documentId, CancellationToken cancellationToken = default)
-    {
-        var documents = await GetDocumentsAsync(agentName, cancellationToken);
-        return documents.FirstOrDefault(d => d.Id == documentId);
-    }
-
-    public override async Task<StaticMemoryDocument> AddDocumentAsync(string agentName, StaticMemoryDocument document, CancellationToken cancellationToken = default)
-    {
-        var documents = await GetDocumentsAsync(agentName, cancellationToken);
-        documents.Add(document);
-        await SaveDocumentsAsync(agentName, documents, cancellationToken);
-        InvokeInvalidation();
-        return document;
-    }
-
     /// <summary>
     /// Helper method to add a document from a file path with text extraction.
     /// </summary>
-    public async Task<StaticMemoryDocument> AddDocumentFromFileAsync(
+    public async Task<string> AddDocumentFromFileAsync(
         string agentName,
         string filePath,
         string? description = null,
@@ -102,28 +61,22 @@ public class JsonStaticMemoryStore : StaticMemoryStore
             throw new InvalidOperationException($"Failed to extract text from {filePath}: {extractionResult.ErrorMessage}");
         }
 
-        var now = DateTime.UtcNow;
-        var document = new StaticMemoryDocument
+        var metadata = new ContentMetadata
         {
-            Id = Guid.NewGuid().ToString("N").Substring(0, 8),
-            FileName = extractionResult.FileName,
-            OriginalPath = filePath,
-            ExtractedText = extractionResult.ExtractedText ?? string.Empty,
-            MimeType = extractionResult.MimeType,
-            FileSize = extractionResult.FileSizeBytes,
-            AddedAt = now,
-            LastAccessed = now,
-            Description = description ?? string.Empty,
-            Tags = tags ?? new List<string>()
+            Name = extractionResult.FileName,
+            OriginalSource = filePath,
+            Description = description,
+            Tags = tags?.ToDictionary(t => t, t => "true")
         };
 
-        return await AddDocumentAsync(agentName, document, cancellationToken);
+        var data = Encoding.UTF8.GetBytes(extractionResult.ExtractedText ?? string.Empty);
+        return await PutAsync(agentName, data, extractionResult.MimeType, metadata, cancellationToken);
     }
 
     /// <summary>
     /// Helper method to add a document from a URL with text extraction.
     /// </summary>
-    public async Task<StaticMemoryDocument> AddDocumentFromUrlAsync(
+    public async Task<string> AddDocumentFromUrlAsync(
         string agentName,
         string url,
         string? description = null,
@@ -137,35 +90,21 @@ public class JsonStaticMemoryStore : StaticMemoryStore
             throw new InvalidOperationException($"Failed to extract text from {url}: {extractionResult.ErrorMessage}");
         }
 
-        var now = DateTime.UtcNow;
-        var document = new StaticMemoryDocument
+        var metadata = new ContentMetadata
         {
-            Id = Guid.NewGuid().ToString("N").Substring(0, 8),
-            FileName = extractionResult.FileName,
-            OriginalPath = url,
-            ExtractedText = extractionResult.ExtractedText ?? string.Empty,
-            MimeType = extractionResult.MimeType,
-            FileSize = extractionResult.FileSizeBytes,
-            AddedAt = now,
-            LastAccessed = now,
-            Description = description ?? string.Empty,
-            Tags = tags ?? new List<string>()
+            Name = extractionResult.FileName,
+            OriginalSource = url,
+            Description = description,
+            Tags = tags?.ToDictionary(t => t, t => "true")
         };
 
-        return await AddDocumentAsync(agentName, document, cancellationToken);
-    }
-
-    public override async Task DeleteDocumentAsync(string agentName, string documentId, CancellationToken cancellationToken = default)
-    {
-        var documents = await GetDocumentsAsync(agentName, cancellationToken);
-        documents.RemoveAll(d => d.Id == documentId);
-        await SaveDocumentsAsync(agentName, documents, cancellationToken);
-        InvokeInvalidation();
+        var data = Encoding.UTF8.GetBytes(extractionResult.ExtractedText ?? string.Empty);
+        return await PutAsync(agentName, data, extractionResult.MimeType, metadata, cancellationToken);
     }
 
     public override async Task<string> GetCombinedKnowledgeTextAsync(string agentName, int maxTokens, CancellationToken cancellationToken = default)
     {
-        var documents = await GetDocumentsAsync(agentName, cancellationToken);
+        var documents = await GetDocumentsForAgentAsync(agentName, cancellationToken);
 
         if (!documents.Any())
             return string.Empty;
@@ -219,7 +158,7 @@ public class JsonStaticMemoryStore : StaticMemoryStore
             {
                 try
                 {
-                    var agentName = Path.GetFileNameWithoutExtension(file);
+                    var agentName = GetAgentNameFromFile(file);
                     var json = File.ReadAllText(file);
                     var documents = JsonSerializer.Deserialize(
                         json,
@@ -307,12 +246,299 @@ public class JsonStaticMemoryStore : StaticMemoryStore
         return Task.CompletedTask;
     }
 
+    private async Task<List<StaticMemoryDocument>> GetDocumentsForAgentAsync(string agentName, CancellationToken cancellationToken = default)
+    {
+        var file = GetFilePath(agentName);
+
+        if (!File.Exists(file))
+        {
+            return new List<StaticMemoryDocument>();
+        }
+
+        try
+        {
+            using var stream = File.OpenRead(file);
+            var documents = await JsonSerializer.DeserializeAsync(
+                stream,
+                MemoryJsonContext.Default.ListStaticMemoryDocument,
+                cancellationToken: cancellationToken)
+                ?? new List<StaticMemoryDocument>();
+            return documents.OrderByDescending(d => d.LastAccessed).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Failed to read knowledge documents from {File}", file);
+            return new List<StaticMemoryDocument>();
+        }
+    }
+
     private void InvokeInvalidation()
     {
         foreach (var cb in _invalidationCallbacks)
         {
             try { cb(); } catch { }
         }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // IContentStore Implementation (V2)
+    // ═══════════════════════════════════════════════════════════════════
+    // scope = agentName for StaticMemoryStore
+    // If scope is null in QueryAsync, query across ALL agents
+
+    /// <inheritdoc />
+    public override async Task<string> PutAsync(
+        string? scope,
+        byte[] data,
+        string contentType,
+        ContentMetadata? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        var agentName = scope ?? throw new ArgumentNullException(nameof(scope), "Scope (agentName) is required for StaticMemoryStore.PutAsync");
+
+        var document = new StaticMemoryDocument
+        {
+            Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+            FileName = metadata?.Name ?? $"content-{DateTime.UtcNow:yyyyMMdd-HHmmss}",
+            OriginalPath = metadata?.OriginalSource ?? string.Empty,
+            ExtractedText = Encoding.UTF8.GetString(data),
+            MimeType = contentType,
+            FileSize = data.Length,
+            AddedAt = DateTime.UtcNow,
+            LastAccessed = DateTime.UtcNow,
+            Description = metadata?.Description ?? string.Empty,
+            Tags = metadata?.Tags?.Keys.ToList() ?? new List<string>()
+        };
+
+        var documents = await GetDocumentsForAgentAsync(agentName, cancellationToken);
+        documents.Add(document);
+        await SaveDocumentsAsync(agentName, documents, cancellationToken);
+        InvokeInvalidation();
+
+        return document.Id;
+    }
+
+    /// <inheritdoc />
+    public override async Task<ContentData?> GetAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
+    {
+        // If scope is provided, search only within that agent's documents
+        if (scope != null)
+        {
+            var documents = await GetDocumentsForAgentAsync(scope, cancellationToken);
+            var document = documents.FirstOrDefault(d => d.Id == contentId);
+            if (document != null)
+            {
+                document.LastAccessed = DateTime.UtcNow;
+                await SaveDocumentsAsync(scope, documents, cancellationToken);
+                return MapToContentData(document);
+            }
+            return null;
+        }
+
+        // If scope is null, search across ALL agent files
+        if (!Directory.Exists(_storageDirectory))
+            return null;
+
+        foreach (var file in Directory.GetFiles(_storageDirectory, "*.json"))
+        {
+            try
+            {
+                using var stream = File.OpenRead(file);
+                var documents = await JsonSerializer.DeserializeAsync(
+                    stream,
+                    MemoryJsonContext.Default.ListStaticMemoryDocument,
+                    cancellationToken: cancellationToken)
+                    ?? new List<StaticMemoryDocument>();
+
+                var document = documents.FirstOrDefault(d => d.Id == contentId);
+                if (document != null)
+                {
+                    // Update last accessed
+                    document.LastAccessed = DateTime.UtcNow;
+                    var agentName = GetAgentNameFromFile(file);
+                    await SaveDocumentsAsync(agentName, documents, cancellationToken);
+                    return MapToContentData(document);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to read {File} during GetAsync", file);
+            }
+        }
+
+        return null;
+    }
+
+    /// <inheritdoc />
+    public override async Task DeleteAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
+    {
+        // If scope is provided, delete only within that agent's documents
+        if (scope != null)
+        {
+            var documents = await GetDocumentsForAgentAsync(scope, cancellationToken);
+            var removed = documents.RemoveAll(d => d.Id == contentId);
+            if (removed > 0)
+            {
+                await SaveDocumentsAsync(scope, documents, cancellationToken);
+                InvokeInvalidation();
+            }
+            return;
+        }
+
+        // If scope is null, search across ALL agent files and delete
+        if (!Directory.Exists(_storageDirectory))
+            return;
+
+        foreach (var file in Directory.GetFiles(_storageDirectory, "*.json"))
+        {
+            try
+            {
+                using var stream = File.OpenRead(file);
+                var documents = await JsonSerializer.DeserializeAsync(
+                    stream,
+                    MemoryJsonContext.Default.ListStaticMemoryDocument,
+                    cancellationToken: cancellationToken)
+                    ?? new List<StaticMemoryDocument>();
+                stream.Close();
+
+                var removed = documents.RemoveAll(d => d.Id == contentId);
+                if (removed > 0)
+                {
+                    var agentName = GetAgentNameFromFile(file);
+                    await SaveDocumentsAsync(agentName, documents, cancellationToken);
+                    InvokeInvalidation();
+                    break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to process {File} during DeleteAsync", file);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public override async Task<IReadOnlyList<ContentInfo>> QueryAsync(
+        string? scope = null,
+        ContentQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        var allDocuments = new List<StaticMemoryDocument>();
+
+        // If scope is provided, query only within that agent's documents
+        if (scope != null)
+        {
+            allDocuments = await GetDocumentsForAgentAsync(scope, cancellationToken);
+        }
+        else
+        {
+            // If scope is null, query across ALL agent files
+            if (Directory.Exists(_storageDirectory))
+            {
+                foreach (var file in Directory.GetFiles(_storageDirectory, "*.json"))
+                {
+                    try
+                    {
+                        using var stream = File.OpenRead(file);
+                        var documents = await JsonSerializer.DeserializeAsync(
+                            stream,
+                            MemoryJsonContext.Default.ListStaticMemoryDocument,
+                            cancellationToken: cancellationToken)
+                            ?? new List<StaticMemoryDocument>();
+                        allDocuments.AddRange(documents);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to read {File} during QueryAsync", file);
+                    }
+                }
+            }
+        }
+
+        // Apply filters
+        var filtered = allDocuments.AsEnumerable();
+
+        if (query?.ContentType != null)
+        {
+            filtered = filtered.Where(d =>
+                d.MimeType.Equals(query.ContentType, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (query?.CreatedAfter != null)
+        {
+            filtered = filtered.Where(d => d.AddedAt >= query.CreatedAfter.Value);
+        }
+
+        // Map to ContentInfo
+        var results = filtered.Select(MapToContentInfo);
+
+        // Apply limit
+        if (query?.Limit != null)
+        {
+            results = results.Take(query.Limit.Value);
+        }
+
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Maps StaticMemoryDocument to ContentData.
+    /// </summary>
+    private static ContentData MapToContentData(StaticMemoryDocument document)
+    {
+        var data = Encoding.UTF8.GetBytes(document.ExtractedText);
+        return new ContentData
+        {
+            Id = document.Id,
+            Data = data,
+            ContentType = document.MimeType,
+            Info = MapToContentInfo(document)
+        };
+    }
+
+    /// <summary>
+    /// Maps StaticMemoryDocument to ContentInfo.
+    /// </summary>
+    private static ContentInfo MapToContentInfo(StaticMemoryDocument document)
+    {
+        return new ContentInfo
+        {
+            Id = document.Id,
+            Name = document.FileName,
+            ContentType = document.MimeType,
+            SizeBytes = document.FileSize,
+            CreatedAt = document.AddedAt,
+            LastModified = null, // StaticMemory doesn't track modifications
+            LastAccessed = document.LastAccessed,
+            Origin = ContentSource.User, // Implicit: all static memory is user-uploaded
+            Description = document.Description,
+            Tags = document.Tags.Any()
+                ? document.Tags.ToDictionary(t => t, t => "true")
+                : null,
+            OriginalSource = document.OriginalPath,
+            ExtendedMetadata = new Dictionary<string, object>
+            {
+                ["extractedTextLength"] = document.ExtractedTextLength
+            }
+        };
+    }
+
+    /// <summary>
+    /// Extracts agent name from a file path like "knowledge_agentname.json".
+    /// </summary>
+    private static string GetAgentNameFromFile(string filePath)
+    {
+        var fileName = Path.GetFileNameWithoutExtension(filePath);
+        // Remove "knowledge_" prefix
+        return fileName.StartsWith("knowledge_")
+            ? fileName.Substring("knowledge_".Length)
+            : fileName;
     }
 }
 

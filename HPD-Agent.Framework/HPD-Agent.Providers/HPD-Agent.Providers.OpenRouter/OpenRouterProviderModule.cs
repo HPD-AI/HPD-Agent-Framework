@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.OpenRouter;
 
@@ -14,5 +15,8 @@ public static class OpenRouterProviderModule
     public static void Initialize()
     {
         ProviderDiscovery.RegisterProviderFactory(() => new OpenRouterProvider());
+
+        // Register environment variable alias for unified secret resolution
+        SecretAliasRegistry.Register("openrouter:ApiKey", "OPENROUTER_API_KEY");
     }
 }

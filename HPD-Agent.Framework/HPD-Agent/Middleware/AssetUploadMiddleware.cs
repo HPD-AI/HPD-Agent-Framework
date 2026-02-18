@@ -76,11 +76,13 @@ public class AssetUploadMiddleware : IAgentMiddleware
             {
                 try
                 {
-                    // Upload to asset store
-                    var assetId = await assetStore.UploadAssetAsync(
-                        data.Data.ToArray(),
-                        data.MediaType ?? "application/octet-stream",
-                        cancellationToken);
+                    // Upload to asset store using V2 ContentStore API
+                    var assetId = await assetStore.PutAsync(
+                        scope: session.Id,
+                        data: data.Data.ToArray(),
+                        contentType: data.MediaType ?? "application/octet-stream",
+                        metadata: null,
+                        cancellationToken: cancellationToken);
 
                     // Replace with URI reference using MEAI's UriContent
                     transformedContent = new UriContent(

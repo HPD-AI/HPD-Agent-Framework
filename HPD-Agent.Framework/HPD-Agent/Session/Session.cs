@@ -64,8 +64,9 @@ public class Session
 
     /// <summary>
     /// Creates a new session with a generated ID.
+    /// Internal - only the framework creates sessions via Agent.LoadSessionAndBranchAsync().
     /// </summary>
-    public Session()
+    internal Session()
     {
         Id = Guid.NewGuid().ToString();
         CreatedAt = DateTime.UtcNow;
@@ -76,9 +77,10 @@ public class Session
 
     /// <summary>
     /// Creates a new session with a specific ID.
+    /// Internal - only the framework creates sessions via Agent.LoadSessionAndBranchAsync().
     /// </summary>
     /// <param name="sessionId">The session identifier</param>
-    public Session(string sessionId)
+    internal Session(string sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         Id = sessionId;
@@ -91,6 +93,7 @@ public class Session
     /// <summary>
     /// Creates a session with specific values (for deserialization).
     /// </summary>
+    [JsonConstructor]
     internal Session(
         string id,
         DateTime createdAt,
@@ -152,11 +155,11 @@ public class Session
 
     /// <summary>
     /// Creates a new branch owned by this session.
-    /// This is the only public way to create a Branch.
+    /// Internal - only the framework creates branches via Agent.LoadSessionAndBranchAsync() or Agent.ForkBranchAsync().
     /// </summary>
     /// <param name="branchId">Branch ID (defaults to generated GUID)</param>
     /// <returns>A new Branch linked to this Session</returns>
-    public Branch CreateBranch(string? branchId = null)
+    internal Branch CreateBranch(string? branchId = null)
     {
         var id = branchId ?? Guid.NewGuid().ToString();
         return new Branch(Id, id) { Session = this };

@@ -251,7 +251,7 @@ public class CircuitBreakerMiddlewareTests
             toolCalls.Add(CreateToolCall(toolName));
         }
 
-        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunConfig());
     }
 
     private static AgentLoopState CreateStateWithConsecutiveCalls(string toolName, string signature, int count)
@@ -303,7 +303,7 @@ public class CircuitBreakerMiddlewareTests
         var agentContext = CreateAgentContext(state);
         response ??= new ChatMessage(ChatRole.Assistant, []);
         toolCalls ??= new List<FunctionCallContent>();
-        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunConfig());
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(
@@ -313,7 +313,7 @@ public class CircuitBreakerMiddlewareTests
         var agentContext = CreateAgentContext(state);
         var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
-        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunConfig());
     }
 
 }

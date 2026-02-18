@@ -139,8 +139,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for OpenAI provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "openai");
+        // Note: API key resolution is now handled by ISecretResolver in the provider's CreateChatClient method
+        // We store the explicit override (if provided) in config.ApiKey, and ISecretResolver will handle the resolution chain
 
         // Create provider config
         var providerConfig = new OpenAIProviderConfig();
@@ -155,7 +155,7 @@ public static class AgentBuilderExtensions
         builder.Config.Provider = new ProviderConfig
         {
             ProviderKey = "openai",
-            ApiKey = resolvedApiKey,
+            ApiKey = apiKey, // Store explicit override; ISecretResolver will handle resolution
             ModelName = model
         };
 
@@ -216,8 +216,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for Azure OpenAI provider.", nameof(model));
 
-        // Resolve API key from multiple sources (using azure-openai as provider key for env var lookup)
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "azure-openai");
+        // Note: API key resolution is now handled by ISecretResolver in the provider's CreateChatClient method
+        // We store the explicit override (if provided) in config.ApiKey, and ISecretResolver will handle the resolution chain
 
         // Create provider config
         var providerConfig = new OpenAIProviderConfig();
@@ -233,7 +233,7 @@ public static class AgentBuilderExtensions
         {
             ProviderKey = "azure-openai",
             Endpoint = endpoint,
-            ApiKey = resolvedApiKey,
+            ApiKey = apiKey, // Store explicit override; ISecretResolver will handle resolution
             ModelName = model
         };
 

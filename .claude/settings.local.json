@@ -42,7 +42,20 @@
       "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent stash list:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(csc:*)",
+      "Bash(/tmp/test_usage.cs:*)",
+      "Bash(/tmp/test_endpoint.cs:*)",
+      "Bash(sudo dotnet workload:*)",
+      "Bash(dotnet msbuild:*)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/test/HPD-Agent.Tests/Secrets/ExplicitSecretResolverTests.cs:*)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/test/HPD-Agent.Tests/Secrets/EnvironmentSecretResolverTests.cs:*)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/test/HPD-Agent.Tests/Secrets/ConfigurationSecretResolverTests.cs:*)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/test/HPD-Agent.Tests/Secrets/ChainedSecretResolverTests.cs:*)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/test/HPD-Agent.Tests/Secrets/SecretResolverExtensionsTests.cs:*)",
+      "Bash(tee:*)",
+      "Bash(git status:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

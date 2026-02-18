@@ -33,7 +33,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new TestSessionStoreWithoutAssets();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var userMessage = new ChatMessage(ChatRole.User, "Hello");
         var context = CreateBeforeMessageTurnContext(session, userMessage);
@@ -52,7 +53,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var userMessage = new ChatMessage(ChatRole.User, "Hello");
         var context = CreateBeforeMessageTurnContext(session, userMessage);
@@ -71,7 +73,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 }; // PNG header
         var message = new ChatMessage(ChatRole.User, [
@@ -105,7 +108,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A };
         var message = new ChatMessage(ChatRole.User, [
@@ -129,7 +133,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var image1 = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var image2 = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }; // JPEG header
@@ -164,7 +169,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var message = new ChatMessage(ChatRole.User, [
@@ -195,7 +201,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var message = new ChatMessage(ChatRole.User, [
             new DataContent(Array.Empty<byte>(), "image/png") // Empty data
@@ -218,7 +225,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
         var message = new ChatMessage(ChatRole.User, [
@@ -237,7 +245,7 @@ public class AssetUploadMiddlewareTests
 
         // Verify we can retrieve the asset
         var assetStore = store.GetAssetStore(session.Id)!;
-        var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+        var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
         Assert.NotNull(retrievedAsset);
         Assert.Equal(imageBytes, retrievedAsset.Data);
         Assert.Equal("image/png", retrievedAsset.ContentType);
@@ -249,7 +257,8 @@ public class AssetUploadMiddlewareTests
         // Arrange
         var middleware = new AssetUploadMiddleware();
         var store = new InMemorySessionStore();
-        var session = await store.LoadOrCreateSessionAsync("test-session");
+        var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
+        session.Store = store;
 
         var bytes = new byte[] { 0x01, 0x02, 0x03 };
         var message = new ChatMessage(ChatRole.User, [
@@ -266,7 +275,7 @@ public class AssetUploadMiddlewareTests
         var uriContent = (UriContent)context.UserMessage.Contents[0];
         var assetId = uriContent.Uri.Host;
         var assetStore = store.GetAssetStore(session.Id)!;
-        var retrievedAsset = await assetStore.DownloadAssetAsync(assetId);
+        var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
 
         Assert.NotNull(retrievedAsset);
         Assert.Equal("application/octet-stream", retrievedAsset.ContentType);
@@ -293,9 +302,9 @@ public class AssetUploadMiddlewareTests
             CancellationToken.None);
 
         var conversationHistory = new List<ChatMessage>();
-        var runOptions = new AgentRunOptions();
+        var runConfig = new AgentRunConfig();
 
-        return agentContext.AsBeforeMessageTurn(userMessage, conversationHistory, runOptions);
+        return agentContext.AsBeforeMessageTurn(userMessage, conversationHistory, runConfig);
     }
 
     // Test session store without asset support

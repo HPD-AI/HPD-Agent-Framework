@@ -283,4 +283,149 @@ public abstract class InstructionDocumentStoreBase : IInstructionDocumentStore
         // TODO: Implement skill document reading (Phase 5)
         throw new NotImplementedException("Skill document reading not yet implemented (Phase 5)");
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // IContentStore Implementation
+    // ═══════════════════════════════════════════════════════════════════
+    // Note: IInstructionDocumentStore is GLOBAL (not agent-scoped).
+    // IContentStore methods operate on the same global document collection.
+
+    /// <inheritdoc />
+    public virtual async Task<string> PutAsync(
+        string? scope,
+        byte[] data,
+        string contentType,
+        ContentMetadata? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        // IInstructionDocumentStore is GLOBAL - scope is always null
+        // We ignore the scope parameter for instruction documents
+
+        // Generate document ID
+        var documentId = metadata?.Name ?? Guid.NewGuid().ToString("N").Substring(0, 8);
+
+        // Convert to string content
+        var content = Encoding.UTF8.GetString(data);
+
+        // Create document metadata
+        var docMetadata = new DocumentMetadata
+        {
+            Name = metadata?.Name ?? documentId,
+            Description = metadata?.Description ?? string.Empty
+        };
+
+        // Use existing UploadFromContentAsync method
+        await UploadFromContentAsync(documentId, docMetadata, content, cancellationToken);
+
+        return documentId;
+    }
+
+    /// <inheritdoc />
+    public virtual async Task<ContentData?> GetAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
+    {
+        // IInstructionDocumentStore is GLOBAL - scope is always null
+        // We ignore the scope parameter for instruction documents
+
+        // Read content
+        var content = await ReadContentAsync(contentId, cancellationToken);
+        if (content == null)
+        {
+            return null;
+        }
+
+        // Read metadata
+        var docMetadata = await ReadMetadataAsync(contentId, cancellationToken);
+        if (docMetadata == null)
+        {
+            return null;
+        }
+
+        // Map GlobalDocumentInfo → ContentData
+        var data = Encoding.UTF8.GetBytes(content);
+        return new ContentData
+        {
+            Id = docMetadata.DocumentId,
+            Data = data,
+            ContentType = "text/plain",
+            Info = MapToContentInfo(docMetadata)
+        };
+    }
+
+    /// <inheritdoc />
+    public virtual async Task DeleteAsync(
+        string? scope,
+        string contentId,
+        CancellationToken cancellationToken = default)
+    {
+        // IInstructionDocumentStore is GLOBAL - scope is always null
+        // We ignore the scope parameter for instruction documents
+
+        // Use existing DeleteDocumentAsync method
+        await DeleteDocumentAsync(contentId, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public virtual async Task<IReadOnlyList<ContentInfo>> QueryAsync(
+        string? scope = null,
+        ContentQuery? query = null,
+        CancellationToken cancellationToken = default)
+    {
+        // IInstructionDocumentStore is GLOBAL - scope is always null
+        // We ignore the scope parameter for instruction documents
+
+        // Get all documents
+        var allDocuments = await ListAllDocumentsAsync(cancellationToken);
+
+        // Apply filters (Phase 1: ContentType, CreatedAfter, Limit)
+        IEnumerable<GlobalDocumentInfo> filtered = allDocuments;
+
+        if (query?.ContentType != null)
+        {
+            filtered = filtered.Where(d =>
+                "text/plain".Equals(query.ContentType, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (query?.CreatedAfter != null)
+        {
+            filtered = filtered.Where(d => d.CreatedAt >= query.CreatedAfter.Value);
+        }
+
+        // Map to ContentInfo
+        var results = filtered.Select(MapToContentInfo);
+
+        // Apply limit
+        if (query?.Limit != null)
+        {
+            results = results.Take(query.Limit.Value);
+        }
+
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Maps GlobalDocumentInfo to ContentInfo.
+    /// </summary>
+    private static ContentInfo MapToContentInfo(GlobalDocumentInfo document)
+    {
+        return new ContentInfo
+        {
+            Id = document.DocumentId,
+            Name = document.Name,
+            ContentType = "text/plain",
+            SizeBytes = document.SizeBytes,
+            CreatedAt = document.CreatedAt,
+            LastModified = document.LastModified,
+            LastAccessed = null, // Instruction documents don't track last accessed
+            Origin = ContentSource.System, // Skill docs are system-managed
+            Description = document.Description,
+            ExtendedMetadata = new Dictionary<string, object>
+            {
+                ["version"] = document.Version,
+                ["contentHash"] = document.ContentHash
+            }
+        };
+    }
 }

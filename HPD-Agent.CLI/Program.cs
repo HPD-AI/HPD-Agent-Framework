@@ -280,7 +280,7 @@ var commandProcessor = new CommandProcessor(ui.CommandRegistry, ui, commandConte
 var commandInput = new CommandAwareInput(commandProcessor);
 
 // Current run options (for provider/model override)
-AgentRunOptions? currentRunOptions = null;
+AgentRunConfig? currentRunConfig = null;
 
 while (true)
 {
@@ -442,7 +442,7 @@ while (true)
         {
             try
             {
-                await foreach (var evt in agent.RunAsync(message, sessionId, branchId: null, currentRunOptions, escape.Token))
+                await foreach (var evt in agent.RunAsync(message, sessionId, branchId: null, currentRunConfig, escape.Token))
                 {
                     ui.RenderEvent(evt);
                 }
@@ -478,10 +478,10 @@ while (true)
                 {
                     AnsiConsole.MarkupLine($"\n[red]⊘ Model not found:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
 
-                    if (currentRunOptions != null)
+                    if (currentRunConfig != null)
                     {
                         AnsiConsole.MarkupLine("[dim]Resetting to default model. Use /model to set a valid model.[/]");
-                        currentRunOptions = null;
+                        currentRunConfig = null;
                     }
                 }
                 else
@@ -520,8 +520,8 @@ while (true)
         if (result.ShouldSwitchModel && commandContextData.TryGetValue("ModelSwitchRequest", out var switchReqObj)
             && switchReqObj is BuiltInCommands.ModelSwitchRequest switchReq)
         {
-            // Use AgentRunOptions for runtime provider switching (no rebuild needed)
-            currentRunOptions = new AgentRunOptions
+            // Use AgentRunConfig for runtime provider switching (no rebuild needed)
+            currentRunConfig = new AgentRunConfig
             {
                 ProviderKey = switchReq.Provider,
                 ModelId = switchReq.Model,
@@ -587,27 +587,27 @@ while (true)
     #if DEBUG
     var (debugSession, debugBranch) = await agent.LoadSessionAndBranchAsync(sessionId);
     AnsiConsole.MarkupLine($"[dim]≡ Session: {sessionId} ({debugBranch.Messages.Count} messages)[/]");
-    if (currentRunOptions != null && !string.IsNullOrEmpty(currentRunOptions.ProviderKey))
+    if (currentRunConfig != null && !string.IsNullOrEmpty(currentRunConfig.ProviderKey))
     {
-        AnsiConsole.MarkupLine($"[dim]→ Using override: {currentRunOptions.ProviderKey}:{currentRunOptions.ModelId}[/]");
+        AnsiConsole.MarkupLine($"[dim]→ Using override: {currentRunConfig.ProviderKey}:{currentRunConfig.ModelId}[/]");
     }
     #endif
 
     // Resolve credentials from auth storage if needed
-    var effectiveRunOptions = currentRunOptions;
-    if (effectiveRunOptions != null && !string.IsNullOrEmpty(effectiveRunOptions.ProviderKey))
+    var effectiveRunConfig = currentRunConfig;
+    if (effectiveRunConfig != null && !string.IsNullOrEmpty(effectiveRunConfig.ProviderKey))
     {
-        var resolvedCreds = await authManager.ResolveCredentialsAsync(effectiveRunOptions.ProviderKey);
-        if (resolvedCreds != null && string.IsNullOrEmpty(effectiveRunOptions.ApiKey))
+        var resolvedCreds = await authManager.ResolveCredentialsAsync(effectiveRunConfig.ProviderKey);
+        if (resolvedCreds != null && string.IsNullOrEmpty(effectiveRunConfig.ApiKey))
         {
             // Debug: show what credentials were resolved
             AnsiConsole.MarkupLine($"[dim]→ Resolved BaseUrl: {resolvedCreds.BaseUrl ?? "(null)"}[/]");
             AnsiConsole.MarkupLine($"[dim]→ Resolved Headers: {(resolvedCreds.CustomHeaders != null ? string.Join(", ", resolvedCreds.CustomHeaders.Keys) : "(none)")}[/]");
 
-            effectiveRunOptions = new AgentRunOptions
+            effectiveRunConfig = new AgentRunConfig
             {
-                ProviderKey = effectiveRunOptions.ProviderKey,
-                ModelId = effectiveRunOptions.ModelId,
+                ProviderKey = effectiveRunConfig.ProviderKey,
+                ModelId = effectiveRunConfig.ModelId,
                 ApiKey = resolvedCreds.ApiKey,
                 ProviderEndpoint = resolvedCreds.BaseUrl,
                 CustomHeaders = resolvedCreds.CustomHeaders
@@ -619,7 +619,7 @@ while (true)
     {
         try
         {
-            await foreach (var evt in agent.RunAsync(userInput, sessionId, branchId: null, effectiveRunOptions, escape.Token))
+            await foreach (var evt in agent.RunAsync(userInput, sessionId, branchId: null, effectiveRunConfig, escape.Token))
             {
                 ui.RenderEvent(evt);
             }
@@ -657,10 +657,10 @@ while (true)
                 AnsiConsole.MarkupLine($"\n[red]⊘ Model not found:[/] [yellow]{Markup.Escape(errorMessage)}[/]");
 
                 // Reset to default model if we were using an override
-                if (currentRunOptions != null)
+                if (currentRunConfig != null)
                 {
                     AnsiConsole.MarkupLine("[dim]Resetting to default model. Use /model to set a valid model.[/]");
-                    currentRunOptions = null;
+                    currentRunConfig = null;
                 }
             }
             else

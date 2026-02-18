@@ -10,15 +10,15 @@ using Xunit;
 namespace HPD.Agent.Tests.Audio;
 
 /// <summary>
-/// Unit tests for AudioRunOptions (slim runtime API).
+/// Unit tests for AudioRunConfig (slim runtime API).
 /// </summary>
-public class AudioRunOptionsTests
+public class AudioRunConfigTests
 {
     [Fact]
     public void AllPropertiesCanBeSet()
     {
         // Arrange & Act
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             ProcessingMode = AudioProcessingMode.Native,
             IOMode = AudioIOMode.AudioToAudio,
@@ -52,7 +52,7 @@ public class AudioRunOptionsTests
     public void DefaultValues_AreAllNull()
     {
         // Act
-        var options = new AudioRunOptions();
+        var options = new AudioRunConfig();
 
         // Assert - all properties should be null (use middleware defaults)
         Assert.Null(options.ProcessingMode);
@@ -71,7 +71,7 @@ public class AudioRunOptionsTests
     public void ToFullConfig_ConvertsAllProperties()
     {
         // Arrange
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             ProcessingMode = AudioProcessingMode.Native,
             IOMode = AudioIOMode.AudioToAudioAndText,
@@ -104,7 +104,7 @@ public class AudioRunOptionsTests
     public void ToFullConfig_ShortcutsOnlyAppliedWhenNotNull()
     {
         // Arrange - shortcuts set, but no Tts config
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             Voice = "nova",
             TtsModel = "tts-1",
@@ -125,7 +125,7 @@ public class AudioRunOptionsTests
     public void ToFullConfig_ShortcutsDoNotOverrideExistingValues()
     {
         // Arrange - Tts config has Voice, shortcut also has Voice
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             Voice = "alloy",
             Tts = new TtsConfig { Voice = "nova" } // This should win
@@ -147,7 +147,7 @@ public class AudioRunOptionsTests
         var sttConfig = new SttConfig { Provider = "openai", Language = "en" };
         var vadConfig = new VadConfig { Provider = "silero" };
 
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             Tts = ttsConfig,
             Stt = sttConfig,
@@ -167,7 +167,7 @@ public class AudioRunOptionsTests
     public void Validate_ValidOptions_DoesNotThrow()
     {
         // Arrange
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             Voice = "nova",
             TtsSpeed = 1.0f,
@@ -182,13 +182,13 @@ public class AudioRunOptionsTests
     public void Validate_InvalidTtsSpeed_Throws()
     {
         // Arrange - speed too low
-        var options1 = new AudioRunOptions { TtsSpeed = 0.1f };
+        var options1 = new AudioRunConfig { TtsSpeed = 0.1f };
 
         // Act & Assert
         Assert.Throws<ArgumentException>(() => options1.Validate());
 
         // Arrange - speed too high
-        var options2 = new AudioRunOptions { TtsSpeed = 5.0f };
+        var options2 = new AudioRunConfig { TtsSpeed = 5.0f };
 
         // Act & Assert
         Assert.Throws<ArgumentException>(() => options2.Validate());
@@ -198,9 +198,9 @@ public class AudioRunOptionsTests
     public void Validate_ValidTtsSpeedRange_DoesNotThrow()
     {
         // Arrange - min valid
-        var options1 = new AudioRunOptions { TtsSpeed = 0.25f };
+        var options1 = new AudioRunConfig { TtsSpeed = 0.25f };
         // Arrange - max valid
-        var options2 = new AudioRunOptions { TtsSpeed = 4.0f };
+        var options2 = new AudioRunConfig { TtsSpeed = 4.0f };
 
         // Act & Assert
         options1.Validate();
@@ -211,7 +211,7 @@ public class AudioRunOptionsTests
     public void JsonSerialization_RoundTrip()
     {
         // Arrange
-        var options = new AudioRunOptions
+        var options = new AudioRunConfig
         {
             ProcessingMode = AudioProcessingMode.Pipeline,
             IOMode = AudioIOMode.AudioToAudioAndText,
@@ -222,8 +222,8 @@ public class AudioRunOptionsTests
         };
 
         // Act
-        var json = JsonSerializer.Serialize(options, AudioJsonContext.Default.AudioRunOptions);
-        var deserialized = JsonSerializer.Deserialize(json, AudioJsonContext.Default.AudioRunOptions);
+        var json = JsonSerializer.Serialize(options, AudioJsonContext.Default.AudioRunConfig);
+        var deserialized = JsonSerializer.Deserialize(json, AudioJsonContext.Default.AudioRunConfig);
 
         // Assert
         Assert.NotNull(deserialized);
@@ -239,10 +239,10 @@ public class AudioRunOptionsTests
     public void JsonSerialization_NullValuesOmitted()
     {
         // Arrange - only set Voice
-        var options = new AudioRunOptions { Voice = "nova" };
+        var options = new AudioRunConfig { Voice = "nova" };
 
         // Act
-        var json = JsonSerializer.Serialize(options, AudioJsonContext.Default.AudioRunOptions);
+        var json = JsonSerializer.Serialize(options, AudioJsonContext.Default.AudioRunConfig);
 
         // Assert - should only contain non-null properties
         Assert.Contains("\"voice\"", json);

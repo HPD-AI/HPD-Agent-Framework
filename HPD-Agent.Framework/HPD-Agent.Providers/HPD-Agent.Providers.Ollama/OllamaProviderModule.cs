@@ -23,5 +23,7 @@ public static class OllamaProviderModule
             "ollama",
             json => JsonSerializer.Deserialize(json, OllamaJsonContext.Default.OllamaProviderConfig),
             config => JsonSerializer.Serialize(config, OllamaJsonContext.Default.OllamaProviderConfig));
+
+        // No API key registration needed - Ollama runs locally and does not require authentication
     }
 }

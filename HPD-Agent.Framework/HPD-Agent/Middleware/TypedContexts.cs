@@ -8,7 +8,7 @@ namespace HPD.Agent.Middleware;
 
 /// <summary>
 /// Context for BeforeMessageTurn hook.
-/// Available properties: UserMessage, ConversationHistory, RunOptions
+/// Available properties: UserMessage, ConversationHistory, RunConfig
 /// </summary>
 public sealed class BeforeMessageTurnContext : HookContext
 {
@@ -33,24 +33,24 @@ public sealed class BeforeMessageTurnContext : HookContext
     ///   Always available (never NULL)
     /// Contains configuration like ClientToolInput, MaxIterations, etc.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     internal BeforeMessageTurnContext(
         AgentContext baseContext,
         ChatMessage? userMessage,
         List<ChatMessage> conversationHistory,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         UserMessage = userMessage; // Can be null in continuation scenarios
         ConversationHistory = conversationHistory ?? throw new ArgumentNullException(nameof(conversationHistory));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
 /// <summary>
 /// Context for AfterMessageTurn hook.
-/// Available properties: FinalResponse, TurnHistory, RunOptions
+/// Available properties: FinalResponse, TurnHistory, RunConfig
 /// </summary>
 public sealed class AfterMessageTurnContext : HookContext
 {
@@ -73,18 +73,18 @@ public sealed class AfterMessageTurnContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for logging, metrics, and turn-level decisions based on user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     internal AfterMessageTurnContext(
         AgentContext baseContext,
         ChatResponse finalResponse,
         List<ChatMessage> turnHistory,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         FinalResponse = finalResponse ?? throw new ArgumentNullException(nameof(finalResponse));
         TurnHistory = turnHistory ?? throw new ArgumentNullException(nameof(turnHistory));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
@@ -94,7 +94,7 @@ public sealed class AfterMessageTurnContext : HookContext
 
 /// <summary>
 /// Context for BeforeIteration hook.
-/// Available properties: Iteration, Messages, Options, RunOptions
+/// Available properties: Iteration, Messages, Options, RunConfig
 /// </summary>
 public sealed class BeforeIterationContext : HookContext
 {
@@ -126,7 +126,7 @@ public sealed class BeforeIterationContext : HookContext
     /// Use for iteration-specific decisions based on user preferences and context.
     /// Examples: Adapt temperature, filter tools, access ContextOverrides for tenant/user info.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     //
     // CONTROL SIGNALS
@@ -157,19 +157,19 @@ public sealed class BeforeIterationContext : HookContext
         int iteration,
         List<ChatMessage> messages,
         ChatOptions options,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         Iteration = iteration;
         Messages = messages ?? throw new ArgumentNullException(nameof(messages));
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
 /// <summary>
 /// Context for BeforeToolExecution hook.
-/// Available properties: Response, ToolCalls, RunOptions
+/// Available properties: Response, ToolCalls, RunConfig
 /// </summary>
 public sealed class BeforeToolExecutionContext : HookContext
 {
@@ -191,7 +191,7 @@ public sealed class BeforeToolExecutionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission checks, dry-run mode (SkipTools), and tool-level validation.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     //
     // CONTROL SIGNALS
@@ -212,18 +212,18 @@ public sealed class BeforeToolExecutionContext : HookContext
         AgentContext baseContext,
         ChatMessage response,
         IReadOnlyList<FunctionCallContent> toolCalls,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         Response = response ?? throw new ArgumentNullException(nameof(response));
         ToolCalls = toolCalls ?? throw new ArgumentNullException(nameof(toolCalls));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
 /// <summary>
 /// Context for AfterIteration hook.
-/// Available properties: Iteration, ToolResults, RunOptions
+/// Available properties: Iteration, ToolResults, RunConfig
 /// </summary>
 public sealed class AfterIterationContext : HookContext
 {
@@ -245,7 +245,7 @@ public sealed class AfterIterationContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for error tracking, metrics collection, and iteration-level logging with user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     //
     // HELPERS
@@ -265,12 +265,12 @@ public sealed class AfterIterationContext : HookContext
         AgentContext baseContext,
         int iteration,
         IReadOnlyList<FunctionResultContent> toolResults,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         Iteration = iteration;
         ToolResults = toolResults ?? throw new ArgumentNullException(nameof(toolResults));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
@@ -280,7 +280,7 @@ public sealed class AfterIterationContext : HookContext
 
 /// <summary>
 /// Context for BeforeParallelBatch hook.
-/// Available properties: ParallelFunctions, RunOptions
+/// Available properties: ParallelFunctions, RunConfig
 /// </summary>
 public sealed class BeforeParallelBatchContext : HookContext
 {
@@ -296,22 +296,22 @@ public sealed class BeforeParallelBatchContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for rate limiting, batch-level validation, and parallel execution control based on user tier/context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     internal BeforeParallelBatchContext(
         AgentContext baseContext,
         IReadOnlyList<ParallelFunctionInfo> parallelFunctions,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         ParallelFunctions = parallelFunctions ?? throw new ArgumentNullException(nameof(parallelFunctions));
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
 /// <summary>
 /// Context for BeforeFunction hook.
-/// Available properties: Function, FunctionCallId, Arguments, ToolkitName, SkillName, RunOptions
+/// Available properties: Function, FunctionCallId, Arguments, ToolkitName, SkillName, RunConfig
 /// </summary>
 public sealed class BeforeFunctionContext : HookContext
 {
@@ -351,7 +351,7 @@ public sealed class BeforeFunctionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for permission validation, dry-run mode (SkipTools), and function-level authorization.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     //
     // CONTROL SIGNALS
@@ -389,7 +389,7 @@ public sealed class BeforeFunctionContext : HookContext
         IReadOnlyDictionary<string, object?> arguments,
         string? toolkitName,
         string? skillName,
-        AgentRunOptions runOptions)
+        AgentRunConfig runConfig)
         : base(baseContext)
     {
         Function = function; // Can be null for unknown functions
@@ -397,13 +397,13 @@ public sealed class BeforeFunctionContext : HookContext
         Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments));
         ToolkitName = toolkitName;
         SkillName = skillName;
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 
 /// <summary>
 /// Context for AfterFunction hook.
-/// Available properties: Function, FunctionCallId, Result, Exception, ToolkitName, SkillName, RunOptions
+/// Available properties: Function, FunctionCallId, Result, Exception, ToolkitName, SkillName, RunConfig
 /// </summary>
 public sealed class AfterFunctionContext : HookContext
 {
@@ -451,7 +451,7 @@ public sealed class AfterFunctionContext : HookContext
     /// READ-ONLY - represents the user's original intent for this run.
     /// Use for audit logging, metrics, and result transformation based on user context.
     /// </summary>
-    public AgentRunOptions RunOptions { get; }
+    public AgentRunConfig RunConfig { get; }
 
     //
     // HELPERS
@@ -483,7 +483,7 @@ public sealed class AfterFunctionContext : HookContext
         string callId,
         object? result,
         Exception? exception,
-        AgentRunOptions runOptions,
+        AgentRunConfig runConfig,
         string? toolkitName = null,
         string? skillName = null)
         : base(baseContext)
@@ -494,7 +494,7 @@ public sealed class AfterFunctionContext : HookContext
         Exception = exception;
         ToolkitName = toolkitName;
         SkillName = skillName;
-        RunOptions = runOptions ?? throw new ArgumentNullException(nameof(runOptions));
+        RunConfig = runConfig ?? throw new ArgumentNullException(nameof(runConfig));
     }
 }
 

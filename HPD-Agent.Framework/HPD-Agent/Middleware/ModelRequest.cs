@@ -117,11 +117,11 @@ public sealed record ModelRequest
     /// For example, AudioPipelineMiddleware reads Audio settings:
     /// </para>
     /// <code>
-    /// var audioOptions = request.RunOptions?.Audio as AudioRunOptions;
+    /// var audioOptions = request.RunConfig?.Audio as AudioRunConfig;
     /// var voice = audioOptions?.Voice ?? "default";
     /// </code>
     /// </remarks>
-    public AgentRunOptions? RunOptions { get; init; }
+    public AgentRunConfig? RunConfig { get; init; }
 
     /// <summary>
     /// Event coordinator for emitting events during streaming.
@@ -161,7 +161,7 @@ public sealed record ModelRequest
     /// </para>
     /// <para><b>Note:</b></para>
     /// <para>
-    /// Streams, RunOptions, and EventCoordinator are NOT overrideable via this method.
+    /// Streams, RunConfig, and EventCoordinator are NOT overrideable via this method.
     /// These properties come from the agent runtime and should not be modified by middleware.
     /// </para>
     /// <para><b>Example:</b></para>

@@ -17,7 +17,7 @@ namespace HPD.Agent.Audio;
     WriteIndented = false,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AudioConfig))]
-[JsonSerializable(typeof(AudioRunOptions))]
+[JsonSerializable(typeof(AudioRunConfig))]
 [JsonSerializable(typeof(TtsConfig))]
 [JsonSerializable(typeof(SttConfig))]
 [JsonSerializable(typeof(VadConfig))]

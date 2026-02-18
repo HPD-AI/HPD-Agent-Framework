@@ -22,7 +22,7 @@
   <ItemGroup>
     <!-- Core HPD-Agent dependency -->
     <ProjectReference Include="..\..\HPD-Agent\HPD-Agent.csproj" />
-        <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.1.1" />
+        <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
   </ItemGroup>
 
   <!-- Expose internals to test projects -->

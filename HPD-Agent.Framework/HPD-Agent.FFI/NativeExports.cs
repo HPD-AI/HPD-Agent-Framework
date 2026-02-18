@@ -12,6 +12,8 @@ namespace HPD.Agent.FFI;
 /// <summary>
 /// Wrapper holding V3 Session + Branch pair for FFI thread handles.
 /// FFI consumers see a single "thread" handle; internally we maintain the V3 split.
+/// Note: FFI has InternalsVisibleTo access and can use internal Session/Branch constructors.
+/// This is framework code, not user-facing, so internal API usage is appropriate.
 /// </summary>
 internal sealed class FFIConversationThread
 {

@@ -120,10 +120,8 @@ public static class AgentBuilderExtensions
         if (string.IsNullOrWhiteSpace(model))
             throw new ArgumentException("Model is required for Mistral provider.", nameof(model));
 
-        // Resolve API key from multiple sources
-        var resolvedApiKey = ProviderConfigurationHelper.ResolveApiKey(apiKey, "mistral");
-
         // Create provider config
+        // Note: API key resolution is deferred to Build() time via ISecretResolver
         var providerConfig = new MistralProviderConfig();
 
         // Allow user to configure additional options
@@ -136,7 +134,7 @@ public static class AgentBuilderExtensions
         builder.Config.Provider = new ProviderConfig
         {
             ProviderKey = "mistral",
-            ApiKey = resolvedApiKey,
+            ApiKey = apiKey, // May be null - AgentBuilder.Build() will resolve via ISecretResolver
             ModelName = model
         };
 

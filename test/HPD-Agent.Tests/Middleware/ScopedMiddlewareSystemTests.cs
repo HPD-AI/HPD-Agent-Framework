@@ -411,7 +411,7 @@ public class CollapsedMiddlewareSystemTests
             function: function,
             callId: "test-call",
             arguments: new Dictionary<string, object?>(),
-            runOptions: new AgentRunOptions(),
+            runConfig: new AgentRunConfig(),
             toolkitName: toolName,
             skillName: skillName);
     }
@@ -442,7 +442,7 @@ public class CollapsedMiddlewareSystemTests
         var agentContext = CreateAgentContext(state);
         response ??= new ChatMessage(ChatRole.Assistant, []);
         toolCalls ??= new List<FunctionCallContent>();
-        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunConfig());
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(
@@ -452,7 +452,7 @@ public class CollapsedMiddlewareSystemTests
         var agentContext = CreateAgentContext(state);
         var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
-        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunConfig());
     }
 
 }

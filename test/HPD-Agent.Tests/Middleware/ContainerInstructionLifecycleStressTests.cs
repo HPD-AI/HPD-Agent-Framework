@@ -374,7 +374,7 @@ public class ContainerInstructionLifecycleStressTests
             Tools = new List<AITool>(),
             Instructions = "You are a helpful AI assistant."
         };
-        var runOptions = new AgentRunOptions();
+        var runConfig = new AgentRunConfig();
 
         var loopState = AgentLoopState.InitialSafe(
             messages: messages,
@@ -397,7 +397,7 @@ public class ContainerInstructionLifecycleStressTests
             branch: new global::HPD.Agent.Branch("test-session"),
             cancellationToken: CancellationToken.None);
 
-        return agentContext.AsBeforeIteration(iteration, messages, options, runOptions);
+        return agentContext.AsBeforeIteration(iteration, messages, options, runConfig);
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(ContainerMiddlewareState state)
@@ -426,9 +426,9 @@ public class ContainerInstructionLifecycleStressTests
 
         var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Response"));
         var turnHistory = new List<ChatMessage>();
-        var runOptions = new AgentRunOptions();
+        var runConfig = new AgentRunConfig();
 
-        return agentContext.AsAfterMessageTurn(response, turnHistory, runOptions);
+        return agentContext.AsAfterMessageTurn(response, turnHistory, runConfig);
     }
 
     #endregion

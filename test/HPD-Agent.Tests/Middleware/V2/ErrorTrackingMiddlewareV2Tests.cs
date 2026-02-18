@@ -66,7 +66,7 @@ public class ErrorTrackingMiddlewareTests
 
         // Update afterContext to have same state as errorContext
         var agentContext = GetAgentContextFromErrorContext(errorContext);
-        var newAfterContext = agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunOptions());
+        var newAfterContext = agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunConfig());
 
         // Act - successful iteration should reset
         await middleware.AfterIterationAsync(newAfterContext, CancellationToken.None);
@@ -96,7 +96,7 @@ public class ErrorTrackingMiddlewareTests
         {
             Exception = new InvalidOperationException("Test error")
         };
-        var newAfterContext = agentContext.AsAfterIteration(0, new[] { failedResult }, new AgentRunOptions());
+        var newAfterContext = agentContext.AsAfterIteration(0, new[] { failedResult }, new AgentRunConfig());
 
         // Act - failed iteration should NOT reset
         await middleware.AfterIterationAsync(newAfterContext, CancellationToken.None);
@@ -225,7 +225,7 @@ public class ErrorTrackingMiddlewareTests
 
         if (allSucceeded)
         {
-            return agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunOptions());
+            return agentContext.AsAfterIteration(0, Array.Empty<FunctionResultContent>(), new AgentRunConfig());
         }
         else
         {
@@ -233,7 +233,7 @@ public class ErrorTrackingMiddlewareTests
             {
                 Exception = new InvalidOperationException("Test error")
             };
-            return agentContext.AsAfterIteration(0, new[] { failedResult }, new AgentRunOptions());
+            return agentContext.AsAfterIteration(0, new[] { failedResult }, new AgentRunConfig());
         }
     }
 

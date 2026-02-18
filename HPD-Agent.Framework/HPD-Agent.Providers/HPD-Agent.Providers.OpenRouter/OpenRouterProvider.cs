@@ -8,7 +8,9 @@ using System.IO;
 using System.Linq;
 using HPD.Agent.Providers;
 using HPD.Agent.ErrorHandling;
+using HPD.Agent.Secrets;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using HPD.Agent;
 namespace HPD.Agent.Providers.OpenRouter;
 
@@ -22,8 +24,18 @@ internal class OpenRouterProvider : IProviderExtendedFeatures
 
     public IChatClient CreateChatClient(ProviderConfig config, IServiceProvider? services = null)
     {
-        if (string.IsNullOrEmpty(config.ApiKey))
-            throw new ArgumentException("OpenRouter requires an API key");
+        // Get secret resolver from services
+        var secrets = services?.GetService<ISecretResolver>();
+        if (secrets == null)
+        {
+            throw new InvalidOperationException(
+                "ISecretResolver is required for provider initialization. " +
+                "Ensure the agent builder is properly configured with secret resolution.");
+        }
+
+        // Resolve API key using ISecretResolver
+        var apiKeyTask = secrets.RequireAsync("openrouter:ApiKey", "OpenRouter", config.ApiKey, CancellationToken.None);
+        string apiKey = apiKeyTask.GetAwaiter().GetResult();
 
         var attributionInfo = ExtractAttributionInfo(config);
 
@@ -32,7 +44,7 @@ internal class OpenRouterProvider : IProviderExtendedFeatures
             BaseAddress = new Uri("https://openrouter.ai/api/v1/")
         };
 
-        httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {config.ApiKey}");
+        httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
         httpClient.DefaultRequestHeaders.Add("HTTP-Referer", attributionInfo.Referer);
         httpClient.DefaultRequestHeaders.Add("X-Title", attributionInfo.Title);
 
@@ -69,8 +81,13 @@ internal class OpenRouterProvider : IProviderExtendedFeatures
 
     public ProviderValidationResult ValidateConfiguration(ProviderConfig config)
     {
+        // Note: API key validation is now deferred to CreateChatClient where ISecretResolver is available
+        // This method only validates config structure, not secret resolution
         if (string.IsNullOrEmpty(config.ApiKey))
-            return ProviderValidationResult.Failure("API key is required for OpenRouter");
+        {
+            return ProviderValidationResult.Failure("API key is required for OpenRouter. " +
+                "Set it via the apiKey parameter, OPENROUTER_API_KEY environment variable, or configuration.");
+        }
 
         if (string.IsNullOrEmpty(config.ModelName))
             return ProviderValidationResult.Failure("Model name is required");

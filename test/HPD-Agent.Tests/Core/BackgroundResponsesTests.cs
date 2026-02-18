@@ -18,7 +18,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void AllowBackgroundResponses_ResolvesFromOptions_WhenExplicitlySet()
     {
         // Arrange
-        var options = new AgentRunOptions { AllowBackgroundResponses = true };
+        var options = new AgentRunConfig { AllowBackgroundResponses = true };
         var config = new BackgroundResponsesConfig { DefaultAllow = false };
 
         // Act
@@ -32,7 +32,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void AllowBackgroundResponses_FallsBackToConfig_WhenOptionsNotSet()
     {
         // Arrange
-        var options = new AgentRunOptions { AllowBackgroundResponses = null };
+        var options = new AgentRunConfig { AllowBackgroundResponses = null };
         var config = new BackgroundResponsesConfig { DefaultAllow = true };
 
         // Act
@@ -46,7 +46,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void AllowBackgroundResponses_OptionsOverridesConfig_WhenBothSet()
     {
         // Arrange
-        var options = new AgentRunOptions { AllowBackgroundResponses = false };
+        var options = new AgentRunConfig { AllowBackgroundResponses = false };
         var config = new BackgroundResponsesConfig { DefaultAllow = true };
 
         // Act
@@ -60,7 +60,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void AllowBackgroundResponses_DefaultsFalse_WhenNothingConfigured()
     {
         // Arrange
-        AgentRunOptions? options = null;
+        AgentRunConfig? options = null;
         BackgroundResponsesConfig? config = null;
 
         // Act
@@ -74,7 +74,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void AllowBackgroundResponses_DefaultsFalse_WhenOptionsNull()
     {
         // Arrange
-        var options = new AgentRunOptions(); // AllowBackgroundResponses is null by default
+        var options = new AgentRunConfig(); // AllowBackgroundResponses is null by default
         var config = new BackgroundResponsesConfig(); // DefaultAllow is false by default
 
         // Act
@@ -87,7 +87,7 @@ public class BackgroundResponsesTests : AgentTestBase
     /// <summary>
     /// Helper method that matches the resolution logic in Agent.RunAsync
     /// </summary>
-    private static bool ResolveBackgroundSetting(AgentRunOptions? options, BackgroundResponsesConfig? config)
+    private static bool ResolveBackgroundSetting(AgentRunConfig? options, BackgroundResponsesConfig? config)
     {
         return options?.AllowBackgroundResponses
             ?? config?.DefaultAllow
@@ -135,13 +135,13 @@ public class BackgroundResponsesTests : AgentTestBase
 
     #endregion
 
-    #region AgentRunOptions Background Properties Tests
+    #region AgentRunConfig Background Properties Tests
 
     [Fact]
-    public void AgentRunOptions_BackgroundProperties_AreNullByDefault()
+    public void AgentRunConfig_BackgroundProperties_AreNullByDefault()
     {
         // Act
-        var options = new AgentRunOptions();
+        var options = new AgentRunConfig();
 
         // Assert
         Assert.Null(options.AllowBackgroundResponses);
@@ -151,7 +151,7 @@ public class BackgroundResponsesTests : AgentTestBase
     }
 
     [Fact]
-    public void AgentRunOptions_BackgroundProperties_CanBeSet()
+    public void AgentRunConfig_BackgroundProperties_CanBeSet()
     {
         // Arrange
         #pragma warning disable MEAI001 // Experimental API
@@ -159,7 +159,7 @@ public class BackgroundResponsesTests : AgentTestBase
         #pragma warning restore MEAI001
 
         // Act
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             AllowBackgroundResponses = true,
             ContinuationToken = token,
@@ -525,7 +525,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void PollingInterval_ResolvesFromOptions_WhenSet()
     {
         // Arrange
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             BackgroundPollingInterval = TimeSpan.FromSeconds(10)
         };
@@ -545,7 +545,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void PollingInterval_FallsBackToConfig_WhenOptionsNull()
     {
         // Arrange
-        var options = new AgentRunOptions(); // BackgroundPollingInterval is null
+        var options = new AgentRunConfig(); // BackgroundPollingInterval is null
         var config = new BackgroundResponsesConfig
         {
             DefaultPollingInterval = TimeSpan.FromSeconds(5)
@@ -566,7 +566,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void BackgroundTimeout_ResolvesFromOptions_WhenSet()
     {
         // Arrange
-        var options = new AgentRunOptions
+        var options = new AgentRunConfig
         {
             BackgroundTimeout = TimeSpan.FromMinutes(15)
         };
@@ -586,7 +586,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void BackgroundTimeout_FallsBackToConfig_WhenOptionsNull()
     {
         // Arrange
-        var options = new AgentRunOptions(); // BackgroundTimeout is null
+        var options = new AgentRunConfig(); // BackgroundTimeout is null
         var config = new BackgroundResponsesConfig
         {
             DefaultTimeout = TimeSpan.FromMinutes(30)
@@ -603,7 +603,7 @@ public class BackgroundResponsesTests : AgentTestBase
     public void BackgroundTimeout_IsNull_WhenNothingConfigured()
     {
         // Arrange
-        var options = new AgentRunOptions();
+        var options = new AgentRunConfig();
         var config = new BackgroundResponsesConfig(); // DefaultTimeout is null by default
 
         // Act

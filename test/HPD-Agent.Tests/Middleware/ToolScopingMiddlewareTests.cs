@@ -887,7 +887,7 @@ public class ContainerMiddlewareTests
             iteration: 0,
             messages: new List<ChatMessage>(),
             options: options ?? new ChatOptions { Tools = new List<AITool>() },
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static BeforeIterationContext CreateIterationContext(AgentLoopState? state = null, ChatOptions? options = null)
@@ -897,7 +897,7 @@ public class ContainerMiddlewareTests
             iteration: 0,
             messages: new List<ChatMessage>(),
             options: options ?? new ChatOptions(),
-            runOptions: new AgentRunOptions());
+            runConfig: new AgentRunConfig());
     }
 
     private static BeforeToolExecutionContext CreateBeforeToolExecutionContext(
@@ -909,7 +909,7 @@ public class ContainerMiddlewareTests
         response ??= new ChatMessage(ChatRole.Assistant, []);
         toolCalls ??= new List<FunctionCallContent>();
 
-        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunOptions());
+        return agentContext.AsBeforeToolExecution(response, toolCalls, new AgentRunConfig());
     }
 
     private static AfterMessageTurnContext CreateAfterMessageTurnContext(
@@ -920,7 +920,7 @@ public class ContainerMiddlewareTests
         var finalResponse = new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
 
-        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunOptions());
+        return agentContext.AsAfterMessageTurn(finalResponse, turnHistory, new AgentRunConfig());
     }
 
     private static (AIFunction Container, AIFunction[] Members) CreateCollapsedToolkit(

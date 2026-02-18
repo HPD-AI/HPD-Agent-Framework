@@ -11,10 +11,10 @@ namespace HPD.Agent.Tests.Middleware.V2;
 /// </summary>
 public static class MiddlewareTestHelpers
 {
-    private static AgentRunOptions CreateDefaultRunOptions()
+    private static AgentRunConfig CreateDefaultRunConfig()
     {
         // Empty run options - all properties are optional
-        return new AgentRunOptions();
+        return new AgentRunConfig();
     }
 
 
@@ -66,7 +66,7 @@ public static class MiddlewareTestHelpers
             iteration,
             messages ?? new List<ChatMessage>(),
             options ?? new ChatOptions(),
-            runOptions: CreateDefaultRunOptions());
+            runConfig: CreateDefaultRunConfig());
     }
 
     /// <summary>
@@ -79,7 +79,7 @@ public static class MiddlewareTestHelpers
         string agentName = "TestAgent")
     {
         var context = CreateAgentContext(agentName: agentName, state: state);
-        return context.AsAfterIteration(iteration, toolResults ?? new List<FunctionResultContent>(), CreateDefaultRunOptions());
+        return context.AsAfterIteration(iteration, toolResults ?? new List<FunctionResultContent>(), CreateDefaultRunConfig());
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public static class MiddlewareTestHelpers
         function ??= AIFunctionFactory.Create(() => "test", "TestFunction");
         arguments ??= new Dictionary<string, object?>();
 
-        return context.AsBeforeFunction(function, callId, arguments, CreateDefaultRunOptions(), ToolkitName, skillName);
+        return context.AsBeforeFunction(function, callId, arguments, CreateDefaultRunConfig(), ToolkitName, skillName);
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ public static class MiddlewareTestHelpers
         var context = CreateAgentContext(agentName: agentName, state: state);
         function ??= AIFunctionFactory.Create(() => "test", "TestFunction");
 
-        return context.AsAfterFunction(function, callId, result, exception, CreateDefaultRunOptions());
+        return context.AsAfterFunction(function, callId, result, exception, CreateDefaultRunConfig());
     }
 
     /// <summary>
@@ -140,16 +140,16 @@ public static class MiddlewareTestHelpers
     public static BeforeMessageTurnContext CreateBeforeMessageTurnContext(
         ChatMessage? userMessage = null,
         List<ChatMessage>? conversationHistory = null,
-        AgentRunOptions? runOptions = null,
+        AgentRunConfig? runConfig = null,
         AgentLoopState? state = null,
         string agentName = "TestAgent")
     {
         var context = CreateAgentContext(agentName: agentName, state: state);
         userMessage ??= new ChatMessage(ChatRole.User, "Test message");
         conversationHistory ??= new List<ChatMessage>();
-        runOptions ??= new AgentRunOptions();
+        runConfig ??= new AgentRunConfig();
 
-        return context.AsBeforeMessageTurn(userMessage, conversationHistory, runOptions);
+        return context.AsBeforeMessageTurn(userMessage, conversationHistory, runConfig);
     }
 
     /// <summary>
@@ -165,7 +165,7 @@ public static class MiddlewareTestHelpers
         finalResponse ??= new ChatResponse(new ChatMessage(ChatRole.Assistant, "Test response"));
         turnHistory ??= new List<ChatMessage>();
 
-        return context.AsAfterMessageTurn(finalResponse, turnHistory, CreateDefaultRunOptions());
+        return context.AsAfterMessageTurn(finalResponse, turnHistory, CreateDefaultRunConfig());
     }
 
     /// <summary>
@@ -181,7 +181,7 @@ public static class MiddlewareTestHelpers
         response ??= new ChatMessage(ChatRole.Assistant, "Test response");
         toolCalls ??= new List<FunctionCallContent>();
 
-        return context.AsBeforeToolExecution(response, toolCalls, CreateDefaultRunOptions());
+        return context.AsBeforeToolExecution(response, toolCalls, CreateDefaultRunConfig());
     }
 
     /// <summary>
@@ -195,7 +195,7 @@ public static class MiddlewareTestHelpers
         var context = CreateAgentContext(agentName: agentName, state: state);
         functions ??= new List<ParallelFunctionInfo>();
 
-        return context.AsBeforeParallelBatch(functions, CreateDefaultRunOptions());
+        return context.AsBeforeParallelBatch(functions, CreateDefaultRunConfig());
     }
 
     /// <summary>

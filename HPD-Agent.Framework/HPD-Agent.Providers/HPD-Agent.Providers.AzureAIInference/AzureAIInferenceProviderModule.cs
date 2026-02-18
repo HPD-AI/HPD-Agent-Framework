@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using HPD.Agent.Providers;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent.Providers.AzureAIInference;
 
@@ -24,5 +25,9 @@ public static class AzureAIInferenceProviderModule
             "azure-ai-inference",
             json => JsonSerializer.Deserialize(json, AzureAIInferenceJsonContext.Default.AzureAIInferenceProviderConfig),
             config => JsonSerializer.Serialize(config, AzureAIInferenceJsonContext.Default.AzureAIInferenceProviderConfig));
+
+        // Register environment variable aliases
+        SecretAliasRegistry.Register("azure-ai-inference:ApiKey", "AZURE_AI_INFERENCE_API_KEY");
+        SecretAliasRegistry.Register("azure-ai-inference:Endpoint", "AZURE_AI_INFERENCE_ENDPOINT");
     }
 }
