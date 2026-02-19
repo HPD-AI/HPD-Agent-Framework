@@ -27,5 +27,12 @@ internal enum CapabilityType
     /// A multi-agent workflow capability that orchestrates multiple agents.
     /// Decorated with [MultiAgent] attribute. MultiAgents are containers that execute graph workflows.
     /// </summary>
-    MultiAgent
+    MultiAgent,
+
+    /// <summary>
+    /// An MCP server capability that provides external tool connections.
+    /// Decorated with [MCPServer] attribute. MCP servers are NOT containers themselves —
+    /// their tools are either stamped flat under the parent toolkit or wrapped in an MCP_* container at runtime.
+    /// </summary>
+    MCPServer
 }

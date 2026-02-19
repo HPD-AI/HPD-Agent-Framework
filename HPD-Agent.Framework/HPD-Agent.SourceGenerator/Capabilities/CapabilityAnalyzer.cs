@@ -160,7 +160,25 @@ internal static class CapabilityAnalyzer
             return AnalyzeMultiAgentCapability(method, attrs, semanticModel, className, namespaceName, diagnostics);
         }
 
-        // 4. Check for [AIFunction] attribute
+        // 4. Check for [MCPServer] attribute
+        if (HasAttribute(attrs, "MCPServer"))
+        {
+            // Check for conflicting attributes (HPDAG0302)
+            var conflictingAttr = GetConflictingCapabilityAttribute(attrs, "MCPServer");
+            if (conflictingAttr != null)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    MCPServerDiagnostics.ConflictingAttributes,
+                    method.Identifier.GetLocation(),
+                    method.Identifier.ValueText,
+                    conflictingAttr));
+                return null;
+            }
+
+            return AnalyzeMCPServerCapability(method, attrs, semanticModel, className, namespaceName, diagnostics);
+        }
+
+        // 5. Check for [AIFunction] attribute
         if (HasAttribute(attrs, "AIFunction"))
         {
             return AnalyzeFunctionCapability(method, attrs, semanticModel, context, className, namespaceName);
@@ -634,6 +652,134 @@ internal static class CapabilityAnalyzer
         };
     }
 
+    // ========== MCPServer Analysis ==========
+
+    /// <summary>
+    /// Analyzes a method with [MCPServer] attribute and creates an MCPServerCapability.
+    /// The method must return MCPServerConfig or MCPServerConfig?.
+    /// </summary>
+    private static MCPServerCapability? AnalyzeMCPServerCapability(
+        MethodDeclarationSyntax method,
+        List<AttributeSyntax> attrs,
+        SemanticModel semanticModel,
+        string className,
+        string namespaceName,
+        List<Diagnostic> diagnostics)
+    {
+        // Validate return type is MCPServerConfig or MCPServerConfig? (nullable)
+        var returnType = semanticModel.GetTypeInfo(method.ReturnType).Type;
+        if (returnType == null)
+            return null;
+
+        // Handle nullable: MCPServerConfig? unwraps to MCPServerConfig
+        var actualType = returnType;
+        if (returnType is INamedTypeSymbol namedType &&
+            namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            namedType.TypeArguments.Length == 1)
+        {
+            actualType = namedType.TypeArguments[0];
+        }
+        // Also handle nullable reference type annotation (MCPServerConfig?)
+        if (returnType.NullableAnnotation == NullableAnnotation.Annotated && returnType is INamedTypeSymbol annotatedType)
+        {
+            actualType = annotatedType;
+        }
+
+        if (actualType.Name != "MCPServerConfig")
+        {
+            // Report HPDAG0301: Invalid return type
+            diagnostics.Add(Diagnostic.Create(
+                MCPServerDiagnostics.InvalidReturnType,
+                method.ReturnType.GetLocation(),
+                method.Identifier.ValueText,
+                returnType.ToDisplayString()));
+            return null;
+        }
+
+        var methodName = method.Identifier.ValueText;
+        var isStatic = method.Modifiers.Any(SyntaxKind.StaticKeyword);
+
+        // Extract attribute properties
+        var mcpAttr = attrs.FirstOrDefault(a => a.Name.ToString().Contains("MCPServer"));
+        string? serverName = null;
+        string? customName = null;
+        string? description = null;
+        string? fromManifest = null;
+        bool collapseWithinToolkit = false;
+
+        if (mcpAttr?.ArgumentList != null)
+        {
+            var arguments = mcpAttr.ArgumentList.Arguments;
+
+            // First positional argument is serverName (constructor parameter)
+            if (arguments.Count > 0 && arguments[0].NameEquals == null && arguments[0].NameColon == null)
+            {
+                serverName = ExtractStringLiteral(arguments[0].Expression, semanticModel);
+            }
+
+            // Check for named arguments
+            foreach (var arg in arguments)
+            {
+                if (arg.NameEquals != null)
+                {
+                    var propName = arg.NameEquals.Name.Identifier.ValueText;
+                    switch (propName)
+                    {
+                        case "Name":
+                            customName = ExtractStringLiteral(arg.Expression, semanticModel);
+                            break;
+                        case "Description":
+                            description = ExtractStringLiteral(arg.Expression, semanticModel);
+                            break;
+                        case "FromManifest":
+                            fromManifest = ExtractStringLiteral(arg.Expression, semanticModel);
+                            break;
+                        case "CollapseWithinToolkit":
+                            if (arg.Expression is LiteralExpressionSyntax collapseLit)
+                                collapseWithinToolkit = collapseLit.IsKind(SyntaxKind.TrueLiteralExpression);
+                            break;
+                    }
+                }
+            }
+        }
+
+        // Fall back to [AIDescription] attribute if no description in [MCPServer]
+        if (string.IsNullOrWhiteSpace(description))
+        {
+            description = GetDescription(attrs);
+        }
+
+        // Effective name: customName > methodName
+        var effectiveName = customName ?? methodName;
+
+        // Extract conditional and context metadata
+        var conditionalExpression = GetConditionalExpression(attrs);
+        var contextTypeName = GetMetadataTypeName(method, semanticModel);
+
+        // Use standalone [RequiresPermission] attribute (same pattern as AIFunction/Skill)
+        var requiresPermission = HasAttribute(attrs, "RequiresPermission");
+
+        System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Analyzed MCPServer: {methodName}, Name={effectiveName}, FromManifest={fromManifest}, CollapseWithinToolkit={collapseWithinToolkit}");
+
+        return new MCPServerCapability
+        {
+            Name = effectiveName,
+            MethodName = methodName,
+            Description = description ?? string.Empty,
+            ParentToolkitName = className,
+            ParentNamespace = namespaceName,
+            IsStatic = isStatic,
+            FromManifest = fromManifest,
+            ManifestServerName = serverName,
+            CollapseWithinToolkit = collapseWithinToolkit,
+            RequiresPermission = requiresPermission,
+
+            // Context and conditionals (feature parity!)
+            ContextTypeName = contextTypeName,
+            ConditionalExpression = conditionalExpression,
+        };
+    }
+
     // ========== Function Analysis ==========
 
     /// <summary>
@@ -730,7 +876,7 @@ internal static class CapabilityAnalyzer
     /// </summary>
     private static string? GetConflictingCapabilityAttribute(List<AttributeSyntax> attrs, string currentAttr)
     {
-        var capabilityAttributes = new[] { "AIFunction", "Skill", "SubAgent", "MultiAgent" };
+        var capabilityAttributes = new[] { "AIFunction", "Skill", "SubAgent", "MultiAgent", "MCPServer" };
 
         foreach (var attr in attrs)
         {

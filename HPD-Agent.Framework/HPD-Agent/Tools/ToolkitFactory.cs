@@ -123,5 +123,14 @@ public record ToolkitFactory(
     /// Example: new[] { "WebSearch", "ImageSearch", "NewsSearch" }
     /// Used to validate ToolkitReference.Functions at resolution time.
     /// </summary>
-    string[]? FunctionNames = null
+    string[]? FunctionNames = null,
+
+    // ========== NEW: MCP SERVER SUPPORT ==========
+
+    /// <summary>
+    /// Whether this toolkit has [MCPServer] methods.
+    /// When true, the generated Registration class has a static MCPServers property
+    /// containing MCPServerRegistration objects that AgentBuilder processes at build time.
+    /// </summary>
+    bool HasMCPServers = false
 );

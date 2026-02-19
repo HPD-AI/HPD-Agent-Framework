@@ -12,6 +12,7 @@ internal class SkillCapability : BaseCapability
 {
     public override CapabilityType Type => CapabilityType.Skill;
     public override bool IsContainer => true;  // Skills ARE containers
+    public override bool EmitsIntoCreateTools => false;  // Skills registered via GenerateSkillRegistrations()
     public override bool RequiresInstance => true;  // Skills require instance to execute
 
     // ========== Skill-Specific Properties ==========
@@ -94,7 +95,7 @@ internal class SkillCapability : BaseCapability
         var props = base.GetAdditionalProperties();
         props["IsContainer"] = true;
         props["IsSkill"] = true;
-        props["ParentSkillContainer"] = ParentToolkitName;
+        props["ParentContainer"] = ParentToolkitName;
         props["ReferencedFunctions"] = ResolvedFunctionReferences.ToArray();
         props["ReferencedToolkits"] = ResolvedToolkitTypes.ToArray();
         props["RequiresPermission"] = RequiresPermission;

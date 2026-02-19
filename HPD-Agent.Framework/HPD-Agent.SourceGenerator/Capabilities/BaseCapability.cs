@@ -130,6 +130,13 @@ internal abstract class BaseCapability : ICapability
     public abstract bool IsContainer { get; }
 
     /// <summary>
+    /// Whether this capability is emitted into the CreateTools() functions list.
+    /// - true: emitted as functions.Add(HPDAIFunctionFactory.Create(...)) in CreateTools
+    /// - false: has its own registration path (e.g., Skills via helper methods, MCPServers via static property)
+    /// </summary>
+    public abstract bool EmitsIntoCreateTools { get; }
+
+    /// <summary>
     /// Generates the registration code for this capability.
     /// This creates the HPDAIFunctionFactory.Create(...) call with all necessary metadata.
     /// Must be implemented by concrete capability classes.

@@ -38,6 +38,13 @@ internal interface ICapability
     bool RequiresInstance { get; }
 
     /// <summary>
+    /// Whether this capability is emitted into the CreateTools() functions list.
+    /// - true: emitted as functions.Add(HPDAIFunctionFactory.Create(...)) in CreateTools
+    /// - false: has its own registration path (e.g., Skills via helper methods, MCPServers via static property)
+    /// </summary>
+    bool EmitsIntoCreateTools { get; }
+
+    /// <summary>
     /// Indicates whether this capability has a dynamic description that uses metadata interpolation.
     /// Example: "Analyze {metadata.ProjectType} code"
     /// </summary>

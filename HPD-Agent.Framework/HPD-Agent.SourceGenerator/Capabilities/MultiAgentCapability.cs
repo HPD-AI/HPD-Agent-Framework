@@ -12,6 +12,7 @@ internal class MultiAgentCapability : BaseCapability
 {
     public override CapabilityType Type => CapabilityType.MultiAgent;
     public override bool IsContainer => false;  // NOT a container - just a function that runs a workflow (like SubAgent)
+    public override bool EmitsIntoCreateTools => true;
     public override bool RequiresInstance => !IsStatic;  // Instance required unless static method
 
     // ========== MultiAgent-Specific Properties ==========

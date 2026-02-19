@@ -319,6 +319,65 @@ public class MCPClientManager : IDisposable
     }
 
     /// <summary>
+    /// Loads tools from an MCP server defined via [MCPServer] attribute in a toolkit.
+    /// Handles both flat and nested collapsing modes based on config.CollapseWithinToolkit.
+    /// </summary>
+    /// <param name="config">Server config with ParentToolkit and CollapseWithinToolkit set</param>
+    /// <param name="maxFunctionNamesInDescription">Max function names to show in container descriptions</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>List of AIFunctions (flat tools or container + collapsed tools)</returns>
+    public async Task<List<AIFunction>> LoadToolsForToolkitAsync(
+        MCPServerConfig config,
+        int maxFunctionNamesInDescription = 10,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Loading MCP tools for toolkit-owned server '{ServerName}' (Parent: {ParentToolkit}, Nested: {CollapseWithinToolkit})",
+            config.Name, config.ParentToolkit, config.CollapseWithinToolkit);
+
+        var tools = await LoadServerToolsAsync(config, cancellationToken);
+
+        if (tools.Count == 0)
+        {
+            _logger.LogWarning("No tools loaded from server '{ServerName}'", config.Name);
+            return new List<AIFunction>();
+        }
+
+        if (config.CollapseWithinToolkit)
+        {
+            // Nested mode: MCP tools behind their own MCP_* container, parented to the toolkit
+            var (container, collapsedTools) = ExternalToolCollapsingWrapper.WrapMCPServerTools(
+                serverName: config.Name,
+                tools: tools,
+                maxFunctionNamesInDescription: maxFunctionNamesInDescription,
+                FunctionResult: config.FunctionResult,
+                SystemPrompt: config.SystemPrompt,
+                customDescription: config.Description,
+                parentContainer: config.ParentToolkit);
+
+            var result = new List<AIFunction> { container };
+            result.AddRange(collapsedTools);
+
+            _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (nested under {ParentToolkit})",
+                tools.Count, config.Name, config.ParentToolkit);
+
+            return result;
+        }
+        else
+        {
+            // Flat mode: stamp ParentContainer directly on each tool
+            var flatTools = tools.Select(tool =>
+                ExternalToolCollapsingWrapper.AddParentToolMetadata(
+                    tool, config.ParentToolkit ?? config.Name, "MCP", parentContainer: config.ParentToolkit))
+                .ToList();
+
+            _logger.LogInformation("Loaded {Count} tools from server '{ServerName}' (flat under {ParentToolkit})",
+                tools.Count, config.Name, config.ParentToolkit);
+
+            return flatTools;
+        }
+    }
+
+    /// <summary>
     /// Performs health check on all connected servers
     /// </summary>
     public async Task<Dictionary<string, bool>> HealthCheckAsync(CancellationToken cancellationToken = default)

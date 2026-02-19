@@ -48,11 +48,11 @@ public class MCPServerConfig
     /// <summary>
     /// Whether tools from this MCP server require user permission before execution.
     /// When true, all tools from this server will trigger permission requests.
-    /// When false, tools execute without permission prompts (use for read-only servers).
-    /// If not specified, defaults to true (require permission for safety).
+    /// When false (default), tools execute without permission prompts.
+    /// Use [RequiresPermission] on the method to opt in (same as [AIFunction] and [Skill]).
     /// </summary>
     [JsonPropertyName("requiresPermission")]
-    public bool RequiresPermission { get; set; } = true;
+    public bool RequiresPermission { get; set; } = false;
 
     /// <summary>
     /// Sandbox configuration for this MCP server.
@@ -88,6 +88,24 @@ public class MCPServerConfig
     
     [JsonPropertyName("environment")]
     public Dictionary<string, string>? Environment { get; set; }
+
+    // ========== Toolkit-Awareness Fields (set at runtime, not serialized from JSON) ==========
+
+    /// <summary>
+    /// Name of the parent toolkit that owns this MCP server (set via [MCPServer] attribute).
+    /// Used at runtime to stamp ParentContainer on MCP tools for visibility management.
+    /// Null for standalone MCP servers registered via WithMCP().
+    /// </summary>
+    [JsonIgnore]
+    public string? ParentToolkit { get; set; }
+
+    /// <summary>
+    /// When true, MCP tools sit behind their own MCP_* container nested inside the parent toolkit.
+    /// When false (default), tools appear directly under the parent toolkit on expansion.
+    /// Only meaningful when ParentToolkit is set.
+    /// </summary>
+    [JsonIgnore]
+    public bool CollapseWithinToolkit { get; set; }
 
     /// <summary>
     /// Validates the server configuration

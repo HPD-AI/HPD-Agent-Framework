@@ -6,6 +6,7 @@ using DiffPlex;
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using HPD.Agent;
+using HPD.Agent.MCP;
 using MAB.DotIgnore;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using Ude;
@@ -1212,6 +1213,20 @@ public class CodingToolkit
 
         return sb.ToString();
     }
+
+    // ========== MCP Servers ==========
+
+    [MCPServer(CollapseWithinToolkit = true)]
+    public static MCPServerConfig Context7Server() => new MCPServerConfig
+    {
+        Name = "context7",
+        Command = "npx",
+        Arguments = new List<string> { "-y", "@upstash/context7-mcp" },
+        Description = "Up-to-date library documentation and code examples from Context7",
+        TimeoutMs = 30000,
+        RetryAttempts = 3,
+        Environment = new Dictionary<string, string> { ["NODE_ENV"] = "production" }
+    };
 
     private static string TruncateOutput(string text, int maxLines)
     {

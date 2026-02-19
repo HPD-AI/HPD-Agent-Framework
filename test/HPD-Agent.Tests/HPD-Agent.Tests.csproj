@@ -38,6 +38,7 @@
                       ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.Toolkit\HPD-Agent.Toolkit.FileSystem\HPD-Agent.Toolkit.FileSystem.csproj" />
     <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.MultiAgent\HPD-Agent.MultiAgent.csproj" />
+    <ProjectReference Include="..\..\HPD-Agent.Framework\HPD-Agent.MCP\HPD-Agent.MCP.csproj" />
   </ItemGroup>
 
 </Project>

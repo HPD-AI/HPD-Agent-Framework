@@ -11,6 +11,7 @@ internal class SubAgentCapability : BaseCapability
 {
     public override CapabilityType Type => CapabilityType.SubAgent;
     public override bool IsContainer => false;  // SubAgents are NOT containers (they're wrappers that delegate)
+    public override bool EmitsIntoCreateTools => true;
     public override bool RequiresInstance => !IsStatic;  // Instance required unless static method
 
     // ========== SubAgent-Specific Properties ==========

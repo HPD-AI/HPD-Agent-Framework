@@ -1894,6 +1894,226 @@ public class AgentBuilder
     }
 
     /// <summary>
+    /// Loads MCP tools from toolkit-owned [MCPServer] methods.
+    /// Iterates through selected toolkit factories with HasMCPServers=true,
+    /// discovers MCPServerRegistration objects via reflection on the generated Registration class,
+    /// resolves configs, and loads tools through MCPClientManager.
+    /// </summary>
+#pragma warning disable IL2075
+    private async Task<List<AIFunction>> LoadToolkitMCPServersAsync(CancellationToken cancellationToken)
+    {
+        var allTools = new List<AIFunction>();
+
+        // Find toolkits that have MCP servers
+        var toolkitsWithMcp = _selectedToolkitFactories.Where(f => f.HasMCPServers).ToList();
+        if (toolkitsWithMcp.Count == 0)
+            return allTools;
+
+        // Ensure we have an MCP client manager (create one if needed)
+        if (McpClientManager == null)
+        {
+            // Try to create MCPClientManager via reflection (same pattern as WithMCP)
+            var mcpManagerType = Type.GetType("HPD.Agent.MCP.MCPClientManager, HPD-Agent.MCP");
+            if (mcpManagerType == null)
+            {
+                _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                    "Toolkits have [MCPServer] attributes but HPD-Agent.MCP assembly is not referenced. Skipping MCP server loading.");
+                return allTools;
+            }
+
+            var logger = _logger?.CreateLogger("HPD.Agent.MCP.MCPClientManager")
+                ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+            McpClientManager = Activator.CreateInstance(mcpManagerType, logger, null);
+        }
+
+        var maxFunctionNames = _config.Collapsing?.MaxFunctionNamesInDescription ?? 10;
+
+        foreach (var factory in toolkitsWithMcp)
+        {
+            try
+            {
+                // Find the Registration class: {ToolkitName}Registration
+                var registrationType = factory.ToolkitType.Assembly.GetType(
+                    $"{factory.Name}Registration") ??
+                    factory.ToolkitType.Assembly.GetTypes().FirstOrDefault(t =>
+                        t.Name == $"{factory.Name}Registration");
+
+                if (registrationType == null)
+                {
+                    _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                        "Could not find {ToolkitName}Registration class for MCP server loading", factory.Name);
+                    continue;
+                }
+
+                // Get the MCPServers static property
+                var mcpServersProp = registrationType.GetProperty("MCPServers",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                if (mcpServersProp == null)
+                {
+                    _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                        "Registration class {ToolkitName}Registration has no MCPServers property", factory.Name);
+                    continue;
+                }
+
+                // Get the registrations list
+                var registrations = mcpServersProp.GetValue(null);
+                if (registrations == null) continue;
+
+                // Get the toolkit instance for instance-method MCP servers
+                object? toolkitInstance = null;
+                if (_serviceProvider != null)
+                {
+                    toolkitInstance = _serviceProvider.GetService(factory.ToolkitType);
+                }
+                toolkitInstance ??= factory.CreateInstance();
+
+                // Iterate over MCPServerRegistration objects
+                var registrationList = (System.Collections.IEnumerable)registrations;
+                foreach (var regObj in registrationList)
+                {
+                    // Use reflection to access MCPServerRegistration properties
+                    var regType = regObj.GetType();
+                    var fromManifest = (string?)regType.GetProperty("FromManifest")?.GetValue(regObj);
+                    var manifestServerName = (string?)regType.GetProperty("ManifestServerName")?.GetValue(regObj);
+                    var name = (string?)regType.GetProperty("Name")?.GetValue(regObj) ?? string.Empty;
+                    var description = (string?)regType.GetProperty("Description")?.GetValue(regObj);
+                    var parentToolkit = (string?)regType.GetProperty("ParentToolkit")?.GetValue(regObj) ?? factory.Name;
+                    var collapseWithinToolkit = (bool)(regType.GetProperty("CollapseWithinToolkit")?.GetValue(regObj) ?? false);
+                    var requiresPermissionOverride = (bool?)regType.GetProperty("RequiresPermissionOverride")?.GetValue(regObj);
+
+                    object? config = null;
+
+                    if (fromManifest != null)
+                    {
+                        // FromManifest mode: load config from manifest file
+                        config = await LoadConfigFromManifestAsync(fromManifest, manifestServerName ?? name, cancellationToken);
+                    }
+                    else
+                    {
+                        // Inline config mode: call the provider delegate
+                        var staticProvider = regType.GetProperty("StaticConfigProvider")?.GetValue(regObj);
+                        var instanceProvider = regType.GetProperty("InstanceConfigProvider")?.GetValue(regObj);
+
+                        if (staticProvider is Delegate staticDel)
+                        {
+                            config = staticDel.DynamicInvoke();
+                        }
+                        else if (instanceProvider is Delegate instanceDel)
+                        {
+                            config = instanceDel.DynamicInvoke(toolkitInstance);
+                        }
+                    }
+
+                    if (config == null)
+                    {
+                        _logger?.CreateLogger<AgentBuilder>().LogDebug(
+                            "MCP server '{ServerName}' in toolkit '{ToolkitName}' returned null config, skipping",
+                            name, factory.Name);
+                        continue;
+                    }
+
+                    // Set toolkit-awareness properties on the config
+                    var configType = config.GetType();
+                    configType.GetProperty("ParentToolkit")?.SetValue(config, parentToolkit);
+                    configType.GetProperty("CollapseWithinToolkit")?.SetValue(config, collapseWithinToolkit);
+
+                    // Apply attribute overrides
+                    if (requiresPermissionOverride.HasValue)
+                    {
+                        configType.GetProperty("RequiresPermission")?.SetValue(config, requiresPermissionOverride.Value);
+                    }
+
+                    if (!string.IsNullOrEmpty(description))
+                    {
+                        var descProp = configType.GetProperty("Description");
+                        var currentDesc = (string?)descProp?.GetValue(config);
+                        if (string.IsNullOrEmpty(currentDesc))
+                        {
+                            descProp?.SetValue(config, description);
+                        }
+                    }
+
+                    // Load tools via MCPClientManager.LoadToolsForToolkitAsync
+                    var mcpManagerType = McpClientManager!.GetType();
+                    var loadMethod = mcpManagerType.GetMethod("LoadToolsForToolkitAsync");
+
+                    if (loadMethod != null)
+                    {
+                        var task = loadMethod.Invoke(McpClientManager, new object[] { config, maxFunctionNames, cancellationToken })
+                            as Task<List<AIFunction>>;
+
+                        if (task != null)
+                        {
+                            var tools = await task;
+                            allTools.AddRange(tools);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.CreateLogger<AgentBuilder>().LogWarning(ex,
+                    "Failed to load MCP servers for toolkit '{ToolkitName}': {Error}",
+                    factory.Name, ex.Message);
+            }
+        }
+
+        return allTools;
+    }
+
+    /// <summary>
+    /// Loads an MCPServerConfig from a manifest file by server name.
+    /// </summary>
+    private async Task<object?> LoadConfigFromManifestAsync(string manifestPath, string serverName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!File.Exists(manifestPath))
+            {
+                _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                    "MCP manifest file not found: {ManifestPath}", manifestPath);
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+
+            // Use reflection to parse manifest and find server
+            var manifestType = Type.GetType("HPD.Agent.MCP.MCPManifest, HPD-Agent.MCP");
+            var configType = Type.GetType("HPD.Agent.MCP.MCPServerConfig, HPD-Agent.MCP");
+            if (manifestType == null || configType == null) return null;
+
+            var manifest = System.Text.Json.JsonSerializer.Deserialize(json, manifestType);
+            if (manifest == null) return null;
+
+            var serversProp = manifestType.GetProperty("Servers");
+            var servers = serversProp?.GetValue(manifest) as System.Collections.IEnumerable;
+            if (servers == null) return null;
+
+            foreach (var server in servers)
+            {
+                var nameProp = server.GetType().GetProperty("Name");
+                var name = (string?)nameProp?.GetValue(server);
+                if (string.Equals(name, serverName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return server;
+                }
+            }
+
+            _logger?.CreateLogger<AgentBuilder>().LogWarning(
+                "Server '{ServerName}' not found in manifest '{ManifestPath}'", serverName, manifestPath);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger?.CreateLogger<AgentBuilder>().LogWarning(ex,
+                "Failed to load manifest '{ManifestPath}': {Error}", manifestPath, ex.Message);
+            return null;
+        }
+    }
+#pragma warning restore IL2075
+
+    /// <summary>
     /// Invokes MCP methods via reflection. This is only called from RequiresUnreferencedCode context,
     /// so the trimmer knows MCPClientManager types must be preserved.
     /// </summary>
@@ -2280,6 +2500,14 @@ public class AgentBuilder
             }
         }
 
+        // Load toolkit-owned MCP servers (from [MCPServer] attributes)
+        var toolkitMcpTools = await LoadToolkitMCPServersAsync(cancellationToken);
+        if (toolkitMcpTools.Count > 0)
+        {
+            toolFunctions.AddRange(toolkitMcpTools);
+            _logger?.CreateLogger<AgentBuilder>().LogInformation("Successfully integrated {Count} toolkit-owned MCP tools into agent", toolkitMcpTools.Count);
+        }
+
         // Note: Old SkillDefinition-based skills have been removed in favor of type-safe Skill class.
         // Skills are now registered via Toolkits and auto-discovered by the source generator.
 
@@ -2533,7 +2761,7 @@ public class AgentBuilder
         foreach (var skillContainer in skillContainers)
         {
             var skillName = skillContainer.Name ?? "Unknown";
-            var skillNamespace = $"{skillContainer.AdditionalProperties?["ParentSkillContainer"]}";
+            var skillNamespace = $"{skillContainer.AdditionalProperties?["ParentContainer"]}";
 
             // Collect all documents for this skill (uploads + references)
             var skillDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

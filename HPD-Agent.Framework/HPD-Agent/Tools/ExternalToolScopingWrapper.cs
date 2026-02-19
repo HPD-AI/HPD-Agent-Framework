@@ -25,7 +25,8 @@ public static class ExternalToolCollapsingWrapper
         int maxFunctionNamesInDescription = 10,
         string? FunctionResult = null,
         string?SystemPrompt = null,
-        string? customDescription = null)
+        string? customDescription = null,
+        string? parentContainer = null)
     {
         if (string.IsNullOrEmpty(serverName))
             throw new ArgumentException("Server name cannot be null or empty", nameof(serverName));
@@ -83,6 +84,7 @@ public static class ExternalToolCollapsingWrapper
                 {
                     ["IsContainer"] = true,
                     ["ToolkitName"] = containerName,
+                    ["ParentContainer"] = parentContainer, // null for standalone WithMCP(), toolkit name for [MCPServer]
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
                     ["SourceType"] = "MCP",
@@ -264,8 +266,9 @@ public static class ExternalToolCollapsingWrapper
     /// <param name="tool">Original tool to wrap</param>
     /// <param name="parentToolkitName">Parent container name</param>
     /// <param name="sourceType">Source type (MCP, Client, ClientToolGroup)</param>
+    /// <param name="parentContainer">Optional parent container for nested visibility (e.g., parent toolkit name for flat MCP tools)</param>
     /// <returns>New AIFunction with metadata</returns>
-    private static AIFunction AddParentToolMetadata(AIFunction tool, string parentToolkitName, string sourceType)
+    internal static AIFunction AddParentToolMetadata(AIFunction tool, string parentToolkitName, string sourceType, string? parentContainer = null)
     {
         // Check if tool already has Collapsing metadata (avoid double-wrapping)
         if (tool.AdditionalProperties?.ContainsKey("ParentToolkit") == true)
@@ -287,6 +290,7 @@ public static class ExternalToolCollapsingWrapper
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["ParentToolkit"] = parentToolkitName,
+                    ["ParentContainer"] = parentContainer, // For nested visibility (flat MCP tools under a toolkit)
                     ["ToolkitName"] = parentToolkitName,
                     ["IsContainer"] = false,
                     ["SourceType"] = sourceType

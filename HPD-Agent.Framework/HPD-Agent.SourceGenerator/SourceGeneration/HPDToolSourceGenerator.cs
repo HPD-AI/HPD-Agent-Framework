@@ -77,7 +77,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
             return attrs.Any(name =>
                 name.Contains("AIFunction") ||
                 name.Contains("Skill") ||
-                name.Contains("SubAgent"));
+                name.Contains("SubAgent") ||
+                name.Contains("MCPServer"));
         });
 
         if (hasCapabilityMethods)
@@ -139,7 +140,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         var functionCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>().Count();
         var skillCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
         var subAgentCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
-        var description = BuildToolkitDescription(functionCount, skillCount, subAgentCount);
+        var mcpServerCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.MCPServerCapability>().Count();
+        var description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount);
 
         // NEW: Extract function names for selective registration
         var functionNames = capabilities
@@ -272,21 +274,24 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         return true;
     }
 
-    private static string BuildToolkitDescription(int functionCount, int skillCount, int subAgentCount)
+    private static string BuildToolkitDescription(int functionCount, int skillCount, int subAgentCount, int mcpServerCount = 0)
     {
         var parts = new List<string>();
         if (functionCount > 0) parts.Add($"{functionCount} AI functions");
         if (skillCount > 0) parts.Add($"{skillCount} skills");
         if (subAgentCount > 0) parts.Add($"{subAgentCount} sub-agents");
+        if (mcpServerCount > 0) parts.Add($"{mcpServerCount} MCP servers");
 
         if (parts.Count == 0)
             return "Empty Toolkit container.";
         else if (parts.Count == 1)
             return $"Toolkit containing {parts[0]}.";
-        else if (parts.Count == 2)
-            return $"Toolkit containing {parts[0]} and {parts[1]}.";
         else
-            return $"Toolkit containing {parts[0]}, {parts[1]}, and {parts[2]}.";
+        {
+            var last = parts[parts.Count - 1];
+            var rest = string.Join(", ", parts.Take(parts.Count - 1));
+            return $"Toolkit containing {rest}, and {last}.";
+        }
     }
     
     private static void GenerateToolRegistrations(SourceProductionContext context, ImmutableArray<ToolkitInfo?> Toolkits)
@@ -308,6 +313,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 var functionCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.FunctionCapability>().Count();
                 var skillCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
                 var subAgentCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
+                var mcpServerCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.MCPServerCapability>().Count();
 
                 // Preserve IsCollapsed and ContainerDescription from any partial class that has it
                 var isCollapsed = group.Any(p => p!.IsCollapsed);
@@ -335,7 +341,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 return new ToolkitInfo
                 {
                     Name = first.Name,
-                    Description = BuildToolkitDescription(functionCount, skillCount, subAgentCount),
+                    Description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount),
                     Namespace = first.Namespace,
 
                     // PHASE 5: Unified Capabilities list (all capability types)
@@ -589,7 +595,11 @@ namespace HPD.Agent.Diagnostics {{
             var functionNamesArray = Toolkit.FunctionNames.Any()
                 ? $"new string[] {{ {string.Join(", ", Toolkit.FunctionNames.Select(n => $"\"{n}\""))} }}"
                 : "Array.Empty<string>()";
-            sb.AppendLine($"                FunctionNames: {functionNamesArray}");
+            sb.AppendLine($"                FunctionNames: {functionNamesArray},");
+
+            // NEW: MCP Server support
+            sb.AppendLine($"                // ========== MCP SERVERS ==========");
+            sb.AppendLine($"                HasMCPServers: {Toolkit.MCPServerCapabilities.Any().ToString().ToLower()}");
 
             sb.AppendLine($"            ),");
         }
@@ -819,19 +829,16 @@ namespace HPD.Agent.Diagnostics {{
             sb.Append(skillRegistrations);
         }
 
-        // PHASE 2A: POLYMORPHIC DISPATCH - All capabilities use the same pattern
-        // All capabilities now return just the factory call, so we can treat them uniformly
-        //
-        // IMPORTANT: Skills are registered via GenerateSkillRegistrations() above,
-        // so we exclude them here to avoid duplicate registration.
-        // Skills use helper methods (CreateSkillNameSkill) while other capabilities use inline code.
-        var nonSkillCapabilities = Toolkit.Capabilities.Where(c => c.Type != CapabilityType.Skill);
+        // PHASE 2A: POLYMORPHIC DISPATCH
+        // Each capability declares via EmitsIntoCreateTools whether it belongs in the functions list.
+        // Capabilities with their own registration paths (Skills, MCPServers, etc.) return false.
+        var createToolsCapabilities = Toolkit.Capabilities.Where(c => c.EmitsIntoCreateTools);
 
-        if (nonSkillCapabilities.Any())
+        if (createToolsCapabilities.Any())
         {
             sb.AppendLine();
-            sb.AppendLine("        // Register all non-skill capabilities (Functions, SubAgents)");
-            foreach (var capability in nonSkillCapabilities)
+            sb.AppendLine("        // Register capabilities that emit into CreateTools");
+            foreach (var capability in createToolsCapabilities)
             {
                 // CRITICAL: Only generate conditional check if the evaluator method was generated
                 // Conditional evaluators require a ContextTypeName to be set
@@ -968,6 +975,22 @@ namespace HPD.Agent.Diagnostics {{
         if (Toolkit.SkillCapabilities.Any() || Toolkit.IsCollapsed)
         {
             sb.AppendLine(SkillCodeGenerator.GenerateAllSkillCode(Toolkit));
+        }
+
+        // Generate MCP Server registrations
+        if (Toolkit.MCPServerCapabilities.Any())
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // MCP Server configurations");
+            sb.AppendLine($"        public static IReadOnlyList<HPD.Agent.MCP.MCPServerRegistration> MCPServers {{ get; }} = new HPD.Agent.MCP.MCPServerRegistration[]");
+            sb.AppendLine("        {");
+
+            foreach (var mcp in Toolkit.MCPServerCapabilities)
+            {
+                sb.AppendLine($"            {mcp.GenerateRegistrationCode(Toolkit)},");
+            }
+
+            sb.AppendLine("        };");
         }
 
         sb.AppendLine("    }");

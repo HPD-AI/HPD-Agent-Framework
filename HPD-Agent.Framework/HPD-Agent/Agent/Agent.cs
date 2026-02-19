@@ -1911,94 +1911,15 @@ public sealed class Agent
          s.Contains("quota reached", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-
-    /// <summary>
-    /// Constructs a final ChatResponse from collected streaming updates
-    /// </summary>
-    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates, bool preserveReasoning = false)
-    {
-        // Collect all content from the updates
-        var allContents = new List<AIContent>();
-        ChatFinishReason? finishReason = null;
-        string? modelId = null;
-        string? responseId = null;
-        DateTimeOffset? createdAt = null;
-        UsageDetails? usage = null;
-
-        foreach (var update in updates)
-        {
-            if (update.Contents != null)
-            {
-                foreach (var content in update.Contents)
-                {
-                    // Extract usage from UsageContent (streaming providers send this in final chunk)
-                    if (content is UsageContent usageContent)
-                    {
-                        usage = usageContent.Details;
-                    }
-                    // Include TextContent in message
-                    else if (content is TextContent)
-                    {
-                        allContents.Add(content);
-                    }
-                    // Include TextReasoningContent only if preserveReasoning is true (to save tokens by default)
-                    else if (content is TextReasoningContent && preserveReasoning)
-                    {
-                        allContents.Add(content);
-                    }
-                }
-            }
-
-            if (update.FinishReason != null)
-                finishReason = update.FinishReason;
-
-            if (update.ModelId != null)
-                modelId = update.ModelId;
-
-            if (update.ResponseId != null)
-                responseId = update.ResponseId;
-
-            if (update.CreatedAt != null)
-                createdAt = update.CreatedAt;
-        }
-
-        // Coalesce consecutive TextContent items into a single TextContent
-        // This prevents streaming chunks from being saved as separate content items
-        var coalescedContents = CoalesceTextContents(allContents);
-
-        // Don't create empty assistant messages
-        if (coalescedContents.Count == 0)
-        {
-            return new ChatResponse(Array.Empty<ChatMessage>())
-            {
-                FinishReason = finishReason,
-                ModelId = modelId,
-                CreatedAt = createdAt,
-                Usage = usage
-            };
-        }
-
-        // Create a ChatMessage from the collected content
-        var chatMessage = new ChatMessage(ChatRole.Assistant, coalescedContents)
-        {
-            MessageId = responseId
-        };
-
-        return new ChatResponse(chatMessage)
-        {
-            FinishReason = finishReason,
-            ModelId = modelId,
-            CreatedAt = createdAt,
-            Usage = usage
-        };
-    }
-
-    /// <summary>
-    /// Coalesces consecutive TextContent items into single TextContent items.
-    /// Non-text content (FunctionCallContent, etc.) is preserved as-is and acts as a boundary.
-    /// TextReasoningContent items are never coalesced — each chunk is passed through as-is
-    /// to preserve ProtectedData (the encrypted blob used by Anthropic extended thinking and
-    /// OpenAI o-series Responses API that must be round-tripped verbatim to the provider).
+    /// Coalesces consecutive <see cref="TextContent"/> items and consecutive
+    /// <see cref="TextReasoningContent"/> items within a list of <see cref="AIContent"/>.
+    /// Used by the coalesce-mode event emission and tool-call message building paths
+    /// (which operate on raw content lists, not <see cref="ChatResponseUpdate"/> streams).
+    /// <para>
+    /// Reasoning chunks are merged unless a chunk carries <see cref="TextReasoningContent.ProtectedData"/>,
+    /// which terminates the current run (its data is transferred to the merged result).
+    /// This matches the Microsoft.Extensions.AI <c>CoalesceContent</c> semantics.
+    /// </para>
     /// </summary>
     private static List<AIContent> CoalesceTextContents(List<AIContent> contents)
     {
@@ -2007,43 +1928,111 @@ public sealed class Agent
 
         var result = new List<AIContent>();
         var textBuilder = new System.Text.StringBuilder();
+        var reasoningBuilder = new System.Text.StringBuilder();
+        string? reasoningProtectedData = null;
+
+        void FlushReasoning()
+        {
+            if (reasoningBuilder.Length > 0 || reasoningProtectedData != null)
+            {
+                result.Add(new TextReasoningContent(reasoningBuilder.ToString())
+                {
+                    ProtectedData = reasoningProtectedData
+                });
+                reasoningBuilder.Clear();
+                reasoningProtectedData = null;
+            }
+        }
+
+        void FlushText()
+        {
+            if (textBuilder.Length > 0)
+            {
+                result.Add(new TextContent(textBuilder.ToString()));
+                textBuilder.Clear();
+            }
+        }
 
         foreach (var content in contents)
         {
-            if (content is TextReasoningContent)
+            if (content is TextReasoningContent reasoningContent)
             {
-                // Flush any accumulated regular text first, then pass reasoning through as-is.
-                // Do NOT merge reasoning chunks — ProtectedData must be preserved per-chunk.
-                if (textBuilder.Length > 0)
+                FlushText();
+
+                if (reasoningProtectedData != null)
                 {
-                    result.Add(new TextContent(textBuilder.ToString()));
-                    textBuilder.Clear();
+                    // Current run already has ProtectedData — flush and start a new run.
+                    FlushReasoning();
                 }
-                result.Add(content);
+
+                reasoningBuilder.Append(reasoningContent.Text);
+
+                if (!string.IsNullOrEmpty(reasoningContent.ProtectedData))
+                {
+                    // Absorb the encrypted blob and flush — next chunk starts a new run.
+                    reasoningProtectedData = reasoningContent.ProtectedData;
+                    FlushReasoning();
+                }
             }
             else if (content is TextContent textContent)
             {
+                FlushReasoning();
                 textBuilder.Append(textContent.Text);
             }
             else
             {
-                // Non-text content — flush accumulated text, then pass through as-is.
-                if (textBuilder.Length > 0)
-                {
-                    result.Add(new TextContent(textBuilder.ToString()));
-                    textBuilder.Clear();
-                }
+                FlushText();
+                FlushReasoning();
                 result.Add(content);
             }
         }
 
-        // Flush any remaining text
-        if (textBuilder.Length > 0)
-        {
-            result.Add(new TextContent(textBuilder.ToString()));
-        }
+        FlushText();
+        FlushReasoning();
 
         return result;
+    }
+
+    /// <summary>
+    /// Builds a <see cref="ChatResponse"/> from buffered streaming updates using the
+    /// built-in <see cref="ChatResponseExtensions.ToChatResponse"/> from Microsoft.Extensions.AI.
+    /// That method handles message grouping (by MessageId/Role), content coalescing
+    /// (TextContent, TextReasoningContent with ProtectedData preservation, DataContent, etc.),
+    /// and UsageContent → <see cref="ChatResponse.Usage"/> extraction.
+    /// <para>
+    /// When <paramref name="preserveReasoning"/> is false (the default), any
+    /// <see cref="TextReasoningContent"/> items are stripped from the resulting messages
+    /// to save tokens in conversation history.
+    /// </para>
+    /// </summary>
+    private static ChatResponse ConstructChatResponseFromUpdates(List<ChatResponseUpdate> updates, bool preserveReasoning = false)
+    {
+        var response = updates.ToChatResponse();
+
+        if (!preserveReasoning)
+        {
+            foreach (var message in response.Messages)
+            {
+                for (int i = message.Contents.Count - 1; i >= 0; i--)
+                {
+                    if (message.Contents[i] is TextReasoningContent)
+                    {
+                        message.Contents.RemoveAt(i);
+                    }
+                }
+            }
+
+            // Remove messages that became empty after stripping reasoning
+            for (int i = response.Messages.Count - 1; i >= 0; i--)
+            {
+                if (response.Messages[i].Contents.Count == 0)
+                {
+                    response.Messages.RemoveAt(i);
+                }
+            }
+        }
+
+        return response;
     }
 
     /// <inheritdoc />

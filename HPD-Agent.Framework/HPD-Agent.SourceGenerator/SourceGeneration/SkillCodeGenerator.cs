@@ -331,7 +331,7 @@ internal static class SkillCodeGenerator
         sb.AppendLine("                        [\"IsContainer\"] = true,");
         sb.AppendLine("                        [\"IsSkill\"] = true,");
         // PHASE 5: SkillCapability uses ParentToolkitName instead of ContainingClass
-        sb.AppendLine($"                        [\"ParentSkillContainer\"] = \"{skill.ParentToolkitName}\",");
+        sb.AppendLine($"                        [\"ParentContainer\"] = \"{skill.ParentToolkitName}\",");
         sb.AppendLine($"                        [\"ReferencedFunctions\"] = new string[] {{ {string.Join(", ", skill.ResolvedFunctionReferences.Select(f => $"\"{f}\""))} }},");
         sb.AppendLine($"                        [\"ReferencedToolkits\"] = new string[] {{ {string.Join(", ", skill.ResolvedToolkitTypes.Select(p => $"\"{p}\""))} }},");
 
@@ -382,12 +382,13 @@ internal static class SkillCodeGenerator
 
         var sb = new StringBuilder();
 
-        // Combine both AI functions and skills
+        // Combine functions, skills, and MCP servers
         var allCapabilities = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
             .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
+            .Concat(Toolkit.MCPServerCapabilities.Select(m => m.Name))
             .ToList();
         var capabilitiesList = string.Join(", ", allCapabilities);
-        var totalCount = Toolkit.FunctionCapabilities.Count() + Toolkit.SkillCapabilities.Count();
+        var totalCount = allCapabilities.Count;
 
         var description = !string.IsNullOrEmpty(Toolkit.ContainerDescription)
             ? Toolkit.ContainerDescription
@@ -587,9 +588,10 @@ internal static class SkillCodeGenerator
             : Toolkit.Description;
         sb.AppendLine($"                Description = \"{description}\",");
 
-        // Include both functions and skills
+        // Include functions, skills, and MCP servers
         var allFunctionNames = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
             .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
+            .Concat(Toolkit.MCPServerCapabilities.Select(m => m.Name))
             .ToList();
         var functionNamesArray = string.Join(", ", allFunctionNames.Select(n => $"\"{n}\""));
 

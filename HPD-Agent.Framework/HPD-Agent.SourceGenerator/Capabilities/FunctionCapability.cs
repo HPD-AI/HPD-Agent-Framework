@@ -12,6 +12,7 @@ internal class FunctionCapability : BaseCapability
 {
     public override CapabilityType Type => CapabilityType.Function;
     public override bool IsContainer => false;  // Functions are NOT containers (direct execution)
+    public override bool EmitsIntoCreateTools => true;
     public override bool RequiresInstance => true;  // Functions typically require instance (unless static)
 
     // ========== Function-Specific Properties ==========

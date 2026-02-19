@@ -230,11 +230,8 @@ public class ToolVisibilityManager
     private string? GetParentToolkit(AIFunction function) =>
         function.AdditionalProperties?.TryGetValue("ParentToolkit", out var v) == true && v is string s ? s : null;
 
-    private string? GetParentSkillContainer(AIFunction function) =>
-        function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
-
-    private string? GetParentCollapseContainer(AIFunction function) =>
-        function.AdditionalProperties?.TryGetValue("ParentSkillContainer", out var v) == true && v is string s ? s : null;
+    private string? GetParentContainer(AIFunction function) =>
+        function.AdditionalProperties?.TryGetValue("ParentContainer", out var v) == true && v is string s ? s : null;
 
     private string[] GetReferencedFunctions(AIFunction skillContainer)
     {
@@ -390,6 +387,19 @@ public class ToolVisibilityManager
             return false;
         }
 
+        // Hide if parent container exists but is not yet expanded
+        // This enables nested containers (e.g., MCP_wolfram inside SearchToolkit)
+        var parentContainerName = GetParentContainer(container);
+        if (!string.IsNullOrEmpty(parentContainerName))
+        {
+            if (!context.ExpandedCollapsedToolkitContainers.Contains(parentContainerName) &&
+                !context.ExpandedSkillContainers.Contains(parentContainerName))
+            {
+                _logger?.LogDebug($"[VISIBILITY] Collapse container {CollapseName}: HIDDEN (parent {parentContainerName} not expanded)");
+                return false;
+            }
+        }
+
         // Hide if expanded (in either set)
         if (context.ExpandedCollapsedToolkitContainers.Contains(CollapseName) ||
             context.ExpandedSkillContainers.Contains(CollapseName))
@@ -418,7 +428,7 @@ public class ToolVisibilityManager
             return false;
         }
 
-        var parentCollapse = GetParentCollapseContainer(container);
+        var parentCollapse = GetParentContainer(container);
 
         // Case 1: No parent Collapse - treat like regular skill
         if (string.IsNullOrEmpty(parentCollapse))
@@ -453,7 +463,7 @@ public class ToolVisibilityManager
     /// </summary>
     private bool IsSkillVisible(AIFunction skill, VisibilityContext context)
     {
-        var parentContainer = GetParentSkillContainer(skill);
+        var parentContainer = GetParentContainer(skill);
 
         if (string.IsNullOrEmpty(parentContainer))
         {
@@ -641,7 +651,7 @@ public class ToolVisibilityManager
                     var skillName = GetSkillName(tool);
                     var referencedFunctions = GetReferencedFunctions(tool);
                     var referencedToolkits = GetReferencedTools(tool);
-                    var parentSkillContainer = GetParentSkillContainer(tool);
+                    var parentSkillContainer = GetParentContainer(tool);
 
                     // Mark Toolkits as having Collapsed skills ONLY if they are from a DIFFERENT Toolkit
                     // (i.e., skills referencing functions from external Toolkits)

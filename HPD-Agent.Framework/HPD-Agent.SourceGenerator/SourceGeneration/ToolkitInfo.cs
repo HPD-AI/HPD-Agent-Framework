@@ -66,6 +66,12 @@ internal class ToolkitInfo
         Capabilities.OfType<MultiAgentCapability>();
 
     /// <summary>
+    /// Gets all MCP server capabilities from the unified Capabilities list.
+    /// </summary>
+    public IEnumerable<MCPServerCapability> MCPServerCapabilities =>
+        Capabilities.OfType<MCPServerCapability>();
+
+    /// <summary>
     /// Total count of all capabilities.
     /// </summary>
     public int CapabilityCount => Capabilities.Count;
