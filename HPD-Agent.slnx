@@ -31,7 +31,6 @@
   </Folder>
   <Folder Name="/HPD.VCS/">
     <Project Path="HPD.VCS/HPD.VCS.Library/HPD.VCS.Library.csproj" />
-    <Project Path="HPD.VCS/HPD.VCS/HPD.VCS.csproj" />
   </Folder>
   <Folder Name="/HPD.Graph/">
     <Project Path="HPD.Graph/HPD.Graph.Abstractions/HPD.Graph.Abstractions.csproj" />

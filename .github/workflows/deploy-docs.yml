@@ -39,7 +39,7 @@ jobs:
         working-directory: OfficialDocs
 
       - name: Build with VitePress
-        run: npm run docs:build
+        run: npm run build
         working-directory: OfficialDocs
 
       - name: Upload artifact
