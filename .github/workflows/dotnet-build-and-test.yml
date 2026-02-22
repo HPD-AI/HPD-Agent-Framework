@@ -81,10 +81,10 @@ jobs:
           10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore HPD-Agent.slnxx
+      run: dotnet restore HPD-Agent.slnx
 
     - name: Build
-      run: dotnet build HPD-Agent.slnxx -c ${{ matrix.configuration }} --no-restore
+      run: dotnet build HPD-Agent.slnx -c ${{ matrix.configuration }} --no-restore
 
     - name: Run tests (with coverage)
       if: matrix.collect-coverage
