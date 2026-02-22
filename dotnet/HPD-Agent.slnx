@@ -1,0 +1,58 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/HPD-Agent.Audio/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.OpenAI/HPD-Agent.AudioProviders.OpenAI.csproj" />
+  </Folder>
+  <Folder Name="/HPD-Agent.Providers/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Anthropic/HPD-Agent.Providers.Anthropic.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAI/HPD-Agent.Providers.AzureAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAIInference/HPD-Agent.Providers.AzureAIInference.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Bedrock/HPD-Agent.Providers.Bedrock.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.GoogleAI/HPD-Agent.Providers.GoogleAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.HuggingFace/HPD-Agent.Providers.HuggingFace.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Mistral/HPD-Agent.Providers.Mistral.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Ollama/HPD-Agent.Providers.Ollama.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OnnxRuntime/HPD-Agent.Providers.OnnxRuntime.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
+  </Folder>
+  <Folder Name="/HPD-Agent.Toolkit/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.WebSearch/HPD-Agent.Toolkit.WebSearch.csproj" />
+  </Folder>
+  <Folder Name="/HPD.VCS/">
+    <Project Path="src/HPD.VCS/HPD.VCS.csproj" />
+  </Folder>
+  <Folder Name="/HPD.Graph/">
+    <Project Path="src/HPD.Graph/HPD.Graph.Abstractions/HPD.Graph.Abstractions.csproj" />
+    <Project Path="src/HPD.Graph/HPD.Graph.Core/HPD.Graph.Core.csproj" />
+    <Project Path="src/HPD.Graph/HPD.Graph.SourceGenerator/HPD.Graph.SourceGenerator.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/HPD-Agent.Audio.Tests/HPD-Agent.Audio.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Tests/HPD-Agent.Tests.csproj" />
+    <Project Path="test/HPD.Events.Tests/HPD.Events.Tests.csproj" />
+    <Project Path="test/HPD.Graph.Tests/HPD.Graph.Tests.csproj" />
+    <Project Path="test/HPD.MultiAgent.Tests/HPD.MultiAgent.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Providers.Tests/HPD-Agent.Providers.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Sandbox.Local.Tests/HPD-Agent.Sandbox.Local.Tests.csproj" />
+    <Project Path="test/HPD.Agent.SerializationTests/HPD.Agent.SerializationTests.csproj" />
+    <Project Path="test/HPD.VCS.Tests/HPD.VCS.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Evaluations.Tests/HPD-Agent.Evaluations.Tests.csproj" />
+  </Folder>
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Sandbox.Local/HPD-Agent.Sandbox.Local.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent/HPD-Agent.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Evaluations/HPD-Agent.Evaluations.csproj" />
+  <Project Path="src/HPD.Events/HPD.Events.csproj" />
+</Solution>
