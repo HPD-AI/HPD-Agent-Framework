@@ -1,6 +1,5 @@
 using HPD.Agent;
 using HPD.Agent.AspNetCore;
-using HPD.Agent.Memory;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
@@ -51,9 +50,6 @@ builder.Services.AddHPDAgent(options =>
         .WithProvider("openrouter", "z-ai/glm-4.6")
         .WithName("AI Assistant")
         .WithInstructions("You are a helpful AI assistant with file system access and memory capabilities.")
-        .WithDynamicMemory(opts => opts
-            .WithStorageDirectory("./agent-memory-storage")
-            .WithMaxTokens(6000))
         .WithToolkit<MathTools>()
         .WithPermissions()
         .WithPreserveReasoningInHistory()

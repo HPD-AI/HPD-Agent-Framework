@@ -5,7 +5,7 @@ using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
 using HPD.Agent.MCP;
 using HPD.Agent.OpenApi;
-using HPD.Agent.Memory;
+using HPD.Agent.Planning;
 using HPD_Agent.CLI.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -157,6 +157,7 @@ var agentBuilder = new AgentBuilder(config)
     .WithLogging(loggerFactory)
     .WithMiddleware(new EnvironmentContextMiddleware(new[] { userWorkingDirectory }))
     .WithSessionStore(sessionStore, persistAfterTurn: true)
+    .WithContentStore(new LocalFileContentStore(Path.Combine(Path.GetDirectoryName(sessionsPath)!, "content")) )
     // Enable plan mode for multi-step task tracking
     .WithPlanMode()
     .WithPermissions()

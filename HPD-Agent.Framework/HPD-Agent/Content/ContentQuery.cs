@@ -63,6 +63,24 @@ public record ContentQuery
     /// </summary>
     public int? Limit { get; init; }
 
+    /// <summary>
+    /// Filter by tags (must match ALL specified tags — AND logic).
+    /// Used for folder-based filtering: {"folder": "/knowledge"}, {"folder": "/uploads"}.
+    /// Example: {"folder": "/knowledge", "skill": "finance"} — only content in /knowledge tagged with skill=finance.
+    /// </summary>
+    /// <remarks>
+    /// This is the primary mechanism for folder navigation in V3.
+    /// All stored content is tagged with ["folder"] = "/foldername" to enable path-based queries.
+    /// </remarks>
+    public IReadOnlyDictionary<string, string>? Tags { get; init; }
+
+    /// <summary>
+    /// Filter by content name (exact match or prefix).
+    /// Used to look up a specific file within a folder: Name = "api-docs.md".
+    /// Null = return all content in scope (subject to other filters).
+    /// </summary>
+    public string? Name { get; init; }
+
     // ═══════════════════════════════════════════════════════════════════
     // Future Phase 2+ Fields (Commented Out For Now)
     // ═══════════════════════════════════════════════════════════════════
@@ -73,12 +91,6 @@ public record ContentQuery
     // /// Filter by content origin (User, Agent, System).
     // /// </summary>
     // public ContentSource? Origin { get; init; }
-    //
-    // /// <summary>
-    // /// Filter by tags (must match all specified tags).
-    // /// Example: {"category": "knowledge", "project": "alpha"}
-    // /// </summary>
-    // public IReadOnlyDictionary<string, string>? Tags { get; init; }
     //
     // /// <summary>
     // /// Full-text search across content and metadata.

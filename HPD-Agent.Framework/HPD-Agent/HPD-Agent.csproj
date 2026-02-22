@@ -33,6 +33,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.1" />
+    <!-- Used by ContentStoreToolkit for glob pattern matching on content names -->
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.1" />
 
   </ItemGroup>
 

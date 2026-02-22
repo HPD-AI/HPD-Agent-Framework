@@ -1,85 +1,74 @@
 // Copyright 2026 Einstein Essibu
 // SPDX-License-Identifier: AGPL-3.0-only
 
-using HPD.Agent.Skills.DocumentStore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HPD.Agent.ClientTools;
 
 /// <summary>
-/// Registers Client skill documents into the instruction document store.
-/// Uses "Client:" namespace prefix to prevent collision with compile-time skill documents.
+/// Registers Client skill documents into the V3 content store under the /skills folder.
+/// Uses the "client" origin tag to distinguish client-uploaded docs from compile-time skill docs.
 /// </summary>
 /// <remarks>
-/// <para><b>Document ID Prefixing:</b></para>
+/// <para><b>Document ID Namespace:</b></para>
 /// <para>
-/// Client documents are stored with a "Client:" prefix to distinguish them from
-/// compile-time skill documents. For example:
+/// Client documents are stored with a "client:" prefix in the document ID to prevent
+/// collision with compile-time skill documents. For example:
 /// - ClientSkillDocument with DocumentId="checkout-flow"
-/// - Becomes "Client:checkout-flow" in the document store
+/// - Stored as "client:checkout-flow" in the /skills folder
+/// - Agent retrieves via content_read("/skills/client:checkout-flow")
 /// </para>
 ///
 /// <para><b>Usage:</b></para>
 /// <code>
-/// var registrar = new ClientSkillDocumentRegistrar(documentStore, logger);
+/// var registrar = new ClientSkillDocumentRegistrar(contentStore, logger);
 ///
-/// // Register all documents from a Toolkit
+/// // Register all documents from a toolkit
 /// await registrar.RegisterToolkitDocumentsAsync(ecommerceToolkit, ct);
 ///
-/// // Later, when Toolkit is removed
+/// // Later, when toolkit is removed
 /// await registrar.UnregisterToolkitDocumentsAsync(ecommerceToolkit, ct);
 /// </code>
-///
-/// <para><b>Document Retrieval:</b></para>
-/// <para>
-/// The agent uses the standard read_skill_document() function to retrieve documents.
-/// The middleware transforms "Client:checkout-flow" back to "checkout-flow" when
-/// showing documents in skill activation responses.
-/// </para>
 /// </remarks>
 public class ClientSkillDocumentRegistrar
 {
-    private readonly IInstructionDocumentStore _documentStore;
+    private readonly IContentStore _contentStore;
     private readonly ILogger _logger;
 
     /// <summary>
-    /// Prefix for Client document IDs in the store.
+    /// Prefix applied to client document IDs to prevent collision with compile-time skill docs.
     /// </summary>
-    public const string ClientDocumentPrefix = "Client:";
+    public const string ClientDocumentPrefix = "client:";
 
     /// <summary>
-    /// Creates a new registrar.
+    /// Creates a new registrar backed by the V3 content store.
     /// </summary>
-    /// <param name="documentStore">The document store to register documents into</param>
-    /// <param name="logger">Optional logger</param>
     public ClientSkillDocumentRegistrar(
-        IInstructionDocumentStore documentStore,
+        IContentStore contentStore,
         ILogger? logger = null)
     {
-        _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
+        _contentStore = contentStore ?? throw new ArgumentNullException(nameof(contentStore));
         _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>
-    /// Registers all documents from all skills in a Toolkit.
+    /// Registers all documents from all skills in a toolkit.
+    /// Uses named upsert semantics — idempotent, safe to call on reconnect.
     /// </summary>
-    /// <param name="Toolkit">The Toolkit containing skills with documents</param>
-    /// <param name="ct">Cancellation token</param>
-    /// <returns>Number of documents registered</returns>
     public async Task<int> RegisterToolkitDocumentsAsync(
-        ClientToolGroupDefinition Toolkit,
+        ClientToolGroupDefinition toolkit,
         CancellationToken ct = default)
     {
-        if (Toolkit.Skills == null || Toolkit.Skills.Count == 0)
+        if (toolkit.Skills == null || toolkit.Skills.Count == 0)
         {
-            _logger.LogDebug("Toolkit '{ToolkitName}' has no skills, skipping document registration", Toolkit.Name);
+            _logger.LogDebug("Toolkit '{ToolkitName}' has no skills, skipping document registration", toolkit.Name);
             return 0;
         }
 
         var registeredCount = 0;
 
-        foreach (var skill in Toolkit.Skills)
+        foreach (var skill in toolkit.Skills)
         {
             if (skill.Documents == null || skill.Documents.Count == 0)
                 continue;
@@ -88,42 +77,39 @@ public class ClientSkillDocumentRegistrar
             {
                 try
                 {
-                    await RegisterDocumentAsync(Toolkit.Name, skill.Name, document, ct);
+                    await RegisterDocumentAsync(toolkit.Name, skill.Name, document, ct);
                     registeredCount++;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex,
-                        "Failed to register document '{DocumentId}' from skill '{SkillName}' in Toolkit '{ToolkitName}'",
-                        document.DocumentId, skill.Name, Toolkit.Name);
+                        "Failed to register document '{DocumentId}' from skill '{SkillName}' in toolkit '{ToolkitName}'",
+                        document.DocumentId, skill.Name, toolkit.Name);
                     throw;
                 }
             }
         }
 
         _logger.LogInformation(
-            "Registered {Count} documents from Toolkit '{ToolkitName}'",
-            registeredCount, Toolkit.Name);
+            "Registered {Count} documents from toolkit '{ToolkitName}'",
+            registeredCount, toolkit.Name);
 
         return registeredCount;
     }
 
     /// <summary>
-    /// Unregisters all documents from all skills in a Toolkit.
+    /// Unregisters all documents from all skills in a toolkit.
     /// </summary>
-    /// <param name="Toolkit">The Toolkit containing skills with documents</param>
-    /// <param name="ct">Cancellation token</param>
-    /// <returns>Number of documents unregistered</returns>
     public async Task<int> UnregisterToolkitDocumentsAsync(
-        ClientToolGroupDefinition Toolkit,
+        ClientToolGroupDefinition toolkit,
         CancellationToken ct = default)
     {
-        if (Toolkit.Skills == null || Toolkit.Skills.Count == 0)
+        if (toolkit.Skills == null || toolkit.Skills.Count == 0)
             return 0;
 
         var unregisteredCount = 0;
 
-        foreach (var skill in Toolkit.Skills)
+        foreach (var skill in toolkit.Skills)
         {
             if (skill.Documents == null || skill.Documents.Count == 0)
                 continue;
@@ -133,15 +119,13 @@ public class ClientSkillDocumentRegistrar
                 try
                 {
                     var storeId = GetStoreDocumentId(document.DocumentId);
-                    await _documentStore.DeleteDocumentAsync(storeId, ct);
-                    unregisteredCount++;
-                }
-                catch (NotImplementedException)
-                {
-                    // Delete not implemented - log and continue
-                    _logger.LogWarning(
-                        "Document deletion not implemented. Document '{DocumentId}' remains in store.",
-                        document.DocumentId);
+                    // Scope=null for global /skills folder (consistent with UploadSkillDocumentAsync)
+                    var existing = await _contentStore.QueryAsync(null, new ContentQuery { Name = storeId }, ct);
+                    if (existing.Count > 0)
+                    {
+                        await _contentStore.DeleteAsync(null, existing[0].Id, ct);
+                        unregisteredCount++;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -153,14 +137,14 @@ public class ClientSkillDocumentRegistrar
         }
 
         _logger.LogInformation(
-            "Unregistered {Count} documents from Toolkit '{ToolkitName}'",
-            unregisteredCount, Toolkit.Name);
+            "Unregistered {Count} documents from toolkit '{ToolkitName}'",
+            unregisteredCount, toolkit.Name);
 
         return unregisteredCount;
     }
 
     /// <summary>
-    /// Registers a single document into the store.
+    /// Registers a single document into the /skills folder of the content store.
     /// </summary>
     private async Task RegisterDocumentAsync(
         string toolName,
@@ -171,16 +155,14 @@ public class ClientSkillDocumentRegistrar
         var storeId = GetStoreDocumentId(document.DocumentId);
         var content = await GetDocumentContentAsync(document, ct);
 
-        var metadata = new DocumentMetadata
-        {
-            Name = document.DocumentId,
-            Description = document.Description
-        };
-
-        await _documentStore.UploadFromContentAsync(storeId, metadata, content, ct);
+        await _contentStore.UploadSkillDocumentAsync(
+            documentId: storeId,
+            content: content,
+            description: document.Description,
+            cancellationToken: ct);
 
         _logger.LogDebug(
-            "Registered Client document '{StoreId}' from skill '{SkillName}' in Toolkit '{ToolkitName}'",
+            "Registered client document '{StoreId}' from skill '{SkillName}' in toolkit '{ToolkitName}'",
             storeId, skillName, toolName);
     }
 
@@ -191,21 +173,13 @@ public class ClientSkillDocumentRegistrar
         ClientSkillDocument document,
         CancellationToken ct)
     {
-        // Prefer inline content
         if (!string.IsNullOrEmpty(document.Content))
-        {
             return document.Content;
-        }
 
-        // Fetch from URL
         if (!string.IsNullOrEmpty(document.Url))
-        {
             return await FetchDocumentFromUrlAsync(document.Url, document.DocumentId, ct);
-        }
 
-        // Should not happen if validation passed
-        throw new ArgumentException(
-            $"Document '{document.DocumentId}' has neither content nor URL");
+        throw new ArgumentException($"Document '{document.DocumentId}' has neither content nor URL");
     }
 
     /// <summary>
@@ -217,21 +191,12 @@ public class ClientSkillDocumentRegistrar
         CancellationToken ct)
     {
         using var httpClient = new HttpClient();
-
         try
         {
             _logger.LogDebug("Fetching document '{DocumentId}' from URL: {Url}", documentId, url);
-
             var response = await httpClient.GetAsync(url, ct);
             response.EnsureSuccessStatusCode();
-
-            var content = await response.Content.ReadAsStringAsync(ct);
-
-            _logger.LogDebug(
-                "Fetched document '{DocumentId}' from URL ({Bytes} bytes)",
-                documentId, content.Length);
-
-            return content;
+            return await response.Content.ReadAsStringAsync(ct);
         }
         catch (Exception ex)
         {
@@ -241,36 +206,20 @@ public class ClientSkillDocumentRegistrar
     }
 
     /// <summary>
-    /// Converts a Client document ID to its store ID (with prefix).
+    /// Returns the store document ID for a client document (prefixed).
     /// </summary>
-    /// <param name="documentId">The Client document ID</param>
-    /// <returns>The store document ID with "Client:" prefix</returns>
     public static string GetStoreDocumentId(string documentId)
-    {
-        return $"{ClientDocumentPrefix}{documentId}";
-    }
+        => $"{ClientDocumentPrefix}{documentId}";
 
     /// <summary>
-    /// Converts a store document ID back to the Client document ID (strips prefix).
+    /// Strips the client prefix from a store document ID. Returns null if not a client document.
     /// </summary>
-    /// <param name="storeId">The store document ID</param>
-    /// <returns>The Client document ID without prefix, or null if not a Client document</returns>
     public static string? GetClientDocumentId(string storeId)
-    {
-        if (storeId.StartsWith(ClientDocumentPrefix))
-        {
-            return storeId.Substring(ClientDocumentPrefix.Length);
-        }
-        return null;
-    }
+        => storeId.StartsWith(ClientDocumentPrefix) ? storeId[ClientDocumentPrefix.Length..] : null;
 
     /// <summary>
-    /// Checks if a store document ID is a Client document.
+    /// Returns true if the store document ID belongs to a client-uploaded document.
     /// </summary>
-    /// <param name="storeId">The store document ID</param>
-    /// <returns>True if this is a Client document</returns>
     public static bool IsClientDocument(string storeId)
-    {
-        return storeId.StartsWith(ClientDocumentPrefix);
-    }
+        => storeId.StartsWith(ClientDocumentPrefix);
 }

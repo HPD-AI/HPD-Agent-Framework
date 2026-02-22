@@ -104,9 +104,6 @@ using HPD.Agent;
 [JsonSerializable(typeof(HistoryReductionStateData))]
 [JsonSerializable(typeof(CachedReduction))]
 
-// --- Document store types ---
-[JsonSerializable(typeof(HPD.Agent.Skills.DocumentStore.GlobalDocumentInfo))]
-
 // --- Client Tools types ---
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition[]))]

@@ -145,14 +145,15 @@ public interface ISessionStore
         CancellationToken cancellationToken = default);
 
     // ═══════════════════════════════════════════════════════════════════
-    // ASSET STORAGE (Binary Content)
+    // CONTENT STORAGE (Session-Scoped)
     // ═══════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Get the asset store for a specific session.
-    /// Returns null if this store doesn't support asset storage.
+    /// Get the content store for session-scoped binary content (uploads, artifacts).
+    /// Returns null if this store doesn't support content storage.
+    /// In V3, content is stored using IContentStore with scope=sessionId and folder tags.
     /// </summary>
-    IAssetStore? GetAssetStore(string sessionId);
+    IContentStore? GetContentStore(string sessionId);
 
     // ═══════════════════════════════════════════════════════════════════
     // CLEANUP

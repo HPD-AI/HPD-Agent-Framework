@@ -28,7 +28,6 @@
 
   <!-- Core HPD-Agent reference -->
   <ItemGroup>
-    <ProjectReference Include="../HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
     <ProjectReference Include="../HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
   </ItemGroup>

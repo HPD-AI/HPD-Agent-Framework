@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 using HPD.Agent;
 using HPD.Agent.FFI;
 using HPD.Agent.MCP;
-using HPD.Agent.Memory;
+using HPD.Agent.Planning;
 using HPD.Agent.StructuredOutput;
 
 namespace HPD.Agent.FFI;
@@ -60,9 +60,7 @@ namespace HPD.Agent.FFI;
 [JsonSerializable(typeof(DocumentHandlingConfig))]
 [JsonSerializable(typeof(HistoryReductionConfig))]
 
-// --- Memory configuration and types (from HPD-Agent.Memory) ---
-[JsonSerializable(typeof(DynamicMemoryConfig))]
-[JsonSerializable(typeof(StaticMemoryConfig))]
+// --- Plan Mode types (from HPD.Agent.Planning) ---
 [JsonSerializable(typeof(PlanModeConfig))]
 [JsonSerializable(typeof(PlanStepStatus))]
 

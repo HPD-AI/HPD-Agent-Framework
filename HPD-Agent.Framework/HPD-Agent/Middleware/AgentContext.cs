@@ -82,16 +82,16 @@ public sealed class AgentContext
     /// <para>
     /// Session contains metadata and session-scoped middleware state (permissions, preferences).
     /// Messages live in <see cref="Branch"/> instead.
-    /// Middleware can access session?.Store.GetAssetStore(sessionId) for binary asset storage operations.
+    /// Middleware can access session?.Store.GetContentStore(sessionId) for session-scoped content storage.
     /// </para>
     /// <para><b>Example:</b></para>
     /// <code>
     /// public async Task BeforeIterationAsync(BeforeIterationContext context, ...)
     /// {
-    ///     var assetStore = context.Session?.Store?.GetAssetStore(context.Session.Id);
-    ///     if (assetStore != null)
+    ///     var contentStore = context.Session?.Store?.GetContentStore(context.Session.Id);
+    ///     if (contentStore != null)
     ///     {
-    ///         // Upload assets, retrieve assets, etc.
+    ///         // Upload/retrieve session-scoped content, etc.
     ///     }
     /// }
     /// </code>

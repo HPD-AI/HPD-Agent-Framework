@@ -1,4 +1,5 @@
 using HPD.Agent;
+using HPD.Agent.Planning;
 using HPD.Events;
 using HPD.MultiAgent;
 using Spectre.Console;
@@ -958,7 +959,7 @@ public class AgentUIRenderer
     private void RenderPlanUpdate(PlanUpdatedEvent evt)
     {
         // Cast Plan to AgentPlanData
-        if (evt.Plan is not HPD.Agent.Memory.AgentPlanData plan)
+        if (evt.Plan is not HPD.Agent.Planning.AgentPlanData plan)
         {
             AnsiConsole.MarkupLine("[red]⚠ Invalid plan data in PlanUpdatedEvent[/]");
             return;
@@ -1000,7 +1001,7 @@ public class AgentUIRenderer
         AnsiConsole.WriteLine();
     }
 
-    private IRenderable BuildPlanDisplay(HPD.Agent.Memory.AgentPlanData plan, PlanUpdateType updateType)
+    private IRenderable BuildPlanDisplay(HPD.Agent.Planning.AgentPlanData plan, PlanUpdateType updateType)
     {
         var table = new Table()
             .Border(TableBorder.None)
@@ -1014,19 +1015,19 @@ public class AgentUIRenderer
         {
             var statusIcon = step.Status switch
             {
-                HPD.Agent.Memory.PlanStepStatus.Pending => "○",
-                HPD.Agent.Memory.PlanStepStatus.InProgress => "◐",
-                HPD.Agent.Memory.PlanStepStatus.Completed => "●",
-                HPD.Agent.Memory.PlanStepStatus.Blocked => "⊘",
+                HPD.Agent.Planning.PlanStepStatus.Pending => "○",
+                HPD.Agent.Planning.PlanStepStatus.InProgress => "◐",
+                HPD.Agent.Planning.PlanStepStatus.Completed => "●",
+                HPD.Agent.Planning.PlanStepStatus.Blocked => "⊘",
                 _ => "•"
             };
 
             var statusColor = step.Status switch
             {
-                HPD.Agent.Memory.PlanStepStatus.Pending => "dim",
-                HPD.Agent.Memory.PlanStepStatus.InProgress => "yellow",
-                HPD.Agent.Memory.PlanStepStatus.Completed => "green",
-                HPD.Agent.Memory.PlanStepStatus.Blocked => "red",
+                HPD.Agent.Planning.PlanStepStatus.Pending => "dim",
+                HPD.Agent.Planning.PlanStepStatus.InProgress => "yellow",
+                HPD.Agent.Planning.PlanStepStatus.Completed => "green",
+                HPD.Agent.Planning.PlanStepStatus.Blocked => "red",
                 _ => "white"
             };
 

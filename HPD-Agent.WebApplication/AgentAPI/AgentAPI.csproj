@@ -12,7 +12,6 @@
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent/HPD-Agent.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
 <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj" />
     <ProjectReference Include="../../HPD-Agent.Framework/HPD-Agent.AspNetCore/HPD-Agent.AspNetCore.csproj" />

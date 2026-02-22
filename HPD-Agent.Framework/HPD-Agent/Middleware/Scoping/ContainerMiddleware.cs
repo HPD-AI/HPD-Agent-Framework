@@ -704,12 +704,6 @@ public class ContainerMiddleware : IAgentMiddleware
                     sb.AppendLine();
                 }
 
-                // Add document information from metadata (for skills)
-                var hasDocuments = BuildDocumentSection(containerFunction, sb);
-                if (hasDocuments)
-                {
-                    sb.AppendLine();
-                }
             }
 
             // Add theSystemPrompt instructions
@@ -720,28 +714,6 @@ public class ContainerMiddleware : IAgentMiddleware
         return sb.ToString();
     }
 
-
-    /// <summary>
-    /// Builds the document section for a skill, showing available documents.
-    /// </summary>
-    private static bool BuildDocumentSection(AIFunction skillFunction, StringBuilder sb)
-    {
-        // Use type-safe SkillDocuments property
-        if (skillFunction is HPDAIFunctionFactory.HPDAIFunction hpdFunction &&
-            hpdFunction.SkillDocuments?.Any() == true)
-        {
-            sb.AppendLine("📚 **Available Documents:**");
-            foreach (var doc in hpdFunction.SkillDocuments)
-            {
-                sb.AppendLine($"- {doc.DocumentId}: {doc.Description} ({doc.SourceType})");
-            }
-            sb.AppendLine();
-            sb.AppendLine("Use `read_skill_document(documentId)` to retrieve document content.");
-            return true;
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// Extracts string metadata from AdditionalProperties.
@@ -937,16 +909,6 @@ public class ContainerMiddleware : IAgentMiddleware
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Exposed for testing: Builds the document section for a skill function.
-    /// </summary>
-    public static string BuildDocumentSectionForTesting(AIFunction skillFunction)
-    {
-        var sb = new StringBuilder();
-        BuildDocumentSection(skillFunction, sb);
-        return sb.ToString();
     }
 
     /// <summary>

@@ -1,196 +1,230 @@
 using Xunit;
 using HPD.Agent;
-using HPD.Agent.Memory;
-using HPD.Agent.Skills.DocumentStore;
-using HPD.Agent.TextExtraction;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HPD.Agent.Tests.Content;
 
 /// <summary>
-/// Integration tests demonstrating polymorphic usage of IContentStore across all four store types.
+/// Integration tests for IContentStore using InMemoryContentStore.
+/// Covers scoped isolation, content-type filtering, timestamp filtering, and get/delete semantics.
 /// </summary>
 public class ContentStoreIntegrationTests
 {
+    // ═══════════════════════════════════════════════════════════════════
+    // Scoped Isolation
+    // ═══════════════════════════════════════════════════════════════════
+
     [Fact]
-    public async Task PolymorphicBackup_WorksAcrossAllStores()
+    public async Task PutAndGet_WithinSameScope_ReturnsContent()
     {
-        // Arrange - Create instances of all four store types
-        var assetStore = new InMemoryAssetStore();
-        var staticMemoryStore = new InMemoryStaticMemoryStore();
-        var dynamicMemoryStore = new InMemoryDynamicMemoryStore();
-        var instructionStore = new InMemoryInstructionStore(NullLogger.Instance);
+        var store = new InMemoryContentStore();
+        var data = new byte[] { 1, 2, 3 };
 
-        // Add some test content to each store using the V2 API
-        await assetStore.PutAsync("session1", new byte[] { 1, 2, 3 }, "image/jpeg", cancellationToken: CancellationToken.None);
-        await staticMemoryStore.PutAsync("test-agent", System.Text.Encoding.UTF8.GetBytes("Static memory content"), "text/plain",
-            new ContentMetadata { Name = "test.txt" }, CancellationToken.None);
-        await dynamicMemoryStore.PutAsync("test-agent", System.Text.Encoding.UTF8.GetBytes("Dynamic memory content"), "text/plain",
-            new ContentMetadata { Name = "Test Memory" }, CancellationToken.None);
-        await instructionStore.PutAsync(null, System.Text.Encoding.UTF8.GetBytes("Instruction content"), "text/plain",
-            new ContentMetadata { Name = "Skill Documentation", Description = "Test skill doc" }, CancellationToken.None);
+        var id = await store.PutAsync("session-a", data, "image/jpeg");
+        var result = await store.GetAsync("session-a", id);
 
-        // Act - Use polymorphic backup function that works with any IContentStore
-        var stores = new (IContentStore Store, string? Scope)[]
-        {
-            (assetStore, "session1"),
-            (staticMemoryStore, "test-agent"),
-            (dynamicMemoryStore, "test-agent"),
-            (instructionStore, null)
-        };
-        var backupResults = new List<(string StoreType, int ItemCount, long TotalBytes)>();
-
-        foreach (var (store, scope) in stores)
-        {
-            var items = await store.QueryAsync(scope, cancellationToken: CancellationToken.None);
-            long totalBytes = 0;
-            foreach (var item in items)
-            {
-                totalBytes += item.SizeBytes;
-            }
-            backupResults.Add((store.GetType().Name, items.Count, totalBytes));
-        }
-
-        // Assert - Verify each store has content
-        Assert.Equal(4, backupResults.Count);
-        Assert.All(backupResults, result => Assert.True(result.ItemCount > 0, $"{result.StoreType} should have at least one item"));
-        Assert.All(backupResults, result => Assert.True(result.TotalBytes > 0, $"{result.StoreType} should have content"));
+        Assert.NotNull(result);
+        Assert.Equal(id, result.Id);
+        Assert.Equal("image/jpeg", result.ContentType);
+        Assert.Equal(data, result.Data);
     }
 
     [Fact]
-    public async Task PolymorphicSearch_FindsRecentContentAcrossStores()
+    public async Task Get_FromWrongScope_ReturnsNull()
     {
-        // Arrange
+        var store = new InMemoryContentStore();
+
+        var id = await store.PutAsync("session-a", new byte[] { 1, 2, 3 }, "image/jpeg");
+        var result = await store.GetAsync("session-b", id);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Query_WithinScope_ReturnsOnlyThatScopesContent()
+    {
+        var store = new InMemoryContentStore();
+
+        await store.PutAsync("agent-x", new byte[] { 1 }, "text/plain");
+        await store.PutAsync("agent-x", new byte[] { 2 }, "text/plain");
+        await store.PutAsync("agent-y", new byte[] { 3 }, "text/plain");
+
+        var xResults = await store.QueryAsync("agent-x");
+        var yResults = await store.QueryAsync("agent-y");
+
+        Assert.Equal(2, xResults.Count);
+        Assert.Single(yResults);
+    }
+
+    [Fact]
+    public async Task Query_WithNullScope_ReturnsAcrossAllScopes()
+    {
+        var store = new InMemoryContentStore();
+
+        await store.PutAsync("scope-1", new byte[] { 1 }, "text/plain");
+        await store.PutAsync("scope-2", new byte[] { 2 }, "text/plain");
+
+        var all = await store.QueryAsync(null);
+
+        Assert.Equal(2, all.Count);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ContentType Filtering
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task QueryByContentType_ReturnsOnlyMatchingMimeType()
+    {
+        var store = new InMemoryContentStore();
+
+        await store.PutAsync("session-1", new byte[] { 1 }, "image/jpeg");
+        await store.PutAsync("session-1", new byte[] { 2 }, "image/jpeg");
+        await store.PutAsync("session-1", new byte[] { 3 }, "audio/mpeg");
+
+        var jpegs = await store.QueryAsync("session-1", new ContentQuery { ContentType = "image/jpeg" });
+
+        Assert.Equal(2, jpegs.Count);
+        Assert.All(jpegs, item => Assert.Equal("image/jpeg", item.ContentType));
+    }
+
+    [Fact]
+    public async Task QueryByContentType_NoMatches_ReturnsEmptyList()
+    {
+        var store = new InMemoryContentStore();
+        await store.PutAsync("session-1", new byte[] { 1 }, "image/jpeg");
+
+        var results = await store.QueryAsync("session-1", new ContentQuery { ContentType = "video/mp4" });
+
+        Assert.Empty(results);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CreatedAfter Filtering
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task QueryByCreatedAfter_ReturnsOnlyRecentContent()
+    {
+        var store = new InMemoryContentStore();
         var cutoff = DateTime.UtcNow.AddMinutes(-1);
-        var assetStore = new InMemoryAssetStore();
-        var dynamicMemoryStore = new InMemoryDynamicMemoryStore();
 
-        // Add content after cutoff
-        await Task.Delay(50);
-        var assetId = await assetStore.PutAsync("session1", new byte[] { 1, 2, 3 }, "image/jpeg", cancellationToken: CancellationToken.None);
-        var memoryId = await dynamicMemoryStore.PutAsync(
-            "agent1",
-            System.Text.Encoding.UTF8.GetBytes("Recent memory"),
-            "text/plain",
-            new ContentMetadata { Name = "Recent" },
-            CancellationToken.None);
+        await Task.Delay(50); // ensure timestamps land after cutoff
+        await store.PutAsync("agent-1", new byte[] { 1 }, "text/plain");
+        await store.PutAsync("agent-1", new byte[] { 2 }, "text/plain");
 
-        // Act - Search for recent content across multiple stores
-        var stores = new (IContentStore Store, string? Scope)[]
-        {
-            (assetStore, "session1"),
-            (dynamicMemoryStore, "agent1")
-        };
-        var recentContent = new List<ContentInfo>();
+        var results = await store.QueryAsync("agent-1", new ContentQuery { CreatedAfter = cutoff });
 
-        foreach (var (store, scope) in stores)
-        {
-            var items = await store.QueryAsync(scope, new ContentQuery
-            {
-                CreatedAfter = cutoff
-            }, CancellationToken.None);
-            recentContent.AddRange(items);
-        }
-
-        // Assert
-        Assert.Equal(2, recentContent.Count);
-        Assert.All(recentContent, item => Assert.True(item.CreatedAt >= cutoff));
+        Assert.Equal(2, results.Count);
+        Assert.All(results, item => Assert.True(item.CreatedAt >= cutoff));
     }
 
     [Fact]
-    public async Task PolymorphicGetAndDelete_WorksAcrossStores()
+    public async Task QueryByCreatedAfter_FutureTimestamp_ReturnsEmpty()
     {
-        // Arrange
-        var assetStore = new InMemoryAssetStore();
-        var dynamicStore = new InMemoryDynamicMemoryStore();
+        var store = new InMemoryContentStore();
+        await store.PutAsync("agent-1", new byte[] { 1 }, "text/plain");
 
-        var assetId = await assetStore.PutAsync("session1", new byte[] { 1, 2, 3 }, "image/jpeg", cancellationToken: CancellationToken.None);
-        var memoryId = await dynamicStore.PutAsync(
-            "agent1",
-            System.Text.Encoding.UTF8.GetBytes("Memory content"),
-            "text/plain",
-            cancellationToken: CancellationToken.None);
-
-        // Act - Get content polymorphically
-        IContentStore store1 = assetStore;
-        IContentStore store2 = dynamicStore;
-
-        var content1 = await store1.GetAsync("session1", assetId, CancellationToken.None);
-        var content2 = await store2.GetAsync("agent1", memoryId, CancellationToken.None);
-
-        // Assert - Verify content retrieved
-        Assert.NotNull(content1);
-        Assert.Equal(assetId, content1.Id);
-        Assert.Equal("image/jpeg", content1.ContentType);
-        Assert.Equal(ContentSource.User, content1.Info.Origin);
-
-        Assert.NotNull(content2);
-        Assert.Equal(memoryId, content2.Id);
-        Assert.Equal("text/plain", content2.ContentType);
-        Assert.Equal(ContentSource.Agent, content2.Info.Origin);
-
-        // Act - Delete polymorphically
-        await store1.DeleteAsync("session1", assetId, CancellationToken.None);
-        await store2.DeleteAsync("agent1", memoryId, CancellationToken.None);
-
-        // Assert - Verify deletion
-        Assert.Null(await store1.GetAsync("session1", assetId, CancellationToken.None));
-        Assert.Null(await store2.GetAsync("agent1", memoryId, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task QueryByContentType_FiltersCorrectly()
-    {
-        // Arrange
-        var assetStore = new InMemoryAssetStore();
-        await assetStore.PutAsync("session1", new byte[] { 1 }, "image/jpeg", cancellationToken: CancellationToken.None);
-        await assetStore.PutAsync("session1", new byte[] { 2 }, "image/jpeg", cancellationToken: CancellationToken.None);
-        await assetStore.PutAsync("session1", new byte[] { 3 }, "audio/mp3", cancellationToken: CancellationToken.None);
-
-        // Act
-        var jpegImages = await assetStore.QueryAsync("session1", new ContentQuery
+        var results = await store.QueryAsync("agent-1", new ContentQuery
         {
-            ContentType = "image/jpeg"
-        }, CancellationToken.None);
+            CreatedAfter = DateTime.UtcNow.AddMinutes(5)
+        });
 
-        // Assert
-        Assert.Equal(2, jpegImages.Count);
-        Assert.All(jpegImages, item => Assert.Equal("image/jpeg", item.ContentType));
+        Assert.Empty(results);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Delete Semantics
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task Delete_RemovesContent_GetReturnsNull()
+    {
+        var store = new InMemoryContentStore();
+
+        var id = await store.PutAsync("session-1", new byte[] { 1, 2, 3 }, "image/png");
+        Assert.NotNull(await store.GetAsync("session-1", id));
+
+        await store.DeleteAsync("session-1", id);
+        Assert.Null(await store.GetAsync("session-1", id));
     }
 
     [Fact]
-    public async Task V2API_PutAndGetWorkWithScoping()
+    public async Task Delete_IsIdempotent_NoErrorOnMissingId()
     {
-        // Arrange
-        var assetStore = new InMemoryAssetStore();
-        var data = new byte[] { 1, 2, 3, 4, 5 };
+        var store = new InMemoryContentStore();
 
-        // Act - Upload using V2 API to session1
-        var assetId = await assetStore.PutAsync("session1", data, "image/png", cancellationToken: CancellationToken.None);
+        // Should not throw
+        await store.DeleteAsync("session-1", "nonexistent-id");
+    }
 
-        // Act - Retrieve using IContentStore interface
-        IContentStore contentStore = assetStore;
-        var contentData = await contentStore.GetAsync("session1", assetId, CancellationToken.None);
+    [Fact]
+    public async Task Delete_RemovesFromQuery_ButOtherContentRemains()
+    {
+        var store = new InMemoryContentStore();
 
-        // Assert
-        Assert.NotNull(contentData);
-        Assert.Equal(data, contentData.Data);
-        Assert.Equal("image/png", contentData.ContentType);
-        Assert.Equal(assetId, contentData.Info.Id);
+        var id1 = await store.PutAsync("session-1", new byte[] { 1 }, "text/plain");
+        var id2 = await store.PutAsync("session-1", new byte[] { 2 }, "text/plain");
 
-        // Act - Upload to different session using V2 API
-        var contentId = await contentStore.PutAsync("session2", new byte[] { 6, 7, 8 }, "audio/mp3", cancellationToken: CancellationToken.None);
+        await store.DeleteAsync("session-1", id1);
 
-        // Act - Retrieve from correct session
-        var assetData = await assetStore.GetAsync("session2", contentId, CancellationToken.None);
+        var results = await store.QueryAsync("session-1");
+        Assert.Single(results);
+        Assert.Equal(id2, results[0].Id);
+    }
 
-        // Assert
-        Assert.NotNull(assetData);
-        Assert.Equal(new byte[] { 6, 7, 8 }, assetData.Data);
-        Assert.Equal("audio/mp3", assetData.ContentType);
+    // ═══════════════════════════════════════════════════════════════════
+    // ContentInfo Metadata
+    // ═══════════════════════════════════════════════════════════════════
 
-        // Assert - Cannot access from wrong session
-        var wrongSession = await assetStore.GetAsync("session1", contentId, CancellationToken.None);
-        Assert.Null(wrongSession);
+    [Fact]
+    public async Task Put_WithMetadata_PresentsCorrectInfoOnQuery()
+    {
+        var store = new InMemoryContentStore();
+        var data = System.Text.Encoding.UTF8.GetBytes("hello");
+
+        await store.PutAsync("agent-1", data, "text/plain", new ContentMetadata
+        {
+            Name = "greeting.txt",
+            Description = "A simple greeting",
+            Origin = ContentSource.User,
+            Tags = new Dictionary<string, string> { ["folder"] = "/uploads" }
+        });
+
+        var results = await store.QueryAsync("agent-1");
+
+        Assert.Single(results);
+        var info = results[0];
+        Assert.Equal("greeting.txt", info.Name);
+        Assert.Equal("A simple greeting", info.Description);
+        Assert.Equal(ContentSource.User, info.Origin);
+        Assert.Equal(data.Length, info.SizeBytes);
+        Assert.Equal("/uploads", info.Tags!["folder"]);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Tag Filtering
+    // ═══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task QueryByTag_ReturnsOnlyMatchingTaggedContent()
+    {
+        var store = new InMemoryContentStore();
+
+        await store.PutAsync("agent-1", new byte[] { 1 }, "text/plain", new ContentMetadata
+        {
+            Tags = new Dictionary<string, string> { ["folder"] = "/knowledge" }
+        });
+        await store.PutAsync("agent-1", new byte[] { 2 }, "text/plain", new ContentMetadata
+        {
+            Tags = new Dictionary<string, string> { ["folder"] = "/memory" }
+        });
+
+        var knowledge = await store.QueryAsync("agent-1", new ContentQuery
+        {
+            Tags = new Dictionary<string, string> { ["folder"] = "/knowledge" }
+        });
+
+        Assert.Single(knowledge);
+        Assert.Equal("/knowledge", knowledge[0].Tags!["folder"]);
     }
 }

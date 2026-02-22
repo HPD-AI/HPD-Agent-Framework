@@ -59,12 +59,12 @@ internal static class AssetEndpoints
                 return ErrorResponses.NotFound();
             }
 
-            var assetStore = manager.Store.GetAssetStore(sid);
-            if (assetStore == null)
+            var contentStore = manager.Store.GetContentStore(sid);
+            if (contentStore == null)
             {
                 return ErrorResponses.ValidationProblem(new Dictionary<string, string[]>
                 {
-                    ["AssetStoreNotAvailable"] = ["Asset storage is not available for this session store."]
+                    ["AssetStoreNotAvailable"] = ["Content storage is not available for this session store."]
                 });
             }
 
@@ -94,20 +94,25 @@ internal static class AssetEndpoints
             var assetData = memoryStream.ToArray();
             var contentType = file.ContentType ?? "application/octet-stream";
 
-            // Use IContentStore API with session scope
-            var assetId = await assetStore.PutAsync(
+            // Upload to content store with session scope and /uploads folder tag
+            var assetId = await contentStore.PutAsync(
                 scope: sid,
                 data: assetData,
                 contentType: contentType,
                 metadata: new ContentMetadata
                 {
                     Name = file.FileName,
-                    Origin = ContentSource.User
+                    Origin = ContentSource.User,
+                    Tags = new Dictionary<string, string>
+                    {
+                        ["folder"] = "/uploads",
+                        ["session"] = sid
+                    }
                 },
                 cancellationToken: ct);
 
             // Get metadata from the store
-            var content = await assetStore.GetAsync(sid, assetId, ct);
+            var content = await contentStore.GetAsync(sid, assetId, ct);
             if (content == null)
             {
                 return ErrorResponses.ValidationProblem(new Dictionary<string, string[]>
@@ -146,14 +151,17 @@ internal static class AssetEndpoints
                 return ErrorResponses.NotFound();
             }
 
-            var assetStore = manager.Store.GetAssetStore(sid);
-            if (assetStore == null)
+            var contentStore = manager.Store.GetContentStore(sid);
+            if (contentStore == null)
             {
                 return ErrorResponses.Json(new List<AssetDto>());
             }
 
-            // Use IContentStore QueryAsync with session scope
-            var assets = await assetStore.QueryAsync(scope: sid, query: null, cancellationToken: ct);
+            // Query /uploads folder within session scope
+            var assets = await contentStore.QueryAsync(
+                scope: sid,
+                query: new ContentQuery { Tags = new Dictionary<string, string> { ["folder"] = "/uploads" } },
+                cancellationToken: ct);
             var dtos = assets.Select(a => new AssetDto(
                 a.Id,
                 a.ContentType,
@@ -185,14 +193,13 @@ internal static class AssetEndpoints
                 return ErrorResponses.NotFound();
             }
 
-            var assetStore = manager.Store.GetAssetStore(sid);
-            if (assetStore == null)
+            var contentStore = manager.Store.GetContentStore(sid);
+            if (contentStore == null)
             {
                 return ErrorResponses.NotFound();
             }
 
-            // Use IContentStore GetAsync with session scope
-            var content = await assetStore.GetAsync(sid, assetId, ct);
+            var content = await contentStore.GetAsync(sid, assetId, ct);
             if (content == null)
             {
                 return ErrorResponses.NotFound();
@@ -224,21 +231,20 @@ internal static class AssetEndpoints
                 return ErrorResponses.NotFound();
             }
 
-            var assetStore = manager.Store.GetAssetStore(sid);
-            if (assetStore == null)
+            var contentStore = manager.Store.GetContentStore(sid);
+            if (contentStore == null)
             {
                 return ErrorResponses.NotFound();
             }
 
             // Check if asset exists before deleting
-            var content = await assetStore.GetAsync(sid, assetId, ct);
+            var content = await contentStore.GetAsync(sid, assetId, ct);
             if (content == null)
             {
                 return ErrorResponses.NotFound();
             }
 
-            // Use IContentStore DeleteAsync with session scope
-            await assetStore.DeleteAsync(sid, assetId, ct);
+            await contentStore.DeleteAsync(sid, assetId, ct);
 
             return ErrorResponses.NoContent();
         }

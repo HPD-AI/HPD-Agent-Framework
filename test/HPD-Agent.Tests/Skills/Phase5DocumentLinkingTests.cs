@@ -1,423 +1,211 @@
 using Xunit;
-using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Logging.Abstractions;
-using HPD.Agent.Skills;
-using HPD.Agent.Skills.DocumentStore;
 using HPD.Agent;
-using System.IO;
-using System.Threading.Tasks;
-using System.Linq;
-using System;
 
 namespace HPD.Agent.Tests.Skills;
 
 /// <summary>
-/// Tests for Phase 5: Document Linking & Explicit Init
-/// Validates document upload, validation, and linking during agent build
+/// Tests for skill document upload, idempotency, cross-skill sharing, and description overrides.
+/// All tests use InMemoryContentStore + ContentStoreExtensions (V3 API).
 /// </summary>
-public class Phase5DocumentLinkingTests : IDisposable
+public class Phase5DocumentLinkingTests
 {
-    private readonly string _testDocumentsPath;
-    private readonly string _testStorePath;
-
-    public Phase5DocumentLinkingTests()
-    {
-        _testDocumentsPath = Path.Combine(Path.GetTempPath(), "hpd-agent-test-docs", Guid.NewGuid().ToString());
-        _testStorePath = Path.Combine(Path.GetTempPath(), "hpd-agent-test-store", Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_testDocumentsPath);
-        Directory.CreateDirectory(_testStorePath);
-    }
-
-    public void Dispose()
-    {
-        // Cleanup test directories
-        if (Directory.Exists(_testDocumentsPath))
-            Directory.Delete(_testDocumentsPath, recursive: true);
-        if (Directory.Exists(_testStorePath))
-            Directory.Delete(_testStorePath, recursive: true);
-    }
-
-    // ===== P0 Tests: Default Store Creation =====
+    // ═══════════════════════════════════════════════════════════════════
+    // Idempotent Upload
+    // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task BuildAsync_WithoutDocumentStore_CreatesDefaultFileSystemStore()
+    public async Task UploadSkillDocument_SameContentTwice_IsNoOp()
     {
-        // Arrange: Create a test document
-        var testDocPath = Path.Combine(_testDocumentsPath, "test-guide.md");
-        await File.WriteAllTextAsync(testDocPath, "# Test Guide\nThis is a test document.");
+        var store = new InMemoryContentStore();
+        var content = "# OAuth Guide\nHow to handle OAuth flows.";
 
-        // Create a mock Toolkit with a skill that uploads a document
-        var testToolkit = new TestToolkitWithDocumentUpload(testDocPath);
+        var id1 = await store.UploadSkillDocumentAsync("oauth-guide", content, "OAuth authentication guide");
+        var id2 = await store.UploadSkillDocumentAsync("oauth-guide", content, "OAuth authentication guide");
 
-        // Act: Build agent without providing document store
-        var builder = new AgentBuilder()
-            .WithProvider("openai", "gpt-4");
-
-        // Register Toolkit via instance registration
-        builder._instanceRegistrations.Add(new ToolInstanceRegistration(testToolkit, "TestToolkitWithDocumentUpload"));
-
-        // Note: We can't fully test Build() without a real provider,
-        // but we can verify the document store field gets set
-        var storeBefore = builder._documentStore;
-
-        // Assert: Store should be null before processing
-        Assert.Null(storeBefore);
+        // Same content = same ID returned (no-op, no duplicate entry)
+        Assert.Equal(id1, id2);
+        var all = await store.QueryAsync(null, new ContentQuery
+        {
+            Tags = new Dictionary<string, string> { ["folder"] = "/skills" }
+        });
+        Assert.Single(all);
     }
 
     [Fact]
-    public async Task BuildAsync_WithCustomStore_UsesProvidedStore()
+    public async Task UploadSkillDocument_ChangedContent_OverwritesInPlace()
     {
-        // Arrange
-        var customStore = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
-        var testDocPath = Path.Combine(_testDocumentsPath, "custom-guide.md");
-        await File.WriteAllTextAsync(testDocPath, "# Custom Guide");
+        var store = new InMemoryContentStore();
 
-        var builder = new AgentBuilder()
-            .WithProvider("openai", "gpt-4")
-            .WithDocumentStore(customStore);
+        var id1 = await store.UploadSkillDocumentAsync("oauth-guide", "# Version 1", "OAuth guide");
+        var id2 = await store.UploadSkillDocumentAsync("oauth-guide", "# Version 2 — updated", "OAuth guide");
 
-        // Assert: Custom store should be set
-        Assert.Same(customStore, builder._documentStore);
-    }
+        // Same ID (in-place overwrite), content updated
+        Assert.Equal(id1, id2);
 
-    // ===== P0 Tests: Document Upload (AddDocumentFromFile) =====
-
-    [Fact]
-    public async Task ProcessDocuments_UploadsDocumentFromFile()
-    {
-        // Arrange: Create test document
-        var testDocPath = Path.Combine(_testDocumentsPath, "upload-test.md");
-        var testContent = "# Upload Test\nThis document should be uploaded.";
-        await File.WriteAllTextAsync(testDocPath, testContent);
-
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
-
-        // Create skill with AddDocumentFromFile
-        var skill = SkillFactory.Create(
-            "TestSkill",
-            "Test skill with document upload",
-            functionResult: "Skill activated",
-            systemPrompt: "Instructions",
-            options: new SkillOptions()
-                .AddDocumentFromFile(testDocPath, "Test upload document", "upload-test"),
-            "MockToolkit.TestFunction"
-        );
-
-        // Simulate what the source generator would create
-        var skillContainer = CreateMockSkillContainer(
-            "TestSkill",
-            documentUploads: new[]
-            {
-                new { FilePath = testDocPath, DocumentId = "upload-test", Description = "Test upload document" }
-            },
-            documentReferences: Array.Empty<object>()
-        );
-
-        // Act: Upload via store (simulating what ProcessSkillDocumentsAsync does)
-        var metadata = new DocumentMetadata
-        {
-            Name = "upload-test",
-            Description = "Test upload document"
-        };
-        
-        // Read file and upload content (AgentBuilder pattern)
-        var content = await File.ReadAllTextAsync(testDocPath);
-        await store.UploadFromContentAsync("upload-test", metadata, content);
-
-        // Assert: Document should exist in store
-        var exists = await store.DocumentExistsAsync("upload-test");
-        Assert.True(exists);
-
-        var readContent = await store.ReadDocumentAsync("upload-test");
-        Assert.NotNull(readContent);
-        Assert.Contains("Upload Test", readContent);
+        var data = await store.GetAsync(null, id1);
+        Assert.NotNull(data);
+        Assert.Contains("Version 2", System.Text.Encoding.UTF8.GetString(data.Data));
     }
 
     [Fact]
-    public async Task ProcessDocuments_DeduplicatesSameDocumentFromMultipleSkills()
+    public async Task UploadSkillDocument_CalledEveryStartup_IsStartupSafe()
     {
-        // Arrange: Create shared document
-        var sharedDocPath = Path.Combine(_testDocumentsPath, "shared-doc.md");
-        await File.WriteAllTextAsync(sharedDocPath, "# Shared Document");
+        var store = new InMemoryContentStore();
+        const string content = "# Auth Guide";
 
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        // Simulate being called 3× at startup
+        for (var i = 0; i < 3; i++)
+            await store.UploadSkillDocumentAsync("auth-guide", content, "Auth guide");
 
-        // Upload document twice (simulating two skills uploading same document)
-        var metadata = new DocumentMetadata
+        var results = await store.QueryAsync(null, new ContentQuery
         {
-            Name = "shared-doc",
-            Description = "Shared document"
-        };
-
-        var fileContent = await File.ReadAllTextAsync(sharedDocPath);
-        await store.UploadFromContentAsync("shared-doc", metadata, fileContent);
-
-        // Second upload should be idempotent (same content hash)
-        await store.UploadFromContentAsync("shared-doc", metadata, fileContent);
-
-        // Assert: Document exists only once
-        var exists = await store.DocumentExistsAsync("shared-doc");
-        Assert.True(exists);
-
-        var allDocs = await store.ListAllDocumentsAsync();
-        Assert.Single(allDocs.Where(d => d.DocumentId == "shared-doc"));
+            Tags = new Dictionary<string, string> { ["folder"] = "/skills" }
+        });
+        Assert.Single(results);
     }
 
-    // ===== P0 Tests: Document Reference Validation (AddDocument) =====
+    // ═══════════════════════════════════════════════════════════════════
+    // Cross-Skill Document Sharing
+    // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ProcessDocuments_ValidatesDocumentReferencesExist()
+    public async Task LinkSkillDocument_TwoSkills_ShareOneDocument()
     {
-        // Arrange: Create store with existing document
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
 
-        var testDocPath = Path.Combine(_testDocumentsPath, "existing-doc.md");
-        await File.WriteAllTextAsync(testDocPath, "# Existing Document");
+        await store.UploadSkillDocumentAsync("oauth-guide", "# OAuth", "OAuth protocol reference");
+        await store.LinkSkillDocumentAsync("oauth-guide", "SecuritySkill", "Token validation and expiry rules");
+        await store.LinkSkillDocumentAsync("oauth-guide", "AuthToolkit", "OAuth flow for login integration");
 
-        var metadata = new DocumentMetadata
+        // Only one document in the store — not duplicated
+        var all = await store.QueryAsync(null, new ContentQuery
         {
-            Name = "existing-doc",
-            Description = "Pre-uploaded document"
-        };
-        
-        var fileContent = await File.ReadAllTextAsync(testDocPath);
-        await store.UploadFromContentAsync("existing-doc", metadata, fileContent);
-
-        // Act: Validate reference exists
-        var exists = await store.DocumentExistsAsync("existing-doc");
-
-        // Assert: Document should exist
-        Assert.True(exists);
+            Tags = new Dictionary<string, string> { ["folder"] = "/skills" }
+        });
+        Assert.Single(all);
     }
 
     [Fact]
-    public async Task ProcessDocuments_ThrowsWhenReferencedDocumentMissing()
+    public async Task LinkSkillDocument_StoresPerSkillDescriptionTag()
     {
-        // Arrange: Create store without the document
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
 
-        // Act & Assert: Checking non-existent document should return false
-        var exists = await store.DocumentExistsAsync("missing-doc");
-        Assert.False(exists);
+        await store.UploadSkillDocumentAsync("oauth-guide", "# OAuth", "Global default description");
+        await store.LinkSkillDocumentAsync("oauth-guide", "SecuritySkill", "Token validation rules");
 
-        // In the actual implementation, this would throw DocumentNotFoundException
-        // when ProcessSkillDocumentsAsync validates references
-    }
-
-    // ===== P0 Tests: Document Linking =====
-
-    [Fact]
-    public async Task ProcessDocuments_LinksDocumentToSkill()
-    {
-        // Arrange: Create document and link to skill
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
-
-        var testDocPath = Path.Combine(_testDocumentsPath, "linked-doc.md");
-        await File.WriteAllTextAsync(testDocPath, "# Linked Document");
-
-        var docMetadata = new DocumentMetadata
+        var results = await store.QueryAsync(null, new ContentQuery
         {
-            Name = "linked-doc",
-            Description = "Document to link"
-        };
-        
-        var fileContent = await File.ReadAllTextAsync(testDocPath);
-        await store.UploadFromContentAsync("linked-doc", docMetadata, fileContent);
+            Tags = new Dictionary<string, string> { ["folder"] = "/skills" }
+        });
 
-        // Act: Link document to skill
-        var skillMetadata = new SkillDocumentMetadata
-        {
-            Description = "Skill-specific description"
-        };
-        await store.LinkDocumentToSkillAsync("TestToolkit", "linked-doc", skillMetadata);
-
-        // Assert: Document should be linked to skill
-        var skillDocs = await store.GetSkillDocumentsAsync("TestToolkit");
-        Assert.Single(skillDocs);
-        Assert.Equal("linked-doc", skillDocs[0].DocumentId);
-        Assert.Equal("Skill-specific description", skillDocs[0].Description);
+        Assert.Single(results);
+        var doc = results[0];
+        Assert.True(doc.Tags!.ContainsKey("description:SecuritySkill"));
+        Assert.Equal("Token validation rules", doc.Tags["description:SecuritySkill"]);
     }
 
     [Fact]
-    public async Task ProcessDocuments_MultipleSkillsCanReferencesSameDocument()
+    public async Task LinkSkillDocument_MultipleSkills_EachGetOwnDescriptionTag()
     {
-        // Arrange: Create shared document
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
 
-        var testDocPath = Path.Combine(_testDocumentsPath, "multi-skill-doc.md");
-        await File.WriteAllTextAsync(testDocPath, "# Multi-Skill Document");
+        await store.UploadSkillDocumentAsync("shared-doc", "# Shared", "Default description");
+        await store.LinkSkillDocumentAsync("shared-doc", "SkillA", "Description for Skill A");
+        await store.LinkSkillDocumentAsync("shared-doc", "SkillB", "Description for Skill B");
 
-        var docMetadata = new DocumentMetadata
+        var results = await store.QueryAsync(null, new ContentQuery
         {
-            Name = "multi-skill-doc",
-            Description = "Shared by multiple skills"
-        };
-        
-        var fileContent = await File.ReadAllTextAsync(testDocPath);
-        await store.UploadFromContentAsync("multi-skill-doc", docMetadata, fileContent);
+            Tags = new Dictionary<string, string> { ["folder"] = "/skills" }
+        });
 
-        // Act: Link to multiple skills with different descriptions
-        await store.LinkDocumentToSkillAsync(
-            "SkillA",
-            "multi-skill-doc",
-            new SkillDocumentMetadata { Description = "Description for Skill A" });
-
-        await store.LinkDocumentToSkillAsync(
-            "SkillB",
-            "multi-skill-doc",
-            new SkillDocumentMetadata { Description = "Description for Skill B" });
-
-        // Assert: Both skills should have the document with their own descriptions
-        var skillADocs = await store.GetSkillDocumentsAsync("SkillA");
-        var skillBDocs = await store.GetSkillDocumentsAsync("SkillB");
-
-        Assert.Single(skillADocs);
-        Assert.Equal("Description for Skill A", skillADocs[0].Description);
-
-        Assert.Single(skillBDocs);
-        Assert.Equal("Description for Skill B", skillBDocs[0].Description);
+        Assert.Single(results);
+        var tags = results[0].Tags!;
+        Assert.Equal("Description for Skill A", tags["description:SkillA"]);
+        Assert.Equal("Description for Skill B", tags["description:SkillB"]);
     }
 
-    // ===== P0 Tests: Description Override =====
+    // ═══════════════════════════════════════════════════════════════════
+    // LinkSkillDocument Validation
+    // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ProcessDocuments_SkillCanOverrideDocumentDescription()
+    public async Task LinkSkillDocument_DocumentNotUploaded_Throws()
     {
-        // Arrange
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
 
-        var testDocPath = Path.Combine(_testDocumentsPath, "override-doc.md");
-        await File.WriteAllTextAsync(testDocPath, "# Override Document");
-
-        var docMetadata = new DocumentMetadata
-        {
-            Name = "override-doc",
-            Description = "Default description"
-        };
-        
-        var fileContent = await File.ReadAllTextAsync(testDocPath);
-        await store.UploadFromContentAsync("override-doc", docMetadata, fileContent);
-
-        // Act: Link with override description
-        await store.LinkDocumentToSkillAsync(
-            "OverrideSkill",
-            "override-doc",
-            new SkillDocumentMetadata { Description = "Custom skill-specific description" });
-
-        // Assert: Should use overridden description
-        var skillDocs = await store.GetSkillDocumentsAsync("OverrideSkill");
-        Assert.Single(skillDocs);
-        Assert.Equal("Custom skill-specific description", skillDocs[0].Description);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            store.LinkSkillDocumentAsync("missing-doc", "SomeSkill", "Some description"));
     }
 
-    // ===== P0 Tests: Idempotency =====
+    // ═══════════════════════════════════════════════════════════════════
+    // Knowledge Documents (Agent-Scoped)
+    // ═══════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task ProcessDocuments_IdempotentUpload_SkipsUnchangedDocuments()
+    public async Task UploadKnowledgeDocument_SameAgentAndName_IsIdempotent()
     {
-        // Arrange
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
+        var data = System.Text.Encoding.UTF8.GetBytes("# API Guide");
 
-        var testDocPath = Path.Combine(_testDocumentsPath, "idempotent-doc.md");
-        var content = "# Idempotent Document";
-        await File.WriteAllTextAsync(testDocPath, content);
+        var id1 = await store.UploadKnowledgeDocumentAsync("my-agent", "api-guide", data, "text/markdown");
+        var id2 = await store.UploadKnowledgeDocumentAsync("my-agent", "api-guide", data, "text/markdown");
 
-        var metadata = new DocumentMetadata
+        Assert.Equal(id1, id2);
+
+        var results = await store.QueryAsync("my-agent", new ContentQuery
         {
-            Name = "idempotent-doc",
-            Description = "Test idempotency"
-        };
-
-        // Act: Upload twice with same content
-        await store.UploadFromContentAsync("idempotent-doc", metadata, content);
-        var firstUploadMeta = await store.GetDocumentMetadataAsync("idempotent-doc");
-
-        await store.UploadFromContentAsync("idempotent-doc", metadata, content);
-        var secondUploadMeta = await store.GetDocumentMetadataAsync("idempotent-doc");
-
-        // Assert: Metadata should be identical (same content hash, no re-upload)
-        Assert.NotNull(firstUploadMeta);
-        Assert.NotNull(secondUploadMeta);
-        Assert.Equal(firstUploadMeta.ContentHash, secondUploadMeta.ContentHash);
-        Assert.Equal(firstUploadMeta.Version, secondUploadMeta.Version);
+            Tags = new Dictionary<string, string> { ["folder"] = "/knowledge" }
+        });
+        Assert.Single(results);
     }
 
     [Fact]
-    public async Task ProcessDocuments_ChangedContent_UpdatesDocument()
+    public async Task UploadKnowledgeDocument_DifferentAgents_AreIsolated()
     {
-        // Arrange
-        var store = new InMemoryInstructionStore(NullLogger<InMemoryInstructionStore>.Instance);
+        var store = new InMemoryContentStore();
+        var data = System.Text.Encoding.UTF8.GetBytes("# Guide");
 
-        var testDocPath = Path.Combine(_testDocumentsPath, "changing-doc.md");
-        await File.WriteAllTextAsync(testDocPath, "# Version 1");
+        await store.UploadKnowledgeDocumentAsync("agent-a", "guide", data, "text/markdown");
+        await store.UploadKnowledgeDocumentAsync("agent-b", "guide", data, "text/markdown");
 
-        var metadata = new DocumentMetadata
-        {
-            Name = "changing-doc",
-            Description = "Document that changes"
-        };
+        var agentAResults = await store.QueryAsync("agent-a");
+        var agentBResults = await store.QueryAsync("agent-b");
 
-        // Act: Upload, then change content and upload again
-        await store.UploadFromContentAsync("changing-doc", metadata, "# Version 1");
-        var firstMeta = await store.GetDocumentMetadataAsync("changing-doc");
-
-        // Upload with changed content
-        await store.UploadFromContentAsync("changing-doc", metadata, "# Version 2 - Updated");
-        var secondMeta = await store.GetDocumentMetadataAsync("changing-doc");
-
-        // Assert: Content hash and version should change
-        Assert.NotNull(firstMeta);
-        Assert.NotNull(secondMeta);
-        Assert.NotEqual(firstMeta.ContentHash, secondMeta.ContentHash);
-        Assert.True(secondMeta.Version > firstMeta.Version);
+        Assert.Single(agentAResults);
+        Assert.Single(agentBResults);
     }
 
-    // ===== Helper Methods =====
+    // ═══════════════════════════════════════════════════════════════════
+    // Memory (Agent-Scoped)
+    // ═══════════════════════════════════════════════════════════════════
 
-    private AIFunction CreateMockSkillContainer(
-        string skillName,
-        object[] documentUploads,
-        object[] documentReferences)
+    [Fact]
+    public async Task WriteMemory_SameTitleTwice_OverwritesContent()
     {
-        return HPDAIFunctionFactory.Create(
-            async (args, ct) => "Skill activated",
-            new HPDAIFunctionFactoryOptions
-            {
-                Name = skillName,
-                Description = "Test skill",
-                AdditionalProperties = new Dictionary<string, object>
-                {
-                    ["IsSkill"] = true,
-                    ["SkillName"] = skillName,
-                    ["ParentSkillContainer"] = "TestToolkit",
-                    ["DocumentUploads"] = documentUploads,
-                    ["DocumentReferences"] = documentReferences
-                }
-            });
+        var store = new InMemoryContentStore();
+
+        var id1 = await store.WriteMemoryAsync("my-agent", "user-prefs", "Prefers email");
+        var id2 = await store.WriteMemoryAsync("my-agent", "user-prefs", "Prefers SMS now");
+
+        Assert.Equal(id1, id2);
+
+        var data = await store.GetAsync("my-agent", id1);
+        Assert.Contains("SMS", System.Text.Encoding.UTF8.GetString(data!.Data));
     }
 
-    // Mock Toolkit for testing
-    private class TestToolkitWithDocumentUpload
+    [Fact]
+    public async Task WriteMemory_IsTaggedWithMemoryFolder()
     {
-        private readonly string _documentPath;
+        var store = new InMemoryContentStore();
 
-        public TestToolkitWithDocumentUpload(string documentPath)
-        {
-            _documentPath = documentPath;
-        }
+        await store.WriteMemoryAsync("my-agent", "note-1", "Remember this");
 
-        [Skill]
-        public Skill TestSkill(SkillOptions? options = null)
+        var results = await store.QueryAsync("my-agent", new ContentQuery
         {
-            return SkillFactory.Create(
-                "TestSkill",
-                "Test skill with document",
-                functionResult: "Skill activated",
-                systemPrompt: "Instructions",
-                options: new SkillOptions()
-                    .AddDocumentFromFile(_documentPath, "Test document", "test-doc"),
-                "MockToolkit.TestFunction"
-            );
-        }
+            Tags = new Dictionary<string, string> { ["folder"] = "/memory" }
+        });
+
+        Assert.Single(results);
+        Assert.Equal("note-1", results[0].Name);
     }
 }

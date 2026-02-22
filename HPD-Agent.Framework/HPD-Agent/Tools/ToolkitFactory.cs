@@ -149,5 +149,15 @@ public record ToolkitFactory(
     /// Cast to OpenApiConfig happens inside OpenApiLoader.LoadAllAsync.
     /// ISecretResolver is available via constructor injection — no threading through this delegate.
     /// </summary>
-    Action<object, Action<string, object, string>>? CollectOpenApiSources = null
+    Action<object, Action<string, object, string>>? CollectOpenApiSources = null,
+
+    // ========== V3: CONTENT STORE DOCUMENT INITIALIZATION ==========
+
+    /// <summary>
+    /// Delegate to the generated InitializeDocumentsAsync(IContentStore) method.
+    /// Null when the toolkit has no skills with document uploads or references.
+    /// Called by AgentBuilder.Build() to upload skill documents to the V3 content store at startup.
+    /// Idempotent: same document ID + same content hash = no-op.
+    /// </summary>
+    Func<IContentStore, System.Threading.CancellationToken, System.Threading.Tasks.Task>? InitializeDocumentsAsync = null
 );

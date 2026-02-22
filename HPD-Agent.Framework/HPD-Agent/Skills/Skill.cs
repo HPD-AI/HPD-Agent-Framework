@@ -40,12 +40,6 @@ public class Skill
     /// <summary>Skill configuration options</summary>
     public SkillOptions Options { get; internal set; } = new();
 
-    /// <summary>
-    /// Type-safe document content for this skill (replaces AdditionalProperties["DocumentUploads"]).
-    /// Set by source generator with proper typed objects instead of dictionaries.
-    /// </summary>
-    public SkillDocumentContent[]? SkillDocuments { get; internal set; }
-
     // Internal - resolved by source generator during code generation
 
     /// <summary>

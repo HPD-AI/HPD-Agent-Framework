@@ -3,34 +3,42 @@ using Microsoft.Extensions.AI;
 namespace HPD.Agent.Middleware;
 
 /// <summary>
-/// Automatically uploads binary assets (DataContent) to AssetStore before LLM processing.
+/// Automatically uploads binary assets (DataContent) to IContentStore before LLM processing.
 /// Transforms DataContent(bytes) → UriContent(asset://assetId) for efficient storage.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This middleware is automatically registered in AgentBuilder.
-/// It checks at runtime if session.Store.GetAssetStore(sessionId) exists - zero cost when not used.
+/// This middleware is automatically registered in AgentBuilder when WithContentStore() is used.
+/// It checks at runtime if a content store is available — zero cost when not used.
 /// </para>
 /// <para><b>Behavior:</b></para>
 /// <list type="bullet">
 /// <item>Scans messages for DataContent with binary data</item>
-/// <item>Uploads bytes to session.Store.GetAssetStore(sessionId)</item>
+/// <item>Uploads bytes to IContentStore with scope=sessionId and folder=/uploads tag</item>
 /// <item>Replaces DataContent with UriContent using asset:// URI scheme</item>
 /// <item>Emits AssetUploadedEvent or AssetUploadFailedEvent for observability</item>
 /// </list>
 /// <para><b>Zero-cost when unused:</b></para>
 /// <para>
-/// If session?.Store?.GetAssetStore(sessionId) is null, middleware returns immediately (no-op).
-/// This makes it safe to auto-register without performance impact.
+/// If the content store or session is null, middleware returns immediately (no-op).
 /// </para>
 /// </remarks>
 public class AssetUploadMiddleware : IAgentMiddleware
 {
-    // NO instance fields - middleware is stateless
+    private readonly IContentStore? _contentStore;
+
+    /// <summary>
+    /// Creates an AssetUploadMiddleware that uploads binary assets to the provided content store.
+    /// Pass null to create a no-op middleware (useful for agents without content storage).
+    /// </summary>
+    public AssetUploadMiddleware(IContentStore? contentStore = null)
+    {
+        _contentStore = contentStore;
+    }
 
     /// <summary>
     /// Called before processing a user message turn.
-    /// Uploads DataContent to AssetStore and replaces with UriContent.
+    /// Uploads DataContent to IContentStore and replaces with UriContent.
     /// </summary>
     /// <remarks>
     /// Uses BeforeMessageTurnAsync (not BeforeIterationAsync) to upload assets once per user message,
@@ -41,19 +49,15 @@ public class AssetUploadMiddleware : IAgentMiddleware
         BeforeMessageTurnContext context,
         CancellationToken cancellationToken)
     {
-        // Get session from context
-        var session = context.Session;
-        if (session?.Store == null)
-            return;  // No store configured - zero cost exit
+        // Zero-cost exit when no content store configured
+        if (_contentStore == null)
+            return;
 
-        // Get session-scoped asset store
-        var assetStore = session.Store.GetAssetStore(session.Id);
-        if (assetStore == null)
-            return;  // No asset store configured - zero cost exit
+        var session = context.Session;
+        if (session == null)
+            return;
 
         var message = context.UserMessage;
-
-        // UserMessage can be null in continuation scenarios
         if (message == null)
             return;
 
@@ -71,25 +75,34 @@ public class AssetUploadMiddleware : IAgentMiddleware
         {
             AIContent transformedContent = content;
 
-            // Handle DataContent (images, audio, files, etc.)
             if (content is DataContent data && data.Data.Length > 0)
             {
                 try
                 {
-                    // Upload to asset store using V2 ContentStore API
-                    var assetId = await assetStore.PutAsync(
+                    // Upload to content store as session-scoped /uploads content
+                    // Name is only set when the content has an explicit filename — unnamed uploads
+                    // always use the unnamed-insert path (new entry per upload, no upsert collision).
+                    var assetId = await _contentStore.PutAsync(
                         scope: session.Id,
                         data: data.Data.ToArray(),
                         contentType: data.MediaType ?? "application/octet-stream",
-                        metadata: null,
+                        metadata: new ContentMetadata
+                        {
+                            Name = ExtractFileName(content),
+                            Origin = ContentSource.User,
+                            Tags = new Dictionary<string, string>
+                            {
+                                ["folder"] = "/uploads",
+                                ["session"] = session.Id
+                            }
+                        },
                         cancellationToken: cancellationToken);
 
-                    // Replace with URI reference using MEAI's UriContent
+                    // Replace with URI reference using asset:// scheme
                     transformedContent = new UriContent(
                         new Uri($"asset://{assetId}"),
                         data.MediaType);
 
-                    // Emit event for observability
                     context.Emit(new AssetUploadedEvent(
                         AssetId: assetId,
                         MediaType: data.MediaType ?? "application/octet-stream",
@@ -97,7 +110,6 @@ public class AssetUploadMiddleware : IAgentMiddleware
                 }
                 catch (Exception ex)
                 {
-                    // Log error but continue (could add retry logic here)
                     context.Emit(new AssetUploadFailedEvent(
                         MediaType: data.MediaType ?? "application/octet-stream",
                         Error: ex.Message));
@@ -117,8 +129,14 @@ public class AssetUploadMiddleware : IAgentMiddleware
             AdditionalProperties = message.AdditionalProperties
         };
 
-        // Update the user message in the context
-        // The agent will handle persisting this to branch.Messages via turnHistory
         context.UserMessage = updatedMessage;
+    }
+
+    private static string? ExtractFileName(AIContent content)
+    {
+        if (content.AdditionalProperties != null &&
+            content.AdditionalProperties.TryGetValue("filename", out var fn))
+            return fn?.ToString();
+        return null;
     }
 }

@@ -422,7 +422,6 @@ public class ClientToolMiddleware : IAgentMiddleware
 
     /// <summary>
     /// Converts a ClientSkillDefinition to an AIFunction.
-    /// Sets metadata required by ToolVisibilityManager for read_skill_document visibility.
     /// </summary>
     private static AIFunction ConvertSkillToAIFunction(ClientSkillDefinition skill, string toolName)
     {
@@ -433,18 +432,13 @@ public class ClientToolMiddleware : IAgentMiddleware
             returnMessage += $"\n\n{skill.FunctionResult}";
         }
 
-        // Build document references for visibility manager (uses "Client:" prefix)
-        var documentReferences = Array.Empty<string>();
+        // Build document reference list for activation message (V3: content_read paths)
         if (skill.Documents != null && skill.Documents.Count > 0)
         {
-            returnMessage += "\n\nAvailable documents:";
-            documentReferences = new string[skill.Documents.Count];
-            for (int i = 0; i < skill.Documents.Count; i++)
+            returnMessage += "\n\nReference documents available in the content store:";
+            foreach (var doc in skill.Documents)
             {
-                var doc = skill.Documents[i];
-                // Use the Client-prefixed document ID for the store
-                documentReferences[i] = ClientSkillDocumentRegistrar.GetStoreDocumentId(doc.DocumentId);
-                returnMessage += $"\n- {doc.DocumentId}: {doc.Description}";
+                returnMessage += $"\n- content_read(\"/skills/{doc.DocumentId}\") — {doc.Description}";
             }
         }
 
@@ -497,8 +491,6 @@ public class ClientToolMiddleware : IAgentMiddleware
                     ["SystemPrompt"] = skill.SystemPrompt,
                     // Legacy key for backward compatibility with ContainerMiddleware
                     ["Instructions"] = skill.SystemPrompt,
-                    // These are checked by ToolVisibilityManager.HasDocuments()
-                    ["DocumentReferences"] = documentReferences,
                     // These are used by ToolVisibilityManager for visibility rules
                     ["ReferencedFunctions"] = referencedFunctions,
                     ["ReferencedToolkits"] = referencedToolkits

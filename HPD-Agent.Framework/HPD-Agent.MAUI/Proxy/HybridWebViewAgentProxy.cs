@@ -687,27 +687,32 @@ public abstract class HybridWebViewAgentProxy
         if (session == null)
             throw new InvalidOperationException($"Session '{sessionId}' not found");
 
-        var assetStore = Manager.Store.GetAssetStore(sessionId);
-        if (assetStore == null)
-            throw new InvalidOperationException("Asset storage is not available for this session store");
+        var contentStore = Manager.Store.GetContentStore(sessionId);
+        if (contentStore == null)
+            throw new InvalidOperationException("Content storage is not available for this session store");
 
         // Convert base64 to byte array
         var data = Convert.FromBase64String(base64Data);
 
-        // Store asset using IContentStore API
-        var assetId = await assetStore.PutAsync(
+        // Upload to content store with /uploads folder tag
+        var assetId = await contentStore.PutAsync(
             scope: sessionId,
             data: data,
             contentType: contentType,
             metadata: new ContentMetadata
             {
                 Name = filename,
-                Origin = ContentSource.User
+                Origin = ContentSource.User,
+                Tags = new Dictionary<string, string>
+                {
+                    ["folder"] = "/uploads",
+                    ["session"] = sessionId
+                }
             },
             cancellationToken: default);
 
         // Get metadata from the store to return DTO
-        var content = await assetStore.GetAsync(sessionId, assetId);
+        var content = await contentStore.GetAsync(sessionId, assetId);
         if (content == null)
             throw new InvalidOperationException("Asset was uploaded but could not be retrieved");
 
@@ -726,15 +731,17 @@ public abstract class HybridWebViewAgentProxy
         if (session == null)
             throw new InvalidOperationException($"Session '{sessionId}' not found");
 
-        var assetStore = Manager.Store.GetAssetStore(sessionId);
-        if (assetStore == null)
+        var contentStore = Manager.Store.GetContentStore(sessionId);
+        if (contentStore == null)
         {
-            // Return empty list if asset store not available
             return JsonSerializer.Serialize(new List<AssetDto>());
         }
 
-        // Query all assets for this session
-        var assets = await assetStore.QueryAsync(scope: sessionId, query: null, cancellationToken: default);
+        // Query /uploads folder for this session
+        var assets = await contentStore.QueryAsync(
+            scope: sessionId,
+            query: new ContentQuery { Tags = new Dictionary<string, string> { ["folder"] = "/uploads" } },
+            cancellationToken: default);
         var dtos = assets.Select(a => new AssetDto(
             a.Id,
             a.ContentType,
@@ -750,17 +757,16 @@ public abstract class HybridWebViewAgentProxy
         if (session == null)
             throw new InvalidOperationException($"Session '{sessionId}' not found");
 
-        var assetStore = Manager.Store.GetAssetStore(sessionId);
-        if (assetStore == null)
-            throw new InvalidOperationException("Asset storage is not available for this session store");
+        var contentStore = Manager.Store.GetContentStore(sessionId);
+        if (contentStore == null)
+            throw new InvalidOperationException("Content storage is not available for this session store");
 
         // Check if asset exists before deleting
-        var content = await assetStore.GetAsync(sessionId, assetId);
+        var content = await contentStore.GetAsync(sessionId, assetId);
         if (content == null)
             throw new InvalidOperationException($"Asset '{assetId}' not found");
 
-        // Delete the asset
-        await assetStore.DeleteAsync(sessionId, assetId);
+        await contentStore.DeleteAsync(sessionId, assetId);
     }
 
     // ============================================================

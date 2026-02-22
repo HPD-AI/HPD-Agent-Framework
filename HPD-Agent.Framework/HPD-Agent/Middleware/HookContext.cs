@@ -49,14 +49,14 @@ public abstract class HookContext
     /// Does NOT contain messages - messages are in <see cref="Branch"/>.
     /// </summary>
     /// <remarks>
-    /// <para><b>Example - Asset Upload:</b></para>
+    /// <para><b>Example - Content Upload:</b></para>
     /// <code>
     /// public async Task BeforeIterationAsync(BeforeIterationContext context, ...)
     /// {
-    ///     var assetStore = context.Session?.Store?.GetAssetStore(context.Session.Id);
-    ///     if (assetStore != null)
+    ///     var contentStore = context.Session?.Store?.GetContentStore(context.Session.Id);
+    ///     if (contentStore != null)
     ///     {
-    ///         var assetId = await assetStore.UploadAssetAsync(bytes, "image/jpeg");
+    ///         var id = await contentStore.PutAsync(context.Session.Id, bytes, "image/jpeg");
     ///     }
     /// }
     /// </code>

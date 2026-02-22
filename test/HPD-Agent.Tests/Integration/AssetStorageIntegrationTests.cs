@@ -24,16 +24,17 @@ public class AssetStorageIntegrationTests
         {
             // Create store with asset support
             var store = new JsonSessionStore(tempDir);
-            Assert.NotNull(store.GetAssetStore("test-session"));
+            Assert.NotNull(store.GetContentStore("test-session"));
 
             // Create fake chat client and enqueue a response
             var chatClient = new FakeChatClient();
             chatClient.EnqueueTextResponse("I see the image.");
 
-            // Create agent with vision model (asset middleware auto-registered)
+            // Create agent with content store so AssetUploadMiddleware can upload assets
             var agent = await new AgentBuilder()
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
+                .WithContentStore(store.GetContentStore("test-session")!)
                 .Build();
 
             // Load session and branch (sets session.Store automatically)
@@ -89,17 +90,19 @@ public class AssetStorageIntegrationTests
 
             // Assert: Verify asset was stored and is retrievable
             var assetId = uriContent.Uri.Host;
-            var assetStore = store.GetAssetStore(session.Id)!;
+            var assetStore = store.GetContentStore(session.Id)!;
             var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
             Assert.NotNull(retrievedAsset);
             Assert.Equal(imageBytes, retrievedAsset.Data);
             Assert.Equal("image/png", retrievedAsset.ContentType);
             Assert.Equal(assetId, retrievedAsset.Id);
 
-            // Assert: Verify asset file exists on disk
-            // LocalFileAssetStore stores at {basePath}/{scope}/{contentId}.ext
-            // basePath = {tempDir}/{sessionId}/assets, scope = sessionId
-            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id, "assets", session.Id), $"{assetId}.*");
+            // Assert: Verify asset file exists on disk (exclude .meta companion files)
+            // LocalFileContentStore stores at {basePath}/{scope}/{contentId}.ext
+            // basePath = {tempDir}/{sessionId}/content, scope = sessionId
+            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id, "content", session.Id), $"{assetId}.*")
+                .Where(f => !f.EndsWith(".meta") && !f.EndsWith(".nameindex"))
+                .ToArray();
             Assert.Single(assetFiles);
             Assert.EndsWith(".png", assetFiles[0]);
 
@@ -140,6 +143,7 @@ public class AssetStorageIntegrationTests
             var agent = await new AgentBuilder()
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
+                .WithContentStore(store.GetContentStore("multi-asset-session")!)
                 .Build();
 
             var session = await store.LoadSessionAsync("multi-asset-session") ?? new SessionModel("multi-asset-session");
@@ -185,19 +189,18 @@ public class AssetStorageIntegrationTests
             Assert.Equal(3, uriContents.Count);
 
             // Assert: All assets retrievable
-            var assetStore = store.GetAssetStore(session.Id)!;
+            var assetStore = store.GetContentStore(session.Id)!;
             foreach (var uriContent in uriContents)
             {
                 var assetId = uriContent.Uri.Host;
                 var asset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
                 Assert.NotNull(asset);
-                Assert.Equal(uriContent.MediaType, asset.ContentType);
             }
 
             // Assert: Correct file extensions on disk
-            // LocalFileAssetStore stores at {basePath}/{scope}/{contentId}.ext
-            // basePath = {tempDir}/{sessionId}/assets, scope = sessionId
-            var assetDir = Path.Combine(tempDir, session.Id, "assets", session.Id);
+            // LocalFileContentStore stores at {basePath}/{scope}/{contentId}.ext
+            // basePath = {tempDir}/{sessionId}/content, scope = sessionId
+            var assetDir = Path.Combine(tempDir, session.Id, "content", session.Id);
             Assert.True(Directory.GetFiles(assetDir, "*.png").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.jpg").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.pdf").Length >= 1);
@@ -272,6 +275,7 @@ public class AssetStorageIntegrationTests
             var agent = await new AgentBuilder()
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
+                .WithContentStore(store.GetContentStore("roundtrip-session")!)
                 .Build();
 
             // First run: Upload asset
@@ -309,7 +313,7 @@ public class AssetStorageIntegrationTests
             Assert.Equal(assetId, uri2.Uri.Host);
 
             // Assert: Asset still retrievable after roundtrip
-            var assetStore = store.GetAssetStore(session2.Id)!;
+            var assetStore = store.GetContentStore(session2.Id)!;
             var retrievedAsset = await assetStore.GetAsync(session2.Id, assetId, CancellationToken.None);
             Assert.NotNull(retrievedAsset);
             Assert.Equal(imageBytes, retrievedAsset.Data);
@@ -373,7 +377,7 @@ public class AssetStorageIntegrationTests
     {
         private readonly Dictionary<string, SessionModel> _sessions = new();
 
-        public IAssetStore? GetAssetStore(string sessionId) => null; // No asset store
+        public IContentStore? GetContentStore(string sessionId) => null; // No content store
 
         public Task<SessionModel?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {

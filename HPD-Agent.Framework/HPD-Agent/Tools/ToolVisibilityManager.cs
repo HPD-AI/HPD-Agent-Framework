@@ -247,31 +247,6 @@ public class ToolVisibilityManager
         return Array.Empty<string>();
     }
 
-    /// <summary>
-    /// Checks if a skill container has documents attached.
-    /// </summary>
-    private bool HasDocuments(AIFunction skillContainer)
-    {
-        if (skillContainer.AdditionalProperties == null)
-            return false;
-
-        // Check for DocumentUploads
-        if (skillContainer.AdditionalProperties.TryGetValue("DocumentUploads", out var uploadsObj) &&
-            uploadsObj is Array uploadsArray && uploadsArray.Length > 0)
-        {
-            return true;
-        }
-
-        // Check for DocumentReferences
-        if (skillContainer.AdditionalProperties.TryGetValue("DocumentReferences", out var refsObj) &&
-            refsObj is Array refsArray && refsArray.Length > 0)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
     private string ExtractFunctionName(string reference)
     {
         // "ToolkitName.FunctionName" -> "FunctionName"
@@ -491,8 +466,7 @@ public class ToolVisibilityManager
     ///   - If Toolkit has [Collapse] container AND not expanded → HIDDEN
     /// PRIORITY 2: Explicit registration check (always show if explicitly registered)
     /// PRIORITY 3: Skill reference check (show if any referencing skill is expanded)
-    /// PRIORITY 4: Special case - read_skill_document
-    /// PRIORITY 5: Orphan check (hide functions in implicitly-registered Toolkits that aren't referenced)
+    /// PRIORITY 4: Orphan check (hide functions in implicitly-registered Toolkits that aren't referenced)
     /// DEFAULT: Non-Collapsed, non-referenced, non-orphan functions are always visible
     /// </summary>
     private FunctionVisibility GetFunctionVisibility(AIFunction function, VisibilityContext context)
@@ -562,36 +536,7 @@ public class ToolVisibilityManager
             return FunctionVisibility.Hidden;
         }
 
-        // PRIORITY 4: Special handling for read_skill_document
-        if (functionName.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase) ||
-            functionName.Equals("ReadSkillDocument", StringComparison.OrdinalIgnoreCase))
-        {
-            // This function should only be visible when a skill with documents is expanded
-            bool anySkillWithDocumentsExpanded = context.ExpandedSkillContainers.Any(skillName =>
-            {
-                // Find the skill container
-                var skillContainer = context.AllTools.FirstOrDefault(t =>
-                    GetContainerType(t) == ContainerType.SkillMethodContainer &&
-                    GetSkillName(t).Equals(skillName, StringComparison.OrdinalIgnoreCase));
-
-                if (skillContainer == null) return false;
-
-                // Check if skill has documents
-                return HasDocuments(skillContainer);
-            });
-
-            if (anySkillWithDocumentsExpanded)
-            {
-                _logger?.LogDebug($"[VISIBILITY] Function {functionName}: VISIBLE (skill with documents expanded)");
-                return FunctionVisibility.ExpandedSkill;
-            }
-
-            // If no skill with documents is expanded, function is hidden
-            _logger?.LogDebug($"[VISIBILITY] Function {functionName}: HIDDEN (no skill with documents expanded)");
-            return FunctionVisibility.Hidden;
-        }
-
-        // PRIORITY 5: Orphan check
+        // PRIORITY 4: Orphan check
         if (parentToolkit != null && context.ToolkitsWithCollapsedSkills.Contains(parentToolkit))
         {
             // This function is in a Toolkit that was auto-registered via Collapsed skills

@@ -609,11 +609,24 @@ namespace HPD.Agent.Diagnostics {{
             sb.AppendLine($"                // ========== OPENAPI SOURCES ==========");
             if (Toolkit.OpenApiCapabilities.Any())
             {
-                sb.AppendLine($"                CollectOpenApiSources: {Toolkit.Name}Registration.CollectOpenApiSources");
+                sb.AppendLine($"                CollectOpenApiSources: {Toolkit.Name}Registration.CollectOpenApiSources,");
             }
             else
             {
-                sb.AppendLine($"                CollectOpenApiSources: null");
+                sb.AppendLine($"                CollectOpenApiSources: null,");
+            }
+
+            // V3: Content store document initialization
+            sb.AppendLine($"                // ========== V3 CONTENT STORE DOCUMENTS ==========");
+            var hasSkillDocs = Toolkit.SkillCapabilities.Any(s =>
+                s.Options.DocumentUploads.Any() || s.Options.DocumentReferences.Any());
+            if (hasSkillDocs)
+            {
+                sb.AppendLine($"                InitializeDocumentsAsync: {Toolkit.Name}Registration.InitializeDocumentsAsync");
+            }
+            else
+            {
+                sb.AppendLine($"                InitializeDocumentsAsync: null");
             }
 
             sb.AppendLine($"            ),");
@@ -900,8 +913,6 @@ namespace HPD.Agent.Diagnostics {{
         sb.AppendLine("using Microsoft.Extensions.AI;");
         sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Text;");
-        sb.AppendLine("using HPD.Agent.Skills.DocumentStore;");
-
         // Add HPD.Agent namespace for AgentBuilder, ConversationThread, etc.
         sb.AppendLine("using HPD.Agent;");
 

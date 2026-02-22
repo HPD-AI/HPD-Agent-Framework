@@ -245,15 +245,15 @@ public class JsonSessionStore : ISessionStore
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // ASSET STORAGE (Binary Content - session-scoped)
+    // CONTENT STORAGE (Session-Scoped)
     // ═══════════════════════════════════════════════════════════════════
 
     /// <inheritdoc />
-    public IAssetStore? GetAssetStore(string sessionId)
+    public IContentStore? GetContentStore(string sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        return new LocalFileAssetStore(Path.Combine(_basePath, sessionId, "assets"));
+        return new LocalFileContentStore(Path.Combine(_basePath, sessionId, "content"));
     }
 
     // ═══════════════════════════════════════════════════════════════════

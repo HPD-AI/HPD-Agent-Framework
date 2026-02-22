@@ -151,7 +151,7 @@ internal sealed class FakeSessionStore : ISessionStore
     public Task<UncommittedTurn?> LoadUncommittedTurnAsync(string sessionId, CancellationToken ct = default) => Task.FromResult<UncommittedTurn?>(null);
     public Task SaveUncommittedTurnAsync(UncommittedTurn turn, CancellationToken ct = default) => Task.CompletedTask;
     public Task DeleteUncommittedTurnAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
-    public IAssetStore? GetAssetStore(string sessionId) => null;
+    public IContentStore? GetContentStore(string sessionId) => null;
     public Task<int> DeleteInactiveSessionsAsync(TimeSpan threshold, bool dryRun = false, CancellationToken ct = default) => Task.FromResult(0);
 }
 

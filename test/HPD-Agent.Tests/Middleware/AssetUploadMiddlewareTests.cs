@@ -71,7 +71,8 @@ public class AssetUploadMiddlewareTests
     public async Task BeforeMessageTurnAsync_WithDataContent_TransformsToUriContent()
     {
         // Arrange
-        var middleware = new AssetUploadMiddleware();
+        var contentStore = new InMemoryContentStore();
+        var middleware = new AssetUploadMiddleware(contentStore);
         var store = new InMemorySessionStore();
         var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
         session.Store = store;
@@ -131,7 +132,7 @@ public class AssetUploadMiddlewareTests
     public async Task BeforeMessageTurnAsync_MultipleDataContents_TransformsAll()
     {
         // Arrange
-        var middleware = new AssetUploadMiddleware();
+        var middleware = new AssetUploadMiddleware(new InMemoryContentStore());
         var store = new InMemorySessionStore();
         var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
         session.Store = store;
@@ -223,7 +224,8 @@ public class AssetUploadMiddlewareTests
     public async Task BeforeMessageTurnAsync_AssetStoreReturnsId_CreatesCorrectUri()
     {
         // Arrange
-        var middleware = new AssetUploadMiddleware();
+        var contentStore = new InMemoryContentStore();
+        var middleware = new AssetUploadMiddleware(contentStore);
         var store = new InMemorySessionStore();
         var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
         session.Store = store;
@@ -243,9 +245,8 @@ public class AssetUploadMiddlewareTests
         var uriContent = (UriContent)context.UserMessage.Contents[0];
         var assetId = uriContent.Uri.Host;
 
-        // Verify we can retrieve the asset
-        var assetStore = store.GetAssetStore(session.Id)!;
-        var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
+        // Verify we can retrieve the asset directly from the content store
+        var retrievedAsset = await contentStore.GetAsync(session.Id, assetId, CancellationToken.None);
         Assert.NotNull(retrievedAsset);
         Assert.Equal(imageBytes, retrievedAsset.Data);
         Assert.Equal("image/png", retrievedAsset.ContentType);
@@ -255,7 +256,8 @@ public class AssetUploadMiddlewareTests
     public async Task BeforeMessageTurnAsync_OctetStreamMediaType_PreservesContentType()
     {
         // Arrange
-        var middleware = new AssetUploadMiddleware();
+        var contentStore = new InMemoryContentStore();
+        var middleware = new AssetUploadMiddleware(contentStore);
         var store = new InMemorySessionStore();
         var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
         session.Store = store;
@@ -274,8 +276,7 @@ public class AssetUploadMiddlewareTests
         Assert.NotNull(context.UserMessage);
         var uriContent = (UriContent)context.UserMessage.Contents[0];
         var assetId = uriContent.Uri.Host;
-        var assetStore = store.GetAssetStore(session.Id)!;
-        var retrievedAsset = await assetStore.GetAsync(session.Id, assetId, CancellationToken.None);
+        var retrievedAsset = await contentStore.GetAsync(session.Id, assetId, CancellationToken.None);
 
         Assert.NotNull(retrievedAsset);
         Assert.Equal("application/octet-stream", retrievedAsset.ContentType);
@@ -310,7 +311,7 @@ public class AssetUploadMiddlewareTests
     // Test session store without asset support
     private class TestSessionStoreWithoutAssets : ISessionStore
     {
-        public IAssetStore? GetAssetStore(string sessionId) => null; // No asset store
+        public IContentStore? GetContentStore(string sessionId) => null; // No content store
 
         public Task<SessionModel?> LoadSessionAsync(string sessionId, CancellationToken cancellationToken = default)
             => Task.FromResult<SessionModel?>(new SessionModel(sessionId));

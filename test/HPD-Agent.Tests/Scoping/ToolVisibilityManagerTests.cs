@@ -366,9 +366,6 @@ public class ToolVisibilityManagerTests
             tools.AddRange(CreateSkills(skillsHaveCollapse ? "FinancialAnalysisSkills" : null));
         }
 
-        // Add non-Collapsed function
-        tools.Add(CreateNonCollapsedFunction("ReadSkillDocument"));
-
         return tools;
     }
 
@@ -498,21 +495,6 @@ public class ToolVisibilityManagerTests
             });
     }
 
-    private AIFunction CreateReadSkillDocumentFunction()
-    {
-        return AIFunctionFactory.Create(
-            (object? args, CancellationToken ct) => Task.FromResult<object?>("Document content"),
-            new AIFunctionFactoryOptions
-            {
-                Name = "read_skill_document",
-                Description = "Read a skill document by ID",
-                AdditionalProperties = new Dictionary<string, object>
-                {
-                    ["ParentToolkit"] = "DocumentRetrievalToolkit"
-                }
-            });
-    }
-
     private IEnumerable<AIFunction> CreateSkillsWithDocuments(string? parentCollapse, bool withDocuments)
     {
         var skillNames = new[]
@@ -559,176 +541,6 @@ public class ToolVisibilityManagerTests
                     AdditionalProperties = props
                 });
         });
-    }
-
-    #endregion
-
-    #region read_skill_document Conditional Visibility Tests
-
-    [Fact]
-    public void ReadSkillDocument_NotVisible_WhenNoSkillsExpanded()
-    {
-        // Arrange: Skills with documents exist, but none expanded
-        var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
-        tools.Add(CreateReadSkillDocumentFunction());
-        tools.AddRange(CreateToolkitFunctions("FinancialAnalysisToolkit"));
-
-        var explicitToolkits = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "FinancialAnalysisToolkit");
-
-        var manager = new ToolVisibilityManager(tools, explicitToolkits);
-
-        // Act: No skills expanded
-        var visibleTools = manager.GetToolsForAgentTurn(
-            tools.ToList(),
-            ImmutableHashSet<string>.Empty,
-            ImmutableHashSet<string>.Empty);
-
-        // Assert: read_skill_document should NOT be visible
-        visibleTools.Should().NotContain(t =>
-            t.Name.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void ReadSkillDocument_Visible_WhenSkillWithDocumentsExpanded()
-    {
-        // Arrange: Skill with documents
-        var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
-        tools.Add(CreateReadSkillDocumentFunction());
-        tools.AddRange(CreateToolkitFunctions("FinancialAnalysisToolkit"));
-
-        var explicitToolkits = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "FinancialAnalysisToolkit");
-
-        var manager = new ToolVisibilityManager(tools, explicitToolkits);
-
-        // Act: Expand skill that has documents
-        var ExpandedSkillContainers = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "QuickLiquidityAnalysis");
-
-        var visibleTools = manager.GetToolsForAgentTurn(
-            tools.ToList(),
-            ImmutableHashSet<string>.Empty,
-            ExpandedSkillContainers);
-
-        // Assert: read_skill_document SHOULD be visible
-        visibleTools.Should().Contain(t =>
-            t.Name.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void ReadSkillDocument_NotVisible_WhenSkillWithoutDocumentsExpanded()
-    {
-        // Arrange: Skills WITHOUT documents
-        var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: false));
-        tools.Add(CreateReadSkillDocumentFunction());
-        tools.AddRange(CreateToolkitFunctions("FinancialAnalysisToolkit"));
-
-        var explicitToolkits = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "FinancialAnalysisToolkit");
-
-        var manager = new ToolVisibilityManager(tools, explicitToolkits);
-
-        // Act: Expand skill that has NO documents
-        var ExpandedSkillContainers = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "QuickLiquidityAnalysis");
-
-        var visibleTools = manager.GetToolsForAgentTurn(
-            tools.ToList(),
-            ImmutableHashSet<string>.Empty,
-            ExpandedSkillContainers);
-
-        // Assert: read_skill_document should NOT be visible (skill has no documents)
-        visibleTools.Should().NotContain(t =>
-            t.Name.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void ReadSkillDocument_VisibleOnce_WhenMultipleSkillsWithDocumentsExpanded()
-    {
-        // Arrange: Multiple skills with documents
-        var tools = new List<AIFunction>();
-        tools.AddRange(CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true));
-        tools.Add(CreateReadSkillDocumentFunction());
-        tools.AddRange(CreateToolkitFunctions("FinancialAnalysisToolkit"));
-
-        var explicitToolkits = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "FinancialAnalysisToolkit");
-
-        var manager = new ToolVisibilityManager(tools, explicitToolkits);
-
-        // Act: Expand BOTH skills that have documents
-        var ExpandedSkillContainers = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "QuickLiquidityAnalysis",
-            "CapitalStructureAnalysis");
-
-        var visibleTools = manager.GetToolsForAgentTurn(
-            tools.ToList(),
-            ImmutableHashSet<string>.Empty,
-            ExpandedSkillContainers);
-
-        // Assert: read_skill_document appears exactly once (deduplicated)
-        var readDocCount = visibleTools.Count(t =>
-            t.Name.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase));
-        readDocCount.Should().Be(1);
-    }
-
-    [Fact]
-    public void ReadSkillDocument_Visible_WhenMixedSkillsExpandedButOneHasDocuments()
-    {
-        // Arrange: Mix of skills with and without documents
-        var tools = new List<AIFunction>();
-        var skillsWithDocs = CreateSkillsWithDocuments(parentCollapse: null, withDocuments: true).ToList();
-        var skillsWithoutDocs = CreateSkillsWithDocuments(parentCollapse: null, withDocuments: false)
-            .Select(s =>
-            {
-                // Rename to avoid conflicts
-                var name = s.Name + "_NoDoc";
-                return AIFunctionFactory.Create(
-                    (object? args, CancellationToken ct) => Task.FromResult<object?>($"{name} executed"),
-                    new AIFunctionFactoryOptions
-                    {
-                        Name = name,
-                        Description = $"{name} skill",
-                        AdditionalProperties = s.AdditionalProperties
-                    });
-            }).ToList();
-
-        tools.AddRange(skillsWithDocs);
-        tools.AddRange(skillsWithoutDocs);
-        tools.Add(CreateReadSkillDocumentFunction());
-        tools.AddRange(CreateToolkitFunctions("FinancialAnalysisToolkit"));
-
-        var explicitToolkits = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "FinancialAnalysisToolkit");
-
-        var manager = new ToolVisibilityManager(tools, explicitToolkits);
-
-        // Act: Expand one skill WITH documents and one WITHOUT
-        var ExpandedSkillContainers = ImmutableHashSet.Create(
-            StringComparer.OrdinalIgnoreCase,
-            "QuickLiquidityAnalysis", // Has documents
-            "QuickLiquidityAnalysis_NoDoc"); // No documents
-
-        var visibleTools = manager.GetToolsForAgentTurn(
-            tools.ToList(),
-            ImmutableHashSet<string>.Empty,
-            ExpandedSkillContainers);
-
-        // Assert: read_skill_document SHOULD be visible (at least one skill has documents)
-        visibleTools.Should().Contain(t =>
-            t.Name.Equals("read_skill_document", StringComparison.OrdinalIgnoreCase));
     }
 
     #endregion

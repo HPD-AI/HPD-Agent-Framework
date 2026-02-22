@@ -53,8 +53,7 @@
   <Project Path="HPD-Agent.CLI/HPD-Agent.CLI.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
-  <Project Path="HPD-Agent.Framework/HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
-  <Project Path="HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
+<Project Path="HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.Sandbox.Local/HPD-Agent.Sandbox.Local.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj" />

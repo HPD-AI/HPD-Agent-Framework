@@ -1,41 +1,24 @@
 namespace HPD.Agent;
 
 /// <summary>
-/// Base interface for all content storage systems in the framework.
-/// Provides common Put/Get/Delete/Query operations that all stores implement.
+/// Unified content storage interface for the framework.
+/// Provides Put/Get/Delete/Query operations with scope-based isolation.
 /// </summary>
 /// <remarks>
-/// <para><b>Design Philosophy:</b></para>
+/// <para><b>V3 Design:</b></para>
 /// <para>
-/// IContentStore defines the minimum common interface shared by all content systems:
-/// assets, static memory, dynamic memory, and skill documents. Each store extends
-/// this base with specialized methods (text extraction, skill linking, etc.).
-/// </para>
-///
-/// <para><b>Scoping Strategy (V2):</b></para>
-/// <para>
-/// Scoping is now explicit via the scope parameter in all methods. Scope semantics vary by store type:
+/// One store, one interface. Scope and folder tags determine isolation:
 /// </para>
 /// <list type="bullet">
-/// <item><b>IAssetStore:</b> scope = sessionId (per-session isolation)</item>
-/// <item><b>StaticMemoryStore:</b> scope = agentName (per-agent knowledge)</item>
-/// <item><b>DynamicMemoryStore:</b> scope = agentName (per-agent memory)</item>
-/// <item><b>IInstructionDocumentStore:</b> scope = null (global, no scoping)</item>
+/// <item><b>scope = agentName, folder = /skills</b> — skill instruction documents</item>
+/// <item><b>scope = agentName, folder = /knowledge</b> — agent knowledge base</item>
+/// <item><b>scope = agentName, folder = /memory</b> — agent working memory</item>
+/// <item><b>scope = sessionId, folder = /uploads</b> — user-uploaded files (ephemeral)</item>
+/// <item><b>scope = sessionId, folder = /artifacts</b> — agent-generated outputs (ephemeral)</item>
 /// </list>
 /// <para>
 /// Pass scope=null to QueryAsync to search across ALL scopes.
 /// </para>
-///
-/// <para><b>Content Types:</b></para>
-/// <para>
-/// All content is stored as bytes with a MIME type. Stores may apply processing:
-/// </para>
-/// <list type="bullet">
-/// <item><b>IAssetStore:</b> Raw binary (image/jpeg, audio/mp3, application/pdf)</item>
-/// <item><b>StaticMemoryStore:</b> UTF-8 text (text/plain, text/markdown, text/html)</item>
-/// <item><b>DynamicMemoryStore:</b> UTF-8 text (text/plain, application/json)</item>
-/// <item><b>IInstructionDocumentStore:</b> UTF-8 text (text/plain, text/markdown)</item>
-/// </list>
 /// </remarks>
 public interface IContentStore
 {
@@ -43,25 +26,20 @@ public interface IContentStore
     /// Store content in the given scope and return a unique identifier.
     /// </summary>
     /// <param name="scope">
-    /// Scope identifier. Semantics vary by store type:
-    /// - IAssetStore: sessionId (per-session isolation)
-    /// - StaticMemoryStore: agentName (per-agent knowledge)
-    /// - DynamicMemoryStore: agentName (per-agent memory)
-    /// - IInstructionDocumentStore: null (global, no scoping)
+    /// Scope identifier for isolation (e.g., agentName or sessionId).
+    /// Pass null for global content visible to all agents.
     /// </param>
     /// <param name="data">Content bytes (binary or UTF-8 text)</param>
     /// <param name="contentType">MIME type (e.g., "image/jpeg", "text/plain")</param>
-    /// <param name="metadata">Optional metadata (tags, origin, description, etc.)</param>
+    /// <param name="metadata">Optional metadata (tags, origin, description, name, etc.)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Unique content identifier for later retrieval</returns>
     /// <remarks>
-    /// <para><b>Idempotency:</b></para>
+    /// <para><b>Named Upsert:</b></para>
     /// <para>
-    /// Behavior varies by store:
-    /// - IAssetStore: Always creates new entry (no deduplication)
-    /// - StaticMemoryStore: Creates new entry
-    /// - DynamicMemoryStore: Creates new memory
-    /// - IInstructionDocumentStore: Idempotent (same content = no-op, returns existing ID)
+    /// When <see cref="ContentMetadata.Name"/> is provided, behaves as an upsert keyed on (scope, Name):
+    /// same name + same content hash = no-op; same name + changed content = overwrite.
+    /// When Name is null, always creates a new entry (unnamed insert — correct for uploads/artifacts).
     /// </para>
     /// </remarks>
     Task<string> PutAsync(
@@ -75,13 +53,7 @@ public interface IContentStore
     /// Retrieve content by identifier within the given scope.
     /// Returns null if not found.
     /// </summary>
-    /// <param name="scope">
-    /// Scope identifier. Semantics vary by store type:
-    /// - IAssetStore: sessionId (per-session isolation)
-    /// - StaticMemoryStore: agentName (per-agent knowledge)
-    /// - DynamicMemoryStore: agentName (per-agent memory)
-    /// - IInstructionDocumentStore: null (global, no scoping)
-    /// </param>
+    /// <param name="scope">Scope identifier (e.g., agentName or sessionId). Pass null for global scope.</param>
     /// <param name="contentId">Content identifier returned by PutAsync</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Content data, or null if not found</returns>
@@ -94,13 +66,7 @@ public interface IContentStore
     /// Delete content by identifier within the given scope.
     /// Idempotent - no-op if content doesn't exist.
     /// </summary>
-    /// <param name="scope">
-    /// Scope identifier. Semantics vary by store type:
-    /// - IAssetStore: sessionId (per-session isolation)
-    /// - StaticMemoryStore: agentName (per-agent knowledge)
-    /// - DynamicMemoryStore: agentName (per-agent memory)
-    /// - IInstructionDocumentStore: null (global, no scoping)
-    /// </param>
+    /// <param name="scope">Scope identifier (e.g., agentName or sessionId). Pass null for global scope.</param>
     /// <param name="contentId">Content identifier to delete</param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task DeleteAsync(
@@ -112,14 +78,7 @@ public interface IContentStore
     /// Query content within the given scope with optional filters.
     /// Returns metadata only (not full content bytes).
     /// </summary>
-    /// <param name="scope">
-    /// Scope identifier. Semantics vary by store type:
-    /// - IAssetStore: sessionId (per-session isolation)
-    /// - StaticMemoryStore: agentName (per-agent knowledge)
-    /// - DynamicMemoryStore: agentName (per-agent memory)
-    /// - IInstructionDocumentStore: null (global, no scoping)
-    /// Pass null to query across ALL scopes.
-    /// </param>
+    /// <param name="scope">Scope identifier (e.g., agentName or sessionId). Pass null to query across ALL scopes.</param>
     /// <param name="query">Optional query filters (null = return all content in scope)</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of content metadata matching query within scope</returns>
@@ -140,15 +99,6 @@ public interface IContentStore
 /// Metadata provided when storing content.
 /// All fields are optional - stores may compute defaults.
 /// </summary>
-/// <remarks>
-/// <para><b>Metadata Mapping by Store:</b></para>
-/// <list type="bullet">
-/// <item><b>IAssetStore:</b> Name defaults to AssetId (current impl has no name/description/tags)</item>
-/// <item><b>StaticMemoryStore:</b> Name = FileName, Origin = User (implicit), Tags supported</item>
-/// <item><b>DynamicMemoryStore:</b> Name = Title, Description/Tags/Origin = null (not in current model)</item>
-/// <item><b>IInstructionDocumentStore:</b> Full metadata support (Name, Description, Origin)</item>
-/// </list>
-/// </remarks>
 public record ContentMetadata
 {
     /// <summary>

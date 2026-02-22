@@ -58,8 +58,8 @@ public class AgentBuilder
     public readonly List<ToolInstanceRegistration> _instanceRegistrations = new();
     // store individual Toolkit contexts
     internal readonly Dictionary<string, IToolMetadata?> _toolkitContexts = new();
-    // Phase 5: Document store for skill instruction documents
-    internal HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore? _documentStore;
+    // V3: Unified content store for all agent content (skills, knowledge, memory, uploads, artifacts)
+    internal IContentStore? _contentStore;
     // Track explicitly registered Toolkits (for Collapsing manager)
     internal readonly HashSet<string> _explicitlyRegisteredToolkits = new(StringComparer.OrdinalIgnoreCase);
     internal readonly List<Middleware.IAgentMiddleware> _middlewares = new(); // Unified middleware list
@@ -997,15 +997,63 @@ public class AgentBuilder
         return this;
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // V3: Unified Content Store
+    // ═══════════════════════════════════════════════════════════════════
+
     /// <summary>
-    /// Sets the document store for skill instruction documents.
-    /// Phase 5: Required for skills that use AddDocument(), AddDocumentFromFile(), or AddDocumentFromUrl().
-    /// Documents are uploaded and validated during Build().
+    /// Configure a custom content store for this agent.
+    /// The store provides unified storage for skills, knowledge, memory, uploads, and artifacts.
+    /// Use <see cref="UseDefaultContentStore"/> for automatic default folder setup.
     /// </summary>
-    /// <param name="documentStore">Document store implementation (InMemoryInstructionStore, FileSystemInstructionStore, etc.)</param>
-    public AgentBuilder WithDocumentStore(HPD.Agent.Skills.DocumentStore.IInstructionDocumentStore documentStore)
+    public AgentBuilder WithContentStore(IContentStore store)
     {
-        _documentStore = documentStore ?? throw new ArgumentNullException(nameof(documentStore));
+        _contentStore = store ?? throw new ArgumentNullException(nameof(store));
+        return this;
+    }
+
+    /// <summary>
+    /// Configure the content store with default folders (/skills, /knowledge, /memory)
+    /// and auto-register FolderDiscoveryMiddleware and ContentStoreToolkit.
+    /// This is the recommended one-liner for enabling the V3 content store system.
+    /// </summary>
+    /// <param name="store">
+    /// Optional custom store. Defaults to InMemoryContentStore if not provided.
+    /// For production use, pass a LocalFileContentStore or custom implementation.
+    /// </param>
+    public AgentBuilder UseDefaultContentStore(IContentStore? store = null)
+    {
+        _contentStore = store ?? new InMemoryContentStore();
+
+        // Register default folders
+        _contentStore.CreateFolder("skills", new FolderOptions
+        {
+            Permissions = ContentPermissions.Read,
+            Description = "Agent skill instructions and documentation"
+        });
+        _contentStore.CreateFolder("knowledge", new FolderOptions
+        {
+            Permissions = ContentPermissions.Read,
+            Description = "Agent knowledge base and expertise"
+        });
+        _contentStore.CreateFolder("memory", new FolderOptions
+        {
+            Permissions = ContentPermissions.ReadWrite,
+            Description = "Agent working memory and context"
+        });
+
+        // Auto-register FolderDiscoveryMiddleware and ContentStoreToolkit
+        var toolkit = new ContentStoreToolkit(_contentStore, AgentName ?? "agent");
+        var discoveryMiddleware = new Middleware.FolderDiscoveryMiddleware(_contentStore, AgentName);
+        discoveryMiddleware.SetToolkit(toolkit);
+
+        _middlewares.Add(discoveryMiddleware);
+        // FolderDiscoveryMiddleware propagates session ID to the toolkit via SetToolkit link.
+
+        // Register toolkit for AI function exposure
+        _instanceRegistrations.Add(new ToolInstanceRegistration(toolkit, nameof(ContentStoreToolkit)));
+        _toolkitContexts[nameof(ContentStoreToolkit)] = null;
+
         return this;
     }
 
@@ -1882,10 +1930,10 @@ public class AgentBuilder
             });
         }
 
-        // Register AssetUploadMiddleware ALWAYS (before iteration)
-        // This transforms DataContent → UriContent for efficient storage
-        // Safe because it checks session.Store.GetAssetStore(sessionId) at runtime (zero cost if null)
-        _middlewares.Add(new Middleware.AssetUploadMiddleware());
+        // Register AssetUploadMiddleware with the agent-level content store (if configured).
+        // Transforms DataContent → UriContent for efficient storage.
+        // Zero-cost when _contentStore is null (no-op middleware).
+        _middlewares.Add(new Middleware.AssetUploadMiddleware(_contentStore));
 
         // Register ImageMiddleware ALWAYS with default PassThrough strategy
         // Allows images to flow to vision models without processing
@@ -2239,20 +2287,19 @@ public class AgentBuilder
     [RequiresUnreferencedCode("MCP tool loading via reflection. Requires HPD.Agent.MCP types preserved.")]
     private async Task<AgentBuildDependencies> BuildDependenciesAsync(CancellationToken cancellationToken)
     {
-        // === : PROCESS SKILL DOCUMENTS (Before provider validation) ===
-        // This happens early so documents can be uploaded even if provider config is invalid
-        // Matches the StaticMemory pattern where documents are uploaded during WithStaticMemory()
-        // See: Comparison with StaticMemory in architecture docs
-        await ProcessSkillDocumentsAsync(cancellationToken).ConfigureAwait(false);
-
-        // Auto-register document retrieval Toolkit if document store is present
-        if (_documentStore != null)
+        // === V3: INITIALIZE SKILL DOCUMENTS VIA CONTENT STORE ===
+        // Each toolkit registration class with skill documents generates InitializeDocumentsAsync.
+        // Idempotent: same document ID + same content hash = no-op (startup-safe).
+        if (_contentStore != null)
         {
-            var toolName = "DocumentRetrievalToolkit";
-            if (_availableToolkits.TryGetValue(toolName, out var factory) &&
-                !_selectedToolkitFactories.Any(f => f.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+            var docLogger = _logger?.CreateLogger<AgentBuilder>();
+            foreach (var factory in _selectedToolkitFactories)
             {
-                _selectedToolkitFactories.Add(factory);
+                if (factory.InitializeDocumentsAsync != null)
+                {
+                    docLogger?.LogDebug("Initializing skill documents for toolkit {Toolkit}", factory.Name);
+                    await factory.InitializeDocumentsAsync(_contentStore, cancellationToken).ConfigureAwait(false);
+                }
             }
         }
 
@@ -2650,325 +2697,6 @@ public class AgentBuilder
             openApiResult?.OwnedHttpClients.Count > 0 ? openApiResult.OwnedHttpClients : null);
     }
 
-    /// <summary>
-    /// Phase 5: Process skill documents - upload files and validate references.
-    /// Extracts document metadata from skill containers and processes them.
-    /// If no document store is configured, creates a default FileSystemInstructionStore.
-    /// </summary>
-    [RequiresUnreferencedCode("Skill document processing uses reflection-based Toolkit catalog.")]
-    private async Task ProcessSkillDocumentsAsync(CancellationToken cancellationToken)
-    {
-        var logger = _logger?.CreateLogger<AgentBuilder>();
-        logger?.LogInformation("Starting skill document processing");
-
-        // ==========  Collect skill containers ==========
-        // Use the catalog-based function creation (same as Build() uses)
-        var skillContainers = new List<AIFunction>();
-        var allFunctions = CreateFunctionsFromCatalog();
-
-        // Filter to only skill containers
-        foreach (var function in allFunctions)
-        {
-            if (function.AdditionalProperties?.TryGetValue("IsSkill", out var isSkill) == true &&
-                isSkill is bool isSkillBool && isSkillBool)
-            {
-                skillContainers.Add(function);
-            }
-        }
-
-        if (skillContainers.Count == 0)
-        {
-            logger?.LogDebug("No skills found");
-            return;
-        }
-
-        // ========== PHASE 2: Collect document uploads and references ==========
-        var documentUploads = new List<(string SkillName, string DocumentId, string FilePath, string Description)>();
-        var documentReferences = new List<(string SkillName, string DocumentId, string? DescriptionOverride)>();
-
-        foreach (var skillContainer in skillContainers)
-        {
-            var skillName = skillContainer.Name ?? "Unknown";
-
-            // Collect document uploads using type-safe SkillDocuments property
-            if (skillContainer is HPDAIFunctionFactory.HPDAIFunction hpdFunction &&
-                hpdFunction.SkillDocuments?.Any() == true)
-            {
-                foreach (var doc in hpdFunction.SkillDocuments)
-                {
-                    // Handle both file-based and URL-based documents
-                    var filePath = doc.FilePath ?? doc.Url;
-                    if (!string.IsNullOrEmpty(filePath) && !string.IsNullOrEmpty(doc.Description))
-                    {
-                        documentUploads.Add((skillName, doc.DocumentId, filePath, doc.Description));
-                    }
-                }
-            }
-
-            // Collect document references (AddDocument)
-            if (skillContainer.AdditionalProperties?.TryGetValue("DocumentReferences", out var refsObj) == true &&
-                refsObj is Array refsArray)
-            {
-                foreach (var reference in refsArray)
-                {
-                    // Source generator creates Dictionary<string, string> for references
-                    if (reference is Dictionary<string, string> refDict)
-                    {
-                        if (refDict.TryGetValue("DocumentId", out var documentId) &&
-                            !string.IsNullOrEmpty(documentId))
-                        {
-                            refDict.TryGetValue("DescriptionOverride", out var descriptionOverride);
-                            documentReferences.Add((skillName, documentId, descriptionOverride));
-                        }
-                    }
-                }
-            }
-        }
-
-        // ========== CRITICAL CHECK: Do we have ANY documents? ==========
-        if (documentUploads.Count == 0 && documentReferences.Count == 0)
-        {
-            logger?.LogDebug("No documents found in any skills - document store not needed");
-            // IMPORTANT: Leave _documentStore as null so DocumentRetrievalToolkit is NOT registered
-            return;
-        }
-
-
-        // ========== PHASE 3: NOW create document store (only if needed) ==========
-        if (_documentStore == null)
-        {
-            var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "agent-skills", "skill-documents");
-            var storeLogger = _logger?.CreateLogger<HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore>()
-                ?? NullLogger<HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore>.Instance;
-            _documentStore = new HPD.Agent.Skills.DocumentStore.FileSystemInstructionStore(
-                storeLogger,
-                defaultPath);
-            logger?.LogInformation(
-                "No document store configured. Using default FileSystemInstructionStore at: {Path}",
-                defaultPath);
-        }
-        else
-        {
-        }
-
-        // ========== PHASE 4: Upload documents with deduplication ==========
-        // IMPORTANT: This is where we read files from the OS filesystem (not in the store!)
-        // The store only cares about content and where to persist it.
-        var uploadedDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-
-        foreach (var (skillName, documentId, filePath, description) in documentUploads)
-        {
-            // Skip duplicates (same document ID from multiple skills)
-            if (uploadedDocuments.Contains(documentId))
-            {
-                logger?.LogDebug("Skipping duplicate upload for document {DocumentId} (already uploaded)", documentId);
-                continue;
-            }
-
-            try
-            {
-                string content;
-
-                //  Step 1: Check if this is a URL or a file path
-                if (IsUrl(filePath))
-                {
-                    // Fetch content from URL
-                    try
-                    {
-                        using var httpClient = new HttpClient();
-                        httpClient.Timeout = TimeSpan.FromSeconds(30);
-                        content = await httpClient.GetStringAsync(filePath, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (HttpRequestException httpEx)
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to fetch document from URL '{filePath}' for skill '{skillName}': {httpEx.Message}",
-                            httpEx);
-                    }
-                    catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-                    {
-                        throw new InvalidOperationException(
-                            $"Timeout fetching document from URL '{filePath}' for skill '{skillName}'");
-                    }
-                }
-                else
-                {
-                    //  Step 1b: Resolve the file path with proper error handling
-                    var resolvedPath = ResolveDocumentPath(filePath, skillName);
-
-                    //  Step 2: Read file content (this is AgentBuilder's responsibility)
-                    try
-                    {
-                        content = await File.ReadAllTextAsync(resolvedPath, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (FileNotFoundException)
-                    {
-                        throw new FileNotFoundException(
-                            $"Document file '{filePath}' not found for skill '{skillName}'. " +
-                            $"Searched at: {resolvedPath}. " +
-                            $"Current working directory: {Directory.GetCurrentDirectory()}",
-                            filePath);
-                    }
-                    catch (Exception fileEx) when (fileEx is not OperationCanceledException)
-                    {
-                        throw new InvalidOperationException(
-                            $"Failed to read document file '{filePath}' for skill '{skillName}': {fileEx.Message}",
-                            fileEx);
-                    }
-                }
-
-                //  Step 3: Pass content (not path) to store
-                var metadata = new HPD.Agent.Skills.DocumentStore.DocumentMetadata
-                {
-                    Name = documentId,
-                    Description = description
-                };
-
-                await _documentStore!.UploadFromContentAsync(documentId, metadata, content, cancellationToken)
-                    .ConfigureAwait(false);
-
-                uploadedDocuments.Add(documentId);
-                logger?.LogInformation(
-                    "Uploaded document {DocumentId} from {Source} for skill {SkillName}",
-                    documentId, filePath, skillName);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                var message = $"Failed to upload document '{documentId}' from '{filePath}' for skill '{skillName}': {ex.Message}";
-                logger?.LogError(ex, message);
-                throw new InvalidOperationException(message, ex);
-            }
-        }
-
-        // ========== PHASE 5: Validate document references ==========
-        foreach (var (skillName, documentId, descriptionOverride) in documentReferences)
-        {
-            var exists = await _documentStore!.DocumentExistsAsync(documentId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (!exists)
-            {
-                var message = $"Document '{documentId}' referenced by skill '{skillName}' does not exist in store. " +
-                    "Either upload it with AddDocumentFromFile() in another skill, upload externally via CLI/API, " +
-                    "or ensure the skill that uploads it is registered.";
-                logger?.LogError(message);
-                throw new HPD.Agent.Skills.DocumentStore.DocumentNotFoundException(message, documentId);
-            }
-
-            logger?.LogDebug("Validated document reference {DocumentId} for skill {SkillName}", documentId, skillName);
-        }
-
-        // ========== PHASE 6: Link documents to skills in the store ==========
-        foreach (var skillContainer in skillContainers)
-        {
-            var skillName = skillContainer.Name ?? "Unknown";
-            var skillNamespace = $"{skillContainer.AdditionalProperties?["ParentContainer"]}";
-
-            // Collect all documents for this skill (uploads + references)
-            var skillDocuments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // Add uploads
-            foreach (var (sn, docId, _, _) in documentUploads.Where(u => u.SkillName == skillName))
-            {
-                skillDocuments.Add(docId);
-            }
-
-            // Add references
-            foreach (var (sn, docId, _) in documentReferences.Where(r => r.SkillName == skillName))
-            {
-                skillDocuments.Add(docId);
-            }
-
-            // Link each document to the skill
-            foreach (var documentId in skillDocuments)
-            {
-                try
-                {
-                    // Find description override for this skill-document pair
-                    var descriptionOverride = documentReferences
-                        .FirstOrDefault(r => r.SkillName == skillName && r.DocumentId == documentId)
-                        .DescriptionOverride;
-
-                    // Get default description from store
-                    var docMetadata = await _documentStore!.GetDocumentMetadataAsync(documentId, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    var skillDocMetadata = new HPD.Agent.Skills.DocumentStore.SkillDocumentMetadata
-                    {
-                        Description = descriptionOverride ?? docMetadata?.Description ?? "No description"
-                    };
-
-                    await _documentStore!.LinkDocumentToSkillAsync(
-                        skillNamespace,
-                        documentId,
-                        skillDocMetadata,
-                        cancellationToken).ConfigureAwait(false);
-
-                    logger?.LogDebug("Linked document {DocumentId} to skill {SkillName}", documentId, skillName);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "Failed to link document {DocumentId} to skill {SkillName}",
-                        documentId, skillName);
-                }
-            }
-        }
-
-        logger?.LogInformation(
-            "Successfully processed skill documents: {UploadCount} uploads, {ReferenceCount} references, {SkillCount} skills",
-            uploadedDocuments.Count, documentReferences.Count, skillContainers.Count);
-    }
-
-    #region Helper Methods
-
-    /// <summary>
-    /// Checks if a path is a URL (http:// or https://).
-    /// </summary>
-    private static bool IsUrl(string path)
-    {
-        return !string.IsNullOrEmpty(path) &&
-               (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
-    }
-
-    /// <summary>
-    /// Resolves a document file path relative to the current working directory.
-    /// This separates concerns: AgentBuilder resolves paths, Store handles persistence.
-    /// </summary>
-    private string ResolveDocumentPath(string filePath, string skillName)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("File path cannot be empty.", nameof(filePath));
-
-        // If absolute path, use as-is
-        if (Path.IsPathRooted(filePath))
-        {
-            return filePath;
-        }
-
-        // Resolve relative to current working directory
-        var resolvedPath = Path.GetFullPath(filePath);
-
-        return resolvedPath;
-    }
-
-    /// <summary>
-    /// Derives a document ID from a file path (matches SkillOptions.DeriveDocumentId)
-    /// </summary>
-    private static string DeriveDocumentId(string filePath)
-    {
-        // "./docs/debugging-workflow.md" -> "debugging-workflow"
-        var fileName = Path.GetFileNameWithoutExtension(filePath);
-
-        // Normalize to lowercase-kebab-case
-        return fileName.ToLowerInvariant()
-            .Replace(" ", "-")
-            .Replace("_", "-");
-    }
-
     public bool IsProviderRegistered(string providerKey) => _providerRegistry.IsRegistered(providerKey);
     
     public IReadOnlyCollection<string> GetAvailableProviders() => _providerRegistry.GetRegisteredProviders();
@@ -3122,8 +2850,6 @@ public class AgentBuilder
         get => _mcpClientManager;
         set => _mcpClientManager = value;
     }
-
-    #endregion
 
     /// <summary>
     /// Adds a native function to the agent (used by FFI layer for Rust, C++, etc.)

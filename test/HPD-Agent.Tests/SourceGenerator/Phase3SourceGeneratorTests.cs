@@ -98,14 +98,14 @@ namespace TestToolkits
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.NotNull(generatedCode);
 
-        // Assert: FilePath is correctly extracted from args[0]
-        Assert.Contains("FilePath = \"./docs/guide.md\"", generatedCode);
+        // Assert: FilePath is present in the generated comment
+        Assert.Contains("AddDocumentFromFile(\"./docs/guide.md\"", generatedCode);
 
-        // Assert: Description is correctly extracted from args[1]
-        Assert.Contains("Description = \"User documentation guide\"", generatedCode);
+        // Assert: Description is correctly passed to UploadSkillDocumentAsync
+        Assert.Contains("description: \"User documentation guide\"", generatedCode);
 
         // Assert: DocumentId is auto-derived (guide, from guide.md)
-        Assert.Contains("DocumentId = \"guide\"", generatedCode);
+        Assert.Contains("documentId: \"guide\"", generatedCode);
     }
 
     /// <summary>
@@ -145,11 +145,11 @@ namespace TestToolkits
         Assert.NotNull(generatedCode);
 
         // Assert: Explicit document ID is used
-        Assert.Contains("DocumentId = \"custom-id\"", generatedCode);
+        Assert.Contains("documentId: \"custom-id\"", generatedCode);
 
         // Assert: FilePath and Description are still correct
-        Assert.Contains("FilePath = \"./docs/file.pdf\"", generatedCode);
-        Assert.Contains("Description = \"Important document\"", generatedCode);
+        Assert.Contains("AddDocumentFromFile(\"./docs/file.pdf\"", generatedCode);
+        Assert.Contains("description: \"Important document\"", generatedCode);
     }
 
     /// <summary>
@@ -191,7 +191,7 @@ namespace TestToolkits
 
         // Assert: Document ID is auto-derived with correct transformations
         // "Debugging_Workflow.md" -> "debugging-workflow"
-        Assert.Contains("DocumentId = \"debugging-workflow\"", generatedCode);
+        Assert.Contains("documentId: \"debugging-workflow\"", generatedCode);
     }
 
     #endregion
@@ -239,14 +239,14 @@ namespace TestToolkits
         Assert.Empty(diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error));
         Assert.NotNull(generatedCode);
 
-        // Assert: URL is correctly extracted from args[0]
-        Assert.Contains("Url = \"https://docs.company.com/sops/financial-health.md\"", generatedCode);
+        // Assert: URL is present in the generated comment
+        Assert.Contains("AddDocumentFromUrl(\"https://docs.company.com/sops/financial-health.md\"", generatedCode);
 
-        // Assert: Description is correctly extracted from args[1]
-        Assert.Contains("Description = \"Financial health analysis procedures\"", generatedCode);
+        // Assert: Description is correctly passed to UploadSkillDocumentAsync
+        Assert.Contains("description: \"Financial health analysis procedures\"", generatedCode);
 
         // Assert: DocumentId is auto-derived from URL (financial-health)
-        Assert.Contains("DocumentId = \"financial-health\"", generatedCode);
+        Assert.Contains("documentId: \"financial-health\"", generatedCode);
     }
 
     /// <summary>
@@ -289,7 +289,7 @@ namespace TestToolkits
 
         // Assert: Document ID is auto-derived from URL filename
         // "Data_Privacy_Policy.pdf" -> "data-privacy-policy"
-        Assert.Contains("DocumentId = \"data-privacy-policy\"", generatedCode);
+        Assert.Contains("documentId: \"data-privacy-policy\"", generatedCode);
     }
 
     #endregion
@@ -343,19 +343,19 @@ namespace TestToolkits
         Assert.NotNull(generatedCode);
 
         // Assert: First document (file, auto-derived ID)
-        Assert.Contains("FilePath = \"./docs/accounting-standards.pdf\"", generatedCode);
-        Assert.Contains("Description = \"GAAP accounting standards\"", generatedCode);
-        Assert.Contains("DocumentId = \"accounting-standards\"", generatedCode);
+        Assert.Contains("AddDocumentFromFile(\"./docs/accounting-standards.pdf\"", generatedCode);
+        Assert.Contains("description: \"GAAP accounting standards\"", generatedCode);
+        Assert.Contains("documentId: \"accounting-standards\"", generatedCode);
 
         // Assert: Second document (URL, explicit ID)
-        Assert.Contains("Url = \"https://internal.com/policies/controls.md\"", generatedCode);
-        Assert.Contains("Description = \"Internal financial controls\"", generatedCode);
-        Assert.Contains("DocumentId = \"fin-controls\"", generatedCode);
+        Assert.Contains("AddDocumentFromUrl(\"https://internal.com/policies/controls.md\"", generatedCode);
+        Assert.Contains("description: \"Internal financial controls\"", generatedCode);
+        Assert.Contains("documentId: \"fin-controls\"", generatedCode);
 
         // Assert: Third document (file, explicit ID)
-        Assert.Contains("FilePath = \"./templates/balance_sheet.xlsx\"", generatedCode);
-        Assert.Contains("Description = \"Balance sheet template\"", generatedCode);
-        Assert.Contains("DocumentId = \"bs-template\"", generatedCode);
+        Assert.Contains("AddDocumentFromFile(\"./templates/balance_sheet.xlsx\"", generatedCode);
+        Assert.Contains("description: \"Balance sheet template\"", generatedCode);
+        Assert.Contains("documentId: \"bs-template\"", generatedCode);
     }
 
     #endregion
@@ -402,7 +402,7 @@ namespace TestToolkits
 
         // Assert: Document ID derived from host when no filename
         // "https://example.com" -> "example-com"
-        Assert.Contains("DocumentId = \"example-com\"", generatedCode);
+        Assert.Contains("documentId: \"example-com\"", generatedCode);
     }
 
     #endregion
@@ -449,13 +449,13 @@ namespace TestToolkits
         Assert.NotNull(generatedCode);
 
         // Assert: DocumentId is correctly extracted
-        Assert.Contains("DocumentId = \"existing-doc-id\"", generatedCode);
+        Assert.Contains("documentId: \"existing-doc-id\"", generatedCode);
 
         // Assert: Description override is correctly extracted
-        Assert.Contains("Description = \"Custom description for existing doc\"", generatedCode);
+        Assert.Contains("descriptionOverride: \"Custom description for existing doc\"", generatedCode);
 
-        // Assert: Document is in SkillDocuments array
-        Assert.Contains("SkillDocuments = new SkillDocumentContent[]", generatedCode);
+        // Assert: Document is registered via InitializeDocumentsAsync (V3 pattern)
+        Assert.Contains("InitializeDocumentsAsync", generatedCode);
     }
 
     /// <summary>
@@ -495,10 +495,10 @@ namespace TestToolkits
         Assert.NotNull(generatedCode);
 
         // Assert: DocumentId is correctly extracted
-        Assert.Contains("DocumentId = \"doc-id\"", generatedCode);
+        Assert.Contains("documentId: \"doc-id\"", generatedCode);
 
-        // Assert: Description is null when not provided
-        Assert.Contains("Description = null", generatedCode);
+        // Assert: Empty description when not provided
+        Assert.Contains("descriptionOverride: string.Empty", generatedCode);
     }
 
     /// <summary>
@@ -541,14 +541,14 @@ namespace TestToolkits
         Assert.NotNull(generatedCode);
 
         // Assert: All three document types are present
-        Assert.Contains("DocumentId = \"existing-doc\"", generatedCode);
-        Assert.Contains("Description = \"Reference to existing\"", generatedCode);
+        Assert.Contains("documentId: \"existing-doc\"", generatedCode);
+        Assert.Contains("descriptionOverride: \"Reference to existing\"", generatedCode);
 
-        Assert.Contains("FilePath = \"./local/file.pdf\"", generatedCode);
-        Assert.Contains("Description = \"Local file\"", generatedCode);
+        Assert.Contains("AddDocumentFromFile(\"./local/file.pdf\"", generatedCode);
+        Assert.Contains("description: \"Local file\"", generatedCode);
 
-        Assert.Contains("Url = \"https://example.com/doc.md\"", generatedCode);
-        Assert.Contains("Description = \"Remote file\"", generatedCode);
+        Assert.Contains("AddDocumentFromUrl(\"https://example.com/doc.md\"", generatedCode);
+        Assert.Contains("description: \"Remote file\"", generatedCode);
     }
 
     #endregion

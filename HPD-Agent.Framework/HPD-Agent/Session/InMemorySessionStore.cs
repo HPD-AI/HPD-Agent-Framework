@@ -22,18 +22,18 @@ public class InMemorySessionStore : ISessionStore
     private readonly ConcurrentDictionary<string, Session> _sessions = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, Branch>> _branches = new();
     private readonly ConcurrentDictionary<string, UncommittedTurn> _uncommittedTurns = new();
-    private readonly InMemoryAssetStore _assetStore;
+    private readonly InMemoryContentStore _contentStore;
 
     public InMemorySessionStore()
     {
-        _assetStore = new InMemoryAssetStore();
+        _contentStore = new InMemoryContentStore();
     }
 
     /// <inheritdoc />
-    public IAssetStore? GetAssetStore(string sessionId)
+    public IContentStore? GetContentStore(string sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        return _assetStore;
+        return _contentStore;
     }
 
     // ═══════════════════════════════════════════════════════════════════

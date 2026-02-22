@@ -14,3 +14,6 @@ using System.Runtime.CompilerServices;
 
 // Make internals visible to the OpenAPI test project (needed for AgentContext helpers)
 [assembly: InternalsVisibleTo("HPD-Agent.OpenApi.Tests")]
+
+// Make internals visible to the main test project (needed for Skill internals: ResolvedFunctionReferences, DocumentReferences, etc.)
+[assembly: InternalsVisibleTo("HPD-Agent.Tests")]

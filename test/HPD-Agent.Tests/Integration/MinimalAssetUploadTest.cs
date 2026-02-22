@@ -25,13 +25,14 @@ public class MinimalAssetUploadTest
             Assert.NotNull(session.Store);
             Assert.Same(store, session.Store);
 
-            // Create agent
+            // Create agent with content store so AssetUploadMiddleware can upload assets
             var chatClient = new FakeChatClient();
             chatClient.EnqueueTextResponse("Response");
 
             var agent = await new AgentBuilder()
                 .WithName("MinimalAgent")
                 .WithChatClient(chatClient)
+                .WithContentStore(store.GetContentStore("minimal-session")!)
                 .Build();
 
             // Create message with DataContent
@@ -59,7 +60,7 @@ public class MinimalAssetUploadTest
                 Console.WriteLine($"❌ NO AssetUploadedEvent!");
                 Console.WriteLine($"Total events: {events.Count}");
                 Console.WriteLine($"Session.Store: {session.Store != null}");
-                Console.WriteLine($"AssetStore: {session.Store?.GetAssetStore(session.Id) != null}");
+                Console.WriteLine($"ContentStore: {session.Store?.GetContentStore(session.Id) != null}");
                 foreach (var evt in events.Take(10))
                 {
                     Console.WriteLine($"  - {evt.GetType().Name}");

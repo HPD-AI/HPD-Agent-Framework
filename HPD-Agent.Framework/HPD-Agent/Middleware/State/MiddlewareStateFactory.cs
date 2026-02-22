@@ -20,7 +20,7 @@ namespace HPD.Agent;
 public record MiddlewareStateFactory(
     /// <summary>
     /// Fully-qualified type name used as the storage key.
-    /// Example: "HPD.Agent.Memory.PlanModePersistentStateData"
+    /// Example: "HPD.Agent.Planning.PlanModePersistentStateData"
     /// </summary>
     string FullyQualifiedName,
 
