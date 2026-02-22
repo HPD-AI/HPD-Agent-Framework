@@ -501,6 +501,7 @@ public class ProviderConfig
     public string ModelName { get; set; } = string.Empty;
     public string? ApiKey { get; set; }
     public string? Endpoint { get; set; }
+    [JsonIgnore] // ChatOptions contains non-serializable types (tools, response format, etc.)
     public ChatOptions? DefaultChatOptions { get; set; }
 
     /// <summary>

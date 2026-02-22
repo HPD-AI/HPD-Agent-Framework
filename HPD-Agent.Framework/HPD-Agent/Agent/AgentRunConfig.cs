@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Einstein Essibu. All rights reserved.
+// Copyright 2026 Einstein Essibu
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using System;
 using System.Collections.Generic;
@@ -490,6 +491,27 @@ public class AgentRunConfig
     /// </summary>
     [JsonIgnore]
     internal ChatToolMode? RuntimeToolMode { get; set; }
+
+    #endregion
+
+    #region Evaluation
+
+    /// <summary>
+    /// When true, EvaluationMiddleware skips all evaluation for this run.
+    /// Set automatically by RunEvals on every internal agent run to prevent
+    /// live evaluators from double-firing during batch evaluation.
+    /// </summary>
+    [JsonIgnore]
+    public bool DisableEvaluators { get; set; } = false;
+
+    /// <summary>
+    /// When true, indicates this AgentRunConfig was created by EvaluationMiddleware
+    /// to invoke a judge LLM. EvaluationMiddleware checks this flag first in
+    /// AfterMessageTurnAsync and returns immediately if set, preventing eval loops.
+    /// Only meaningful when the judge IChatClient is itself a wrapping Agent instance.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsInternalEvalJudgeCall { get; set; } = false;
 
     #endregion
 }

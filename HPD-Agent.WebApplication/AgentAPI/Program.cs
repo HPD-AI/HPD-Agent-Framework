@@ -1,8 +1,22 @@
 using HPD.Agent;
 using HPD.Agent.AspNetCore;
 using HPD.Agent.Memory;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateSlimBuilder(args);
+
+// Wire OpenTelemetry → Aspire dashboard.
+// Aspire injects OTEL_EXPORTER_OTLP_ENDPOINT automatically when running via apphost.
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddSource("HPD.Agent")   // picks up TracingObserver spans (agent.turn, agent.iteration, agent.tool_call)
+        .AddOtlpExporter())
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddMeter("HPD.Agent")    // picks up TelemetryEventObserver counters and histograms
+        .AddOtlpExporter());
 
 // CORS Configuration
 builder.Services.AddCors(options =>
@@ -42,7 +56,9 @@ builder.Services.AddHPDAgent(options =>
             .WithMaxTokens(6000))
         .WithToolkit<MathTools>()
         .WithPermissions()
-        .WithPreserveReasoningInHistory();
+        .WithPreserveReasoningInHistory()
+        .WithTracing(sourceName: "HPD.Agent")   // produces agent.turn / agent.iteration / agent.tool_call spans
+        .WithTelemetry(sourceName: "HPD.Agent"); // produces agent.iterations, agent.message_turn.duration, etc.
 });
 
 var app = builder.Build();

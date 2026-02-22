@@ -454,7 +454,7 @@ public class ToolVisibilityManagerTests
 
             if (parentCollapse != null)
             {
-                props["ParentSkillContainer"] = parentCollapse;
+                props["ParentContainer"] = parentCollapse;
             }
 
             return AIFunctionFactory.Create(
@@ -533,7 +533,7 @@ public class ToolVisibilityManagerTests
 
             if (parentCollapse != null)
             {
-                props["ParentSkillContainer"] = parentCollapse;
+                props["ParentContainer"] = parentCollapse;
             }
 
             // Add documents metadata if requested
@@ -883,7 +883,7 @@ public class ToolVisibilityManagerTests
         // Assert: Skill should be visible
         var solveQuadratic = visibleTools.FirstOrDefault(t => t.Name == "SolveQuadratic");
         solveQuadratic.Should().NotBeNull();
-        solveQuadratic!.AdditionalProperties?["ParentSkillContainer"].Should().Be("MathTools");
+        solveQuadratic!.AdditionalProperties?["ParentContainer"].Should().Be("MathTools");
     }
 
     #endregion
@@ -969,7 +969,7 @@ public class ToolVisibilityManagerTests
                 {
                     ["IsContainer"] = true,
                     ["IsSkill"] = true,
-                    ["ParentSkillContainer"] = parentSkillContainer,
+                    ["ParentContainer"] = parentSkillContainer,
                     ["ReferencedFunctions"] = referencedFunctions,
                     ["ReferencedToolkits"] = referencedToolkits
                 }
@@ -993,7 +993,7 @@ public class ToolVisibilityManagerTests
 
         if (parentCollapse != null)
         {
-            additionalProps["ParentSkillContainer"] = parentCollapse;
+            additionalProps["ParentContainer"] = parentCollapse;
         }
 
         return AIFunctionFactory.Create(
@@ -1332,7 +1332,7 @@ public class ToolVisibilityManagerTests
 
     /// <summary>
     /// Creates a skill that is inside a collapsed toolkit.
-    /// The ParentSkillContainer property indicates the skill belongs to the parent toolkit.
+    /// The ParentContainer property indicates the skill belongs to the parent toolkit.
     /// </summary>
     private AIFunction CreateSkillInsideCollapsedToolkit(string name, string description, string parentToolkit)
     {
@@ -1346,7 +1346,7 @@ public class ToolVisibilityManagerTests
                 {
                     ["IsContainer"] = true,
                     ["IsSkill"] = true,
-                    ["ParentSkillContainer"] = parentToolkit, // Links skill to parent toolkit
+                    ["ParentContainer"] = parentToolkit, // Links skill to parent toolkit
                     ["ReferencedFunctions"] = Array.Empty<string>(),
                     ["ReferencedToolkits"] = new[] { parentToolkit }
                 }

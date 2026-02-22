@@ -68,6 +68,12 @@ public sealed class AgentContext
     public string? ConversationId { get; }
 
     /// <summary>
+    /// OTel-compatible trace ID (32 hex chars) shared across all events in this turn.
+    /// Automatically stamped onto every event emitted via <see cref="Emit"/>.
+    /// </summary>
+    public string? TraceId { get; }
+
+    /// <summary>
     /// The session metadata container.
     /// Provides access to session.Store for middleware infrastructure operations.
     /// May be null if no session was provided.
@@ -316,6 +322,9 @@ public sealed class AgentContext
     public void Emit(AgentEvent evt)
     {
         if (evt == null) throw new ArgumentNullException(nameof(evt));
+        // Stamp the turn's traceId onto every middleware-emitted event that doesn't already have one.
+        if (TraceId is not null && evt.TraceId is null)
+            evt = evt with { TraceId = TraceId };
         _events.Emit(evt);
     }
 
@@ -356,6 +365,7 @@ public sealed class AgentContext
     /// <param name="cancellationToken">Cancellation token for the operation</param>
     /// <param name="parentChatClient">Parent agent's chat client (for SubAgent inheritance)</param>
     /// <param name="services">Service provider for dependency injection (may be null)</param>
+    /// <param name="traceId">OTel-compatible trace ID shared across all events in this turn.</param>
     public AgentContext(
         string agentName,
         string? conversationId,
@@ -365,10 +375,12 @@ public sealed class AgentContext
         Branch? branch,
         CancellationToken cancellationToken,
         IChatClient? parentChatClient = null,
-        IServiceProvider? services = null)
+        IServiceProvider? services = null,
+        string? traceId = null)
     {
         AgentName = agentName ?? throw new ArgumentNullException(nameof(agentName));
         ConversationId = conversationId;
+        TraceId = traceId;
         _state = initialState ?? throw new ArgumentNullException(nameof(initialState));
         _events = eventCoordinator ?? throw new ArgumentNullException(nameof(eventCoordinator));
         _session = session;

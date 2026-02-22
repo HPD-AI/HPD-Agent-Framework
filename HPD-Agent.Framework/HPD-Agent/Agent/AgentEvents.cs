@@ -159,6 +159,25 @@ public abstract record AgentEvent : HPD.Events.Event
     /// Automatically attached by EventCoordinator.Emit() if not already set.
     /// </summary>
     public AgentExecutionContext? ExecutionContext { get; init; }
+
+    /// <summary>
+    /// OpenTelemetry-compatible trace ID (128-bit, 32 hex chars).
+    /// Shared across all events in a single message turn execution.
+    /// Set by the agent core at turn start and propagated to all subsequent events.
+    /// </summary>
+    public string? TraceId { get; init; }
+
+    /// <summary>
+    /// OpenTelemetry-compatible span ID (64-bit, 16 hex chars) for this event.
+    /// Allows observers to build a parent-child span tree from the event stream.
+    /// </summary>
+    public string? SpanId { get; init; }
+
+    /// <summary>
+    /// Span ID of the parent span, linking this event into the trace hierarchy.
+    /// Null for root-level events (MessageTurnStartedEvent).
+    /// </summary>
+    public string? ParentSpanId { get; init; }
 }
 
 #region Message Turn Events (Entire User Interaction)
@@ -438,6 +457,7 @@ public record PermissionApprovedEvent(
 public record PermissionDeniedEvent(
     string PermissionId,
     string SourceName,
+    string CallId,
     string Reason) : AgentEvent, IPermissionEvent
 {
     /// <summary>Explicit interface implementation - maps PermissionId to RequestId</summary>

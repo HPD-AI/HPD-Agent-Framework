@@ -273,6 +273,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 "Permission request timed out after 5 minutes"));
 
             context.BlockExecution = true;
@@ -284,6 +285,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 "Permission request was cancelled"));
 
             context.BlockExecution = true;
@@ -342,6 +344,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 denialReason));
 
             // Record denial in batch state (for parallel execution optimization)
@@ -410,6 +413,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 "Permission request timed out after 5 minutes"));
 
             return (false, "Permission request timed out. Please respond to permission requests promptly.");
@@ -419,6 +423,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 "Permission request was cancelled"));
 
             return (false, "Permission request was cancelled.");
@@ -459,6 +464,7 @@ public class PermissionMiddleware : IAgentMiddleware
             context.Emit(new PermissionDeniedEvent(
                 permissionId,
                 _middlewareName,
+                callId,
                 denialReason));
 
             return (false, denialReason);

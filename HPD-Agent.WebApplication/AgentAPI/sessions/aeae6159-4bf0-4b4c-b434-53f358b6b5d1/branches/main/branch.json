@@ -1,0 +1,69 @@
+{
+  "id": "main",
+  "sessionId": "aeae6159-4bf0-4b4c-b434-53f358b6b5d1",
+  "messages": [
+    {
+      "createdAt": "2026-02-21T16:22:53.196147+00:00",
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ],
+      "messageId": "e232aefb-8310-4091-b34b-3d5c316e21a4"
+    },
+    {
+      "createdAt": "2026-02-21T16:22:45+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe user is asking who I am. This is a simple question about my identity. I should provide a clear and honest answer about what I am - an AI assistant with the capabilities mentioned in my system prompt."
+        },
+        {
+          "$type": "text",
+          "text": "I\u0027m an AI assistant with access to several tools and capabilities:\n\n- **File system access** - I can work with files and directories\n- **Memory functions** - I can create, update, delete, and manage persistent memories that carry over between conversations\n- **Math tools** - I have access to various mathematical operations including addition, multiplication, absolute value, squaring, subtraction, minimum, and quadratic equation solving\n- **Artifact canvas** - I can create and manage visual content displays for code, markdown, HTML, SVG, and Mermaid diagrams\n\nI\u0027m designed to be helpful and can assist with a wide range of tasks that leverage these capabilities. Whether you need help with calculations, creating and managing persistent information, or displaying content in a specialized format, I\u0027m here to assist you.\n\nWhat would you like help with today?"
+        }
+      ],
+      "messageId": "c12ae861-69a8-4d65-a800-b0887f6af5ad"
+    },
+    {
+      "createdAt": "2026-02-21T16:23:01.661052+00:00",
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "my name is Einstien"
+        }
+      ],
+      "messageId": "01276ea0-510e-400b-93d6-fb044eb0642c"
+    },
+    {
+      "createdAt": "2026-02-21T16:22:59+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe user has told me their name is Einstein. This is information they\u0027re sharing with me, and I should acknowledge it appropriately. I don\u0027t need to use any tools for this - it\u0027s just a simple acknowledgment of their name."
+        },
+        {
+          "$type": "text",
+          "text": "Hello Einstein! It\u0027s nice to meet you. How can I help you today?"
+        }
+      ],
+      "messageId": "a272b4f0-d671-42cc-804e-58520a51f8c3"
+    }
+  ],
+  "createdAt": "2026-02-21T16:22:41.372605Z",
+  "lastActivity": "2026-02-21T16:23:01.661066Z",
+  "siblingIndex": 0,
+  "totalSiblings": 1,
+  "isOriginal": true,
+  "childBranches": [],
+  "totalForks": 0,
+  "middlewareState": {},
+  "messageCount": 4,
+  "isLeaf": true,
+  "isRoot": true
+}

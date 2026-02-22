@@ -1,0 +1,131 @@
+{
+  "id": "main",
+  "sessionId": "27567413-e6ee-4c9f-b5e3-ffeaec3e79ae",
+  "messages": [
+    {
+      "createdAt": "2026-02-21T16:19:09.947239+00:00",
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "who are you"
+        }
+      ],
+      "messageId": "7583279b-20a2-4e92-b379-e28ebbff3c5d"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:06+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe user is asking \u0022who are you\u0022 - this is a simple question about my identity. I should provide a clear and concise answer about what I am as an AI assistant. I don\u0027t need to use any tools for this basic question."
+        },
+        {
+          "$type": "text",
+          "text": "I\u0027m an AI assistant designed to help you with various tasks and questions. I have access to several tools including:\n\n- MathTools for mathematical calculations\n- Memory functions to create, update, and delete persistent memories\n- Artifact canvas for displaying code, markdown, diagrams, and other visual content\n\nI\u0027m here to assist you with information, problem-solving, creative tasks, and any other help you might need. Feel free to ask me questions or give me tasks to work on!\n\nWhat would you like help with today?"
+        }
+      ],
+      "messageId": "063b7ccc-1fc3-4c8d-896a-49763ec8615b"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:30.019551+00:00",
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "if i have 5 apples and i eat 4 what is left"
+        }
+      ],
+      "messageId": "65f85b72-10fc-442e-867c-2478dffe37d8"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:30.019551+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe user is asking a simple math question: if they have 5 apples and eat 4, how many are left? This is a basic subtraction problem: 5 - 4 = 1.\n\nI can use the MathTools to solve this, specifically the Subtract function."
+        },
+        {
+          "$type": "functionCall",
+          "callId": "call_ce4ec67eca1d4bfc8f04c4fa",
+          "name": "MathTools",
+          "informationalOnly": false
+        }
+      ],
+      "messageId": "a6845ce3-fab4-4b7e-8b16-1625a0ec8fde"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:30.019551+00:00",
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_ce4ec67eca1d4bfc8f04c4fa",
+          "result": "Math Toolkit expanded. Available functions: Add, Multiply, Abs, Square, Subtract, Min, SolveQuadratic"
+        }
+      ],
+      "messageId": "45a2a339-e0cd-49b8-9624-0e7ef0cc7332"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:30.019551+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe user is asking a simple math question: if they have 5 apples and eat 4, what\u0027s left? This is basic subtraction: 5 - 4 = 1.\n\nI can use the Subtract function to calculate this, though it\u0027s simple enough to do mentally. Let me use the function to demonstrate the capability."
+        },
+        {
+          "$type": "functionCall",
+          "callId": "call_7fdd363bb94e41c0a1fdb7ec",
+          "name": "Subtract",
+          "arguments": {
+            "a": 5,
+            "b": 4
+          },
+          "informationalOnly": false
+        }
+      ],
+      "messageId": "92bfd8a5-56f7-49d2-8d1d-7b636f12a7a6"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:30.019551+00:00",
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "call_7fdd363bb94e41c0a1fdb7ec",
+          "result": 1
+        }
+      ],
+      "messageId": "9393848d-98fb-4527-9f78-1cb7dc8d354e"
+    },
+    {
+      "createdAt": "2026-02-21T16:19:29+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "\nThe subtraction function returned 1, which is correct. If I have 5 apples and eat 4, I have 1 apple left."
+        },
+        {
+          "$type": "text",
+          "text": "You have 1 apple left."
+        }
+      ],
+      "messageId": "8526e306-b8e7-432c-8b8e-bd2246149544"
+    }
+  ],
+  "createdAt": "2026-02-21T16:19:00.813324Z",
+  "lastActivity": "2026-02-21T16:19:30.019585Z",
+  "siblingIndex": 0,
+  "totalSiblings": 1,
+  "isOriginal": true,
+  "childBranches": [],
+  "totalForks": 0,
+  "middlewareState": {},
+  "messageCount": 8,
+  "isLeaf": true,
+  "isRoot": true
+}

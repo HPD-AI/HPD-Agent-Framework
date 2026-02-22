@@ -44,7 +44,7 @@ public sealed class Agent
     // Unified middleware pipeline
     private readonly AgentMiddlewarePipeline _middlewarePipeline;
     // Observer pattern for event-driven observability
-    private readonly IReadOnlyList<IAgentEventObserver> _observers;
+    private readonly IReadOnlyList<ObserverDispatcher> _observerDispatchers;
     private readonly IReadOnlyList<IAgentEventHandler> _eventHandlers;
     private readonly ObserverHealthTracker? _observerHealthTracker;
     private readonly ILogger? _observerErrorLogger;
@@ -239,14 +239,12 @@ public sealed class Agent
         var loggerFactory = serviceProvider?.GetService(typeof(ILoggerFactory))
             as ILoggerFactory;
 
-        // Initialize event observers (fire-and-forget, for telemetry/logging)
-        _observers = observers?.ToList() ?? new List<IAgentEventObserver>();
-
         // Initialize event handlers (synchronous, ordered, for UI)
         _eventHandlers = eventHandlers?.ToList() ?? new List<IAgentEventHandler>();
 
-        // Initialize observer health tracker if observers are configured
-        if (_observers.Count > 0 && loggerFactory != null)
+        // Initialize observer health tracker and dispatchers if observers are configured
+        var observerList = observers?.ToList() ?? new List<IAgentEventObserver>();
+        if (observerList.Count > 0 && loggerFactory != null)
         {
             _observerErrorLogger = loggerFactory.CreateLogger<Agent>();
 
@@ -266,6 +264,11 @@ public sealed class Agent
                 observabilityConfig.MaxConsecutiveFailures,
                 observabilityConfig.SuccessesToResetCircuitBreaker);
         }
+
+        var emitObservabilityEvents = config.Observability?.EmitObservabilityEvents ?? false;
+        _observerDispatchers = observerList
+            .Select(o => new ObserverDispatcher(o, _observerHealthTracker, _observerErrorLogger, emitObservabilityEvents))
+            .ToList();
 
     }
 
@@ -293,6 +296,18 @@ public sealed class Agent
 
     /// <summary>
     /// Validates and migrates middleware state schema when resuming from checkpoint.
+    // ── Span ID helpers ───────────────────────────────────────────────────────
+
+    /// <summary>Generates a 128-bit OTel-compatible trace ID (32 lowercase hex chars).</summary>
+    private static string GenerateTraceId()
+        => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+
+    /// <summary>Generates a 64-bit OTel-compatible span ID (16 lowercase hex chars).</summary>
+    private static string GenerateSpanId()
+        => Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     /// Detects added/removed middleware and logs changes for operational visibility.
     /// Schema is computed from runtime-registered factories (not compiled constants).
     /// </summary>
@@ -322,8 +337,7 @@ public sealed class Agent
                 AddedTypes: Array.Empty<string>(),
                 IsUpgrade: true);
 
-            // Notify observers using existing NotifyObservers method
-            NotifyObservers(upgradeEvent);
+            DispatchToObservers(upgradeEvent);
 
             return new MiddlewareState
             {
@@ -381,8 +395,7 @@ public sealed class Agent
             AddedTypes: added,
             IsUpgrade: false);
 
-        // Notify observers using existing NotifyObservers method
-        NotifyObservers(schemaEvent);
+        DispatchToObservers(schemaEvent);
 
         // Update to current schema metadata
         return new MiddlewareState
@@ -395,61 +408,20 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Notifies all registered observers about an event using fire-and-forget pattern.
-    /// Observer failures are logged but don't impact agent execution.
-    /// Circuit breaker pattern automatically disables failing observers.
+    /// Dispatches an event to all registered observers via their dedicated sequential channels.
+    /// Each observer's channel guarantees FIFO ordering, eliminating Task.Run race conditions.
     /// </summary>
-    private void NotifyObservers(AgentEvent evt)
+    private void DispatchToObservers(AgentEvent evt)
     {
-        if (_observers.Count == 0) return;
+        if (_observerDispatchers.Count == 0) return;
 
-        // Skip observability events if disabled (default)
-        if (evt is IObservabilityEvent && !(Config?.Observability?.EmitObservabilityEvents ?? false))
-        {
-            return;
-        }
-
-        foreach (var observer in _observers)
-        {
-            // Skip observers with open circuit breakers
-            if (_observerHealthTracker != null && !_observerHealthTracker.ShouldProcess(observer))
-            {
-                continue;
-            }
-
-            // Check observer-specific Middleware
-            if (!observer.ShouldProcess(evt))
-            {
-                continue;
-            }
-
-            // Fire-and-forget: run observer asynchronously without waiting
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await observer.OnEventAsync(evt).ConfigureAwait(false);
-
-                    // Record success (may close circuit if it was open)
-                    _observerHealthTracker?.RecordSuccess(observer);
-                }
-                catch (Exception ex)
-                {
-                    // Structured logging - failures are visible
-                    _observerErrorLogger?.LogError(ex,
-                        "Observer {ObserverType} failed processing {EventType}",
-                        observer.GetType().Name, evt.GetType().Name);
-
-                    // Record failure (may open circuit)
-                    _observerHealthTracker?.RecordFailure(observer, ex);
-                }
-            });
-        }
+        foreach (var dispatcher in _observerDispatchers)
+            dispatcher.Enqueue(evt);
     }
 
     /// <summary>
     /// Processes event handlers synchronously, guaranteeing ordered execution.
-    /// Unlike NotifyObservers which fires-and-forgets, this awaits each handler.
+    /// Unlike DispatchToObservers which enqueues asynchronously, this awaits each handler.
     /// Handler failures are logged but don't crash the agent.
     /// </summary>
     private async Task ProcessEventHandlersAsync(AgentEvent evt, CancellationToken cancellationToken)
@@ -541,6 +513,12 @@ public sealed class Agent
         // Generate IDs for this message turn
         var messageTurnId = Guid.NewGuid().ToString();
 
+        // Generate OTel-compatible trace/span IDs for this turn.
+        // traceId is shared across every event in this execution.
+        // turnSpanId is the root span; iteration and tool-call spans nest beneath it.
+        var traceId    = GenerateTraceId();
+        var turnSpanId = GenerateSpanId();
+
         // Extract conversation ID from turn.Options, session, or generate new one
         string conversationId;
         if (turn.Options?.AdditionalProperties?.TryGetValue("ConversationId", out var convIdObj) == true && convIdObj is string convId)
@@ -563,7 +541,12 @@ public sealed class Agent
             yield return new MessageTurnStartedEvent(
                 messageTurnId,
                 conversationId,
-                _name);
+                _name)
+            {
+                TraceId      = traceId,
+                SpanId       = turnSpanId,
+                ParentSpanId = null   // root span
+            };
  
             // MESSAGE PREPARATION: Split logic between Fresh Run vs Resume
             // FRESH RUN: Process documents → PrepareMessages → Create initial state
@@ -634,7 +617,8 @@ public sealed class Agent
                     Timestamp: DateTimeOffset.UtcNow,
                     Duration: restoreStopwatch.Elapsed,
                     Iteration: state.Iteration,
-                    MessageCount: sharedMessages.Count);
+                    MessageCount: sharedMessages.Count)
+                { TraceId = traceId };
             }
             else
             {
@@ -730,7 +714,8 @@ public sealed class Agent
                 branch: branch,
                 cancellationToken: effectiveCancellationToken,
                 parentChatClient: _baseClient,  // Pass chat client for SubAgent inheritance
-                services: _serviceProvider);  // Pass service provider for DI
+                services: _serviceProvider,     // Pass service provider for DI
+                traceId: traceId);              // Propagate trace ID to all middleware-emitted events
 
             // IMPORTANT: Create runConfig instance ONCE and reuse it throughout the entire turn
             // Middleware may modify runConfig (e.g., AgentPlanAgentMiddleware sets AdditionalSystemInstructions)
@@ -787,9 +772,15 @@ public sealed class Agent
             {
                 // Generate message ID for this iteration
                 var assistantMessageId = Guid.NewGuid().ToString();
+                var iterSpanId         = GenerateSpanId();
 
                 // Emit iteration start
-                yield return new AgentTurnStartedEvent(state.Iteration);
+                yield return new AgentTurnStartedEvent(state.Iteration)
+                {
+                    TraceId      = traceId,
+                    SpanId       = iterSpanId,
+                    ParentSpanId = turnSpanId
+                };
 
                 // Emit state snapshot for testing/debugging
                 yield return new StateSnapshotEvent(
@@ -799,7 +790,8 @@ public sealed class Agent
                     TerminationReason: state.TerminationReason,
                     ConsecutiveErrorCount: state.MiddlewareState.ErrorTracking()?.ConsecutiveFailures ?? 0,
                     CompletedFunctions: new List<string>(state.CompletedFunctions),
-                    AgentName: _name);
+                    AgentName: _name)
+                { TraceId = traceId };
 
                 // Drain middleware events before decision
                 while (_eventCoordinator.TryRead(out var MiddlewareEvt))
@@ -823,7 +815,8 @@ public sealed class Agent
                     CurrentMessageCount: state.CurrentMessages.Count,
                     HistoryMessageCount: 0, // History is part of CurrentMessages
                     TurnHistoryMessageCount: state.TurnHistory.Count,
-                    CompletedFunctionsCount: state.CompletedFunctions.Count);
+                    CompletedFunctionsCount: state.CompletedFunctions.Count)
+                { TraceId = traceId };
 
                 // Emit decision event
                 yield return new AgentDecisionEvent(
@@ -831,7 +824,8 @@ public sealed class Agent
                     DecisionType: decision.GetType().Name,
                     Iteration: state.Iteration,
                     ConsecutiveFailures: state.MiddlewareState.ErrorTracking()?.ConsecutiveFailures ?? 0,
-                    CompletedFunctionsCount: state.CompletedFunctions.Count);
+                    CompletedFunctionsCount: state.CompletedFunctions.Count)
+                { TraceId = traceId };
 
                 // NOTE: Circuit breaker events are now emitted directly by CircuitBreakerIterationMiddleware
                 // via context.Emit() in BeforeToolExecutionAsync.
@@ -1010,30 +1004,35 @@ public sealed class Agent
                                 {
                                     if (!messageStarted)
                                     {
-                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                         messageStarted = true;
                                     }
-                                    yield return new TextDeltaEvent(textContent.Text, assistantMessageId);
+                                    yield return new TextDeltaEvent(textContent.Text, assistantMessageId) { TraceId = traceId };
                                 }
                                 else if (content is FunctionCallContent functionCall)
                                 {
                                     if (!messageStarted)
                                     {
-                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                         messageStarted = true;
                                     }
                                     yield return new ToolCallStartEvent(
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
                                         assistantMessageId,
-                                        LookupToolkit(functionCall.Name));
+                                        LookupToolkit(functionCall.Name))
+                                    {
+                                        TraceId      = traceId,
+                                        SpanId       = GenerateSpanId(),
+                                        ParentSpanId = iterSpanId
+                                    };
 
                                     if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                     {
                                         var argsJson = JsonSerializer.Serialize(
                                             functionCall.Arguments,
                                             HPDJsonContext.Default.DictionaryStringObject);
-                                        yield return new ToolCallArgsEvent(functionCall.CallId, argsJson);
+                                        yield return new ToolCallArgsEvent(functionCall.CallId, argsJson) { TraceId = traceId };
                                     }
                                 }
                             }
@@ -1052,7 +1051,8 @@ public sealed class Agent
                             _name,
                             state.Iteration,
                             messagesToSend.Count(),
-                            DateTimeOffset.UtcNow);
+                            DateTimeOffset.UtcNow)
+                        { TraceId = traceId };
 
                         // CREATE MODEL REQUEST (V2 - immutable request pattern)
                         var modelRequest = new Middleware.ModelRequest
@@ -1115,7 +1115,8 @@ public sealed class Agent
                                         yield return new BackgroundOperationStartedEvent(
                                             ContinuationToken: continuationToken,
                                             Status: OperationStatus.InProgress,
-                                            OperationId: assistantMessageId);
+                                            OperationId: assistantMessageId)
+                        { TraceId = traceId };
 
                                         // Track in agent loop state for crash recovery
                                         state = state.WithBackgroundOperation(new BackgroundOperationInfo
@@ -1168,39 +1169,43 @@ public sealed class Agent
                                     {
                                         yield return new ReasoningMessageStartEvent(
                                             MessageId: assistantMessageId,
-                                            Role: "assistant");
+                                            Role: "assistant")
+                                        { TraceId = traceId };
                                         reasoningMessageStarted = true;
                                     }
                                     yield return new ReasoningDeltaEvent(
                                         Text: reasoning.Text,
-                                        MessageId: assistantMessageId);
+                                        MessageId: assistantMessageId)
+                                    { TraceId = traceId };
                                 }
                                 else if (content is TextContent textContent)
                                 {
                                     if (reasoningMessageStarted)
                                     {
                                         yield return new ReasoningMessageEndEvent(
-                                            MessageId: assistantMessageId);
+                                            MessageId: assistantMessageId)
+                                        { TraceId = traceId };
                                         reasoningMessageStarted = false;
                                     }
                                     if (!messageStarted)
                                     {
-                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                         messageStarted = true;
                                     }
-                                    yield return new TextDeltaEvent(textContent.Text, assistantMessageId);
+                                    yield return new TextDeltaEvent(textContent.Text, assistantMessageId) { TraceId = traceId };
                                 }
                                 else if (content is FunctionCallContent functionCall)
                                 {
                                     if (reasoningMessageStarted)
                                     {
                                         yield return new ReasoningMessageEndEvent(
-                                            MessageId: assistantMessageId);
+                                            MessageId: assistantMessageId)
+                                        { TraceId = traceId };
                                         reasoningMessageStarted = false;
                                     }
                                     if (!messageStarted)
                                     {
-                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                        yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                         messageStarted = true;
                                     }
 
@@ -1208,7 +1213,12 @@ public sealed class Agent
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
                                         assistantMessageId,
-                                        LookupToolkit(functionCall.Name));
+                                        LookupToolkit(functionCall.Name))
+                                    {
+                                        TraceId      = traceId,
+                                        SpanId       = GenerateSpanId(),
+                                        ParentSpanId = iterSpanId
+                                    };
 
                                     if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                     {
@@ -1216,7 +1226,7 @@ public sealed class Agent
                                             functionCall.Arguments,
                                             HPDJsonContext.Default.DictionaryStringObject);
 
-                                        yield return new ToolCallArgsEvent(functionCall.CallId, argsJson);
+                                        yield return new ToolCallArgsEvent(functionCall.CallId, argsJson) { TraceId = traceId };
                                     }
                                 }
                             }
@@ -1224,7 +1234,8 @@ public sealed class Agent
                             if (reasoningMessageStarted)
                             {
                                 yield return new ReasoningMessageEndEvent(
-                                    MessageId: assistantMessageId);
+                                    MessageId: assistantMessageId)
+                                { TraceId = traceId };
                                 reasoningMessageStarted = false;
                             }
                         }
@@ -1253,7 +1264,8 @@ public sealed class Agent
                                         yield return new BackgroundOperationStartedEvent(
                                             ContinuationToken: continuationToken,
                                             Status: OperationStatus.InProgress,
-                                            OperationId: assistantMessageId);
+                                            OperationId: assistantMessageId)
+                        { TraceId = traceId };
 
                                         // Track in agent loop state for crash recovery
                                         state = state.WithBackgroundOperation(new BackgroundOperationInfo
@@ -1278,13 +1290,15 @@ public sealed class Agent
                                             {
                                                 yield return new ReasoningMessageStartEvent(
                                                     MessageId: assistantMessageId,
-                                                    Role: "assistant");
+                                                    Role: "assistant")
+                                                { TraceId = traceId };
                                                 reasoningMessageStarted = true;
                                             }
 
                                             yield return new ReasoningDeltaEvent(
                                                 Text: reasoning.Text,
-                                                MessageId: assistantMessageId);
+                                                MessageId: assistantMessageId)
+                                            { TraceId = traceId };
                                             assistantContents.Add(reasoning);
                                         }
                                         else if (content is TextContent textContent && !string.IsNullOrEmpty(textContent.Text))
@@ -1292,24 +1306,25 @@ public sealed class Agent
                                             if (reasoningMessageStarted)
                                             {
                                                 yield return new ReasoningMessageEndEvent(
-                                                    MessageId: assistantMessageId);
+                                                    MessageId: assistantMessageId)
+                                                { TraceId = traceId };
                                                 reasoningMessageStarted = false;
                                             }
 
                                             if (!messageStarted)
                                             {
-                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                                 messageStarted = true;
                                             }
 
                                             assistantContents.Add(textContent);
-                                            yield return new TextDeltaEvent(textContent.Text, assistantMessageId);
+                                            yield return new TextDeltaEvent(textContent.Text, assistantMessageId) { TraceId = traceId };
                                         }
                                         else if (content is FunctionCallContent functionCall)
                                         {
                                             if (!messageStarted)
                                             {
-                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant");
+                                                yield return new TextMessageStartEvent(assistantMessageId, "assistant") { TraceId = traceId };
                                                 messageStarted = true;
                                             }
 
@@ -1317,7 +1332,12 @@ public sealed class Agent
                                                 functionCall.CallId,
                                                 functionCall.Name ?? string.Empty,
                                                 assistantMessageId,
-                                                LookupToolkit(functionCall.Name));
+                                                LookupToolkit(functionCall.Name))
+                                            {
+                                                TraceId      = traceId,
+                                                SpanId       = GenerateSpanId(),
+                                                ParentSpanId = iterSpanId
+                                            };
 
                                             if (functionCall.Arguments != null && functionCall.Arguments.Count > 0)
                                             {
@@ -1325,7 +1345,7 @@ public sealed class Agent
                                                     functionCall.Arguments,
                                                      HPDJsonContext.Default.DictionaryStringObject);
 
-                                                yield return new ToolCallArgsEvent(functionCall.CallId, argsJson);
+                                                yield return new ToolCallArgsEvent(functionCall.CallId, argsJson) { TraceId = traceId };
                                             }
 
                                             toolRequests.Add(functionCall);
@@ -1346,7 +1366,8 @@ public sealed class Agent
                                     if (reasoningMessageStarted)
                                     {
                                         yield return new ReasoningMessageEndEvent(
-                                            MessageId: assistantMessageId);
+                                            MessageId: assistantMessageId)
+                                        { TraceId = traceId };
                                         reasoningMessageStarted = false;
                                     }
                                 }
@@ -1379,13 +1400,14 @@ public sealed class Agent
                         yield return new BackgroundOperationStatusEvent(
                             ContinuationToken: null!,  // null indicates completion
                             Status: OperationStatus.Completed,
-                            StatusMessage: "Background operation completed successfully");
+                            StatusMessage: "Background operation completed successfully")
+                        { TraceId = traceId };
                     }
 
                     // Close the message if we started one (applies to both middleware and normal flow)
                     if (messageStarted)
                     {
-                        yield return new TextMessageEndEvent(assistantMessageId);
+                        yield return new TextMessageEndEvent(assistantMessageId) { TraceId = traceId };
                     }
 
                     // V2: Sync state after LLM call (middleware may have updated it)
@@ -1525,7 +1547,7 @@ public sealed class Agent
                             {
                                 if (_functionCallProcessor.IsOutputToolByName(toolRequest.Name, effectiveOptionsForTools?.Tools))
                                 {
-                                    yield return new ToolCallEndEvent(toolRequest.CallId);
+                                    yield return new ToolCallEndEvent(toolRequest.CallId) { TraceId = traceId };
                                 }
                             }
                             state = state.Terminate("Output tool called - structured output complete");
@@ -1622,9 +1644,9 @@ public sealed class Agent
                         {
                             if (content is FunctionResultContent result)
                             {
-                                yield return new ToolCallEndEvent(result.CallId);
+                                yield return new ToolCallEndEvent(result.CallId) { TraceId = traceId };
                                 callIdToToolkit.TryGetValue(result.CallId, out var toolkitName);
-                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName);
+                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName) { TraceId = traceId };
                             }
                         }
                         // Shared reference: state.CurrentMessages already sees the changes via MessagesRef
@@ -1706,7 +1728,12 @@ public sealed class Agent
                 }
 
                 // Emit iteration end
-                yield return new AgentTurnFinishedEvent(state.Iteration);
+                yield return new AgentTurnFinishedEvent(state.Iteration)
+                {
+                    TraceId      = traceId,
+                    SpanId       = iterSpanId,
+                    ParentSpanId = turnSpanId
+                };
 
                 // Check if middleware signaled termination (e.g., circuit breaker, error threshold)
                 // This is a safety check in case the break statements inside nested blocks didn't exit properly
@@ -1754,7 +1781,12 @@ public sealed class Agent
                 messageTurnId,
                 conversationId,
                 _name,
-                turnStopwatch.Elapsed);
+                turnStopwatch.Elapsed)
+            {
+                TraceId      = traceId,
+                SpanId       = turnSpanId,
+                ParentSpanId = null
+            };
 
             // Record orchestration telemetry metrics
             orchestrationActivity?.SetTag("agent.total_iterations", state.Iteration);
@@ -1768,7 +1800,8 @@ public sealed class Agent
                 _name,
                 state.Iteration,
                 turnStopwatch.Elapsed,
-                DateTimeOffset.UtcNow);
+                DateTimeOffset.UtcNow)
+            { TraceId = traceId };
     
             // DELETE UNCOMMITTED TURN (turn completed successfully — no longer needed)
             if (session != null && store != null)
@@ -1779,7 +1812,7 @@ public sealed class Agent
                     {
                         await store.DeleteUncommittedTurnAsync(session.Id);
 
-                        NotifyObservers(new CheckpointEvent(
+                        DispatchToObservers(new CheckpointEvent(
                             Operation: CheckpointOperation.Cleared,
                             SessionId: session.Id,
                             Timestamp: DateTimeOffset.UtcNow,
@@ -1788,7 +1821,7 @@ public sealed class Agent
                     }
                     catch (Exception ex)
                     {
-                        NotifyObservers(new CheckpointEvent(
+                        DispatchToObservers(new CheckpointEvent(
                             Operation: CheckpointOperation.Cleared,
                             SessionId: session.Id,
                             Timestamp: DateTimeOffset.UtcNow,
@@ -2020,6 +2053,13 @@ public sealed class Agent
                         message.Contents.RemoveAt(i);
                     }
                 }
+
+                // Re-coalesce: stripping reasoning may leave adjacent TextContent items
+                // that were previously separated by reasoning chunks.
+                var coalesced = CoalesceTextContents(message.Contents.ToList());
+                message.Contents.Clear();
+                foreach (var c in coalesced)
+                    message.Contents.Add(c);
             }
 
             // Remove messages that became empty after stripping reasoning
@@ -2035,13 +2075,24 @@ public sealed class Agent
         return response;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Waits for all observer dispatchers to finish processing their queued events.
+    /// Call this after an agent run completes to ensure observers (e.g. TracingObserver)
+    /// have fully processed all events before asserting or shutting down.
+    /// </summary>
+    public async Task FlushObserversAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var dispatcher in _observerDispatchers)
+            await dispatcher.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public void Dispose()
     {
         _baseClient?.Dispose();
         (_eventCoordinator as IDisposable)?.Dispose();
+        foreach (var dispatcher in _observerDispatchers)
+            dispatcher.Dispose();
     }
 
     /// <summary>
@@ -2112,7 +2163,7 @@ public sealed class Agent
             yield return evt;
 
             // 3. Observers LAST (fire-and-forget) - for telemetry
-            NotifyObservers(evt);
+            DispatchToObservers(evt);
         }
     }
 
@@ -2426,7 +2477,7 @@ public sealed class Agent
             // Standard event processing
             await ProcessEventHandlersAsync(evt, cancellationToken).ConfigureAwait(false);
             yield return evt;
-            NotifyObservers(evt);
+            DispatchToObservers(evt);
         }
     }
 
@@ -5323,7 +5374,8 @@ internal class FunctionCallProcessor
             session: agentContext.Session,
             branch: agentContext.Branch,
             cancellationToken: cancellationToken,
-            services: agentContext.Services);
+            services: agentContext.Services,
+            traceId: agentContext.TraceId);  // Propagate trace ID into batch hook context
 
         var batchContext = batchAgentContext.AsBeforeParallelBatch(
             parallelFunctions,

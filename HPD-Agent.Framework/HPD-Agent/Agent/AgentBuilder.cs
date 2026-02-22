@@ -1195,6 +1195,37 @@ public class AgentBuilder
     }
 
     /// <summary>
+    /// Registers a <see cref="TracingObserver"/> that converts the agent event stream
+    /// into OpenTelemetry <see cref="System.Diagnostics.Activity"/> spans.
+    ///
+    /// Produces three span types:
+    /// <list type="bullet">
+    /// <item><description><b>agent.turn</b> — one per user message (root span)</description></item>
+    /// <item><description><b>agent.iteration</b> — one per LLM call (child of turn)</description></item>
+    /// <item><description><b>agent.tool_call</b> — one per tool execution (child of iteration)</description></item>
+    /// </list>
+    ///
+    /// The host application must configure an OTLP exporter to ship spans to a backend:
+    /// <code>
+    /// builder.Services.AddOpenTelemetry()
+    ///     .WithTracing(t => t
+    ///         .AddSource("HPD.Agent")
+    ///         .AddOtlpExporter());
+    /// </code>
+    /// </summary>
+    /// <param name="sourceName">ActivitySource name (default: "HPD.Agent").</param>
+    /// <param name="sanitizerOptions">
+    /// Controls redaction and length caps on span payloads (tool results, error messages).
+    /// Defaults to 4KB cap and sensitive-field redaction enabled.
+    /// </param>
+    public AgentBuilder WithTracing(string? sourceName = null, SpanSanitizerOptions? sanitizerOptions = null)
+    {
+        var observer = new TracingObserver(sourceName ?? "HPD.Agent", sanitizerOptions);
+        _observers.Add(observer);
+        return this;
+    }
+
+    /// <summary>
     /// Enables comprehensive structured logging for observability:
     /// <list type="bullet">
     /// <item><description><b>LLM-level (Microsoft):</b> LLM invocation logging (requests/responses/errors)</description></item>

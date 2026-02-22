@@ -73,7 +73,16 @@
       "WebFetch(domain:openrouter.ai)",
       "Bash(node -e:*)",
       "WebFetch(domain:www.nuget.org)",
-      "WebFetch(domain:devblogs.microsoft.com)"
+      "WebFetch(domain:devblogs.microsoft.com)",
+      "Bash(dotnet tool list:*)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(/Users/einsteinessibu/Documents/HPD-Agent-Framework/LICENSE:*)",
+      "Bash(echo:*)",
+      "Bash(done)",
+      "Bash(dotnet script:*)",
+      "Bash(dotnet-ildasm:*)",
+      "Bash(dotnet workload:*)"
     ],
     "deny": [],
     "ask": []

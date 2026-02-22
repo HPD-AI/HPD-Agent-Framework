@@ -1,4 +1,5 @@
-// Copyright (c) 2025 Einstein Essibu. All rights reserved.
+// Copyright 2026 Einstein Essibu
+// SPDX-License-Identifier: AGPL-3.0-only
 
 using System.Collections.Immutable;
 using System.Text.Json;

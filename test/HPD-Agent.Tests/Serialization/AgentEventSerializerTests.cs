@@ -271,7 +271,7 @@ public class AgentEventSerializerTests
         Assert.Contains("\"type\":\"PERMISSION_APPROVED\"", approvedJson);
 
         // PermissionDeniedEvent
-        var deniedEvt = new PermissionDeniedEvent("perm-1", "Source", "User rejected");
+        var deniedEvt = new PermissionDeniedEvent("perm-1", "Source", "call-1", "User rejected");
         var deniedJson = AgentEventSerializer.ToJson(deniedEvt);
         Assert.Contains("\"type\":\"PERMISSION_DENIED\"", deniedJson);
         Assert.Contains("\"reason\":\"User rejected\"", deniedJson);

@@ -1,0 +1,111 @@
+{
+  "id": "main",
+  "sessionId": "console-2026-02-19-131610-8a6009c6",
+  "messages": [
+    {
+      "createdAt": "2026-02-19T19:16:58.801831+00:00",
+      "role": "user",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "add 39934 and 3493949"
+        }
+      ],
+      "messageId": "6bd9fb10-23ed-4bb9-abe8-12a8614e36d2"
+    },
+    {
+      "createdAt": "2026-02-19T19:16:58.801831+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "The user wants me to add two numbers: 39934 and 3493949.\n\nI should use the MathToolkit\u0027s Add function to perform this calculation."
+        },
+        {
+          "$type": "text",
+          "text": "I\u0027ll add those two numbers for you."
+        },
+        {
+          "$type": "functionCall",
+          "callId": "chatcmpl-tool-bbc61c9eb5914306",
+          "name": "MathToolkit",
+          "informationalOnly": false
+        }
+      ],
+      "messageId": "a7914869-546c-4295-b44c-4ced3fd8148c"
+    },
+    {
+      "createdAt": "2026-02-19T19:16:58.801831+00:00",
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "chatcmpl-tool-bbc61c9eb5914306",
+          "result": "MathToolkit expanded. Available functions: Add, Multiply, Abs, Square, Subtract, Min, SolveQuadratic\n\nNote: In new message turns, call MathToolkit again to access these functions."
+        }
+      ],
+      "messageId": "316ae3f2-f77f-4b14-85d7-19adc78c77f8"
+    },
+    {
+      "createdAt": "2026-02-19T19:16:58.801831+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "reasoning",
+          "text": "The user wants me to add two numbers: 39934 and 3493949. I can use the Add function to perform this calculation.\n\nLet me call the Add function with:\n- a = 39934\n- b = 3493949"
+        },
+        {
+          "$type": "text",
+          "text": "I\u0027ll add those two numbers for you."
+        },
+        {
+          "$type": "functionCall",
+          "callId": "chatcmpl-tool-94d174d7e81c25bd",
+          "name": "Add",
+          "arguments": {
+            "a": 39934,
+            "b": 3493949
+          },
+          "informationalOnly": false
+        }
+      ],
+      "messageId": "4034d1e2-6f3f-4357-883d-f451ce226fac"
+    },
+    {
+      "createdAt": "2026-02-19T19:16:58.801831+00:00",
+      "role": "tool",
+      "contents": [
+        {
+          "$type": "functionResult",
+          "callId": "chatcmpl-tool-94d174d7e81c25bd",
+          "result": 3533883
+        }
+      ],
+      "messageId": "9e4f8abe-e243-4197-9fad-5c80d4e1f523"
+    },
+    {
+      "createdAt": "2026-02-19T19:16:55+00:00",
+      "role": "assistant",
+      "contents": [
+        {
+          "$type": "text",
+          "text": "The sum of 39,934 and 3,493,949 is **3,533,883**."
+        }
+      ],
+      "messageId": "92ccb17b-66fb-4e52-8542-2870cc061fc2"
+    }
+  ],
+  "createdAt": "2026-02-19T19:16:29.180266Z",
+  "lastActivity": "2026-02-19T19:16:58.807353Z",
+  "siblingIndex": 0,
+  "totalSiblings": 1,
+  "isOriginal": true,
+  "childBranches": [],
+  "totalForks": 0,
+  "middlewareState": {
+    "HPD.Agent.HistoryReductionStateData": "{\n  \u0022exchangeCount\u0022: 1\n}"
+  },
+  "messageCount": 6,
+  "isLeaf": true,
+  "isRoot": true
+}

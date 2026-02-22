@@ -97,7 +97,9 @@ public class AssetStorageIntegrationTests
             Assert.Equal(assetId, retrievedAsset.Id);
 
             // Assert: Verify asset file exists on disk
-            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id), $"{assetId}.*");
+            // LocalFileAssetStore stores at {basePath}/{scope}/{contentId}.ext
+            // basePath = {tempDir}/{sessionId}/assets, scope = sessionId
+            var assetFiles = Directory.GetFiles(Path.Combine(tempDir, session.Id, "assets", session.Id), $"{assetId}.*");
             Assert.Single(assetFiles);
             Assert.EndsWith(".png", assetFiles[0]);
 
@@ -193,7 +195,9 @@ public class AssetStorageIntegrationTests
             }
 
             // Assert: Correct file extensions on disk
-            var assetDir = Path.Combine(tempDir, session.Id);
+            // LocalFileAssetStore stores at {basePath}/{scope}/{contentId}.ext
+            // basePath = {tempDir}/{sessionId}/assets, scope = sessionId
+            var assetDir = Path.Combine(tempDir, session.Id, "assets", session.Id);
             Assert.True(Directory.GetFiles(assetDir, "*.png").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.jpg").Length >= 1);
             Assert.True(Directory.GetFiles(assetDir, "*.pdf").Length >= 1);

@@ -51,6 +51,9 @@ using HPD.Agent;
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(McpConfig))]
 [JsonSerializable(typeof(CollapsingConfig))]
+[JsonSerializable(typeof(HPD.Agent.ReasoningOptions))]
+[JsonSerializable(typeof(HPD.Agent.ReasoningEffort))]
+[JsonSerializable(typeof(HPD.Agent.ReasoningOutput))]
 
 // --- Toolkit and Middleware reference types (Config Serialization) ---
 [JsonSerializable(typeof(ToolkitReference))]
@@ -76,6 +79,8 @@ using HPD.Agent;
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatRole))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatOptions))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningOptions))]
+[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningEffort))]
+[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningOutput))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.UsageDetails))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.AdditionalPropertiesDictionary))]
 [JsonSerializable(typeof(Microsoft.Extensions.AI.ChatFinishReason))]
