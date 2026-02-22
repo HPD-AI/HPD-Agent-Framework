@@ -98,7 +98,12 @@
       "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework diff HEAD -- \"test/HPD-Agent.Evaluations.Tests/Integration/IntegrationTestInfrastructure.cs\" \"test/HPD-Agent.Tests/Content/ContentStoreIntegrationTests.cs\" \"test/HPD-Agent.Tests/Integration/AssetStorageIntegrationTests.cs\" \"test/HPD-Agent.Tests/Integration/MinimalAssetUploadTest.cs\" \"test/HPD-Agent.Tests/Middleware/AssetUploadMiddlewareTests.cs\" \"test/HPD-Agent.Tests/Scoping/ToolVisibilityManagerTests.cs\")",
       "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework diff HEAD -- \"test/HPD-Agent.Tests/Skills/Phase1ApiTests.cs\" \"test/HPD-Agent.Tests/Skills/Phase3SkillRuntimeTests.cs\" \"test/HPD-Agent.Tests/Skills/Phase5DocumentLinkingTests.cs\" \"test/HPD-Agent.Tests/SourceGenerator/Phase3SourceGeneratorTests.cs\" \"test/HPD.Agent.SerializationTests/AgentEventSerializerTests.cs\")",
       "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework diff HEAD -- \"HPD-Agent.Framework/HPD-Agent/Agent/AgentBuilder.cs\")",
-      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework diff HEAD -- \"HPD-Agent.Framework/HPD-Agent.SourceGenerator/SourceGeneration/SkillCodeGenerator.cs\")"
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework diff HEAD -- \"HPD-Agent.Framework/HPD-Agent.SourceGenerator/SourceGeneration/SkillCodeGenerator.cs\")",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework submodule status)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework rm:*)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework add HPD.VCS)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework status --short HPD.VCS)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework status --short)"
     ],
     "deny": [],
     "ask": []

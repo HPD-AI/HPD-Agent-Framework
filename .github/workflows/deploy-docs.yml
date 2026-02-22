@@ -29,15 +29,18 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: OfficialDocs/package-lock.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
       - name: Install dependencies
         run: npm ci
+        working-directory: OfficialDocs
 
       - name: Build with VitePress
         run: npm run docs:build
+        working-directory: OfficialDocs
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

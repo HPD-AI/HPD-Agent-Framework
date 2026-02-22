@@ -3,6 +3,10 @@
 # HPD-Agent Unified NuGet Publishing Script
 # Usage: ./nuget-publish.sh <command> <version> [options]
 #
+# NOTE: This script has been superseded by the GitHub Actions workflow at
+#       .github/workflows/publish-nuget.yml which is the canonical publish path.
+#       This script is retained for local/manual use only.
+#
 # Commands:
 #   pack <version>              - Build and pack packages locally
 #   push <version> <api-key>    - Push packages to NuGet.org
@@ -19,27 +23,47 @@ set -e
 NUPKG_DIR="./.nupkg"
 
 # All projects to pack (with correct paths)
-# Note: HPD-Agent.SourceGenerator is NOT included - it's embedded in HPD.Agent.Framework
+# Note: HPD-Agent.SourceGenerator is NOT included - it's embedded in HPD-Agent.Framework
 PROJECTS=(
-    "HPD-Agent/HPD-Agent.csproj"
-    "HPD-Agent.FFI/HPD-Agent.FFI.csproj"
-    "HPD-Agent.MCP/HPD-Agent.MCP.csproj"
-    "HPD-Agent.Memory/HPD-Agent.Memory.csproj"
-    "HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj"
-    "HPD-Agent.Toolkits/HPD-Agent.Toolkits.FileSystem/HPD-Agent.Toolkits.FileSystem.csproj"
-    "HPD-Agent.Toolkits/HPD-Agent.Toolkits.WebSearch/HPD-Agent.Toolkits.WebSearch.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.Anthropic/HPD-Agent.Providers.Anthropic.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.AzureAIInference/HPD-Agent.Providers.AzureAIInference.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.Bedrock/HPD-Agent.Providers.Bedrock.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.GoogleAI/HPD-Agent.Providers.GoogleAI.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.HuggingFace/HPD-Agent.Providers.HuggingFace.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.Mistral/HPD-Agent.Providers.Mistral.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.Ollama/HPD-Agent.Providers.Ollama.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.OnnxRuntime/HPD-Agent.Providers.OnnxRuntime.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj"
-    "HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj"
-    "HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj"
-    "HPD-Agent.Audio/HPD-Agent.AudioProviders.OpenAI/HPD-Agent.AudioProviders.OpenAI.csproj"
+    # Core
+    "HPD-Agent.Framework/HPD-Agent/HPD-Agent.csproj"
+    "HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj"
+    "HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Hosting/HPD-Agent.Hosting.csproj"
+    "HPD-Agent.Framework/HPD-Agent.AspNetCore/HPD-Agent.AspNetCore.csproj"
+    "HPD-Agent.Framework/HPD-Agent.MAUI/HPD-Agent.MAUI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Sandbox.Local/HPD-Agent.Sandbox.Local.csproj"
+    "HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Evaluations/HPD-Agent.Evaluations.csproj"
+    "HPD-Agent.Framework/HPD-Agent.OpenApi/HPD-Agent.OpenApi.csproj"
+    "HPD-Agent.Framework/HPD.OpenApi.Core/HPD.OpenApi.Core.csproj"
+    # Toolkits
+    "HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.WebSearch/HPD-Agent.Toolkit.WebSearch.csproj"
+    # Audio
+    "HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.OpenAI/HPD-Agent.AudioProviders.OpenAI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj"
+    # Providers
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Anthropic/HPD-Agent.Providers.Anthropic.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAI/HPD-Agent.Providers.AzureAI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAIInference/HPD-Agent.Providers.AzureAIInference.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Bedrock/HPD-Agent.Providers.Bedrock.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.GoogleAI/HPD-Agent.Providers.GoogleAI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.HuggingFace/HPD-Agent.Providers.HuggingFace.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Mistral/HPD-Agent.Providers.Mistral.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Ollama/HPD-Agent.Providers.Ollama.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OnnxRuntime/HPD-Agent.Providers.OnnxRuntime.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj"
+    "HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj"
+    # Events & Graph
+    "HPD.Events/HPD.Events.csproj"
+    "HPD.Graph/HPD.Graph.Abstractions/HPD.Graph.Abstractions.csproj"
+    "HPD.Graph/HPD.Graph.Core/HPD.Graph.Core.csproj"
+    "HPD.Graph/HPD.Graph.SourceGenerator/HPD.Graph.SourceGenerator.csproj"
+    # VCS
+    "HPD.VCS/HPD.VCS.Library/HPD.VCS.Library.csproj"
 )
 
 # Expected package IDs (with hyphens - matching NuGet namespace ownership)
@@ -48,11 +72,22 @@ PACKAGE_IDS=(
     "HPD-Agent.Framework"
     "HPD-Agent.FFI"
     "HPD-Agent.MCP"
-    "HPD-Agent.Memory"
     "HPD-Agent.TextExtraction"
-    "HPD-Agent.Toolkits.FileSystem"
-    "HPD-Agent.Toolkits.WebSearch"
+    "HPD-Agent.Hosting"
+    "HPD-Agent.AspNetCore"
+    "HPD-Agent.MAUI"
+    "HPD-Agent.Sandbox.Local"
+    "HPD-Agent.MultiAgent"
+    "HPD-Agent.Evaluations"
+    "HPD-Agent.OpenApi"
+    "HPD.OpenApi.Core"
+    "HPD-Agent.Toolkit.FileSystem"
+    "HPD-Agent.Toolkit.WebSearch"
+    "HPD-Agent.Audio"
+    "HPD-Agent.AudioProviders.OpenAI"
+    "HPD-Agent.AudioProviders.ElevenLabs"
     "HPD-Agent.Providers.Anthropic"
+    "HPD-Agent.Providers.AzureAI"
     "HPD-Agent.Providers.AzureAIInference"
     "HPD-Agent.Providers.Bedrock"
     "HPD-Agent.Providers.GoogleAI"
@@ -62,8 +97,11 @@ PACKAGE_IDS=(
     "HPD-Agent.Providers.OnnxRuntime"
     "HPD-Agent.Providers.OpenAI"
     "HPD-Agent.Providers.OpenRouter"
-    "HPD-Agent.Audio"
-    "HPD-Agent.AudioProviders.OpenAI"
+    "HPD.Events"
+    "HPD.Graph.Abstractions"
+    "HPD.Graph.Core"
+    "HPD.Graph.SourceGenerator"
+    "HPD.VCS"
 )
 
 function show_usage() {
