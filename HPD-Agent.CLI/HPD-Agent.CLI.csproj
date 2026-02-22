@@ -13,7 +13,7 @@
     <Content Remove="TestFiles\**" />
   </ItemGroup>
 
-  <!-- Declare all target RIDs so restore succeeds on any CI host without --runtime flag -->
+  <!-- Declare all target RIDs so restore succeeds on any CI host without a runtime flag -->
   <PropertyGroup>
     <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
   </PropertyGroup>
