@@ -13,7 +13,12 @@
     <Content Remove="TestFiles\**" />
   </ItemGroup>
 
-  <!-- Single-file publish settings (only for publish, not build) -->
+  <!-- Declare all target RIDs so restore succeeds on any CI host without --runtime flag -->
+  <PropertyGroup>
+    <RuntimeIdentifiers>win-x64;win-arm64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+  </PropertyGroup>
+
+  <!-- Single-file publish settings (only active during dotnet publish, not build) -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
