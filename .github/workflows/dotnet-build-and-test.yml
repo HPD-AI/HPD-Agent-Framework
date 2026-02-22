@@ -32,7 +32,7 @@ jobs:
     outputs:
       dotnet-changed: ${{ steps.filter.outputs.dotnet }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -68,7 +68,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
@@ -81,15 +81,15 @@ jobs:
           10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore HPD-Agent.slnx
+      run: dotnet restore dotnet/HPD-Agent.slnx
 
     - name: Build
-      run: dotnet build HPD-Agent.slnx -c ${{ matrix.configuration }} --no-restore
+      run: dotnet build dotnet/HPD-Agent.slnx -c ${{ matrix.configuration }} --no-restore
 
     - name: Run tests (with coverage)
       if: matrix.collect-coverage
       run: |
-        dotnet test HPD-Agent.slnx \
+        dotnet test dotnet/HPD-Agent.slnx \
           -f ${{ matrix.targetFramework }} \
           -c ${{ matrix.configuration }} \
           --no-build \
@@ -103,7 +103,7 @@ jobs:
       if: ${{ !matrix.collect-coverage }}
       shell: bash
       run: |
-        dotnet test HPD-Agent.slnx \
+        dotnet test dotnet/HPD-Agent.slnx \
           -f ${{ matrix.targetFramework }} \
           -c ${{ matrix.configuration }} \
           --no-build \
@@ -112,7 +112,7 @@ jobs:
 
     - name: Upload test results
       if: always()
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.os }}-${{ matrix.targetFramework }}
         path: '**/test-results.trx'
@@ -158,7 +158,7 @@ jobs:
 
     - name: Upload coverage report
       if: matrix.collect-coverage
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: ./TestResults/Reports
@@ -173,7 +173,7 @@ jobs:
 
     steps:
     - name: Download all test results
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v4
       with:
         pattern: test-results-*
         path: ./test-results
@@ -197,7 +197,7 @@ jobs:
     if: needs.paths-filter.outputs.dotnet-changed == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
@@ -208,7 +208,7 @@ jobs:
           10.0.x
 
     - name: Pack NuGet packages
-      run: dotnet pack HPD-Agent.slnx -c Release --output ./artifacts
+      run: dotnet pack dotnet/HPD-Agent.slnx -c Release --output ./artifacts
 
     - name: Verify package contents
       run: |
@@ -284,7 +284,7 @@ jobs:
         fi
 
     - name: Upload packages
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v4
       with:
         name: nuget-packages
         path: ./artifacts/*.nupkg
