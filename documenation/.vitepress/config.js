@@ -7,7 +7,7 @@ export default defineConfig({
   // Base path for GitHub Pages deployment
   base: '/HPD-Agent-Framework/',
 
-  // Use OfficialDocs as the root
+  // Use documenation as the root
   srcDir: '.',
 
   // Clean URLs (removes .html)
@@ -114,7 +114,7 @@ export default defineConfig({
 
     // Edit link
     editLink: {
-      pattern: 'https://github.com/HPD-AI/HPD-Agent/edit/main/OfficialDocs/:path',
+      pattern: 'https://github.com/HPD-AI/HPD-Agent/edit/main/documenation/:path',
       text: 'Edit this page on GitHub'
     }
   },
