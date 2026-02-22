@@ -8,8 +8,8 @@ appsettings.*.json
 **/appsettings.*.json
 **/node_modules
 **/dist
-documenation/.vitepress/cache
-documenation/.vitepress/dist
+documentation/.vitepress/cache
+documentation/.vitepress/dist
 .vitepress/cache
 /target
 **/target
