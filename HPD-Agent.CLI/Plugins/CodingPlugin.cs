@@ -7,6 +7,7 @@ using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using HPD.Agent;
 using HPD.Agent.MCP;
+using HPD.Agent.OpenApi;
 using MAB.DotIgnore;
 using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using Ude;
@@ -22,8 +23,9 @@ using Matcher = Microsoft.Extensions.FileSystemGlobbing.Matcher;
     SystemPrompt: CodingToolkitPrompts.SystemPrompt)]
 public class CodingToolkit
 {
-    private readonly IgnoreList? _gitIgnoreList;
-
+    private readonly IgnoreList? _gitIgnoreList = File.Exists(Path.Combine(Directory.GetCurrentDirectory(), ".gitignore"))
+        ? new IgnoreList(Path.Combine(Directory.GetCurrentDirectory(), ".gitignore"))
+        : null;
     private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".exe", ".dll", ".so", ".dylib", ".bin", ".obj", ".o",
@@ -42,17 +44,6 @@ public class CodingToolkit
         ".next", ".nuxt", "coverage", ".cache"
     };
 
-    /// <summary>
-    /// Creates a CodingToolkit. Optionally loads .gitignore from current directory.
-    /// </summary>
-    public CodingToolkit()
-    {
-        var gitignorePath = Path.Combine(Directory.GetCurrentDirectory(), ".gitignore");
-        if (File.Exists(gitignorePath))
-        {
-            _gitIgnoreList = new IgnoreList(gitignorePath);
-        }
-    }
 
     // ═══════════════════════════════════════════════════════════════════
     // READ FILE - With offset/limit and encoding detection
@@ -1213,6 +1204,45 @@ public class CodingToolkit
 
         return sb.ToString();
     }
+
+    // ========== OpenAPI Sources ==========
+
+    [OpenApi(Prefix = "github")]
+    public OpenApiConfig GitHub() => new()
+    {
+        SpecUri = new Uri("https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json"),
+        IgnoreNonCompliantErrors = true,
+        CollapseWithinToolkit = true,
+        ResponseOptimization = new ResponseOptimizationConfig { MaxLength = 4000 },
+        // Keep only the most commonly useful GitHub operations
+        OperationSelectionPredicate = ctx => ctx.Id is
+            "repos/get" or
+            "repos/list-for-authenticated-user" or
+            "repos/list-for-org" or
+            "issues/list-for-repo" or
+            "issues/get" or
+            "issues/create" or
+            "issues/create-comment" or
+            "pulls/list" or
+            "pulls/get" or
+            "pulls/create" or
+            "pulls/list-review-comments" or
+            "git/get-tree" or
+            "repos/get-content" or
+            "repos/create-or-update-file-contents" or
+            "search/repositories" or
+            "search/issues-and-pull-requests" or
+            "search/code" or
+            "users/get-authenticated" or
+            "orgs/list-for-authenticated-user",
+        AuthCallback = (req, ct) =>
+        {
+            var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+            if (!string.IsNullOrEmpty(token))
+                req.Headers.Authorization = new("Bearer", token);
+            return Task.CompletedTask;
+        }
+    };
 
     // ========== MCP Servers ==========
 

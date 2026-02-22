@@ -4,6 +4,7 @@ using HPD.Agent;
 using HPD.Agent.Audio;
 using HPD.Agent.Audio.ElevenLabs;
 using HPD.Agent.MCP;
+using HPD.Agent.OpenApi;
 using HPD.Agent.Memory;
 using HPD_Agent.CLI.Auth;
 using Microsoft.Extensions.Configuration;
@@ -149,22 +150,26 @@ var loggerFactory = LoggerFactory.Create(builder =>
 
 
 
-// Create CodingToolkit instance for chat client injection (LLM self-correction)
-var codingToolkit = new CodingToolkit();
-
 // MCP manifest path (same directory as appsettings.json)
 var mcpManifestPath = Path.Combine(appDirectory, "MCP.json");
 
 var agentBuilder = new AgentBuilder(config)
     .WithLogging(loggerFactory)
     .WithMiddleware(new EnvironmentContextMiddleware(new[] { userWorkingDirectory }))
-    // Register CodingToolkit as instance to enable chat client injection after build
     .WithSessionStore(sessionStore, persistAfterTurn: true)
     // Enable plan mode for multi-step task tracking
     .WithPlanMode()
     .WithPermissions()
     // Add MCP support for external tool servers
-    .WithMCP(mcpManifestPath);
+    .WithMCP(mcpManifestPath)
+    // Petstore demo API — public, no auth required
+    .WithOpenApi("petstore",
+        new Uri("https://petstore3.swagger.io/api/v3/openapi.json"),
+        config =>
+        {
+            //config.CollapseWithinToolkit = true;
+            config.ResponseOptimization = new ResponseOptimizationConfig { MaxLength = 3000 };
+        });
 
 // Add audio pipeline if providers are available
 var agent = await agentBuilder.Build();

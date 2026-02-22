@@ -72,6 +72,12 @@ internal class ToolkitInfo
         Capabilities.OfType<MCPServerCapability>();
 
     /// <summary>
+    /// Gets all OpenAPI spec capabilities from the unified Capabilities list.
+    /// </summary>
+    public IEnumerable<OpenApiCapability> OpenApiCapabilities =>
+        Capabilities.OfType<OpenApiCapability>();
+
+    /// <summary>
     /// Total count of all capabilities.
     /// </summary>
     public int CapabilityCount => Capabilities.Count;

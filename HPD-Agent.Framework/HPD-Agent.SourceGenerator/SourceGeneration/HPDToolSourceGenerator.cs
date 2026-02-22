@@ -78,7 +78,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 name.Contains("AIFunction") ||
                 name.Contains("Skill") ||
                 name.Contains("SubAgent") ||
-                name.Contains("MCPServer"));
+                name.Contains("MCPServer") ||
+                name.Contains("OpenApi"));
         });
 
         if (hasCapabilityMethods)
@@ -141,7 +142,8 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         var skillCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
         var subAgentCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
         var mcpServerCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.MCPServerCapability>().Count();
-        var description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount);
+        var openApiCount = capabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.OpenApiCapability>().Count();
+        var description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount, openApiCount);
 
         // NEW: Extract function names for selective registration
         var functionNames = capabilities
@@ -274,13 +276,14 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
         return true;
     }
 
-    private static string BuildToolkitDescription(int functionCount, int skillCount, int subAgentCount, int mcpServerCount = 0)
+    private static string BuildToolkitDescription(int functionCount, int skillCount, int subAgentCount, int mcpServerCount = 0, int openApiCount = 0)
     {
         var parts = new List<string>();
         if (functionCount > 0) parts.Add($"{functionCount} AI functions");
         if (skillCount > 0) parts.Add($"{skillCount} skills");
         if (subAgentCount > 0) parts.Add($"{subAgentCount} sub-agents");
         if (mcpServerCount > 0) parts.Add($"{mcpServerCount} MCP servers");
+        if (openApiCount > 0) parts.Add($"{openApiCount} OpenAPI source(s)");
 
         if (parts.Count == 0)
             return "Empty Toolkit container.";
@@ -314,6 +317,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 var skillCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SkillCapability>().Count();
                 var subAgentCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.SubAgentCapability>().Count();
                 var mcpServerCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.MCPServerCapability>().Count();
+                var openApiCount = allCapabilities.OfType<HPD.Agent.SourceGenerator.Capabilities.OpenApiCapability>().Count();
 
                 // Preserve IsCollapsed and ContainerDescription from any partial class that has it
                 var isCollapsed = group.Any(p => p!.IsCollapsed);
@@ -341,7 +345,7 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                 return new ToolkitInfo
                 {
                     Name = first.Name,
-                    Description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount),
+                    Description = BuildToolkitDescription(functionCount, skillCount, subAgentCount, mcpServerCount, openApiCount),
                     Namespace = first.Namespace,
 
                     // PHASE 5: Unified Capabilities list (all capability types)
@@ -599,7 +603,18 @@ namespace HPD.Agent.Diagnostics {{
 
             // NEW: MCP Server support
             sb.AppendLine($"                // ========== MCP SERVERS ==========");
-            sb.AppendLine($"                HasMCPServers: {Toolkit.MCPServerCapabilities.Any().ToString().ToLower()}");
+            sb.AppendLine($"                HasMCPServers: {Toolkit.MCPServerCapabilities.Any().ToString().ToLower()},");
+
+            // NEW: OpenAPI support
+            sb.AppendLine($"                // ========== OPENAPI SOURCES ==========");
+            if (Toolkit.OpenApiCapabilities.Any())
+            {
+                sb.AppendLine($"                CollectOpenApiSources: {Toolkit.Name}Registration.CollectOpenApiSources");
+            }
+            else
+            {
+                sb.AppendLine($"                CollectOpenApiSources: null");
+            }
 
             sb.AppendLine($"            ),");
         }
@@ -991,6 +1006,28 @@ namespace HPD.Agent.Diagnostics {{
             }
 
             sb.AppendLine("        };");
+        }
+
+        // Generate CollectOpenApiSources method
+        if (Toolkit.OpenApiCapabilities.Any())
+        {
+            sb.AppendLine();
+            sb.AppendLine("        // OpenAPI source collection");
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// Collects OpenAPI source registrations from [OpenApi] methods.");
+            sb.AppendLine("        /// Called by AgentBuilder.CreateFunctionsFromCatalog() via ToolkitFactory.CollectOpenApiSources.");
+            sb.AppendLine("        /// Config is passed as object so ToolkitFactory has no compile-time dep on HPD-Agent.OpenApi.");
+            sb.AppendLine("        /// Cast to OpenApiConfig happens inside OpenApiLoader.LoadAllAsync.");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine($"        public static void CollectOpenApiSources(object __instance, System.Action<string, object, string> __openApiCollector)");
+            sb.AppendLine("        {");
+
+            foreach (var openApi in Toolkit.OpenApiCapabilities)
+            {
+                sb.AppendLine($"            {openApi.GenerateRegistrationCode(Toolkit)}");
+            }
+
+            sb.AppendLine("        }");
         }
 
         sb.AppendLine("    }");

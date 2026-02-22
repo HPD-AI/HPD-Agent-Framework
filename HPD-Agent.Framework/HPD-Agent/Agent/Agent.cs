@@ -60,6 +60,10 @@ public sealed class Agent
     // Passed from AgentBuilder, used for session persistence and schema validation
     private readonly ImmutableDictionary<string, MiddlewareStateFactory> _stateFactories;
 
+    // HttpClients created by AgentBuilder for OpenAPI sources that did not provide their own.
+    // Disposed when the Agent is disposed.
+    private readonly IReadOnlyList<HttpClient>? _ownedHttpClients;
+
     /// <summary>
     /// Agent configuration object containing all settings
     /// </summary>
@@ -189,12 +193,14 @@ public sealed class Agent
         IEnumerable<IAgentEventObserver>? observers = null,
         IEnumerable<IAgentEventHandler>? eventHandlers = null,
         Providers.IProviderRegistry? providerRegistry = null,
-        IReadOnlyDictionary<string, MiddlewareStateFactory>? stateFactories = null)
+        IReadOnlyDictionary<string, MiddlewareStateFactory>? stateFactories = null,
+        IReadOnlyList<HttpClient>? ownedHttpClients = null)
     {
         _providerRegistry = providerRegistry;
         _serviceProvider = serviceProvider;
         _stateFactories = stateFactories?.ToImmutableDictionary()
             ?? ImmutableDictionary<string, MiddlewareStateFactory>.Empty;
+        _ownedHttpClients = ownedHttpClients;
         Config = config ?? throw new ArgumentNullException(nameof(config));
         _baseClient = baseClient ?? throw new ArgumentNullException(nameof(baseClient));
         _name = config.Name ?? "Agent"; // Default to "Agent" to prevent null dictionary key exceptions
@@ -2093,6 +2099,9 @@ public sealed class Agent
         (_eventCoordinator as IDisposable)?.Dispose();
         foreach (var dispatcher in _observerDispatchers)
             dispatcher.Dispose();
+        if (_ownedHttpClients != null)
+            foreach (var client in _ownedHttpClients)
+                client.Dispose();
     }
 
     /// <summary>

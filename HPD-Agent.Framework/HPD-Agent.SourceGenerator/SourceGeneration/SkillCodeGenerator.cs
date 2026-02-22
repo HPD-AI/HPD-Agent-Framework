@@ -382,10 +382,11 @@ internal static class SkillCodeGenerator
 
         var sb = new StringBuilder();
 
-        // Combine functions, skills, and MCP servers
+        // Combine functions, skills, MCP servers, and OpenAPI sources
         var allCapabilities = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
             .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
             .Concat(Toolkit.MCPServerCapabilities.Select(m => m.Name))
+            .Concat(Toolkit.OpenApiCapabilities.Select(o => o.Prefix ?? o.Name))
             .ToList();
         var capabilitiesList = string.Join(", ", allCapabilities);
         var totalCount = allCapabilities.Count;
@@ -588,10 +589,11 @@ internal static class SkillCodeGenerator
             : Toolkit.Description;
         sb.AppendLine($"                Description = \"{description}\",");
 
-        // Include functions, skills, and MCP servers
+        // Include functions, skills, MCP servers, and OpenAPI sources
         var allFunctionNames = Toolkit.FunctionCapabilities.Select(f => f.FunctionName)
             .Concat(Toolkit.SkillCapabilities.Select(s => s.Name))
             .Concat(Toolkit.MCPServerCapabilities.Select(m => m.Name))
+            .Concat(Toolkit.OpenApiCapabilities.Select(o => o.Prefix ?? o.Name))
             .ToList();
         var functionNamesArray = string.Join(", ", allFunctionNames.Select(n => $"\"{n}\""));
 

@@ -178,7 +178,25 @@ internal static class CapabilityAnalyzer
             return AnalyzeMCPServerCapability(method, attrs, semanticModel, className, namespaceName, diagnostics);
         }
 
-        // 5. Check for [AIFunction] attribute
+        // 5. Check for [OpenApi] attribute
+        if (HasAttribute(attrs, "OpenApi"))
+        {
+            // Check for conflicting attributes (HPDAG0402)
+            var conflictingAttr = GetConflictingCapabilityAttribute(attrs, "OpenApi");
+            if (conflictingAttr != null)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    OpenApiDiagnostics.ConflictingAttributes,
+                    method.Identifier.GetLocation(),
+                    method.Identifier.ValueText,
+                    conflictingAttr));
+                return null;
+            }
+
+            return AnalyzeOpenApiCapability(method, attrs, semanticModel, className, namespaceName, diagnostics);
+        }
+
+        // 6. Check for [AIFunction] attribute
         if (HasAttribute(attrs, "AIFunction"))
         {
             return AnalyzeFunctionCapability(method, attrs, semanticModel, context, className, namespaceName);
@@ -780,6 +798,81 @@ internal static class CapabilityAnalyzer
         };
     }
 
+    // ========== OpenApi Analysis ==========
+
+    /// <summary>
+    /// Analyzes a method with [OpenApi] attribute and creates an OpenApiCapability.
+    /// The method must return OpenApiConfig (from HPD-Agent.OpenApi) and be parameterless.
+    /// ISecretResolver is available via constructor injection — HPDAG0403 guards method parameters.
+    /// </summary>
+    private static OpenApiCapability? AnalyzeOpenApiCapability(
+        MethodDeclarationSyntax method,
+        List<AttributeSyntax> attrs,
+        SemanticModel semanticModel,
+        string className,
+        string namespaceName,
+        List<Diagnostic> diagnostics)
+    {
+        // Validate return type is OpenApiConfig
+        var returnType = semanticModel.GetTypeInfo(method.ReturnType).Type;
+        if (returnType == null || returnType.Name != "OpenApiConfig")
+        {
+            diagnostics.Add(Diagnostic.Create(
+                OpenApiDiagnostics.InvalidReturnType,
+                method.ReturnType.GetLocation(),
+                method.Identifier.ValueText,
+                returnType?.ToDisplayString() ?? "unknown"));
+            return null;
+        }
+
+        // Validate method is parameterless (HPDAG0403)
+        if (method.ParameterList.Parameters.Count > 0)
+        {
+            diagnostics.Add(Diagnostic.Create(
+                OpenApiDiagnostics.MethodMustBeParameterless,
+                method.ParameterList.GetLocation(),
+                method.Identifier.ValueText));
+            return null;
+        }
+
+        var methodName = method.Identifier.ValueText;
+        var isStatic = method.Modifiers.Any(SyntaxKind.StaticKeyword);
+
+        // Extract [OpenApi] attribute properties
+        var openApiAttr = attrs.FirstOrDefault(a => a.Name.ToString().Contains("OpenApi"));
+        string? prefix = null;
+
+        if (openApiAttr?.ArgumentList != null)
+        {
+            foreach (var arg in openApiAttr.ArgumentList.Arguments)
+            {
+                if (arg.NameEquals != null)
+                {
+                    var propName = arg.NameEquals.Name.Identifier.ValueText;
+                    if (propName == "Prefix")
+                        prefix = ExtractStringLiteral(arg.Expression, semanticModel);
+                }
+            }
+        }
+
+        // Use standalone [RequiresPermission] attribute (same pattern as AIFunction/Skill/MCPServer)
+        var requiresPermission = HasAttribute(attrs, "RequiresPermission");
+
+        System.Diagnostics.Debug.WriteLine($"[CapabilityAnalyzer] Analyzed OpenApi: {methodName}, Prefix={prefix}, RequiresPermission={requiresPermission}");
+
+        return new OpenApiCapability
+        {
+            Name = methodName,
+            MethodName = methodName,
+            Description = string.Empty,    // OpenAPI — descriptions come from spec operations
+            ParentToolkitName = className,
+            ParentNamespace = namespaceName,
+            IsStatic = isStatic,
+            Prefix = prefix,
+            RequiresPermission = requiresPermission,
+        };
+    }
+
     // ========== Function Analysis ==========
 
     /// <summary>
@@ -876,7 +969,7 @@ internal static class CapabilityAnalyzer
     /// </summary>
     private static string? GetConflictingCapabilityAttribute(List<AttributeSyntax> attrs, string currentAttr)
     {
-        var capabilityAttributes = new[] { "AIFunction", "Skill", "SubAgent", "MultiAgent", "MCPServer" };
+        var capabilityAttributes = new[] { "AIFunction", "Skill", "SubAgent", "MultiAgent", "MCPServer", "OpenApi" };
 
         foreach (var attr in attrs)
         {

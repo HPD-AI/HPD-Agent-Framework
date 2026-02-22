@@ -55,6 +55,7 @@ internal static class AutoDiscovery
         // 1. Initialize extension libraries (which may auto-discover their own providers)
         TryInitializeByTypeName("HPD.Agent.Audio.AudioProviderAutoDiscovery, HPD-Agent.Audio");
         TryInitializeByTypeName("HPD.Agent.MCP.MCPAutoDiscovery, HPD-Agent.MCP");
+        TryInitializeByTypeName("HPD.Agent.OpenApi.OpenApiAutoDiscovery, HPD-Agent.OpenApi");
 
         // 2. Initialize LLM providers
         TryInitializeByTypeName("HPD.Agent.Providers.OpenAI.OpenAIProviderModule, HPD-Agent.Providers.OpenAI");
@@ -74,6 +75,7 @@ internal static class AutoDiscovery
     /// </summary>
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.Audio.AudioProviderAutoDiscovery", "HPD-Agent.Audio")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.MCP.MCPAutoDiscovery", "HPD-Agent.MCP")]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.OpenApi.OpenApiAutoDiscovery", "HPD-Agent.OpenApi")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.Providers.OpenAI.OpenAIProviderModule", "HPD-Agent.Providers.OpenAI")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.Providers.Anthropic.AnthropicProviderModule", "HPD-Agent.Providers.Anthropic")]
     [DynamicDependency(DynamicallyAccessedMemberTypes.All, "HPD.Agent.Providers.GoogleAI.GoogleAIProviderModule", "HPD-Agent.Providers.GoogleAI")]
@@ -144,6 +146,7 @@ internal static class AutoDiscovery
             // 1. Load extension libraries (which may auto-discover their own providers)
             TryLoadExtensionLibrary(directory, "HPD-Agent.Audio.dll");
             TryLoadExtensionLibrary(directory, "HPD-Agent.MCP.dll");
+            TryLoadExtensionLibrary(directory, "HPD-Agent.OpenApi.dll");
 
             // 2. Scan for LLM provider assemblies
             var providerPattern = "HPD-Agent.Providers.*.dll";

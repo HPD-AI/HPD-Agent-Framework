@@ -82,7 +82,8 @@
       "Bash(done)",
       "Bash(dotnet script:*)",
       "Bash(dotnet-ildasm:*)",
-      "Bash(dotnet workload:*)"
+      "Bash(dotnet workload:*)",
+      "WebFetch(domain:petstore3.swagger.io)"
     ],
     "deny": [],
     "ask": []

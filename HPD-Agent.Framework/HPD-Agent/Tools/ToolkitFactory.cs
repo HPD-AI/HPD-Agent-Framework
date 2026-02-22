@@ -132,5 +132,22 @@ public record ToolkitFactory(
     /// When true, the generated Registration class has a static MCPServers property
     /// containing MCPServerRegistration objects that AgentBuilder processes at build time.
     /// </summary>
-    bool HasMCPServers = false
+    bool HasMCPServers = false,
+
+    // ========== NEW: OPENAPI SOURCE SUPPORT ==========
+
+    /// <summary>
+    /// Delegate to collect OpenAPI source registrations from [OpenApi] methods.
+    /// Null when toolkit has no [OpenApi] methods.
+    ///
+    /// Signature: (instance, collector) where collector is Action&lt;string, object, string&gt;:
+    ///   - string: source name (Prefix ?? method name)
+    ///   - object: OpenApiConfig returned by the [OpenApi] method (cast to OpenApiConfig in HPD-Agent.OpenApi)
+    ///   - string: parent toolkit name
+    ///
+    /// Config is passed as object to avoid ToolkitFactory taking a dependency on HPD-Agent.OpenApi.
+    /// Cast to OpenApiConfig happens inside OpenApiLoader.LoadAllAsync.
+    /// ISecretResolver is available via constructor injection — no threading through this delegate.
+    /// </summary>
+    Action<object, Action<string, object, string>>? CollectOpenApiSources = null
 );

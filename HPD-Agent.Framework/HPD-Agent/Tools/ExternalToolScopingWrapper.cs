@@ -259,6 +259,76 @@ public static class ExternalToolCollapsingWrapper
     }
 
     /// <summary>
+    /// Wraps OpenAPI functions behind a container nested inside a parent toolkit.
+    /// Used when <c>CollapseWithinToolkit = true</c> on <c>OpenApiConfig</c>.
+    /// The container gets <c>["ParentContainer"] = parentContainer</c> so
+    /// <c>IsCollapseContainerVisible()</c> enforces parent-first visibility.
+    /// </summary>
+    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapOpenApiTools(
+        string containerName,
+        List<AIFunction> tools,
+        int maxFunctionNamesInDescription = 10,
+        string? functionResult = null,
+        string? systemPrompt = null,
+        string? customDescription = null,
+        string? parentContainer = null)
+    {
+        if (string.IsNullOrEmpty(containerName))
+            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
+
+        if (tools == null || tools.Count == 0)
+            throw new ArgumentException("Tools list cannot be null or empty", nameof(tools));
+
+        var allFunctionNames = tools.Select(t => t.Name).ToList();
+
+        var displayedNames = allFunctionNames.Take(maxFunctionNamesInDescription);
+        var functionNamesList = string.Join(", ", displayedNames);
+        var moreCount = allFunctionNames.Count > maxFunctionNamesInDescription
+            ? $" and {allFunctionNames.Count - maxFunctionNamesInDescription} more"
+            : "";
+        var functionSuffix = $"Contains {allFunctionNames.Count} operations: {functionNamesList}{moreCount}";
+
+        string description;
+        if (!string.IsNullOrWhiteSpace(customDescription))
+            description = $"{customDescription}. {functionSuffix}";
+        else
+            description = $"OpenAPI source '{containerName}'. {functionSuffix}";
+
+        var fullFunctionList = string.Join(", ", allFunctionNames);
+        var returnMessage = $"{containerName} expanded. Available operations: {fullFunctionList}";
+        if (!string.IsNullOrEmpty(functionResult))
+            returnMessage += $"\n\n{functionResult}";
+
+        var container = HPDAIFunctionFactory.Create(
+            (_, _) => Task.FromResult<object?>(returnMessage),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = containerName,
+                Description = description,
+                RequiresPermission = false,
+                Validator = _ => new List<ValidationError>(),
+                SchemaProvider = () => CreateEmptyContainerSchema(),
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["ToolkitName"] = containerName,
+                    ["ParentContainer"] = parentContainer,
+                    ["FunctionNames"] = allFunctionNames.ToArray(),
+                    ["FunctionCount"] = allFunctionNames.Count,
+                    ["SourceType"] = "OpenApi",
+                    ["FunctionResult"] = functionResult,
+                    ["SystemPrompt"] = systemPrompt
+                }
+            });
+
+        var collapsedTools = tools
+            .Select(tool => AddParentToolMetadata(tool, containerName, "OpenApi", parentContainer: null))
+            .ToList();
+
+        return (container, collapsedTools);
+    }
+
+    /// <summary>
     /// Adds ParentToolkit metadata to an existing AIFunction by wrapping it.
     /// This is necessary because AIFunction.AdditionalProperties is read-only,
     /// so we create a new function that delegates to the original.

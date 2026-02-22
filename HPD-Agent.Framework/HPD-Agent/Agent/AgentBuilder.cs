@@ -28,7 +28,12 @@ internal record AgentBuildDependencies(
     IChatClient ClientToUse,
     ChatOptions? MergedOptions,
     ErrorHandling.IProviderErrorHandler ErrorHandler,
-    IChatClient? SummarizerClient = null);
+    IChatClient? SummarizerClient = null,
+    /// <summary>
+    /// HttpClients created by AgentBuilder for OpenAPI sources that did not provide their own.
+    /// Transferred to Agent and disposed when Agent.Dispose() is called.
+    /// </summary>
+    IReadOnlyList<HttpClient>? OwnedHttpClients = null);
 
 /// <summary>
 /// Builder for creating dual interface agents with sophisticated capabilities
@@ -184,6 +189,38 @@ public class AgentBuilder
     /// Maps toolkit name -> JsonElement config for CreateFromConfig delegate.
     /// </summary>
     internal readonly Dictionary<string, System.Text.Json.JsonElement> _toolkitConfigs = new(StringComparer.OrdinalIgnoreCase);
+
+    // ==========  OpenAPI Support  ==========
+
+    /// <summary>
+    /// Static singleton set by OpenApiAutoDiscovery.Initialize() via [ModuleInitializer].
+    /// Null until HPD-Agent.OpenApi is loaded. Same pattern as provider modules.
+    /// </summary>
+    private static IOpenApiLoader? s_openApiLoader;
+
+    /// <summary>
+    /// OpenAPI sources registered via WithOpenApi() or [OpenApi] toolkit attribute.
+    /// Resolved and loaded in BuildDependenciesAsync() after MCP tool loading.
+    /// </summary>
+    internal readonly List<OpenApiSourceRegistration> _openApiSources = new();
+
+    /// <summary>
+    /// Registers the OpenAPI loader hook. Called by OpenApiAutoDiscovery via [ModuleInitializer].
+    /// Thread-safe — [ModuleInitializer] methods are called at most once.
+    /// </summary>
+    internal static void RegisterOpenApiLoader(IOpenApiLoader loader)
+    {
+        s_openApiLoader = loader;
+    }
+
+    /// <summary>
+    /// Adds a pending OpenAPI source registration. Called by WithOpenApi() and
+    /// CreateFunctionsFromCatalog() when a toolkit has [OpenApi] methods.
+    /// </summary>
+    internal void AddOpenApiSource(OpenApiSourceRegistration registration)
+    {
+        _openApiSources.Add(registration);
+    }
 
     /// <summary>
     /// Creates a new builder with default configuration.
@@ -535,6 +572,21 @@ public class AgentBuilder
                 instance = factory.CreateInstance();
 
             HaveInstance:
+                // Collect OpenAPI sources from [OpenApi] toolkit methods (ZERO REFLECTION!)
+                // Config is stored as object; cast to OpenApiConfig happens in OpenApiLoader.
+                // CollapseWithinToolkit placeholder is false — loader reads it from config directly.
+                if (factory.CollectOpenApiSources != null)
+                {
+                    factory.CollectOpenApiSources(instance, (name, config, parentContainer) =>
+                    {
+                        _openApiSources.Add(new OpenApiSourceRegistration(
+                            Name: name,
+                            ParentContainer: parentContainer,
+                            CollapseWithinToolkit: false,   // placeholder — loader reads from config
+                            Config: config));
+                    });
+                }
+
                 // Call CreateFunctions delegate (ZERO REFLECTION!)
                 var functions = factory.CreateFunctions(instance, ctx ?? _defaulTMetadata);
 
@@ -1921,7 +1973,8 @@ public class AgentBuilder
             _observers,
             _eventHandlers,
             _providerRegistry,
-            _stateFactories);
+            _stateFactories,
+            buildData.OwnedHttpClients);
     }
 
     /// <summary>
@@ -2542,6 +2595,25 @@ public class AgentBuilder
         // Note: Old SkillDefinition-based skills have been removed in favor of type-safe Skill class.
         // Skills are now registered via Toolkits and auto-discovered by the source generator.
 
+        // Load OpenAPI sources (from WithOpenApi() or [OpenApi] toolkit attributes)
+        OpenApiLoadResult? openApiResult = null;
+        if (_openApiSources.Count > 0)
+        {
+            if (s_openApiLoader == null)
+                throw new InvalidOperationException(
+                    "OpenAPI sources were registered but HPD-Agent.OpenApi is not loaded. " +
+                    "Add a reference to HPD-Agent.OpenApi.");
+
+            // The loader owns all config interpretation, HttpClient creation, and function generation.
+            // It returns any internally-created HttpClients for the Agent to dispose.
+            openApiResult = await s_openApiLoader.LoadAllAsync(_openApiSources, cancellationToken);
+            toolFunctions.AddRange(openApiResult.Functions);
+            if (openApiResult.Functions.Count > 0)
+                _logger?.CreateLogger<AgentBuilder>().LogInformation(
+                    "Successfully integrated {Count} OpenAPI functions from {Sources} source(s)",
+                    openApiResult.Functions.Count, _openApiSources.Count);
+        }
+
         var mergedOptions = MergeToolFunctions(_config.Provider?.DefaultChatOptions, toolFunctions);
 
         // Create custom summarizer client if configured
@@ -2574,7 +2646,8 @@ public class AgentBuilder
             clientToUse,
             mergedOptions,
             errorHandler,
-            summarizerClient);
+            summarizerClient,
+            openApiResult?.OwnedHttpClients.Count > 0 ? openApiResult.OwnedHttpClients : null);
     }
 
     /// <summary>

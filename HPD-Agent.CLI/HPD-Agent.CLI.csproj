@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
+    <ProjectReference Include="../HPD-Agent.Framework/HPD-Agent.OpenApi/HPD-Agent.OpenApi.csproj" />
     <ProjectReference Include="../HPD-Agent.Framework/HPD-Agent.Memory/HPD-Agent.Memory.csproj" />
     <ProjectReference Include="../HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj" />
     <!-- LLM Providers -->
