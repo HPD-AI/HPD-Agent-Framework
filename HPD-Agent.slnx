@@ -26,10 +26,7 @@
     <Project Path="HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj" />
     <Project Path="HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.WebSearch/HPD-Agent.Toolkit.WebSearch.csproj" />
   </Folder>
-  <Folder Name="/HPD-Agent.WebApplication/">
-    <Project Path="HPD-Agent.WebApplication/AgentAPI/AgentAPI.csproj" />
-  </Folder>
-  <Folder Name="/HPD.VCS/">
+<Folder Name="/HPD.VCS/">
     <Project Path="HPD.VCS/HPD.VCS.Library/HPD.VCS.Library.csproj" />
   </Folder>
   <Folder Name="/HPD.Graph/">
@@ -49,10 +46,9 @@
     <Project Path="test/HPD.VCS.Tests/HPD.VCS.Tests.csproj" />
     <Project Path="test/HPD-Agent.Evaluations.Tests/HPD-Agent.Evaluations.Tests.csproj" />
   </Folder>
-  <Project Path="HPD-Agent.CLI/HPD-Agent.CLI.csproj" />
-  <Project Path="HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
+<Project Path="HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
-<Project Path="HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
+  <Project Path="HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.Sandbox.Local/HPD-Agent.Sandbox.Local.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" />
   <Project Path="HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj" />
