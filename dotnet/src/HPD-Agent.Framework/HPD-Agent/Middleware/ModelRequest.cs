@@ -107,6 +107,13 @@ public sealed record ModelRequest
     public IStreamRegistry? Streams { get; init; }
 
     /// <summary>
+    /// The current session. Provides access to session storage (content store, asset store).
+    /// Middleware can use this for storing artifacts produced during the model call.
+    ///   May be NULL if no session is active
+    /// </summary>
+    public Session? Session { get; init; }
+
+    /// <summary>
     /// Original run options for this agent turn.
     /// Contains per-request configuration like Audio settings, StructuredOutput, etc.
     ///   May be NULL in test scenarios

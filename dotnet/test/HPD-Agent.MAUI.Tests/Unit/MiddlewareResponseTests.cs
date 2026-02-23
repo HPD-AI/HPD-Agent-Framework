@@ -667,11 +667,11 @@ public class MiddlewareResponseTests : IDisposable
         }
     }
 
-    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentOptions>
+    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentConfig>
     {
-        public HPDAgentOptions CurrentValue { get; } = new HPDAgentOptions();
-        public HPDAgentOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<HPDAgentOptions, string?> listener) => null;
+        public HPDAgentConfig CurrentValue { get; } = new HPDAgentConfig();
+        public HPDAgentConfig Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<HPDAgentConfig, string?> listener) => null;
     }
 
     #endregion

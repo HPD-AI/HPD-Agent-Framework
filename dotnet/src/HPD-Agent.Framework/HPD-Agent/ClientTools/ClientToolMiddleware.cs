@@ -13,7 +13,7 @@ namespace HPD.Agent.ClientTools;
 /// <remarks>
 /// <para><b>Lifecycle Hooks:</b></para>
 /// <list type="bullet">
-/// <item><c>BeforeMessageTurnAsync</c> - Process initial tool registration from AgentRunInput</item>
+/// <item><c>BeforeMessageTurnAsync</c> - Process initial tool registration from AgentClientInput</item>
 /// <item><c>BeforeIterationAsync</c> - Apply tool visibility based on current state</item>
 /// <item><c>BeforeFunctionAsync</c> - Intercept Client tool calls, emit request, wait for response</item>
 /// </list>
@@ -42,7 +42,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     // ============================================
 
     /// <summary>
-    /// Process initial Toolkit registration from AgentRunInput.
+    /// Process initial Toolkit registration from AgentClientInput.
     /// Tools are always inside Toolkits - this is the only way to register Client tools.
     ///
     /// Registration is ATOMIC: if any Toolkit fails validation (including cross-Toolkit
@@ -50,15 +50,15 @@ public class ClientToolMiddleware : IAgentMiddleware
     /// </summary>
     public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken ct)
     {
-        // Get AgentRunInput from RunConfig (if provided)
-        var runInput = context.RunConfig.ClientToolInput;
+        // Get AgentClientInput from RunConfig (if provided)
+        var clientinput = context.RunConfig.ClientToolInput;
 
-        if (runInput == null)
+        if (clientinput == null)
             return Task.CompletedTask;
 
         // Handle state persistence vs reset
         var existingState = context.Analyze(s => s.MiddlewareState.ClientTool());
-        var state = runInput.ResetClientState || existingState == null
+        var state = clientinput.ResetClientState || existingState == null
             ? new ClientToolStateData()
             : existingState;
 
@@ -66,11 +66,11 @@ public class ClientToolMiddleware : IAgentMiddleware
         // PHASE 1: Register all Toolkits (tools only)
         // Build pending list without committing to state
         // =============================================
-        var pendingToolkits = new List<ClientToolGroupDefinition>();
+        var pendingToolkits = new List<clientToolKitDefinition>();
 
-        if (runInput.ClientToolGroups != null)
+        if (clientinput.clientToolKits != null)
         {
-            foreach (var Toolkit in runInput.ClientToolGroups)
+            foreach (var Toolkit in clientinput.clientToolKits)
             {
                 // Validate Toolkit structure (name, description, tools)
                 Toolkit.Validate();
@@ -99,7 +99,7 @@ public class ClientToolMiddleware : IAgentMiddleware
 
             foreach (var skill in Toolkit.Skills)
             {
-                skill.ValidateReferences(Toolkit.Name, state.RegisteredToolGroups);
+                skill.ValidateReferences(Toolkit.Name, state.RegisteredToolKits);
             }
         }
 
@@ -108,33 +108,33 @@ public class ClientToolMiddleware : IAgentMiddleware
         // =============================================
 
         // Set initial expanded Toolkits
-        if (runInput.ExpandedContainers != null)
+        if (clientinput.ExpandedContainers != null)
         {
-            foreach (var toolName in runInput.ExpandedContainers)
+            foreach (var toolName in clientinput.ExpandedContainers)
             {
                 state = state.WithExpandedToolkit(toolName);
             }
         }
 
         // Set initial hidden tools
-        if (runInput.HiddenTools != null)
+        if (clientinput.HiddenTools != null)
         {
-            foreach (var tool in runInput.HiddenTools)
+            foreach (var tool in clientinput.HiddenTools)
             {
                 state = state.WithHiddenTool(tool);
             }
         }
 
         // Set context
-        if (runInput.Context != null)
+        if (clientinput.Context != null)
         {
-            state = state.WithContext(runInput.Context);
+            state = state.WithContext(clientinput.Context);
         }
 
         // Set state
-        if (runInput.State.HasValue)
+        if (clientinput.State.HasValue)
         {
-            state = state.WithState(runInput.State);
+            state = state.WithState(clientinput.State);
         }
 
         // =============================================
@@ -146,9 +146,9 @@ public class ClientToolMiddleware : IAgentMiddleware
         });
 
         // Emit registration confirmation (optional - works without EventCoordinator)
-        context.TryEmit(new ClientToolGroupsRegisteredEvent(
-           RegisteredToolGroups: state.RegisteredToolGroups.Keys.ToList(),
-            TotalTools: state.RegisteredToolGroups.Values.Sum(p => p.Tools.Count),
+        context.TryEmit(new clientToolKitsRegisteredEvent(
+           RegisteredToolKits: state.RegisteredToolKits.Keys.ToList(),
+            TotalTools: state.RegisteredToolKits.Values.Sum(p => p.Tools.Count),
             Timestamp: DateTimeOffset.UtcNow));
 
         return Task.CompletedTask;
@@ -190,7 +190,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     public Task BeforeIterationAsync(BeforeIterationContext context, CancellationToken ct)
     {
         var state = context.Analyze(s => s.MiddlewareState.ClientTool());
-        if (state == null || state.RegisteredToolGroups.Count == 0)
+        if (state == null || state.RegisteredToolKits.Count == 0)
             return Task.CompletedTask;
 
         // Apply any pending augmentation from previous iteration
@@ -340,7 +340,7 @@ public class ClientToolMiddleware : IAgentMiddleware
     {
         var allFunctions = new List<AIFunction>();
 
-        foreach (var (toolName, Toolkit) in state.RegisteredToolGroups)
+        foreach (var (toolName, Toolkit) in state.RegisteredToolKits)
         {
             // Convert ClientToolDefinitions to AIFunctions
             var toolAIFunctions = Toolkit.Tools
@@ -365,7 +365,7 @@ public class ClientToolMiddleware : IAgentMiddleware
             if (shouldCollapse)
             {
                 // Use ExternalToolCollapsingWrapper pattern - creates container + Collapsed tools
-                var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapClientToolGroup(
+                var (container, CollapsedTools) = ExternalToolCollapsingWrapper.WrapclientToolKit(
                     toolName,
                     Toolkit.Description!,  // Validated to exist for collapsed Toolkits
                     toolAIFunctions,
@@ -414,8 +414,8 @@ public class ClientToolMiddleware : IAgentMiddleware
                 AdditionalProperties = new Dictionary<string, object?>
                 {
                     ["IsClientTool"] = true,
-                    ["ClientToolGroupName"] = toolName,
-                    ["SourceType"] = "ClientToolGroup"
+                    ["clientToolKitName"] = toolName,
+                    ["SourceType"] = "clientToolKit"
                 }
             });
     }
@@ -484,8 +484,8 @@ public class ClientToolMiddleware : IAgentMiddleware
                     ["IsSkill"] = true,
                     ["IsContainer"] = true,  // Skills are containers (for ToolVisibilityManager)
                     ["IsClientSkill"] = true,
-                    ["ClientToolGroupName"] = toolName,
-                    ["SourceType"] = "ClientToolGroup",
+                    ["clientToolKitName"] = toolName,
+                    ["SourceType"] = "clientToolKit",
                     // Dual-context architecture: FunctionResult for ephemeral, SystemPrompt for persistent
                     ["FunctionResult"] = skill.FunctionResult,
                     ["SystemPrompt"] = skill.SystemPrompt,

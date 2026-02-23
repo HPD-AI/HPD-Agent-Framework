@@ -15,9 +15,9 @@ Add middleware via the `AgentBuilder`:
 ```csharp
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithTools<MyTools>()
+    .WithToolkit<MyTools>()
     .WithMiddleware(new LoggingMiddleware())
-    .WithMiddleware(new CircuitBreakerMiddlewa())
+    .WithMiddleware(new CircuitBreakerMiddleware())
     .Build();
 ```
 
@@ -76,23 +76,26 @@ Build your own middleware from scratch. Learn patterns, state management, event 
 ```csharp
 public class SimpleRetryMiddleware : IAgentMiddleware
 {
-    public async Task<ModelResponse> WrapModelCallAsync(
+    public async IAsyncEnumerable<IStreamEvent> WrapModelCallStreamingAsync(
         ModelRequest request,
-        Func<ModelRequest, Task<ModelResponse>> handler,
-        CancellationToken ct)
+        Func<ModelRequest, IAsyncEnumerable<IStreamEvent>> handler,
+        IAgentContext context)
     {
         for (int i = 0; i < 3; i++)
         {
             try
             {
-                return await handler(request);
+                await foreach (var evt in handler(request))
+                    yield return evt;
+                yield break;
             }
             catch (HttpRequestException) when (i < 2)
             {
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i)), ct);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, i)), context.CancellationToken);
             }
         }
-        return await handler(request);
+        await foreach (var evt in handler(request))
+            yield return evt;
     }
 }
 ```
@@ -102,7 +105,7 @@ Register it:
 ```csharp
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithTools<MyTools>()
+    .WithToolkit<MyTools>()
     .WithMiddleware(new SimpleRetryMiddleware())
     .WithMiddleware(new CircuitBreakerMiddleware())
     .Build();

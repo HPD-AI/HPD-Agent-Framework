@@ -1,4 +1,4 @@
-## Customizing an Agent
+# Customizing an Agent
 There are **three primary patterns** to customize an agent:
 
 1. **Builder Pattern (Fluent API):** Configure agents programmatically using a fluent, chainable API in C# code.
@@ -310,3 +310,64 @@ var agent2 = new AgentBuilder("agent-config.json")
 </div>
 
 **Key insight:** All configuration (toolkits, middlewares, caching, error handling, timeouts) is centralized once. The builder pattern lets you extend or override as needed. No repetition—just load and customize.
+
+---
+
+## AgentBuilder Constructor Reference
+
+`AgentBuilder` has three constructors:
+
+```csharp
+// 1. Default — blank config, auto-discovers toolkits in the calling assembly
+new AgentBuilder()
+
+// 2. From a config object — starts with all values from the AgentConfig
+new AgentBuilder(AgentConfig config)
+
+// 3. From a JSON file — loads and deserializes the file, then applies it as the base config
+new AgentBuilder(string configPath)
+```
+
+**`new AgentBuilder(AgentConfig config)`** is the recommended constructor for production. It takes a fully-populated `AgentConfig` as the starting point and lets you layer runtime-only concerns on top via builder methods:
+
+```csharp
+var config = new AgentConfig
+{
+    Name = "SupportAgent",
+    SystemInstructions = "You are a support assistant.",
+    Provider = new ProviderConfig { ProviderKey = "openai", ModelName = "gpt-4o" },
+    MaxAgenticIterations = 15,
+    Toolkits = ["KnowledgeToolkit"],
+    Middlewares = ["LoggingMiddleware"]
+};
+
+var agent = new AgentBuilder(config)
+    // Runtime-only additions — these cannot be serialized to JSON:
+    .WithServiceProvider(services)    // DI container
+    .WithToolkit<MyCompiledTool>()    // Native C# toolkit (type reference)
+    .WithMiddleware<CustomMiddleware>() // Native middleware
+    .Build();
+```
+
+**Builder methods take precedence over config.** If `config.Provider` is set and you also call `.WithProvider(...)`, the builder value wins.
+
+### AgentConfig Properties
+
+`AgentConfig` is a serializable data class. Key properties:
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `Name` | `string` | `"HPD-Agent"` | Agent name |
+| `SystemInstructions` | `string` | `"You are a helpful assistant."` | System prompt |
+| `MaxAgenticIterations` | `int` | `10` | Maximum tool-calling iterations per turn |
+| `ContinuationExtensionAmount` | `int` | `3` | Extra iterations granted on continuation |
+| `Provider` | `ProviderConfig?` | `null` | LLM provider and model |
+| `Toolkits` | `List<ToolkitReference>` | `[]` | Toolkits to register |
+| `Middlewares` | `List<MiddlewareReference>` | `[]` | Middleware pipeline |
+| `Caching` | `CachingConfig?` | `null` | Prompt caching settings |
+| `ErrorHandling` | `ErrorHandlingConfig?` | `null` | Retry and timeout settings |
+| `HistoryReduction` | `HistoryReductionConfig?` | `null` | Conversation history summarization |
+| `AgenticLoop` | `AgenticLoopConfig?` | `null` | Loop timeout and control settings |
+| `Collapsing` | `CollapsingConfig` | enabled | Toolkit collapse/expand behaviour |
+| `Observability` | `ObservabilityConfig?` | `null` | Tracing and metrics |
+| `PreserveReasoningTokens` | `bool` | `false` | Keep extended reasoning in history |

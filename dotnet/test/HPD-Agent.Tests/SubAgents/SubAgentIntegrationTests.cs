@@ -52,7 +52,7 @@ public class SubAgentIntegrationTests
     public void CrossAssemblyToolkitLoading_LoadsRegistryFromToolkitAssembly()
     {
         // This test verifies that the cross-assembly Toolkit loading mechanism works.
-        // When WithTools<T>() is called, it should load the ToolRegistry from T's assembly
+        // When WithToolkit<T>() is called, it should load the ToolRegistry from T's assembly
         // if not already loaded.
 
         // Arrange - Create a builder

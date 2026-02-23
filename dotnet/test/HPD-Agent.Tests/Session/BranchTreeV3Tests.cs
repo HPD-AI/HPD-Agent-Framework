@@ -147,7 +147,7 @@ public class BranchTreeV3Tests : AgentTestBase
         var branch = new Branch("session-1", "branch-1")
         {
             IsOriginal = true,
-            ForkedFrom = "main", // ❌ Conflict!
+            ForkedFrom = "main", //  Conflict!
             SiblingIndex = 0,
             TotalSiblings = 1
         };
@@ -164,7 +164,7 @@ public class BranchTreeV3Tests : AgentTestBase
         var branch = new Branch("session-1", "branch-1")
         {
             SiblingIndex = 5,
-            TotalSiblings = 3, // ❌ Index out of range!
+            TotalSiblings = 3, //  Index out of range!
             IsOriginal = false,
             ForkedFrom = "main"
         };
@@ -181,7 +181,7 @@ public class BranchTreeV3Tests : AgentTestBase
         var branch = new Branch("session-1", "branch-1")
         {
             SiblingIndex = -1, // Set this negative to avoid range check triggering first
-            TotalSiblings = 0, // ❌ Must be positive!
+            TotalSiblings = 0, //  Must be positive!
             IsOriginal = true
         };
 
@@ -200,7 +200,7 @@ public class BranchTreeV3Tests : AgentTestBase
             SiblingIndex = 0,
             TotalSiblings = 3,
             IsOriginal = true,
-            PreviousSiblingId = "some-id" // ❌ First sibling can't have previous!
+            PreviousSiblingId = "some-id" //  First sibling can't have previous!
         };
 
         // Act & Assert
@@ -218,7 +218,7 @@ public class BranchTreeV3Tests : AgentTestBase
             TotalSiblings = 3,
             IsOriginal = false,
             ForkedFrom = "main",
-            NextSiblingId = "some-id" // ❌ Last sibling can't have next!
+            NextSiblingId = "some-id" //  Last sibling can't have next!
         };
 
         // Act & Assert
@@ -236,7 +236,7 @@ public class BranchTreeV3Tests : AgentTestBase
             TotalSiblings = 3,
             IsOriginal = false,
             ForkedFrom = "main",
-            PreviousSiblingId = null, // ❌ Middle sibling needs previous!
+            PreviousSiblingId = null, //  Middle sibling needs previous!
             NextSiblingId = "branch-2"
         };
 
@@ -256,7 +256,7 @@ public class BranchTreeV3Tests : AgentTestBase
             IsOriginal = false,
             ForkedFrom = "main",
             PreviousSiblingId = "main",
-            NextSiblingId = null // ❌ Middle sibling needs next!
+            NextSiblingId = null //  Middle sibling needs next!
         };
 
         // Act & Assert
@@ -272,7 +272,7 @@ public class BranchTreeV3Tests : AgentTestBase
         {
             IsOriginal = true,
             ForkedFrom = null,
-            OriginalBranchId = "some-id", // ❌ Original branches don't have this!
+            OriginalBranchId = "some-id", //  Original branches don't have this!
             SiblingIndex = 0,
             TotalSiblings = 1
         };

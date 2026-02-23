@@ -18,7 +18,7 @@ namespace HPD.Agent.ClientTools;
 /// <param name="FunctionResult">Ephemeral instructions returned in function result when container is expanded</param>
 /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
 /// <param name="StartCollapsed">Whether container starts collapsed (default: true)</param>
-public record ClientToolGroupDefinition(
+public record clientToolKitDefinition(
     string Name,
     string? Description,
     IReadOnlyList<ClientToolDefinition> Tools,
@@ -67,15 +67,15 @@ public record ClientToolGroupDefinition(
     /// Validates skill references against registered Toolkits.
     /// Call this after all Toolkits are registered to validate cross-Toolkit references.
     /// </summary>
-    /// <param name="RegisteredToolGroups">All registered Toolkits by name</param>
+    /// <param name="RegisteredToolKits">All registered Toolkits by name</param>
     /// <exception cref="ArgumentException">If a skill references a non-existent tool</exception>
-    public void ValidateSkillReferences(IReadOnlyDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups)
+    public void ValidateSkillReferences(IReadOnlyDictionary<string, clientToolKitDefinition> RegisteredToolKits)
     {
         if (Skills == null) return;
 
         foreach (var skill in Skills)
         {
-            skill.ValidateReferences(Name, RegisteredToolGroups);
+            skill.ValidateReferences(Name, RegisteredToolKits);
         }
     }
 }

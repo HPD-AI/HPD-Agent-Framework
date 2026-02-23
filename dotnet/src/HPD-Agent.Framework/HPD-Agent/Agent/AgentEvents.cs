@@ -202,7 +202,8 @@ public record MessageTurnFinishedEvent(
     string MessageTurnId,
     string ConversationId,
     string AgentName,
-    TimeSpan Duration) : AgentEvent
+    TimeSpan Duration,
+    UsageDetails? Usage = null) : AgentEvent
 {
     public new HPD.Events.EventKind Kind { get; init; } = HPD.Events.EventKind.Lifecycle;
 }
@@ -549,15 +550,6 @@ public record ClarificationResponseEvent(
 }
 
 /// <summary>
-/// Middleware reports progress (one-way, no response needed).
-/// This is NOT a bidirectional event - it's just informational.
-/// </summary>
-public record MiddlewareProgressEvent(
-    string SourceName,
-    string Message,
-    int? PercentComplete = null) : AgentEvent;
-
-/// <summary>
 /// Middleware reports an error (one-way, no response needed).
 /// This is NOT a bidirectional event - it's just informational.
 /// </summary>
@@ -630,25 +622,6 @@ public record ContainerExpandedEvent(
 
 public enum ContainerType { Toolkit, Skill }
 
-/// <summary>
-/// Emitted when Middleware pipeline execution starts.
-/// </summary>
-public record MiddlewarePipelineStartEvent(
-    string FunctionName,
-    int MiddlewareCount,
-    DateTimeOffset Timestamp
-) : AgentEvent, IObservabilityEvent;
-
-/// <summary>
-/// Emitted when Middleware pipeline execution completes.
-/// </summary>
-public record MiddlewarePipelineEndEvent(
-    string FunctionName,
-    TimeSpan Duration,
-    bool Success,
-    string? ErrorMessage,
-    DateTimeOffset Timestamp
-) : AgentEvent, IObservabilityEvent;
 
 /// <summary>
 /// Emitted when a permission check occurs.

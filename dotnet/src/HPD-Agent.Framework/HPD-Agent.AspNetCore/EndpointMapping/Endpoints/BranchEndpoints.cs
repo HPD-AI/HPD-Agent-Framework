@@ -338,7 +338,7 @@ internal static class BranchEndpoints
                 {
                     ["RecursiveDeleteDisabled"] = [
                         "Recursive branch deletion is not enabled on this server. " +
-                        "Set AllowRecursiveBranchDelete = true in HPDAgentOptions to enable it."
+                        "Set AllowRecursiveBranchDelete = true in HPDAgentConfig to enable it."
                     ]
                 });
             }

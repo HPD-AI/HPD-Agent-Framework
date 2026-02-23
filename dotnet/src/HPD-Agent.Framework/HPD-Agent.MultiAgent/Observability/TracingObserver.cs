@@ -47,6 +47,7 @@ public class TracingObserver : IEventObserver<Event>
     public bool ShouldProcess(Event evt)
     {
         return evt is GraphEvent
+            or WorkflowStartedEvent
             or ToolCallStartEvent
             or ToolCallEndEvent;
     }
@@ -60,6 +61,11 @@ public class TracingObserver : IEventObserver<Event>
             {
                 case GraphExecutionStartedEvent started:
                     StartWorkflowSpan(started);
+                    break;
+
+                case WorkflowStartedEvent workflowStarted:
+                    // Patch the span name now that we have the workflow name
+                    PatchWorkflowSpanName(workflowStarted);
                     break;
 
                 case GraphExecutionCompletedEvent completed:
@@ -95,6 +101,8 @@ public class TracingObserver : IEventObserver<Event>
     {
         var executionId = evt.GraphContext?.GraphId ?? Guid.NewGuid().ToString();
 
+        // Start with a placeholder name — PatchWorkflowSpanName updates it when
+        // WorkflowStartedEvent arrives with the actual workflow name.
         var activity = _activitySource.StartActivity(
             "Workflow:unnamed",
             ActivityKind.Internal);
@@ -105,6 +113,22 @@ public class TracingObserver : IEventObserver<Event>
             activity.SetTag("workflow.node_count", evt.NodeCount);
 
             _workflowActivities[executionId] = activity;
+        }
+    }
+
+    private void PatchWorkflowSpanName(WorkflowStartedEvent evt)
+    {
+        // Find the activity for this workflow execution by matching on execution_id tag.
+        // WorkflowStartedEvent carries the workflow name but not the execution ID directly,
+        // so we patch the most recently created unnamed span.
+        foreach (var activity in _workflowActivities.Values)
+        {
+            if (activity.DisplayName == "Workflow:unnamed")
+            {
+                activity.DisplayName = $"Workflow:{evt.WorkflowName}";
+                activity.SetTag("workflow.name", evt.WorkflowName);
+                break;
+            }
         }
     }
 

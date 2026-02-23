@@ -1070,7 +1070,8 @@ public sealed class Agent
                             Iteration = state.Iteration,
                             Streams = _eventCoordinator.Streams,
                             RunConfig = effectiveRunConfig,
-                            EventCoordinator = _eventCoordinator
+                            EventCoordinator = _eventCoordinator,
+                            Session = agentContext.Session
                         };
 
                         // [AGENT] DEBUG: Log exact payload being sent to LLM
@@ -1787,7 +1788,8 @@ public sealed class Agent
                 messageTurnId,
                 conversationId,
                 _name,
-                turnStopwatch.Elapsed)
+                turnStopwatch.Elapsed,
+                Usage: state.AccumulatedUsage)
             {
                 TraceId      = traceId,
                 SpanId       = turnSpanId,
@@ -2183,11 +2185,13 @@ public sealed class Agent
     /// <summary>
     /// Creates a new conversation session and branch.
     /// </summary>
+    /// <param name="sessionId">Optional session ID. If null, a GUID is generated.</param>
+    /// <param name="branchId">Optional branch ID. If null, a GUID is generated.</param>
     /// <returns>A tuple of (Session, Branch) for the new conversation</returns>
-    public (Session Session, Branch Branch) CreateSession()
+    public (Session Session, Branch Branch) CreateSession(string? sessionId = null, string? branchId = null)
     {
-        var session = new Session();
-        var branch = session.CreateBranch();
+        var session = sessionId is null ? new Session() : new Session(sessionId);
+        var branch = session.CreateBranch(branchId);
         return (session, branch);
     }
 
@@ -3168,7 +3172,7 @@ public sealed class Agent
         if (options.ClientToolInput != null)
         {
             properties ??= new Dictionary<string, object>();
-            properties["AgentRunInput"] = options.ClientToolInput;
+            properties["AgentClientInput"] = options.ClientToolInput;
         }
 
         // Add AgentRunConfig itself for middleware access

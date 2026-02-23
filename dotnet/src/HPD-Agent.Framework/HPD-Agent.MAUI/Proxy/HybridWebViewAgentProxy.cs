@@ -502,7 +502,7 @@ public abstract class HybridWebViewAgentProxy
             if (!Manager.AllowRecursiveBranchDelete)
                 throw new InvalidOperationException(
                     "Recursive branch deletion is not enabled. " +
-                    "Set AllowRecursiveBranchDelete = true in HPDAgentOptions to enable it.");
+                    "Set AllowRecursiveBranchDelete = true in HPDAgentConfig to enable it.");
         }
 
         // 4. Acquire and HOLD stream lock through the entire delete

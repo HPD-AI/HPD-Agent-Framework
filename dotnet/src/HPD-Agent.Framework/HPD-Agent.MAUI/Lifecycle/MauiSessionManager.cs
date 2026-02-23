@@ -11,13 +11,13 @@ namespace HPD.Agent.Maui;
 /// </summary>
 public sealed class MauiSessionManager : AgentSessionManager
 {
-    private readonly IOptionsMonitor<HPDAgentOptions> _optionsMonitor;
+    private readonly IOptionsMonitor<HPDAgentConfig> _optionsMonitor;
     private readonly string _name;
     private readonly IAgentFactory? _agentFactory;
 
     internal MauiSessionManager(
         ISessionStore store,
-        IOptionsMonitor<HPDAgentOptions> optionsMonitor,
+        IOptionsMonitor<HPDAgentConfig> optionsMonitor,
         string name,
         IAgentFactory? agentFactory = null)
         : base(store)

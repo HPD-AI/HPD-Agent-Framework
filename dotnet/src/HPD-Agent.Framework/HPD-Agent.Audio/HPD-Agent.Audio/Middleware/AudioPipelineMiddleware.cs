@@ -376,6 +376,11 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         if (effectiveConfig.Disabled == true)
             return;
 
+        // Native mode: the model handles audio I/O directly — skip STT entirely.
+        // Audio content is left in the messages for the model to process natively.
+        if (ProcessingMode == AudioProcessingMode.Native)
+            return;
+
         // Create clients from role-based configuration if not already injected
         // This implements the V3 role-based discovery pattern
         if (SpeechToTextClient == null && effectiveConfig.Stt != null && HasAudioInput)
@@ -432,12 +437,40 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         if (lastMessage.Role != ChatRole.User)
             return;
 
-        var audioContents = lastMessage.Contents?
-            .OfType<DataContent>()
-            .Where(d => d.MediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true)
-            .ToList();
+        // Resolve content store for asset:// URI resolution
+        var contentStore = context.Session?.Store?.GetContentStore(context.Session.Id);
 
-        if (audioContents == null || audioContents.Count == 0)
+        // Collect audio items: AudioContent (typed), DataContent with audio MIME, or UriContent with audio MIME
+        var audioItems = new List<(AIContent Original, DataContent? Resolved)>();
+        foreach (var content in lastMessage.Contents ?? [])
+        {
+            if (content is AudioContent ac)
+            {
+                // Typed AudioContent — may still have bytes or be a data URI
+                audioItems.Add((content, ac));
+            }
+            else if (content is DataContent dc &&
+                     dc.MediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                audioItems.Add((content, dc));
+            }
+            else if (content is UriContent uc &&
+                     uc.MediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true &&
+                     uc.Uri?.Scheme == "asset" &&
+                     contentStore != null)
+            {
+                // asset:// URI — resolve bytes from content store
+                var assetId = uc.Uri.Host;
+                var stored = await contentStore.GetAsync(context.Session!.Id, assetId, cancellationToken);
+                if (stored != null)
+                {
+                    var resolved = new DataContent(stored.Data, stored.ContentType);
+                    audioItems.Add((content, resolved));
+                }
+            }
+        }
+
+        if (audioItems.Count == 0)
             return;
 
         var transcriptionId = Guid.NewGuid().ToString("N")[..8];
@@ -448,13 +481,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
             Priority = EventPriority.Normal
         });
 
-        // Transcribe each audio content
+        // Transcribe each audio item
         var transcriptions = new List<string>();
-        foreach (var audioContent in audioContents)
+        foreach (var (_, resolved) in audioItems)
         {
+            if (resolved == null) continue;
             try
             {
-                var transcription = await TranscribeAudioAsync(audioContent, cancellationToken);
+                var transcription = await TranscribeAudioAsync(resolved, cancellationToken);
                 if (!string.IsNullOrWhiteSpace(transcription))
                 {
                     transcriptions.Add(transcription);
@@ -499,19 +533,13 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
                 _turnMetrics.UserWpm = CurrentWpm;
             }
 
-            // Replace audio content with text in the message
-            var newContents = new List<AIContent>();
-            foreach (var content in lastMessage.Contents!)
-            {
-                if (content is DataContent dc && dc.MediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    // Skip audio content - we'll add transcription instead
-                    continue;
-                }
-                newContents.Add(content);
-            }
+            // Replace audio content with transcription text in the message
+            var audioOriginals = audioItems.Select(a => a.Original).ToHashSet(ReferenceEqualityComparer.Instance);
+            var newContents = lastMessage.Contents!
+                .Where(c => !audioOriginals.Contains(c))
+                .ToList();
 
-            // Add transcription as text content
+            // Add transcription as text content at the front
             newContents.Insert(0, new TextContent(fullTranscription));
 
             // Create new message with updated contents
@@ -531,8 +559,6 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         if (SpeechToTextClient == null)
             return null;
 
-        // Convert DataContent to the format expected by ISpeechToTextClient
-        // ISpeechToTextClient.GetTextAsync expects a stream or audio data
         var audioData = audioContent.Data;
         if (audioData.IsEmpty)
             return null;
@@ -567,7 +593,16 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         var audioOptions = request.RunConfig?.Audio as AudioConfig;
 
         // Check if audio is disabled for this request
-        if (audioOptions?.Disabled == true || TextToSpeechClient == null || !HasAudioOutput)
+        if (audioOptions?.Disabled == true)
+            return null;
+
+        // Native mode: model outputs audio directly — scan the response stream for
+        // DataContent with audio/* MIME and emit AudioChunkEvents; skip TTS entirely.
+        if (ProcessingMode == AudioProcessingMode.Native && HasAudioOutput)
+            return StreamNativeAudioAsync(request, handler, ct);
+
+        // Pipeline mode: synthesize audio from text via TTS
+        if (TextToSpeechClient == null || !HasAudioOutput)
         {
             // Return null to pass through without interception
             return null;
@@ -597,6 +632,7 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
         var voice = audioOptions?.Tts?.Voice ?? DefaultVoice;
         var model = audioOptions?.Tts?.ModelId ?? DefaultModel;
         var speed = audioOptions?.Tts?.Speed;
+        var outputFormat = DefaultOutputFormat ?? "audio/mpeg";
 
         // Initialize metrics if not already set by BeforeIterationAsync
         _turnMetrics ??= new TurnMetrics { TurnStartTime = DateTime.UtcNow };
@@ -677,6 +713,42 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
             });
             stream?.Complete();
 
+            // Upload assembled TTS audio to /artifacts if content store is available and synthesis produced audio
+            if (synthesisState.AssembledAudio.Count > 0)
+            {
+                var sessionId = request.Session?.Id;
+                var contentStore = request.Session?.Store?.GetContentStore(sessionId ?? "");
+                if (contentStore != null && !string.IsNullOrEmpty(sessionId))
+                {
+                    try
+                    {
+                        var audioBytes = synthesisState.AssembledAudio.ToArray();
+                        await contentStore.PutAsync(
+                            scope: sessionId,
+                            data: audioBytes,
+                            contentType: outputFormat,
+                            metadata: new ContentMetadata
+                            {
+                                Origin = ContentSource.Agent,
+                                Tags = new Dictionary<string, string>
+                                {
+                                    ["folder"]       = "/artifacts",
+                                    ["session"]      = sessionId,
+                                    ["audio-role"]   = "tts",
+                                    ["synthesis-id"] = synthesisId,
+                                    ["voice"]        = voice ?? "",
+                                    ["model"]        = model ?? "",
+                                    ["interrupted"]  = wasInterrupted ? "true" : "false"
+                                }
+                            });
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"TTS artifact upload failed: {ex.Message}");
+                    }
+                }
+            }
+
             // Update and emit metrics
             var ttsEndTime = DateTime.UtcNow;
             _turnMetrics.TtsDuration = ttsEndTime - ttsStartTime;
@@ -688,6 +760,127 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
             {
                 _turnMetrics.TimeToFirstAudio = firstAudioTime.Value - _turnMetrics.TurnStartTime;
             }
+
+            EmitTurnMetrics(request.EventCoordinator);
+        }
+    }
+
+    /// <summary>
+    /// Native mode: passes the LLM stream through unchanged, but extracts any
+    /// DataContent items with an audio/* MIME type and emits them as AudioChunkEvents.
+    /// No TTS is involved — the model produces audio directly.
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> StreamNativeAudioAsync(
+        ModelRequest request,
+        Func<ModelRequest, IAsyncEnumerable<ChatResponseUpdate>> handler,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var stream = request.Streams?.Create();
+        var synthesisId = Guid.NewGuid().ToString("N")[..8];
+        var synthesisState = new SynthesisState();
+        var outputFormat = DefaultOutputFormat ?? "audio/pcm";
+
+        _turnMetrics ??= new TurnMetrics { TurnStartTime = DateTime.UtcNow };
+        DateTime? firstAudioTime = null;
+
+        try
+        {
+            request.EventCoordinator?.Emit(new SynthesisStartedEvent(synthesisId, null, null)
+            {
+                Priority = EventPriority.Normal,
+                StreamId = stream?.StreamId
+            });
+
+            await foreach (var update in handler(request).WithCancellation(ct))
+            {
+                // Scan each content item for native audio chunks
+                if (update.Contents != null)
+                {
+                    foreach (var content in update.Contents)
+                    {
+                        if (content is DataContent dc &&
+                            dc.MediaType?.StartsWith("audio/", StringComparison.OrdinalIgnoreCase) == true)
+                        {
+                            if (stream?.IsInterrupted == true) break;
+
+                            var audioBytes = dc.Data.ToArray();
+                            synthesisState.AssembledAudio.AddRange(audioBytes);
+
+                            var audioChunk = new AudioChunkEvent(
+                                synthesisId,
+                                Convert.ToBase64String(audioBytes),
+                                dc.MediaType,
+                                synthesisState.ChunkIndex++,
+                                TimeSpan.Zero,
+                                false)
+                            {
+                                Priority = EventPriority.Normal,
+                                StreamId = stream?.StreamId,
+                                CanInterrupt = true
+                            };
+
+                            firstAudioTime ??= DateTime.UtcNow;
+                            request.EventCoordinator?.Emit(audioChunk);
+                        }
+                    }
+                }
+
+                yield return update;
+            }
+        }
+        finally
+        {
+            var wasInterrupted = stream?.IsInterrupted ?? false;
+
+            request.EventCoordinator?.Emit(new SynthesisCompletedEvent(synthesisId, wasInterrupted, synthesisState.ChunkIndex, synthesisState.ChunkIndex)
+            {
+                Priority = EventPriority.Control,
+                StreamId = stream?.StreamId,
+                CanInterrupt = false
+            });
+            stream?.Complete();
+
+            // Upload assembled native audio to /artifacts (same contract as Pipeline mode)
+            if (synthesisState.AssembledAudio.Count > 0)
+            {
+                var sessionId = request.Session?.Id;
+                var contentStore = request.Session?.Store?.GetContentStore(sessionId ?? "");
+                if (contentStore != null && !string.IsNullOrEmpty(sessionId))
+                {
+                    try
+                    {
+                        await contentStore.PutAsync(
+                            scope: sessionId,
+                            data: synthesisState.AssembledAudio.ToArray(),
+                            contentType: outputFormat,
+                            metadata: new ContentMetadata
+                            {
+                                Origin = ContentSource.Agent,
+                                Tags = new Dictionary<string, string>
+                                {
+                                    ["folder"]       = "/artifacts",
+                                    ["session"]      = sessionId,
+                                    ["audio-role"]   = "native",
+                                    ["synthesis-id"] = synthesisId,
+                                    ["interrupted"]  = wasInterrupted ? "true" : "false"
+                                }
+                            });
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Native audio artifact upload failed: {ex.Message}");
+                    }
+                }
+            }
+
+            var ttsEndTime = DateTime.UtcNow;
+            _turnMetrics.TtsDuration = ttsEndTime - _turnMetrics.TurnStartTime;
+            _turnMetrics.WasInterrupted = wasInterrupted;
+            _turnMetrics.TotalChunks = synthesisState.ChunkIndex;
+            _turnMetrics.DeliveredChunks = synthesisState.ChunkIndex;
+
+            if (firstAudioTime.HasValue)
+                _turnMetrics.TimeToFirstAudio = firstAudioTime.Value - _turnMetrics.TurnStartTime;
 
             EmitTurnMetrics(request.EventCoordinator);
         }
@@ -1132,11 +1325,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
     //
 
     /// <summary>
-    /// State for tracking synthesis progress across async enumeration.
+    /// State for tracking synthesis progress and accumulating audio bytes across async enumeration.
     /// </summary>
     private sealed class SynthesisState
     {
         public int ChunkIndex { get; set; }
+
+        /// <summary>Accumulated raw audio bytes across all chunks for artifact upload.</summary>
+        public List<byte> AssembledAudio { get; } = [];
     }
 
     private async IAsyncEnumerable<AudioChunkEvent> SynthesizeAndEmitAsync(
@@ -1167,9 +1363,14 @@ public partial class AudioPipelineMiddleware : IAgentMiddleware
             if (stream?.IsInterrupted == true) break;
 
             var audioData = chunk.Audio?.Data ?? ReadOnlyMemory<byte>.Empty;
+            var audioBytes = audioData.ToArray();
+
+            // Accumulate bytes for artifact upload after synthesis completes
+            state.AssembledAudio.AddRange(audioBytes);
+
             var audioChunk = new AudioChunkEvent(
                 synthesisId,
-                Convert.ToBase64String(audioData.ToArray()),
+                Convert.ToBase64String(audioBytes),
                 "audio/mpeg",
                 state.ChunkIndex++,
                 chunk.Duration ?? TimeSpan.Zero,

@@ -307,7 +307,7 @@ Enable debug logging to troubleshoot layout issues:
 
 ## Usage Patterns
 
-### ✅ DO: Use Snippets for Pane Content
+###  DO: Use Snippets for Pane Content
 
 ```svelte
 <SplitPanel.Pane id="sidebar">
@@ -322,7 +322,7 @@ Enable debug logging to troubleshoot layout issues:
 </SplitPanel.Pane>
 ```
 
-### ✅ DO: Set Meaningful IDs
+###  DO: Set Meaningful IDs
 
 ```svelte
 <!-- Good: descriptive IDs -->
@@ -335,7 +335,7 @@ Enable debug logging to troubleshoot layout issues:
 <SplitPanel.Pane id="left" />
 ```
 
-### ✅ DO: Use Priority for Main Content
+###  DO: Use Priority for Main Content
 
 ```svelte
 <!-- Main content should have high priority -->
@@ -345,14 +345,14 @@ Enable debug logging to troubleshoot layout issues:
 <SplitPanel.Pane id="sidebar" priority="low" />
 ```
 
-### ✅ DO: Use Percentages for Responsive Layouts
+###  DO: Use Percentages for Responsive Layouts
 
 ```svelte
 <SplitPanel.Pane id="sidebar" initialSize={25} initialSizeUnit="percent" />
 <SplitPanel.Pane id="main" initialSize={75} initialSizeUnit="percent" />
 ```
 
-### ✅ DO: Handle Collapsed State in Snippets
+###  DO: Handle Collapsed State in Snippets
 
 ```svelte
 <SplitPanel.Pane id="panel" autoCollapseThreshold={100}>
@@ -368,7 +368,7 @@ Enable debug logging to troubleshoot layout issues:
 </SplitPanel.Pane>
 ```
 
-### ✅ DO: Place Handle Between Every Pair of Panes
+###  DO: Place Handle Between Every Pair of Panes
 
 ```svelte
 <SplitPanel.Split axis="horizontal">
@@ -384,33 +384,33 @@ Enable debug logging to troubleshoot layout issues:
 
 ## Anti-Patterns
 
-### ❌ DON'T: Manually Calculate Flex/Percentages
+###  DON'T: Manually Calculate Flex/Percentages
 
 The library handles flex calculations automatically.
 
 ```svelte
-<!-- ❌ Wrong: Don't do this -->
+<!--  Wrong: Don't do this -->
 <div style="flex: 0.3">...</div>
 <div style="flex: 0.7">...</div>
 
-<!-- ✅ Right: Use initialSize -->
+<!--  Right: Use initialSize -->
 <SplitPanel.Pane initialSize={30} initialSizeUnit="percent" />
 <SplitPanel.Pane initialSize={70} initialSizeUnit="percent" />
 ```
 
-### ❌ DON'T: Manually Set Width/Height on Panes
+###  DON'T: Manually Set Width/Height on Panes
 
 The library manages all sizing. Don't override with CSS.
 
 ```svelte
-<!-- ❌ Wrong: Don't manually set dimensions -->
+<!--  Wrong: Don't manually set dimensions -->
 <SplitPanel.Pane id="sidebar">
   {#snippet children()}
     <div style="width: 300px">...</div>  <!-- Don't do this! -->
   {/snippet}
 </SplitPanel.Pane>
 
-<!-- ✅ Right: Let the pane control size -->
+<!--  Right: Let the pane control size -->
 <SplitPanel.Pane id="sidebar" minSize={200} maxSize={400}>
   {#snippet children()}
     <div style="width: 100%; height: 100%">...</div>
@@ -418,31 +418,31 @@ The library manages all sizing. Don't override with CSS.
 </SplitPanel.Pane>
 ```
 
-### ❌ DON'T: Use CSS Resize
+###  DON'T: Use CSS Resize
 
 The library provides drag handles. Don't add CSS resize.
 
 ```css
-/* ❌ Wrong: Don't use CSS resize */
+/*  Wrong: Don't use CSS resize */
 .pane-content {
   resize: horizontal;
   overflow: auto;
 }
 ```
 
-### ❌ DON'T: Nest Roots
+###  DON'T: Nest Roots
 
 Only one Root per layout tree.
 
 ```svelte
-<!-- ❌ Wrong: Nested roots -->
+<!--  Wrong: Nested roots -->
 <SplitPanel.Root id="outer">
   <SplitPanel.Root id="inner">  <!-- Don't nest! -->
     ...
   </SplitPanel.Root>
 </SplitPanel.Root>
 
-<!-- ✅ Right: Use nested Splits instead -->
+<!--  Right: Use nested Splits instead -->
 <SplitPanel.Root id="layout">
   <SplitPanel.Split axis="horizontal">
     <SplitPanel.Pane id="sidebar" />
@@ -456,18 +456,18 @@ Only one Root per layout tree.
 </SplitPanel.Root>
 ```
 
-### ❌ DON'T: Forget Handles
+###  DON'T: Forget Handles
 
 Missing handles means panes can't be resized.
 
 ```svelte
-<!-- ❌ Wrong: Missing handles -->
+<!--  Wrong: Missing handles -->
 <SplitPanel.Split axis="horizontal">
   <SplitPanel.Pane id="a" />
   <SplitPanel.Pane id="b" />  <!-- Can't resize! -->
 </SplitPanel.Split>
 
-<!-- ✅ Right: Include handles -->
+<!--  Right: Include handles -->
 <SplitPanel.Split axis="horizontal">
   <SplitPanel.Pane id="a" />
   <SplitPanel.Handle />
@@ -475,28 +475,28 @@ Missing handles means panes can't be resized.
 </SplitPanel.Split>
 ```
 
-### ❌ DON'T: Mix Percentage and Pixel initialSize in Same Split
+###  DON'T: Mix Percentage and Pixel initialSize in Same Split
 
 For predictable results, use the same unit for siblings.
 
 ```svelte
-<!-- ❌ Confusing: Mixed units -->
+<!--  Confusing: Mixed units -->
 <SplitPanel.Pane initialSize={30} initialSizeUnit="percent" />
 <SplitPanel.Handle />
 <SplitPanel.Pane initialSize={400} initialSizeUnit="pixels" />
 
-<!-- ✅ Better: Consistent units -->
+<!--  Better: Consistent units -->
 <SplitPanel.Pane initialSize={30} initialSizeUnit="percent" />
 <SplitPanel.Handle />
 <SplitPanel.Pane initialSize={70} initialSizeUnit="percent" />
 ```
 
-### ❌ DON'T: Use position: absolute/fixed in Pane Content
+###  DON'T: Use position: absolute/fixed in Pane Content
 
 This breaks the layout flow.
 
 ```svelte
-<!-- ❌ Wrong: Breaks layout -->
+<!--  Wrong: Breaks layout -->
 <SplitPanel.Pane id="sidebar">
   {#snippet children()}
     <div style="position: absolute; top: 0; left: 0;">
@@ -505,7 +505,7 @@ This breaks the layout flow.
   {/snippet}
 </SplitPanel.Pane>
 
-<!-- ✅ Right: Use normal flow -->
+<!--  Right: Use normal flow -->
 <SplitPanel.Pane id="sidebar">
   {#snippet children()}
     <div style="height: 100%; overflow: auto;">
@@ -515,17 +515,17 @@ This breaks the layout flow.
 </SplitPanel.Pane>
 ```
 
-### ❌ DON'T: Manually Track Pane Sizes
+###  DON'T: Manually Track Pane Sizes
 
 Use the `size` prop from the snippet.
 
 ```svelte
-<!-- ❌ Wrong: Manual tracking -->
+<!--  Wrong: Manual tracking -->
 <script>
   let sidebarSize = $state(300);
 </script>
 
-<!-- ✅ Right: Use snippet prop -->
+<!--  Right: Use snippet prop -->
 <SplitPanel.Pane id="sidebar">
   {#snippet children({ size })}
     <div>Current size: {size}px</div>

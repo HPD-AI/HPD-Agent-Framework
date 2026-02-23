@@ -73,7 +73,7 @@ internal static class StreamingEndpoints
 
                 // Build run configuration from request
                 var runConfig = BuildRunConfig(request.RunConfig);
-                runConfig.ClientToolInput = request.ToAgentRunInput();
+                runConfig.ClientToolInput = request.ToAgentClientInput();
 
                 // Stream events using SSE - this sends headers and starts streaming
                 // After this call, we cannot return a typed result
@@ -205,7 +205,7 @@ internal static class StreamingEndpoints
 
             // Build run configuration
             var runConfig = BuildRunConfig(request.RunConfig);
-            runConfig.ClientToolInput = request.ToAgentRunInput();
+            runConfig.ClientToolInput = request.ToAgentClientInput();
 
             // Stream events via WebSocket with ID-based API
             var events = agent.RunAsync(userMessage, sid, bid, options: runConfig, cancellationToken: ct);

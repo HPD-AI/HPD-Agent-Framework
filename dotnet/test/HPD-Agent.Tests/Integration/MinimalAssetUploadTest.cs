@@ -57,7 +57,7 @@ public class MinimalAssetUploadTest
             var uploadEvent = events.OfType<AssetUploadedEvent>().FirstOrDefault();
             if (uploadEvent == null)
             {
-                Console.WriteLine($"❌ NO AssetUploadedEvent!");
+                Console.WriteLine($" NO AssetUploadedEvent!");
                 Console.WriteLine($"Total events: {events.Count}");
                 Console.WriteLine($"Session.Store: {session.Store != null}");
                 Console.WriteLine($"ContentStore: {session.Store?.GetContentStore(session.Id) != null}");

@@ -17,7 +17,7 @@ public static class HPDAgentServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddHPDAgent(
         this IServiceCollection services,
-        Action<HPDAgentOptions>? configure = null)
+        Action<HPDAgentConfig>? configure = null)
         => services.AddHPDAgent(Options.DefaultName, configure);
 
     /// <summary>
@@ -27,13 +27,13 @@ public static class HPDAgentServiceCollectionExtensions
     public static IServiceCollection AddHPDAgent(
         this IServiceCollection services,
         string name,
-        Action<HPDAgentOptions>? configure = null)
+        Action<HPDAgentConfig>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(name);
         // Allow empty string for Options.DefaultName
 
-        // Register named options (each agent name gets its own HPDAgentOptions)
+        // Register named options (each agent name gets its own HPDAgentConfig)
         if (configure != null)
             services.Configure(name, configure);
 

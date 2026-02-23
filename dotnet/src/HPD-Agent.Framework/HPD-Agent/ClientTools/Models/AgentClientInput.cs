@@ -10,14 +10,14 @@ namespace HPD.Agent.ClientTools;
 /// Tools are always registered via Toolkits (containers), matching HPD's C# Toolkit model.
 /// For "standalone" tools without grouping, use a default Toolkit with StartCollapsed=false.
 /// </summary>
-public record AgentRunInput
+public record AgentClientInput
 {
     /// <summary>
     /// Client Toolkit containers to register for this message turn.
     /// Each Toolkit contains tools that can be collapsed/expanded together.
     /// This is the ONLY way to register Client tools - matching HPD's Toolkit-centric model.
     /// </summary>
-    public IReadOnlyList<ClientToolGroupDefinition>? ClientToolGroups { get; init; }
+    public IReadOnlyList<clientToolKitDefinition>? clientToolKits { get; init; }
 
     /// <summary>
     /// Containers that should start in expanded state.

@@ -158,7 +158,7 @@ public class AgentRunConfig
     /// Client tool configuration for this run.
     /// Allows dynamic Toolkit/tool registration without rebuilding agent.
     /// </summary>
-    public ClientTools.AgentRunInput? ClientToolInput { get; set; }
+    public ClientTools.AgentClientInput? ClientToolInput { get; set; }
 
     /// <summary>
     /// Conversation ID override (for multi-tenant scenarios or branching).

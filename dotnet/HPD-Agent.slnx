@@ -34,6 +34,11 @@
     <Project Path="src/HPD.Graph/HPD.Graph.Core/HPD.Graph.Core.csproj" />
     <Project Path="src/HPD.Graph/HPD.Graph.SourceGenerator/HPD.Graph.SourceGenerator.csproj" />
   </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/HPD-Agent.Framework/" />
+  <Folder Name="/src/HPD-Agent.Framework/HPD-Agent.Audio/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.Silero/HPD-Agent.AudioProviders.Silero.csproj" />
+  </Folder>
   <Folder Name="/test/">
     <Project Path="test/HPD-Agent.Audio.Tests/HPD-Agent.Audio.Tests.csproj" />
     <Project Path="test/HPD-Agent.Tests/HPD-Agent.Tests.csproj" />

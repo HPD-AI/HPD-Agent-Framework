@@ -17,3 +17,6 @@ using System.Runtime.CompilerServices;
 
 // Make internals visible to the main test project (needed for Skill internals: ResolvedFunctionReferences, DocumentReferences, etc.)
 [assembly: InternalsVisibleTo("HPD-Agent.Tests")]
+
+// Make internals visible to the audio test project (needed for Session/Branch construction in audio middleware tests)
+[assembly: InternalsVisibleTo("HPD-Agent.Audio.Tests")]

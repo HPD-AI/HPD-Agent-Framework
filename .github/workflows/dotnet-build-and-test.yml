@@ -94,10 +94,9 @@ jobs:
           -c ${{ matrix.configuration }} \
           --no-build \
           --verbosity normal \
-          --logger "trx;LogFileName=test-results.trx" \
+          --logger "trx" \
           --collect:"XPlat Code Coverage" \
-          --results-directory:"TestResults/Coverage/" \
-          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeByAttribute=GeneratedCodeAttribute,CompilerGeneratedAttribute,ExcludeFromCodeCoverageAttribute
+          --results-directory:"TestResults/Coverage/"
 
     - name: Run tests (without coverage)
       if: ${{ !matrix.collect-coverage }}
@@ -115,7 +114,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: test-results-${{ matrix.os }}-${{ matrix.targetFramework }}
-        path: '**/test-results.trx'
+        path: '**/*.trx'
 
     - name: Generate coverage report
       if: matrix.collect-coverage

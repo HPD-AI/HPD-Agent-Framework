@@ -166,12 +166,12 @@ public static class DtoMappingExtensions
     }
 
     /// <summary>
-    /// Convert a StreamRequest's client tool fields into an AgentRunInput.
+    /// Convert a StreamRequest's client tool fields into an AgentClientInput.
     /// Returns null if no client tool data is present.
     /// </summary>
-    public static AgentRunInput? ToAgentRunInput(this StreamRequest request)
+    public static AgentClientInput? ToAgentClientInput(this StreamRequest request)
     {
-        if (request.ClientToolGroups == null &&
+        if (request.clientToolKits == null &&
             request.Context == null &&
             request.State == null &&
             request.ExpandedContainers == null &&
@@ -183,13 +183,13 @@ public static class DtoMappingExtensions
 
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-        List<ClientToolGroupDefinition>? groups = null;
-        if (request.ClientToolGroups is { Count: > 0 })
+        List<clientToolKitDefinition>? groups = null;
+        if (request.clientToolKits is { Count: > 0 })
         {
-            groups = new List<ClientToolGroupDefinition>(request.ClientToolGroups.Count);
-            foreach (var element in request.ClientToolGroups)
+            groups = new List<clientToolKitDefinition>(request.clientToolKits.Count);
+            foreach (var element in request.clientToolKits)
             {
-                var group = JsonSerializer.Deserialize<ClientToolGroupDefinition>(element, options);
+                var group = JsonSerializer.Deserialize<clientToolKitDefinition>(element, options);
                 if (group != null)
                     groups.Add(group);
             }
@@ -207,9 +207,9 @@ public static class DtoMappingExtensions
             }
         }
 
-        return new AgentRunInput
+        return new AgentClientInput
         {
-            ClientToolGroups = groups,
+            clientToolKits = groups,
             Context = context,
             State = request.State,
             ExpandedContainers = request.ExpandedContainers is { Count: > 0 }

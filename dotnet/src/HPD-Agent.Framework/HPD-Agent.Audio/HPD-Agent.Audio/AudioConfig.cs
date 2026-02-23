@@ -253,6 +253,31 @@ public class AudioConfig
     /// </summary>
     public void Validate()
     {
+        // Native mode: the model handles audio I/O directly — STT/TTS/VAD are not used.
+        // Setting them alongside Native mode is a configuration error.
+        if (ProcessingMode == AudioProcessingMode.Native)
+        {
+            if (Stt != null)
+                throw new InvalidOperationException(
+                    "AudioConfig.Stt cannot be set when ProcessingMode is Native. " +
+                    "In Native mode the model handles speech-to-text directly; " +
+                    "remove the Stt configuration or switch to ProcessingMode.Pipeline.");
+
+            if (Tts != null)
+                throw new InvalidOperationException(
+                    "AudioConfig.Tts cannot be set when ProcessingMode is Native. " +
+                    "In Native mode the model produces audio output directly; " +
+                    "remove the Tts configuration or switch to ProcessingMode.Pipeline.");
+
+            if (Vad != null)
+                throw new InvalidOperationException(
+                    "AudioConfig.Vad cannot be set when ProcessingMode is Native. " +
+                    "In Native mode turn detection is handled by the model itself; " +
+                    "remove the Vad configuration or switch to ProcessingMode.Pipeline.");
+
+            return;
+        }
+
         // Validate role configs
         Tts?.Validate();
         Stt?.Validate();

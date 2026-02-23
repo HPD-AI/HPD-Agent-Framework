@@ -182,7 +182,7 @@ public static class ExternalToolCollapsingWrapper
     /// <param name="FunctionResult">Ephemeral instructions returned in function result after expansion</param>
     /// <param name="SystemPrompt">Persistent instructions injected into system prompt after expansion</param>
     /// <returns>Container function and Collapsed tools with metadata</returns>
-    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapClientToolGroup(
+    public static (AIFunction container, List<AIFunction> CollapsedTools) WrapclientToolKit(
         string toolName,
         string description,
         List<AIFunction> tools,
@@ -240,10 +240,10 @@ public static class ExternalToolCollapsingWrapper
                 {
                     ["IsContainer"] = true,
                     ["ToolkitName"] = containerName,
-                    ["ClientToolGroupName"] = toolName, // Original name without prefix
+                    ["clientToolKitName"] = toolName, // Original name without prefix
                     ["FunctionNames"] = allFunctionNames.ToArray(),
                     ["FunctionCount"] = allFunctionNames.Count,
-                    ["SourceType"] = "ClientToolGroup",
+                    ["SourceType"] = "clientToolKit",
                     // Dual-context architecture: FunctionResult for ephemeral, SystemPrompt for persistent
                     ["FunctionResult"] = FunctionResult,
                     ["SystemPrompt"] = SystemPrompt,
@@ -253,7 +253,7 @@ public static class ExternalToolCollapsingWrapper
             });
 
         // Add metadata to individual tools
-        var CollapsedTools = tools.Select(tool => AddParentToolMetadata(tool, containerName, "ClientToolGroup")).ToList();
+        var CollapsedTools = tools.Select(tool => AddParentToolMetadata(tool, containerName, "clientToolKit")).ToList();
 
         return (container, CollapsedTools);
     }
@@ -335,7 +335,7 @@ public static class ExternalToolCollapsingWrapper
     /// </summary>
     /// <param name="tool">Original tool to wrap</param>
     /// <param name="parentToolkitName">Parent container name</param>
-    /// <param name="sourceType">Source type (MCP, Client, ClientToolGroup)</param>
+    /// <param name="sourceType">Source type (MCP, Client, clientToolKit)</param>
     /// <param name="parentContainer">Optional parent container for nested visibility (e.g., parent toolkit name for flat MCP tools)</param>
     /// <returns>New AIFunction with metadata</returns>
     internal static AIFunction AddParentToolMetadata(AIFunction tool, string parentToolkitName, string sourceType, string? parentContainer = null)

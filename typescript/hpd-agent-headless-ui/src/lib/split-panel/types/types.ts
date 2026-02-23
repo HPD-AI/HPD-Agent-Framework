@@ -107,10 +107,10 @@ export interface BranchNode {
  *
  * Branches do NOT have stable IDs (only leaves do). This is an intentional simplification:
  *
- * ✅ Why: Branches are ephemeral—created/destroyed during tree restructuring (add, remove, split).
+ *  Why: Branches are ephemeral—created/destroyed during tree restructuring (add, remove, split).
  *    Giving them IDs would complicate serialization and identity tracking with no clear benefit.
  *
- * ✅ Trade-off: Simpler mental model—only leaves are addressable units. Branches are
+ *  Trade-off: Simpler mental model—only leaves are addressable units. Branches are
  *    organizational structure, not user-facing panels.
  *
  * ⚠️ Future consideration: If you later need branch-level operations (targeted logging,

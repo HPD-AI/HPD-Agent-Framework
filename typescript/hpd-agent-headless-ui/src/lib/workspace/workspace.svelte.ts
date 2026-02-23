@@ -242,7 +242,7 @@ class WorkspaceImpl implements Workspace {
 			baseUrl: options.baseUrl,
 			transport: options.transport ?? 'sse',
 			headers: options.headers,
-			clientToolGroups: options.clientToolGroups
+			clientToolKits: options.clientToolKits
 		});
 
 		// Kick off async init (loading flag covers UI during this)
@@ -413,9 +413,9 @@ class WorkspaceImpl implements Workspace {
 				);
 			},
 
-			onClientToolGroupsRegistered: (event) => {
-				this.#activeState()?.onClientToolGroupsRegistered(
-					event.registeredToolGroups,
+			onclientToolKitsRegistered: (event) => {
+				this.#activeState()?.onclientToolKitsRegistered(
+					event.registeredToolKits,
 					event.totalTools,
 					event.timestamp
 				);

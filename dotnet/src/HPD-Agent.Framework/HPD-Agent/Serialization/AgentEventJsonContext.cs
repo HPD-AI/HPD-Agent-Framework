@@ -69,13 +69,12 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(ClarificationResponseEvent))]
 
 // Middleware Events
-[JsonSerializable(typeof(MiddlewareProgressEvent))]
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
 
 // Client Tool Events
 [JsonSerializable(typeof(ClientTools.ClientToolInvokeRequestEvent))]
 [JsonSerializable(typeof(ClientTools.ClientToolInvokeResponseEvent))]
-[JsonSerializable(typeof(ClientTools.ClientToolGroupsRegisteredEvent))]
+[JsonSerializable(typeof(ClientTools.clientToolKitsRegisteredEvent))]
 [JsonSerializable(typeof(ClientTools.IToolResultContent))]
 [JsonSerializable(typeof(ClientTools.TextContent))]
 [JsonSerializable(typeof(ClientTools.BinaryContent))]
@@ -89,8 +88,6 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(CollapsedToolsVisibleEvent))]
 [JsonSerializable(typeof(ContainerExpandedEvent))]
 [JsonSerializable(typeof(ContainerType))]
-[JsonSerializable(typeof(MiddlewarePipelineStartEvent))]
-[JsonSerializable(typeof(MiddlewarePipelineEndEvent))]
 [JsonSerializable(typeof(PermissionCheckEvent))]
 [JsonSerializable(typeof(IterationStartEvent))]
 [JsonSerializable(typeof(CircuitBreakerTriggeredEvent))]

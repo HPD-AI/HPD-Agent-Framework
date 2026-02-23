@@ -194,15 +194,15 @@ public class AgentSessionManagerStreamLockTests : IDisposable
 
     private class AspNetCoreSessionManagerTestable(
         ISessionStore store,
-        IOptionsMonitor<HPDAgentOptions> optionsMonitor,
+        IOptionsMonitor<HPDAgentConfig> optionsMonitor,
         string name,
         IAgentFactory? agentFactory)
         : AspNetCoreSessionManager(store, optionsMonitor, name, agentFactory);
 
-    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentOptions>
+    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentConfig>
     {
-        public HPDAgentOptions CurrentValue { get; } = new HPDAgentOptions();
-        public HPDAgentOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<HPDAgentOptions, string?> listener) => null;
+        public HPDAgentConfig CurrentValue { get; } = new HPDAgentConfig();
+        public HPDAgentConfig Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<HPDAgentConfig, string?> listener) => null;
     }
 }

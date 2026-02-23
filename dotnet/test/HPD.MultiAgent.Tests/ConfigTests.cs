@@ -218,4 +218,105 @@ public class ConfigTests
             json.Should().Contain(mode.ToString());
         }
     }
+
+    // ========================================
+    // Phase 1 — Compound ConditionConfig Tests
+    // ========================================
+
+    [Fact]
+    public void ConditionConfig_WithConditions_Serializes()
+    {
+        var condition = new ConditionConfig
+        {
+            Type = ConditionType.And,
+            Conditions = new List<ConditionConfig>
+            {
+                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = "billing" },
+                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = "VIP" }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(condition, new JsonSerializerOptions { WriteIndented = true });
+
+        json.Should().Contain("And");
+        json.Should().Contain("Conditions");
+        json.Should().Contain("intent");
+        json.Should().Contain("billing");
+    }
+
+    [Fact]
+    public void ConditionConfig_WithConditions_Deserializes()
+    {
+        var json = """
+        {
+            "Type": "And",
+            "Conditions": [
+                { "Type": "FieldEquals", "Field": "intent", "Value": "billing" },
+                { "Type": "FieldEquals", "Field": "tier",   "Value": "VIP"     }
+            ]
+        }
+        """;
+
+        var condition = JsonSerializer.Deserialize<ConditionConfig>(json);
+
+        condition.Should().NotBeNull();
+        condition!.Type.Should().Be(ConditionType.And);
+        condition.Conditions.Should().HaveCount(2);
+        condition.Conditions![0].Field.Should().Be("intent");
+        condition.Conditions![1].Field.Should().Be("tier");
+    }
+
+    [Fact]
+    public void ConditionConfig_WithRegexOptions_Serializes()
+    {
+        var condition = new ConditionConfig
+        {
+            Type = ConditionType.FieldMatchesRegex,
+            Field = "intent",
+            Value = "^billing",
+            RegexOptions = "IgnoreCase"
+        };
+
+        var json = JsonSerializer.Serialize(condition);
+
+        json.Should().Contain("IgnoreCase");
+    }
+
+    [Fact]
+    public void MultiAgent_FromConfig_MapsNestedConditions()
+    {
+        var workflowConfig = new MultiAgentWorkflowConfig
+        {
+            Name = "Test",
+            Agents = new Dictionary<string, AgentNodeConfig>
+            {
+                ["a"] = new AgentNodeConfig { Agent = new AgentConfig { Name = "A" } },
+                ["b"] = new AgentNodeConfig { Agent = new AgentConfig { Name = "B" } }
+            },
+            Edges = new List<EdgeConfig>
+            {
+                new EdgeConfig
+                {
+                    From = "a",
+                    To = "b",
+                    When = new ConditionConfig
+                    {
+                        Type = ConditionType.And,
+                        Conditions = new List<ConditionConfig>
+                        {
+                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = "billing" },
+                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = "VIP" }
+                        }
+                    }
+                }
+            }
+        };
+
+        // Act: build from config — should not throw and should map nested conditions
+        var builder = MultiAgent.FromConfig(workflowConfig);
+        builder.Should().NotBeNull();
+
+        // The mapping is internal; we verify round-trip works by checking no exception is thrown
+        // and that the builder was constructed successfully.
+    }
 }

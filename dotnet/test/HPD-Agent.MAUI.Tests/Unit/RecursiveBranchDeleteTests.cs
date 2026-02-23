@@ -243,13 +243,13 @@ public class RecursiveBranchDeleteTests : IDisposable
     private class TestProxy(MauiSessionManager manager, IHybridWebView webView)
         : HybridWebViewAgentProxy(manager, webView);
 
-    private class OptionsMonitorWrapper(bool allowRecursive = false) : IOptionsMonitor<HPDAgentOptions>
+    private class OptionsMonitorWrapper(bool allowRecursive = false) : IOptionsMonitor<HPDAgentConfig>
     {
-        public HPDAgentOptions CurrentValue { get; } = new HPDAgentOptions
+        public HPDAgentConfig CurrentValue { get; } = new HPDAgentConfig
         {
             AllowRecursiveBranchDelete = allowRecursive
         };
-        public HPDAgentOptions Get(string? name) => CurrentValue;
-        public IDisposable? OnChange(Action<HPDAgentOptions, string?> listener) => null;
+        public HPDAgentConfig Get(string? name) => CurrentValue;
+        public IDisposable? OnChange(Action<HPDAgentConfig, string?> listener) => null;
     }
 }

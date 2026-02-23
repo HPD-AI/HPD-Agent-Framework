@@ -41,17 +41,21 @@ public class Branch
 
 ## In-Memory Sessions (No Persistence)
 
-The simplest way to use HPD-Agent is without any persistence. The session and branch live only in memory:
+The simplest way to use HPD-Agent is without any persistence. Sessions live only in memory and are lost when the process ends.
+
+`Session` and `Branch` objects are managed by the framework — use `agent.CreateSession()` to create new ones. Pass a session ID to give it a meaningful name; the branch ID is optional:
 
 ```csharp
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o", apiKey)
-    .WithTool<MyTools>()
+    .WithToolkit<MyTools>()
     .Build();
 
-// Create a session + branch
-var session = new Session();
-var branch = session.CreateBranch();
+// Named session, auto-generated branch ID
+var (session, branch) = agent.CreateSession("user-123");
+
+// Both named
+var (session, branch) = agent.CreateSession("user-123", "main");
 
 var userMessages = new[]
 {
@@ -59,7 +63,7 @@ var userMessages = new[]
     "Now multiply the result by 5"      // References previous result
 };
 
-// Run multiple turns in the same session
+// Run multiple turns in the same branch — agent remembers previous messages
 foreach (var message in userMessages)
 {
     await foreach (var evt in agent.RunAsync(message, branch))
@@ -72,7 +76,7 @@ foreach (var message in userMessages)
 ```
 
 **Limitations:**
-- Session is lost if the process crashes or restarts
+- Session is lost when the process ends
 - Cannot resume conversations across process restarts
 
 ---
@@ -117,10 +121,9 @@ var agent = new AgentBuilder()
     .WithSessionStore(store)
     .Build();
 
-var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("session-123");
+var (session, branch) = await agent.LoadSessionAndBranchAsync("session-123");
 await foreach (var evt in agent.RunAsync("Hello", branch)) { }
-await store.SaveSessionAsync(session);
-await store.SaveBranchAsync(session.Id, branch);
+await agent.SaveSessionAndBranchAsync(session, branch);
 
 // Option B: Auto-save after each turn (using sessionId overload)
 var agent = new AgentBuilder()
@@ -135,11 +138,13 @@ await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
 
 ```csharp
 // Load existing session + branch, or create new ones (defaults to "main" branch)
-var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("session-123");
+var (session, branch) = await agent.LoadSessionAndBranchAsync("session-123");
 
-// Or specify a branch explicitly
-var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("session-123", "formal");
+// Always specify the branch explicitly once a session has been forked
+var (session, branch) = await agent.LoadSessionAndBranchAsync("session-123", "formal");
 ```
+
+> **Note:** If you omit the branch ID and the session has more than one branch, an `AmbiguousBranchException` is thrown. Always pass a branch ID explicitly after forking.
 
 ---
 
@@ -159,7 +164,7 @@ When an agent has a session store configured, crash recovery is **automatic**. D
 Recovery is automatic when you call `RunAsync` with a session that has an uncommitted turn:
 
 ```csharp
-var (session, branch) = await store.LoadOrCreateSessionAndBranchAsync("session-123");
+var (session, branch) = await agent.LoadSessionAndBranchAsync("session-123");
 
 // If an uncommitted turn exists, RunAsync automatically detects it and resumes
 await foreach (var evt in agent.RunAsync(Array.Empty<ChatMessage>(), branch)) { }
@@ -185,10 +190,11 @@ var agent = new AgentBuilder()
 Branches enable exploring alternative conversation paths from any point:
 
 ```csharp
-// Fork a branch at message index 3
-var sourceBranch = await store.LoadBranchAsync("session-123", "main");
+var (session, branch) = await agent.LoadSessionAndBranchAsync("session-123", "main");
+
+// Fork at message index 3
 var newBranch = await agent.ForkBranchAsync(
-    sourceBranch,
+    branch,
     newBranchId: "experiment",
     fromMessageIndex: 3);
 
@@ -197,12 +203,22 @@ await foreach (var evt in agent.RunAsync("Try a different approach", newBranch))
 
 // List all branches
 var branchIds = await agent.ListBranchesAsync(session.Id);
+
+// Delete a branch (atomic, enforces referential integrity)
+await agent.DeleteBranchAsync(newBranch);
+
+// Delete a branch AND all its child branches
+await agent.DeleteBranchAsync(newBranch, allowRecursive: true);
 ```
 
 **Fork behavior:**
 - Messages up to `fromMessageIndex` are **copied** to the new branch
 - Branch-scoped middleware state is **copied** (then diverges independently)
 - Session-scoped middleware state is **shared** (permissions apply everywhere)
+
+**Delete behavior:**
+- Deleting a branch with child branches throws unless `allowRecursive: true` is passed
+- This referential integrity check prevents accidentally orphaning child branches
 
 ---
 
@@ -248,10 +264,12 @@ IAsyncEnumerable<AgentEvent> RunAsync(
     CancellationToken cancellationToken = default)
 
 // SessionId convenience (auto-loads/saves session + branch)
+// branchId defaults to null — resolves to "main" if only one branch exists.
+// Throws AmbiguousBranchException if the session has been forked and branchId is omitted.
 IAsyncEnumerable<AgentEvent> RunAsync(
     string userMessage,
     string sessionId,
-    string branchId = "main",
+    string? branchId = null,
     AgentRunConfig? options = null,
     CancellationToken cancellationToken = default)
 ```
@@ -262,22 +280,27 @@ IAsyncEnumerable<AgentEvent> RunAsync(
 // Stateless (no session)
 await foreach (var evt in agent.RunAsync("Hello")) { }
 
-// With branch (session is implicit via branch.Session)
+// With branch object
 await foreach (var evt in agent.RunAsync("Hello", branch)) { }
 
-// With options
+// With options (temperature, provider switching, system instructions, etc.)
 var options = new AgentRunConfig { Chat = new ChatRunConfig { Temperature = 0.7f } };
 await foreach (var evt in agent.RunAsync("Hello", branch, options)) { }
+// → See Agent Builder & Config/Run Config.md for the full AgentRunConfig reference
 
-// Auto-load session by ID
+// Auto-load by session ID (safe as long as the session has only one branch)
 await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
+
+// Always specify branch ID after forking
+await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123", branchId: "experiment")) { }
 ```
 
 ### Agent Methods
 
 | Method | Description |
 |--------|-------------|
-| `LoadSessionAndBranchAsync(sessionId, branchId)` | Load session + branch from store |
+| `CreateSession(sessionId?, branchId?)` | Create a new in-memory session + branch with optional IDs |
+| `LoadSessionAndBranchAsync(sessionId, branchId)` | Load from store, or create new if not found |
 | `SaveSessionAndBranchAsync(session, branch)` | Save session + branch to store |
 | `ForkBranchAsync(sourceBranch, newBranchId, fromMessageIndex)` | Fork a branch at a message index |
 | `ListBranchesAsync(sessionId)` | List branch IDs for a session |
@@ -306,7 +329,7 @@ await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
 | `LoadSessionAsync(sessionId)` | Load session metadata |
 | `SaveSessionAsync(session)` | Save session metadata |
 | `ListSessionIdsAsync()` | List all session IDs |
-| `DeleteSessionAsync(sessionId)` | Delete session + all branches + assets |
+| `DeleteSessionAsync(sessionId)` | Delete session + all branches |
 | `LoadBranchAsync(sessionId, branchId)` | Load a branch |
 | `SaveBranchAsync(sessionId, branch)` | Save a branch |
 | `ListBranchIdsAsync(sessionId)` | List branch IDs for a session |
@@ -314,8 +337,6 @@ await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
 | `LoadUncommittedTurnAsync(sessionId)` | Load crash recovery data |
 | `SaveUncommittedTurnAsync(turn)` | Save crash recovery data |
 | `DeleteUncommittedTurnAsync(sessionId)` | Clear crash recovery data |
-| `GetAssetStore(sessionId)` | Get asset store for binary content |
-| `DeleteInactiveSessionsAsync(threshold, dryRun)` | Cleanup inactive sessions |
 
 ---
 
@@ -329,6 +350,6 @@ await foreach (var evt in agent.RunAsync("Hello", sessionId: "session-123")) { }
 
 4. **Use branching for exploration** - When users want to try a different approach, fork instead of losing the original conversation
 
-5. **Cleanup inactive sessions** - Use `DeleteInactiveSessionsAsync` on a schedule to manage storage
+5. **Cleanup inactive sessions** - Use `DeleteSessionAsync` on a schedule to manage storage
 
 ---

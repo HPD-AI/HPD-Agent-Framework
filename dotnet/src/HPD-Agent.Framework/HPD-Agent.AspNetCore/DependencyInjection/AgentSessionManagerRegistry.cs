@@ -35,7 +35,7 @@ internal sealed class AgentSessionManagerRegistry
 
     private AgentSessionManager CreateManager(string name)
     {
-        var optionsMonitor = _serviceProvider.GetRequiredService<IOptionsMonitor<HPDAgentOptions>>();
+        var optionsMonitor = _serviceProvider.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
         var options = optionsMonitor.Get(name);
 
         // The hosting layer owns the session store — not the AgentBuilder.
@@ -43,9 +43,9 @@ internal sealed class AgentSessionManagerRegistry
         // session/branch endpoints (list, create, delete) before any agent is ever built.
         // AgentBuilder is only invoked lazily on the first stream request, and receives
         // this same store via WithSessionStore() in BuildAgentAsync. The flow is:
-        //   HPDAgentOptions.SessionStore → manager._store (immediately, at startup)
+        //   HPDAgentConfig.SessionStore → manager._store (immediately, at startup)
         //   manager._store → builder.WithSessionStore() (lazily, per stream request)
-        // This is why SessionStore lives on HPDAgentOptions and not on AgentBuilder
+        // This is why SessionStore lives on HPDAgentConfig and not on AgentBuilder
         // when using the hosted model — the two are not redundant.
         ISessionStore store = options.SessionStore ?? new InMemorySessionStore();
 

@@ -6,7 +6,7 @@ namespace HPD.Agent.Hosting.Configuration;
 /// Configuration options for hosting an HPD Agent.
 /// Used by both AspNetCore and MAUI hosting platforms.
 /// </summary>
-public class HPDAgentOptions
+public class HPDAgentConfig
 {
     /// <summary>
     /// The session store to use for this agent.

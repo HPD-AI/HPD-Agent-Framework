@@ -31,6 +31,9 @@
 
     <!-- Main HPD-Agent project for integration -->
     <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj" />
+
+    <!-- Silero VAD provider -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Audio\HPD-Agent.AudioProviders.Silero\HPD-Agent.AudioProviders.Silero.csproj" />
   </ItemGroup>
 
 </Project>

@@ -25,7 +25,7 @@ public class ClientToolStateDataTests
 
         // Assert
         Assert.NotNull(state);
-        Assert.Empty(state.RegisteredToolGroups);
+        Assert.Empty(state.RegisteredToolKits);
         Assert.Empty(state.ExpandedToolkits);
         Assert.Empty(state.HiddenTools);
         Assert.Empty(state.Context);
@@ -49,9 +49,9 @@ public class ClientToolStateDataTests
 
         // Assert
         Assert.NotSame(state, updated);
-        Assert.Single(updated.RegisteredToolGroups);
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("TestToolkit"));
-        Assert.Equal(Toolkit, updated.RegisteredToolGroups["TestToolkit"]);
+        Assert.Single(updated.RegisteredToolKits);
+        Assert.True(updated.RegisteredToolKits.ContainsKey("TestToolkit"));
+        Assert.Equal(Toolkit, updated.RegisteredToolKits["TestToolkit"]);
     }
 
     [Fact]
@@ -68,9 +68,9 @@ public class ClientToolStateDataTests
             .WithRegisteredToolkit(Toolkit2);
 
         // Assert
-        Assert.Equal(2, updated.RegisteredToolGroups.Count);
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit1"));
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit2"));
+        Assert.Equal(2, updated.RegisteredToolKits.Count);
+        Assert.True(updated.RegisteredToolKits.ContainsKey("Toolkit1"));
+        Assert.True(updated.RegisteredToolKits.ContainsKey("Toolkit2"));
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public class ClientToolStateDataTests
             .WithRegisteredToolkit(Toolkit2);
 
         // Assert
-        Assert.Single(updated.RegisteredToolGroups);
-        Assert.Equal("Tool2", updated.RegisteredToolGroups["TestToolkit"].Tools[0].Name);
+        Assert.Single(updated.RegisteredToolKits);
+        Assert.Equal("Tool2", updated.RegisteredToolKits["TestToolkit"].Tools[0].Name);
     }
 
     [Fact]
@@ -103,9 +103,9 @@ public class ClientToolStateDataTests
         var updated = state.WithoutRegisteredToolkit("Toolkit1");
 
         // Assert
-        Assert.Single(updated.RegisteredToolGroups);
-        Assert.False(updated.RegisteredToolGroups.ContainsKey("Toolkit1"));
-        Assert.True(updated.RegisteredToolGroups.ContainsKey("Toolkit2"));
+        Assert.Single(updated.RegisteredToolKits);
+        Assert.False(updated.RegisteredToolKits.ContainsKey("Toolkit1"));
+        Assert.True(updated.RegisteredToolKits.ContainsKey("Toolkit2"));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class ClientToolStateDataTests
         var updated = state.WithoutRegisteredToolkit("NonExistent");
 
         // Assert
-        Assert.Single(updated.RegisteredToolGroups);
+        Assert.Single(updated.RegisteredToolKits);
     }
 
     // ============================================
@@ -347,7 +347,7 @@ public class ClientToolStateDataTests
         // Assert
         Assert.NotSame(container, updated);
         Assert.NotNull(updated.ClientTool());
-        Assert.Single(updated.ClientTool().RegisteredToolGroups);
+        Assert.Single(updated.ClientTool().RegisteredToolKits);
     }
 
     [Fact]
@@ -363,11 +363,11 @@ public class ClientToolStateDataTests
             .WithHiddenTool("Tool1");
 
         // Assert
-        Assert.Empty(original.RegisteredToolGroups);
+        Assert.Empty(original.RegisteredToolKits);
         Assert.Empty(original.ExpandedToolkits);
         Assert.Empty(original.HiddenTools);
 
-        Assert.Single(updated.RegisteredToolGroups);
+        Assert.Single(updated.RegisteredToolKits);
         Assert.Single(updated.ExpandedToolkits);
         Assert.Single(updated.HiddenTools);
     }
@@ -376,11 +376,11 @@ public class ClientToolStateDataTests
     // Helper Methods
     // ============================================
 
-    private static ClientToolGroupDefinition CreateTestToolkit(
+    private static clientToolKitDefinition CreateTestToolkit(
         string name,
         ClientToolDefinition[]? tools = null)
     {
-        return new ClientToolGroupDefinition(
+        return new clientToolKitDefinition(
             Name: name,
             Description: $"Test Toolkit {name}",
             Tools: tools ?? new[] { CreateTestTool($"{name}_Tool") }

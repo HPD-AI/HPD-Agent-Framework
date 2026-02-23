@@ -1,8 +1,12 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using HPD.Agent;
 using HPD.Events;
 using HPD.Events.Core;
+using HPD.MultiAgent.Config;
 using HPD.MultiAgent.Internal;
+using HPD.MultiAgent.Routing;
 using HPDAgent.Graph.Abstractions.Events;
 using HPDAgent.Graph.Abstractions.Execution;
 using HPDAgent.Graph.Abstractions.Graph;
@@ -59,6 +63,12 @@ public abstract class AgentFactory
     /// Build the agent, optionally with a fallback chat client.
     /// </summary>
     public abstract Task<Agent.Agent> BuildAsync(IChatClient? fallbackChatClient, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Return the AgentConfig backing this factory, if available.
+    /// Used by ExportConfigJson to reconstruct serializable config.
+    /// </summary>
+    internal virtual AgentConfig? GetConfig() => null;
 }
 
 /// <summary>
@@ -72,6 +82,8 @@ internal sealed class PrebuiltAgentFactory : AgentFactory
 
     public override Task<Agent.Agent> BuildAsync(IChatClient? fallbackChatClient, CancellationToken cancellationToken)
         => Task.FromResult(_agent);
+
+    internal override AgentConfig? GetConfig() => _agent.Config;
 }
 
 /// <summary>
@@ -103,6 +115,8 @@ internal sealed class ConfigAgentFactory : AgentFactory
 
         return await builder.Build(cancellationToken);
     }
+
+    internal override AgentConfig? GetConfig() => _config;
 }
 
 /// <summary>
@@ -115,6 +129,8 @@ public sealed class AgentWorkflowInstance
     private readonly Dictionary<string, AgentNodeOptions> _options;
     private readonly IServiceProvider _serviceProvider;
     private readonly string _workflowName;
+    private readonly WorkflowSettingsConfig _settings;
+    private readonly Dictionary<string, Func<EdgeConditionContext, bool>> _predicateEdges;
 
     // Cache of built agents (built lazily on first execution)
     private Dictionary<string, Agent.Agent>? _builtAgents;
@@ -124,13 +140,17 @@ public sealed class AgentWorkflowInstance
         Dictionary<string, AgentFactory> agentFactories,
         Dictionary<string, AgentNodeOptions> options,
         IServiceProvider serviceProvider,
-        string? workflowName = null)
+        string? workflowName = null,
+        WorkflowSettingsConfig? settings = null,
+        Dictionary<string, Func<EdgeConditionContext, bool>>? predicateEdges = null)
     {
         _graph = graph;
         _agentFactories = agentFactories;
         _options = options;
         _serviceProvider = serviceProvider;
         _workflowName = workflowName ?? graph.Name ?? "Workflow";
+        _settings = settings ?? new WorkflowSettingsConfig();
+        _predicateEdges = predicateEdges ?? new Dictionary<string, Func<EdgeConditionContext, bool>>();
     }
 
     // Legacy constructor for backward compatibility
@@ -255,6 +275,32 @@ public sealed class AgentWorkflowInstance
     }
 
     /// <summary>
+    /// Execute the workflow with streaming events, using a <see cref="WorkflowEventCoordinator"/>
+    /// for bidirectional event patterns (e.g. approval responses) and observer dispatch.
+    /// This overload avoids any direct dependency on HPD.Events.
+    /// </summary>
+    /// <param name="input">The input to the workflow.</param>
+    /// <param name="coordinator">
+    /// A <see cref="WorkflowEventCoordinator"/> used to send approval responses and receive observer callbacks.
+    /// Call <see cref="WorkflowEventCoordinator.Approve"/> or <see cref="WorkflowEventCoordinator.Deny"/>
+    /// while iterating the returned stream.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Unified stream of graph and agent events.</returns>
+    public async IAsyncEnumerable<Event> ExecuteStreamingAsync(
+        string input,
+        WorkflowEventCoordinator coordinator,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var evt in ExecuteStreamingAsync(input, coordinator.Inner, parentExecutionContext: null, parentChatClient: null, cancellationToken))
+        {
+            if (coordinator.HasObservers)
+                await coordinator.DispatchToObserversAsync(evt, cancellationToken);
+            yield return evt;
+        }
+    }
+
+    /// <summary>
     /// Execute the workflow with streaming events, with optional parent coordinator for event bubbling.
     /// When a parent coordinator is provided, events will automatically bubble up to it.
     /// This enables nested workflows where events from inner workflows appear in the parent's event stream.
@@ -358,7 +404,8 @@ public sealed class AgentWorkflowInstance
             services: _serviceProvider,
             agents: agents,
             agentOptions: _options,
-            originalInput: input)
+            originalInput: input,
+            predicateEdges: _predicateEdges)
         {
             EventCoordinator = eventCoordinator,
             FallbackChatClient = parentChatClient
@@ -367,8 +414,12 @@ public sealed class AgentWorkflowInstance
         // Set initial input in channels
         context.Channels["input"].Set(input);
 
-        // Create orchestrator with service provider
-        var orchestrator = new GraphOrchestrator<AgentGraphContext>(_serviceProvider);
+        // Create orchestrator — pass checkpoint store when checkpointing is enabled
+        var checkpointStore = _settings.EnableCheckpointing
+            ? _serviceProvider.GetService<HPDAgent.Graph.Abstractions.Checkpointing.IGraphCheckpointStore>()
+            : null;
+
+        var orchestrator = new GraphOrchestrator<AgentGraphContext>(_serviceProvider, checkpointStore: checkpointStore);
 
         // Start execution in background task
         var executionTask = Task.Run(async () =>
@@ -529,12 +580,117 @@ public sealed class AgentWorkflowInstance
 
     /// <summary>
     /// Export the workflow configuration as JSON.
+    /// Reconstructs a <see cref="MultiAgentWorkflowConfig"/> from the runtime graph and options,
+    /// then serializes it to indented JSON.
+    /// Note: Agents added as pre-built instances will only export config if Agent.Config is set.
     /// </summary>
     public string ExportConfigJson()
     {
-        // TODO: Implement config export
-        throw new NotImplementedException("Config export not yet implemented");
+        // --- Build Agents dictionary ---
+        var agents = new Dictionary<string, AgentNodeConfig>();
+
+        foreach (var (nodeId, factory) in _agentFactories)
+        {
+            var agentConfig = factory.GetConfig() ?? new AgentConfig();
+            var nodeOptions = _options.TryGetValue(nodeId, out var opts) ? opts : new AgentNodeOptions();
+
+            RetryConfig? retryConfig = null;
+            if (nodeOptions.RetryPolicy is { } rp)
+            {
+                retryConfig = new RetryConfig
+                {
+                    MaxAttempts = rp.MaxAttempts,
+                    InitialDelay = rp.InitialDelay,
+                    Strategy = rp.Strategy,
+                    MaxDelay = rp.MaxDelay,
+                    OnlyTransient = rp.RetryableExceptions?.Count > 0
+                };
+            }
+
+            ErrorConfig? errorConfig = null;
+            if (nodeOptions.ErrorMode != ErrorMode.Stop || nodeOptions.FallbackAgentId != null)
+            {
+                errorConfig = new ErrorConfig
+                {
+                    Mode = nodeOptions.ErrorMode,
+                    FallbackAgent = nodeOptions.FallbackAgentId
+                };
+            }
+
+            agents[nodeId] = new AgentNodeConfig
+            {
+                Agent = agentConfig,
+                OutputMode = nodeOptions.OutputMode,
+                StructuredOutputType = nodeOptions.StructuredType?.AssemblyQualifiedName,
+                UnionTypeNames = nodeOptions.UnionTypes?.Select(t => t.AssemblyQualifiedName!).ToList(),
+                Timeout = nodeOptions.Timeout,
+                MaxConcurrent = nodeOptions.MaxConcurrentExecutions,
+                Retry = retryConfig,
+                OnError = errorConfig,
+                InputKey = nodeOptions.InputKey,
+                OutputKey = nodeOptions.OutputKey,
+                InputTemplate = nodeOptions.InputTemplate,
+                AdditionalInstructions = nodeOptions.AdditionalSystemInstructions
+            };
+        }
+
+        // --- Build Edges list (skip START/END infrastructure edges) ---
+        var entryId = _graph.EntryNodeId;
+        var exitId = _graph.ExitNodeId;
+
+        var edges = _graph.Edges
+            .Where(e => e.From != entryId && e.To != exitId)
+            .Select(e =>
+            {
+                ConditionConfig? when = null;
+                if (e.Condition is { } c && c.Type != HPDAgent.Graph.Abstractions.Graph.ConditionType.Always)
+                {
+                    when = MapEdgeConditionToConfig(c);
+                }
+                return new EdgeConfig { From = e.From, To = e.To, When = when };
+            })
+            .ToList();
+
+        // --- Build Settings ---
+        var settings = new WorkflowSettingsConfig
+        {
+            MaxIterations = _graph.MaxIterations,
+            DefaultTimeout = _graph.ExecutionTimeout
+        };
+
+        // --- Assemble and serialize ---
+        var config = new MultiAgentWorkflowConfig
+        {
+            Name = _workflowName,
+            Version = _graph.Version,
+            Agents = agents,
+            Edges = edges,
+            Settings = settings
+        };
+
+        var jsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter() }
+        };
+
+        return JsonSerializer.Serialize(config, jsonOptions);
     }
+
+    /// <summary>
+    /// Recursively maps an <see cref="EdgeCondition"/> to a serializable <see cref="ConditionConfig"/>.
+    /// Preserves nested <c>Conditions</c> for compound types and <c>RegexOptions</c> for regex conditions.
+    /// </summary>
+    private static ConditionConfig MapEdgeConditionToConfig(HPDAgent.Graph.Abstractions.Graph.EdgeCondition c) =>
+        new ConditionConfig
+        {
+            Type = c.Type,
+            Field = c.Field,
+            Value = c.Value,
+            RegexOptions = c.RegexOptions,
+            Conditions = c.Conditions?.Select(MapEdgeConditionToConfig).ToList()
+        };
 }
 
 /// <summary>

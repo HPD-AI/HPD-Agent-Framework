@@ -16,6 +16,10 @@ public class MetricsObserver : IEventObserver<Event>
     private readonly ConcurrentQueue<WorkflowMetrics> _completedWorkflows = new();
     private readonly int _maxCompletedWorkflows;
 
+    // Tracks which node is currently executing per workflow execution ID.
+    // Used to associate agent events (token usage, tool calls) with the right node.
+    private readonly ConcurrentDictionary<string, string> _activeNodePerExecution = new();
+
     /// <summary>
     /// Creates a new metrics observer.
     /// </summary>
@@ -173,6 +177,10 @@ public class MetricsObserver : IEventObserver<Event>
         nodeMetrics.StartedAt = DateTimeOffset.UtcNow;
         nodeMetrics.Iteration = evt.LayerIndex ?? 0;
 
+        // Track which node is active so agent events can be associated with it
+        if (!string.IsNullOrEmpty(executionId))
+            _activeNodePerExecution[executionId] = evt.NodeId;
+
         OnMetricsUpdated?.Invoke(metrics);
     }
 
@@ -199,6 +207,10 @@ public class MetricsObserver : IEventObserver<Event>
             nodeMetrics.ErrorMessage = failure.Exception.Message;
         }
 
+        // Clear the active node tracking for this execution
+        if (!string.IsNullOrEmpty(executionId))
+            _activeNodePerExecution.TryRemove(executionId, out _);
+
         OnMetricsUpdated?.Invoke(metrics);
     }
 
@@ -214,16 +226,44 @@ public class MetricsObserver : IEventObserver<Event>
 
     private void HandleToolCallStart(ToolCallStartEvent evt)
     {
-        // We need to track which workflow/node this belongs to
-        // For now, we'll track tool calls globally and associate later
-        // This is a limitation - we'd need context to know which node
+        var (metrics, nodeMetrics) = FindActiveNodeMetrics();
+        if (nodeMetrics == null || metrics == null) return;
+
+        nodeMetrics.ToolCallCount++;
+        if (!string.IsNullOrEmpty(evt.Name))
+            nodeMetrics.ToolsCalled.Add(evt.Name);
+
+        OnMetricsUpdated?.Invoke(metrics);
     }
 
     private void HandleTurnFinished(MessageTurnFinishedEvent evt)
     {
-        // Token usage is in the event
-        // We need context to associate with the right node
-        // This would be handled by the AgentNodeHandler emitting enriched events
+        if (evt.Usage == null) return;
+
+        var (metrics, nodeMetrics) = FindActiveNodeMetrics();
+        if (nodeMetrics == null || metrics == null) return;
+
+        nodeMetrics.InputTokens += (int)(evt.Usage.InputTokenCount ?? 0);
+        nodeMetrics.OutputTokens += (int)(evt.Usage.OutputTokenCount ?? 0);
+
+        OnMetricsUpdated?.Invoke(metrics);
+    }
+
+    /// <summary>
+    /// Finds the workflow metrics and node metrics for the currently-executing node
+    /// by looking up the active node per execution ID.
+    /// </summary>
+    private (WorkflowMetrics? Workflow, NodeMetrics? Node) FindActiveNodeMetrics()
+    {
+        foreach (var (executionId, nodeId) in _activeNodePerExecution)
+        {
+            if (_activeWorkflows.TryGetValue(executionId, out var metrics) &&
+                metrics.NodeMetrics.TryGetValue(nodeId, out var nodeMetrics))
+            {
+                return (metrics, nodeMetrics);
+            }
+        }
+        return (null, null);
     }
 
     private void HandleApprovalRequest(NodeApprovalRequestEvent evt)
@@ -279,6 +319,7 @@ public class MetricsObserver : IEventObserver<Event>
     public void Clear()
     {
         _activeWorkflows.Clear();
+        _activeNodePerExecution.Clear();
         while (_completedWorkflows.TryDequeue(out _)) { }
     }
 }

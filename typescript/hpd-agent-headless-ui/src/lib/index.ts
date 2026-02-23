@@ -18,7 +18,7 @@ export type {
 	BranchMessage,
 	CreateSessionRequest,
 	CreateBranchRequest,
-	ClientToolGroupDefinition,
+	clientToolKitDefinition,
 	ClientToolDefinition,
 	ClientSkillDefinition,
 	ClientToolInvokeResponse,
@@ -29,7 +29,7 @@ export type {
 export {
 	createSuccessResponse,
 	createErrorResponse,
-	createExpandedToolGroup,
+	createExpandedToolKit,
 } from '@hpd/hpd-agent-client';
 
 // BranchSwitcher component (V3 - Sibling navigation UI)

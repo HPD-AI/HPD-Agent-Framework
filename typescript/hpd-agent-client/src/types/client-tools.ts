@@ -34,7 +34,7 @@ export interface ClientToolDefinition {
  * A tool group is a container for related tools and skills.
  * All client tools must be registered inside a tool group.
  */
-export interface ClientToolGroupDefinition {
+export interface clientToolKitDefinition {
   /** Unique name of the tool group */
   name: string;
 
@@ -111,7 +111,7 @@ export interface ClientSkillReference {
   toolName: string;
 
   /** Tool group containing the tool (optional, defaults to same tool group) */
-  toolGroupName?: string;
+  ToolKitName?: string;
 }
 
 /**
@@ -209,16 +209,16 @@ export type ToolResultContent = TextContent | BinaryContent | JsonContent;
  */
 export interface ClientToolAugmentation {
   /** New tool groups to inject */
-  injectToolGroups?: ClientToolGroupDefinition[];
+  injectToolKits?: clientToolKitDefinition[];
 
   /** Tool groups to remove */
-  removeToolGroups?: string[];
+  removeToolKits?: string[];
 
   /** Tool groups to expand (show their tools) */
-  expandToolGroups?: string[];
+  expandToolKits?: string[];
 
   /** Tool groups to collapse (hide their tools) */
-  collapseToolGroups?: string[];
+  collapseToolKits?: string[];
 
   /** Tools to hide */
   hideTools?: string[];
@@ -292,7 +292,7 @@ export interface ClientToolInvokeResponse {
  */
 export interface ClientStreamOptions {
   /** Tool groups to register for this stream */
-  clientToolGroups?: ClientToolGroupDefinition[];
+  clientToolKits?: clientToolKitDefinition[];
 
   /** Context items to pass to the agent */
   context?: ContextItem[];
@@ -318,7 +318,7 @@ export interface ClientStreamOptions {
  * Creates a collapsed tool group definition.
  * Collapsed tool groups hide their tools behind an expandable container.
  */
-export function createCollapsedToolGroup(
+export function createCollapsedToolKit(
   name: string,
   description: string,
   tools: ClientToolDefinition[],
@@ -329,7 +329,7 @@ export function createCollapsedToolGroup(
     /** Persistent instructions injected into system prompt after expansion (every iteration) */
     systemPrompt?: string;
   }
-): ClientToolGroupDefinition {
+): clientToolKitDefinition {
   return {
     name,
     description,
@@ -345,7 +345,7 @@ export function createCollapsedToolGroup(
  * Creates an expanded tool group definition.
  * Expanded tool groups show all their tools immediately.
  */
-export function createExpandedToolGroup(
+export function createExpandedToolKit(
   name: string,
   tools: ClientToolDefinition[],
   options?: {
@@ -356,7 +356,7 @@ export function createExpandedToolGroup(
     /** Persistent instructions injected into system prompt after expansion (every iteration) */
     systemPrompt?: string;
   }
-): ClientToolGroupDefinition {
+): clientToolKitDefinition {
   return {
     name,
     description: options?.description,

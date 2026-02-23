@@ -114,11 +114,10 @@ public static partial class EventTypes
     #region Middleware Events
 
     /// <summary>
-    /// Middleware progress and error events.
+    /// Middleware error events.
     /// </summary>
     public static class Middleware
     {
-        public const string MIDDLEWARE_PROGRESS = "MIDDLEWARE_PROGRESS";
         public const string MIDDLEWARE_ERROR = "MIDDLEWARE_ERROR";
     }
 
@@ -138,21 +137,6 @@ public static partial class EventTypes
 
     #endregion
 
-    #region Branch Events
-
-    /// <summary>
-    /// Conversation branching events.
-    /// </summary>
-    public static class Branch
-    {
-        public const string BRANCH_CREATED = "BRANCH_CREATED";
-        public const string BRANCH_SWITCHED = "BRANCH_SWITCHED";
-        public const string BRANCH_DELETED = "BRANCH_DELETED";
-        public const string BRANCH_RENAMED = "BRANCH_RENAMED";
-    }
-
-    #endregion
-
     #region Observability Events
 
     /// <summary>
@@ -162,8 +146,6 @@ public static partial class EventTypes
     {
         public const string COLLAPSED_TOOLS_VISIBLE = "COLLAPSED_TOOLS_VISIBLE";
         public const string CONTAINER_EXPANDED = "CONTAINER_EXPANDED";
-        public const string MIDDLEWARE_PIPELINE_START = "MIDDLEWARE_PIPELINE_START";
-        public const string MIDDLEWARE_PIPELINE_END = "MIDDLEWARE_PIPELINE_END";
         public const string PERMISSION_CHECK = "PERMISSION_CHECK";
         public const string ITERATION_START = "ITERATION_START";
         public const string CIRCUIT_BREAKER_TRIGGERED = "CIRCUIT_BREAKER_TRIGGERED";

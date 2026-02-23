@@ -547,7 +547,8 @@ public class AgentBuilder
                 // Create Toolkit instance using AOT-safe resolution:
                 // 1. Try DI first (if ServiceProvider available)
                 // 2. Try config-based instantiation (if config provided)
-                // 3. Fall back to parameterless constructor
+                // 3. Try ISecretResolver-only constructor (auto-injected from builder)
+                // 4. Fall back to parameterless constructor
                 object instance;
 
                 // 1. Try DI first
@@ -568,7 +569,14 @@ public class AgentBuilder
                     goto HaveInstance;
                 }
 
-                // 3. Fall back to parameterless constructor (ZERO REFLECTION - direct delegate call!)
+                // 3. Auto-inject ISecretResolver (ZERO REFLECTION - direct delegate call!)
+                if (factory.CreateWithSecrets != null && _secretResolver != null)
+                {
+                    instance = factory.CreateWithSecrets(_secretResolver);
+                    goto HaveInstance;
+                }
+
+                // 4. Fall back to parameterless constructor (ZERO REFLECTION - direct delegate call!)
                 instance = factory.CreateInstance();
 
             HaveInstance:
@@ -1988,7 +1996,7 @@ public class AgentBuilder
 
         // Register ClientToolMiddleware automatically
         // This enables Client-defined tools without explicit configuration.
-        // It's a no-op if no Client Toolkits are registered via AgentRunInput.
+        // It's a no-op if no Client Toolkits are registered via AgentClientInput.
         // Users can override with WithClientTools() to customize config.
         if (!_middlewares.Any(m => m is ClientTools.ClientToolMiddleware))
         {
@@ -2097,6 +2105,10 @@ public class AgentBuilder
                 if (_serviceProvider != null)
                 {
                     toolkitInstance = _serviceProvider.GetService(factory.ToolkitType);
+                }
+                if (toolkitInstance == null && factory.CreateWithSecrets != null && _secretResolver != null)
+                {
+                    toolkitInstance = factory.CreateWithSecrets(_secretResolver);
                 }
                 toolkitInstance ??= factory.CreateInstance();
 

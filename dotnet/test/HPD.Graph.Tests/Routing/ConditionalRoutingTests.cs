@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using HPDAgent.Graph.Abstractions.Graph;
 using HPDAgent.Graph.Core.Orchestration;
@@ -715,6 +716,575 @@ public class ConditionalRoutingTests
         // Assert
         regularResult.Should().BeTrue("regular condition should match");
         // Default edge should NOT be used - verified in integration tests
+    }
+
+    #endregion
+
+    #region Phase 1 — Compound Logic Tests (And / Or / Not)
+
+    [Fact]
+    public void Evaluate_And_BothTrue_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.And,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "a", Value = "x" },
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "b", Value = "y" }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x", ["b"] = "y" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_And_OneFalse_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.And,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "a", Value = "x" },
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "b", Value = "y" }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x", ["b"] = "WRONG" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_And_EmptyConditions_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.And, Conditions = [] };
+        var outputs = new Dictionary<string, object> { ["x"] = "1" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue("vacuously true");
+    }
+
+    [Fact]
+    public void Evaluate_Or_OneTrue_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Or,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "status", Value = "urgent" },
+                new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "priority", Value = 8 }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["status"] = "normal", ["priority"] = 10 };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Or_AllFalse_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Or,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "status", Value = "urgent" },
+                new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "priority", Value = 8 }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["status"] = "normal", ["priority"] = 5 };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_Or_EmptyConditions_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.Or, Conditions = [] };
+        var outputs = new Dictionary<string, object> { ["x"] = "1" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse("vacuously false");
+    }
+
+    [Fact]
+    public void Evaluate_Not_True_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Not,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "verified", Value = "true" }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["verified"] = "true" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_Not_False_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Not,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "verified", Value = "true" }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["verified"] = "false" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_NestedAndOr_EvaluatesCorrectly()
+    {
+        // And(Or(a=="x", b=="y"), Not(c=="z"))
+        // outputs: a="x", b="no", c="other" → Or is true (a matches), Not is true (c!="z") → And=true
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.And,
+            Conditions = [
+                new EdgeCondition
+                {
+                    Type = ConditionType.Or,
+                    Conditions = [
+                        new EdgeCondition { Type = ConditionType.FieldEquals, Field = "a", Value = "x" },
+                        new EdgeCondition { Type = ConditionType.FieldEquals, Field = "b", Value = "y" }
+                    ]
+                },
+                new EdgeCondition
+                {
+                    Type = ConditionType.Not,
+                    Conditions = [
+                        new EdgeCondition { Type = ConditionType.FieldEquals, Field = "c", Value = "z" }
+                    ]
+                }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x", ["b"] = "no", ["c"] = "other" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_And_ContainingDefault_ThrowsInvalidOperationException()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.And,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "a", Value = "x" },
+                new EdgeCondition { Type = ConditionType.Default }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x" };
+
+        var act = () => ConditionEvaluator.Evaluate(condition, outputs);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Default*");
+    }
+
+    [Fact]
+    public void Evaluate_Or_ContainingDefault_ThrowsInvalidOperationException()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Or,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.Default }
+            ]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x" };
+
+        var act = () => ConditionEvaluator.Evaluate(condition, outputs);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Default*");
+    }
+
+    [Fact]
+    public void Evaluate_Not_ContainingDefault_ThrowsInvalidOperationException()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Not,
+            Conditions = [new EdgeCondition { Type = ConditionType.Default }]
+        };
+        var outputs = new Dictionary<string, object> { ["a"] = "x" };
+
+        var act = () => ConditionEvaluator.Evaluate(condition, outputs);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Default*");
+    }
+
+    [Fact]
+    public void GetDescription_And_ReturnsNestedString()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.And,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "a", Value = "x" },
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "b", Value = "y" }
+            ]
+        };
+
+        condition.GetDescription().Should().Be("(a == x AND b == y)");
+    }
+
+    [Fact]
+    public void GetDescription_Or_ReturnsNestedString()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Or,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "status", Value = "urgent" },
+                new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "priority", Value = 8 }
+            ]
+        };
+
+        condition.GetDescription().Should().Be("(status == urgent OR priority > 8)");
+    }
+
+    [Fact]
+    public void GetDescription_Not_ReturnsNestedString()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.Not,
+            Conditions = [
+                new EdgeCondition { Type = ConditionType.FieldEquals, Field = "verified", Value = true }
+            ]
+        };
+
+        condition.GetDescription().Should().Be("NOT (verified == True)");
+    }
+
+    #endregion
+
+    #region Phase 2 — Advanced String Condition Tests
+
+    [Fact]
+    public void Evaluate_FieldStartsWith_Match_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldStartsWith, Field = "intent", Value = "billing/" };
+        var outputs = new Dictionary<string, object> { ["intent"] = "billing/general" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldStartsWith_NoMatch_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldStartsWith, Field = "intent", Value = "billing/" };
+        var outputs = new Dictionary<string, object> { ["intent"] = "general/billing" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldEndsWith_Match_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldEndsWith, Field = "code", Value = "_billing" };
+        var outputs = new Dictionary<string, object> { ["code"] = "code_billing" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldEndsWith_NoMatch_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldEndsWith, Field = "code", Value = "_billing" };
+        var outputs = new Dictionary<string, object> { ["code"] = "billing_code" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldMatchesRegex_Match_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldMatchesRegex, Field = "response", Value = @"^(yes|sure|ok)$" };
+        var outputs = new Dictionary<string, object> { ["response"] = "yes" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldMatchesRegex_NoMatch_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldMatchesRegex, Field = "response", Value = @"^(yes|sure|ok)$" };
+        var outputs = new Dictionary<string, object> { ["response"] = "nope" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldMatchesRegex_IgnoreCase_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldMatchesRegex,
+            Field = "intent",
+            Value = "^yes$",
+            RegexOptions = "IgnoreCase"
+        };
+        var outputs = new Dictionary<string, object> { ["intent"] = "YES" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldMatchesRegex_Timeout_ReturnsFalse()
+    {
+        // Catastrophically backtracking pattern with a short timeout override
+        var original = ConditionEvaluator.RegexMatchTimeout;
+        ConditionEvaluator.RegexMatchTimeout = TimeSpan.FromMilliseconds(1);
+        try
+        {
+            // Clear the cache so our tiny timeout applies
+            var condition = new EdgeCondition
+            {
+                Type = ConditionType.FieldMatchesRegex,
+                Field = "body",
+                // ReDoS pattern: exponential backtracking on long "aaa..." strings that don't match
+                Value = @"^(a+)+$"
+            };
+            var outputs = new Dictionary<string, object> { ["body"] = new string('a', 30) + "!" };
+
+            // Should not throw — timeout is caught internally
+            var act = () => ConditionEvaluator.Evaluate(condition, outputs);
+            act.Should().NotThrow();
+            // Result should be false (timeout → non-match)
+            ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+        }
+        finally
+        {
+            ConditionEvaluator.RegexMatchTimeout = original;
+        }
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsEmpty_NullField_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsEmpty, Field = "summary" };
+        var outputs = new Dictionary<string, object> { ["summary"] = null! };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsEmpty_EmptyString_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsEmpty, Field = "summary" };
+        var outputs = new Dictionary<string, object> { ["summary"] = "" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsEmpty_WhitespaceOnly_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsEmpty, Field = "summary" };
+        var outputs = new Dictionary<string, object> { ["summary"] = "   " };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsEmpty_NonEmpty_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsEmpty, Field = "summary" };
+        var outputs = new Dictionary<string, object> { ["summary"] = "hello" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsNotEmpty_NonEmpty_ReturnsTrue()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsNotEmpty, Field = "draft" };
+        var outputs = new Dictionary<string, object> { ["draft"] = "Some content" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldIsNotEmpty_EmptyString_ReturnsFalse()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldIsNotEmpty, Field = "draft" };
+        var outputs = new Dictionary<string, object> { ["draft"] = "" };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldStartsWith_JsonElementField_Works()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldStartsWith, Field = "intent", Value = "billing/" };
+        var je = JsonDocument.Parse("\"billing/general\"").RootElement;
+        var outputs = new Dictionary<string, object> { ["intent"] = je };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Phase 3 — Collection Condition Tests
+
+    [Fact]
+    public void Evaluate_FieldContainsAny_OneMatch_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = "tags",
+            Value = new[] { "urgent", "escalate" }
+        };
+        var outputs = new Dictionary<string, object> { ["tags"] = new List<string> { "billing", "urgent" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAny_NoMatch_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = "tags",
+            Value = new[] { "urgent", "escalate" }
+        };
+        var outputs = new Dictionary<string, object> { ["tags"] = new List<string> { "billing" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAny_EmptyField_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = "tags",
+            Value = new[] { "urgent" }
+        };
+        var outputs = new Dictionary<string, object> { ["tags"] = new List<string>() };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAny_EmptyValues_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = "tags",
+            Value = Array.Empty<string>()
+        };
+        var outputs = new Dictionary<string, object> { ["tags"] = new List<string> { "urgent" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAll_AllMatch_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAll,
+            Field = "required_steps",
+            Value = new[] { "verified", "payment_ok" }
+        };
+        var outputs = new Dictionary<string, object> { ["required_steps"] = new List<string> { "verified", "payment_ok", "reviewed" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAll_PartialMatch_ReturnsFalse()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAll,
+            Field = "required_steps",
+            Value = new[] { "verified", "payment_ok" }
+        };
+        var outputs = new Dictionary<string, object> { ["required_steps"] = new List<string> { "verified" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAll_EmptyValues_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAll,
+            Field = "required_steps",
+            Value = Array.Empty<string>()
+        };
+        var outputs = new Dictionary<string, object> { ["required_steps"] = new List<string> { "verified" } };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue("vacuously true");
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAny_JsonElementArray_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = "tags",
+            Value = new[] { "urgent", "escalate" }
+        };
+        var je = JsonDocument.Parse("[\"billing\",\"urgent\"]").RootElement;
+        var outputs = new Dictionary<string, object> { ["tags"] = je };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldContainsAll_JsonElementArray_ReturnsTrue()
+    {
+        var condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAll,
+            Field = "required_steps",
+            Value = new[] { "verified", "payment_ok" }
+        };
+        var je = JsonDocument.Parse("[\"verified\",\"payment_ok\",\"reviewed\"]").RootElement;
+        var outputs = new Dictionary<string, object> { ["required_steps"] = je };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Phase 4 — Numeric Gap Fix Tests
+
+    [Fact]
+    public void Evaluate_FieldGreaterThan_ShortType_Works()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "val", Value = 10 };
+        var outputs = new Dictionary<string, object> { ["val"] = (short)50 };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldGreaterThan_ByteType_Works()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "val", Value = 10 };
+        var outputs = new Dictionary<string, object> { ["val"] = (byte)200 };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_FieldGreaterThan_JsonElementNumeric_Works()
+    {
+        var condition = new EdgeCondition { Type = ConditionType.FieldGreaterThan, Field = "score", Value = 50 };
+        var je = JsonDocument.Parse("75").RootElement;
+        var outputs = new Dictionary<string, object> { ["score"] = je };
+
+        ConditionEvaluator.Evaluate(condition, outputs).Should().BeTrue();
     }
 
     #endregion

@@ -20,7 +20,7 @@ public class ClientToolMiddlewareTests
     // ============================================
 
     [Fact]
-    public async Task BeforeMessageTurn_NoAgentRunInput_DoesNothing()
+    public async Task BeforeMessageTurn_NoAgentClientInput_DoesNothing()
     {
         // Arrange
         var middleware = new ClientToolMiddleware();
@@ -39,15 +39,15 @@ public class ClientToolMiddlewareTests
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateContext();
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[]
+            clientToolKits = new[]
             {
                 CreateTestToolkit("Toolkit1", tools: new[] { CreateTestTool("Tool1") }),
                 CreateTestToolkit("Toolkit2", tools: new[] { CreateTestTool("Tool2") })
             }
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -55,9 +55,9 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.Analyze(s => s.MiddlewareState.ClientTool());
         Assert.NotNull(state);
-        Assert.Equal(2, state.RegisteredToolGroups.Count);
-        Assert.True(state.RegisteredToolGroups.ContainsKey("Toolkit1"));
-        Assert.True(state.RegisteredToolGroups.ContainsKey("Toolkit2"));
+        Assert.Equal(2, state.RegisteredToolKits.Count);
+        Assert.True(state.RegisteredToolKits.ContainsKey("Toolkit1"));
+        Assert.True(state.RegisteredToolKits.ContainsKey("Toolkit2"));
     }
 
     [Fact]
@@ -66,16 +66,16 @@ public class ClientToolMiddlewareTests
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateContext();
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[]
+            clientToolKits = new[]
             {
                 CreateTestToolkit("Toolkit1", startCollapsed: true),
                 CreateTestToolkit("Toolkit2", startCollapsed: true)
             },
             ExpandedContainers = new HashSet<string> { "Toolkit1" }
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -93,9 +93,9 @@ public class ClientToolMiddlewareTests
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateContext();
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[]
+            clientToolKits = new[]
             {
                 CreateTestToolkit("Toolkit1", tools: new[]
                 {
@@ -105,7 +105,7 @@ public class ClientToolMiddlewareTests
             },
             HiddenTools = new HashSet<string> { "Tool1" }
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -123,16 +123,16 @@ public class ClientToolMiddlewareTests
         // Arrange
         var middleware = new ClientToolMiddleware();
         var context = CreateContext();
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[] { CreateTestToolkit("Toolkit1") },
+            clientToolKits = new[] { CreateTestToolkit("Toolkit1") },
             Context = new[]
             {
                 new ContextItem("User preferences", "dark-theme", "prefs"),
                 new ContextItem("Current page", "/dashboard", "page")
             }
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -152,12 +152,12 @@ public class ClientToolMiddlewareTests
         var middleware = new ClientToolMiddleware();
         var context = CreateContext();
         var appState = JsonSerializer.SerializeToElement(new { cartItems = 3, userId = "user123" });
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[] { CreateTestToolkit("Toolkit1") },
+            clientToolKits = new[] { CreateTestToolkit("Toolkit1") },
             State = appState
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -176,21 +176,21 @@ public class ClientToolMiddlewareTests
 
         // First call - register Toolkits
         var context1 = CreateContext();
-        var runInput1 = new AgentRunInput
+        var clientinput1 = new AgentClientInput
         {
-            ClientToolGroups = new[] { CreateTestToolkit("OldToolkit") }
+            clientToolKits = new[] { CreateTestToolkit("OldToolkit") }
         };
-        context1.RunConfig.ClientToolInput = runInput1;
+        context1.RunConfig.ClientToolInput = clientinput1;
         await middleware.BeforeMessageTurnAsync(context1, CancellationToken.None);
 
         // Second call with reset
         var context2 = CreateContext(context1.State);
-        var runInput2 = new AgentRunInput
+        var clientinput2 = new AgentClientInput
         {
-            ClientToolGroups = new[] { CreateTestToolkit("NewToolkit") },
+            clientToolKits = new[] { CreateTestToolkit("NewToolkit") },
             ResetClientState = true
         };
-        context2.RunConfig.ClientToolInput = runInput2;
+        context2.RunConfig.ClientToolInput = clientinput2;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context2, CancellationToken.None);
@@ -198,9 +198,9 @@ public class ClientToolMiddlewareTests
         // Assert - only new Toolkit registered
         var state = context2.State.MiddlewareState.ClientTool();
         Assert.NotNull(state);
-        Assert.Single(state.RegisteredToolGroups);
-        Assert.True(state.RegisteredToolGroups.ContainsKey("NewToolkit"));
-        Assert.False(state.RegisteredToolGroups.ContainsKey("OldToolkit"));
+        Assert.Single(state.RegisteredToolKits);
+        Assert.True(state.RegisteredToolKits.ContainsKey("NewToolkit"));
+        Assert.False(state.RegisteredToolKits.ContainsKey("OldToolkit"));
     }
 
     // ============================================
@@ -293,15 +293,15 @@ public class ClientToolMiddlewareTests
         var context = CreateBeforeMessageTurnContext();
 
         // Create Toolkit with startCollapsed=true but no description
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "BadToolkit",
             Description: null, // No description!
             Tools: new[] { CreateTestTool("Tool1") },
             StartCollapsed: true
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
-        context.RunConfig.ClientToolInput = runInput;
+        var clientinput = new AgentClientInput { clientToolKits = new[] { Toolkit } };
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
@@ -370,7 +370,7 @@ public class ClientToolMiddlewareTests
             References: new[] { new ClientSkillReference("AddToCart") }
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -378,8 +378,8 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
-        context.RunConfig.ClientToolInput = runInput;
+        var clientinput = new AgentClientInput { clientToolKits = new[] { Toolkit } };
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -387,10 +387,10 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.Analyze(s => s.MiddlewareState.ClientTool());
         Assert.NotNull(state);
-        Assert.Single(state.RegisteredToolGroups);
-        Assert.NotNull(state.RegisteredToolGroups["ECommerce"].Skills);
-        Assert.Single(state.RegisteredToolGroups["ECommerce"].Skills!);
-        Assert.Equal("CheckoutWorkflow", state.RegisteredToolGroups["ECommerce"].Skills![0].Name);
+        Assert.Single(state.RegisteredToolKits);
+        Assert.NotNull(state.RegisteredToolKits["ECommerce"].Skills);
+        Assert.Single(state.RegisteredToolKits["ECommerce"].Skills!);
+        Assert.Equal("CheckoutWorkflow", state.RegisteredToolKits["ECommerce"].Skills![0].Name);
     }
 
     [Fact]
@@ -405,7 +405,7 @@ public class ClientToolMiddlewareTests
             SystemPrompt: "1. Verify cart\n2. Get payment\n3. Confirm order"
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -450,7 +450,7 @@ public class ClientToolMiddlewareTests
             }
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -496,7 +496,7 @@ public class ClientToolMiddlewareTests
             References: new[] { new ClientSkillReference("NonExistentTool") }
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -504,8 +504,8 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
-        context.RunConfig.ClientToolInput = runInput;
+        var clientinput = new AgentClientInput { clientToolKits = new[] { Toolkit } };
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act & Assert - should throw because skill references non-existent tool
         await Assert.ThrowsAsync<ArgumentException>(
@@ -531,7 +531,7 @@ public class ClientToolMiddlewareTests
             }
         );
 
-        var ecommerceToolkit = new ClientToolGroupDefinition(
+        var ecommerceToolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart") },
@@ -539,18 +539,18 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var paymentToolkit = new ClientToolGroupDefinition(
+        var paymentToolkit = new clientToolKitDefinition(
             Name: "PaymentToolkit",
             Description: "Payment tools",
             Tools: new[] { CreateTestTool("ProcessPayment") },
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput
+        var clientinput = new AgentClientInput
         {
-            ClientToolGroups = new[] { ecommerceToolkit, paymentToolkit }
+            clientToolKits = new[] { ecommerceToolkit, paymentToolkit }
         };
-        context.RunConfig.ClientToolInput = runInput;
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act - should succeed because PaymentToolkit.ProcessPayment exists
         await middleware.BeforeMessageTurnAsync(context, CancellationToken.None);
@@ -558,7 +558,7 @@ public class ClientToolMiddlewareTests
         // Assert
         var state = context.Analyze(s => s.MiddlewareState.ClientTool());
         Assert.NotNull(state);
-        Assert.Equal(2, state.RegisteredToolGroups.Count);
+        Assert.Equal(2, state.RegisteredToolKits.Count);
     }
 
     [Fact]
@@ -579,7 +579,7 @@ public class ClientToolMiddlewareTests
             }
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "MyToolkit",
             Description: "My tools",
             Tools: new[] { CreateTestTool("LocalTool") },
@@ -587,8 +587,8 @@ public class ClientToolMiddlewareTests
             StartCollapsed: false
         );
 
-        var runInput = new AgentRunInput { ClientToolGroups = new[] { Toolkit } };
-        context.RunConfig.ClientToolInput = runInput;
+        var clientinput = new AgentClientInput { clientToolKits = new[] { Toolkit } };
+        context.RunConfig.ClientToolInput = clientinput;
 
         // Act & Assert - should throw because referenced Toolkit doesn't exist
         await Assert.ThrowsAsync<ArgumentException>(
@@ -611,7 +611,7 @@ public class ClientToolMiddlewareTests
             SystemPrompt: "Use this for quick orders"
         );
 
-        var Toolkit = new ClientToolGroupDefinition(
+        var Toolkit = new clientToolKitDefinition(
             Name: "ECommerce",
             Description: "E-commerce tools",
             Tools: new[] { CreateTestTool("AddToCart"), CreateTestTool("RemoveFromCart") },
@@ -791,12 +791,12 @@ public class ClientToolMiddlewareTests
             agentName: "TestAgent");
     }
 
-    private static ClientToolGroupDefinition CreateTestToolkit(
+    private static clientToolKitDefinition CreateTestToolkit(
         string name,
         ClientToolDefinition[]? tools = null,
         bool startCollapsed = false)
     {
-        return new ClientToolGroupDefinition(
+        return new clientToolKitDefinition(
             Name: name,
             Description: $"Test Toolkit {name}",
             Tools: tools ?? new[] { CreateTestTool($"{name}_DefaultTool") },

@@ -138,6 +138,7 @@ public static class AgentBuilderAudioExtensions
 
     /// <summary>
     /// Quick setup: OpenAI TTS + STT with default settings.
+    /// VAD is not configured here — add it separately via WithAudio(audio => audio.Vad = ...) if needed.
     /// </summary>
     public static AgentBuilder WithOpenAIAudio(
         this AgentBuilder builder,
@@ -164,16 +165,12 @@ public static class AgentBuilderAudioExtensions
                 ModelId = sttModel,
                 ProviderOptionsJson = JsonSerializer.Serialize(new { apiKey = resolvedApiKey })
             };
-
-            audio.Vad = new VadConfig
-            {
-                Provider = "silero-vad"
-            };
         });
     }
 
     /// <summary>
-    /// Quick setup: ElevenLabs TTS + OpenAI STT + Silero VAD.
+    /// Quick setup: ElevenLabs TTS + OpenAI STT.
+    /// VAD is not configured here — add it separately via WithAudio(audio => audio.Vad = ...) if needed.
     /// </summary>
     public static AgentBuilder WithElevenLabsTts(
         this AgentBuilder builder,
@@ -204,8 +201,6 @@ public static class AgentBuilderAudioExtensions
                 ModelId = "whisper-1",
                 ProviderOptionsJson = JsonSerializer.Serialize(new { apiKey = resolvedOpenAiKey })
             };
-
-            audio.Vad = new VadConfig { Provider = "silero-vad" };
         });
     }
 }

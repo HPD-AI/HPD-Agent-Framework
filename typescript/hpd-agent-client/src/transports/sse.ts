@@ -63,8 +63,8 @@ export class SseTransport implements AgentTransport {
     };
 
     // Include client tools configuration
-    if (options.clientToolGroups && options.clientToolGroups.length > 0) {
-      requestBody.clientToolGroups = options.clientToolGroups;
+    if (options.clientToolKits && options.clientToolKits.length > 0) {
+      requestBody.clientToolKits = options.clientToolKits;
     }
     if (options.context && options.context.length > 0) {
       requestBody.context = options.context;

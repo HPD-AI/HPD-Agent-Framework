@@ -122,7 +122,6 @@ namespace HPD.Agent.FFI;
 [JsonSerializable(typeof(ContinuationResponseEvent))]
 [JsonSerializable(typeof(ClarificationRequestEvent))]
 [JsonSerializable(typeof(ClarificationResponseEvent))]
-[JsonSerializable(typeof(MiddlewareProgressEvent))]
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
 
 // --- Structured Output Types ---

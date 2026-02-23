@@ -23,6 +23,7 @@ public class GraphBuilder
     private int _maxIterations = 10;
     private TimeSpan? _executionTimeout;
     private Abstractions.Execution.CloningPolicy _cloningPolicy = Abstractions.Execution.CloningPolicy.LazyClone;
+    private IterationOptions? _iterationOptions;
 
     /// <summary>
     /// Creates a new GraphBuilder instance.
@@ -112,6 +113,16 @@ public class GraphBuilder
     public GraphBuilder WithCloningPolicy(Abstractions.Execution.CloningPolicy policy)
     {
         _cloningPolicy = policy;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets iteration options for cyclic graphs (change-aware iteration, auto-convergence, etc.).
+    /// When set, overrides <see cref="WithMaxIterations"/> for the max iterations value.
+    /// </summary>
+    public GraphBuilder WithIterationOptions(IterationOptions options)
+    {
+        _iterationOptions = options ?? throw new ArgumentNullException(nameof(options));
         return this;
     }
 
@@ -349,7 +360,8 @@ public class GraphBuilder
             Metadata = _metadata,
             MaxIterations = _maxIterations,
             ExecutionTimeout = _executionTimeout,
-            CloningPolicy = _cloningPolicy
+            CloningPolicy = _cloningPolicy,
+            IterationOptions = _iterationOptions
         };
     }
 

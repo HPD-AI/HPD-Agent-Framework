@@ -322,13 +322,13 @@ export class AgentState {
 		// TODO: Automatically invoke registered client tool handlers
 	}
 
-	onClientToolGroupsRegistered(
-		registeredToolGroups: string[],
+	onclientToolKitsRegistered(
+		registeredToolKits: string[],
 		totalTools: number,
 		timestamp: string
 	) {
 		console.log(
-			`[AgentState] Registered ${totalTools} tools in ${registeredToolGroups.length} groups at ${timestamp}`
+			`[AgentState] Registered ${totalTools} tools in ${registeredToolKits.length} groups at ${timestamp}`
 		);
 	}
 

@@ -1,6 +1,6 @@
 import type {
 	AgentTransport,
-	ClientToolGroupDefinition,
+	clientToolKitDefinition,
 	ClientToolInvokeResponse,
 	ClientToolInvokeRequestEvent,
 	PermissionChoice,
@@ -45,7 +45,7 @@ export interface CreateWorkspaceOptions {
 	maxCachedBranches?: number;
 
 	/** Client tool groups to register on every stream */
-	clientToolGroups?: ClientToolGroupDefinition[];
+	clientToolKits?: clientToolKitDefinition[];
 
 	/** Handler for client tool invocations */
 	onClientToolInvoke?: (req: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>;

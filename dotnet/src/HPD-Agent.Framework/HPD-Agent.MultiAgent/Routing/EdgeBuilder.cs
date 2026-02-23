@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using HPDAgent.Graph.Abstractions;
 using HPDAgent.Graph.Abstractions.Graph;
 
@@ -63,15 +64,25 @@ public class EdgeTargetBuilder
     }
 
     /// <summary>
-    /// Add a condition for traversing these edges.
+    /// Add a custom predicate condition for traversing these edges.
+    /// The predicate receives the source node's outputs and returns true to traverse the edge.
+    /// Note: predicate edges are not serializable to JSON config.
     /// </summary>
     public EdgeTargetBuilder When(Func<EdgeConditionContext, bool> predicate)
     {
-        // For now, we'll convert the predicate to a simple condition
-        // Full support would require runtime evaluation
-        throw new NotSupportedException(
-            "Predicate-based conditions are not yet supported. " +
-            "Use When(field, value) or WhenEquals(field, value) instead.");
+        if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+
+        // Remove the unconditional edges registered in the constructor,
+        // then register predicate-based edges via the workflow builder.
+        foreach (var source in _sourceNodes)
+        {
+            foreach (var target in _targetNodes)
+            {
+                _workflowBuilder.AddPredicateEdge(source, target, predicate);
+            }
+        }
+
+        return this;
     }
 
     /// <summary>
@@ -172,6 +183,133 @@ public class EdgeTargetBuilder
             Type = ConditionType.FieldContains,
             Field = field,
             Value = value
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Add a declarative compound or leaf condition built via <see cref="Condition"/> factory methods.
+    /// Unlike <see cref="When(Func{EdgeConditionContext, bool})"/>, this overload is fully serializable.
+    /// </summary>
+    public EdgeTargetBuilder When(EdgeCondition condition)
+    {
+        _condition = condition ?? throw new ArgumentNullException(nameof(condition));
+        UpdateEdges();
+        return this;
+    }
+
+    // ========================================
+    // Advanced String Conditions
+    // ========================================
+
+    /// <summary>
+    /// Traverse if <paramref name="field"/> starts with <paramref name="prefix"/>.
+    /// </summary>
+    public EdgeTargetBuilder WhenStartsWith(string field, string prefix)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldStartsWith,
+            Field = field,
+            Value = prefix
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Traverse if <paramref name="field"/> ends with <paramref name="suffix"/>.
+    /// </summary>
+    public EdgeTargetBuilder WhenEndsWith(string field, string suffix)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldEndsWith,
+            Field = field,
+            Value = suffix
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Traverse if <paramref name="field"/> matches the regular expression <paramref name="pattern"/>.
+    /// </summary>
+    public EdgeTargetBuilder WhenMatchesRegex(string field, string pattern, RegexOptions options = RegexOptions.None)
+    {
+        var optionsStr = options == RegexOptions.None
+            ? null
+            : string.Join(",", options.ToString().Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
+
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldMatchesRegex,
+            Field = field,
+            Value = pattern,
+            RegexOptions = optionsStr
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Traverse if <paramref name="field"/> is null, empty, or whitespace-only.
+    /// </summary>
+    public EdgeTargetBuilder WhenEmpty(string field)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldIsEmpty,
+            Field = field
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Traverse if <paramref name="field"/> is NOT null, empty, or whitespace-only.
+    /// </summary>
+    public EdgeTargetBuilder WhenNotEmpty(string field)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldIsNotEmpty,
+            Field = field
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    // ========================================
+    // Collection Conditions
+    // ========================================
+
+    /// <summary>
+    /// Traverse if the <paramref name="field"/> array contains at least one of <paramref name="values"/>.
+    /// </summary>
+    public EdgeTargetBuilder WhenContainsAny(string field, params object[] values)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAny,
+            Field = field,
+            Value = values
+        };
+        UpdateEdges();
+        return this;
+    }
+
+    /// <summary>
+    /// Traverse if the <paramref name="field"/> array contains ALL of <paramref name="values"/>.
+    /// </summary>
+    public EdgeTargetBuilder WhenContainsAll(string field, params object[] values)
+    {
+        _condition = new EdgeCondition
+        {
+            Type = ConditionType.FieldContainsAll,
+            Field = field,
+            Value = values
         };
         UpdateEdges();
         return this;

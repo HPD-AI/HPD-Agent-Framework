@@ -85,8 +85,8 @@ var config = new AgentConfig
 {
     Collapsing = new CollapsingConfig
     {
-        CollapseClientToolkit = true,
-        ClientToolkitInstructions = "These Toolkit interact with the user's IDE."
+        CollapseClientTools = true,
+        ClientToolsInstructions = "These tools interact with the user's IDE."
     }
 };
 ```
@@ -102,7 +102,7 @@ Auto-generate Toolkit from OpenAPI/Swagger specifications. Point to an API spec 
 ```csharp
 // Future API
 var agent = new AgentBuilder()
-    .WithOpenAPI("https://api.example.com/openapi.json")
+    .WithOpenApi("https://api.example.com/openapi.json")
     .Build();
 ```
 
@@ -122,7 +122,7 @@ var config = new AgentConfig
     Collapsing = new CollapsingConfig
     {
         Enabled = true,                    // C# Toolkit
-        CollapseClientToolkit = true,        // Client Toolkit
+        CollapseClientTools = true,           // Client Toolkit
         // MCP servers are collapsed by server name automatically
     }
 };
@@ -145,7 +145,7 @@ var config = new AgentConfig
         },
 
         // Client Toolkit instructions
-        ClientToolkitInstructions = "These Toolkit interact with the user's IDE."
+        ClientToolsInstructions = "These tools interact with the user's IDE."
     }
 };
 ```

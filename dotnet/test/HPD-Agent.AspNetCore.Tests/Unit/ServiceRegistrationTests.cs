@@ -46,7 +46,7 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        var options = provider.GetService<IOptionsMonitor<HPDAgentOptions>>();
+        var options = provider.GetService<IOptionsMonitor<HPDAgentConfig>>();
         options.Should().NotBeNull();
         options!.CurrentValue.AgentIdleTimeout.Should().Be(TimeSpan.FromMinutes(60));
     }
@@ -85,7 +85,7 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        var optionsMonitor = provider.GetRequiredService<IOptionsMonitor<HPDAgentOptions>>();
+        var optionsMonitor = provider.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
         var options1 = optionsMonitor.Get("agent1");
         var options2 = optionsMonitor.Get("agent2");
 
@@ -107,7 +107,7 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        var optionsMonitor = provider.GetRequiredService<IOptionsMonitor<HPDAgentOptions>>();
+        var optionsMonitor = provider.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
         var defaultOptions = optionsMonitor.Get(Options.DefaultName);
         defaultOptions.SessionStorePath.Should().Be("./test");
     }

@@ -103,8 +103,8 @@ export interface CreateAgentOptions {
 	/** Additional headers for requests */
 	headers?: Record<string, string>;
 
-	/** Client tool groups (pass ClientToolGroupDefinition[] from hpd-agent-client) */
-	clientToolGroups?: import('@hpd/hpd-agent-client').ClientToolGroupDefinition[];
+	/** Client tool groups (pass clientToolKitDefinition[] from hpd-agent-client) */
+	clientToolKits?: import('@hpd/hpd-agent-client').clientToolKitDefinition[];
 
 	/** Client tool invocation handler */
 	onClientToolInvoke?: (

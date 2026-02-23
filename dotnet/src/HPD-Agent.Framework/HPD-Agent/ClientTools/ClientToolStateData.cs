@@ -35,7 +35,7 @@ namespace HPD.Agent;
 ///
 /// <para><b>Lifecycle:</b></para>
 /// <para>
-/// - RegisteredToolGroups persist across message turns (unless ResetClientState=true)
+/// - RegisteredToolKits persist across message turns (unless ResetClientState=true)
 /// - ExpandedToolkits and HiddenTools can be modified via augmentation
 /// - PendingAugmentation is applied at the start of each iteration
 /// </para>
@@ -47,8 +47,8 @@ public sealed record ClientToolStateData
     /// Registered Toolkits (source of truth for tools).
     /// Key is Toolkit name, value is the Toolkit definition.
     /// </summary>
-    public ImmutableDictionary<string, ClientToolGroupDefinition> RegisteredToolGroups { get; init; }
-        = ImmutableDictionary<string, ClientToolGroupDefinition>.Empty;
+    public ImmutableDictionary<string, clientToolKitDefinition> RegisteredToolKits { get; init; }
+        = ImmutableDictionary<string, clientToolKitDefinition>.Empty;
 
     /// <summary>
     /// Toolkits that are currently expanded (showing their tools).
@@ -86,11 +86,11 @@ public sealed record ClientToolStateData
     /// <summary>
     /// Registers a new Toolkit.
     /// </summary>
-    public ClientToolStateData WithRegisteredToolkit(ClientToolGroupDefinition Toolkit)
+    public ClientToolStateData WithRegisteredToolkit(clientToolKitDefinition Toolkit)
     {
         return this with
         {
-            RegisteredToolGroups = RegisteredToolGroups.SetItem(Toolkit.Name, Toolkit)
+            RegisteredToolKits = RegisteredToolKits.SetItem(Toolkit.Name, Toolkit)
         };
     }
 
@@ -101,7 +101,7 @@ public sealed record ClientToolStateData
     {
         return this with
         {
-            RegisteredToolGroups = RegisteredToolGroups.Remove(toolName),
+            RegisteredToolKits = RegisteredToolKits.Remove(toolName),
             ExpandedToolkits = ExpandedToolkits.Remove(toolName)
         };
     }

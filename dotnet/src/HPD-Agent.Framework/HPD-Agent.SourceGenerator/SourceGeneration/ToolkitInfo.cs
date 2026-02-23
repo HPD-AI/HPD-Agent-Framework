@@ -107,6 +107,14 @@ internal class ToolkitInfo
     public bool HasParameterlessConstructor { get; set; } = true;
 
     /// <summary>
+    /// Whether this Toolkit has a constructor whose sole parameter is ISecretResolver.
+    /// When true, the source generator emits a CreateWithSecrets delegate and includes
+    /// the toolkit in ToolkitRegistry.All so AgentBuilder can instantiate it automatically.
+    /// Example: public StripeToolkit(ISecretResolver secrets)
+    /// </summary>
+    public bool HasSecretsConstructor { get; set; } = false;
+
+    /// <summary>
     /// Whether this Toolkit class is publicly accessible.
     /// Only publicly accessible classes can be included in the ToolkitRegistry.All catalog.
     /// Private/internal classes (e.g., test fixtures) are still processed for individual Registration files

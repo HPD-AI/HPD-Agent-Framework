@@ -21,6 +21,11 @@ public class MultiAgent
     private readonly Dictionary<string, AgentConfig> _agentConfigs = new();
     private readonly Dictionary<string, AgentNodeOptions> _options = new();
     private readonly List<(string From, string To, EdgeCondition? Condition)> _edges = new();
+
+    // Stores predicate-based edge conditions keyed by "from->to".
+    // Predicates are evaluated by AgentNodeHandler after the source node runs and
+    // write a synthetic boolean output key that the graph routes on.
+    internal readonly Dictionary<string, Func<EdgeConditionContext, bool>> PredicateEdges = new();
     private readonly WorkflowSettingsConfig _settings;
     private string? _workflowName;
 
@@ -52,15 +57,7 @@ public class MultiAgent
         // Add edges from config
         foreach (var edge in config.Edges)
         {
-            var condition = edge.When != null
-                ? new EdgeCondition
-                {
-                    Type = edge.When.Type,
-                    Field = edge.When.Field,
-                    Value = edge.When.Value
-                }
-                : null;
-
+            var condition = edge.When != null ? MapCondition(edge.When) : null;
             _edges.Add((edge.From, edge.To, condition));
         }
     }
@@ -127,18 +124,10 @@ public class MultiAgent
         if (configureAgent == null)
             throw new ArgumentNullException(nameof(configureAgent));
 
-        // Create a builder and apply configuration
-        var builder = new AgentBuilder();
-        configureAgent(builder);
-
-        // Store the config for deferred building
-        // Note: AgentBuilder.Build() is async, so we store the builder action
-        _agentConfigs[id] = new AgentConfig(); // Placeholder
-        _options[id] = new AgentNodeOptions();
-
-        // We need a way to store the builder action for later
-        // For now, we'll build immediately which isn't ideal but works
-        // TODO: Improve this to truly defer building
+        // Store the builder action for deferred building at execution time.
+        // The agent is built when the workflow runs so it can inherit the
+        // parent's chat client if no Provider is configured.
+        _agentConfigs[id] = new AgentConfig(); // placeholder — factory uses the builder action
         _builderActions[id] = configureAgent;
 
         var options = new AgentNodeOptions();
@@ -249,6 +238,23 @@ public class MultiAgent
         // Configure graph
         _graphBuilder.WithName(_workflowName ?? "MultiAgentWorkflow");
 
+        // Wire iteration options if configured
+        if (_settings.IterationOptions != null)
+        {
+            _graphBuilder.WithIterationOptions(new HPDAgent.Graph.Abstractions.Graph.IterationOptions
+            {
+                MaxIterations = _settings.IterationOptions.MaxIterations,
+                UseChangeAwareIteration = _settings.IterationOptions.UseChangeAwareIteration,
+                EnableAutoConvergence = _settings.IterationOptions.EnableAutoConvergence,
+                IgnoreFieldsForChangeDetection = _settings.IterationOptions.IgnoreFieldsForChangeDetection != null
+                    ? new HashSet<string>(_settings.IterationOptions.IgnoreFieldsForChangeDetection)
+                    : null,
+                AlwaysDirtyNodes = _settings.IterationOptions.AlwaysDirtyNodes != null
+                    ? new HashSet<string>(_settings.IterationOptions.AlwaysDirtyNodes)
+                    : null
+            });
+        }
+
         // Add START and END nodes
         _graphBuilder.AddStartNode();
         _graphBuilder.AddEndNode();
@@ -297,7 +303,7 @@ public class MultiAgent
             services.AddSingleton<HPDAgent.Graph.Abstractions.Handlers.IGraphNodeHandler<AgentGraphContext>>(handler);
         }
 
-        return Task.FromResult(new AgentWorkflowInstance(graph, factories, _options, services.BuildServiceProvider(), _workflowName));
+        return Task.FromResult(new AgentWorkflowInstance(graph, factories, _options, services.BuildServiceProvider(), _workflowName, _settings, PredicateEdges));
     }
 
     /// <summary>
@@ -344,6 +350,25 @@ public class MultiAgent
         }
     }
 
+    /// <summary>
+    /// Registers a predicate-based edge. The predicate is evaluated by AgentNodeHandler
+    /// after the source node runs and writes a synthetic boolean key that the graph routes on.
+    /// The synthetic key is "__predicate_{from}_{to}".
+    /// </summary>
+    internal void AddPredicateEdge(string from, string to, Func<EdgeConditionContext, bool> predicate)
+    {
+        var syntheticKey = $"__predicate_{from}_{to}";
+        PredicateEdges[$"{from}->{to}"] = predicate;
+
+        // Register the edge with a FieldEquals condition on the synthetic key
+        AddEdgeInternal(from, to, new EdgeCondition
+        {
+            Type = ConditionType.FieldEquals,
+            Field = syntheticKey,
+            Value = true
+        });
+    }
+
     internal AgentNodeOptions GetOrCreateOptions(string nodeId)
     {
         if (!_options.TryGetValue(nodeId, out var options))
@@ -358,6 +383,15 @@ public class MultiAgent
     {
         return _agents.Keys.Union(_agentConfigs.Keys).Distinct();
     }
+
+    private static EdgeCondition MapCondition(Config.ConditionConfig c) => new EdgeCondition
+    {
+        Type = c.Type,
+        Field = c.Field,
+        Value = c.Value,
+        RegexOptions = c.RegexOptions,
+        Conditions = c.Conditions?.Select(MapCondition).ToList()
+    };
 
     private static AgentNodeOptions ConvertToOptions(AgentNodeConfig config)
     {

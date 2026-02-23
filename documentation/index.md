@@ -93,7 +93,7 @@ cd MyAgent
 using HPD.Agent;
 
 var agent = new AgentBuilder()
-    .WithOpenAI("gpt-4")
+    .WithProvider("openai", "gpt-4o")
     .Build();
 
 await agent.RunAsync("Hello! Tell me about yourself.");

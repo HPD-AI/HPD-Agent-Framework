@@ -43,7 +43,7 @@ using HPD.Agent.Toolkits.FileSystem;
 
 // Just add the Toolkit - uses current directory with safe defaults
 var agent = new AgentBuilder()
-     .WithTool<FileSystemToolkit>()  // ← That's it!
+     .WithToolkit<FileSystemToolkit>()  // ← That's it!
     .Build();
 
 // Default context:

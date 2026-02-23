@@ -57,7 +57,7 @@ public class ClientSkillDocumentRegistrar
     /// Uses named upsert semantics — idempotent, safe to call on reconnect.
     /// </summary>
     public async Task<int> RegisterToolkitDocumentsAsync(
-        ClientToolGroupDefinition toolkit,
+        clientToolKitDefinition toolkit,
         CancellationToken ct = default)
     {
         if (toolkit.Skills == null || toolkit.Skills.Count == 0)
@@ -101,7 +101,7 @@ public class ClientSkillDocumentRegistrar
     /// Unregisters all documents from all skills in a toolkit.
     /// </summary>
     public async Task<int> UnregisterToolkitDocumentsAsync(
-        ClientToolGroupDefinition toolkit,
+        clientToolKitDefinition toolkit,
         CancellationToken ct = default)
     {
         if (toolkit.Skills == null || toolkit.Skills.Count == 0)

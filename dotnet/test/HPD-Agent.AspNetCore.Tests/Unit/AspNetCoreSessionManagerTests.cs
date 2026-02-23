@@ -13,7 +13,7 @@ namespace HPD.Agent.AspNetCore.Tests.Unit;
 public class AspNetCoreSessionManagerTests : IDisposable
 {
     private readonly InMemorySessionStore _store;
-    private readonly IOptionsMonitor<HPDAgentOptions> _optionsMonitor;
+    private readonly IOptionsMonitor<HPDAgentConfig> _optionsMonitor;
 
     public AspNetCoreSessionManagerTests()
     {
@@ -259,7 +259,7 @@ public class AspNetCoreSessionManagerTests : IDisposable
     {
         public TestableAspNetCoreSessionManager(
             ISessionStore store,
-            IOptionsMonitor<HPDAgentOptions> optionsMonitor,
+            IOptionsMonitor<HPDAgentConfig> optionsMonitor,
             string name,
             IAgentFactory? agentFactory = null)
             : base(store, optionsMonitor, name, agentFactory)
@@ -310,11 +310,11 @@ public class AspNetCoreSessionManagerTests : IDisposable
         }
 
         // Expose protected fields for tests
-        private readonly IOptionsMonitor<HPDAgentOptions> _optionsMonitor;
+        private readonly IOptionsMonitor<HPDAgentConfig> _optionsMonitor;
         private readonly string _name;
         private readonly IAgentFactory? _agentFactory;
 
-        public void InitializeFields(IOptionsMonitor<HPDAgentOptions> optionsMonitor, string name, IAgentFactory? agentFactory)
+        public void InitializeFields(IOptionsMonitor<HPDAgentConfig> optionsMonitor, string name, IAgentFactory? agentFactory)
         {
             typeof(TestableAspNetCoreSessionManager)
                 .GetField("_optionsMonitor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
@@ -361,13 +361,13 @@ public class AspNetCoreSessionManagerTests : IDisposable
         }
     }
 
-    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentOptions>
+    private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentConfig>
     {
-        public HPDAgentOptions CurrentValue { get; } = new HPDAgentOptions();
+        public HPDAgentConfig CurrentValue { get; } = new HPDAgentConfig();
 
-        public HPDAgentOptions Get(string? name) => CurrentValue;
+        public HPDAgentConfig Get(string? name) => CurrentValue;
 
-        public IDisposable? OnChange(Action<HPDAgentOptions, string?> listener) => null;
+        public IDisposable? OnChange(Action<HPDAgentConfig, string?> listener) => null;
     }
 
     // Extension to access protected method
@@ -375,7 +375,7 @@ public class AspNetCoreSessionManagerTests : IDisposable
     {
         public AspNetCoreSessionManagerTestable(
             ISessionStore store,
-            IOptionsMonitor<HPDAgentOptions> optionsMonitor,
+            IOptionsMonitor<HPDAgentConfig> optionsMonitor,
             string name,
             IAgentFactory? agentFactory)
             : base(store, optionsMonitor, name, agentFactory)

@@ -445,7 +445,7 @@ Handle different content types:
 
 ## Usage Patterns
 
-### ✅ DO: Use Snippets for Dynamic Content
+###  DO: Use Snippets for Dynamic Content
 
 ```svelte
 <Artifact.Root id="dynamic">
@@ -463,7 +463,7 @@ Handle different content types:
 </Artifact.Root>
 ```
 
-### ✅ DO: Use Unique, Meaningful IDs
+###  DO: Use Unique, Meaningful IDs
 
 ```svelte
 <!-- Good: descriptive IDs -->
@@ -476,7 +476,7 @@ Handle different content types:
 <Artifact.Root id="a" />
 ```
 
-### ✅ DO: Place Panel in Your Layout
+###  DO: Place Panel in Your Layout
 
 ```svelte
 <div class="app-layout">
@@ -494,7 +494,7 @@ Handle different content types:
 </div>
 ```
 
-### ✅ DO: Provide Fallbacks
+###  DO: Provide Fallbacks
 
 ```svelte
 <Artifact.Title>
@@ -510,7 +510,7 @@ Handle different content types:
 </Artifact.Content>
 ```
 
-### ✅ DO: Use Data Attributes for Styling
+###  DO: Use Data Attributes for Styling
 
 ```svelte
 <Artifact.Trigger>
@@ -533,75 +533,75 @@ Handle different content types:
 
 ## Anti-Patterns
 
-### ❌ DON'T: Nest Providers
+###  DON'T: Nest Providers
 
 ```svelte
-<!-- ❌ Wrong: Nested providers -->
+<!--  Wrong: Nested providers -->
 <Artifact.Provider>
   <Artifact.Provider>
     ...
   </Artifact.Provider>
 </Artifact.Provider>
 
-<!-- ✅ Right: Single provider -->
+<!--  Right: Single provider -->
 <Artifact.Provider>
   <!-- All artifacts here -->
 </Artifact.Provider>
 ```
 
-### ❌ DON'T: Duplicate IDs
+###  DON'T: Duplicate IDs
 
 ```svelte
-<!-- ❌ Wrong: Duplicate IDs -->
+<!--  Wrong: Duplicate IDs -->
 <Artifact.Root id="my-artifact">...</Artifact.Root>
 <Artifact.Root id="my-artifact">...</Artifact.Root>
 
-<!-- ✅ Right: Unique IDs -->
+<!--  Right: Unique IDs -->
 <Artifact.Root id="artifact-1">...</Artifact.Root>
 <Artifact.Root id="artifact-2">...</Artifact.Root>
 ```
 
-### ❌ DON'T: Put Slot Outside Root
+###  DON'T: Put Slot Outside Root
 
 ```svelte
-<!-- ❌ Wrong: Slot outside Root -->
+<!--  Wrong: Slot outside Root -->
 <Artifact.Slot title={titleSnippet} content={contentSnippet} />
 <Artifact.Root id="orphan">
   <Artifact.Trigger>Open</Artifact.Trigger>
 </Artifact.Root>
 
-<!-- ✅ Right: Slot inside Root -->
+<!--  Right: Slot inside Root -->
 <Artifact.Root id="correct">
   <Artifact.Slot title={titleSnippet} content={contentSnippet} />
   <Artifact.Trigger>Open</Artifact.Trigger>
 </Artifact.Root>
 ```
 
-### ❌ DON'T: Put Trigger Outside Root
+###  DON'T: Put Trigger Outside Root
 
 ```svelte
-<!-- ❌ Wrong: Trigger outside Root -->
+<!--  Wrong: Trigger outside Root -->
 <Artifact.Root id="my-artifact">
   <Artifact.Slot title={titleSnippet} content={contentSnippet} />
 </Artifact.Root>
 <Artifact.Trigger>Open</Artifact.Trigger>
 
-<!-- ✅ Right: Trigger inside Root -->
+<!--  Right: Trigger inside Root -->
 <Artifact.Root id="my-artifact">
   <Artifact.Slot title={titleSnippet} content={contentSnippet} />
   <Artifact.Trigger>Open</Artifact.Trigger>
 </Artifact.Root>
 ```
 
-### ❌ DON'T: Forget the Provider
+###  DON'T: Forget the Provider
 
 ```svelte
-<!-- ❌ Wrong: Missing Provider -->
+<!--  Wrong: Missing Provider -->
 <Artifact.Root id="orphan">
   ...
 </Artifact.Root>
 
-<!-- ✅ Right: Wrapped in Provider -->
+<!--  Right: Wrapped in Provider -->
 <Artifact.Provider>
   <Artifact.Root id="correct">
     ...
@@ -609,32 +609,32 @@ Handle different content types:
 </Artifact.Provider>
 ```
 
-### ❌ DON'T: Put Panel Outside Provider
+###  DON'T: Put Panel Outside Provider
 
 ```svelte
-<!-- ❌ Wrong: Panel outside Provider -->
+<!--  Wrong: Panel outside Provider -->
 <Artifact.Provider>
   <Artifact.Root id="my-artifact">...</Artifact.Root>
 </Artifact.Provider>
 <Artifact.Panel>...</Artifact.Panel>
 
-<!-- ✅ Right: Panel inside Provider -->
+<!--  Right: Panel inside Provider -->
 <Artifact.Provider>
   <Artifact.Root id="my-artifact">...</Artifact.Root>
   <Artifact.Panel>...</Artifact.Panel>
 </Artifact.Provider>
 ```
 
-### ❌ DON'T: Use Title/Content/Close Outside Panel
+###  DON'T: Use Title/Content/Close Outside Panel
 
 ```svelte
-<!-- ❌ Wrong: Title outside Panel -->
+<!--  Wrong: Title outside Panel -->
 <Artifact.Provider>
   <Artifact.Title />  <!-- Won't work! -->
   <Artifact.Panel>...</Artifact.Panel>
 </Artifact.Provider>
 
-<!-- ✅ Right: Title inside Panel -->
+<!--  Right: Title inside Panel -->
 <Artifact.Provider>
   <Artifact.Panel>
     <Artifact.Title />

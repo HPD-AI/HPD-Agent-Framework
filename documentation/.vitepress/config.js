@@ -23,6 +23,7 @@ export default defineConfig({
       { text: 'Tools', link: '/Tools/02.1 CSharp Tools Overview' },
       { text: 'Middleware', link: '/Middleware/04.1 Middleware Lifecycle' },
       { text: 'Events', link: '/Events/05.1 Events Overview' },
+      { text: 'Multi-Agent', link: '/Multi-Agent/06.1 Overview' },
     ],
 
     sidebar: [
@@ -55,6 +56,7 @@ export default defineConfig({
           { text: 'Conditional Expression DSL', link: '/Tools/02.1.7 Conditional Expression DSL' },
           { text: 'MCP Servers', link: '/Tools/02.2 MCP Servers' },
           { text: 'Client Tools', link: '/Tools/02.3 Client Tools' },
+          { text: 'OpenAPI Tools', link: '/Tools/02.4 OpenAPI Tools' },
         ]
       },
       {
@@ -79,6 +81,19 @@ export default defineConfig({
           { text: 'Streaming & Cancellation', link: '/Events/05.5 Streaming & Cancellation' },
           { text: 'Bidirectional Events', link: '/Events/05.6 Bidirectional Events' },
           { text: 'Custom Events', link: '/Events/05.7 Custom Events' },
+        ]
+      },
+      {
+        text: 'Multi-Agent',
+        collapsed: false,
+        items: [
+          { text: 'Overview', link: '/Multi-Agent/06.1 Overview' },
+          { text: 'Building Workflows', link: '/Multi-Agent/06.2 Building Workflows' },
+          { text: 'Node Options', link: '/Multi-Agent/06.3 Node Options' },
+          { text: 'Routing & Edges', link: '/Multi-Agent/06.4 Routing & Edges' },
+          { text: 'As a Toolkit Capability', link: '/Multi-Agent/06.5 As a Toolkit Capability' },
+          { text: 'Workflow Events', link: '/Multi-Agent/06.6 Workflow Events' },
+          { text: 'Observability', link: '/Multi-Agent/06.7 Observability' },
         ]
       },
       {

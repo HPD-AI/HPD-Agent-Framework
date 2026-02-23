@@ -35,7 +35,7 @@ public record ClientToolAugmentation
     /// New Toolkits to inject (with their tools).
     /// This is the ONLY way to add new tools - they must be inside a Toolkit.
     /// </summary>
-    public IReadOnlyList<ClientToolGroupDefinition>? InjectToolkits { get; init; }
+    public IReadOnlyList<clientToolKitDefinition>? InjectToolkits { get; init; }
 
     /// <summary>
     /// Toolkit names to remove entirely (removes Toolkit and all its tools).

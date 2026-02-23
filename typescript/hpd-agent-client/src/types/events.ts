@@ -374,9 +374,9 @@ export interface ClientToolInvokeResponseEvent extends BaseEvent {
   augmentation?: Record<string, unknown>;
 }
 
-export interface ClientToolGroupsRegisteredEvent extends BaseEvent {
+export interface clientToolKitsRegisteredEvent extends BaseEvent {
   type: typeof EventTypes.CLIENT_TOOL_GROUPS_REGISTERED;
-  registeredToolGroups: string[];
+  registeredToolKits: string[];
   totalTools: number;
   timestamp: string;
 }
@@ -572,7 +572,7 @@ export type AgentEvent =
   // Client Tool Events
   | ClientToolInvokeRequestEvent
   | ClientToolInvokeResponseEvent
-  | ClientToolGroupsRegisteredEvent
+  | clientToolKitsRegisteredEvent
   // Audio Events (TTS)
   | SynthesisStartedEvent
   | AudioChunkEvent
@@ -645,9 +645,9 @@ export function isClientToolInvokeRequestEvent(
   return event.type === EventTypes.CLIENT_TOOL_INVOKE_REQUEST;
 }
 
-export function isClientToolGroupsRegisteredEvent(
+export function isclientToolKitsRegisteredEvent(
   event: BaseEvent
-): event is ClientToolGroupsRegisteredEvent {
+): event is clientToolKitsRegisteredEvent {
   return event.type === EventTypes.CLIENT_TOOL_GROUPS_REGISTERED;
 }
 

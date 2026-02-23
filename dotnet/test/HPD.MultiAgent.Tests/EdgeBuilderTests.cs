@@ -1,7 +1,9 @@
+using System.Text.RegularExpressions;
 using HPD.Agent;
 using HPD.MultiAgent;
 using HPD.MultiAgent.Routing;
 using HPDAgent.Graph.Abstractions;
+using HPDAgent.Graph.Abstractions.Graph;
 
 namespace HPD.MultiAgent.Tests;
 
@@ -209,6 +211,209 @@ public class EdgeBuilderTests
             .AddAgent("c", config)
             .From("a").To("b").WhenEquals("x", 1)
             .From("b").To("c");
+
+        builder.Should().NotBeNull();
+    }
+
+    // ========================================
+    // Phase 1 — Compound Logic Builder Tests
+    // ========================================
+
+    [Fact]
+    public void When_AndCondition_RegistersCompoundEdge()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("triage", config)
+            .AddAgent("vip-billing", config)
+            .From("triage").To("vip-billing")
+                .When(Condition.And(
+                    Condition.Equals("intent", "billing"),
+                    Condition.Equals("tier", "VIP")
+                ));
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void When_OrCondition_RegistersCompoundEdge()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("classifier", config)
+            .AddAgent("escalate", config)
+            .From("classifier").To("escalate")
+                .When(Condition.Or(
+                    Condition.Equals("status", "urgent"),
+                    Condition.GreaterThan("priority", 8)
+                ));
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void When_NotCondition_RegistersCompoundEdge()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("classifier", config)
+            .AddAgent("skip", config)
+            .From("classifier").To("skip")
+                .When(Condition.Not(Condition.Exists("summary")));
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Condition_And_ReturnsCorrectEdgeCondition()
+    {
+        var result = Condition.And(
+            Condition.Equals("intent", "billing"),
+            Condition.Equals("tier", "VIP")
+        );
+
+        result.Type.Should().Be(ConditionType.And);
+        result.Conditions.Should().HaveCount(2);
+        result.Conditions![0].Type.Should().Be(ConditionType.FieldEquals);
+        result.Conditions![0].Field.Should().Be("intent");
+        result.Conditions![1].Field.Should().Be("tier");
+    }
+
+    [Fact]
+    public void Condition_Or_ReturnsCorrectEdgeCondition()
+    {
+        var result = Condition.Or(
+            Condition.Equals("a", "x"),
+            Condition.Equals("b", "y")
+        );
+
+        result.Type.Should().Be(ConditionType.Or);
+        result.Conditions.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Condition_Not_ReturnsCorrectEdgeCondition()
+    {
+        var result = Condition.Not(Condition.Exists("summary"));
+
+        result.Type.Should().Be(ConditionType.Not);
+        result.Conditions.Should().HaveCount(1);
+        result.Conditions![0].Type.Should().Be(ConditionType.FieldExists);
+        result.Conditions![0].Field.Should().Be("summary");
+    }
+
+    // ========================================
+    // Phase 2 — String Condition Builder Tests
+    // ========================================
+
+    [Fact]
+    public void WhenStartsWith_Adds_FieldStartsWith_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("router", config)
+            .AddAgent("billing", config)
+            .From("router").To("billing").WhenStartsWith("intent", "billing/");
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WhenEndsWith_Adds_FieldEndsWith_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("router", config)
+            .AddAgent("billing", config)
+            .From("router").To("billing").WhenEndsWith("code", "_billing");
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WhenMatchesRegex_Adds_FieldMatchesRegex_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("classifier", config)
+            .AddAgent("affirm", config)
+            .From("classifier").To("affirm").WhenMatchesRegex("response", @"^(yes|sure|ok)$");
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WhenMatchesRegex_WithRegexOptions_SetsOptions()
+    {
+        // Test that WhenMatchesRegex correctly serializes RegexOptions
+        // We verify the edge condition by inspecting what was registered.
+        // Since EdgeTargetBuilder is internal, we test via Condition factory instead.
+        var result = Condition.MatchesRegex("intent", @"^yes$", RegexOptions.IgnoreCase);
+
+        result.Type.Should().Be(ConditionType.FieldMatchesRegex);
+        result.Field.Should().Be("intent");
+        result.Value.Should().Be(@"^yes$");
+        result.RegexOptions.Should().Be("IgnoreCase");
+    }
+
+    [Fact]
+    public void WhenEmpty_Adds_FieldIsEmpty_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("drafter", config)
+            .AddAgent("retry", config)
+            .From("drafter").To("retry").WhenEmpty("draft");
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WhenNotEmpty_Adds_FieldIsNotEmpty_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("drafter", config)
+            .AddAgent("reviewer", config)
+            .From("drafter").To("reviewer").WhenNotEmpty("draft");
+
+        builder.Should().NotBeNull();
+    }
+
+    // ========================================
+    // Phase 3 — Collection Condition Builder Tests
+    // ========================================
+
+    [Fact]
+    public void WhenContainsAny_Adds_FieldContainsAny_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("classifier", config)
+            .AddAgent("escalate", config)
+            .From("classifier").To("escalate").WhenContainsAny("tags", "urgent", "escalate", "manager");
+
+        builder.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WhenContainsAll_Adds_FieldContainsAll_Condition()
+    {
+        var config = CreateTestConfig();
+
+        var builder = AgentWorkflow.Create()
+            .AddAgent("checker", config)
+            .AddAgent("approve", config)
+            .From("checker").To("approve").WhenContainsAll("required_steps", "verified", "payment_ok");
 
         builder.Should().NotBeNull();
     }

@@ -1,6 +1,6 @@
 import type { AgentEvent, PermissionChoice } from './events.js';
 import type {
-  ClientToolGroupDefinition,
+  clientToolKitDefinition,
   ContextItem,
   ToolResultContent,
   ClientToolAugmentation,
@@ -31,7 +31,7 @@ export interface ConnectOptions {
   /** Optional AbortSignal for cancellation */
   signal?: AbortSignal;
   /** Client tool groups to register */
-  clientToolGroups?: ClientToolGroupDefinition[];
+  clientToolKits?: clientToolKitDefinition[];
   /** Context items to pass to the agent */
   context?: ContextItem[];
   /** Application state (opaque to agent) */

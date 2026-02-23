@@ -357,4 +357,67 @@ public class AudioConfigTests
         var act = () => config.Validate();
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void Validate_Native_WithStt_Throws()
+    {
+        // Arrange
+        var config = new AudioConfig
+        {
+            ProcessingMode = AudioProcessingMode.Native,
+            Stt = new SttConfig()
+        };
+
+        // Act & Assert
+        var act = () => config.Validate();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Stt*Native*");
+    }
+
+    [Fact]
+    public void Validate_Native_WithTts_Throws()
+    {
+        // Arrange
+        var config = new AudioConfig
+        {
+            ProcessingMode = AudioProcessingMode.Native,
+            Tts = new TtsConfig()
+        };
+
+        // Act & Assert
+        var act = () => config.Validate();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Tts*Native*");
+    }
+
+    [Fact]
+    public void Validate_Native_WithVad_Throws()
+    {
+        // Arrange
+        var config = new AudioConfig
+        {
+            ProcessingMode = AudioProcessingMode.Native,
+            Vad = new VadConfig()
+        };
+
+        // Act & Assert
+        var act = () => config.Validate();
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Vad*Native*");
+    }
+
+    [Fact]
+    public void Validate_Native_WithoutRoleConfigs_Succeeds()
+    {
+        // Arrange — Native mode with no STT/TTS/VAD is valid
+        var config = new AudioConfig
+        {
+            ProcessingMode = AudioProcessingMode.Native,
+            IOMode = AudioIOMode.AudioToAudio
+        };
+
+        // Act & Assert
+        var act = () => config.Validate();
+        act.Should().NotThrow();
+    }
 }

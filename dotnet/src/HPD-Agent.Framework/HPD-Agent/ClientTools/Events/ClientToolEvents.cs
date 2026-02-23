@@ -67,11 +67,11 @@ public record ClientToolInvokeResponseEvent(
 /// Emitted after Client Toolkits are successfully registered.
 /// Useful for debugging and observability.
 /// </summary>
-/// <param name="RegisteredToolGroups">Names of all registered tool groups</param>
+/// <param name="RegisteredToolKits">Names of all registered tool groups</param>
 /// <param name="TotalTools">Total number of tools across all tool groups</param>
 /// <param name="Timestamp">When registration completed</param>
-public record ClientToolGroupsRegisteredEvent(
-    IReadOnlyList<string>RegisteredToolGroups,
+public record clientToolKitsRegisteredEvent(
+    IReadOnlyList<string>RegisteredToolKits,
     int TotalTools,
     DateTimeOffset Timestamp
 ) : AgentEvent;

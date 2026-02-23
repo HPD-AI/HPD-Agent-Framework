@@ -21,7 +21,7 @@ public static class ServiceCollectionExtensions
     /// This registers:
     /// - MauiSessionManager as a singleton
     /// - ISessionStore (either provided via options or created from SessionStorePath)
-    /// - HPDAgentOptions configuration
+    /// - HPDAgentConfig configuration
     ///
     /// Example usage:
     /// <code>
@@ -38,7 +38,7 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     public static IServiceCollection AddHPDAgentBridge(
         this IServiceCollection services,
-        Action<HPDAgentOptions>? configure = null)
+        Action<HPDAgentConfig>? configure = null)
         => services.AddHPDAgentBridge(Options.DefaultName, configure);
 
     /// <summary>
@@ -52,12 +52,12 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddHPDAgentBridge(
         this IServiceCollection services,
         string name,
-        Action<HPDAgentOptions>? configure = null)
+        Action<HPDAgentConfig>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-        // Register named options (each agent name gets its own HPDAgentOptions)
+        // Register named options (each agent name gets its own HPDAgentConfig)
         if (configure != null)
             services.Configure(name, configure);
 
@@ -65,7 +65,7 @@ public static class ServiceCollectionExtensions
         // Use a factory to resolve the correct ISessionStore based on options
         services.TryAddSingleton<MauiSessionManager>(sp =>
         {
-            var optionsMonitor = sp.GetRequiredService<IOptionsMonitor<HPDAgentOptions>>();
+            var optionsMonitor = sp.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
             var opts = optionsMonitor.Get(name);
 
             // Determine session store

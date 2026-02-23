@@ -84,7 +84,7 @@ export class WebSocketTransport implements AgentTransport {
         // Send initial messages and client tool options once connected
         this.ws!.send(JSON.stringify({
           messages: options.messages,
-          clientToolGroups: options.clientToolGroups,
+          clientToolKits: options.clientToolKits,
           context: options.context,
           state: options.state,
           expandedContainers: options.expandedContainers,

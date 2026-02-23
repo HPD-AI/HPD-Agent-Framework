@@ -70,7 +70,7 @@ public class CalculatorTool
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are a helpful assistant with math capabilities.")
-    .WithTools<CalculatorTool>()  // Register the tool
+    .WithToolkit<CalculatorTool>()  // Register the tool
     .Build();
 ```
 
@@ -104,7 +104,7 @@ public class LoggingMiddleware : IAgentMiddleware
 var agent = new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are a helpful assistant.")
-    .WithTools<CalculatorTool>()
+    .WithToolkit<CalculatorTool>()
     .WithMiddleware(new LoggingMiddleware())  // Add the middleware
     .Build();
 ```
@@ -130,9 +130,8 @@ That's it! Your agent is running and can use tools.
 For multi-turn conversations, use a session and branch to maintain history:
 
 ```csharp
-// Create a session (metadata) and branch (messages) to maintain conversation history
-var session = new Session();
-var branch = session.CreateBranch();
+// Create a named session + branch in memory
+var (session, branch) = agent.CreateSession("user-123");
 
 // Each call reuses the same branch - agent remembers previous messages
 var userMessages = new[]
@@ -157,7 +156,7 @@ The branch maintains conversation history across turns, so the agent remembers t
 ## Key Concepts
 
 ### Session + Branch
-A **Session** holds metadata and session-scoped state (permissions, assets). A **Branch** holds the conversation messages. Together they let you resume conversations, persist them to storage, and explore alternative conversation paths via branching.
+A **Session** holds metadata and session-scoped state (permissions, assets). A **Branch** holds the conversation messages. Use `agent.CreateSession()` for in-memory sessions, or `agent.LoadSessionAndBranchAsync(id)` to load (or create) a persistent session by ID. Together they let you resume conversations, persist them to storage, and explore alternative conversation paths via branching.
 
 → Learn more: [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md)
 
@@ -203,14 +202,11 @@ This means you can:
 
 → Complete event reference: [05 Event Handling.md](05%20Event%20Handling.md)
 
-→ Complete event reference: [05 Event Handling.md](05%20Event%20Handling.md)
-
 ## Stateless vs. Persistent
 
-### Stateless (Default)
+### In-Memory (Default)
 ```csharp
-var session = new Session();
-var branch = session.CreateBranch();
+var (session, branch) = agent.CreateSession("user-123");
 await foreach (var evt in agent.RunAsync("First message", branch)) { }
 await foreach (var evt in agent.RunAsync("Second message", branch)) { }
 // Session is lost when process ends

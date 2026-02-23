@@ -59,31 +59,6 @@ public class LoggingEventObserver : IAgentEventObserver
                 }
                 break;
 
-            // Middleware pipeline
-            case MiddlewarePipelineStartEvent e:
-                if (_logger.IsEnabled(LogLevel.Trace))
-                {
-                    _logger.LogTrace(
-                        "Middleware pipeline starting for '{Function}' with {MiddlewareCount} Middlewares",
-                        e.FunctionName, e.MiddlewareCount);
-                }
-                break;
-
-            case MiddlewarePipelineEndEvent e:
-                if (_logger.IsEnabled(LogLevel.Trace))
-                {
-                    _logger.LogTrace(
-                        "Middleware pipeline for '{Function}' completed in {Duration}ms (Success: {Success})",
-                        e.FunctionName, e.Duration.TotalMilliseconds, e.Success);
-                }
-                if (!e.Success && !string.IsNullOrEmpty(e.ErrorMessage))
-                {
-                    _logger.LogWarning(
-                        "Middleware pipeline for '{Function}' failed: {Error}",
-                        e.FunctionName, e.ErrorMessage);
-                }
-                break;
-
             // Circuit breaker
             case CircuitBreakerTriggeredEvent e:
                 _logger.LogWarning(

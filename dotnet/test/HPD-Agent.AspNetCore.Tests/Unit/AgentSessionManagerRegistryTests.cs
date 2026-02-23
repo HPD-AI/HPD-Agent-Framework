@@ -20,7 +20,7 @@ public class AgentSessionManagerRegistryTests
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts =>
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
         });
@@ -40,7 +40,7 @@ public class AgentSessionManagerRegistryTests
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts =>
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
         });
@@ -61,11 +61,11 @@ public class AgentSessionManagerRegistryTests
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>("agent1", opts =>
+        services.Configure<HPDAgentConfig>("agent1", opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
         });
-        services.Configure<HPDAgentOptions>("agent2", opts =>
+        services.Configure<HPDAgentConfig>("agent2", opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
         });
@@ -86,7 +86,7 @@ public class AgentSessionManagerRegistryTests
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>("test-agent", opts =>
+        services.Configure<HPDAgentConfig>("test-agent", opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
             opts.AgentIdleTimeout = TimeSpan.FromMinutes(60);
@@ -108,7 +108,7 @@ public class AgentSessionManagerRegistryTests
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddSingleton<IAgentFactory, TestAgentFactory>();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts =>
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts =>
         {
             opts.SessionStore = new InMemorySessionStore();
         });
@@ -129,7 +129,7 @@ public class AgentSessionManagerRegistryTests
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts =>
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts =>
         {
             opts.SessionStorePath = tempPath;
         });
@@ -154,7 +154,7 @@ public class AgentSessionManagerRegistryTests
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts => { });
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts => { });
         var provider = services.BuildServiceProvider();
         var registry = new AgentSessionManagerRegistry(provider);
 
@@ -173,7 +173,7 @@ public class AgentSessionManagerRegistryTests
         var customStore = new InMemorySessionStore();
         var services = new ServiceCollection();
         services.AddOptions();
-        services.Configure<HPDAgentOptions>(Options.DefaultName, opts =>
+        services.Configure<HPDAgentConfig>(Options.DefaultName, opts =>
         {
             opts.SessionStore = customStore;
         });

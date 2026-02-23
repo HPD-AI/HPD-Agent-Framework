@@ -4,13 +4,13 @@ import type {
   ClarificationRequestEvent,
   ContinuationRequestEvent,
   ClientToolInvokeRequestEvent,
-  ClientToolGroupsRegisteredEvent,
+  clientToolKitsRegisteredEvent,
   PermissionChoice,
 } from './types/events.js';
 import { EventTypes } from './types/events.js';
 import type { AgentTransport } from './types/transport.js';
 import type {
-  ClientToolGroupDefinition,
+  clientToolKitDefinition,
   ContextItem,
   ClientToolInvokeResponse,
 } from './types/client-tools.js';
@@ -37,7 +37,7 @@ export interface PermissionResponse {
 export interface StreamOptions {
   signal?: AbortSignal;
   /** Client tool groups to register */
-  clientToolGroups?: ClientToolGroupDefinition[];
+  clientToolKits?: clientToolKitDefinition[];
   /** Context items to pass to the agent */
   context?: ContextItem[];
   /** Application state (opaque to agent) */
@@ -128,7 +128,7 @@ export interface EventHandlers {
    * Called when client tool groups are successfully registered.
    * Useful for debugging and UI updates.
    */
-  onClientToolGroupsRegistered?: (event: ClientToolGroupsRegisteredEvent) => void;
+  onclientToolKitsRegistered?: (event: clientToolKitsRegisteredEvent) => void;
 
   // ============================================
   // Lifecycle Handlers
@@ -223,7 +223,7 @@ export interface AgentClientConfig {
   headers?: Record<string, string>;
 
   /** Client tool groups to register automatically on every stream */
-  clientToolGroups?: ClientToolGroupDefinition[];
+  clientToolKits?: clientToolKitDefinition[];
 
   /** Default context items to include on every stream */
   defaulTMetadata?: ContextItem[];
@@ -347,9 +347,9 @@ export class AgentClient {
       });
 
       // Merge config defaults with stream options
-      const mergedToolGroups = [
-        ...(this.config.clientToolGroups ?? []),
-        ...(options?.clientToolGroups ?? []),
+      const mergedToolKits = [
+        ...(this.config.clientToolKits ?? []),
+        ...(options?.clientToolKits ?? []),
       ];
       const mergedContext = [
         ...(this.config.defaulTMetadata ?? []),
@@ -363,7 +363,7 @@ export class AgentClient {
           branchId: branchId || 'main',
           messages,
           signal: options?.signal,
-          clientToolGroups: mergedToolGroups.length > 0 ? mergedToolGroups : undefined,
+          clientToolKits: mergedToolKits.length > 0 ? mergedToolKits : undefined,
           context: mergedContext.length > 0 ? mergedContext : undefined,
           state: options?.state,
           expandedContainers: options?.expandedContainers,
@@ -474,7 +474,7 @@ export class AgentClient {
 
         // Client Tool Groups Registered (informational)
         case EventTypes.CLIENT_TOOL_GROUPS_REGISTERED:
-          handlers.onClientToolGroupsRegistered?.(event);
+          handlers.onclientToolKitsRegistered?.(event);
           break;
 
         // Lifecycle
@@ -594,36 +594,36 @@ export class AgentClient {
   /**
    * Register a client tool group. It will be automatically included in all future streams.
    */
-  registerToolGroup(toolGroup: ClientToolGroupDefinition): void {
-    if (!this.config.clientToolGroups) {
-      this.config.clientToolGroups = [];
+  registerToolKit(ToolKit: clientToolKitDefinition): void {
+    if (!this.config.clientToolKits) {
+      this.config.clientToolKits = [];
     }
     // Remove existing tool group with same name (update)
-    this.config.clientToolGroups = this.config.clientToolGroups.filter(g => g.name !== toolGroup.name);
-    this.config.clientToolGroups.push(toolGroup);
+    this.config.clientToolKits = this.config.clientToolKits.filter(g => g.name !== ToolKit.name);
+    this.config.clientToolKits.push(ToolKit);
   }
 
   /**
    * Register multiple client tool groups.
    */
-  registerToolGroups(toolGroups: ClientToolGroupDefinition[]): void {
-    toolGroups.forEach(g => this.registerToolGroup(g));
+  registerToolKits(ToolKits: clientToolKitDefinition[]): void {
+    ToolKits.forEach(g => this.registerToolKit(g));
   }
 
   /**
    * Unregister a client tool group by name.
    */
-  unregisterToolGroup(toolGroupName: string): void {
-    if (this.config.clientToolGroups) {
-      this.config.clientToolGroups = this.config.clientToolGroups.filter(g => g.name !== toolGroupName);
+  unregisterToolKit(ToolKitName: string): void {
+    if (this.config.clientToolKits) {
+      this.config.clientToolKits = this.config.clientToolKits.filter(g => g.name !== ToolKitName);
     }
   }
 
   /**
    * Get all registered tool groups.
    */
-  get toolGroups(): ClientToolGroupDefinition[] {
-    return this.config.clientToolGroups ?? [];
+  get ToolKits(): clientToolKitDefinition[] {
+    return this.config.clientToolKits ?? [];
   }
 
   /**

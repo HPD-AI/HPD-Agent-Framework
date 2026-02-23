@@ -230,8 +230,19 @@ public sealed record ConditionConfig
 
     /// <summary>
     /// Value to compare against.
+    /// For FieldContainsAny/FieldContainsAll, this is an array of values.
     /// </summary>
     public object? Value { get; init; }
+
+    /// <summary>
+    /// Sub-conditions for compound types (And, Or, Not).
+    /// </summary>
+    public List<ConditionConfig>? Conditions { get; init; }
+
+    /// <summary>
+    /// Regex flags for FieldMatchesRegex (e.g. "IgnoreCase,Multiline").
+    /// </summary>
+    public string? RegexOptions { get; init; }
 }
 
 /// <summary>

@@ -4,7 +4,7 @@ import type { IStorageBackend, StorageScope, StorageSchema } from './types.ts';
  * Reactive storage state using plain JavaScript reactivity
  * Replaces VSCode's 4-layer architecture with 1 reactive class
  *
- * ✅ DESIGN:
+ *  DESIGN:
  * 1. Uses Map/Set for storage (compatible with components and tests)
  * 2. Factory pattern for safe async initialization
  * 3. Callbacks for reactivity integration (to be used with Svelte $effect in components)
@@ -25,7 +25,7 @@ import type { IStorageBackend, StorageScope, StorageSchema } from './types.ts';
  * ```
  */
 export class StorageState<TSchema extends Record<string, any> = StorageSchema> {
-	// ✅ Private constructor - synchronous only
+	//  Private constructor - synchronous only
 	private constructor(
 		private backend: IStorageBackend,
 		private scope: StorageScope,
@@ -33,7 +33,7 @@ export class StorageState<TSchema extends Record<string, any> = StorageSchema> {
 		private debounce = 100
 	) {}
 
-	// ✅ Static async factory (handles async initialization safely)
+	//  Static async factory (handles async initialization safely)
 	static async create<T extends Record<string, any> = StorageSchema>(
 		backend: IStorageBackend,
 		scope: StorageScope,
@@ -103,14 +103,14 @@ export class StorageState<TSchema extends Record<string, any> = StorageSchema> {
 		try {
 			const items = await this.backend.getItems();
 
-			// ✅ Populate cache
+			//  Populate cache
 			for (const [key, value] of items) {
 				this.cache.set(key, value);
 			}
 
 			this.#initialized = true;
 
-			// ✅ Setup persistence AFTER data loaded
+			//  Setup persistence AFTER data loaded
 			this.#setupAutoPersist();
 		} catch (error) {
 			console.error('[StorageState] Init failed:', error);
@@ -248,7 +248,7 @@ export class StorageState<TSchema extends Record<string, any> = StorageSchema> {
 			valueStr = String(value);
 		}
 
-		// ✅ Map mutation, then schedule flush
+		//  Map mutation, then schedule flush
 		this.cache.set(scopedKey, valueStr);
 		this.#dirtyKeys.add(scopedKey);
 		this.#scheduleFlush();
@@ -312,7 +312,7 @@ export class StorageState<TSchema extends Record<string, any> = StorageSchema> {
 	// ========================================
 
 	/**
-	 * ✅ Scope key with ID support
+	 *  Scope key with ID support
 	 */
 	#scopeKey<K extends keyof TSchema>(key: K): string {
 		const prefix = this.#getScopePrefix();

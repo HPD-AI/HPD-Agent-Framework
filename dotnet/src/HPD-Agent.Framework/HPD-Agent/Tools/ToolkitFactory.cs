@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using HPD.Agent.Secrets;
 
 namespace HPD.Agent;
 
@@ -89,6 +90,16 @@ public record ToolkitFactory(
     /// From [Collapse(SystemPrompt = "...")] or method reference.
     /// </summary>
     string? SystemPrompt = null,
+
+    // ========== NEW: SECRETS-BASED INSTANTIATION ==========
+
+    /// <summary>
+    /// Delegate to create a toolkit instance from an ISecretResolver.
+    /// Generated when the toolkit has a constructor whose only parameter is ISecretResolver.
+    /// Example: secrets => new StripeToolkit(secrets)
+    /// Null if toolkit has no ISecretResolver-only constructor.
+    /// </summary>
+    Func<ISecretResolver, object>? CreateWithSecrets = null,
 
     // ========== NEW: CONFIG-BASED INSTANTIATION ==========
 

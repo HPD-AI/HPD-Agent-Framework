@@ -158,8 +158,8 @@ export class SplitPanelState {
 	 * This enables correct measurement for arbitrary nesting depth + mixed axes
 	 * without recursive traversal (faster, more correct).
 	 *
-	 * ✅ Solves: Axis-ambiguous leaf.size with arbitrary nesting
-	 * ✅ BEAR 3: Enables true constraint enforcement without reflow
+	 *  Solves: Axis-ambiguous leaf.size with arbitrary nesting
+	 *  BEAR 3: Enables true constraint enforcement without reflow
 	 */
 	#nodeDimsCache = new WeakMap<LayoutNode, { width: number; height: number }>();
 
@@ -230,7 +230,7 @@ export class SplitPanelState {
 	 * Automatically recalculates when tree structure or constraints change.
 	 * minWidth: minimum extent along row axis
 	 * minHeight: minimum extent along column axis
-	 * ✅ BEAR 3: Enables reactive constraint validation in resizePanel()
+	 *  BEAR 3: Enables reactive constraint validation in resizePanel()
 	 */
 	readonly minSizeRequired = $derived.by(() => {
 		const root = this.root;

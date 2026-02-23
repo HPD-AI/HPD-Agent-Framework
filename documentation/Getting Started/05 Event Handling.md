@@ -61,7 +61,7 @@ When the agent calls functions:
 
 ```csharp
 case ToolCallStartEvent toolStart:
-    Console.WriteLine($"\n[Calling: {toolStart.ToolName}]");
+    Console.WriteLine($"\n[Calling: {toolStart.Name}]");
     break;
 
 case ToolCallResultEvent toolResult:
@@ -97,7 +97,7 @@ case PermissionRequestEvent permission:
     var approved = PromptUser($"Allow {permission.FunctionName}?");
 
     // Step 2: MUST send response or agent hangs!
-    await agent.SendResponseAsync(permission.PermissionId,
+    agent.SendMiddlewareResponse(permission.PermissionId,
         new PermissionResponseEvent
         {
             PermissionId = permission.PermissionId,
@@ -106,7 +106,7 @@ case PermissionRequestEvent permission:
     break;
 ```
 
-**Common mistake:** Handling the event but forgetting to call `SendResponseAsync()` causes the agent to hang until timeout!
+**Common mistake:** Handling the event but forgetting to call `SendMiddlewareResponse()` causes the agent to hang until timeout!
 
 ## Complete Minimal Example
 
@@ -143,7 +143,7 @@ await foreach (var evt in agent.RunAsync(messages))
 
         // Show tool execution
         case ToolCallStartEvent toolStart:
-            Console.WriteLine($"\n[Calling tool: {toolStart.ToolName}]");
+            Console.WriteLine($"\n[Calling tool: {toolStart.Name}]");
             break;
 
         case ToolCallResultEvent toolResult:
@@ -166,8 +166,8 @@ await foreach (var evt in agent.RunAsync(messages))
             var input = Console.ReadLine();
             var approved = input?.ToLower() == "y";
 
-            // MUST call SendResponseAsync or agent hangs!
-            await agent.SendResponseAsync(permission.PermissionId,
+            // MUST call SendMiddlewareResponse or agent hangs!
+            agent.SendMiddlewareResponse(permission.PermissionId,
                 new PermissionResponseEvent
                 {
                     PermissionId = permission.PermissionId,

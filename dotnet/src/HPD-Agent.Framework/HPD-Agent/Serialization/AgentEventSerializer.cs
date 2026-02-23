@@ -71,7 +71,6 @@ public static partial class AgentEventSerializer
         [typeof(ClarificationResponseEvent)] = EventTypes.Clarification.CLARIFICATION_RESPONSE,
 
         // Middleware Events
-        [typeof(MiddlewareProgressEvent)] = EventTypes.Middleware.MIDDLEWARE_PROGRESS,
         [typeof(MiddlewareErrorEvent)] = EventTypes.Middleware.MIDDLEWARE_ERROR,
 
         // Branch events removed - branching is now an application-level concern
@@ -79,8 +78,6 @@ public static partial class AgentEventSerializer
         // Observability Events
         [typeof(CollapsedToolsVisibleEvent)] = EventTypes.Observability.COLLAPSED_TOOLS_VISIBLE,
         [typeof(ContainerExpandedEvent)] = EventTypes.Observability.CONTAINER_EXPANDED,
-        [typeof(MiddlewarePipelineStartEvent)] = EventTypes.Observability.MIDDLEWARE_PIPELINE_START,
-        [typeof(MiddlewarePipelineEndEvent)] = EventTypes.Observability.MIDDLEWARE_PIPELINE_END,
         [typeof(PermissionCheckEvent)] = EventTypes.Observability.PERMISSION_CHECK,
         [typeof(IterationStartEvent)] = EventTypes.Observability.ITERATION_START,
         [typeof(CircuitBreakerTriggeredEvent)] = EventTypes.Observability.CIRCUIT_BREAKER_TRIGGERED,

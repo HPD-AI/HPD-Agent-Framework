@@ -280,12 +280,6 @@ public class AgentEventSerializerTests
     [Fact]
     public void ToJson_MiddlewareEvents_SerializeCorrectly()
     {
-        // MiddlewareProgressEvent
-        var progressEvt = new MiddlewareProgressEvent("TestMiddleware", "Processing...", 50);
-        var progressJson = AgentEventSerializer.ToJson(progressEvt);
-        Assert.Contains("\"type\":\"MIDDLEWARE_PROGRESS\"", progressJson);
-        Assert.Contains("\"percentComplete\":50", progressJson);
-
         // MiddlewareErrorEvent
         var errorEvt = new MiddlewareErrorEvent("TestMiddleware", "Something went wrong");
         var errorJson = AgentEventSerializer.ToJson(errorEvt);
@@ -360,7 +354,6 @@ public class AgentEventSerializerTests
             new PermissionRequestEvent("perm-1", "Source", "TestFunc", "desc", "call-1", new Dictionary<string, object?> { ["arg1"] = "value1" }),
             new MessageTurnStartedEvent("turn-1", "conv-1", "Agent"),
             new AgentTurnStartedEvent(1),
-            new MiddlewareProgressEvent("TestMiddleware", "Processing...", 50),
         };
 
         // Act & Assert

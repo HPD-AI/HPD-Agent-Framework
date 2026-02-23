@@ -105,8 +105,8 @@ using HPD.Agent;
 [JsonSerializable(typeof(CachedReduction))]
 
 // --- Client Tools types ---
-[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition))]
-[JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolGroupDefinition[]))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.clientToolKitDefinition))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.clientToolKitDefinition[]))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolDefinition))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientToolDefinition[]))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDefinition))]
@@ -117,7 +117,7 @@ using HPD.Agent;
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ClientSkillDocument[]))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem))]
 [JsonSerializable(typeof(HPD.Agent.ClientTools.ContextItem[]))]
-[JsonSerializable(typeof(HPD.Agent.ClientTools.AgentRunInput))]
+[JsonSerializable(typeof(HPD.Agent.ClientTools.AgentClientInput))]
 
 // --- Background Responses types ---
 [JsonSerializable(typeof(BackgroundResponsesConfig))]
