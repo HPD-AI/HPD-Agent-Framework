@@ -4,7 +4,11 @@
 [![Docs](https://img.shields.io/badge/Docs-hpd--ai.github.io-blue)](https://hpd-ai.github.io/HPD-Agent-Framework/)
 [![NuGet](https://img.shields.io/nuget/v/HPD-Agent.Framework?label=NuGet&color=004880&logo=nuget)](https://www.nuget.org/packages/HPD-Agent.Framework)
 
-![HPD-Agent Architecture](architecture.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="architecture.svg">
+  <img alt="HPD-Agent Architecture" src="architecture.svg">
+</picture>
 
 A full-stack framework for building AI agents — C# backend with tools, middleware, multi-turn conversations, and multi-agent workflows, paired with TypeScript/Svelte UI libraries for building rich, streaming chat interfaces.
 
