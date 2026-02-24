@@ -7,7 +7,7 @@
     <IsPackable>true</IsPackable>
 
     <!-- Package metadata -->
-    <PackageId>HPDAgent.Graph.Core</PackageId>
+    <PackageId>HPD-Agent.Graph.Core</PackageId>
     <Description>Core implementation of HPD.Graph - a universal DAG execution engine with support for parallel execution, checkpointing, and content-addressable caching.</Description>
     <PackageTags>graph;dag;workflow;orchestration;execution-engine;orchestrator</PackageTags>
   </PropertyGroup>

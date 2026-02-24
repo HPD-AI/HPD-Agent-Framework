@@ -13,7 +13,7 @@
     <IsRoslynComponent>true</IsRoslynComponent>
 
     <!-- Package metadata -->
-    <PackageId>HPDAgent.Graph.SourceGenerator</PackageId>
+    <PackageId>HPD-Agent.Graph.SourceGenerator</PackageId>
     <Description>Source generator for HPD.Graph socket attributes - generates bridge code between clean handler methods and IGraphNodeHandler interface.</Description>
     <PackageTags>source-generator;roslyn;graph;codegen</PackageTags>
   </PropertyGroup>

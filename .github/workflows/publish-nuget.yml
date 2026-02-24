@@ -147,7 +147,26 @@ jobs:
             echo "Error: NUGET_API_KEY secret is not set"
             exit 1
           fi
-          dotnet nuget push ./nupkg/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $NUGET_API_KEY --skip-duplicate
+          FAILED=0
+          for pkg in ./nupkg/*.nupkg; do
+            echo "Pushing $(basename $pkg)..."
+            output=$(dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key $NUGET_API_KEY 2>&1)
+            exit_code=$?
+            echo "$output"
+            if [ $exit_code -ne 0 ]; then
+              # 409 "already exists" is acceptable (genuine duplicate), everything else is a real failure
+              if echo "$output" | grep -q "already exists"; then
+                echo "Skipping $(basename $pkg) — already published."
+              else
+                echo "ERROR: Failed to push $(basename $pkg)"
+                FAILED=1
+              fi
+            fi
+          done
+          if [ $FAILED -ne 0 ]; then
+            echo "One or more packages failed to push. See errors above."
+            exit 1
+          fi
 
       - name: Summary
         run: |
@@ -165,7 +184,7 @@ jobs:
             echo "- $(basename $pkg)" >> $GITHUB_STEP_SUMMARY
           done
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "[View on NuGet](https://www.nuget.org/packages?q=HPD-Agent)" >> $GITHUB_STEP_SUMMARY
+          echo "[View HPD-Agent packages on NuGet](https://www.nuget.org/packages?q=HPD-Agent)" >> $GITHUB_STEP_SUMMARY
 
   publish-maui:
     runs-on: macos-latest
@@ -224,4 +243,17 @@ jobs:
             echo "Error: NUGET_API_KEY secret is not set"
             exit 1
           fi
-          dotnet nuget push ./nupkg/*.nupkg --source https://api.nuget.org/v3/index.json --api-key $NUGET_API_KEY --skip-duplicate
+          for pkg in ./nupkg/*.nupkg; do
+            echo "Pushing $(basename $pkg)..."
+            output=$(dotnet nuget push "$pkg" --source https://api.nuget.org/v3/index.json --api-key $NUGET_API_KEY 2>&1)
+            exit_code=$?
+            echo "$output"
+            if [ $exit_code -ne 0 ]; then
+              if echo "$output" | grep -q "already exists"; then
+                echo "Skipping $(basename $pkg) — already published."
+              else
+                echo "ERROR: Failed to push $(basename $pkg)"
+                exit 1
+              fi
+            fi
+          done
