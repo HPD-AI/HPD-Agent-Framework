@@ -40,13 +40,7 @@
 		}
 	},
 	"peerDependencies": {
-		"@hpd/hpd-agent-client": ">=0.1.0",
 		"svelte": "^5.0.0"
-	},
-	"peerDependenciesMeta": {
-		"@hpd/hpd-agent-client": {
-			"optional": true
-		}
 	},
 	"devDependencies": {
 		"@hpd/hpd-agent-client": "file:../hpd-agent-client",
