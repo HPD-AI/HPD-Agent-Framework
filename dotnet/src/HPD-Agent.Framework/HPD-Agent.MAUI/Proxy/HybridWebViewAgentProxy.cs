@@ -619,10 +619,14 @@ public abstract class HybridWebViewAgentProxy
         for (int i = 0; i < branch.Messages.Count; i++)
         {
             var msg = branch.Messages[i];
+            var contents = msg.Contents
+                .Where(c => c is not UsageContent)
+                .ToList();
             dtos.Add(new MessageDto(
                 msg.MessageId ?? $"msg-{i}",
-                msg.Role.ToString().ToLower(),
-                msg.Text ?? "",
+                msg.Role.Value,
+                contents,
+                msg.AuthorName,
                 msg.CreatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O")));
         }
 

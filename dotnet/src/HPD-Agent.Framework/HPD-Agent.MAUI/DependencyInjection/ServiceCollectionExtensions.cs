@@ -20,7 +20,7 @@ public static class ServiceCollectionExtensions
     /// <remarks>
     /// This registers:
     /// - MauiSessionManager as a singleton
-    /// - ISessionStore (either provided via options or created from SessionStorePath)
+    /// - ISessionStore (either provided via options or InMemorySessionStore by default)
     /// - HPDAgentConfig configuration
     ///
     /// Example usage:
@@ -32,7 +32,7 @@ public static class ServiceCollectionExtensions
     ///         Name = "My Agent",
     ///         Provider = new ProviderConfig { ProviderKey = "anthropic", ModelName = "claude-sonnet-4-5" }
     ///     };
-    ///     options.SessionStorePath = Path.Combine(FileSystem.AppDataDirectory, "sessions");
+    ///     options.SessionStore = new JsonSessionStore(Path.Combine(FileSystem.AppDataDirectory, "sessions"));
     /// });
     /// </code>
     /// </remarks>
@@ -69,22 +69,7 @@ public static class ServiceCollectionExtensions
             var opts = optionsMonitor.Get(name);
 
             // Determine session store
-            ISessionStore store;
-            if (opts.SessionStore != null)
-            {
-                // Use the provided session store
-                store = opts.SessionStore;
-            }
-            else if (!string.IsNullOrWhiteSpace(opts.SessionStorePath))
-            {
-                // Create JsonSessionStore from path
-                store = new JsonSessionStore(opts.SessionStorePath);
-            }
-            else
-            {
-                // Default to in-memory store
-                store = new InMemorySessionStore();
-            }
+            ISessionStore store = opts.SessionStore ?? new InMemorySessionStore();
 
             // Try to resolve IAgentFactory from DI (optional)
             var agentFactory = sp.GetService<IAgentFactory>();
