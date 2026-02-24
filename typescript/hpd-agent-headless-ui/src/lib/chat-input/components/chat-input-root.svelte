@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { boxWith, mergeProps } from 'svelte-toolbelt';
 	import { ChatInputRootState } from '../chat-input.svelte.js';
-	import type { ChatInputRootProps } from '../types.js';
+	import type { ChatInputRootComponentProps } from '../types.js';
 
 	let {
 		value = $bindable(),
@@ -13,7 +13,7 @@
 		children,
 		ref = $bindable(null),
 		...restProps
-	}: ChatInputRootProps = $props();
+	}: ChatInputRootComponentProps = $props();
 
 	// Determine if controlled mode at creation
 	const isControlled = value !== undefined;
@@ -35,8 +35,8 @@
 	});
 
 	// Props for the root container
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('root')]: '',
 			...rootState.sharedProps
 		})
@@ -44,9 +44,9 @@
 </script>
 
 {#if child}
-	{@render child({ props })}
+	{@render child({ props: mergedProps })}
 {:else}
-	<div bind:this={ref} {...props}>
+	<div bind:this={ref} {...mergedProps}>
 		{@render children?.()}
 	</div>
 {/if}

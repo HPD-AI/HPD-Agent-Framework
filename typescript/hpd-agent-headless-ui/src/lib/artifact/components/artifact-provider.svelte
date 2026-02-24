@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { boxWith, mergeProps } from 'svelte-toolbelt';
 	import { ArtifactProviderState } from '../artifact.svelte.js';
-	import type { ArtifactProviderProps } from '../types.js';
+	import type { ArtifactProviderComponentProps } from '../types.js';
 
 	let {
 		onOpenChange,
@@ -9,7 +9,7 @@
 		children,
 		ref = $bindable(null),
 		...restProps
-	}: ArtifactProviderProps = $props();
+	}: ArtifactProviderComponentProps = $props();
 
 	// Create provider state with boxed values
 	const providerState = ArtifactProviderState.create({
@@ -17,8 +17,8 @@
 	});
 
 	// Props for the provider container
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[providerState.getHPDAttr('provider')]: '',
 			...providerState.sharedProps
 		})
@@ -26,9 +26,9 @@
 </script>
 
 {#if child}
-	{@render child({ props })}
+	{@render child({ props: mergedProps })}
 {:else}
-	<div bind:this={ref} {...props}>
+	<div bind:this={ref} {...mergedProps}>
 		{@render children?.()}
 	</div>
 {/if}

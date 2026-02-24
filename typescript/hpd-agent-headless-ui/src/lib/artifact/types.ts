@@ -218,3 +218,62 @@ export type ArtifactClosePropsWithoutHTML = WithChild<
 
 export type ArtifactCloseProps = ArtifactClosePropsWithoutHTML &
 	Without<HPDPrimitiveButtonAttributes, ArtifactClosePropsWithoutHTML>;
+
+// ============================================
+// Component-level flat interfaces (used directly in .svelte $props())
+// ============================================
+
+export interface ArtifactProviderComponentProps {
+	onOpenChange?: (open: boolean, id: string | null) => void;
+	child?: Snippet<[{ props: Record<string, unknown> }]>;
+	children?: Snippet;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactRootComponentProps {
+	id: string;
+	defaultOpen?: boolean;
+	onOpenChange?: OnChangeFn<boolean>;
+	child?: Snippet<[ArtifactRootSnippetProps & { props: Record<string, unknown> }]>;
+	children?: Snippet<[ArtifactRootSnippetProps]>;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactTriggerComponentProps {
+	disabled?: boolean;
+	child?: Snippet<[ArtifactTriggerSnippetProps & { props: Record<string, unknown> }]>;
+	children?: Snippet<[ArtifactTriggerSnippetProps]>;
+	ref?: HTMLButtonElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactPanelComponentProps {
+	child?: Snippet<[ArtifactPanelSnippetProps & { props: Record<string, unknown> }]>;
+	children?: Snippet<[ArtifactPanelSnippetProps]>;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactTitleComponentProps {
+	child?: Snippet<[{ props: Record<string, unknown> }]>;
+	children?: Snippet;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactContentComponentProps {
+	child?: Snippet<[{ props: Record<string, unknown> }]>;
+	children?: Snippet;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ArtifactCloseComponentProps {
+	disabled?: boolean;
+	child?: Snippet<[ArtifactCloseSnippetProps & { props: Record<string, unknown> }]>;
+	children?: Snippet<[ArtifactCloseSnippetProps]>;
+	ref?: HTMLButtonElement | null;
+	[key: string]: unknown;
+}

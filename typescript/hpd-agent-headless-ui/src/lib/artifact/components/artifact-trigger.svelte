@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { mergeProps } from 'svelte-toolbelt';
 	import { ArtifactTriggerState } from '../artifact.svelte.js';
-	import type { ArtifactTriggerProps } from '../types.js';
+	import type { ArtifactTriggerComponentProps } from '../types.js';
 
 	let {
 		disabled = false,
@@ -9,7 +9,7 @@
 		children,
 		ref = $bindable(null),
 		...restProps
-	}: ArtifactTriggerProps = $props();
+	}: ArtifactTriggerComponentProps = $props();
 
 	// Create trigger state
 	const triggerState = ArtifactTriggerState.create();
@@ -24,10 +24,10 @@
 	}
 
 	// Props for the trigger button
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[triggerState.getHPDAttr('trigger')]: '',
-			type: 'button',
+			type: 'button' as const,
 			disabled: disabled || undefined,
 			onclick: handleClick,
 			...triggerState.sharedProps
@@ -41,9 +41,9 @@
 </script>
 
 {#if child}
-	{@render child({ props, ...snippetProps })}
+	{@render child({ props: mergedProps, ...snippetProps })}
 {:else}
-	<button bind:this={ref} {...props}>
+	<button bind:this={ref} {...mergedProps}>
 		{@render children?.(snippetProps)}
 	</button>
 {/if}

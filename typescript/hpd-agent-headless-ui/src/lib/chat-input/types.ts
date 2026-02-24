@@ -238,3 +238,37 @@ export type ChatInputLeadingProps = ChatInputAccessoryProps;
 export type ChatInputTrailingProps = ChatInputAccessoryProps;
 export type ChatInputTopProps = ChatInputAccessoryProps;
 export type ChatInputBottomProps = ChatInputAccessoryProps;
+
+// ============================================
+// Component-level flat interfaces (used directly in .svelte $props())
+// ============================================
+
+export interface ChatInputRootComponentProps {
+	value?: string;
+	defaultValue?: string;
+	disabled?: boolean;
+	onSubmit?: (details: { value: string }) => void;
+	onChange?: OnChangeFn<string>;
+	child?: import('svelte').Snippet<[{ props: Record<string, unknown> }]>;
+	children?: import('svelte').Snippet;
+	ref?: HTMLElement | null;
+	[key: string]: unknown;
+}
+
+export interface ChatInputInputComponentProps {
+	placeholder?: string;
+	maxRows?: number;
+	minRows?: number;
+	disabled?: boolean;
+	ref?: HTMLTextAreaElement | null;
+	child?: import('svelte').Snippet<[ChatInputInputSnippetProps & { props: Record<string, unknown> }]>;
+	children?: import('svelte').Snippet<[ChatInputInputSnippetProps]>;
+	[key: string]: unknown;
+}
+
+export interface ChatInputAccessoryComponentProps {
+	ref?: HTMLElement | null;
+	child?: import('svelte').Snippet<[ChatInputAccessorySnippetProps & { props: Record<string, unknown> }]>;
+	children?: import('svelte').Snippet<[ChatInputAccessorySnippetProps]>;
+	[key: string]: unknown;
+}

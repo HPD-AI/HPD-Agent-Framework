@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { boxWith, mergeProps } from 'svelte-toolbelt';
 	import { ArtifactRootState } from '../artifact.svelte.js';
-	import type { ArtifactRootProps } from '../types.js';
+	import type { ArtifactRootComponentProps } from '../types.js';
 
 	let {
 		id,
@@ -11,7 +11,7 @@
 		children,
 		ref = $bindable(null),
 		...restProps
-	}: ArtifactRootProps = $props();
+	}: ArtifactRootComponentProps = $props();
 
 	// Create root state with boxed values
 	const rootState = ArtifactRootState.create({
@@ -21,8 +21,8 @@
 	});
 
 	// Props for the root container
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('root')]: '',
 			...rootState.sharedProps
 		})
@@ -37,9 +37,9 @@
 </script>
 
 {#if child}
-	{@render child({ props, ...snippetProps })}
+	{@render child({ props: mergedProps, ...snippetProps })}
 {:else}
-	<div bind:this={ref} {...props}>
+	<div bind:this={ref} {...mergedProps}>
 		{@render children?.(snippetProps)}
 	</div>
 {/if}

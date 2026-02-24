@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { mergeProps, attachRef } from 'svelte-toolbelt';
 	import { ChatInputRootState } from '../chat-input.svelte.js';
-	import type { ChatInputBottomProps } from '../types.js';
+	import type { ChatInputAccessoryComponentProps } from '../types.js';
 
 	let {
 		ref = $bindable(null),
 		child,
 		children,
 		...restProps
-	}: ChatInputBottomProps = $props();
+	}: ChatInputAccessoryComponentProps = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();
@@ -29,8 +29,8 @@
 	});
 
 	// Merge props
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('bottom')]: '',
 			...rootState.sharedProps,
 			...refAttachment
@@ -39,11 +39,11 @@
 </script>
 
 {#if child}
-	{@render child({ ...snippetProps, props })}
+	{@render child({ ...snippetProps, props: mergedProps })}
 {:else if children}
-	<div {...props}>
+	<div {...mergedProps}>
 		{@render children(snippetProps)}
 	</div>
 {:else}
-	<div {...props}></div>
+	<div {...mergedProps}></div>
 {/if}

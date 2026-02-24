@@ -32,11 +32,11 @@
 {:else}
 	<InputRoot
 		bind:ref
+		{...(mergedProps as Record<string, unknown>)}
 		value={textareaState.snippetProps.value}
 		placeholder={textareaState.snippetProps.placeholder}
 		disabled={textareaState.snippetProps.pending}
 		onChange={(d) => textareaState.handleChange(d.value)}
-		{...mergedProps}
 		onkeydown={textareaState.handleKeyDown}
 	/>
 {/if}

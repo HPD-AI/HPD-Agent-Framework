@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { mergeProps } from 'svelte-toolbelt';
 	import { ArtifactProviderState, artifactAttrs } from '../artifact.svelte.js';
-	import type { ArtifactContentProps } from '../types.js';
+	import type { ArtifactContentComponentProps } from '../types.js';
 
-	let { child, children, ref = $bindable(null), ...restProps }: ArtifactContentProps = $props();
+	let { child, children, ref = $bindable(null), ...restProps }: ArtifactContentComponentProps = $props();
 
 	// Get provider state to access content snippet
 	const providerState = ArtifactProviderState.get();
@@ -15,8 +15,8 @@
 	);
 
 	// Props for the content container - includes default styles for full height
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[artifactAttrs.getAttr('content')]: '',
 			style: mergedStyle
 		})
@@ -24,9 +24,9 @@
 </script>
 
 {#if child}
-	{@render child({ props })}
+	{@render child({ props: mergedProps })}
 {:else}
-	<div bind:this={ref} {...props}>
+	<div bind:this={ref} {...mergedProps}>
 		{#if providerState.content}
 			{@render providerState.content()}
 		{:else}

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { boxWith, mergeProps } from 'svelte-toolbelt';
 	import { ArtifactPanelState } from '../artifact.svelte.js';
-	import type { ArtifactPanelProps } from '../types.js';
+	import type { ArtifactPanelComponentProps } from '../types.js';
 
-	let { child, children, ref = $bindable(null), ...restProps }: ArtifactPanelProps = $props();
+	let { child, children, ref = $bindable(null), ...restProps }: ArtifactPanelComponentProps = $props();
 
 	// Create panel state with boxed ref
 	const panelState = ArtifactPanelState.create({
@@ -20,8 +20,8 @@
 	);
 
 	// Props for the panel container - includes default styles for full height
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[panelState.getHPDAttr('panel')]: '',
 			...panelState.sharedProps,
 			style: mergedStyle
@@ -40,9 +40,9 @@
 
 {#if panelState.shouldRender}
 	{#if child}
-		{@render child({ props, ...snippetProps })}
+		{@render child({ props: mergedProps, ...snippetProps })}
 	{:else}
-		<div bind:this={ref} {...props}>
+		<div bind:this={ref} {...mergedProps}>
 			{@render children?.(snippetProps)}
 		</div>
 	{/if}

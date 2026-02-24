@@ -2,7 +2,7 @@
 	import { mergeProps } from 'svelte-toolbelt';
 	import { ChatInputRootState } from '../chat-input.svelte.js';
 	import InputRoot from '$lib/input/components/input.svelte';
-	import type { ChatInputInputProps } from '../types.js';
+	import type { ChatInputInputComponentProps } from '../types.js';
 
 	let {
 		placeholder = 'Type a message...',
@@ -13,7 +13,7 @@
 		child,
 		children,
 		...restProps
-	}: ChatInputInputProps = $props();
+	}: ChatInputInputComponentProps = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();
@@ -58,16 +58,8 @@
 
 	// Merge all props for the InputRoot component
 	// This ensures data-testid and other attributes go directly to the textarea
-	const inputProps = $derived(
-		mergeProps(restProps, {
-			[rootState.getHPDAttr('input')]: '',
-			...rootState.sharedProps
-		})
-	);
-
-	// Props for child components
-	const props = $derived(
-		mergeProps(restProps, {
+	const mergedProps = $derived(
+		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('input')]: '',
 			...rootState.sharedProps
 		})
@@ -75,9 +67,9 @@
 </script>
 
 {#if child}
-	{@render child({ ...snippetProps, props })}
+	{@render child({ ...snippetProps, props: mergedProps })}
 {:else if children}
-	<div {...props}>
+	<div {...mergedProps}>
 		{@render children(snippetProps)}
 	</div>
 {:else}
@@ -92,6 +84,6 @@
 		onChange={handleChange}
 		onfocus={handleFocus}
 		onblur={handleBlur}
-		{...inputProps}
+		{...mergedProps}
 	/>
 {/if}
