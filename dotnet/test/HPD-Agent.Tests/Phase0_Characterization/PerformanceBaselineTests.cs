@@ -12,6 +12,7 @@ namespace HPD.Agent.Tests.Phase0_Characterization;
 /// These tests establish performance benchmarks for the current implementation.
 /// They document expected performance before refactoring to detect regressions.
 /// </summary>
+[Trait("Category", "Performance")]
 public class PerformanceBaselineTests : AgentTestBase
 {
     /// <summary>

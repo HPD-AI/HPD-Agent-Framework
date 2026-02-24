@@ -15,6 +15,7 @@ namespace HPD.Graph.Tests.Performance;
 /// Performance and scalability tests for graph execution.
 /// These tests validate that the system can handle large-scale workloads.
 /// </summary>
+[Trait("Category", "Performance")]
 public class PerformanceTests
 {
     private readonly ITestOutputHelper _output;

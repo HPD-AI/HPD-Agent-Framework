@@ -15,6 +15,7 @@ namespace HPD.Graph.Tests.Performance;
 /// Benchmark tests for polling pattern performance vs baseline.
 /// Validates that polling pattern features add less than 2% overhead
 /// </summary>
+[Trait("Category", "Performance")]
 public class PollingPatternBenchmarkTests
 {
     private readonly ITestOutputHelper _output;
