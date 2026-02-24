@@ -63,10 +63,10 @@ jobs:
             10.0.x
 
       - name: Restore dependencies
-        run: dotnet restore dotnet/HPD-Agent.slnx --ignore-project-extensions .maui.csproj
+        run: dotnet restore dotnet/HPD-Agent.no-maui.slnf
 
       - name: Build
-        run: dotnet build dotnet/HPD-Agent.slnx --configuration Release --no-restore
+        run: dotnet build dotnet/HPD-Agent.no-maui.slnf --configuration Release --no-restore
 
       - name: Run tests
         run: |
