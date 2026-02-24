@@ -116,11 +116,11 @@ jobs:
           for PROJECT in "${PROJECTS[@]}"; do
             echo "Packing $PROJECT..."
             if [ -n "$VERSION_SUFFIX" ]; then
-              dotnet pack "$PROJECT" -c Release -o ./nupkg --no-restore \
+              dotnet pack "$PROJECT" -c Release -o ./nupkg --no-build \
                 -p:VersionPrefix="$VERSION_PREFIX" \
                 -p:VersionSuffix="$VERSION_SUFFIX"
             else
-              dotnet pack "$PROJECT" -c Release -o ./nupkg --no-restore \
+              dotnet pack "$PROJECT" -c Release -o ./nupkg --no-build \
                 -p:VersionPrefix="$VERSION_PREFIX"
             fi
           done
