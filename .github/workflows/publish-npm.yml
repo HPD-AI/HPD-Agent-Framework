@@ -131,6 +131,10 @@ jobs:
         working-directory: typescript/hpd-agent-headless-ui
         run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version
 
+      - name: Build client (required by headless-ui)
+        working-directory: typescript/hpd-agent-client
+        run: bun install --frozen-lockfile && bun run build
+
       - name: Install dependencies
         working-directory: typescript/hpd-agent-headless-ui
         run: bun install --frozen-lockfile
