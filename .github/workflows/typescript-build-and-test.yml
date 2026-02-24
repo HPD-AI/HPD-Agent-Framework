@@ -36,7 +36,7 @@ jobs:
               - '.github/workflows/typescript-build-and-test.yml'
 
   # ============================================
-  # hpd-agent-client
+  # hpd-agent-client — test + build, upload dist
   # ============================================
   test-client:
     needs: paths-filter
@@ -65,12 +65,18 @@ jobs:
         working-directory: typescript/hpd-agent-client
         run: bun run build
 
+      - name: Upload client dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: hpd-agent-client-dist
+          path: typescript/hpd-agent-client/dist
+
   # ============================================
   # hpd-agent-headless-ui — server-side tests
   # (node env, no browser needed)
   # ============================================
   test-headless-ui-server:
-    needs: paths-filter
+    needs: [paths-filter, test-client]
     if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -83,6 +89,12 @@ jobs:
       - name: Install dependencies
         working-directory: typescript/hpd-agent-headless-ui
         run: bun install --frozen-lockfile
+
+      - name: Download built client
+        uses: actions/download-artifact@v4
+        with:
+          name: hpd-agent-client-dist
+          path: typescript/hpd-agent-client/dist
 
       - name: Type check
         working-directory: typescript/hpd-agent-headless-ui
@@ -101,7 +113,7 @@ jobs:
   # (chromium via playwright)
   # ============================================
   test-headless-ui-browser:
-    needs: paths-filter
+    needs: [paths-filter, test-client]
     if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -114,6 +126,12 @@ jobs:
       - name: Install dependencies
         working-directory: typescript/hpd-agent-headless-ui
         run: bun install --frozen-lockfile
+
+      - name: Download built client
+        uses: actions/download-artifact@v4
+        with:
+          name: hpd-agent-client-dist
+          path: typescript/hpd-agent-client/dist
 
       - name: Install Playwright browsers
         working-directory: typescript/hpd-agent-headless-ui
