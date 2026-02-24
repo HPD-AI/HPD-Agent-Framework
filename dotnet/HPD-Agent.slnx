@@ -59,5 +59,10 @@
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj" />
   <Project Path="src/HPD-Agent.Framework/HPD-Agent/HPD-Agent.csproj" />
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.Evaluations/HPD-Agent.Evaluations.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Hosting/HPD-Agent.Hosting.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.AspNetCore/HPD-Agent.AspNetCore.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MAUI/HPD-Agent.MAUI.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.OpenApi/HPD-Agent.OpenApi.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD.OpenApi.Core/HPD.OpenApi.Core.csproj" />
   <Project Path="src/HPD.Events/HPD.Events.csproj" />
 </Solution>
