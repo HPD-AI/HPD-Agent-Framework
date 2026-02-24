@@ -114,8 +114,8 @@ jobs:
             "dotnet/src/HPD.Graph/HPD.Graph.Abstractions/HPD.Graph.Abstractions.csproj"
             "dotnet/src/HPD.Graph/HPD.Graph.Core/HPD.Graph.Core.csproj"
             "dotnet/src/HPD.Graph/HPD.Graph.SourceGenerator/HPD.Graph.SourceGenerator.csproj"
-            # VCS
-            "dotnet/src/HPD.VCS/HPD.VCS.csproj"
+            # VCS (excluded — TFM mismatch with SDK 10, needs investigation)
+            # "dotnet/src/HPD.VCS/HPD.VCS.csproj"
           )
 
           VERSION_PREFIX="${{ needs.determine-version.outputs.version_prefix }}"
