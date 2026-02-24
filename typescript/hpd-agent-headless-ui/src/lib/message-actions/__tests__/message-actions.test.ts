@@ -695,13 +695,17 @@ describe('MessageActionsRetryButtonState — retry()', () => {
 describe('MessageActionsCopyButtonState', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
-		Object.assign(navigator, {
-			clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+		Object.defineProperty(globalThis, 'navigator', {
+			value: { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } },
+			writable: true,
+			configurable: true,
 		});
 	});
 
 	afterEach(() => {
 		vi.useRealTimers();
+		// @ts-expect-error — cleaning up globalThis.navigator stub
+		delete globalThis.navigator;
 	});
 
 	function makeCopy(content = 'Hello world', resetDelay = 2000) {
