@@ -65,18 +65,12 @@ jobs:
         working-directory: typescript/hpd-agent-client
         run: bun run build
 
-      - name: Upload client dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: hpd-agent-client-dist
-          path: typescript/hpd-agent-client/dist
-
   # ============================================
   # hpd-agent-headless-ui — server-side tests
   # (node env, no browser needed)
   # ============================================
   test-headless-ui-server:
-    needs: [paths-filter, test-client]
+    needs: paths-filter
     if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -86,15 +80,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Build client (required by headless-ui)
+        working-directory: typescript/hpd-agent-client
+        run: bun install --frozen-lockfile && bun run build
+
       - name: Install dependencies
         working-directory: typescript/hpd-agent-headless-ui
         run: bun install --frozen-lockfile
-
-      - name: Download built client
-        uses: actions/download-artifact@v4
-        with:
-          name: hpd-agent-client-dist
-          path: typescript/hpd-agent-client/dist
 
       - name: Type check
         working-directory: typescript/hpd-agent-headless-ui
@@ -113,7 +105,7 @@ jobs:
   # (chromium via playwright)
   # ============================================
   test-headless-ui-browser:
-    needs: [paths-filter, test-client]
+    needs: paths-filter
     if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -123,15 +115,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      - name: Build client (required by headless-ui)
+        working-directory: typescript/hpd-agent-client
+        run: bun install --frozen-lockfile && bun run build
+
       - name: Install dependencies
         working-directory: typescript/hpd-agent-headless-ui
         run: bun install --frozen-lockfile
-
-      - name: Download built client
-        uses: actions/download-artifact@v4
-        with:
-          name: hpd-agent-client-dist
-          path: typescript/hpd-agent-client/dist
 
       - name: Install Playwright browsers
         working-directory: typescript/hpd-agent-headless-ui
