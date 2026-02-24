@@ -1,0 +1,157 @@
+name: TypeScript Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  merge_group:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # ============================================
+  # Check if TypeScript files changed
+  # ============================================
+  paths-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      ts-changed: ${{ steps.filter.outputs.ts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ts:
+              - 'typescript/**'
+              - '.github/workflows/typescript-build-and-test.yml'
+
+  # ============================================
+  # hpd-agent-client
+  # ============================================
+  test-client:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: typescript/hpd-agent-client
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: typescript/hpd-agent-client
+        run: bun run tsc --noEmit
+
+      - name: Run tests
+        working-directory: typescript/hpd-agent-client
+        run: bun run test
+
+      - name: Build
+        working-directory: typescript/hpd-agent-client
+        run: bun run build
+
+  # ============================================
+  # hpd-agent-headless-ui — server-side tests
+  # (node env, no browser needed)
+  # ============================================
+  test-headless-ui-server:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun run check
+
+      - name: Run server tests
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun run vitest run --project server
+
+      - name: Build
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun run build
+
+  # ============================================
+  # hpd-agent-headless-ui — browser tests
+  # (chromium via playwright)
+  # ============================================
+  test-headless-ui-browser:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bunx playwright install chromium --with-deps
+
+      - name: Run browser tests
+        working-directory: typescript/hpd-agent-headless-ui
+        run: bun run vitest run --project client
+
+  # ============================================
+  # Final gate
+  # ============================================
+  ts-build-check:
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [paths-filter, test-client, test-headless-ui-server, test-headless-ui-browser]
+    steps:
+      - name: Skip message (no TypeScript changes)
+        if: needs.paths-filter.outputs.ts-changed != 'true' && github.event_name != 'workflow_dispatch'
+        run: |
+          echo "=================================="
+          echo "⊘ Skipped - No TypeScript changes  "
+          echo "=================================="
+          echo ""
+          echo "No files under typescript/ were modified."
+
+      - name: Check for failures
+        if: needs.paths-filter.outputs.ts-changed == 'true' && contains(join(needs.*.result, ','), 'failure')
+        run: |
+          echo "::error::One or more TypeScript jobs failed"
+          exit 1
+
+      - name: All checks passed
+        if: needs.paths-filter.outputs.ts-changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "=================================="
+          echo "✓ All TypeScript checks passed!   "
+          echo "=================================="
+          echo ""
+          echo "• hpd-agent-client: tests + build"
+          echo "• hpd-agent-headless-ui: server tests + browser tests + build"

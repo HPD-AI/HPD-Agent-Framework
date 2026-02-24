@@ -398,8 +398,9 @@ describe('MauiTransport', () => {
       await transport.listSessions({ limit: 10, offset: 5 });
 
       const lastCall = mockHybridWebView.InvokeDotNet.mock.calls[0];
-      expect(lastCall[1]).toContain(5); // offset
-      expect(lastCall[1]).toContain(10); // limit
+      const params = JSON.parse(lastCall[1][0]);
+      expect(params.offset).toBe(5);
+      expect(params.limit).toBe(10);
     });
 
     it('throws error when HybridWebView not available for session operations', async () => {
@@ -566,6 +567,7 @@ describe('MauiTransport', () => {
       expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith('DeleteBranch', [
         's1',
         'branch-to-delete',
+        false,
       ]);
     });
 
