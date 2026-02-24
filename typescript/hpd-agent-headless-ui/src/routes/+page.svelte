@@ -29,7 +29,7 @@
 				force: true
 			}
 		};
-		agent.state.onPermissionRequest(request);
+		agent.state!.onPermissionRequest(request);
 	}
 </script>
 
@@ -41,8 +41,8 @@
 	</header>
 
 	<main class="chat-container">
-		<MessageList.Root messages={agent.state.messages} class="messages">
-			{#if agent.state.messages.length === 0}
+		<MessageList.Root messages={agent.state!.messages} class="messages">
+			{#if agent.state!.messages.length === 0}
 				<div class="empty-state">
 					<p>👋 Send a message to start chatting with the mock agent</p>
 					<p class="hint">
@@ -51,7 +51,7 @@
 				</div>
 			{/if}
 
-			{#each agent.state.messages as message (message.id)}
+			{#each agent.state!.messages as message (message.id)}
 				<Message {message}>
 					{#snippet children({ content, role, streaming, thinking, status, toolCalls })}
 						<div class="message" data-role={role} data-streaming={streaming || undefined}>
@@ -134,15 +134,15 @@
 				onSubmit={handleSubmit}
 				placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
 				maxRows={5}
-				disabled={agent.state.streaming}
+				disabled={agent.state!.streaming}
 				class="chat-input"
 			/>
 			<button
 				onclick={() => handleSubmit({ value: input })}
-				disabled={!input.trim() || agent.state.streaming}
+				disabled={!input.trim() || agent.state!.streaming}
 				class="send-button"
 			>
-				{#if agent.state.streaming}
+				{#if agent.state!.streaming}
 					<span class="loading">●</span>
 				{:else}
 					Send
@@ -151,14 +151,14 @@
 		</div>
 
 		<div class="status-bar">
-			{#if agent.state.streaming}
+			{#if agent.state!.streaming}
 				<span class="indicator streaming">● Streaming</span>
-			{:else if agent.state.canSend}
+			{:else if agent.state!.canSend}
 				<span class="indicator ready">● Ready</span>
 			{:else}
 				<span class="indicator">● Idle</span>
 			{/if}
-			<span class="message-count">{agent.state.messages.length} messages</span>
+			<span class="message-count">{agent.state!.messages.length} messages</span>
 			<button onclick={triggerPermission} class="test-permission-btn">
 				🔓 Test Permission
 			</button>

@@ -20,7 +20,7 @@
 	}
 
 	// Capture state reference for simulation (passed via snippet)
-	let internalState: any = null;
+	let internalState: any = $state(null);
 
 	/**
 	 * Generate a valid silent WAV file

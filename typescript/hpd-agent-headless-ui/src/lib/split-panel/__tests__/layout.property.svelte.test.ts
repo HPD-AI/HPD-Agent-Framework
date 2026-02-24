@@ -266,10 +266,7 @@ describe.skip('SplitPanelState Property-Based Tests', () => {
 					{ minLength: 1, maxLength: 100 }
 				),
 				(resizeOps) => {
-					const state = new SplitPanelState({
-						getContainerWidth: () => 1000,
-						getContainerHeight: () => 800
-					});
+					const state = new SplitPanelState();
 					state.updateContainerSize(1000, 800);
 
 					// Add panels with min constraints

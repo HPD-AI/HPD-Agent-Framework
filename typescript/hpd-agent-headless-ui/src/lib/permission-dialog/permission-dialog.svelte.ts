@@ -74,8 +74,8 @@ export class PermissionDialogRootState {
 
 	// Current pending request (first in queue)
 	readonly currentRequest = $derived.by(() => {
-		const requests = this.opts.agent.current.state.pendingPermissions;
-		return requests.length > 0 ? requests[0] : null;
+		const requests = this.opts.agent.current.state?.pendingPermissions;
+		return requests && requests.length > 0 ? requests[0] : null;
 	});
 
 	// Dialog is open when there's a pending request

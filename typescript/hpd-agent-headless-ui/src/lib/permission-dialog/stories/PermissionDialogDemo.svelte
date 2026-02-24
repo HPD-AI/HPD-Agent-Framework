@@ -34,7 +34,7 @@
 			}
 		};
 
-		agent.state.onPermissionRequest(request);
+		agent.state!.onPermissionRequest(request);
 		lastAction = `Permission request triggered: ${request.functionName}`;
 	}
 
@@ -67,7 +67,7 @@
 			}
 		];
 
-		requests.forEach(request => agent.state.onPermissionRequest(request));
+		requests.forEach(request => agent.state!.onPermissionRequest(request));
 		lastAction = `${requests.length} permissions queued`;
 	}
 </script>
@@ -87,7 +87,7 @@
 				<p class="status-text">{lastAction}</p>
 			{/if}
 			<p class="hint-text">
-				Status: {agent.state.pendingPermissions.length} pending permission(s)
+				Status: {agent.state!.pendingPermissions.length} pending permission(s)
 			</p>
 		</div>
 	{/if}

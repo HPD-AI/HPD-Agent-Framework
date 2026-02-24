@@ -81,6 +81,7 @@
 	let lastHeight = $state(0);
 
 	// Create root state with container size accessors
+	// svelte-ignore state_referenced_locally
 	const rootState = new SplitPanelRootState({
 		id,
 		storageKey,

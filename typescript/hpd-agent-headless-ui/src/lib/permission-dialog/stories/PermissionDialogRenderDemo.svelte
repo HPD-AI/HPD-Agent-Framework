@@ -21,7 +21,7 @@
 			}
 		};
 
-		agent.state.onPermissionRequest(request);
+		agent.state!.onPermissionRequest(request);
 	}
 </script>
 

@@ -40,6 +40,7 @@ export interface MessageEditRootHTMLProps {
 	'data-message-edit-root': '';
 	'data-editing'?: '';
 	'data-pending'?: '';
+	[key: string]: unknown;
 }
 
 export interface MessageEditRootSnippetProps {
@@ -78,6 +79,7 @@ export interface MessageEditTextareaHTMLProps {
 	'aria-label': string;
 	'aria-multiline': 'true';
 	disabled: boolean;
+	[key: string]: unknown;
 }
 
 export interface MessageEditTextareaSnippetProps {
@@ -104,6 +106,7 @@ export interface MessageEditSaveButtonHTMLProps {
 	type: 'button';
 	disabled: boolean;
 	'aria-label': string;
+	[key: string]: unknown;
 }
 
 export interface MessageEditSaveButtonSnippetProps {
@@ -128,6 +131,7 @@ export interface MessageEditCancelButtonHTMLProps {
 	type: 'button';
 	disabled: boolean;
 	'aria-label': string;
+	[key: string]: unknown;
 }
 
 export interface MessageEditCancelButtonSnippetProps {

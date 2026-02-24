@@ -3,8 +3,6 @@
 	import { ChatInputRootState } from '../chat-input.svelte.js';
 	import type { ChatInputRootProps } from '../types.js';
 
-	interface Props extends ChatInputRootProps {}
-
 	let {
 		value = $bindable(),
 		defaultValue,
@@ -15,7 +13,7 @@
 		children,
 		ref = $bindable(null),
 		...restProps
-	}: Props = $props();
+	}: ChatInputRootProps = $props();
 
 	// Determine if controlled mode at creation
 	const isControlled = value !== undefined;

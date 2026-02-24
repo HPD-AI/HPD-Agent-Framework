@@ -22,6 +22,7 @@
 
 	// Create state with boxed props
 	// Note: toolCall is passed directly at creation, then synced via $effect
+	// svelte-ignore state_referenced_locally
 	const state = ToolExecutionRootState.create({
 		toolCall: toolCall, // Initial value captured intentionally
 		expanded: boxWith(

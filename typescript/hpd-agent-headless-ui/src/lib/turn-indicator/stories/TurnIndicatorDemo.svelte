@@ -17,7 +17,7 @@
 	}
 
 	// Expose state reference for simulation
-	let internalState: any = null;
+	let internalState: any = $state(null);
 
 	// Simulate turn events
 	function simulateTurnDetected(probability: number, method: 'heuristic' | 'ml' | 'manual' | 'timeout') {

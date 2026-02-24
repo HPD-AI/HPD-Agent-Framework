@@ -4,8 +4,6 @@
 	import InputRoot from '$lib/input/components/input.svelte';
 	import type { ChatInputInputProps } from '../types.js';
 
-	interface Props extends ChatInputInputProps {}
-
 	let {
 		placeholder = 'Type a message...',
 		maxRows = 5,
@@ -15,7 +13,7 @@
 		child,
 		children,
 		...restProps
-	}: Props = $props();
+	}: ChatInputInputProps = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();

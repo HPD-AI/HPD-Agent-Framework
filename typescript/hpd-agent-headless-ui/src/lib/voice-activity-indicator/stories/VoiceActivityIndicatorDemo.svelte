@@ -17,7 +17,7 @@
 	}
 
 	// Expose state reference for simulation
-	let internalState: any = null;
+	let internalState: any = $state(null);
 
 	// Simulate voice activity
 	function simulateStartSpeaking(probability: number = 0.95) {

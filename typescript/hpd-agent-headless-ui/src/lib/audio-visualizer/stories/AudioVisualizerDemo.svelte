@@ -19,7 +19,7 @@
 	}
 
 	// Expose state reference
-	let visualizerState: any = null;
+	let visualizerState: any = $state(null);
 
 	// Audio context for simulation
 	let audioContext: AudioContext | null = $state(null);

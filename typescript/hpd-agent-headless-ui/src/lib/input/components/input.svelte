@@ -28,6 +28,7 @@
 
 	// Determine if controlled mode
 	const isControlled = value !== undefined;
+	// svelte-ignore state_referenced_locally
 	let internalValue = $state(defaultValue ?? '');
 
 	// Sync internal value with controlled value
