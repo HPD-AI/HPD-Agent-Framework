@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: |
             8.0.x
@@ -60,7 +60,7 @@ jobs:
         run: dotnet build dotnet/HPD-Agent.slnx --configuration Release --no-restore
 
       - name: Run tests
-        run: dotnet test dotnet/HPD-Agent.slnx --configuration Release --no-build --verbosity normal --filter "Category!=Performance" -f net10.0
+        run: dotnet test dotnet/HPD-Agent.slnx --configuration Release --no-build --verbosity normal --filter "Category!=Performance" -f net10.0 --blame-hang-timeout 2m
 
       - name: Pack packages
         run: |
