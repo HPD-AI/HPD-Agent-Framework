@@ -49,12 +49,8 @@
         "vitest-browser-svelte": "^2.0.1",
       },
       "peerDependencies": {
-        "@hpd/hpd-agent-client": ">=0.1.0",
         "svelte": "^5.0.0",
       },
-      "optionalPeers": [
-        "@hpd/hpd-agent-client",
-      ],
     },
   },
   "packages": {
