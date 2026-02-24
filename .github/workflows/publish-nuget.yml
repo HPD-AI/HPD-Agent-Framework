@@ -53,6 +53,9 @@ jobs:
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Install MAUI workload
+        run: dotnet workload install maui
+
       - name: Restore dependencies
         run: dotnet restore dotnet/HPD-Agent.slnx
 
