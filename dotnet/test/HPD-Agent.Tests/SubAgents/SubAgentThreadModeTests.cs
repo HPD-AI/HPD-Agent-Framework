@@ -7,13 +7,13 @@ using HPD.Agent.Tests.Infrastructure;
 namespace HPD.Agent.Tests.SubAgents;
 
 /// <summary>
-/// Tests for SubAgent thread mode behaviour introduced/fixed in the branch-aware thread mode update:
+/// Tests for SubAgent Session mode behaviour introduced/fixed in the branch-aware Session mode update:
 /// - SharedBranchId property on SubAgent
 /// - PerSession mode: inherits parent's session + branch via shared store
-/// - SharedThread bug fix: CreateSessionAsync guard (only creates on first invocation)
+/// - SharedSession bug fix: CreateSessionAsync guard (only creates on first invocation)
 /// - Stateless mode: fresh isolated session per call (regression)
 /// </summary>
-public class SubAgentThreadModeTests : AgentTestBase
+public class SubAgentSessionModeTests : AgentTestBase
 {
     private static AgentConfig MinimalConfig() => new()
     {
@@ -61,28 +61,28 @@ public class SubAgentThreadModeTests : AgentTestBase
     {
         var subAgent = SubAgentFactory.CreatePerSession("Test", "desc", MinimalConfig());
 
-        subAgent.ThreadMode.Should().Be(SubAgentThreadMode.PerSession);
+        subAgent.SessionMode.Should().Be(SubAgentSessionMode.PerSession);
         subAgent.SharedSessionId.Should().BeNull();
         subAgent.SharedBranchId.Should().BeNull();
     }
 
     // T4
     [Fact]
-    public void CreateStateful_SetsSharedThreadMode_AndGeneratesSessionId()
+    public void CreateStateful_SetsSharedSessionMode_AndGeneratesSessionId()
     {
         var subAgent = SubAgentFactory.CreateStateful("Test", "desc", MinimalConfig());
 
-        subAgent.ThreadMode.Should().Be(SubAgentThreadMode.SharedThread);
+        subAgent.SessionMode.Should().Be(SubAgentSessionMode.SharedSession);
         subAgent.SharedSessionId.Should().NotBeNullOrEmpty();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Group 2 — SharedThread bug fix (integration)
+    // Group 2 — SharedSession bug fix (integration)
     // ─────────────────────────────────────────────────────────────────────────
 
     // T5
     [Fact]
-    public async Task SharedThread_FirstInvocation_CreatesSessionInStore()
+    public async Task SharedSession_FirstInvocation_CreatesSessionInStore()
     {
         var store = new InMemorySessionStore();
         var fakeClient = new FakeChatClient();
@@ -99,7 +99,7 @@ public class SubAgentThreadModeTests : AgentTestBase
 
     // T6 — key regression test for the CreateSessionAsync bug
     [Fact]
-    public async Task SharedThread_SecondInvocation_DoesNotThrow()
+    public async Task SharedSession_SecondInvocation_DoesNotThrow()
     {
         var store = new InMemorySessionStore();
         var fakeClient = new FakeChatClient();
@@ -121,7 +121,7 @@ public class SubAgentThreadModeTests : AgentTestBase
 
     // T7
     [Fact]
-    public async Task SharedThread_TwoCalls_AccumulatesHistoryInBranch()
+    public async Task SharedSession_TwoCalls_AccumulatesHistoryInBranch()
     {
         var store = new InMemorySessionStore();
         var fakeClient = new FakeChatClient();
@@ -144,7 +144,7 @@ public class SubAgentThreadModeTests : AgentTestBase
 
     // T8
     [Fact]
-    public async Task SharedThread_WithSharedBranchId_UsesThatBranch()
+    public async Task SharedSession_WithSharedBranchId_UsesThatBranch()
     {
         var store = new InMemorySessionStore();
         var fakeClient = new FakeChatClient();

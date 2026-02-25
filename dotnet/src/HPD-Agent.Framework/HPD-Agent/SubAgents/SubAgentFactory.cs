@@ -36,7 +36,7 @@ public static class SubAgentFactory
             Name = name,
             Description = description,
             AgentConfig = agentConfig,
-            ThreadMode = SubAgentThreadMode.Stateless,  // Default to stateless
+            SessionMode = SubAgentSessionMode.Stateless,  // Default to stateless
             ToolkitTypes = Toolkits ?? Array.Empty<Type>()
         };
     }
@@ -58,7 +58,7 @@ public static class SubAgentFactory
         params Type[] toolTypes)
     {
         var subAgent = Create(name, description, agentConfig, toolTypes);
-        subAgent.ThreadMode = SubAgentThreadMode.SharedThread;
+        subAgent.SessionMode = SubAgentSessionMode.SharedSession;
         subAgent.SharedSessionId = Guid.NewGuid().ToString("N");
         return subAgent;
     }
@@ -80,7 +80,7 @@ public static class SubAgentFactory
         params Type[] toolTypes)
     {
         var subAgent = Create(name, description, agentConfig, toolTypes);
-        subAgent.ThreadMode = SubAgentThreadMode.PerSession;
+        subAgent.SessionMode = SubAgentSessionMode.PerSession;
         return subAgent;
     }
 }

@@ -31,18 +31,18 @@ public class SubAgent
     /// Thread handling strategy for sub-agent invocations.
     /// Determines how conversation context is managed across multiple calls.
     /// </summary>
-    public SubAgentThreadMode ThreadMode { get; internal set; } = SubAgentThreadMode.Stateless;
+    public SubAgentSessionMode SessionMode { get; internal set; } = SubAgentSessionMode.Stateless;
 
     /// <summary>
     /// Optional: Shared session ID for stateful multi-turn conversations.
-    /// Only used when ThreadMode = SharedThread.
+    /// Only used when SessionMode = SharedSession.
     /// WARNING: Do not use shared sessions concurrently - can cause race conditions.
     /// </summary>
     public string? SharedSessionId { get; set; }
 
     /// <summary>
     /// Optional: Shared branch ID to use alongside SharedSessionId.
-    /// Only used when ThreadMode = SharedThread. Defaults to "main" if not set.
+    /// Only used when SessionMode = SharedSession. Defaults to "main" if not set.
     /// </summary>
     public string? SharedBranchId { get; set; }
 
@@ -58,7 +58,7 @@ public class SubAgent
 /// Defines how sub-agent threads are managed across invocations.
 /// Mirrors Microsoft's AsAIFunction() thread handling patterns.
 /// </summary>
-public enum SubAgentThreadMode
+public enum SubAgentSessionMode
 {
     /// <summary>
     /// Stateless - New thread created per invocation (default).
@@ -73,7 +73,7 @@ public enum SubAgentThreadMode
     /// Use when: Multi-turn conversations where context matters (e.g., "What's weather in SF?" then "How about tomorrow?")
     /// WARNING: Avoid concurrent usage - not thread-safe!
     /// </summary>
-    SharedThread,
+    SharedSession,
 
     /// <summary>
     /// Per-session - Inherits the parent agent's current session and branch as read-only context.

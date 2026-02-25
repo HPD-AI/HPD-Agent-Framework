@@ -17,13 +17,13 @@ public class SubAgentIntegrationTests
     private static AIFunction CreateSubAgentFunction(
         string name,
         string description,
-        string threadMode = "Stateless",
+        string SessionMode = "Stateless",
         string? parentToolkit = null)
     {
         var additionalProps = new Dictionary<string, object>
         {
             ["IsSubAgent"] = true,
-            ["ThreadMode"] = threadMode
+            ["SessionMode"] = SessionMode
         };
 
         // Add ParentToolkit if specified (not ToolkitName - that was the bug!)
@@ -74,7 +74,7 @@ public class SubAgentIntegrationTests
         var functions = new List<AIFunction>
         {
             CreateSubAgentFunction("WeatherExpert", "Weather forecast agent", "Stateless"),
-            CreateSubAgentFunction("MathExpert", "Math calculation agent", "SharedThread"),
+            CreateSubAgentFunction("MathExpert", "Math calculation agent", "SharedSession"),
             CreateSubAgentFunction("CodeReviewer", "Code review agent", "Stateless")
         };
 
@@ -125,10 +125,10 @@ public class SubAgentIntegrationTests
         Assert.True((bool)subAgentFunction.AdditionalProperties!["IsSubAgent"]);
     }
 
-    // ===== P0: Thread Mode Metadata =====
+    // ===== P0: Session mode Metadata =====
 
     [Fact]
-    public void SubAgent_AIFunction_HasThreadModeMetadata()
+    public void SubAgent_AIFunction_HasSessionModeMetadata()
     {
         // Arrange
         var weatherExpert = CreateSubAgentFunction(
@@ -139,19 +139,19 @@ public class SubAgentIntegrationTests
         var mathExpert = CreateSubAgentFunction(
             "MathExpert",
             "Math agent",
-            "SharedThread");
+            "SharedSession");
 
         // Assert
         Assert.NotNull(weatherExpert);
         Assert.NotNull(mathExpert);
 
         // WeatherExpert should be Stateless
-        Assert.True(weatherExpert.AdditionalProperties?.ContainsKey("ThreadMode"));
-        Assert.Equal("Stateless", weatherExpert.AdditionalProperties!["ThreadMode"] as string);
+        Assert.True(weatherExpert.AdditionalProperties?.ContainsKey("SessionMode"));
+        Assert.Equal("Stateless", weatherExpert.AdditionalProperties!["SessionMode"] as string);
 
-        // MathExpert should be SharedThread
-        Assert.True(mathExpert.AdditionalProperties?.ContainsKey("ThreadMode"));
-        Assert.Equal("SharedThread", mathExpert.AdditionalProperties!["ThreadMode"] as string);
+        // MathExpert should be SharedSession
+        Assert.True(mathExpert.AdditionalProperties?.ContainsKey("SessionMode"));
+        Assert.Equal("SharedSession", mathExpert.AdditionalProperties!["SessionMode"] as string);
     }
 
     // ===== P0: Function Signature =====

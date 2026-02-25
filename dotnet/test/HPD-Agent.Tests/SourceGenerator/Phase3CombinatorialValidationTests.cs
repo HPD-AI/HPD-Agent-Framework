@@ -127,11 +127,11 @@ public class Phase3CombinatorialValidationTests
                 && val1 is bool b1 && b1;
             Assert.True(isSubAgent, $"{subAgent.Name} should have IsSubAgent = true");
 
-            // Should have ThreadMode
-            object? threadMode = null;
-            var hasThreadMode = subAgent.AdditionalProperties?.TryGetValue("ThreadMode", out threadMode) == true;
-            Assert.True(hasThreadMode, $"SubAgent {subAgent.Name} should have ThreadMode");
-            Assert.True(threadMode is string);
+            // Should have SessionMode
+            object? SessionMode = null;
+            var hasSessionMode = subAgent.AdditionalProperties?.TryGetValue("SessionMode", out SessionMode) == true;
+            Assert.True(hasSessionMode, $"SubAgent {subAgent.Name} should have SessionMode");
+            Assert.True(SessionMode is string);
 
             // Should have ParentToolkit
             object? toolName = null;
@@ -313,7 +313,7 @@ public class Phase3CombinatorialValidationTests
         // METADATA VALIDATION:
         //  Function metadata (ParentToolkit, IsContainer = false)
         //  Skill metadata (IsContainer = true, IsSkill = true, ReferencedFunctions, ReferencedToolkits)
-        //  SubAgent metadata (IsSubAgent = true, ThreadMode, ToolkitName)
+        //  SubAgent metadata (IsSubAgent = true, SessionMode, ToolkitName)
         //  Empty array types (new string[] { } instead of new[] { })
         //
         // FUNCTIONAL VALIDATION:

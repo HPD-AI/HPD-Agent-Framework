@@ -9,7 +9,7 @@ namespace HPD.Agent.Tests.SubAgents;
 /// 1. Detects [SubAgent] attribute
 /// 2. Generates AIFunction wrappers for sub-agents
 /// 3. Parses AgentConfig from method body
-/// 4. Handles different thread modes (Stateless, SharedThread, PerSession)
+/// 4. Handles different Session modes (Stateless, SharedSession, PerSession)
 /// 5. Validates method signatures
 /// </summary>
 public class SubAgentSourceGeneratorTests
@@ -56,7 +56,7 @@ public class SubAgentSourceGeneratorTests
         // Assert
         Assert.NotNull(subAgent);
         Assert.Equal("StatelessSubAgent", subAgent.Name);
-        Assert.Equal(SubAgentThreadMode.Stateless, subAgent.ThreadMode);
+        Assert.Equal(SubAgentSessionMode.Stateless, subAgent.SessionMode);
         Assert.Null(subAgent.SharedSessionId); // No shared session ID for stateless
     }
 
@@ -72,7 +72,7 @@ public class SubAgentSourceGeneratorTests
         // Assert
         Assert.NotNull(subAgent);
         Assert.Equal("StatefulSubAgent", subAgent.Name);
-        Assert.Equal(SubAgentThreadMode.SharedThread, subAgent.ThreadMode);
+        Assert.Equal(SubAgentSessionMode.SharedSession, subAgent.SessionMode);
         Assert.NotNull(subAgent.SharedSessionId); // Should have shared session ID
     }
 
@@ -88,7 +88,7 @@ public class SubAgentSourceGeneratorTests
         // Assert
         Assert.NotNull(subAgent);
         Assert.Equal("PerSessionSubAgent", subAgent.Name);
-        Assert.Equal(SubAgentThreadMode.PerSession, subAgent.ThreadMode);
+        Assert.Equal(SubAgentSessionMode.PerSession, subAgent.SessionMode);
     }
 
     // ===== P0: AgentConfig Extraction =====
@@ -171,10 +171,10 @@ public class SubAgentSourceGeneratorTests
         Assert.Equal("A valid test sub-agent", subAgent.Description);
     }
 
-    // ===== P0: Thread Mode Validation =====
+    // ===== P0: Session mode Validation =====
 
     [Fact]
-    public void SubAgent_DefaultThreadMode_IsStateless()
+    public void SubAgent_DefaultSessionMode_IsStateless()
     {
         // Arrange
         var Toolkit = new TestSubAgentTools();
@@ -183,7 +183,7 @@ public class SubAgentSourceGeneratorTests
         var subAgent = Toolkit.StatelessSubAgent();
 
         // Assert
-        Assert.Equal(SubAgentThreadMode.Stateless, subAgent.ThreadMode);
+        Assert.Equal(SubAgentSessionMode.Stateless, subAgent.SessionMode);
     }
 
     [Fact]

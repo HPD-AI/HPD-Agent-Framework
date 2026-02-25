@@ -6,7 +6,7 @@ namespace HPD.Agent.Tests.SubAgents;
 
 /// <summary>
 /// T16–T19: Unit tests that assert on the string output of SubAgentCapability.GenerateRegistrationCode().
-/// These tests verify that the generated code contains the correct patterns for each thread mode.
+/// These tests verify that the generated code contains the correct patterns for each Session mode.
 ///
 /// Access requires [assembly: InternalsVisibleTo("HPD-Agent.Tests")] in the source generator project.
 /// </summary>
@@ -18,26 +18,26 @@ public class SubAgentCapabilityGenerationTests
         Namespace = "Test.Namespace"
     };
 
-    private static SubAgentCapability MakeCapability(string threadMode, string name = "ResearchAgent") => new()
+    private static SubAgentCapability MakeCapability(string SessionMode, string name = "ResearchAgent") => new()
     {
         Name = name,
         SubAgentName = name,
         MethodName = $"Create{name}",
         Description = "A test sub-agent",
         ParentToolkitName = "MyToolkit",
-        ThreadMode = threadMode,
+        SessionMode = SessionMode,
         IsStatic = true,
         RequiresPermission = true
     };
 
     // ─────────────────────────────────────────────────────────────────────────
-    // T16 — SharedThread generated code contains LoadSessionAsync guard
+    // T16 — SharedSession generated code contains LoadSessionAsync guard
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void T16_SharedThread_GeneratedCode_ContainsLoadSessionAsyncGuard()
+    public void T16_SharedSession_GeneratedCode_ContainsLoadSessionAsyncGuard()
     {
-        var capability = MakeCapability("SharedThread");
+        var capability = MakeCapability("SharedSession");
         var toolkit = MakeToolkit();
 
         var code = capability.GenerateRegistrationCode(toolkit);
@@ -84,8 +84,8 @@ public class SubAgentCapabilityGenerationTests
         var code = capability.GenerateRegistrationCode(toolkit);
 
         // Locate the PerSession case block
-        var perSessionCaseIndex = code.IndexOf("case SubAgentThreadMode.PerSession:", StringComparison.Ordinal);
-        var statelessCaseIndex = code.IndexOf("case SubAgentThreadMode.Stateless:", StringComparison.Ordinal);
+        var perSessionCaseIndex = code.IndexOf("case SubAgentSessionMode.PerSession:", StringComparison.Ordinal);
+        var statelessCaseIndex = code.IndexOf("case SubAgentSessionMode.Stateless:", StringComparison.Ordinal);
 
         perSessionCaseIndex.Should().BeGreaterThan(-1);
 
@@ -113,7 +113,7 @@ public class SubAgentCapabilityGenerationTests
         var code = capability.GenerateRegistrationCode(toolkit);
 
         // Locate the Stateless case block
-        var statelessCaseIndex = code.IndexOf("case SubAgentThreadMode.Stateless:", StringComparison.Ordinal);
+        var statelessCaseIndex = code.IndexOf("case SubAgentSessionMode.Stateless:", StringComparison.Ordinal);
         statelessCaseIndex.Should().BeGreaterThan(-1);
 
         var statelessBlock = code[statelessCaseIndex..];
@@ -122,7 +122,7 @@ public class SubAgentCapabilityGenerationTests
         statelessBlock.Should().Contain("Guid.NewGuid()");
         // Must call CreateSessionAsync unconditionally (no if-guard)
         statelessBlock.Should().Contain("await agent.CreateSessionAsync(sessionId");
-        // Must NOT have the existingSession guard (that's only for SharedThread)
+        // Must NOT have the existingSession guard (that's only for SharedSession)
         statelessBlock.Should().NotContain("LoadSessionAsync");
     }
 }

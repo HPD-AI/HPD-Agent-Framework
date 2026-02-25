@@ -91,7 +91,7 @@ public class Phase3GenerationValidationTests
         // SubAgents MUST have:
         // - IsContainer = false (SubAgents are wrappers, NOT containers)
         // - IsSubAgent = true
-        // - ThreadMode (Stateless, SharedThread, or PerSession)
+        // - SessionMode (Stateless, SharedSession, or PerSession)
         // - ToolkitName (parent Toolkit name)
 
         // Event bubbling and execution context setup happens in the

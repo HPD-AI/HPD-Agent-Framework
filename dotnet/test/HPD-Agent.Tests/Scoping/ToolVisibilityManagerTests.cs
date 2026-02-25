@@ -1527,7 +1527,7 @@ public class ToolVisibilityManagerTests
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsSubAgent"] = true,
-                    ["ThreadMode"] = "Stateless"
+                    ["SessionMode"] = "Stateless"
                     // No ParentToolkit!
                 }
             });
@@ -1658,7 +1658,7 @@ public class ToolVisibilityManagerTests
                 AdditionalProperties = new Dictionary<string, object>
                 {
                     ["IsSubAgent"] = true,
-                    ["ThreadMode"] = "Stateless",
+                    ["SessionMode"] = "Stateless",
                     ["ParentToolkit"] = parentToolkit  //  Correct key (not ToolkitName)
                 }
             });

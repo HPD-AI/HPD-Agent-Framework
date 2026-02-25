@@ -431,7 +431,7 @@ internal static class CapabilityAnalyzer
         var isStatic = method.Modifiers.Any(SyntaxKind.StaticKeyword);
 
         // Extract metadata from SubAgentFactory calls in method body
-        var (name, description, threadMode) = ExtractSubAgentMetadata(method, semanticModel);
+        var (name, description, SessionMode) = ExtractSubAgentMetadata(method, semanticModel);
 
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -458,7 +458,7 @@ internal static class CapabilityAnalyzer
             ParentToolkitName = className,
             ParentNamespace = namespaceName,
             IsStatic = isStatic,
-            ThreadMode = threadMode,  // Extracted from factory method (Create vs CreateStateful vs CreatePerSession)
+            SessionMode = SessionMode,  // Extracted from factory method (Create vs CreateStateful vs CreatePerSession)
             RequiresPermission = requiresPermission,
 
             // Context and conditionals (feature parity with Functions and Skills!)
@@ -470,16 +470,16 @@ internal static class CapabilityAnalyzer
     }
 
     /// <summary>
-    /// Extracts sub-agent name, description, and thread mode from method body.
+    /// Extracts sub-agent name, description, and Session mode from method body.
     /// Looks for SubAgentFactory.Create(), CreateStateful(), or CreatePerSession() calls.
     /// </summary>
-    private static (string? name, string? description, string threadMode) ExtractSubAgentMetadata(
+    private static (string? name, string? description, string SessionMode) ExtractSubAgentMetadata(
         MethodDeclarationSyntax method,
         SemanticModel semanticModel)
     {
         string? name = null;
         string? description = null;
-        string threadMode = "Stateless";
+        string SessionMode = "Stateless";
 
         // Find all invocation expressions in the method body
         var invocations = method.DescendantNodes().OfType<InvocationExpressionSyntax>();
@@ -495,13 +495,13 @@ internal static class CapabilityAnalyzer
                 {
                     var methodNameStr = methodSymbol.Name;
 
-                    // Determine thread mode from factory method name
+                    // Determine Session mode from factory method name
                     if (methodNameStr == "CreateStateful")
-                        threadMode = "SharedThread";
+                        SessionMode = "SharedSession";
                     else if (methodNameStr == "CreatePerSession")
-                        threadMode = "PerSession";
+                        SessionMode = "PerSession";
                     else
-                        threadMode = "Stateless";
+                        SessionMode = "Stateless";
 
                     // Extract arguments (name and description)
                     if (invocation.ArgumentList?.Arguments.Count >= 2)
@@ -527,7 +527,7 @@ internal static class CapabilityAnalyzer
             }
         }
 
-        return (name, description, threadMode);
+        return (name, description, SessionMode);
     }
 
     // ========== MultiAgent Analysis ==========

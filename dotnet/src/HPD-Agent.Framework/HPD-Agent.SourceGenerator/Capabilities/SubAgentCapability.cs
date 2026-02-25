@@ -33,12 +33,12 @@ internal class SubAgentCapability : BaseCapability
     public bool IsStatic { get; set; }
 
     /// <summary>
-    /// Thread mode for this sub-agent.
+    /// Session mode for this sub-agent.
     /// - Stateless: New thread per invocation (default)
-    /// - SharedThread: Shared thread across calls
-    /// - PerSession: User-managed thread
+    /// - SharedSession: Shared thread across calls
+    /// - PerSession: User-managed session
     /// </summary>
-    public string ThreadMode { get; set; } = "Stateless";
+    public string SessionMode { get; set; } = "Stateless";
 
     /// <summary>
     /// Whether the sub-agent requires permission to invoke.
@@ -111,7 +111,7 @@ internal class SubAgentCapability : BaseCapability
 
         // PerSession needs to attach the parent's store to the builder BEFORE BuildAsync
         sb.AppendLine("        // PerSession: attach parent's session store before building so RunAsync(sessionId) works");
-        sb.AppendLine("        if (subAgentDef.ThreadMode == SubAgentThreadMode.PerSession)");
+        sb.AppendLine("        if (subAgentDef.SessionMode == SubAgentSessionMode.PerSession)");
         sb.AppendLine("        {");
         sb.AppendLine("            var parentStore = functionContext?.Session?.Store;");
         sb.AppendLine("            if (parentStore != null)");
@@ -160,15 +160,15 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
         sb.AppendLine();
 
-        sb.AppendLine("        switch (subAgentDef.ThreadMode)");
+        sb.AppendLine("        switch (subAgentDef.SessionMode)");
         sb.AppendLine("        {");
 
-        // SharedThread — fixed session, guard against duplicate CreateSessionAsync (pre-existing bug fix)
-        sb.AppendLine("            case SubAgentThreadMode.SharedThread:");
+        // SharedSession — fixed session, guard against duplicate CreateSessionAsync (pre-existing bug fix)
+        sb.AppendLine("            case SubAgentSessionMode.SharedSession:");
         sb.AppendLine("            {");
         sb.AppendLine("                var sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
         sb.AppendLine("                var branchId = subAgentDef.SharedBranchId ?? \"main\";");
-        sb.AppendLine("                // Only create session on first invocation — SharedThread reuses it across calls");
+        sb.AppendLine("                // Only create session on first invocation — SharedSession reuses it across calls");
         sb.AppendLine("                var existingSession = await agent.Config.SessionStore!.LoadSessionAsync(sessionId, cancellationToken);");
         sb.AppendLine("                if (existingSession == null)");
         sb.AppendLine("                    await agent.CreateSessionAsync(sessionId, cancellationToken: cancellationToken);");
@@ -183,7 +183,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            }");
 
         // PerSession — inherit parent's session + branch via shared store; session already exists, skip CreateSessionAsync
-        sb.AppendLine("            case SubAgentThreadMode.PerSession:");
+        sb.AppendLine("            case SubAgentSessionMode.PerSession:");
         sb.AppendLine("            {");
         sb.AppendLine("                var parentSessionId = functionContext?.SessionId;");
         sb.AppendLine("                var parentBranchId = functionContext?.BranchId;");
@@ -198,11 +198,11 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("                    return textResult.ToString();");
         sb.AppendLine("                }");
         sb.AppendLine("                // Fallback: no parent session available — behave stateless");
-        sb.AppendLine("                goto case SubAgentThreadMode.Stateless;");
+        sb.AppendLine("                goto case SubAgentSessionMode.Stateless;");
         sb.AppendLine("            }");
 
         // Stateless — fresh isolated session per call (default)
-        sb.AppendLine("            case SubAgentThreadMode.Stateless:");
+        sb.AppendLine("            case SubAgentSessionMode.Stateless:");
         sb.AppendLine("            default:");
         sb.AppendLine("            {");
         sb.AppendLine("                var sessionId = System.Guid.NewGuid().ToString(\"N\");");
@@ -238,7 +238,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        AdditionalProperties = new System.Collections.Generic.Dictionary<string, object>");
         sb.AppendLine("        {");
         sb.AppendLine("            [\"IsSubAgent\"] = true,");
-        sb.AppendLine($"            [\"ThreadMode\"] = \"{ThreadMode}\",");
+        sb.AppendLine($"            [\"SessionMode\"] = \"{SessionMode}\",");
         sb.AppendLine($"            [\"ParentToolkit\"] = \"{Toolkit.Name}\"");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
@@ -269,7 +269,7 @@ internal class SubAgentCapability : BaseCapability
         // SubAgents are wrappers that delegate to another agent, not containers
         props["IsContainer"] = false;
         props["IsSubAgent"] = true;
-        props["ThreadMode"] = ThreadMode;
+        props["SessionMode"] = SessionMode;
         props["ParentToolkit"] = ParentToolkitName;
         props["RequiresPermission"] = RequiresPermission;
 
