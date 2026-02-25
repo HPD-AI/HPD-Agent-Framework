@@ -286,7 +286,7 @@ All six capability types live in one class. Register it once:
 ```csharp
 var agent = await new AgentBuilder()
     .WithProvider("anthropic", "claude-sonnet-4-5")
-    .WithSystemInstructions("You are a math assistant. Use your tools to solve problems accurately.")
+    .WithInstructions("You are a math assistant. Use your tools to solve problems accurately.")
     .WithToolkit<MathToolkit>()
     .BuildAsync();
 

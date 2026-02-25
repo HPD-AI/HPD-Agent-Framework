@@ -10,7 +10,7 @@
   <img alt="HPD-Agent Architecture" src="architecture.svg">
 </picture>
 
-A full-stack framework for building AI agents — C# backend with tools, middleware, multi-turn conversations, and multi-agent workflows, paired with TypeScript/Svelte UI libraries for building rich, streaming chat interfaces.
+A C# framework for building production AI agents — tools, multi-turn conversations, middleware, sub-agents, multi-agent workflows, audio, and more. Paired with TypeScript/Svelte UI libraries for streaming chat interfaces.
 
 > [!WARNING]
 > **HPD.Agent.Framework is currently in an early development phase.**
@@ -28,91 +28,216 @@ dotnet add package HPD-Agent.Framework
 ```csharp
 using HPD.Agent;
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are a helpful assistant.")
-    .Build();
+    .WithInstructions("You are a helpful assistant.")
+    .BuildAsync();
 
 await foreach (var evt in agent.RunAsync("Hello!"))
 {
-    if (evt is TextDeltaEvent textDelta)
-        Console.Write(textDelta.Text);
+    if (evt is TextDeltaEvent delta)
+        Console.Write(delta.Text);
 }
 ```
+
+---
 
 ## Core Concepts
 
-### Tools
+### Tools (AIFunctions, Skills, SubAgents)
 
-Give your agent capabilities by registering toolkits:
+Mark C# methods with attributes and the source generator wires them up automatically:
 
 ```csharp
-public class CalculatorToolkit
+public class MyToolkit
 {
     [AIFunction(Description = "Add two numbers")]
     public int Add(int a, int b) => a + b;
+
+    [Skill(Description = "Research a topic and write a report")]
+    [FunctionResult("You are now in research mode. Use Search and ReadPage, then call WriteReport.")]
+    public void ResearchAndWrite() { }
+
+    [SubAgent]
+    public SubAgent Summarizer() => SubAgentFactory.Create(
+        name: "Summarize",
+        description: "Summarizes long content",
+        agentConfig: new AgentConfig { SystemInstructions = "Summarize concisely." }
+    );
 }
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithToolkit<CalculatorToolkit>()
-    .Build();
+    .WithToolkit<MyToolkit>()
+    .BuildAsync();
 ```
 
-Tools can also be loaded from MCP servers, OpenAPI specs, or provided by the client at runtime. See [Tools documentation](documentation/Tools/).
+Tools can also come from **MCP servers**, **OpenAPI specs**, or be provided by the client at runtime.
 
-### Multi-Turn Conversations
+See [Tools documentation](documentation/Tools/).
 
-Use sessions and branches to maintain conversation history:
+### Sessions & Branches
 
-```csharp
-var (session, branch) = agent.CreateSession("user-123");
-
-await foreach (var evt in agent.RunAsync("Add 10 and 20", branch)) { }
-await foreach (var evt in agent.RunAsync("Now multiply that by 5", branch)) { }
-// Agent remembers the previous result
-```
-
-For persistent conversations that survive process restarts:
+Sessions track conversation history. Branches let you fork and explore alternative paths:
 
 ```csharp
-var agent = new AgentBuilder()
+// Simple: explicit session ID
+var agent = await new AgentBuilder()
+    .WithProvider("openai", "gpt-4o")
     .WithSessionStore(new JsonSessionStore("./sessions"))
-    .Build();
+    .BuildAsync();
 
-await foreach (var evt in agent.RunAsync("Message", sessionId: "user-123")) { }
+await agent.CreateSessionAsync("user-123");
+await foreach (var evt in agent.RunAsync("Hello", "user-123")) { }
+await foreach (var evt in agent.RunAsync("Follow up", "user-123")) { } // remembers context
+
+// Fork at any point
+await agent.ForkBranchAsync("user-123", "main", "experiment", fromMessageIndex: 4);
+await foreach (var evt in agent.RunAsync("Try this instead", "user-123", "experiment")) { }
 ```
 
-See [02 Multi-Turn Conversations](documentation/Getting%20Started/02%20Multi-Turn%20Conversations.md).
+Crash recovery is automatic — if the process dies mid-turn, the next `RunAsync` resumes from where it left off.
+
+See [Multi-Turn Conversations](documentation/Getting%20Started/02%20Multi-Turn%20Conversations.md).
+
+### Sub-Agents
+
+Delegate complex tasks to child agents, each with their own tools, provider, and memory:
+
+```csharp
+[SubAgent]
+public SubAgent CodeReviewer() => SubAgentFactory.Create(
+    name: "Review Code",
+    description: "Reviews code for bugs and style",
+    agentConfig: new AgentConfig
+    {
+        SystemInstructions = "You are an expert code reviewer...",
+        Provider = new ProviderConfig { ProviderKey = "anthropic", ModelName = "claude-opus-4-6" }
+    },
+    typeof(FileSystemToolkit)
+);
+
+// Stateful: remembers across invocations
+[SubAgent]
+public SubAgent ProjectAssistant() => SubAgentFactory.CreateStateful(
+    name: "Project Assistant",
+    description: "Ongoing project collaborator with memory",
+    agentConfig: new AgentConfig { SystemInstructions = "..." }
+);
+
+// PerSession: inherits the parent's conversation as read-only context
+[SubAgent]
+public SubAgent Summarizer() => SubAgentFactory.CreatePerSession(
+    name: "Summarize",
+    description: "Summarizes the conversation so far",
+    agentConfig: new AgentConfig { SystemInstructions = "Summarize everything discussed." }
+);
+```
+
+See [SubAgents](documentation/Tools/02.1.3%20SubAgents.md).
 
 ### Middleware
 
-Intercept and customize agent behavior at every stage of execution:
+Intercept and customize every stage of agent execution:
 
 ```csharp
 public class LoggingMiddleware : IAgentMiddleware
 {
-    public Task BeforeFunctionAsync(AgentMiddlewareContext context, CancellationToken ct)
+    public Task BeforeFunctionAsync(BeforeFunctionContext ctx, CancellationToken ct)
     {
-        Console.WriteLine($"Calling: {context.Function?.Name}");
+        Console.WriteLine($"Calling: {ctx.Function?.Name}");
         return Task.CompletedTask;
     }
 }
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithMiddleware(new LoggingMiddleware())
-    .Build();
+    .BuildAsync();
 ```
 
-Built-in middleware includes: `CircuitBreaker`, `RetryMiddleware`, `HistoryReduction`, `PIIMiddleware`, `FunctionTimeout`, `Logging`, and more. See [Middleware documentation](documentation/Middleware/).
+Built-in middleware: `CircuitBreaker`, `RetryMiddleware`, `HistoryReduction`, `PIIMiddleware`, `FunctionTimeout`, `Logging`, and more.
+
+See [Middleware documentation](documentation/Middleware/).
+
+### Multi-Agent Workflows
+
+Compose specialized agents in a directed graph with conditional routing:
+
+```csharp
+using HPD.MultiAgent;
+
+var workflow = await AgentWorkflow.Create()
+    .AddAgent("triage", triageConfig)
+    .AddAgent("billing", billingConfig)
+    .AddAgent("support", supportConfig)
+    .From("triage")
+        .To("billing").WhenEquals("intent", "billing")
+        .To("support").WhenEquals("intent", "support")
+    .BuildAsync();
+
+var result = await workflow.RunAsync("I need help with my invoice");
+```
+
+Workflows can also be used as a `[MultiAgent]` toolkit capability inside a parent agent.
+
+See [Multi-Agent documentation](documentation/Multi-Agent/).
+
+### Event Streaming
+
+Agents stream 50+ event types in real time — text, tool calls, turn lifecycle, permissions, and more:
+
+```csharp
+await foreach (var evt in agent.RunAsync("Do something", "session-id"))
+{
+    switch (evt)
+    {
+        case TextDeltaEvent delta:
+            Console.Write(delta.Text);
+            break;
+        case ToolCallStartEvent tool:
+            Console.WriteLine($"\n[Tool: {tool.Name}]");
+            break;
+        case PermissionRequestEvent perm:
+            // Bidirectional: send approval back to the agent
+            await agent.SendMiddlewareResponse(perm.RequestId, approved: true);
+            break;
+        case MessageTurnFinishedEvent:
+            Console.WriteLine("\n[Done]");
+            break;
+    }
+}
+```
+
+See [Event Handling](documentation/Getting%20Started/05%20Event%20Handling.md).
+
+### Memory & Content Store
+
+Three distinct storage abstractions:
+
+| Store | Purpose |
+|-------|---------|
+| `ISessionStore` | Conversation history — sessions and branches |
+| `IContentStore` | Files and documents — knowledge, uploads, artifacts, agent memory notes |
+| Agent Memory | `/memory` folder — the agent's own working notes across turns |
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithProvider("openai", "gpt-4o")
+    .WithSessionStore(new JsonSessionStore("./sessions"))
+    .WithContentStore(new LocalFileContentStore("./content"))
+    .BuildAsync();
+```
+
+Agents can read, write, and search their content store using built-in tools (`content_read`, `content_write`, `content_list`, `content_glob`, etc.).
+
+See [Memory documentation](documentation/Getting%20Started/06%20Memory.md).
 
 ### Agent Configuration
 
-The recommended pattern for production is **Builder + Config** — define configuration as data, then layer runtime customization on top:
+Define configuration as data, layer runtime concerns on top:
 
 ```csharp
-// Define config once (can also be loaded from JSON)
 var config = new AgentConfig
 {
     Name = "SupportAgent",
@@ -123,85 +248,127 @@ var config = new AgentConfig
     Middlewares = ["LoggingMiddleware"]
 };
 
-// Layer runtime-only concerns on top
-var agent = new AgentBuilder(config)
+var agent = await new AgentBuilder(config)
     .WithServiceProvider(services)
-    .WithToolkit<MyCompiledTool>()
-    .Build();
-```
-
-Or load directly from a JSON file:
-
-```csharp
-var agent = new AgentBuilder("agent-config.json")
-    .WithServiceProvider(services)
-    .Build();
-```
-
-See [01 Customizing an Agent](documentation/Getting%20Started/01%20Customizing%20an%20Agent.md).
-
-### Multi-Agent Workflows
-
-Compose multiple specialized agents in a directed graph:
-
-```csharp
-using HPD.MultiAgent;
-
-var workflow = await AgentWorkflow.Create()
-    .AddAgent("researcher", new AgentConfig
-    {
-        SystemInstructions = "Research the topic thoroughly."
-    })
-    .AddAgent("writer", new AgentConfig
-    {
-        SystemInstructions = "Write a clear, concise answer."
-    })
-    .From("researcher").To("writer")
     .BuildAsync();
 
-var result = await workflow.RunAsync("Explain quantum entanglement");
-Console.WriteLine(result.FinalAnswer);
+// Or load from JSON
+var agent = await new AgentBuilder("agent-config.json")
+    .WithServiceProvider(services)
+    .BuildAsync();
 ```
 
-Edges can be conditional, routing based on agent output fields:
+See [Agent Builder & Config](documentation/Agent%20Builder%20%26%20Config/).
+
+---
+
+## Providers
+
+| Provider | Builder method |
+|----------|---------------|
+| OpenAI (GPT-4o, o1, audio) | `.WithOpenAI("key", "gpt-4o")` |
+| Anthropic (Claude) | `.WithAnthropic("key", "claude-opus-4-6")` |
+| Azure OpenAI | `.WithAzureOpenAI(endpoint, "key", "deployment")` |
+| Google AI (Gemini) | `.WithGoogleAI("key", "gemini-2.0-flash")` |
+| Azure AI Foundry | `.WithAzureAI(endpoint, "key", "model")` |
+| Azure AI Inference | `.WithAzureAIInference(endpoint, "key", "model")` |
+| Ollama (local) | `.WithOllama("llama3.2")` |
+| Mistral | `.WithMistral("key", "mistral-large")` |
+| AWS Bedrock | `.WithBedrock("region", "model-id")` |
+| HuggingFace | `.WithHuggingFace("key", "model-id")` |
+| OpenRouter | `.WithOpenRouter("key", "model")` |
+| ONNX Runtime (local) | `.WithOnnxRuntime("model-path")` |
+
+Providers can also be overridden per-call via `AgentRunConfig.ProviderKey`.
+
+See [Providers documentation](documentation/Agent%20Builder%20%26%20Config/).
+
+---
+
+## Advanced Features
+
+### Collapsing
+
+Hide groups of tools behind a container that the agent must explicitly expand — reduces token usage and guides tool selection:
 
 ```csharp
-.From("triage")
-    .To("billing", when => when.Field("intent").Equals("billing"))
-    .To("support", when => when.Field("intent").Equals("support"))
-    .To("fallback")
+[Collapse(Description = "File system operations — expand to read or write files")]
+[FunctionResult("You now have access to file system tools.")]
+public class FileToolkit { ... }
 ```
 
-See [Multi-Agent documentation](documentation/Multi-Agent/).
+### Context Engineering
 
-## Event Streaming
-
-Agents stream events as they work — text output, tool calls, turn lifecycle, and more:
+Dynamic descriptions and conditional tool visibility based on runtime metadata:
 
 ```csharp
-await foreach (var evt in agent.RunAsync("Do something", branch))
+public class SearchContext : IToolMetadata
 {
-    switch (evt)
-    {
-        case TextDeltaEvent textDelta:
-            Console.Write(textDelta.Text);
-            break;
-        case ToolCallStartEvent toolCall:
-            Console.WriteLine($"\n[Tool: {toolCall.Name}]");
-            break;
-        case TurnCompletedEvent:
-            Console.WriteLine("\n[Done]");
-            break;
-    }
+    public bool HasBrave { get; set; }
+    public bool HasBing { get; set; }
 }
+
+[AIFunction<SearchContext>(Description = "Search using {metadata.Provider}")]
+[ConditionalFunction("HasBrave || HasBing")]
+public SearchResult Search(string query) { ... }
 ```
 
-See [05 Event Handling](documentation/Getting%20Started/05%20Event%20Handling.md).
+### Observability
+
+OpenTelemetry integration with automatic span hierarchy (turn → iteration → tool_call):
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithTracing(tracer)
+    .WithMetrics(meter)
+    .BuildAsync();
+```
+
+### Crash Recovery
+
+Automatic — configure a session store and the framework snapshots each turn. On the next `RunAsync` after a crash, execution resumes from the exact point of failure.
+
+### Audio
+
+Native audio input/output support for voice agents:
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithOpenAI("key", "gpt-4o-audio-preview")
+    .WithAudioPipeline(options => options.ProcessingMode = AudioProcessingMode.Native)
+    .BuildAsync();
+```
+
+### MCP Servers
+
+Connect external tool servers via Model Context Protocol — configure via `MCP.json` or C# attributes:
+
+```csharp
+[MCPServer(Name = "filesystem", Command = "npx", Args = "-y @modelcontextprotocol/server-filesystem /workspace")]
+public class WorkspaceTools { }
+```
+
+### OpenAPI Tools
+
+Turn any REST API into agent tools automatically from an OpenAPI spec:
+
+```csharp
+var agent = await new AgentBuilder()
+    .WithOpenApiTools("https://api.example.com/openapi.json", opts =>
+    {
+        opts.AuthCallback = req => req.Headers.Add("Authorization", $"Bearer {token}");
+    })
+    .BuildAsync();
+```
+
+---
 
 ## Building Apps
 
 - **Console apps** — See [07 Building Console Apps](documentation/Getting%20Started/07%20Building%20Console%20Apps.md)
 - **Web apps (ASP.NET Core)** — See [08 Building Web Apps](documentation/Getting%20Started/08%20Building%20Web%20Apps.md)
+
+---
 
 ## TypeScript Libraries
 
@@ -227,62 +394,47 @@ await client.stream('Explain quantum entanglement', {
 });
 ```
 
-The client supports SSE (default), WebSocket, and Maui transports, and handles bidirectional flows for permissions, clarifications, continuations, and client-side tool invocation. It covers all 71 HPD protocol event types.
+Supports SSE (default), WebSocket, and MAUI transports. Handles bidirectional flows for permissions, clarifications, continuations, and client-side tool invocation. Covers all 71 HPD protocol event types.
 
 ### `@hpd/hpd-agent-headless-ui`
 
-A Svelte 5 headless component library for building AI chat interfaces. Zero CSS — you control all styling. Designed specifically for AI-specific primitives: streaming text, tool execution, permissions, branching, and voice.
+A Svelte 5 headless component library for building AI chat interfaces. Zero CSS — you control all styling.
 
 ```bash
 npm install @hpd/hpd-agent-headless-ui
 ```
 
-```svelte
-<script>
-  import { createMockAgent } from '@hpd/hpd-agent-headless-ui';
-
-  const agent = createMockAgent();
-  let input = '';
-
-  async function send() {
-    await agent.send(input);
-    input = '';
-  }
-</script>
-```
-
-Key components (not exhaustive — see [typescript/](typescript/) for the full library):
-
 | Component | Purpose |
 |-----------|---------|
 | `Message` / `MessageList` | Streaming-aware message display with thinking, tool, and reasoning states |
-| `MessageActions` | Edit, retry, and copy buttons attached to messages |
-| `MessageEdit` | Inline message editing with save/cancel |
-| `ChatInput` | Compositional input with leading/trailing/top/bottom accessory slots |
-| `ToolExecution` | Display and track in-progress tool calls |
+| `MessageActions` | Edit, retry, and copy buttons |
+| `MessageEdit` | Inline message editing |
+| `ChatInput` | Compositional input with accessory slots |
+| `ToolExecution` | Display in-progress tool calls |
 | `PermissionDialog` | Handle AI permission requests |
 | `BranchSwitcher` | Navigate sibling conversation branches |
-| `SessionList` | Display and manage conversation sessions |
-| `Artifact` | Teleport rich content (code, documents, charts) into a side panel |
-| `SplitPanel` | Arbitrarily nested resizable layout panels with persistence and undo/redo |
+| `SessionList` | Display and manage sessions |
+| `Artifact` | Teleport rich content into a side panel |
+| `SplitPanel` | Resizable layout panels with persistence |
 | `AudioPlayer` / `Transcription` | Voice playback and speech-to-text streaming |
-| `VoiceActivityIndicator` | Visual feedback during voice input |
-| `AudioVisualizer` | Waveform/level visualization for audio streams |
-| `InterruptionIndicator` / `TurnIndicator` | Voice turn and interruption state display |
-| `Input` | Base AI-aware message input primitive |
+| `VoiceActivityIndicator` / `AudioVisualizer` | Visual feedback for voice input |
 
-Total bundle: < 20 KB gzipped. Located at [typescript/](typescript/).
+Total bundle: < 20 KB gzipped. See [typescript/](typescript/).
+
+---
 
 ## Documentation
 
 | Topic | Location |
 |-------|----------|
-| Agents overview & first steps | [Getting Started/](documentation/Getting%20Started/) |
+| Agents overview | [Getting Started/](documentation/Getting%20Started/) |
 | Agent configuration | [01 Customizing an Agent](documentation/Getting%20Started/01%20Customizing%20an%20Agent.md) |
-| Multi-turn conversations & sessions | [02 Multi-Turn Conversations](documentation/Getting%20Started/02%20Multi-Turn%20Conversations.md) |
+| Sessions & branches | [02 Multi-Turn Conversations](documentation/Getting%20Started/02%20Multi-Turn%20Conversations.md) |
 | Tool calling | [03 Tool Calling](documentation/Getting%20Started/03%20Tool%20Calling.md) |
 | Middleware pipeline | [Middleware/](documentation/Middleware/) |
 | Event handling | [05 Event Handling](documentation/Getting%20Started/05%20Event%20Handling.md) |
-| Memory & content store | [06 Memory & Content Store](documentation/Getting%20Started/06%20Memory%20%26%20Content%20Store.md) |
+| Memory & content store | [06 Memory](documentation/Getting%20Started/06%20Memory.md) |
+| Builder & config | [Agent Builder & Config/](documentation/Agent%20Builder%20%26%20Config/) |
+| Tools (AIFunctions, Skills, SubAgents) | [Tools/](documentation/Tools/) |
 | Multi-agent workflows | [Multi-Agent/](documentation/Multi-Agent/) |
-| Per-invocation run config | [09 Run Config](documentation/Getting%20Started/09%20Run%20Config.md) |
+| Cookbook / examples | [Cookbook/](documentation/Cookbook/) |

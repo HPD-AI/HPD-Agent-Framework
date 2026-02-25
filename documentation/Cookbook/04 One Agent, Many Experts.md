@@ -36,7 +36,7 @@ Two lines. Everything else lives in the toolkits:
 ```csharp
 var agent = await new AgentBuilder()
     .WithProvider("anthropic", "claude-sonnet-4-5")
-    .WithSystemInstructions("You are a helpful assistant. Use your tools to help the user.")
+    .WithInstructions("You are a helpful assistant. Use your tools to help the user.")
     .WithToolkit<MathToolkit>()
     .WithToolkit<WritingToolkit>()
     .WithToolkit<CodeToolkit>()

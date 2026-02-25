@@ -111,7 +111,7 @@ public class SubAgentSourceGeneratorTests
     }
 
     [Fact]
-    public void SourceGenerator_ExtractsAgentConfig_WithSystemInstructions()
+    public void SourceGenerator_ExtractsAgentConfig_WithInstructions()
     {
         // Arrange
         var Toolkit = new TestSubAgentTools();

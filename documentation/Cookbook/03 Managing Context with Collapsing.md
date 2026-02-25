@@ -94,7 +94,7 @@ public partial class MathToolkit(ISecretResolver secrets)
 
 `ISecretResolver` is declared as a primary constructor parameter — the source generator detects it and wires the resolved instance automatically. No DI registration needed.
 
-The agent's base `WithSystemInstructions` stays short and domain-agnostic — something like "You are a helpful assistant." The math-specific behavior only exists in context during math turns. An agent with ten toolkits effectively has ten domain personas, each loading only when relevant.
+The agent's base `WithInstructions` stays short and domain-agnostic — something like "You are a helpful assistant." The math-specific behavior only exists in context during math turns. An agent with ten toolkits effectively has ten domain personas, each loading only when relevant.
 
 **`FunctionResult` vs `SystemPrompt`:**
 

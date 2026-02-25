@@ -17,7 +17,7 @@ Each method offers distinct advantages and trade-offs.
 ```csharp
 var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are helpful...")
+    .WithInstructions("You are helpful...")
     .WithToolkit<MyToolkit>()
     .WithTelemetry()
     .BuildAsync();
@@ -164,7 +164,7 @@ The core issue: with many configurations, the builder gets very long and repetit
 // Pure Builder Pattern - becomes a wall of code!
 var agent1 = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are helpful Math assistant")
+    .WithInstructions("You are helpful Math assistant")
     .WithServiceProvider(services)
     .WithLogging()
     .WithTelemetry()
@@ -187,7 +187,7 @@ var agent1 = await new AgentBuilder()
 // If you have 10 agents with common config, all this is duplicated 10 times!
 var agent2 = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")  // Repeated!
-    .WithSystemInstructions("You are helpful finance assistant")  // Repeated!
+    .WithInstructions("You are helpful finance assistant")  // Repeated!
     .WithServiceProvider(services)  // Repeated!
     .WithLogging()  // Repeated!
     .WithTelemetry()  // Repeated!

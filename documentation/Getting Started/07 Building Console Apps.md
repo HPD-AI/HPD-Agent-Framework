@@ -21,7 +21,7 @@ using HPD.Agent.Events;
 // Configure the agent
 var agent = await new AgentBuilder()
     .WithProvider("anthropic", "claude-sonnet-4-5")
-    .WithSystemInstructions("You are a helpful assistant.")
+    .WithInstructions("You are a helpful assistant.")
     .BuildAsync();
 
 // Create a session to track conversation history

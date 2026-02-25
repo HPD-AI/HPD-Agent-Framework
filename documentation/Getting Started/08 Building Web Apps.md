@@ -45,7 +45,7 @@ builder.Services.AddHPDAgent(options =>
     options.PersistAfterTurn = true;
     options.ConfigureAgent = agent => agent
         .WithProvider("anthropic", "claude-sonnet-4-5")
-        .WithSystemInstructions("You are a helpful assistant.");
+        .WithInstructions("You are a helpful assistant.");
 });
 
 var app = builder.Build();

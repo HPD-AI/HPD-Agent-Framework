@@ -45,7 +45,7 @@ using HPD.Agent;
 // API key is auto-detected from OPENAI_API_KEY environment variable
 var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are a helpful assistant.")
+    .WithInstructions("You are a helpful assistant.")
     .BuildAsync();
 ```
 
@@ -69,7 +69,7 @@ public class CalculatorTool
 // Create an agent with tools
 var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are a helpful assistant with math capabilities.")
+    .WithInstructions("You are a helpful assistant with math capabilities.")
     .WithToolkit<CalculatorTool>()  // Register the tool
     .BuildAsync();
 ```
@@ -103,7 +103,7 @@ public class LoggingMiddleware : IAgentMiddleware
 // Create an agent with middleware
 var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .WithSystemInstructions("You are a helpful assistant.")
+    .WithInstructions("You are a helpful assistant.")
     .WithToolkit<CalculatorTool>()
     .WithMiddleware(new LoggingMiddleware())  // Add the middleware
     .BuildAsync();
