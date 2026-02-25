@@ -35,10 +35,16 @@ public class SubAgent
 
     /// <summary>
     /// Optional: Shared session ID for stateful multi-turn conversations.
-    /// Only used when ThreadMode = SharedThread or PerSession.
+    /// Only used when ThreadMode = SharedThread.
     /// WARNING: Do not use shared sessions concurrently - can cause race conditions.
     /// </summary>
     public string? SharedSessionId { get; set; }
+
+    /// <summary>
+    /// Optional: Shared branch ID to use alongside SharedSessionId.
+    /// Only used when ThreadMode = SharedThread. Defaults to "main" if not set.
+    /// </summary>
+    public string? SharedBranchId { get; set; }
 
     /// <summary>
     /// Toolkit types to register with the sub-agent (e.g., typeof(FileSystemToolkit), typeof(WebSearchToolkit)).
@@ -70,9 +76,10 @@ public enum SubAgentThreadMode
     SharedThread,
 
     /// <summary>
-    /// Per-session - User manages thread lifecycle externally.
-    /// Thread passed in at invocation time.
-    /// Use when: Custom thread management needed (e.g., per-user sessions, custom Collapsing)
+    /// Per-session - Inherits the parent agent's current session and branch as read-only context.
+    /// The sub-agent sees the parent's conversation history but does not write back to it.
+    /// Use when: The task benefits from full conversation context (e.g., summarization, analysis of what was said).
+    /// Falls back to stateless if no parent session is available.
     /// </summary>
     PerSession
 }

@@ -101,6 +101,24 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();
+        // Extract query (needed by all modes, before BuildAsync so PerSession can attach store first)
+        sb.AppendLine("        // Extract query from arguments");
+        sb.AppendLine("        var jsonArgs = arguments.GetJson();");
+        sb.AppendLine("        var query = jsonArgs.TryGetProperty(\"query\", out var queryProp)");
+        sb.AppendLine("            ? queryProp.GetString() ?? string.Empty");
+        sb.AppendLine("            : string.Empty;");
+        sb.AppendLine();
+
+        // PerSession needs to attach the parent's store to the builder BEFORE BuildAsync
+        sb.AppendLine("        // PerSession: attach parent's session store before building so RunAsync(sessionId) works");
+        sb.AppendLine("        if (subAgentDef.ThreadMode == SubAgentThreadMode.PerSession)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var parentStore = functionContext?.Session?.Store;");
+        sb.AppendLine("            if (parentStore != null)");
+        sb.AppendLine("                agentBuilder.WithSessionStore(parentStore);");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+
         sb.AppendLine("        var agent = await agentBuilder.BuildAsync();");
         sb.AppendLine();
 
@@ -114,7 +132,6 @@ internal class SubAgentCapability : BaseCapability
 
         // Build execution context for event attribution
         sb.AppendLine("        // Build hierarchical execution context for event attribution");
-        sb.AppendLine("        // Note: RootAgent is used here for execution context hierarchy (not for chat client)");
         sb.AppendLine("        var currentAgent = HPD.Agent.Agent.RootAgent;");
         sb.AppendLine("        var parenTMetadata = currentAgent?.ExecutionContext;");
         sb.AppendLine("        var randomId = System.Guid.NewGuid().ToString(\"N\")[..8];");
@@ -140,72 +157,66 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            Depth = (parenTMetadata?.Depth ?? -1) + 1");
         sb.AppendLine("        };");
         sb.AppendLine();
+        sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
+        sb.AppendLine();
 
-        // Handle session mode
-        sb.AppendLine("        // Determine sessionId based on mode");
-        sb.AppendLine("        string sessionId;");
         sb.AppendLine("        switch (subAgentDef.ThreadMode)");
         sb.AppendLine("        {");
+
+        // SharedThread — fixed session, guard against duplicate CreateSessionAsync (pre-existing bug fix)
         sb.AppendLine("            case SubAgentThreadMode.SharedThread:");
         sb.AppendLine("            {");
-        sb.AppendLine("                sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                break;");
+        sb.AppendLine("                var sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
+        sb.AppendLine("                var branchId = subAgentDef.SharedBranchId ?? \"main\";");
+        sb.AppendLine("                // Only create session on first invocation — SharedThread reuses it across calls");
+        sb.AppendLine("                var existingSession = await agent.Config.SessionStore!.LoadSessionAsync(sessionId, cancellationToken);");
+        sb.AppendLine("                if (existingSession == null)");
+        sb.AppendLine("                    await agent.CreateSessionAsync(sessionId, cancellationToken: cancellationToken);");
+        sb.AppendLine("                await foreach (var evt in agent.RunAsync(query, sessionId: sessionId, branchId: branchId, cancellationToken: cancellationToken))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    parentCoordinator?.Emit(evt);");
+        sb.AppendLine("                    if (evt is HPD.Agent.TextDeltaEvent td) textResult.Append(td.Text);");
+        sb.AppendLine("                }");
+        sb.AppendLine("                if (textResult.Length > 0) return textResult.ToString();");
+        sb.AppendLine("                var fallbackBranch = await agent.Config.SessionStore!.LoadBranchAsync(sessionId, branchId, cancellationToken);");
+        sb.AppendLine("                return fallbackBranch?.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Text ?? string.Empty;");
         sb.AppendLine("            }");
+
+        // PerSession — inherit parent's session + branch via shared store; session already exists, skip CreateSessionAsync
         sb.AppendLine("            case SubAgentThreadMode.PerSession:");
         sb.AppendLine("            {");
-        sb.AppendLine("                sessionId = subAgentDef.SharedSessionId ?? System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                break;");
+        sb.AppendLine("                var parentSessionId = functionContext?.SessionId;");
+        sb.AppendLine("                var parentBranchId = functionContext?.BranchId;");
+        sb.AppendLine("                if (parentSessionId != null && parentBranchId != null)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    // Session already exists in the inherited store — do NOT call CreateSessionAsync");
+        sb.AppendLine("                    await foreach (var evt in agent.RunAsync(query, sessionId: parentSessionId, branchId: parentBranchId, cancellationToken: cancellationToken))");
+        sb.AppendLine("                    {");
+        sb.AppendLine("                        parentCoordinator?.Emit(evt);");
+        sb.AppendLine("                        if (evt is HPD.Agent.TextDeltaEvent td) textResult.Append(td.Text);");
+        sb.AppendLine("                    }");
+        sb.AppendLine("                    return textResult.ToString();");
+        sb.AppendLine("                }");
+        sb.AppendLine("                // Fallback: no parent session available — behave stateless");
+        sb.AppendLine("                goto case SubAgentThreadMode.Stateless;");
         sb.AppendLine("            }");
+
+        // Stateless — fresh isolated session per call (default)
         sb.AppendLine("            case SubAgentThreadMode.Stateless:");
         sb.AppendLine("            default:");
         sb.AppendLine("            {");
-        sb.AppendLine("                sessionId = System.Guid.NewGuid().ToString(\"N\");");
-        sb.AppendLine("                break;");
+        sb.AppendLine("                var sessionId = System.Guid.NewGuid().ToString(\"N\");");
+        sb.AppendLine("                await agent.CreateSessionAsync(sessionId, cancellationToken: cancellationToken);");
+        sb.AppendLine("                await foreach (var evt in agent.RunAsync(query, sessionId: sessionId, branchId: \"main\", cancellationToken: cancellationToken))");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    parentCoordinator?.Emit(evt);");
+        sb.AppendLine("                    if (evt is HPD.Agent.TextDeltaEvent textDelta) textResult.Append(textDelta.Text);");
+        sb.AppendLine("                }");
+        sb.AppendLine("                if (textResult.Length > 0) return textResult.ToString();");
+        sb.AppendLine("                var fallbackBranch = await agent.Config.SessionStore!.LoadBranchAsync(sessionId, \"main\", cancellationToken);");
+        sb.AppendLine("                return fallbackBranch?.Messages.LastOrDefault(m => m.Role == ChatRole.Assistant)?.Text ?? string.Empty;");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
-        sb.AppendLine();
-
-        // Invoke agent
-        sb.AppendLine("        // Extract query from arguments");
-        sb.AppendLine("        var jsonArgs = arguments.GetJson();");
-        sb.AppendLine("        var query = jsonArgs.TryGetProperty(\"query\", out var queryProp)");
-        sb.AppendLine("            ? queryProp.GetString() ?? string.Empty");
-        sb.AppendLine("            : string.Empty;");
-        sb.AppendLine();
-        sb.AppendLine("        // Create session explicitly before running");
-        sb.AppendLine("        await agent.CreateSessionAsync(sessionId, cancellationToken: cancellationToken);");
-        sb.AppendLine();
-        sb.AppendLine("        // Create user message and run agent with event streaming");
-        sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
-        sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
-        sb.AppendLine("            query,");
-        sb.AppendLine("            sessionId: sessionId,");
-        sb.AppendLine("            branchId: \"main\",");
-        sb.AppendLine("            cancellationToken: cancellationToken))");
-        sb.AppendLine("        {");
-        sb.AppendLine("            // Stream events to parent coordinator for real-time rendering");
-        sb.AppendLine("            if (parentCoordinator != null)");
-        sb.AppendLine("            {");
-        sb.AppendLine("                parentCoordinator.Emit(evt);");
-        sb.AppendLine("            }");
-        sb.AppendLine("            // Capture text for final result");
-        sb.AppendLine("            if (evt is HPD.Agent.TextDeltaEvent textDelta)");
-        sb.AppendLine("            {");
-        sb.AppendLine("                textResult.Append(textDelta.Text);");
-        sb.AppendLine("            }");
-        sb.AppendLine("        }");
-        sb.AppendLine();
-
-        // Return response - prefer captured text, fall back to branch messages
-        sb.AppendLine("        // Return captured text or fall back to last assistant message from branch");
-        sb.AppendLine("        if (textResult.Length > 0)");
-        sb.AppendLine("        {");
-        sb.AppendLine("            return textResult.ToString();");
-        sb.AppendLine("        }");
-        sb.AppendLine("        var branch = await agent.Config.SessionStore!.LoadBranchAsync(sessionId, \"main\", cancellationToken);");
-        sb.AppendLine("        return branch?.Messages");
-        sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");
-        sb.AppendLine("            ?.Text ?? string.Empty;");
         sb.AppendLine("    },");
         sb.AppendLine("    new HPDAIFunctionFactoryOptions");
         sb.AppendLine("    {");

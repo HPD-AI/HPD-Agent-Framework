@@ -163,6 +163,22 @@ public class TestSubAgentTools
     }
 
     [SubAgent]
+    public SubAgent StatefulSubAgentWithBranch()
+    {
+        var subAgent = SubAgentFactory.CreateStateful(
+            "StatefulSubAgentWithBranch",
+            "Stateful sub-agent pinned to a specific branch",
+            new AgentConfig
+            {
+                Name = "StatefulWithBranch",
+                SystemInstructions = "Test",
+                Provider = new ProviderConfig { ProviderKey = "openrouter", ModelName = "test" }
+            });
+        subAgent.SharedBranchId = "review-thread";
+        return subAgent;
+    }
+
+    [SubAgent]
     public SubAgent SubAgentWithToolss()
     {
         return SubAgentFactory.Create(

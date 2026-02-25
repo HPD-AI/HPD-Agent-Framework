@@ -64,14 +64,15 @@ public static class SubAgentFactory
     }
 
     /// <summary>
-    /// Creates a sub-agent with per-session thread management.
-    /// Thread is provided at invocation time by the user.
+    /// Creates a sub-agent that inherits the parent agent's current session and branch as read-only context.
+    /// The sub-agent sees the parent's conversation history but does not write back to it.
+    /// Falls back to stateless if no parent session is available at invocation time.
     /// </summary>
     /// <param name="name">Sub-agent name (REQUIRED - becomes AIFunction name shown to parent agent)</param>
     /// <param name="description">Description shown in tool list (REQUIRED - becomes AIFunction description)</param>
     /// <param name="agentConfig">Agent configuration defining the sub-agent's behavior</param>
     /// <param name="toolTypes">Optional Toolkit types to register with the sub-agent (e.g., typeof(FileSystemToolkit))</param>
-    /// <returns>SubAgent object configured for per-session thread management</returns>
+    /// <returns>SubAgent object configured for parent-context inheritance</returns>
     public static SubAgent CreatePerSession(
         string name,
         string description,

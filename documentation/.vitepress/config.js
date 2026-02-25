@@ -55,6 +55,7 @@ export default defineConfig({
           { text: 'Context Engineering', link: '/Tools/02.1.5 Context Engineering' },
           { text: 'Writing Instructions', link: '/Tools/02.1.6 Writing Instructions' },
           { text: 'Conditional Expression DSL', link: '/Tools/02.1.7 Conditional Expression DSL' },
+          { text: 'MultiAgent', link: '/Tools/02.1.8 MultiAgent' },
           { text: 'MCP Servers', link: '/Tools/02.2 MCP Servers' },
           { text: 'Client Tools', link: '/Tools/02.3 Client Tools' },
           { text: 'OpenAPI Tools', link: '/Tools/02.4 OpenAPI Tools' },
