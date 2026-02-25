@@ -24,6 +24,7 @@ export default defineConfig({
       { text: 'Middleware', link: '/Middleware/04.1 Middleware Lifecycle' },
       { text: 'Events', link: '/Events/05.1 Events Overview' },
       { text: 'Multi-Agent', link: '/Multi-Agent/06.1 Overview' },
+      { text: 'Cookbook', link: '/Cookbook/01 Hello World Chat Loop' },
     ],
 
     sidebar: [
@@ -97,18 +98,47 @@ export default defineConfig({
         ]
       },
       {
-        text: 'Providers',
+        text: 'Cookbook',
         collapsed: false,
         items: [
-          { text: 'Anthropic', link: '/Agent Builder & Config/Providers/Anthropic' },
-          { text: 'OpenAI', link: '/Agent Builder & Config/Providers/OpenAI' },
-          { text: 'Azure AI', link: '/Agent Builder & Config/Providers/AzureAI' },
-          { text: 'Google AI', link: '/Agent Builder & Config/Providers/GoogleAI' },
-          { text: 'Bedrock', link: '/Agent Builder & Config/Providers/Bedrock' },
-          { text: 'Mistral', link: '/Agent Builder & Config/Providers/Mistral' },
-          { text: 'HuggingFace', link: '/Agent Builder & Config/Providers/Huggingface' },
-          { text: 'Ollama', link: '/Agent Builder & Config/Providers/Ollama' },
-          { text: 'ONNX Runtime', link: '/Agent Builder & Config/Providers/OnnxRuntime' },
+          { text: 'Hello World: Chat Loop', link: '/Cookbook/01 Hello World Chat Loop' },
+          { text: 'Building a Toolkit', link: '/Cookbook/02 Building a Toolkit' },
+          { text: 'Managing Context with Collapsing', link: '/Cookbook/03 Managing Context with Collapsing' },
+          { text: 'One Agent, Many Experts', link: '/Cookbook/04 One Agent, Many Experts' },
+          { text: 'Writing Middleware', link: '/Cookbook/05 Writing Middleware' },
+          { text: 'Ralph Wiggum Loops', link: '/Cookbook/06 Ralph Wiggum Loops with Middleware' },
+        ]
+      },
+      {
+        text: 'Agent Builder & Config',
+        collapsed: false,
+        items: [
+          { text: 'Agent Builder', link: '/Agent Builder & Config/Agent Builder' },
+          { text: 'Agent Config', link: '/Agent Builder & Config/Agent Config' },
+          { text: 'Run Config', link: '/Agent Builder & Config/Run Config' },
+          { text: 'Error Handling', link: '/Agent Builder & Config/Error Handling' },
+          { text: 'History Reduction', link: '/Agent Builder & Config/History Reduction' },
+          { text: 'Caching', link: '/Agent Builder & Config/Caching' },
+          { text: 'Collapsing', link: '/Agent Builder & Config/Collapsing' },
+          { text: 'Observability', link: '/Agent Builder & Config/Observability' },
+          { text: 'Session Store', link: '/Agent Builder & Config/Session Store' },
+          { text: 'Sandbox Config', link: '/Agent Builder & Config/Sandbox Config' },
+          {
+            text: 'Providers',
+            collapsed: true,
+            items: [
+              { text: 'Providers Overview', link: '/Agent Builder & Config/Providers/00 Providers Overview' },
+              { text: 'Anthropic', link: '/Agent Builder & Config/Providers/Anthropic' },
+              { text: 'OpenAI', link: '/Agent Builder & Config/Providers/OpenAI' },
+              { text: 'Azure AI', link: '/Agent Builder & Config/Providers/AzureAI' },
+              { text: 'Google AI', link: '/Agent Builder & Config/Providers/GoogleAI' },
+              { text: 'Bedrock', link: '/Agent Builder & Config/Providers/Bedrock' },
+              { text: 'Mistral', link: '/Agent Builder & Config/Providers/Mistral' },
+              { text: 'HuggingFace', link: '/Agent Builder & Config/Providers/Huggingface' },
+              { text: 'Ollama', link: '/Agent Builder & Config/Providers/Ollama' },
+              { text: 'ONNX Runtime', link: '/Agent Builder & Config/Providers/OnnxRuntime' },
+            ]
+          }
         ]
       }
     ],

@@ -91,6 +91,9 @@ var options = new AgentRunConfig
 | `FrequencyPenalty` | `double?` | −2.0–2.0. Reduces repetition |
 | `PresencePenalty` | `double?` | −2.0–2.0. Encourages new topics |
 | `StopSequences` | `IReadOnlyList<string>?` | Sequences that stop generation |
+| `ModelId` | `string?` | Model override scoped to chat parameters (alternative to top-level `ModelId`) |
+| `AdditionalProperties` | `Dictionary<string, object>?` | Provider-specific extra parameters passed through to `ChatOptions` |
+| `ResponseFormat` | `ChatResponseFormat?` | Structured output format (not JSON-serializable) |
 | `Reasoning` | `ReasoningOptions?` | Reasoning effort and output mode (see below) |
 
 ### Reasoning
@@ -270,6 +273,30 @@ var options = new AgentRunConfig
 
 ---
 
+### Structured Output
+
+Force the model to respond in a specific JSON schema:
+
+```csharp
+var options = new AgentRunConfig
+{
+    StructuredOutput = new StructuredOutputOptions { Schema = myJsonSchema }
+};
+```
+
+`StructuredOutput` is not JSON-serializable — set it in C# only.
+
+---
+
+### Conversation & Client
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ConversationIdOverride` | `string?` | Override the conversation ID for this run (useful for caching and stateful routing) |
+| `ClientToolInput` | `AgentClientInput?` | Input from a client-side tool invocation (used in client tool flows) |
+
+---
+
 ### Background Responses
 
 For providers that support async/background execution:
@@ -278,12 +305,27 @@ For providers that support async/background execution:
 // Allow background mode — may return a ContinuationToken immediately
 var options = new AgentRunConfig { AllowBackgroundResponses = true };
 
+// Configure polling behaviour
+var options = new AgentRunConfig
+{
+    AllowBackgroundResponses = true,
+    BackgroundPollingInterval = TimeSpan.FromSeconds(5),
+    BackgroundTimeout = TimeSpan.FromMinutes(2)
+};
+
 // Resume or poll a previous background operation
 var options = new AgentRunConfig
 {
     ContinuationToken = previousResponse.ContinuationToken
 };
 ```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `AllowBackgroundResponses` | `bool?` | Allow this run to return a continuation token and complete in the background |
+| `BackgroundPollingInterval` | `TimeSpan?` | Hint for how often to poll for completion |
+| `BackgroundTimeout` | `TimeSpan?` | Maximum time to wait for a background response before giving up |
+| `ContinuationToken` | `ResponseContinuationToken?` | Resume a previous background operation (not JSON-serializable) |
 
 ---
 
@@ -297,8 +339,9 @@ var options = new AgentRunConfig
 | `SystemInstructions`, `AdditionalSystemInstructions` | `RuntimeMiddleware` |
 | `ContextOverrides`, `PermissionOverrides` | `ContextInstances` |
 | `RunTimeout`, `SkipTools`, `CoalesceDeltas`, `UseCache` | `AdditionalTools`, `ToolModeOverride` |
-| `TriggerHistoryReduction`, `SkipHistoryReduction` | `Attachments`, `CustomStreamCallback` |
-| `AllowBackgroundResponses`, `BackgroundPollingInterval` | `ContinuationToken` |
+| `TriggerHistoryReduction`, `SkipHistoryReduction`, `HistoryReductionBehaviorOverride` | `Attachments`, `CustomStreamCallback` |
+| `AllowBackgroundResponses`, `BackgroundPollingInterval`, `BackgroundTimeout` | `ContinuationToken` |
+| `ConversationIdOverride`, `ClientToolInput` | `StructuredOutput`, `Chat.ResponseFormat` |
 
 In web apps, the TypeScript client sends `StreamRunConfigDto` fields as part of the stream request body. C#-only properties must be injected server-side via `ConfigureAgent` or middleware.
 
