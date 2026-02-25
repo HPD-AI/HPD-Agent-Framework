@@ -34,7 +34,7 @@ Environment.SetEnvironmentVariable("OPENAI_API_KEY", "sk-...");
 
 var agent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -73,17 +73,36 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.7f;
             opts.TopP = 0.95f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`agent.json`:**
+```json
+{
+    "name": "OpenAIAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "openai",
+        "modelName": "gpt-4o",
+        "apiKey": "sk-...",
+        "providerOptionsJson": "{\"temperature\":0.7,\"maxOutputTokenCount\":4096,\"topP\":0.95}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("agent.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing OpenAI-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -97,41 +116,15 @@ var config = new AgentConfig
     }
 };
 
-var openAIOpts = new OpenAIProviderConfig
+config.Provider.SetTypedProviderConfig(new OpenAIProviderConfig
 {
     MaxOutputTokenCount = 4096,
     Temperature = 0.7f,
     TopP = 0.95f
-};
-config.Provider.SetTypedProviderConfig(openAIOpts);
+});
 
 var agent = await config.BuildAsync();
 ```
-
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "OpenAIAgent",
-    "Provider": {
-        "ProviderKey": "openai",
-        "ModelName": "gpt-4o",
-        "ApiKey": "sk-...",
-        "ProviderOptionsJson": "{\"maxOutputTokenCount\":4096,\"temperature\":0.7,\"topP\":0.95}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("openai-config.json");
-```
-
-</div>
-</div>
 
 #### 3. Builder + Config Pattern (Recommended)
 
@@ -158,15 +151,15 @@ var openAIOpts = new OpenAIProviderConfig
 config.Provider.SetTypedProviderConfig(openAIOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -347,7 +340,7 @@ export OPENAI_API_KEY="sk-..."
 // Automatically uses environment variable
 var agent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: Configuration Files
@@ -365,7 +358,7 @@ var agent = await new AgentBuilder()
 // Automatically resolved from config
 var agent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 3: Explicit Parameter
@@ -375,7 +368,7 @@ var agent = await new AgentBuilder()
     .WithOpenAI(
         model: "gpt-4o",
         apiKey: "sk-...")
-    .Build();
+    .BuildAsync();
 ```
 
 **Security Warning:** Never hardcode API keys in source code. Use environment variables or secure configuration management instead.
@@ -404,7 +397,7 @@ var agent = await new AgentBuilder()
             opts.MaxOutputTokenCount = 4096;
             opts.Temperature = 0.7f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Azure Authentication
@@ -483,7 +476,7 @@ var agent = await new AgentBuilder()
             }";
             opts.JsonSchemaIsStrict = true;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Extract user info: John Doe, 30 years old, john@example.com, likes coding and hiking");
 // Guaranteed to match schema
@@ -512,7 +505,7 @@ var agent = await new AgentBuilder()
             // Reasoning models need more output tokens
             opts.MaxOutputTokenCount = 16384;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
     Solve this problem step by step:
@@ -547,7 +540,7 @@ var agent = await new AgentBuilder()
             // Choose format
             opts.AudioFormat = "mp3"; // Or wav, flac, opus, pcm16
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Available Voices:**
@@ -577,7 +570,7 @@ var agent = await new AgentBuilder()
             // Use zero temperature for maximum consistency
             opts.Temperature = 0.0f;
         })
-    .Build();
+    .BuildAsync();
 
 // Same input + seed = same output
 var response1 = await agent.RunAsync("Generate a random number");
@@ -605,7 +598,7 @@ var agent = await new AgentBuilder()
                 [9012] = 10     // Slightly prefer token
             };
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Bias Values:**
@@ -635,7 +628,7 @@ var agent = await new AgentBuilder()
             var logged = new LoggingChatClient(cached, logger);
             return logged;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ## Error Handling
@@ -715,7 +708,7 @@ using HPD.Agent.Providers.OpenAI;
 
 var agent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o", apiKey: "sk-...")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -746,7 +739,7 @@ var agent = await new AgentBuilder()
         apiKey: "sk-...",
         configure: opts => opts.ToolChoice = "auto")
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Seattle? Also get the 5-day forecast.");
 Console.WriteLine(response);
@@ -757,7 +750,7 @@ Console.WriteLine(response);
 ```csharp
 var agent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o", apiKey: "sk-...")
-    .Build();
+    .BuildAsync();
 
 Console.Write("AI: ");
 await foreach (var chunk in agent.RunAsync("Write a short story about AI."))
@@ -790,7 +783,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""sentiment"", ""rating"", ""summary""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var review = @"
 This product is amazing! The build quality is excellent and it works perfectly.
@@ -814,7 +807,7 @@ var agent = await new AgentBuilder()
             opts.ReasoningEffortLevel = "high";
             opts.MaxOutputTokenCount = 16384;
         })
-    .Build();
+    .BuildAsync();
 
 var problem = @"
 You have 3 boxes. Box A contains 2 red balls and 1 blue ball.
@@ -833,12 +826,12 @@ Console.WriteLine(response);
 // Use expensive model for complex tasks
 var expertAgent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o", apiKey: "sk-...")
-    .Build();
+    .BuildAsync();
 
 // Use cheaper model for simple tasks
 var economyAgent = await new AgentBuilder()
     .WithOpenAI(model: "gpt-4o-mini", apiKey: "sk-...")
-    .Build();
+    .BuildAsync();
 
 async Task<string> ProcessQuery(string query)
 {
@@ -873,7 +866,7 @@ var agent = await new AgentBuilder()
             // Custom stop sequences
             opts.StopSequences = new List<string> { "THE END", "\n---\n" };
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Write a creative short story about time travel.");
 ```
@@ -997,6 +990,55 @@ configure: opts =>
     opts.Temperature = 0.2f;
 }
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all OpenAI-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `OpenAIProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "openai",
+        "modelName": "gpt-4o",
+        "apiKey": "sk-...",
+        "providerOptionsJson": "{\"temperature\":0.7,\"maxOutputTokenCount\":4096,\"topP\":0.95,\"frequencyPenalty\":0.5,\"presencePenalty\":0.5,\"seed\":42,\"toolChoice\":\"auto\",\"allowParallelToolCalls\":true,\"serviceTier\":\"auto\",\"endUserId\":\"user-123\"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxOutputTokenCount` | int | ≥ 1 | Max tokens to generate |
+| `temperature` | float | 0.0–2.0 | Sampling randomness |
+| `topP` | float | 0.0–1.0 | Nucleus sampling threshold |
+| `frequencyPenalty` | float | -2.0–2.0 | Reduce token repetition |
+| `presencePenalty` | float | -2.0–2.0 | Encourage topic diversity |
+| `stopSequences` | string[] | max 4 | Stop generation sequences |
+| `seed` | long | any | Deterministic generation seed |
+| `responseFormat` | string | `"text"`, `"json_object"`, `"json_schema"` | Output format |
+| `jsonSchemaName` | string | — | Schema name (required for `json_schema`) |
+| `jsonSchema` | string | — | JSON schema definition string |
+| `jsonSchemaDescription` | string | — | Optional schema description |
+| `jsonSchemaIsStrict` | bool | — | Enforce strict schema (default `true`) |
+| `toolChoice` | string | `"auto"`, `"none"`, `"required"` | Tool selection behavior |
+| `allowParallelToolCalls` | bool | — | Enable parallel tool execution |
+| `includeLogProbabilities` | bool | — | Return token log probabilities |
+| `topLogProbabilityCount` | int | 0–20 | Number of top tokens to return |
+| `logitBiases` | object | token ID → -100–100 | Token probability biases |
+| `reasoningEffortLevel` | string | `"low"`, `"medium"`, `"high"`, `"minimal"` | o1 reasoning effort |
+| `responseModalities` | string | `"text"`, `"audio"`, `"text,audio"` | Output modalities |
+| `audioVoice` | string | `"alloy"`, `"ash"`, `"ballad"`, `"coral"`, `"echo"`, `"sage"`, `"shimmer"`, `"verse"` | Audio voice |
+| `audioFormat` | string | `"wav"`, `"mp3"`, `"flac"`, `"opus"`, `"pcm16"` | Audio format |
+| `serviceTier` | string | `"auto"`, `"default"` | Service tier |
+| `endUserId` | string | — | End-user identifier for abuse monitoring |
+| `safetyIdentifier` | string | — | Safety/policy identifier |
+| `storedOutputEnabled` | bool | — | Store outputs for distillation/evals |
+| `metadata` | object | key-value strings | Dashboard filtering tags |
+| `webSearchEnabled` | bool | — | Enable web search (experimental) |
+
+---
 
 ## OpenAIProviderConfig API Reference
 

@@ -84,7 +84,7 @@ public class AnthropicProviderTests
             builder.WithAnthropic("claude-sonnet-4-5-20250929"); // No explicit API key
 
             // API key resolution happens at Build() time via ISecretResolver
-            var agent = await builder.Build();
+            var agent = await builder.BuildAsync();
 
             // Assert - verify the provider was created successfully with the resolved key
             // (If the key wasn't resolved, Build() would have thrown an exception)

@@ -92,9 +92,9 @@ cd MyAgent
 ```csharp
 using HPD.Agent;
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
-    .Build();
+    .BuildAsync();
 
 await agent.RunAsync("Hello! Tell me about yourself.");
 ```

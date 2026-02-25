@@ -2188,7 +2188,7 @@ public sealed class Agent
     /// <param name="sessionId">Optional session ID. If null, a GUID is generated.</param>
     /// <param name="branchId">Optional branch ID. If null, a GUID is generated.</param>
     /// <returns>A tuple of (Session, Branch) for the new conversation</returns>
-    public (Session Session, Branch Branch) CreateSession(string? sessionId = null, string? branchId = null)
+    internal (Session Session, Branch Branch) CreateSession(string? sessionId = null, string? branchId = null)
     {
         var session = sessionId is null ? new Session() : new Session(sessionId);
         var branch = session.CreateBranch(branchId);
@@ -2237,7 +2237,7 @@ public sealed class Agent
     /// </code>
     /// </para>
     /// </remarks>
-    public IAsyncEnumerable<AgentEvent> RunAsync(
+    internal IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
         Session? session = null,
         Branch? branch = null,
@@ -2261,7 +2261,7 @@ public sealed class Agent
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of agent events</returns>
     /// <exception cref="InvalidOperationException">Thrown if branch.Session is null</exception>
-    public IAsyncEnumerable<AgentEvent> RunAsync(
+    internal IAsyncEnumerable<AgentEvent> RunAsync(
         string userMessage,
         Branch branch,
         AgentRunConfig? options = null,
@@ -2284,7 +2284,7 @@ public sealed class Agent
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of agent events</returns>
     /// <exception cref="InvalidOperationException">Thrown if branch.Session is null</exception>
-    public IAsyncEnumerable<AgentEvent> RunAsync(
+    internal IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         Branch branch,
         AgentRunConfig? options = null,
@@ -2350,7 +2350,7 @@ public sealed class Agent
     /// </code>
     /// </para>
     /// </remarks>
-    public IAsyncEnumerable<AgentEvent> RunAsync(
+    internal IAsyncEnumerable<AgentEvent> RunAsync(
         AgentRunConfig options,
         Session? session = null,
         Branch? branch = null,
@@ -2402,7 +2402,7 @@ public sealed class Agent
     /// - Context overrides and runtime middleware
     /// </para>
     /// </remarks>
-    public async IAsyncEnumerable<AgentEvent> RunAsync(
+    internal async IAsyncEnumerable<AgentEvent> RunAsync(
         IEnumerable<ChatMessage> messages,
         Session? session = null,
         Branch? branch = null,
@@ -3581,34 +3581,38 @@ public sealed class Agent
     //──────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Runs the agent with automatic session management.
-    /// Loads the session from store, runs the agent, and saves if autoSave is enabled.
+    /// Runs the agent statelessly with a list of messages (no session, no persistence).
+    /// Suitable for one-off calls, sub-agents, and multi-agent graph nodes.
+    /// </summary>
+    public IAsyncEnumerable<AgentEvent> RunAsync(
+        IEnumerable<ChatMessage> messages,
+        AgentRunConfig? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return RunAsync(messages, session: null, branch: null, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the agent against an existing session. The session must have been created
+    /// with <see cref="CreateSessionAsync"/> before calling this method.
     /// </summary>
     /// <param name="userMessage">The user's message text</param>
-    /// <param name="sessionId">Session identifier to load/create</param>
-    /// <param name="options">Optional per-invocation run options for customization</param>
+    /// <param name="sessionId">Session identifier — must already exist in the store</param>
+    /// <param name="branchId">Branch identifier. Defaults to "main" if the session has only one branch.</param>
+    /// <param name="options">Optional per-invocation run options</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Stream of internal agent events</returns>
+    /// <returns>Stream of agent events</returns>
     /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
+    /// <exception cref="SessionNotFoundException">Thrown if the session or branch does not exist in the store</exception>
+    /// <exception cref="AmbiguousBranchException">Thrown if branchId is omitted and the session has multiple branches</exception>
     /// <remarks>
-    /// <para>
-    /// This is the recommended API for most use cases. It handles:
-    /// <list type="bullet">
-    /// <item>Loading or creating the session</item>
-    /// <item>Running the agent with the session</item>
-    /// <item>Saving the session (if autoSave is enabled)</item>
-    /// </list>
-    /// </para>
     /// <para>
     /// <b>Example:</b>
     /// <code>
-    /// var agent = new AgentBuilder()
-    ///     .WithSessionStore(store, autoSave: true)
-    ///     .Build();
+    /// await agent.CreateSessionAsync("user-123");
     ///
-    /// // Seamless session management
-    /// await agent.RunAsync("Hello", "session-123");
-    /// await agent.RunAsync("Follow up", "session-123");  // Continues conversation
+    /// await agent.RunAsync("Hello!", "user-123");
+    /// await agent.RunAsync("Follow up", "user-123");  // Continues conversation
     /// </code>
     /// </para>
     /// </remarks>
@@ -3636,12 +3640,15 @@ public sealed class Agent
     /// <summary>
     /// Convenience overload for running with a single ChatMessage and session ID.
     /// Useful for sending messages with typed content (ImageContent, AudioContent, etc.)
+    /// The session must have been created with <see cref="CreateSessionAsync"/> before calling this method.
     /// </summary>
     /// <param name="message">Single chat message to send</param>
-    /// <param name="sessionId">Session ID for auto-save</param>
+    /// <param name="sessionId">Session identifier — must already exist in the store</param>
+    /// <param name="branchId">Branch identifier. Defaults to "main" if the session has only one branch.</param>
     /// <param name="options">Optional run options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Stream of agent events</returns>
+    /// <exception cref="SessionNotFoundException">Thrown if the session or branch does not exist in the store</exception>
     /// <remarks>
     /// <para>
     /// <b>Example - Send image to vision model:</b>
@@ -3675,20 +3682,18 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Loads a session by ID from the configured store.
-    /// Returns a new empty session if no saved session exists.
+    /// Loads a session and branch by ID from the configured store.
+    /// Throws <see cref="SessionNotFoundException"/> if the session or branch does not exist.
+    /// Use <see cref="CreateSessionAsync"/> to create a session before calling this or RunAsync.
     /// </summary>
     /// <param name="sessionId">Session identifier</param>
+    /// <param name="branchId">Branch identifier. Defaults to "main" if the session has only one branch.</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The loaded session, or a new empty session if not found</returns>
+    /// <returns>The loaded session and branch</returns>
     /// <exception cref="InvalidOperationException">Thrown if no session store is configured</exception>
-    /// <remarks>
-    /// <para>
-    /// This method loads session metadata and a branch (messages + branch-scoped state).
-    /// Crash recovery via UncommittedTurn is automatic when RunAsync detects one in the store.
-    /// </para>
-    /// </remarks>
-    public async Task<(Session session, Branch branch)> LoadSessionAndBranchAsync(
+    /// <exception cref="SessionNotFoundException">Thrown if the session or branch does not exist in the store</exception>
+    /// <exception cref="AmbiguousBranchException">Thrown if branchId is omitted and the session has multiple branches</exception>
+    internal async Task<(Session session, Branch branch)> LoadSessionAndBranchAsync(
         string sessionId,
         string? branchId = null,
         CancellationToken cancellationToken = default)
@@ -3711,13 +3716,13 @@ public sealed class Agent
         }
 
         var session = await store.LoadSessionAsync(sessionId, cancellationToken)
-            ?? new Session(sessionId);
+            ?? throw new SessionNotFoundException(sessionId);
         session.Store = store;
 
         var branch = await store.LoadBranchAsync(sessionId, branchId, cancellationToken)
-            ?? session.CreateBranch(branchId);
+            ?? throw new SessionNotFoundException(sessionId, branchId);
 
-        // Ensure back-reference is set (CreateBranch sets it, but loaded branches need it too)
+        // Ensure back-reference is set on loaded branches
         branch.Session = session;
 
         return (session, branch);
@@ -3726,7 +3731,7 @@ public sealed class Agent
     /// <summary>
     /// Saves session metadata and branch to the configured store.
     /// </summary>
-    public async Task SaveSessionAndBranchAsync(
+    internal async Task SaveSessionAndBranchAsync(
         Session session,
         Branch branch,
         CancellationToken cancellationToken = default)
@@ -3742,6 +3747,47 @@ public sealed class Agent
         await store.SaveBranchAsync(session.Id, branch, cancellationToken);
     }
 
+    /// <summary>
+    /// Creates a new session and its default "main" branch in the configured store.
+    /// Must be called before <c>RunAsync(userMessage, sessionId)</c> when a store is configured.
+    /// </summary>
+    /// <param name="sessionId">Session identifier. If null, a new GUID is generated.</param>
+    /// <param name="metadata">Optional metadata to attach to the session.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created session ID.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if no session store is configured, or if a session with the same ID already exists.</exception>
+    public async Task<string> CreateSessionAsync(
+        string? sessionId = null,
+        Dictionary<string, object>? metadata = null,
+        CancellationToken cancellationToken = default)
+    {
+        var store = Config.SessionStore
+            ?? throw new InvalidOperationException(
+                "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
+
+        var id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString() : sessionId;
+
+        var existing = await store.LoadSessionAsync(id, cancellationToken);
+        if (existing != null)
+            throw new InvalidOperationException(
+                $"Session '{id}' already exists. Session IDs must be unique — use a different ID or load the existing session.");
+
+        var session = new Session(id);
+        var branch = session.CreateBranch("main");
+        session.Store = store;
+
+        if (metadata != null)
+        {
+            foreach (var kvp in metadata)
+                session.AddMetadata(kvp.Key, kvp.Value);
+        }
+
+        await store.SaveSessionAsync(session, cancellationToken);
+        await store.SaveBranchAsync(id, branch, cancellationToken);
+
+        return id;
+    }
+
     //
     // V3 BRANCH MANAGEMENT (Session + Branch Architecture)
     //
@@ -3753,7 +3799,7 @@ public sealed class Agent
     /// <param name="branchId">Branch identifier</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Branch if found, null otherwise</returns>
-    public async Task<Branch?> LoadBranchAsync(
+    internal async Task<Branch?> LoadBranchAsync(
         string sessionId,
         string branchId,
         CancellationToken cancellationToken = default)
@@ -3773,7 +3819,7 @@ public sealed class Agent
     /// </summary>
     /// <param name="branch">Branch to save</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    public async Task SaveBranchAsync(
+    internal async Task SaveBranchAsync(
         Branch branch,
         CancellationToken cancellationToken = default)
     {
@@ -3792,7 +3838,7 @@ public sealed class Agent
     /// <param name="sessionId">Session identifier</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>List of branch IDs</returns>
-    public async Task<List<string>> ListBranchesAsync(
+    internal async Task<List<string>> ListBranchesAsync(
         string sessionId,
         CancellationToken cancellationToken = default)
     {
@@ -3810,7 +3856,7 @@ public sealed class Agent
     /// </summary>
     /// <param name="branch">Branch to delete</param>
     /// <param name="cancellationToken">Cancellation token</param>
-    public async Task DeleteBranchAsync(
+    internal async Task DeleteBranchAsync(
         Branch branch,
         CancellationToken cancellationToken = default)
     {
@@ -3842,7 +3888,7 @@ public sealed class Agent
     /// <item>Session back-reference: Copied from source branch</item>
     /// </list>
     /// </remarks>
-    public async Task<Branch> ForkBranchAsync(
+    internal async Task<Branch> ForkBranchAsync(
         Branch sourceBranch,
         string newBranchId,
         int fromMessageIndex,

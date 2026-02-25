@@ -17,7 +17,7 @@ public class SessionBuilderExtensionTests : AgentTestBase
     //──────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void WithSessionStore_StoreOnly_SetsManualSave()
+    public void WithSessionStore_StoreOnly_SetsAutoSave()
     {
         // Arrange
         var store = new InMemorySessionStore();
@@ -29,7 +29,7 @@ public class SessionBuilderExtensionTests : AgentTestBase
         // Assert
         Assert.Same(store, builder.Config.SessionStore);
         Assert.NotNull(builder.Config.SessionStoreOptions);
-        Assert.False(builder.Config.SessionStoreOptions.PersistAfterTurn);
+        Assert.True(builder.Config.SessionStoreOptions.PersistAfterTurn);
     }
 
     //──────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ public class SessionBuilderExtensionTests : AgentTestBase
     }
 
     [Fact]
-    public void WithSessionStore_WithPathDefaultPersistAfterTurn_SetsManualSave()
+    public void WithSessionStore_WithPathDefaultPersistAfterTurn_SetsAutoSave()
     {
         // Arrange
         var builder = new AgentBuilder();
@@ -128,10 +128,10 @@ public class SessionBuilderExtensionTests : AgentTestBase
         try
         {
             // Act
-            builder.WithSessionStore(tempPath); // persistAfterTurn defaults to false
+            builder.WithSessionStore(tempPath); // persistAfterTurn defaults to true
 
             // Assert
-            Assert.False(builder.Config.SessionStoreOptions?.PersistAfterTurn);
+            Assert.True(builder.Config.SessionStoreOptions?.PersistAfterTurn);
         }
         finally
         {

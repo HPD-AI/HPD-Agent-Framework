@@ -113,7 +113,7 @@ internal sealed class ConfigAgentFactory : AgentFactory
             builder.WithChatClient(fallbackChatClient);
         }
 
-        return await builder.Build(cancellationToken);
+        return await builder.BuildAsync(cancellationToken);
     }
 
     internal override AgentConfig? GetConfig() => _config;

@@ -140,13 +140,11 @@ internal static class BranchEndpoints
     {
         try
         {
-            var session = await manager.Store.LoadSessionAsync(sid, ct);
-            if (session == null)
+            var sessionExists = await manager.Store.LoadSessionAsync(sid, ct);
+            if (sessionExists == null)
             {
                 return ErrorResponses.NotFound();
             }
-
-            session.Store = manager.Store;
 
             // Generate branch ID if not provided
             var branchId = string.IsNullOrWhiteSpace(request.BranchId)
@@ -160,28 +158,23 @@ internal static class BranchEndpoints
                 return ErrorResponses.Conflict();
             }
 
-            // Use agent to create branch (Agent has access to internal constructors)
+            // Use string-based ForkBranchAsync to create the new branch from message 0
             var agent = await manager.GetOrCreateAgentAsync(sid, ct);
-            var (_, branch) = await agent.LoadSessionAndBranchAsync(sid, branchId, ct);
+            await agent.ForkBranchAsync(sid, "main", branchId, 0, ct);
 
-            // Set Name and Description from request
+            var branch = await manager.Store.LoadBranchAsync(sid, branchId, ct)
+                ?? throw new InvalidOperationException($"Branch '{branchId}' not found after creation.");
+
             if (!string.IsNullOrEmpty(request.Name))
-            {
                 branch.Name = request.Name;
-            }
 
             if (!string.IsNullOrEmpty(request.Description))
-            {
                 branch.Description = request.Description;
-            }
 
             if (request.Tags != null && request.Tags.Count > 0)
-            {
                 branch.Tags = request.Tags;
-            }
 
             await manager.Store.SaveBranchAsync(sid, branch, ct);
-            await manager.Store.SaveSessionAsync(session, ct);
 
             var dto = ToBranchDto(branch, sid);
             return ErrorResponses.Created($"/sessions/{sid}/branches/{branch.Id}", dto);
@@ -207,44 +200,39 @@ internal static class BranchEndpoints
             // V3: Use session-level lock for atomic sibling updates
             return await manager.WithSessionLockAsync(sid, async () =>
             {
-                var session = await manager.Store.LoadSessionAsync(sid, ct);
-                if (session == null)
+                var sessionExists = await manager.Store.LoadSessionAsync(sid, ct);
+                if (sessionExists == null)
                 {
                     return ErrorResponses.NotFound();
                 }
 
-                var sourceBranch = await manager.Store.LoadBranchAsync(sid, bid, ct);
-                if (sourceBranch == null)
+                var sourceBranchExists = await manager.Store.LoadBranchAsync(sid, bid, ct);
+                if (sourceBranchExists == null)
                 {
                     return ErrorResponses.NotFound();
                 }
 
-                session.Store = manager.Store;
-
-                // Use agent to fork branch (Agent has access to internal methods)
-                var agent = await manager.GetOrCreateAgentAsync(sid, ct);
                 var newBranchId = string.IsNullOrWhiteSpace(request.NewBranchId)
                     ? Guid.NewGuid().ToString()
                     : request.NewBranchId;
-                var newBranch = await agent.ForkBranchAsync(sourceBranch, newBranchId, request.FromMessageIndex, ct);
 
-                // Set Name and Description from request
+                var agent = await manager.GetOrCreateAgentAsync(sid, ct);
+                await agent.ForkBranchAsync(sid, bid, newBranchId, request.FromMessageIndex, ct);
+
+                var newBranch = await manager.Store.LoadBranchAsync(sid, newBranchId, ct)
+                    ?? throw new InvalidOperationException($"Branch '{newBranchId}' not found after fork.");
+
                 if (!string.IsNullOrEmpty(request.Name))
-                {
                     newBranch.Name = request.Name;
-                }
 
                 if (!string.IsNullOrEmpty(request.Description))
-                {
                     newBranch.Description = request.Description;
-                }
 
                 if (request.Tags != null && request.Tags.Count > 0)
-                {
                     newBranch.Tags = request.Tags;
-                }
 
-                // Note: newBranch is already saved by ForkBranchAsync
+                await manager.Store.SaveBranchAsync(sid, newBranch, ct);
+
                 var dto = ToBranchDto(newBranch, sid);
                 return ErrorResponses.Created($"/sessions/{sid}/branches/{newBranch.Id}", dto);
 

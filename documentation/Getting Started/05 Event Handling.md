@@ -114,10 +114,10 @@ case PermissionRequestEvent permission:
 using HPD.Agent;
 using HPD.Agent.Events;
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("anthropic", "claude-sonnet-4-5")
     .WithSystemInstructions("You are a helpful assistant.")
-    .Build();
+    .BuildAsync();
 
 var messages = new List<ChatMessage>
 {

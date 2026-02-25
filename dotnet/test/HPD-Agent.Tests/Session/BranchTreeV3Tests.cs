@@ -498,6 +498,6 @@ public class BranchTreeV3Tests : AgentTestBase
     {
         return await new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None);
+            .BuildAsync(CancellationToken.None);
     }
 }

@@ -402,7 +402,7 @@ public class AgentSessionManagerTests : IDisposable
                 .WithSessionStore(Store)
                 .WithCircuitBreaker(5)
                 .WithErrorTracking(maxConsecutiveErrors: 3)
-                .Build(ct);
+                .BuildAsync(ct);
         }
 
         protected override TimeSpan GetIdleTimeout() => TimeSpan.FromMinutes(30);

@@ -130,6 +130,6 @@ internal class TestWebApplicationAgentFactory : IAgentFactory
                 options.PersistAfterTurn = true;
             })
             .WithCircuitBreaker(5)
-            .Build(ct);
+            .BuildAsync(ct);
     }
 }

@@ -61,9 +61,6 @@ internal static class StreamingEndpoints
                 var agent = await manager.GetOrCreateAgentAsync(sid, ct);
                 manager.SetStreaming(sid, true);
 
-                // Set up session context
-                session.Store = manager.Store;
-
                 // Extract user message from request
                 string userMessage = "";
                 if (request.Messages != null && request.Messages.Count > 0)
@@ -165,9 +162,6 @@ internal static class StreamingEndpoints
             // Get or create agent
             var agent = await manager.GetOrCreateAgentAsync(sid, ct);
             manager.SetStreaming(sid, true);
-
-            // Set up session context
-            session.Store = manager.Store;
 
             // Receive initial message from client
             var buffer = new byte[1024 * 4];

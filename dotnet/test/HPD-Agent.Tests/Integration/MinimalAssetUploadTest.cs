@@ -33,7 +33,7 @@ public class MinimalAssetUploadTest
                 .WithName("MinimalAgent")
                 .WithChatClient(chatClient)
                 .WithContentStore(store.GetContentStore("minimal-session")!)
-                .Build();
+                .BuildAsync();
 
             // Create message with DataContent
             var imageBytes = new byte[] { 0x89, 0x50, 0x4E, 0x47 };

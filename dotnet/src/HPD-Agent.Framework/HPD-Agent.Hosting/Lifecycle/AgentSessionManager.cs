@@ -45,7 +45,7 @@ public abstract class AgentSessionManager : IDisposable
     /// without requiring a configured AI provider. Sessions are provider-agnostic
     /// containers; the agent/provider is only needed during streaming.
     /// </summary>
-    public async Task<(Session session, Branch branch)> CreateSessionAsync(
+    public async Task<(string sessionId, string branchId)> CreateSessionAsync(
         string? sessionId = null,
         Dictionary<string, object>? metadata = null,
         CancellationToken ct = default)
@@ -64,7 +64,7 @@ public abstract class AgentSessionManager : IDisposable
         await _store.SaveSessionAsync(session, ct);
         await _store.SaveBranchAsync(id, branch, ct);
 
-        return (session, branch);
+        return (id, "main");
     }
 
     /// <summary>

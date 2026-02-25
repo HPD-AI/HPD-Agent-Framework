@@ -213,7 +213,7 @@ public class AgentSessionManagerRegistryTests
 
             return new AgentBuilder(config, providerRegistry)
                 .WithSessionStore(store)
-                .Build(ct);
+                .BuildAsync(ct);
         }
     }
 

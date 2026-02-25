@@ -63,7 +63,7 @@ internal class AspNetCoreSessionManager : AgentSessionManager
         builder.WithSessionStore(Store, opts.PersistAfterTurn);
         opts.ConfigureAgent?.Invoke(builder);
 
-        return await builder.Build(ct);
+        return await builder.BuildAsync(ct);
     }
 
     protected override TimeSpan GetIdleTimeout() =>

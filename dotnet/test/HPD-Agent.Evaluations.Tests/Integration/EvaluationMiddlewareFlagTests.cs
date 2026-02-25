@@ -52,7 +52,7 @@ public sealed class EvaluationMiddlewareFlagTests
 
         var builder = new AgentBuilder(MakeConfig(), new StubProviderRegistry(client));
         builder.AddEvaluator(evaluator);
-        var agent = await builder.Build(CancellationToken.None);
+        var agent = await builder.BuildAsync(CancellationToken.None);
 
         await RunAgentAsync(agent, "Hello", new AgentRunConfig { DisableEvaluators = true });
 
@@ -71,7 +71,7 @@ public sealed class EvaluationMiddlewareFlagTests
 
         var builder = new AgentBuilder(MakeConfig(), new StubProviderRegistry(client));
         builder.AddEvaluator(evaluator);
-        var agent = await builder.Build(CancellationToken.None);
+        var agent = await builder.BuildAsync(CancellationToken.None);
 
         await RunAgentAsync(agent, "Hello", new AgentRunConfig { IsInternalEvalJudgeCall = true });
 

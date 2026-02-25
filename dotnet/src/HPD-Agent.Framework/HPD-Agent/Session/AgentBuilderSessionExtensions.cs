@@ -6,7 +6,8 @@ namespace HPD.Agent;
 public static class AgentBuilderSessionExtensions
 {
     /// <summary>
-    /// Configures the session store for the agent with manual save mode (default).
+    /// Configures the session store for the agent.
+    /// Auto-save after each turn is enabled by default when a store is explicitly configured.
     /// Crash recovery via uncommitted turns is automatic when a store is configured.
     /// </summary>
     public static AgentBuilder WithSessionStore(
@@ -17,7 +18,7 @@ public static class AgentBuilderSessionExtensions
         ArgumentNullException.ThrowIfNull(store);
 
         builder.Config.SessionStore = store;
-        builder.Config.SessionStoreOptions = new SessionStoreOptions { PersistAfterTurn = false };
+        builder.Config.SessionStoreOptions = new SessionStoreOptions { PersistAfterTurn = true };
         return builder;
     }
 
@@ -64,7 +65,7 @@ public static class AgentBuilderSessionExtensions
     public static AgentBuilder WithSessionStore(
         this AgentBuilder builder,
         string storagePath,
-        bool persistAfterTurn = false)
+        bool persistAfterTurn = true)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(storagePath);

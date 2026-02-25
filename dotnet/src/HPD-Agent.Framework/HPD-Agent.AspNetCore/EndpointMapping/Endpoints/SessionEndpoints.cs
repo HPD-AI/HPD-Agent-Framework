@@ -65,10 +65,13 @@ internal static class SessionEndpoints
         {
             // Create session directly in the store — no agent/provider needed.
             // Sessions are provider-agnostic; the agent is only needed during streaming.
-            var (session, _) = await manager.CreateSessionAsync(
+            var (sessionId, _) = await manager.CreateSessionAsync(
                 request?.SessionId,
                 request?.Metadata,
                 ct);
+
+            var session = await manager.Store.LoadSessionAsync(sessionId, ct)
+                ?? throw new InvalidOperationException($"Session '{sessionId}' not found after creation.");
 
             var dto = new SessionDto(
                 session.Id,

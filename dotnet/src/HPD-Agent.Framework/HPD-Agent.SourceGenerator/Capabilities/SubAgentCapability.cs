@@ -101,7 +101,7 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();
-        sb.AppendLine("        var agent = await agentBuilder.Build();");
+        sb.AppendLine("        var agent = await agentBuilder.BuildAsync();");
         sb.AppendLine();
 
         // Set up event bubbling via parent-child linking
@@ -172,6 +172,9 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("            ? queryProp.GetString() ?? string.Empty");
         sb.AppendLine("            : string.Empty;");
         sb.AppendLine();
+        sb.AppendLine("        // Create session explicitly before running");
+        sb.AppendLine("        await agent.CreateSessionAsync(sessionId, cancellationToken: cancellationToken);");
+        sb.AppendLine();
         sb.AppendLine("        // Create user message and run agent with event streaming");
         sb.AppendLine("        var textResult = new System.Text.StringBuilder();");
         sb.AppendLine("        await foreach (var evt in agent.RunAsync(");
@@ -199,8 +202,8 @@ internal class SubAgentCapability : BaseCapability
         sb.AppendLine("        {");
         sb.AppendLine("            return textResult.ToString();");
         sb.AppendLine("        }");
-        sb.AppendLine("        var (_, branch) = await agent.LoadSessionAndBranchAsync(sessionId, \"main\", cancellationToken);");
-        sb.AppendLine("        return branch.Messages");
+        sb.AppendLine("        var branch = await agent.Config.SessionStore!.LoadBranchAsync(sessionId, \"main\", cancellationToken);");
+        sb.AppendLine("        return branch?.Messages");
         sb.AppendLine("            .LastOrDefault(m => m.Role == ChatRole.Assistant)");
         sb.AppendLine("            ?.Text ?? string.Empty;");
         sb.AppendLine("    },");

@@ -49,7 +49,7 @@ public static class TestAgentFactory
 
         // Build and return core agent (not protocol-wrapped)
         // Use the internal BuildCoreAsync method to get the core agent directly
-        return builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        return builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>

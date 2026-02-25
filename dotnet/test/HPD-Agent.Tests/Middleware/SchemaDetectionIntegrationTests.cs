@@ -186,7 +186,7 @@ public class SchemaDetectionIntegrationTests : AgentTestBase
             .WithObserver(_eventObserver)
             .WithServiceProvider(serviceProvider)
             .WithSessionStore(store)
-            .Build(CancellationToken.None).GetAwaiter().GetResult();
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         return agent;
     }

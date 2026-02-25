@@ -224,8 +224,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         var runConfig = BuildRunConfig(options, context);
 
         await foreach (var evt in agent.RunAsync(
-            messages: messages,
-            session: null,
+            messages,
             options: runConfig,
             cancellationToken: ct))
         {
@@ -270,8 +269,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         object? result = null;
 
         await foreach (var evt in agent.RunAsync(
-            messages: messages,
-            session: null,
+            messages,
             options: runConfig,
             cancellationToken: ct))
         {
@@ -326,8 +324,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         Type? matchedType = null;
 
         await foreach (var evt in agent.RunAsync(
-            messages: messages,
-            session: null,
+            messages,
             options: runConfig,
             cancellationToken: ct))
         {
@@ -403,8 +400,7 @@ internal sealed class AgentNodeHandler : IGraphNodeHandler<AgentGraphContext>
         }
 
         await foreach (var evt in agent.RunAsync(
-            messages: messages,
-            session: null,
+            messages,
             options: runConfig,
             cancellationToken: ct))
         {

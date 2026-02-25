@@ -32,7 +32,7 @@ using HPD.Agent.Providers.OnnxRuntime;
 var agent = await new AgentBuilder()
     .WithOnnxRuntime(
         modelPath: "/path/to/phi-3-mini-4k-instruct-onnx")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -69,17 +69,35 @@ var agent = await new AgentBuilder()
             opts.DoSample = true;
             opts.TopP = 0.9f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`onnx-config.json`:**
+```json
+{
+    "name": "OnnxAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "onnx-runtime",
+        "modelName": "phi-3-mini",
+        "providerOptionsJson": "{\"modelPath\":\"/path/to/model\",\"maxLength\":2048,\"temperature\":0.7,\"doSample\":true}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("onnx-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing ONNX Runtime-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -92,44 +110,18 @@ var config = new AgentConfig
     }
 };
 
-var onnxOpts = new OnnxRuntimeProviderConfig
+config.Provider.SetTypedProviderConfig(new OnnxRuntimeProviderConfig
 {
-    ModelPath = "/path/to/phi-3-mini",
+    ModelPath = "/path/to/model",
     MaxLength = 2048,
     Temperature = 0.7f,
-    DoSample = true,
-    TopP = 0.9f
-};
-config.Provider.SetTypedProviderConfig(onnxOpts);
+    DoSample = true
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "OnnxAgent",
-    "Provider": {
-        "ProviderKey": "onnx-runtime",
-        "ModelName": "phi-3-mini",
-        "ProviderOptionsJson": "{\"modelPath\":\"/path/to/phi-3-mini\",\"maxLength\":2048,\"temperature\":0.7,\"doSample\":true,\"topP\":0.9}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("onnx-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -154,15 +146,15 @@ var onnxOpts = new OnnxRuntimeProviderConfig
 config.Provider.SetTypedProviderConfig(onnxOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -430,7 +422,7 @@ var agent = await new AgentBuilder()
                 }
             };
         })
-    .Build();
+    .BuildAsync();
 
 // DirectML (Windows, any GPU)
 var agent = await new AgentBuilder()
@@ -440,7 +432,7 @@ var agent = await new AgentBuilder()
         {
             opts.Providers = new List<string> { "dml", "cpu" };
         })
-    .Build();
+    .BuildAsync();
 
 // OpenVINO (Intel hardware)
 var agent = await new AgentBuilder()
@@ -450,7 +442,7 @@ var agent = await new AgentBuilder()
         {
             opts.Providers = new List<string> { "openvino", "cpu" };
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Constrained Generation
@@ -476,7 +468,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""name"", ""age""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Extract user info: John Doe, 30 years old, john@example.com");
 // Guaranteed to return valid JSON matching the schema
@@ -498,7 +490,7 @@ var agent = await new AgentBuilder()
                 verb ::= 'chases' | 'loves' | 'sees'
             ";
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Multi-LoRA Adapters
@@ -514,7 +506,7 @@ var agent = await new AgentBuilder()
             opts.AdapterPath = "/path/to/adapters.onnx_adapter";
             opts.AdapterName = "math_specialist";
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Solve: 2x + 5 = 15");
 ```
@@ -533,7 +525,7 @@ var agent = await new AgentBuilder()
             opts.DoSample = true;
             opts.Temperature = 0.7f;
         })
-    .Build();
+    .BuildAsync();
 
 // Same input + same seed = same output every time
 var response1 = await agent.RunAsync("Generate a random story");
@@ -556,7 +548,7 @@ var agent = await new AgentBuilder()
             opts.EarlyStopping = true;
             opts.LengthPenalty = 1.2f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ## Error Handling
@@ -614,7 +606,7 @@ using HPD.Agent.Providers.OnnxRuntime;
 var agent = await new AgentBuilder()
     .WithOnnxRuntime(
         modelPath: "/path/to/phi-3-mini-4k-instruct-onnx")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -633,7 +625,7 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.7f;
             opts.DoSample = true;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Write a detailed essay about artificial intelligence.");
 ```
@@ -644,7 +636,7 @@ var response = await agent.RunAsync("Write a detailed essay about artificial int
 var agent = await new AgentBuilder()
     .WithOnnxRuntime(
         modelPath: "/path/to/model")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a short story about space exploration."))
 {
@@ -671,7 +663,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""product"", ""price"", ""inStock""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Extract product info: MacBook Pro for $2499, available now");
 // Returns: {"product":"MacBook Pro","price":2499,"inStock":true}
@@ -692,7 +684,7 @@ var agent = await new AgentBuilder()
             opts.RandomSeed = 12345;
             opts.RepetitionPenalty = 1.1f;
         })
-    .Build();
+    .BuildAsync();
 
 // Reproducible creative generation
 var story1 = await agent.RunAsync("Generate a creative story about robots.");
@@ -712,7 +704,7 @@ var mathAgent = await new AgentBuilder()
             opts.AdapterPath = "/path/to/adapters.onnx_adapter";
             opts.AdapterName = "math_adapter";
         })
-    .Build();
+    .BuildAsync();
 
 // Code-specialized agent (same base model, different adapter)
 var codeAgent = await new AgentBuilder()
@@ -723,7 +715,7 @@ var codeAgent = await new AgentBuilder()
             opts.AdapterPath = "/path/to/adapters.onnx_adapter";
             opts.AdapterName = "code_adapter";
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Example 7: Beam Search for Quality
@@ -740,7 +732,7 @@ var agent = await new AgentBuilder()
             opts.LengthPenalty = 1.2f;
             opts.NoRepeatNgramSize = 3;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Translate to French: The weather is beautiful today.");
 // Higher quality translation due to beam search
@@ -874,6 +866,57 @@ configure: opts =>
     opts.ChunkSize = 512; // Enable chunking
 }
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all ONNX Runtime-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `OnnxRuntimeProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "onnx-runtime",
+        "modelName": "phi-3-mini",
+        "providerOptionsJson": "{\"modelPath\":\"/path/to/model\",\"maxLength\":2048,\"temperature\":0.7,\"doSample\":true,\"topK\":50,\"topP\":0.9,\"randomSeed\":42}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `modelPath` | string | — | **Required.** Path to ONNX model directory |
+| `maxLength` | int | ≥ 1 | Max sequence length (0=model.context_length) |
+| `minLength` | int | ≥ 0 | Min sequence length |
+| `batchSize` | int | ≥ 1 | Input batch size (default: 1) |
+| `doSample` | bool | — | Use sampling (false=greedy decoding, default: false) |
+| `temperature` | float | > 0.0 | Sampling randomness (default: 1.0, only when `doSample` is true) |
+| `topK` | int | ≥ 1 | Top-K sampling (default: 50, only when `doSample` is true) |
+| `topP` | float | 0.0–1.0 | Nucleus sampling (only when `doSample` is true) |
+| `repetitionPenalty` | float | ≥ 1.0 | Repetition penalty (1.0=no penalty) |
+| `noRepeatNgramSize` | int | ≥ 0 | Prevent n-gram repetition (0=disabled) |
+| `numBeams` | int | ≥ 1 | Beam search width (1=greedy, default: 1) |
+| `numReturnSequences` | int | ≥ 1 | Sequences to return from beam search (≤ numBeams) |
+| `earlyStopping` | bool | — | Stop beam search early (default: true) |
+| `lengthPenalty` | float | — | Beam length penalty (>1=longer, <1=shorter, default: 1.0) |
+| `diversityPenalty` | float | ≥ 0.0 | Beam diversity penalty |
+| `randomSeed` | int | -1 or any | RNG seed (-1=random, any other=deterministic, default: -1) |
+| `stopSequences` | string[] | — | Stop generation sequences |
+| `enableCaching` | bool | — | Enable conversation caching (default: false) |
+| `guidanceType` | string | `"json"`, `"grammar"`, `"regex"` | Constrained decoding type |
+| `guidanceData` | string | — | Schema/grammar/regex for constrained decoding |
+| `guidanceEnableFFTokens` | bool | — | Fast-forward tokens for guidance (default: false) |
+| `pastPresentShareBuffer` | bool | — | Share KV buffer (CUDA only, default: false) |
+| `chunkSize` | int | ≥ 1 | Prefill chunk size (0=disabled) |
+| `providers` | string[] | `"cuda"`, `"cpu"`, `"dml"`, `"qnn"`, etc. | Execution providers in priority order |
+| `providerOptions` | object | — | Provider-specific options (`{ "cuda": { "device_id": "0" } }`) |
+| `hardwareDeviceType` | string | `"cpu"`, `"gpu"`, `"npu"` | Decoder device type |
+| `hardwareDeviceId` | uint | ≥ 0 | Decoder device ID |
+| `hardwareVendorId` | uint | — | Decoder hardware vendor ID |
+| `adapterPath` | string | — | LoRA adapter file path |
+| `adapterName` | string | — | LoRA adapter name to activate |
+
+---
 
 ## OnnxRuntimeProviderConfig API Reference
 

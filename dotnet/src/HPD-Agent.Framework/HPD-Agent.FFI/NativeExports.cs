@@ -185,7 +185,7 @@ public static partial class NativeExports
                 }
             }
 
-            var agent = builder.Build();
+            var agent = builder.BuildAsync().GetAwaiter().GetResult();
             return ObjectManager.Add(agent);
         }
         catch (Exception ex)

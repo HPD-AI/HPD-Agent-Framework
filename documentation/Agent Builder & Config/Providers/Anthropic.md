@@ -31,7 +31,7 @@ Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-...");
 
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -69,17 +69,36 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.7;
             opts.EnablePromptCaching = true;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`claude-config.json`:**
+```json
+{
+    "name": "ClaudeAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "anthropic",
+        "modelName": "claude-sonnet-4-5-20250929",
+        "apiKey": "sk-ant-...",
+        "providerOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"enablePromptCaching\":true}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("claude-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Anthropic-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -88,46 +107,22 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "anthropic",
-        ModelName = "claude-sonnet-4-5-20250929"
+        ModelName = "claude-sonnet-4-5-20250929",
+        ApiKey = "sk-ant-..."
     }
 };
 
-var anthropicOpts = new AnthropicProviderConfig
+config.Provider.SetTypedProviderConfig(new AnthropicProviderConfig
 {
     MaxTokens = 4096,
     Temperature = 0.7,
     EnablePromptCaching = true
-};
-config.Provider.SetTypedProviderConfig(anthropicOpts);
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "ClaudeAgent",
-    "Provider": {
-        "ProviderKey": "anthropic",
-        "ModelName": "claude-sonnet-4-5-20250929",
-        "ProviderOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"enablePromptCaching\":true}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("claude-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -152,15 +147,15 @@ var anthropicOpts = new AnthropicProviderConfig
 config.Provider.SetTypedProviderConfig(anthropicOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -292,7 +287,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 // Automatically uses ANTHROPIC_API_KEY environment variable
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: Configuration File (Recommended for Production)
@@ -310,7 +305,7 @@ var agent = await new AgentBuilder()
 // Automatically loads from appsettings.json
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 3: Explicit Parameter (Use with Caution)
@@ -320,7 +315,7 @@ var agent = await new AgentBuilder()
     .WithAnthropic(
         model: "claude-sonnet-4-5-20250929",
         apiKey: "sk-ant-...")
-    .Build();
+    .BuildAsync();
 ```
 
  **Security Warning:** Never hardcode API keys in source code. Use environment variables or configuration files instead.
@@ -389,7 +384,7 @@ var agent = await new AgentBuilder()
         {
             opts.ThinkingBudgetTokens = 4096; // Must be >= 1024
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Solve this complex math problem...");
 // Response includes thinking content blocks showing reasoning steps
@@ -420,7 +415,7 @@ var agent = await new AgentBuilder()
             opts.EnablePromptCaching = true;
             opts.PromptCacheTTLMinutes = 5; // Cache expires after 5 min of inactivity
         })
-    .Build();
+    .BuildAsync();
 
 // First call - full cost
 var response1 = await agent.RunAsync("Analyze this large document...");
@@ -457,7 +452,7 @@ var agent = await new AgentBuilder()
         {
             opts.ServiceTier = "auto"; // or "standard_only"
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **auto** (default):
@@ -524,7 +519,7 @@ var agent = await new AgentBuilder()
         config.MaxRetryDelay = TimeSpan.FromSeconds(60);
         config.RetryMultiplier = 2.0; // Exponential backoff
     })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Common Exceptions
@@ -603,7 +598,7 @@ using HPD.Agent.Providers.Anthropic;
 
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -630,7 +625,7 @@ public class WeatherToolkit
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Seattle and what's the forecast?");
 // Claude automatically calls both tools and synthesizes the response
@@ -641,7 +636,7 @@ var response = await agent.RunAsync("What's the weather in Seattle and what's th
 ```csharp
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 
 Console.Write("Claude: ");
 await foreach (var chunk in agent.RunAsync("Write a short story about AI."))
@@ -661,7 +656,7 @@ var agent = await new AgentBuilder()
         {
             opts.ThinkingBudgetTokens = 4096; // Enable thinking mode
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
     A farmer needs to cross a river with a fox, a chicken, and a bag of grain.
@@ -685,7 +680,7 @@ var agent = await new AgentBuilder()
             opts.EnablePromptCaching = true;
             opts.PromptCacheTTLMinutes = 10;
         })
-    .Build();
+    .BuildAsync();
 
 // First call - caches the large documentation
 var response1 = await agent.RunAsync(@"
@@ -707,7 +702,7 @@ var response2 = await agent.RunAsync(@"
 ```csharp
 var agent = await new AgentBuilder()
     .WithAnthropic(model: "claude-sonnet-4-5-20250929")
-    .Build();
+    .BuildAsync();
 
 var imageBytes = File.ReadAllBytes("diagram.png");
 var imageData = Convert.ToBase64String(imageBytes);
@@ -743,7 +738,7 @@ var agent = await new AgentBuilder()
             opts.MaxTokens = 4096;
             opts.Temperature = 0.7;
         })
-    .Build();
+    .BuildAsync();
 
 var history = new List<ChatMessage>();
 
@@ -809,7 +804,7 @@ var agent = await new AgentBuilder()
     .WithAnthropic(
         model: "claude-sonnet-4-5-20250929",
         clientFactory: client => new LoggingChatClient(client, logger))
-    .Build();
+    .BuildAsync();
 ```
 
 ## Troubleshooting
@@ -982,6 +977,37 @@ HPD-Agent itself is fully Native AOT compatible with comprehensive source genera
 ### Contributing
 
 If Native AOT support for Anthropic is critical to your use case, consider contributing to the [upstream Anthropic SDK](https://github.com/anthropics/anthropic-sdk-csharp) to add source generation support.
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Anthropic-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `AnthropicProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "anthropic",
+        "modelName": "claude-sonnet-4-5-20250929",
+        "apiKey": "sk-ant-...",
+        "providerOptionsJson": "{"maxTokens":4096,"temperature":0.7,"enablePromptCaching":true,"serviceTier":"auto"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxTokens` | int | ≥ 1 | Max tokens to generate (default: 4096) |
+| `temperature` | double | 0.0–1.0 | Sampling randomness |
+| `topP` | double | 0.0–1.0 | Nucleus sampling threshold |
+| `topK` | long | ≥ 1 | Top-K sampling (Anthropic-specific) |
+| `stopSequences` | string[] | — | Stop generation sequences |
+| `thinkingBudgetTokens` | long | ≥ 1024 | Enable extended thinking with token budget |
+| `serviceTier` | string | `"auto"`, `"standard_only"` | Request priority tier |
+| `enablePromptCaching` | bool | — | Enable prompt caching to reduce costs |
+| `promptCacheTTLMinutes` | int | 1–60 | Cache TTL in minutes (default: 5) |
+
+---
 
 ## AnthropicProviderConfig API Reference
 

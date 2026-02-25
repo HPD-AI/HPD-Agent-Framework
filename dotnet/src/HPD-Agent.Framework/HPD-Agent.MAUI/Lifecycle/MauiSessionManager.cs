@@ -62,7 +62,7 @@ public sealed class MauiSessionManager : AgentSessionManager
         builder.WithSessionStore(Store);
         opts.ConfigureAgent?.Invoke(builder);
 
-        return await builder.Build(ct);
+        return await builder.BuildAsync(ct);
     }
 
     protected override TimeSpan GetIdleTimeout() =>

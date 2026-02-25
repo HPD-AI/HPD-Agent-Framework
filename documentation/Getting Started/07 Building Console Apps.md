@@ -19,13 +19,13 @@ using HPD.Agent;
 using HPD.Agent.Events;
 
 // Configure the agent
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("anthropic", "claude-sonnet-4-5")
     .WithSystemInstructions("You are a helpful assistant.")
-    .Build();
+    .BuildAsync();
 
-// Start conversation
-var messages = new List<ChatMessage>();
+// Create a session to track conversation history
+var sessionId = await agent.CreateSessionAsync();
 
 while (true)
 {
@@ -34,11 +34,9 @@ while (true)
     var input = Console.ReadLine();
     if (string.IsNullOrEmpty(input)) break;
 
-    messages.Add(new ChatMessage { Role = "user", Content = input });
-
-    // Stream agent response
+    // Stream agent response — history is tracked automatically via sessionId
     Console.Write("Agent: ");
-    await foreach (var evt in agent.RunAsync(messages))
+    await foreach (var evt in agent.RunAsync(input, sessionId: sessionId))
     {
         switch (evt)
         {

@@ -32,7 +32,7 @@ using HPD.Agent.Providers.Ollama;
 // Uses local Ollama at http://localhost:11434
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3:8b")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -73,17 +73,36 @@ var agent = await new AgentBuilder()
             opts.NumCtx = 4096;
             opts.TopP = 0.9f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`ollama-config.json`:**
+```json
+{
+    "name": "OllamaAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "ollama",
+        "modelName": "llama3:8b",
+        "endpoint": "http://localhost:11434",
+        "providerOptionsJson": "{\"temperature\":0.7,\"numPredict\":2048,\"numCtx\":4096}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("ollama-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Ollama-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -97,43 +116,17 @@ var config = new AgentConfig
     }
 };
 
-var ollamaOpts = new OllamaProviderConfig
+config.Provider.SetTypedProviderConfig(new OllamaProviderConfig
 {
     Temperature = 0.7f,
     NumPredict = 2048,
     NumCtx = 4096
-};
-config.Provider.SetTypedProviderConfig(ollamaOpts);
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "OllamaAgent",
-    "Provider": {
-        "ProviderKey": "ollama",
-        "ModelName": "llama3:8b",
-        "Endpoint": "http://localhost:11434",
-        "ProviderOptionsJson": "{\"temperature\":0.7,\"numPredict\":2048,\"numCtx\":4096}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("ollama-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -157,15 +150,15 @@ var ollamaOpts = new OllamaProviderConfig
 config.Provider.SetTypedProviderConfig(ollamaOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -357,7 +350,7 @@ configure: opts =>
 // Uses http://localhost:11434
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3:8b")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Remote Ollama Server
@@ -367,7 +360,7 @@ var agent = await new AgentBuilder()
     .WithOllama(
         model: "mistral",
         endpoint: "http://gpu-server:11434")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Environment Variable Configuration
@@ -382,7 +375,7 @@ export OLLAMA_HOST="http://localhost:11434"
 // Automatically uses OLLAMA_ENDPOINT or OLLAMA_HOST
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3:8b")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Endpoint Priority
@@ -448,7 +441,7 @@ var agent = await new AgentBuilder()
     .WithOllama(
         model: "llama3:8b",
         configure: opts => opts.Format = "json")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(
     "List 3 programming languages with their release years in JSON format");
@@ -468,7 +461,7 @@ var agent = await new AgentBuilder()
             opts.NumCtx = 8192; // Larger context for reasoning
             opts.Temperature = 0.6f;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
 Solve this logic puzzle:
@@ -492,7 +485,7 @@ var agent = await new AgentBuilder()
             opts.Seed = 12345; // Fixed seed
             opts.Temperature = 0.0f; // No randomness
         })
-    .Build();
+    .BuildAsync();
 
 // Same input will always produce same output
 var response1 = await agent.RunAsync("Count from 1 to 10");
@@ -521,7 +514,7 @@ var agent = await new AgentBuilder()
             // Context size
             opts.NumCtx = 4096;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Keep Model Loaded
@@ -549,7 +542,7 @@ Use multimodal models with image understanding:
 ```csharp
 var agent = await new AgentBuilder()
     .WithOllama(model: "llava")
-    .Build();
+    .BuildAsync();
 
 // Vision capabilities require image input through message API
 // (implementation depends on your image handling approach)
@@ -572,7 +565,7 @@ public class WeatherToolkit
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3.1:8b") // Function calling support
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Seattle?");
 ```
@@ -678,7 +671,7 @@ using HPD.Agent.Providers.Ollama;
 
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3:8b")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -696,7 +689,7 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.95f;
             opts.RepeatPenalty = 1.2f; // Reduce repetition
         })
-    .Build();
+    .BuildAsync();
 
 var story = await agent.RunAsync("Write a creative short story about a robot learning to paint");
 ```
@@ -712,7 +705,7 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.2f; // Low for precise code
             opts.NumPredict = 2048;
         })
-    .Build();
+    .BuildAsync();
 
 var code = await agent.RunAsync(@"
 Write a Python function to calculate fibonacci numbers using dynamic programming.
@@ -724,7 +717,7 @@ Include docstring and type hints.");
 ```csharp
 var agent = await new AgentBuilder()
     .WithOllama(model: "llama3:8b")
-    .Build();
+    .BuildAsync();
 
 Console.Write("Response: ");
 await foreach (var chunk in agent.RunAsync("Write a short story about AI"))
@@ -746,7 +739,7 @@ var quickAgent = await new AgentBuilder()
             opts.NumCtx = 4096;
             opts.NumPredict = 512;
         })
-    .Build();
+    .BuildAsync();
 
 // Powerful large model for complex tasks
 var powerAgent = await new AgentBuilder()
@@ -757,7 +750,7 @@ var powerAgent = await new AgentBuilder()
             opts.NumCtx = 8192;
             opts.NumGpu = 40;
         })
-    .Build();
+    .BuildAsync();
 
 // Route based on complexity
 var response = complexity == "simple"
@@ -776,7 +769,7 @@ var agent = await new AgentBuilder()
             opts.Format = "json";
             opts.Temperature = 0.3f;
         })
-    .Build();
+    .BuildAsync();
 
 var jsonResponse = await agent.RunAsync(@"
 List 5 programming languages with their release years.
@@ -798,7 +791,7 @@ var agent = await new AgentBuilder()
             opts.NumCtx = 8192; // Large context for reasoning chains
             opts.Temperature = 0.6f;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
 A farmer has 17 sheep, and all but 9 die. How many are left?
@@ -819,7 +812,7 @@ var agent = await new AgentBuilder()
             opts.NumPredict = 4096;
             opts.KeepAlive = "1h"; // Keep loaded for 1 hour
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ## Troubleshooting
@@ -932,6 +925,63 @@ model: "qwen2.5:7b"
 model: "llama3:8b"     // Llama 3.0
 model: "mistral:7b"    // Base Mistral
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Ollama-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `OllamaProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "ollama",
+        "modelName": "llama3:8b",
+        "endpoint": "http://localhost:11434",
+        "providerOptionsJson": "{\"temperature\":0.7,\"numPredict\":2048,\"numCtx\":4096,\"topK\":40,\"topP\":0.9,\"seed\":42,\"keepAlive\":\"5m\"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `numPredict` | int | -2, -1, ≥ 1 | Max tokens to generate (-1=infinite, -2=fill context) |
+| `numCtx` | int | ≥ 1 | Context window size (default: 2048) |
+| `temperature` | float | — | Sampling randomness (default: 0.8) |
+| `topP` | float | 0.0–1.0 | Nucleus sampling threshold (default: 0.9) |
+| `topK` | int | ≥ 1 | Top-K sampling (default: 40) |
+| `minP` | float | 0.0–1.0 | Min probability relative to most likely token (default: 0.0) |
+| `typicalP` | float | 0.0–1.0 | Locally typical sampling (default: 1.0) |
+| `tfsZ` | float | — | Tail-free sampling (default: 1.0, 1.0=disabled) |
+| `repeatPenalty` | float | — | Repetition penalty (default: 1.1) |
+| `repeatLastN` | int | -1, 0, ≥ 1 | Lookback window for repetition (-1=numCtx, default: 64) |
+| `presencePenalty` | float | — | Presence penalty (default: 0.0) |
+| `frequencyPenalty` | float | — | Frequency penalty (default: 0.0) |
+| `penalizeNewline` | bool | — | Penalize newline tokens (default: true) |
+| `seed` | int | any | Deterministic generation seed (default: 0) |
+| `stop` | string[] | — | Stop sequences |
+| `miroStat` | int | 0, 1, 2 | Mirostat sampling (0=disabled, default: 0) |
+| `miroStatEta` | float | — | Mirostat learning rate (default: 0.1) |
+| `miroStatTau` | float | — | Mirostat coherence/diversity balance (default: 5.0) |
+| `numKeep` | int | -1, ≥ 0 | Tokens to keep from prompt (-1=all, default: 4) |
+| `numGpu` | int | ≥ 0 | GPU layers (0=CPU only, default: auto) |
+| `mainGpu` | int | ≥ 0 | Primary GPU index (default: 0) |
+| `lowVram` | bool | — | Low VRAM mode (default: false) |
+| `f16kv` | bool | — | F16 key/value cache (default: false) |
+| `logitsAll` | bool | — | Return all token logits (default: false) |
+| `numThread` | int | ≥ 1 | CPU threads (default: auto-detected) |
+| `numBatch` | int | ≥ 1 | Prompt processing batch size (default: 512) |
+| `numGqa` | int | ≥ 1 | GQA groups (required for some models, e.g. llama2:70b=8) |
+| `useMmap` | bool | — | Memory-map model files (default: true) |
+| `useMlock` | bool | — | Lock model in memory (default: false) |
+| `numa` | bool | — | NUMA support (default: false) |
+| `vocabOnly` | bool | — | Load vocabulary only (default: false) |
+| `keepAlive` | string | — | Model keep-alive duration (e.g. `"5m"`, `"1h"`, `"-1"`) |
+| `format` | string | `"json"` or schema | Response format override |
+| `template` | string | — | Prompt template override |
+| `think` | bool/string | `true`, `false`, `"high"`, `"medium"`, `"low"` | Enable thinking (reasoning models) |
+
+---
 
 ## OllamaProviderConfig API Reference
 

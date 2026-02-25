@@ -35,7 +35,7 @@ public class AssetStorageIntegrationTests
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
                 .WithContentStore(store.GetContentStore("test-session")!)
-                .Build();
+                .BuildAsync();
 
             // Load session and branch (sets session.Store automatically)
             var session = await store.LoadSessionAsync("test-session") ?? new SessionModel("test-session");
@@ -144,7 +144,7 @@ public class AssetStorageIntegrationTests
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
                 .WithContentStore(store.GetContentStore("multi-asset-session")!)
-                .Build();
+                .BuildAsync();
 
             var session = await store.LoadSessionAsync("multi-asset-session") ?? new SessionModel("multi-asset-session");
             session.Store = store;
@@ -225,7 +225,7 @@ public class AssetStorageIntegrationTests
         var agent = await new AgentBuilder()
             .WithName("TestAgent")
             .WithChatClient(chatClient)
-            .Build();
+            .BuildAsync();
 
         var session = await store.LoadSessionAsync("no-asset-session") ?? new SessionModel("no-asset-session");
         session.Store = store;
@@ -276,7 +276,7 @@ public class AssetStorageIntegrationTests
                 .WithName("TestAgent")
                 .WithChatClient(chatClient)
                 .WithContentStore(store.GetContentStore("roundtrip-session")!)
-                .Build();
+                .BuildAsync();
 
             // First run: Upload asset
             var session1 = await store.LoadSessionAsync("roundtrip-session") ?? new SessionModel("roundtrip-session");

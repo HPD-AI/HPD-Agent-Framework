@@ -306,7 +306,7 @@ public class AspNetCoreSessionManagerTests : IDisposable
             builder.WithSessionStore(Store);
             opts.ConfigureAgent?.Invoke(builder);
 
-            return await builder.Build(ct);
+            return await builder.BuildAsync(ct);
         }
 
         // Expose protected fields for tests
@@ -357,7 +357,7 @@ public class AspNetCoreSessionManagerTests : IDisposable
             return await new AgentBuilder(config, providerRegistry)
                 .WithSessionStore(store)
                 .WithCircuitBreaker(5)
-                .Build(ct);
+                .BuildAsync(ct);
         }
     }
 

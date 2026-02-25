@@ -15,12 +15,12 @@ Each method offers distinct advantages and trade-offs.
 ### Builder Pattern (Fluent API)
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are helpful...")
     .WithToolkit<MyToolkit>()
     .WithTelemetry()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Config Pattern
@@ -109,13 +109,13 @@ var config = new AgentConfig
 };
 
 // Layer builder methods on top for runtime customization
-var agent = new AgentBuilder(config)
+var agent = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithLogging()
     .WithTelemetry()
     .WithToolkit<MyToolkit>()
     .WithMiddleware<MyCustomMiddleware>()
-    .Build();
+    .BuildAsync();
 ```
 
 </div>
@@ -139,13 +139,13 @@ var agent = new AgentBuilder(config)
 **C# Usage:**
 ```csharp
 // Load config from JSON
-var agent = new AgentBuilder("agent-config.json")
+var agent = await new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
     .WithLogging()
     .WithTelemetry()
     .WithToolkit<MyToolkit>()
     .WithMiddleware<MyCustomMiddleware>()
-    .Build();
+    .BuildAsync();
 ```
 
 </div>
@@ -162,7 +162,7 @@ The core issue: with many configurations, the builder gets very long and repetit
 1. **Too many chained calls** - Imagine 20+ `.With()` calls:
 ```csharp
 // Pure Builder Pattern - becomes a wall of code!
-var agent1 = new AgentBuilder()
+var agent1 = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are helpful Math assistant")
     .WithServiceProvider(services)
@@ -179,13 +179,13 @@ var agent1 = new AgentBuilder()
     .WithToolkit<Toolkit2>()
     .WithToolkit<Toolkit3>()
     // ... 20+ more configuration calls
-    .Build();
+    .BuildAsync();
 ```
 
 2. **Configuration duplication across multiple agents** - You have to repeat this everywhere:
 ```csharp
 // If you have 10 agents with common config, all this is duplicated 10 times!
-var agent2 = new AgentBuilder()
+var agent2 = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")  // Repeated!
     .WithSystemInstructions("You are helpful finance assistant")  // Repeated!
     .WithServiceProvider(services)  // Repeated!
@@ -199,7 +199,7 @@ var agent2 = new AgentBuilder()
     .WithMiddleware<ErrorHandlingMiddleware>()  
     .WithMiddleware<HistoryReductionMiddleware>()  
     .WithToolkit<Toolkit2>()
-    .Build();
+    .BuildAsync();
 ```
 
 **With Builder + Config Pattern:**
@@ -252,14 +252,14 @@ var config = new AgentConfig
 };
 
 // Reuse across multiple agents with different overrides
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<AdditionalTools>()  // Extend with more tools
-    .Build();
+    .BuildAsync();
 ```
 
 </div>
@@ -296,14 +296,14 @@ var agent2 = new AgentBuilder(config)
 **C# Usage:**
 ```csharp
 // Reuse across multiple agents with different tool overrides
-var agent1 = new AgentBuilder("agent-config.json")
+var agent1 = await new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder("agent-config.json")
+var agent2 = await new AgentBuilder("agent-config.json")
     .WithServiceProvider(services)
     .WithToolkit<AdditionalTools>()  // Extend with more tools
-    .Build();
+    .BuildAsync();
 ```
 
 </div>
@@ -341,12 +341,12 @@ var config = new AgentConfig
     Middlewares = ["LoggingMiddleware"]
 };
 
-var agent = new AgentBuilder(config)
+var agent = await new AgentBuilder(config)
     // Runtime-only additions — these cannot be serialized to JSON:
     .WithServiceProvider(services)    // DI container
     .WithToolkit<MyCompiledTool>()    // Native C# toolkit (type reference)
     .WithMiddleware<CustomMiddleware>() // Native middleware
-    .Build();
+    .BuildAsync();
 ```
 
 **Builder methods take precedence over config.** If `config.Provider` is set and you also call `.WithProvider(...)`, the builder value wins.

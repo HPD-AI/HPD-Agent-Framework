@@ -1862,7 +1862,7 @@ public class AgentBuilder
     /// Builds the protocol-agnostic core agent asynchronously.
     /// Required for provider validation (LLM connectivity checks) during initialization.
     /// </summary>
-    public async Task<Agent> Build(CancellationToken cancellationToken = default)
+    public async Task<Agent> BuildAsync(CancellationToken cancellationToken = default)
     {
         // Build the secret resolver chain FIRST (before BuildDependenciesAsync)
         // Providers need ISecretResolver available in the service provider during CreateChatClient

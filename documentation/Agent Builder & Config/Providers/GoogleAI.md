@@ -34,7 +34,7 @@ Environment.SetEnvironmentVariable("GOOGLE_AI_API_KEY", "your-api-key");
 
 var agent = await new AgentBuilder()
     .WithGoogleAI(model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -73,17 +73,36 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.95;
             opts.TopK = 40;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`gemini-config.json`:**
+```json
+{
+    "name": "GeminiAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "google-ai",
+        "modelName": "gemini-2.0-flash",
+        "apiKey": "your-api-key",
+        "providerOptionsJson": "{\"maxOutputTokens\":8192,\"temperature\":0.7,\"topP\":0.95}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("gemini-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Google AI-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -92,49 +111,22 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "google-ai",
-        ModelName = "gemini-3.0-flash",
+        ModelName = "gemini-2.0-flash",
         ApiKey = "your-api-key"
     }
 };
 
-var googleOpts = new GoogleAIProviderConfig
+config.Provider.SetTypedProviderConfig(new GoogleAIProviderConfig
 {
     MaxOutputTokens = 8192,
     Temperature = 0.7,
-    TopP = 0.95,
-    TopK = 40
-};
-config.Provider.SetTypedProviderConfig(googleOpts);
+    TopP = 0.95
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "GeminiAgent",
-    "Provider": {
-        "ProviderKey": "google-ai",
-        "ModelName": "gemini-2.0-flash",
-        "ApiKey": "your-api-key",
-        "ProviderOptionsJson": "{\"maxOutputTokens\":8192,\"temperature\":0.7,\"topP\":0.95,\"topK\":40}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("gemini-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -159,15 +151,15 @@ var googleOpts = new GoogleAIProviderConfig
 config.Provider.SetTypedProviderConfig(googleOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -396,7 +388,7 @@ export GEMINI_API_KEY="your-api-key"
 // Automatically uses environment variable
 var agent = await new AgentBuilder()
     .WithGoogleAI(model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: Explicit API Key
@@ -406,7 +398,7 @@ var agent = await new AgentBuilder()
     .WithGoogleAI(
         apiKey: "your-api-key",
         model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 ```
 
 **Security Warning:** Never hardcode API keys in source code. Use environment variables or secure configuration management instead.
@@ -425,12 +417,12 @@ var agent = await new AgentBuilder()
 ```csharp
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json")
-    .Build();
+    .BuildAsync();
 
 // API key automatically resolved from configuration
 var agent = await new AgentBuilder()
     .WithGoogleAI(model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Getting an API Key
@@ -511,7 +503,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""title"", ""summary""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Summarize this article: ...");
 // Response will be valid JSON matching the schema
@@ -537,7 +529,7 @@ var agent = await new AgentBuilder()
             opts.ThinkingBudget = 5000; // Token budget for thinking
             opts.ThinkingLevel = "HIGH"; // Deep reasoning
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Solve this complex math problem: ...");
 // Response includes the model's reasoning process
@@ -563,7 +555,7 @@ var agent = await new AgentBuilder()
             opts.MediaResolution = "MEDIA_RESOLUTION_HIGH";
             opts.AudioTimestamp = true;
         })
-    .Build();
+    .BuildAsync();
 
 // Process image
 var response = await agent.RunAsync(new ChatMessage
@@ -616,7 +608,7 @@ var agent = await new AgentBuilder()
                 }
             };
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Safety Categories:**
@@ -642,7 +634,7 @@ var agent = await new AgentBuilder()
             opts.ImageOutputMimeType = "image/png";
             opts.ImageCompressionQuality = 90;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Generate an image of a sunset over mountains");
 ```
@@ -678,7 +670,7 @@ var agent = await new AgentBuilder()
             opts.FunctionCallingMode = "AUTO"; // Model decides when to call
         })
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in San Francisco?");
 // Model automatically calls GetWeather function
@@ -759,7 +751,7 @@ var agent = await new AgentBuilder()
     .WithGoogleAI(
         apiKey: "your-api-key",
         model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -785,7 +777,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""name"", ""email""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Extract the person's details: John Smith, john@example.com, 30 years old");
 // Returns valid JSON: {"name":"John Smith","email":"john@example.com","age":30}
@@ -817,7 +809,7 @@ var agent = await new AgentBuilder()
         model: "gemini-2.0-flash",
         configure: opts => opts.FunctionCallingMode = "AUTO")
     .WithToolkit<DatabaseToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Get information for user ID 123 and update their email to newemail@example.com");
 ```
@@ -829,7 +821,7 @@ var agent = await new AgentBuilder()
     .WithGoogleAI(
         apiKey: "your-api-key",
         model: "gemini-2.0-flash")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a short story about AI."))
 {
@@ -845,7 +837,7 @@ var agent = await new AgentBuilder()
         apiKey: "your-api-key",
         model: "gemini-2.0-flash",
         configure: opts => opts.MediaResolution = "MEDIA_RESOLUTION_HIGH")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(new ChatMessage
 {
@@ -871,7 +863,7 @@ var agent = await new AgentBuilder()
             opts.ThinkingLevel = "HIGH";
             opts.ThinkingBudget = 10000;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
     Solve this optimization problem:
@@ -899,7 +891,7 @@ var agent = await new AgentBuilder()
                 new() { Category = "HARM_CATEGORY_DANGEROUS_CONTENT", Threshold = "BLOCK_MEDIUM_AND_ABOVE" }
             };
         })
-    .Build();
+    .BuildAsync();
 
 try
 {
@@ -943,7 +935,7 @@ var agent = await new AgentBuilder()
                 ""required"": [""invoiceNumber"", ""date"", ""total""]
             }";
         })
-    .Build();
+    .BuildAsync();
 
 var invoiceText = "Invoice #INV-001, Date: 2024-01-15...";
 var extracted = await agent.RunAsync($"Extract invoice data: {invoiceText}");
@@ -1069,6 +1061,59 @@ configure: opts =>
     opts.Temperature = 0.7; // More focused responses
 }
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Google AI-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `GoogleAIProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "google-ai",
+        "modelName": "gemini-2.0-flash",
+        "apiKey": "your-api-key",
+        "providerOptionsJson": "{\"maxOutputTokens\":8192,\"temperature\":0.7,\"topP\":0.95,\"topK\":40,\"seed\":42,\"responseMimeType\":\"application/json\"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxOutputTokens` | int | ≥ 1 | Max tokens to generate |
+| `temperature` | double | model-specific | Sampling randomness |
+| `topP` | double | 0.0–1.0 | Nucleus sampling threshold |
+| `topK` | int | ≥ 1 | Top-K sampling |
+| `presencePenalty` | double | — | Penalize token reuse (binary) |
+| `frequencyPenalty` | double | — | Penalize token reuse (proportional) |
+| `stopSequences` | string[] | max 5 | Stop generation sequences |
+| `seed` | int | any | Deterministic generation seed |
+| `responseMimeType` | string | `"text/plain"`, `"application/json"`, `"text/x.enum"` | Output MIME type |
+| `responseSchema` | string | — | OpenAPI schema as JSON string (requires `application/json`) |
+| `responseJsonSchema` | string | — | JSON Schema as JSON string (alternative to `responseSchema`) |
+| `responseModalities` | string[] | `"TEXT"`, `"IMAGE"`, `"AUDIO"` | Output modalities |
+| `candidateCount` | int | 1 | Number of response candidates (currently must be 1) |
+| `responseLogprobs` | bool | — | Include log probabilities in response |
+| `logprobs` | int | — | Number of top logprobs per token (requires `responseLogprobs`) |
+| `enableEnhancedCivicAnswers` | bool | — | Enhanced civic answer mode |
+| `enableAffectiveDialog` | bool | — | Emotion-adaptive responses |
+| `includeThoughts` | bool | — | Include thinking in response (Gemini 3+) |
+| `thinkingBudget` | int | — | Thinking token budget (Gemini 3+) |
+| `thinkingLevel` | string | `"LOW"`, `"HIGH"` | Thinking depth level (Gemini 3+) |
+| `mediaResolution` | string | `"MEDIA_RESOLUTION_LOW"`, `"MEDIA_RESOLUTION_MEDIUM"`, `"MEDIA_RESOLUTION_HIGH"` | Input media resolution |
+| `audioTimestamp` | bool | — | Include audio timestamps in request |
+| `imageAspectRatio` | string | `"1:1"`, `"16:9"`, `"9:16"`, `"4:3"`, `"3:4"` | Image generation aspect ratio |
+| `imageSize` | string | `"1K"`, `"2K"`, `"4K"` | Image output resolution |
+| `imageOutputMimeType` | string | `"image/png"`, `"image/jpeg"` | Image output format |
+| `imageCompressionQuality` | int | 0–100 | JPEG compression quality (default: 75) |
+| `modelRoutingPreference` | string | `"PRIORITIZE_QUALITY"`, `"BALANCED"`, `"PRIORITIZE_COST"` | Auto routing preference |
+| `manualRoutingModelName` | string | — | Specific model for manual routing |
+| `safetySettings` | object[] | — | Safety category/threshold pairs |
+| `functionCallingMode` | string | `"AUTO"`, `"ANY"`, `"NONE"` | Function calling behavior |
+| `allowedFunctionNames` | string[] | — | Allowed functions (when mode is `"ANY"`) |
+
+---
 
 ## GoogleAIProviderConfig API Reference
 

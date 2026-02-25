@@ -616,7 +616,7 @@ public class BranchOperationTests : AgentTestBase
 
         var agent = new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None).GetAwaiter().GetResult();
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // No branchId specified, single branch → should default to "main"
         var (loadedSession, branch) = await agent.LoadSessionAndBranchAsync("test-session");
@@ -636,7 +636,7 @@ public class BranchOperationTests : AgentTestBase
 
         var agent = new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None).GetAwaiter().GetResult();
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // No branchId specified, multiple branches → should throw
         var ex = await Assert.ThrowsAsync<AmbiguousBranchException>(
@@ -659,7 +659,7 @@ public class BranchOperationTests : AgentTestBase
 
         var agent = new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None).GetAwaiter().GetResult();
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // Explicit branchId, multiple branches → should work fine
         var (loadedSession, branch) = await agent.LoadSessionAndBranchAsync("test-session", "formal");
@@ -669,19 +669,39 @@ public class BranchOperationTests : AgentTestBase
     }
 
     [Fact]
-    public async Task LoadSessionAndBranch_NoBranches_DefaultsToMain()
+    public async Task LoadSessionAndBranch_SessionNotInStore_ThrowsSessionNotFoundException()
     {
         var store = new InMemorySessionStore();
 
         var agent = new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None).GetAwaiter().GetResult();
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
-        // No branchId specified, no branches in store → should default to "main" and create new
-        var (session, branch) = await agent.LoadSessionAndBranchAsync("new-session");
+        // Session was never created — should throw, not silently create
+        var ex = await Assert.ThrowsAsync<SessionNotFoundException>(
+            () => agent.LoadSessionAndBranchAsync("new-session"));
 
-        Assert.Equal("new-session", session.Id);
-        Assert.Equal("main", branch.Id);
+        Assert.Equal("new-session", ex.SessionId);
+        Assert.Null(ex.BranchId);
+    }
+
+    [Fact]
+    public async Task LoadSessionAndBranch_BranchNotInStore_ThrowsSessionNotFoundException()
+    {
+        var store = new InMemorySessionStore();
+
+        var agent = new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
+            .WithSessionStore(store)
+            .BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+        // Session exists but branch does not
+        await agent.CreateSessionAsync("test-session");
+
+        var ex = await Assert.ThrowsAsync<SessionNotFoundException>(
+            () => agent.LoadSessionAndBranchAsync("test-session", "missing-branch"));
+
+        Assert.Equal("test-session", ex.SessionId);
+        Assert.Equal("missing-branch", ex.BranchId);
     }
 
     //──────────────────────────────────────────────────────────────────

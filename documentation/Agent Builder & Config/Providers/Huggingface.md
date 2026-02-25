@@ -34,7 +34,7 @@ Environment.SetEnvironmentVariable("HF_TOKEN", "hf_...");
 var agent = await new AgentBuilder()
     .WithHuggingFace(
         model: "meta-llama/Meta-Llama-3-8B-Instruct")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -72,17 +72,36 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.9;
             opts.RepetitionPenalty = 1.1;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`huggingface-config.json`:**
+```json
+{
+    "name": "HuggingFaceAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "huggingface",
+        "modelName": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "apiKey": "hf_...",
+        "providerOptionsJson": "{\"maxNewTokens\":250,\"temperature\":0.7,\"topP\":0.9}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("huggingface-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing HuggingFace-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -96,44 +115,17 @@ var config = new AgentConfig
     }
 };
 
-var hfOpts = new HuggingFaceProviderConfig
+config.Provider.SetTypedProviderConfig(new HuggingFaceProviderConfig
 {
-    MaxNewTokens = 500,
+    MaxNewTokens = 250,
     Temperature = 0.7,
-    TopP = 0.9,
-    RepetitionPenalty = 1.1
-};
-config.Provider.SetTypedProviderConfig(hfOpts);
+    TopP = 0.9
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "HuggingFaceAgent",
-    "Provider": {
-        "ProviderKey": "huggingface",
-        "ModelName": "meta-llama/Meta-Llama-3-8B-Instruct",
-        "ApiKey": "hf_...",
-        "ProviderOptionsJson": "{\"maxNewTokens\":500,\"temperature\":0.7,\"topP\":0.9,\"repetitionPenalty\":1.1}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("huggingface-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -158,15 +150,15 @@ var hfOpts = new HuggingFaceProviderConfig
 config.Provider.SetTypedProviderConfig(hfOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -274,7 +266,7 @@ export HF_TOKEN="hf_..."
 // Automatically uses HF_TOKEN environment variable
 var agent = await new AgentBuilder()
     .WithHuggingFace(model: "meta-llama/Meta-Llama-3-8B-Instruct")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: Explicit API Key
@@ -284,7 +276,7 @@ var agent = await new AgentBuilder()
     .WithHuggingFace(
         model: "meta-llama/Meta-Llama-3-8B-Instruct",
         apiKey: "hf_...")
-    .Build();
+    .BuildAsync();
 ```
 
 **Security Warning:** Never hardcode API keys in source code. Use environment variables or configuration files instead.
@@ -304,7 +296,7 @@ var agent = await new AgentBuilder()
 // Automatically resolved from configuration
 var agent = await new AgentBuilder()
     .WithHuggingFace(model: "meta-llama/Meta-Llama-3-8B-Instruct")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Getting Your API Token
@@ -360,7 +352,7 @@ Get real-time token-by-token responses:
 ```csharp
 var agent = await new AgentBuilder()
     .WithHuggingFace(model: "meta-llama/Meta-Llama-3-8B-Instruct")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a story about AI."))
 {
@@ -415,7 +407,7 @@ var agent = await new AgentBuilder()
             opts.RepetitionPenalty = 1.1;
             opts.ReturnFullText = false;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Long-Form Generation
@@ -559,7 +551,7 @@ var agent = await new AgentBuilder()
     .WithHuggingFace(
         model: "meta-llama/Meta-Llama-3-8B-Instruct",
         apiKey: "hf_...")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -570,7 +562,7 @@ Console.WriteLine(response);
 ```csharp
 var agent = await new AgentBuilder()
     .WithHuggingFace(model: "mistralai/Mistral-7B-Instruct-v0.2")
-    .Build();
+    .BuildAsync();
 
 Console.Write("Response: ");
 await foreach (var chunk in agent.RunAsync("Write a haiku about AI."))
@@ -593,7 +585,7 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.95;
             opts.ReturnFullText = false;
         })
-    .Build();
+    .BuildAsync();
 
 var code = await agent.RunAsync(
     "Write a Python function to calculate fibonacci numbers.");
@@ -614,7 +606,7 @@ var agent = await new AgentBuilder()
             opts.RepetitionPenalty = 1.2;
             opts.UseCache = false; // Get varied results
         })
-    .Build();
+    .BuildAsync();
 
 var story = await agent.RunAsync(
     "Write a short science fiction story about time travel.");
@@ -637,7 +629,7 @@ foreach (var model in models)
 {
     var agent = await new AgentBuilder()
         .WithHuggingFace(model: model)
-        .Build();
+        .BuildAsync();
 
     Console.WriteLine($"\n=== {model} ===");
     var response = await agent.RunAsync(prompt);
@@ -656,7 +648,7 @@ var agent = await new AgentBuilder()
             opts.MaxNewTokens = 500;
             opts.Temperature = 0.7;
         })
-    .Build();
+    .BuildAsync();
 
 // First turn
 var response1 = await agent.RunAsync("What is machine learning?");
@@ -678,7 +670,7 @@ var agent = await new AgentBuilder()
             opts.WaitForModel = true; // Wait instead of 503 error
             opts.MaxTime = 60.0; // Allow up to 60 seconds
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Hello!");
 Console.WriteLine(response);
@@ -792,6 +784,39 @@ configure: opts =>
     opts.MaxTime = 30.0; // Set timeout
 }
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all HuggingFace-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `HuggingFaceProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "huggingface",
+        "modelName": "meta-llama/Meta-Llama-3-8B-Instruct",
+        "apiKey": "hf_...",
+        "providerOptionsJson": "{\"maxNewTokens\":250,\"temperature\":0.7,\"topP\":0.9,\"topK\":50,\"repetitionPenalty\":1.1,\"doSample\":true,\"useCache\":true}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxNewTokens` | int | ≥ 1 | New tokens to generate (not counting input, default: 250) |
+| `temperature` | double | 0.0–100.0 | Sampling temperature (0=greedy, 1=normal, default: 1.0) |
+| `topP` | double | 0.0–1.0 | Nucleus sampling threshold |
+| `topK` | int | ≥ 1 | Top-K sampling |
+| `repetitionPenalty` | double | ≥ 1.0 | Penalize repeated tokens (default: 1.0=no penalty) |
+| `doSample` | bool | — | Use sampling (false=greedy decoding, default: true) |
+| `numReturnSequences` | int | ≥ 1 | Number of sequences to return (default: 1) |
+| `returnFullText` | bool | — | Include input prompt in response (default: true) |
+| `maxTime` | double | ≥ 0.0 | Soft time limit in seconds |
+| `useCache` | bool | — | Use inference API response cache (default: true) |
+| `waitForModel` | bool | — | Wait for model to load instead of 503 (default: false) |
+
+---
 
 ## HuggingFaceProviderConfig API Reference
 

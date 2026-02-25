@@ -35,7 +35,7 @@ var agent = await new AgentBuilder()
     .WithAzureAI(
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -49,7 +49,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 ```
 
 ## Installation
@@ -86,17 +86,36 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.9f;
             opts.UseDefaultAzureCredential = true; // OAuth authentication
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`azure-config.json`:**
+```json
+{
+    "name": "AzureAIAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "azure-ai",
+        "modelName": "gpt-4o",
+        "endpoint": "https://your-project.services.ai.azure.com",
+        "providerOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.95}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("azure-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Azure AI-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -105,49 +124,22 @@ var config = new AgentConfig
     Provider = new ProviderConfig
     {
         ProviderKey = "azure-ai",
-        ModelName = "gpt-4",
-        Endpoint = "https://my-resource.openai.azure.com"
+        ModelName = "gpt-4o",
+        Endpoint = "https://your-project.services.ai.azure.com"
     }
 };
 
-var azureOpts = new AzureAIProviderConfig
+config.Provider.SetTypedProviderConfig(new AzureAIProviderConfig
 {
     MaxTokens = 4096,
     Temperature = 0.7f,
-    TopP = 0.9f,
-    UseDefaultAzureCredential = true
-};
-config.Provider.SetTypedProviderConfig(azureOpts);
+    TopP = 0.95f
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "AzureAIAgent",
-    "Provider": {
-        "ProviderKey": "azure-ai",
-        "ModelName": "gpt-4",
-        "Endpoint": "https://my-resource.openai.azure.com",
-        "ProviderOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.9,\"useDefaultAzureCredential\":true}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("azure-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -173,15 +165,15 @@ var azureOpts = new AzureAIProviderConfig
 config.Provider.SetTypedProviderConfig(azureOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -325,7 +317,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         configure: opts => opts.UseDefaultAzureCredential = true)
-    .Build();
+    .BuildAsync();
 ```
 
 #### Production (Managed Identity)
@@ -339,7 +331,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         configure: opts => opts.UseDefaultAzureCredential = true)
-    .Build();
+    .BuildAsync();
 ```
 
 #### DefaultAzureCredential Chain
@@ -369,7 +361,7 @@ var agent = await new AgentBuilder()
     .WithAzureAI(
         endpoint: Environment.GetEnvironmentVariable("AZURE_AI_ENDPOINT"),
         model: "gpt-4")
-    .Build();
+    .BuildAsync();
 ```
 
 #### Configuration File (appsettings.json)
@@ -386,14 +378,14 @@ var agent = await new AgentBuilder()
 ```csharp
 var config = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json")
-    .Build();
+    .BuildAsync();
 
 var agent = await new AgentBuilder()
     .WithAzureAI(
         endpoint: config["AzureAI:Endpoint"],
         model: "gpt-4",
         apiKey: config["AzureAI:ApiKey"])
-    .Build();
+    .BuildAsync();
 ```
 
 #### Explicit API Key
@@ -404,7 +396,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 ```
 
  **Security Warning:** Never hardcode API keys in source code. Use environment variables, Azure Key Vault, or Managed Identity instead.
@@ -429,7 +421,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-account.services.ai.azure.com/api/projects/my-project",
         model: "gpt-4",
         configure: opts => opts.UseDefaultAzureCredential = true)
-    .Build();
+    .BuildAsync();
 ```
 
 **Features:**
@@ -455,7 +447,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 ```
 
 **Features:**
@@ -523,7 +515,7 @@ var agent = await new AgentBuilder()
             }";
             opts.JsonSchemaIsStrict = true;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Extract contact info: John Doe, john@example.com");
 // Response will be valid JSON matching the schema
@@ -543,7 +535,7 @@ var agent = await new AgentBuilder()
             opts.Seed = 12345; // Same seed = same output
             opts.Temperature = 0.0f; // Remove randomness
         })
-    .Build();
+    .BuildAsync();
 
 // Will always generate the same response for the same input
 var response1 = await agent.RunAsync("Write a haiku about code");
@@ -560,7 +552,7 @@ var agent = await new AgentBuilder()
     .WithAzureAI(
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4o") // Vision-capable model
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(
     "What objects are in this image?",
@@ -585,7 +577,7 @@ var agent = await new AgentBuilder()
         model: "gpt-4",
         configure: opts => opts.ToolChoice = "auto")
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Paris?");
 ```
@@ -655,7 +647,7 @@ var agent = await new AgentBuilder()
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4",
         configure: opts => opts.UseDefaultAzureCredential = true)
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing simply.");
 Console.WriteLine(response);
@@ -668,7 +660,7 @@ var agent = await new AgentBuilder()
     .WithAzureAI(
         endpoint: "https://my-resource.openai.azure.com",
         model: "gpt-4")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a story about AI."))
 {
@@ -694,7 +686,7 @@ var agent = await new AgentBuilder()
         model: "gpt-4",
         configure: opts => opts.ToolChoice = "auto")
     .WithToolkit<CalculatorToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is 25 * 4 + 10?");
 ```
@@ -722,7 +714,7 @@ var agent = await new AgentBuilder()
             }";
             opts.JsonSchemaIsStrict = true;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Review the movie Inception.");
 // Returns structured JSON matching the schema
@@ -745,14 +737,14 @@ var primaryAgent = new AgentBuilder(config)
     .WithAzureAI(
         endpoint: "https://eastus-resource.openai.azure.com",
         model: "gpt-4")
-    .Build();
+    .BuildAsync();
 
 // Failover region
 var failoverAgent = new AgentBuilder(config)
     .WithAzureAI(
         endpoint: "https://westus-resource.openai.azure.com",
         model: "gpt-4")
-    .Build();
+    .BuildAsync();
 
 try
 {
@@ -777,7 +769,7 @@ var agent = await new AgentBuilder()
             opts.MaxTokens = 4096;
             opts.Temperature = 0.7f;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Analyze this data...");
 ```
@@ -859,6 +851,43 @@ Then login:
 ```bash
 az login
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Azure AI-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `AzureAIProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "azure-ai",
+        "modelName": "gpt-4o",
+        "endpoint": "https://your-project.services.ai.azure.com",
+        "providerOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.95,\"seed\":42,\"toolChoice\":\"auto\"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxTokens` | int | ≥ 1 | Max tokens to generate |
+| `temperature` | float | 0.0–2.0 | Sampling randomness |
+| `topP` | float | 0.0–1.0 | Nucleus sampling threshold |
+| `frequencyPenalty` | float | -2.0–2.0 | Reduce token repetition |
+| `presencePenalty` | float | -2.0–2.0 | Encourage topic diversity |
+| `stopSequences` | string[] | — | Stop generation sequences |
+| `seed` | long | any | Deterministic generation seed |
+| `responseFormat` | string | `"text"`, `"json_object"`, `"json_schema"` | Output format |
+| `jsonSchemaName` | string | — | Schema name (required for `json_schema`) |
+| `jsonSchema` | string | — | JSON schema definition string |
+| `jsonSchemaDescription` | string | — | Optional schema description |
+| `jsonSchemaIsStrict` | bool | — | Enforce strict schema (default `true`) |
+| `toolChoice` | string | `"auto"`, `"none"`, `"required"` | Tool selection behavior |
+| `projectId` | string | — | Azure AI Project ID (extracted from endpoint if omitted) |
+| `useDefaultAzureCredential` | bool | — | Use Entra ID / DefaultAzureCredential instead of API key |
+
+---
 
 ## AzureAIProviderConfig API Reference
 

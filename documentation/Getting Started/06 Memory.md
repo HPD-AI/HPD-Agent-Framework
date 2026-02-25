@@ -20,19 +20,19 @@ There are three storage abstractions in the framework. They serve different purp
 ### Quick Start
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .UseDefaultContentStore()  // In-memory store + default folders
-    .Build();
+    .BuildAsync();
 ```
 
 For persistent storage, pass a `LocalFileContentStore`:
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .UseDefaultContentStore(new LocalFileContentStore("./data/content"))
-    .Build();
+    .BuildAsync();
 ```
 
 ### Default Folders
@@ -92,10 +92,10 @@ await store.UploadSkillDocumentAsync(
     description: "Instructions for reviewing code",
     scope: null);  // null = visible to all agents
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .UseDefaultContentStore(store)
-    .Build();
+    .BuildAsync();
 ```
 
 Named upsert semantics mean these calls are **startup-safe**: calling them on every app start only overwrites when the content actually changes.
@@ -155,9 +155,9 @@ store.CreateFolder("reports", new FolderOptions
     Permissions = ContentPermissions.ReadWrite
 });
 
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithContentStore(store)  // Manual setup instead of UseDefaultContentStore
-    .Build();
+    .BuildAsync();
 ```
 
 ### Permissions
@@ -206,10 +206,10 @@ foreach (var doc in docs)
 The framework uses `ISessionStore` internally to save and load conversation turns. You configure it once and the agent handles everything else.
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSessionStore(new LocalFileSessionStore("./sessions"), persistAfterTurn: true)
-    .Build();
+    .BuildAsync();
 ```
 
 `persistAfterTurn: true` saves conversation history automatically after each completed turn.

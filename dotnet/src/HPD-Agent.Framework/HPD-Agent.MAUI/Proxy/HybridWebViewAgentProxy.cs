@@ -67,8 +67,6 @@ public abstract class HybridWebViewAgentProxy
                     return;
                 }
 
-                session.Store = Manager.Store;
-
                 var branch = branchId != null
                     ? await Manager.Store.LoadBranchAsync(sessionId, branchId)
                     : await Manager.Store.LoadBranchAsync(sessionId, "main");
@@ -91,23 +89,20 @@ public abstract class HybridWebViewAgentProxy
                 {
                     Manager.SetStreaming(sessionId, true);
 
-                    var chatMessage = new ChatMessage(ChatRole.User, message);
                     var runConfig = runConfigJson != null
                         ? JsonSerializer.Deserialize<StreamRunConfigDto>(runConfigJson)?.ToAgentRunConfig()
                         : null;
 
                     await foreach (var evt in agent.RunAsync(
-                        [chatMessage],
-                        session: session,
-                        branch: branch,
-                        options: runConfig).WithCancellation(cts.Token))
+                        message,
+                        sessionId,
+                        branch.Id,
+                        options: runConfig,
+                        cancellationToken: cts.Token))
                     {
                         if (cts.Token.IsCancellationRequested) break;
                         EventStreamManager.SendEvent(streamId, evt);
                     }
-
-                    await Manager.Store.SaveSessionAsync(session);
-                    await Manager.Store.SaveBranchAsync(sessionId, branch);
 
                     EventStreamManager.SendComplete(streamId);
                 }
@@ -153,27 +148,14 @@ public abstract class HybridWebViewAgentProxy
         // Create temporary session ID if not provided
         var tempSessionId = sessionId ?? Guid.NewGuid().ToString();
 
-        // Get or create agent for this session
-        var agent = await Manager.GetOrCreateAgentAsync(tempSessionId);
-
-        // Use LoadSessionAndBranchAsync to create session with "main" branch
-        // This ensures the branch ID is "main" (not a random GUID)
-        var (session, branch) = await agent.LoadSessionAndBranchAsync(tempSessionId, "main");
-        session.Store = Manager.Store;
-
+        Dictionary<string, object>? metadata = null;
         if (metadataJson != null)
-        {
-            var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(metadataJson);
-            if (dict != null)
-            {
-                foreach (var kvp in dict)
-                    session.AddMetadata(kvp.Key, kvp.Value);
-            }
-        }
+            metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(metadataJson);
 
-        // Save session and branch
-        await Manager.Store.SaveSessionAsync(session);
-        await Manager.Store.SaveBranchAsync(session.Id, branch);
+        await Manager.CreateSessionAsync(tempSessionId, metadata);
+
+        var session = await Manager.Store.LoadSessionAsync(tempSessionId)
+            ?? throw new InvalidOperationException($"Session '{tempSessionId}' not found after creation.");
 
         return JsonSerializer.Serialize(session.ToDto());  // Extension method from Hosting
     }
@@ -375,28 +357,22 @@ public abstract class HybridWebViewAgentProxy
         if (existingBranch != null)
             throw new InvalidOperationException($"Branch '{branchId}' already exists in session '{sessionId}'");
 
-        // Use agent to create branch (Agent has access to internal constructors)
         var agent = await Manager.GetOrCreateAgentAsync(sessionId);
-        var (_, branch) = await agent.LoadSessionAndBranchAsync(sessionId, branchId);
+        await agent.ForkBranchAsync(sessionId, "main", branchId, 0);
 
-        // Set Name and Description from request
+        var branch = await Manager.Store.LoadBranchAsync(sessionId, branchId)
+            ?? throw new InvalidOperationException($"Branch '{branchId}' not found after creation.");
+
         if (!string.IsNullOrEmpty(request.Name))
-        {
             branch.Name = request.Name;
-        }
 
         if (!string.IsNullOrEmpty(request.Description))
-        {
             branch.Description = request.Description;
-        }
 
         if (request.Tags != null && request.Tags.Count > 0)
-        {
             branch.Tags = request.Tags;
-        }
 
         await Manager.Store.SaveBranchAsync(sessionId, branch);
-        await Manager.Store.SaveSessionAsync(session);
 
         var dto = ToBranchDto(branch, sessionId);
         return JsonSerializer.Serialize(dto);
@@ -411,47 +387,39 @@ public abstract class HybridWebViewAgentProxy
         // V3: Use session-level lock for atomic sibling updates
         return await Manager.WithSessionLockAsync(sessionId, async () =>
         {
-            var session = await Manager.Store.LoadSessionAsync(sessionId);
-            if (session == null)
+            var sessionExists = await Manager.Store.LoadSessionAsync(sessionId);
+            if (sessionExists == null)
                 throw new InvalidOperationException($"Session '{sessionId}' not found");
 
-            session.Store = Manager.Store;
-
-            var sourceBranch = await Manager.Store.LoadBranchAsync(sessionId, sourceBranchId);
-            if (sourceBranch == null)
+            var sourceBranchExists = await Manager.Store.LoadBranchAsync(sessionId, sourceBranchId);
+            if (sourceBranchExists == null)
                 throw new InvalidOperationException($"Source branch '{sourceBranchId}' not found");
 
-            // Generate new branch ID if not provided
             var newBranchId = string.IsNullOrWhiteSpace(request.NewBranchId)
                 ? Guid.NewGuid().ToString()
                 : request.NewBranchId;
 
-            // Check if target branch already exists
             var existingBranch = await Manager.Store.LoadBranchAsync(sessionId, newBranchId);
             if (existingBranch != null)
                 throw new InvalidOperationException($"Branch '{newBranchId}' already exists in session '{sessionId}'");
 
-            // Use agent to fork the branch (Agent.ForkBranchAsync now handles all sibling updates)
             var agent = await Manager.GetOrCreateAgentAsync(sessionId);
-            var forkedBranch = await agent.ForkBranchAsync(sourceBranch, newBranchId, request.FromMessageIndex);
+            await agent.ForkBranchAsync(sessionId, sourceBranchId, newBranchId, request.FromMessageIndex);
 
-            // Set additional properties from request
+            var forkedBranch = await Manager.Store.LoadBranchAsync(sessionId, newBranchId)
+                ?? throw new InvalidOperationException($"Branch '{newBranchId}' not found after fork.");
+
             if (!string.IsNullOrEmpty(request.Name))
-            {
                 forkedBranch.Name = request.Name;
-            }
 
             if (!string.IsNullOrEmpty(request.Description))
-            {
                 forkedBranch.Description = request.Description;
-            }
 
             if (request.Tags != null && request.Tags.Count > 0)
-            {
                 forkedBranch.Tags = request.Tags;
-            }
 
-            // Note: forkedBranch is already saved by Agent.ForkBranchAsync
+            await Manager.Store.SaveBranchAsync(sessionId, forkedBranch);
+
             var dto = ToBranchDto(forkedBranch, sessionId);
             return JsonSerializer.Serialize(dto);
         });

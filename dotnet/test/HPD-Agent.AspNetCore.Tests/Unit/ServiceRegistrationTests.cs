@@ -172,7 +172,7 @@ public class ServiceRegistrationTests
 
             return new AgentBuilder(config, providerRegistry)
                 .WithSessionStore(store)
-                .Build(ct);
+                .BuildAsync(ct);
         }
     }
 

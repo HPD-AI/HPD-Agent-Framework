@@ -37,7 +37,7 @@ var agent = await new AgentBuilder()
     .WithBedrock(
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
         region: "us-east-1")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -76,17 +76,35 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.7f;
             opts.TopP = 0.9f;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`bedrock-config.json`:**
+```json
+{
+    "name": "BedrockAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "bedrock",
+        "modelName": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "providerOptionsJson": "{\"region\":\"us-east-1\",\"maxTokens\":4096,\"temperature\":0.7}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("bedrock-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Bedrock-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -99,43 +117,17 @@ var config = new AgentConfig
     }
 };
 
-var bedrockOpts = new BedrockProviderConfig
+config.Provider.SetTypedProviderConfig(new BedrockProviderConfig
 {
     Region = "us-east-1",
     MaxTokens = 4096,
-    Temperature = 0.7f,
-    TopP = 0.9f
-};
-config.Provider.SetTypedProviderConfig(bedrockOpts);
+    Temperature = 0.7f
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "BedrockAgent",
-    "Provider": {
-        "ProviderKey": "bedrock",
-        "ModelName": "anthropic.claude-3-5-sonnet-20241022-v2:0",
-        "ProviderOptionsJson": "{\"region\":\"us-east-1\",\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.9}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("bedrock-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -160,15 +152,15 @@ var bedrockOpts = new BedrockProviderConfig
 config.Provider.SetTypedProviderConfig(bedrockOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -296,7 +288,7 @@ export AWS_SECRET_ACCESS_KEY="your-secret-key"
 // Automatically uses environment variables
 var agent = await new AgentBuilder()
     .WithBedrock(model: "anthropic.claude-3-5-sonnet-20241022-v2:0")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: AWS Profile (Recommended for Local Development)
@@ -319,7 +311,7 @@ var agent = await new AgentBuilder()
     .WithBedrock(
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
         configure: opts => opts.ProfileName = "production")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 3: Explicit Credentials (Use with Caution)
@@ -334,7 +326,7 @@ var agent = await new AgentBuilder()
             opts.AccessKeyId = "AKIAIOSFODNN7EXAMPLE";
             opts.SecretAccessKey = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
         })
-    .Build();
+    .BuildAsync();
 ```
 
  **Security Warning:** Never hardcode credentials in source code. Use environment variables, AWS profiles, or IAM roles instead.
@@ -352,7 +344,7 @@ var agent = await new AgentBuilder()
             opts.SecretAccessKey = "secret...";
             opts.SessionToken = "temporary-session-token";
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 5: IAM Role (Recommended for Production)
@@ -365,7 +357,7 @@ var agent = await new AgentBuilder()
     .WithBedrock(
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
         region: "us-east-1")
-    .Build();
+    .BuildAsync();
 ```
 
 ## Supported Models
@@ -413,7 +405,7 @@ var agent = await new AgentBuilder()
             opts.GuardrailVersion = "1";
             opts.GuardrailTrace = "enabled"; // Include evaluation details
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Guardrail Features:**
@@ -438,7 +430,7 @@ var agent = await new AgentBuilder()
         {
             opts.EnablePromptCaching = true;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Benefits:**
@@ -462,7 +454,7 @@ var agent = await new AgentBuilder()
             // Use VPC endpoint instead of public endpoint
             opts.ServiceUrl = "https://vpce-xxx.bedrock-runtime.us-east-1.vpce.amazonaws.com";
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Resources:**
@@ -481,7 +473,7 @@ var agent = await new AgentBuilder()
         {
             opts.UseFipsEndpoint = true;
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ## Error Handling
@@ -511,7 +503,7 @@ var agent = await new AgentBuilder()
             opts.MaxRetryAttempts = 3;
             opts.RequestTimeoutMs = 120000; // 2 minutes
         })
-    .Build();
+    .BuildAsync();
 ```
 
 ### Common Exceptions
@@ -558,7 +550,7 @@ var agent = await new AgentBuilder()
     .WithBedrock(
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
         region: "us-east-1")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -582,7 +574,7 @@ var agent = await new AgentBuilder()
         region: "us-east-1",
         configure: opts => opts.ToolChoice = "auto")
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Seattle?");
 ```
@@ -594,7 +586,7 @@ var agent = await new AgentBuilder()
     .WithBedrock(
         model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
         region: "us-east-1")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a short story about AI."))
 {
@@ -621,13 +613,13 @@ var usEastAgent = new AgentBuilder(config)
     .WithBedrock(
         model: config.Provider.ModelName,
         region: "us-east-1")
-    .Build();
+    .BuildAsync();
 
 var usWestAgent = new AgentBuilder(config)
     .WithBedrock(
         model: config.Provider.ModelName,
         region: "us-west-2")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Example 5: Guardrails with Content Filtering
@@ -643,7 +635,7 @@ var agent = await new AgentBuilder()
             opts.GuardrailVersion = "1";
             opts.GuardrailTrace = "enabled";
         })
-    .Build();
+    .BuildAsync();
 
 try
 {
@@ -735,6 +727,47 @@ configure: opts =>
     opts.MaxTokens = 8192; // Or reduce max tokens
 }
 ```
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Bedrock-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `BedrockProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "bedrock",
+        "modelName": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "providerOptionsJson": "{\"region\":\"us-east-1\",\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.9,\"toolChoice\":\"auto\"}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxTokens` | int | ≥ 1 | Max tokens to generate |
+| `temperature` | float | 0.0–1.0 | Sampling randomness |
+| `topP` | float | 0.0–1.0 | Nucleus sampling threshold |
+| `stopSequences` | string[] | max 2500 | Stop generation sequences |
+| `region` | string | — | AWS region (e.g. `"us-east-1"`) — required |
+| `accessKeyId` | string | — | AWS access key ID (uses credential chain if omitted) |
+| `secretAccessKey` | string | — | AWS secret access key (uses credential chain if omitted) |
+| `sessionToken` | string | — | AWS session token (for temporary credentials) |
+| `profileName` | string | — | AWS credentials profile (default: `"default"`) |
+| `toolChoice` | string | `"auto"`, `"any"`, `"tool"` | Tool selection behavior |
+| `toolChoiceName` | string | — | Specific tool name (when `toolChoice` is `"tool"`) |
+| `enablePromptCaching` | bool | — | Enable prompt caching (Claude 3.5+ on Bedrock) |
+| `guardrailIdentifier` | string | — | Guardrail ID or ARN |
+| `guardrailVersion` | string | — | Guardrail version or `"DRAFT"` |
+| `guardrailTrace` | string | `"enabled"`, `"disabled"` | Include guardrail assessment in response |
+| `requestTimeoutMs` | int | ≥ 1 | Request timeout in milliseconds |
+| `maxRetryAttempts` | int | ≥ 0 | Max retry attempts (default: SDK default) |
+| `useFipsEndpoint` | bool | — | Use FIPS-compliant endpoints (US gov/compliance) |
+| `serviceUrl` | string | — | Custom endpoint URL (VPC endpoints, local testing) |
+| `additionalModelRequestFields` | object | — | Extra model-specific parameters |
+
+---
 
 ## BedrockProviderConfig API Reference
 

@@ -56,10 +56,10 @@ public class FileToolkit
 Connect external tool servers using the Model Context Protocol. MCP servers run as separate processes and expose Toolkit over a standardized protocol.
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithMCPServer("filesystem", new MCPServerConfig { ... })
     .WithMCPServer("github", new MCPServerConfig { ... })
-    .Build();
+    .BuildAsync();
 ```
 
 MCP Toolkit support:
@@ -101,9 +101,9 @@ Auto-generate Toolkit from OpenAPI/Swagger specifications. Point to an API spec 
 
 ```csharp
 // Future API
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithOpenApi("https://api.example.com/openapi.json")
-    .Build();
+    .BuildAsync();
 ```
 
 ---

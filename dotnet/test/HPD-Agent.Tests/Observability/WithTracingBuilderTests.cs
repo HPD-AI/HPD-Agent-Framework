@@ -105,7 +105,7 @@ public class WithTracingBuilderTests : AgentTestBase, IDisposable
         var config = DefaultConfig();
         var builder = new AgentBuilder(config, new TestProviderRegistry(fakeLLM));
         builder.WithTracing(sourceName: customSource);
-        var agent = builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        var agent = builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         await RunTurnAsync(agent);
 
@@ -128,7 +128,7 @@ public class WithTracingBuilderTests : AgentTestBase, IDisposable
         builder.WithTracing(sourceName: _testSourceName);
         // WithTelemetry also uses ActivitySource so we use our listener to verify it doesn't interfere.
         builder.WithTelemetry(sourceName: _testSourceName);
-        var agent = builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        var agent = builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         // Must not throw
         Func<Task> act = () => RunTurnAsync(agent);
@@ -161,7 +161,7 @@ public class WithTracingBuilderTests : AgentTestBase, IDisposable
         config.Provider ??= new ProviderConfig { ProviderKey = "test", ModelName = "test-model" };
         config.Provider.DefaultChatOptions ??= new ChatOptions();
         config.Provider.DefaultChatOptions.Tools = tools.Cast<AITool>().ToList();
-        var agent = builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        var agent = builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         await RunTurnAsync(agent);
 
@@ -197,7 +197,7 @@ public class WithTracingBuilderTests : AgentTestBase, IDisposable
         var config = DefaultConfig();
         var builder = new AgentBuilder(config, new TestProviderRegistry(fakeLLM));
         builder.WithTracing(sourceName: unlistenedSource);
-        var agent = builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        var agent = builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         Func<Task> act = () => RunTurnAsync(agent);
         await act.Should().NotThrowAsync(
@@ -218,7 +218,7 @@ public class WithTracingBuilderTests : AgentTestBase, IDisposable
 
         var builder = new AgentBuilder(config, new TestProviderRegistry(fakeLLM));
         builder.WithTracing(sourceName: _testSourceName);
-        return builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        return builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private async Task RunTurnAsync(Agent agent)

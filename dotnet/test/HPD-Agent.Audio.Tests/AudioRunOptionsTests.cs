@@ -170,7 +170,7 @@ public class AudioRunConfigTests
         var options = new AudioRunConfig
         {
             Voice = "alloy",
-            Tts = new TtsConfig { Voice = "nova" } // This should win
+            Tts = new TtsConfig { Provider = "openai", Voice = "nova" } // This should win
         };
 
         // Act

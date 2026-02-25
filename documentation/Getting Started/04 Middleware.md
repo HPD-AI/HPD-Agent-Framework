@@ -13,12 +13,12 @@ Middleware provides hooks into the agent execution pipeline, allowing you to int
 Add middleware via the `AgentBuilder`:
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithToolkit<MyTools>()
     .WithMiddleware(new LoggingMiddleware())
     .WithMiddleware(new CircuitBreakerMiddleware())
-    .Build();
+    .BuildAsync();
 ```
 
 ## The Agent Loop
@@ -103,12 +103,12 @@ public class SimpleRetryMiddleware : IAgentMiddleware
 Register it:
 
 ```csharp
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithToolkit<MyTools>()
     .WithMiddleware(new SimpleRetryMiddleware())
     .WithMiddleware(new CircuitBreakerMiddleware())
-    .Build();
+    .BuildAsync();
 ```
 
 ## Key Features

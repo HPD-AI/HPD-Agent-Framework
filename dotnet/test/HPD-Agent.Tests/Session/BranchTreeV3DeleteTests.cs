@@ -447,6 +447,6 @@ public class BranchTreeV3DeleteTests : AgentTestBase
     {
         return await new AgentBuilder(DefaultConfig(), new TestProviderRegistry(new FakeChatClient()))
             .WithSessionStore(store)
-            .Build(CancellationToken.None);
+            .BuildAsync(CancellationToken.None);
     }
 }

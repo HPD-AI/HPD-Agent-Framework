@@ -188,10 +188,10 @@ public class MyAgentFactory : IAgentFactory
 {
     public Task<Agent> CreateAgentAsync(string sessionId, ISessionStore store, CancellationToken ct)
     {
-        var agent = new AgentBuilder()
+        var agent = await new AgentBuilder()
             .WithProvider("openai", "gpt-4o")
             .WithSessionStore(store)
-            .Build();
+            .BuildAsync();
         return Task.FromResult(agent);
     }
 }

@@ -22,7 +22,7 @@ try
         .WithName("TestAssistant")
         .WithInstructions("You are a helpful assistant. Keep your responses concise and friendly.")
         .WithEventHandler(new SimpleConsoleEventHandler())
-        .Build();
+        .BuildAsync();
 
     Console.WriteLine(" Agent created successfully!");
     Console.WriteLine("📝 Asking: 'What is 2 + 2? Explain briefly.'");

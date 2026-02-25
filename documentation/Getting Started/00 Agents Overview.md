@@ -43,10 +43,10 @@ using HPD.Agent;
 
 // Create and configure an agent
 // API key is auto-detected from OPENAI_API_KEY environment variable
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are a helpful assistant.")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Step 2b: Create an Agent with Tools
@@ -67,11 +67,11 @@ public class CalculatorTool
 }
 
 // Create an agent with tools
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are a helpful assistant with math capabilities.")
     .WithToolkit<CalculatorTool>()  // Register the tool
-    .Build();
+    .BuildAsync();
 ```
 
 Now the agent can call `Add` and `Multiply` when needed. For more info on tools: [03 Tool Calling.md](03%20Tool%20Calling.md)
@@ -101,12 +101,12 @@ public class LoggingMiddleware : IAgentMiddleware
 }
 
 // Create an agent with middleware
-var agent = new AgentBuilder()
+var agent = await new AgentBuilder()
     .WithProvider("openai", "gpt-4o")
     .WithSystemInstructions("You are a helpful assistant.")
     .WithToolkit<CalculatorTool>()
     .WithMiddleware(new LoggingMiddleware())  // Add the middleware
-    .Build();
+    .BuildAsync();
 ```
 
 Now every time the agent calls a function, your middleware will log it. For more info on middleware: [Middleware](04%20Middleware.md)
@@ -127,36 +127,32 @@ That's it! Your agent is running and can use tools.
 
 ### Step 3b: Run the Agent (Stateful)
 
-For multi-turn conversations, use a session and branch to maintain history:
+For multi-turn conversations, create a session first, then pass its ID to each `RunAsync` call:
 
 ```csharp
-// Create a named session + branch in memory
-var (session, branch) = agent.CreateSession("user-123");
+// Create the session once
+await agent.CreateSessionAsync("user-123");
 
-// Each call reuses the same branch - agent remembers previous messages
-var userMessages = new[]
+// Each call with the same sessionId continues the conversation
+await foreach (var evt in agent.RunAsync("Add 10 and 20", sessionId: "user-123"))
 {
-    "Add 10 and 20",      // First tool call
-    "Now multiply the result by 5"  // References previous result
-};
+    if (evt is TextDeltaEvent textDelta)
+        Console.Write(textDelta.Text);
+}
+Console.WriteLine();
 
-foreach (var message in userMessages)
+// Agent remembers the previous result
+await foreach (var evt in agent.RunAsync("Now multiply the result by 5", sessionId: "user-123"))
 {
-    await foreach (var evt in agent.RunAsync(message, branch))
-    {
-        if (evt is TextDeltaEvent textDelta)
-            Console.Write(textDelta.Text);
-    }
-    Console.WriteLine();
+    if (evt is TextDeltaEvent textDelta)
+        Console.Write(textDelta.Text);
 }
 ```
 
-The branch maintains conversation history across turns, so the agent remembers the previous calculation.
-
 ## Key Concepts
 
-### Session + Branch
-A **Session** holds metadata and session-scoped state (permissions, assets). A **Branch** holds the conversation messages. Use `agent.CreateSession()` for in-memory sessions, or `agent.LoadSessionAndBranchAsync(id)` to load (or create) a persistent session by ID. Together they let you resume conversations, persist them to storage, and explore alternative conversation paths via branching.
+### Sessions
+A **session** is a conversation container identified by a `sessionId` string. Create it once with `CreateSessionAsync`, then pass the same `sessionId` to each `RunAsync` call — the agent tracks history automatically. Add a session store to persist conversations across restarts, and use `ForkBranchAsync` to explore alternative conversation paths.
 
 → Learn more: [02 Multi-Turn Conversations.md](02%20Multi-Turn%20Conversations.md)
 
@@ -185,7 +181,9 @@ Agents can leverage memory systems to persist and recall information across conv
 The agent doesn't just return a final answer - it streams **events** as it works:
 
 ```csharp
-await foreach (var evt in agent.RunAsync("Do something", branch))
+await agent.CreateSessionAsync("user-123");
+
+await foreach (var evt in agent.RunAsync("Do something", sessionId: "user-123"))
 {
     if (evt is TextDeltaEvent textDelta)
     {
@@ -206,9 +204,10 @@ This means you can:
 
 ### In-Memory (Default)
 ```csharp
-var (session, branch) = agent.CreateSession("user-123");
-await foreach (var evt in agent.RunAsync("First message", branch)) { }
-await foreach (var evt in agent.RunAsync("Second message", branch)) { }
+// Create the session, then run — history lives in memory for the lifetime of the process
+await agent.CreateSessionAsync("user-123");
+await foreach (var evt in agent.RunAsync("First message", sessionId: "user-123")) { }
+await foreach (var evt in agent.RunAsync("Second message", sessionId: "user-123")) { }
 // Session is lost when process ends
 ```
 
@@ -216,11 +215,12 @@ Use this for: Testing, scripts, one-off tasks.
 
 ### Persistent
 ```csharp
-var agent = new AgentBuilder()
-    .WithSessionStore(new JsonSessionStore("./sessions"))
-    .Build();
+var agent = await new AgentBuilder()
+    .WithSessionStore("./sessions")  // auto-saves after every turn
+    .BuildAsync();
 
-// Agent auto-loads, runs, and saves using sessionId + branchId
+// Create the session once — survives process restarts
+await agent.CreateSessionAsync("user-123");
 await foreach (var evt in agent.RunAsync("Message", sessionId: "user-123")) { }
 ```
 

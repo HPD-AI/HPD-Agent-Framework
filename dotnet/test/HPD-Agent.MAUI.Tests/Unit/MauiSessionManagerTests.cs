@@ -241,7 +241,7 @@ public class MauiSessionManagerTests : IDisposable
             return await new AgentBuilder(config, providerRegistry)
                 .WithSessionStore(store)
                 .WithCircuitBreaker(5)
-                .Build(ct);
+                .BuildAsync(ct);
         }
     }
 

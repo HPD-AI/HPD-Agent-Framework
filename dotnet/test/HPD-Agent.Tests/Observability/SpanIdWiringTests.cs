@@ -315,7 +315,7 @@ public class SpanIdWiringTests : AgentTestBase
 
         var builder = new AgentBuilder(config, new TestProviderRegistry(fakeLLM));
         builder.WithPermissions();
-        var agent = builder.Build(CancellationToken.None).GetAwaiter().GetResult();
+        var agent = builder.BuildAsync(CancellationToken.None).GetAwaiter().GetResult();
 
         var eventStream = agent.RunAgenticLoopAsync(
             [new ChatMessage(ChatRole.User, "go")], cancellationToken: TestCancellationToken);

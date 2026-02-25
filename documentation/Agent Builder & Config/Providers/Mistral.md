@@ -33,7 +33,7 @@ Environment.SetEnvironmentVariable("MISTRAL_API_KEY", "your-api-key");
 
 var agent = await new AgentBuilder()
     .WithMistral(model: "mistral-large-latest")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is the capital of France?");
 Console.WriteLine(response);
@@ -70,17 +70,36 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0.7m;
             opts.TopP = 0.9m;
         })
-    .Build();
+    .BuildAsync();
 ```
 
-#### 2. Config Pattern (Data-Driven)
+#### 2. JSON Config File
 
-Best for: Serialization, persistence, and configuration files.
+Best for: A single `agent.json` that fully describes the agent — no code required for configuration.
 
-<div style="display: flex; gap: 20px;">
-<div style="flex: 1;">
+**`mistral-config.json`:**
+```json
+{
+    "name": "MistralAgent",
+    "systemInstructions": "You are a helpful assistant.",
+    "provider": {
+        "providerKey": "mistral",
+        "modelName": "mistral-large-latest",
+        "apiKey": "your-api-key",
+        "providerOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"safePrompt\":true}"
+    }
+}
+```
 
-**C# Config Object:**
+```csharp
+var agent = await AgentConfig.BuildFromFileAsync("mistral-config.json");
+```
+
+The `providerOptionsJson` value is a JSON string containing Mistral-specific options. All keys are **camelCase** — see the [ProviderOptionsJson reference](#provideroptionsjson-reference) below for the full list.
+
+#### 3. C# Config Object
+
+Best for: Reusable config shared across multiple builder instances.
 
 ```csharp
 var config = new AgentConfig
@@ -94,43 +113,17 @@ var config = new AgentConfig
     }
 };
 
-var mistralOpts = new MistralProviderConfig
+config.Provider.SetTypedProviderConfig(new MistralProviderConfig
 {
     MaxTokens = 4096,
     Temperature = 0.7m,
-    TopP = 0.9m
-};
-config.Provider.SetTypedProviderConfig(mistralOpts);
+    SafePrompt = true
+});
 
 var agent = await config.BuildAsync();
 ```
 
-</div>
-<div style="flex: 1;">
-
-**JSON Config File:**
-
-```json
-{
-    "Name": "MistralAgent",
-    "Provider": {
-        "ProviderKey": "mistral",
-        "ModelName": "mistral-large-latest",
-        "ApiKey": "your-api-key",
-        "ProviderOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"topP\":0.9}"
-    }
-}
-```
-
-```csharp
-var agent = await AgentConfig
-    .BuildFromFileAsync("mistral-config.json");
-```
-
-</div>
-</div>
-
-#### 3. Builder + Config Pattern (Recommended)
+#### 4. Builder + Config Pattern (Recommended)
 
 Best for: Production deployments with reusable configuration and runtime customization.
 
@@ -155,15 +148,15 @@ var mistralOpts = new MistralProviderConfig
 config.Provider.SetTypedProviderConfig(mistralOpts);
 
 // Reuse with different runtime customizations
-var agent1 = new AgentBuilder(config)
+var agent1 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
-var agent2 = new AgentBuilder(config)
+var agent2 = await new AgentBuilder(config)
     .WithServiceProvider(services)
     .WithToolkit<FileToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Provider-Specific Options
@@ -274,7 +267,7 @@ export MISTRAL_API_KEY="your-api-key"
 // Automatically uses environment variable
 var agent = await new AgentBuilder()
     .WithMistral(model: "mistral-large-latest")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Method 2: Explicit API Key
@@ -284,7 +277,7 @@ var agent = await new AgentBuilder()
     .WithMistral(
         model: "mistral-large-latest",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 ```
 
 **Security Warning:** Never hardcode API keys in source code. Use environment variables or secure configuration management instead.
@@ -304,7 +297,7 @@ var agent = await new AgentBuilder()
 ```csharp
 var agent = await new AgentBuilder()
     .WithMistral(model: "mistral-large-latest")
-    .Build();
+    .BuildAsync();
 ```
 
 ### Getting Your API Key
@@ -358,7 +351,7 @@ var agent = await new AgentBuilder()
             opts.ResponseFormat = "json_object";
             opts.Temperature = 0.3m; // Lower for structured output
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(
     "Return user data as JSON: Name: John Doe, Age: 30, City: Paris");
@@ -380,7 +373,7 @@ var agent = await new AgentBuilder()
             opts.RandomSeed = 12345; // Same seed = same output
             opts.Temperature = 0m; // No randomness
         })
-    .Build();
+    .BuildAsync();
 
 // Multiple calls with same input will produce identical outputs
 var response1 = await agent.RunAsync("Generate a story.");
@@ -401,7 +394,7 @@ var agent = await new AgentBuilder()
         {
             opts.SafePrompt = true; // Add safety guardrails
         })
-    .Build();
+    .BuildAsync();
 ```
 
 **Benefits:**
@@ -425,7 +418,7 @@ var agent = await new AgentBuilder()
         })
     .WithToolkit<WeatherToolkit>()
     .WithToolkit<CalculatorToolkit>()
-    .Build();
+    .BuildAsync();
 ```
 
 ### Client Middleware
@@ -440,7 +433,7 @@ var agent = await new AgentBuilder()
         clientFactory: client =>
             new LoggingChatClient(
                 new CachingChatClient(client)))
-    .Build();
+    .BuildAsync();
 ```
 
 ## Error Handling
@@ -512,7 +505,7 @@ var agent = await new AgentBuilder()
     .WithMistral(
         model: "mistral-large-latest",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Explain quantum computing in simple terms.");
 Console.WriteLine(response);
@@ -536,7 +529,7 @@ var agent = await new AgentBuilder()
         apiKey: "your-api-key",
         configure: opts => opts.ToolChoice = "auto")
     .WithToolkit<WeatherToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What's the weather in Seattle?");
 ```
@@ -548,7 +541,7 @@ var agent = await new AgentBuilder()
     .WithMistral(
         model: "mistral-large-latest",
         apiKey: "your-api-key")
-    .Build();
+    .BuildAsync();
 
 await foreach (var chunk in agent.RunAsync("Write a short story about AI."))
 {
@@ -568,7 +561,7 @@ var agent = await new AgentBuilder()
             opts.ResponseFormat = "json_object";
             opts.Temperature = 0.3m;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync(@"
     Extract the following person data as JSON:
@@ -593,7 +586,7 @@ var agent = await new AgentBuilder()
             opts.RandomSeed = 42;
             opts.Temperature = 0m;
         })
-    .Build();
+    .BuildAsync();
 
 // Use in tests to ensure consistent behavior
 var response1 = await agent.RunAsync("Generate a test case");
@@ -614,7 +607,7 @@ var agent = await new AgentBuilder()
             opts.TopP = 0.95m;
             opts.MaxTokens = 2048;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Write a creative poem about the stars.");
 ```
@@ -631,7 +624,7 @@ var agent = await new AgentBuilder()
             opts.Temperature = 0m; // No randomness
             opts.MaxTokens = 4096;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Write a Python function to sort a list.");
 ```
@@ -648,7 +641,7 @@ var agent = await new AgentBuilder()
             opts.SafePrompt = true; // Enable safety guardrails
             opts.Temperature = 0.7m;
         })
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("Generate a story for children.");
 ```
@@ -674,7 +667,7 @@ var agent = await new AgentBuilder()
             opts.ParallelToolCalls = true; // Execute tools in parallel
         })
     .WithToolkit<MathToolkit>()
-    .Build();
+    .BuildAsync();
 
 var response = await agent.RunAsync("What is 5+3 and 4*7?");
 // Model can call both Add and Multiply simultaneously
@@ -696,14 +689,14 @@ var config = new AgentConfig
 // Fast model for simple tasks
 var simpleAgent = new AgentBuilder(config)
     .WithMistral(model: "mistral-small-latest")
-    .Build();
+    .BuildAsync();
 
 // Powerful model for complex tasks
 var complexAgent = new AgentBuilder(config)
     .WithMistral(
         model: "mistral-large-latest",
         configure: opts => opts.MaxTokens = 8192)
-    .Build();
+    .BuildAsync();
 
 // Route based on task complexity
 var response = taskIsSimple
@@ -801,6 +794,36 @@ configure: opts =>
 1. Verify model ID matches exactly (case-sensitive)
 2. Check [available models](https://docs.mistral.ai/getting-started/models/)
 3. Ensure you have access to the model
+
+## ProviderOptionsJson Reference
+
+When configuring via JSON file, all Mistral-specific options go inside the `providerOptionsJson` string. The keys are **camelCase** and map 1:1 to `MistralProviderConfig` properties.
+
+A complete example:
+```json
+{
+    "name": "MyAgent",
+    "provider": {
+        "providerKey": "mistral",
+        "modelName": "mistral-large-latest",
+        "apiKey": "your-api-key",
+        "providerOptionsJson": "{\"maxTokens\":4096,\"temperature\":0.7,\"topP\":1.0,\"randomSeed\":42,\"safePrompt\":true,\"toolChoice\":\"auto\",\"parallelToolCalls\":true}"
+    }
+}
+```
+
+| JSON key | Type | Values / Range | Description |
+|---|---|---|---|
+| `maxTokens` | int | ≥ 1 | Max tokens to generate |
+| `temperature` | decimal | 0.0–1.0 | Sampling randomness (default: 0.7) |
+| `topP` | decimal | 0.0–1.0 | Nucleus sampling threshold (default: 1.0) |
+| `randomSeed` | int | any | Seed for deterministic generation |
+| `responseFormat` | string | `"text"`, `"json_object"` | Output format |
+| `safePrompt` | bool | — | Inject Mistral safety guardrails (default: false) |
+| `toolChoice` | string | `"auto"`, `"any"`, `"none"` | Tool selection behavior |
+| `parallelToolCalls` | bool | — | Enable parallel tool execution (default: true) |
+
+---
 
 ## MistralProviderConfig API Reference
 

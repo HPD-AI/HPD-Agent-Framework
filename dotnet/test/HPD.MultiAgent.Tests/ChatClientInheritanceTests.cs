@@ -68,7 +68,7 @@ public class ChatClientInheritanceTests
         };
 
         var builder = new AgentBuilder(config).WithChatClient(mockChatClient.Object);
-        var prebuiltAgent = await builder.Build(CancellationToken.None);
+        var prebuiltAgent = await builder.BuildAsync(CancellationToken.None);
 
         var factory = CreatePrebuiltAgentFactory(prebuiltAgent);
 
@@ -92,7 +92,7 @@ public class ChatClientInheritanceTests
             SystemInstructions = "Test"
         };
         var builder = new AgentBuilder(config).WithChatClient(mockChatClient.Object);
-        var prebuiltAgent = await builder.Build(CancellationToken.None);
+        var prebuiltAgent = await builder.BuildAsync(CancellationToken.None);
 
         var factory = CreatePrebuiltAgentFactory(prebuiltAgent);
 
@@ -141,7 +141,7 @@ public class ChatClientInheritanceTests
         // Act & Assert - deferred provider skips provider validation but still needs client at runtime
         // The client must be provided via OverrideChatClient in RunConfig
         await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-            await builder.Build(CancellationToken.None));
+            await builder.BuildAsync(CancellationToken.None));
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public class ChatClientInheritanceTests
         // Act
         var agent = await new AgentBuilder(config)
             .WithChatClient(mockChatClient.Object)
-            .Build(CancellationToken.None);
+            .BuildAsync(CancellationToken.None);
 
         // Assert
         agent.Should().NotBeNull();
@@ -216,7 +216,7 @@ public class ChatClientInheritanceTests
                 SystemInstructions = "Solve problems"
             })
             .WithChatClient(mockChatClient.Object)
-            .Build(CancellationToken.None);
+            .BuildAsync(CancellationToken.None);
 
         var verifierAgent = await new AgentBuilder(new AgentConfig
             {
@@ -224,7 +224,7 @@ public class ChatClientInheritanceTests
                 SystemInstructions = "Verify solutions"
             })
             .WithChatClient(mockChatClient.Object)
-            .Build(CancellationToken.None);
+            .BuildAsync(CancellationToken.None);
 
         // Build workflow with prebuilt agents
         var workflow = AgentWorkflow.Create()
@@ -279,7 +279,7 @@ internal sealed class TestConfigAgentFactory : AgentFactory
         }
         // If no provider and no fallback, this will throw - which is expected behavior
 
-        return await builder.Build(cancellationToken);
+        return await builder.BuildAsync(cancellationToken);
     }
 }
 

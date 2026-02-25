@@ -409,10 +409,10 @@ public class AgentConfig
     /// - Middleware setup
     /// - Event handler registration
     /// </remarks>
-    public Task<Agent> Build(CancellationToken cancellationToken = default)
+    public Task<Agent> BuildAsync(CancellationToken cancellationToken = default)
     {
         var builder = new AgentBuilder(this);
-        return builder.Build(cancellationToken);
+        return builder.BuildAsync(cancellationToken);
     }
 
     /// <summary>
@@ -446,7 +446,7 @@ public class AgentConfig
             throw new InvalidOperationException($"Failed to deserialize AgentConfig from {filePath}");
         }
         
-        return await config.Build(cancellationToken).ConfigureAwait(false);
+        return await config.BuildAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
