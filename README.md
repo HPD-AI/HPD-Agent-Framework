@@ -12,6 +12,11 @@
 
 A full-stack framework for building AI agents — C# backend with tools, middleware, multi-turn conversations, and multi-agent workflows, paired with TypeScript/Svelte UI libraries for building rich, streaming chat interfaces.
 
+> [!WARNING]
+> **HPD.Agent.Framework is currently in an early development phase.**
+>
+> Until the release of version **1.0**, the API, inner mechanisms and naming are subject to significant changes without notice.
+
 ## Install
 
 ```bash
