@@ -131,4 +131,4 @@ Observability = new ObservabilityConfig
 ## See Also
 
 - [Agent Config](Agent%20Config.md)
-- [Events](../Events) — typed event reference and observer/handler patterns
+- [Events](../Events/05.1%20Events%20Overview.md) — typed event reference and observer/handler patterns

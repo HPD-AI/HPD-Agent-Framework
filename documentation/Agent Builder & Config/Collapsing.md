@@ -108,4 +108,4 @@ All functions are exposed to the model at all times. Suitable for agents with a 
 ## See Also
 
 - [Agent Config](Agent%20Config.md)
-- [Tools Overview](../Tools/02%20Tools%20Overview.md)
+- [Tools Overview](../Tools/02.1%20CSharp%20Tools%20Overview.md)
