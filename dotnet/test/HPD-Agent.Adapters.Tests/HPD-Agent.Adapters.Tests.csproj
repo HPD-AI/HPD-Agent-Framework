@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0;net9.0;net8.0</TargetFrameworks>
+    <RootNamespace>HPD.Agent.Adapters.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Runtime reference for CardFallbackText, attributes, PlatformSessionMapper, etc. -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Adapters\HPD-Agent.Adapters.Abstractions\HPD-Agent.Adapters.Abstractions.csproj" />
+    <!-- Runtime reference for WebhookSignatureVerifier, AdapterRegistration, etc. -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Adapters\HPD-Agent.Adapters.AspNetCore\HPD-Agent.Adapters.AspNetCore.csproj" />
+    <!-- Source generator: runs on this project's code AND is a regular reference for driver tests -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Adapters\HPD-Agent.Adapters.SourceGenerator\HPD-Agent.Adapters.SourceGenerator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="true" />
+    <!-- InMemorySessionStore, Session, Branch, ISessionStore -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj" />
+    <!-- AgentSessionManager -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Hosting\HPD-Agent.Hosting.csproj" />
+    <!-- Slack adapter: SlackBlockKit, SlackModalConverter, SlackThreadId, SlackAdapterConfig, etc. -->
+    <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Adapters\HPD-Agent.Adapters.Slack\HPD-Agent.Adapters.Slack.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -10,21 +10,17 @@
  *   - Error paths: init failure, selectSession failure, switchBranch failure
  *   - Error is cleared on next successful operation
  *
- * Strategy: inject a FakeTransport via the `_transport` option so
+ * Strategy: inject a FakeAgentClient via the `_client` option so
  * createWorkspace() uses our spy without a real server.
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { createWorkspace } from '../workspace.svelte.ts';
-import type { CreateWorkspaceOptions } from '../types.ts';
+import type { AgentClientLike, CreateWorkspaceOptions } from '../types.ts';
 import type {
-	AgentTransport,
 	Branch,
 	BranchMessage,
 	Session,
-	ConnectOptions,
-	ClientMessage,
-	AgentEvent,
 	CreateSessionRequest,
 	UpdateSessionRequest,
 	ListSessionsOptions,
@@ -85,24 +81,20 @@ function makeMessages(count: number): BranchMessage[] {
 }
 
 // ============================================
-// FakeTransport
+// FakeAgentClient
 //
-// A minimal AgentTransport stub. All CRUD methods are vi.fn() so tests
+// Implements AgentClientLike. All CRUD methods are vi.fn() so tests
 // can spy on call counts and control return values via mockResolvedValue.
+// stream() never resolves (workspace CRUD tests don't trigger streaming).
 // ============================================
 
-function makeFakeTransport(sessions: Session[], branchesPerSession: Map<string, Branch[]>): AgentTransport {
+function makeFakeAgentClient(sessions: Session[], branchesPerSession: Map<string, Branch[]>): AgentClientLike {
 	const getBranchMessagesSpy = vi.fn(async (_sid: string, _bid: string): Promise<BranchMessage[]> => []);
 
-	const transport: AgentTransport = {
+	const client: AgentClientLike = {
 		// ---- Streaming (not used in workspace CRUD tests) ----
-		connect: vi.fn(async (_opts: ConnectOptions) => {}),
-		send: vi.fn(async (_msg: ClientMessage) => {}),
-		onEvent: vi.fn((_handler: (event: AgentEvent) => void) => {}),
-		onError: vi.fn((_handler: (error: Error) => void) => {}),
-		onClose: vi.fn((_handler: () => void) => {}),
-		disconnect: vi.fn(),
-		connected: false,
+		stream: vi.fn(async () => new Promise<void>(() => {})),
+		abort: vi.fn(),
 
 		// ---- Session CRUD ----
 		listSessions: vi.fn(async (_opts?: ListSessionsOptions) => sessions),
@@ -151,20 +143,20 @@ function makeFakeTransport(sessions: Session[], branchesPerSession: Map<string, 
 		getPreviousSibling: vi.fn(async (_sid: string, _bid: string): Promise<Branch | null> => null),
 	};
 
-	return transport;
+	return client;
 }
 
 /**
- * Build a workspace with the fake transport pre-wired.
+ * Build a workspace with the fake client pre-wired.
  * Waits for async init to complete before returning.
  */
 async function buildWorkspace(
-	transport: AgentTransport,
+	client: AgentClientLike,
 	overrides: Partial<CreateWorkspaceOptions> = {}
 ) {
 	const ws = createWorkspace({
 		baseUrl: 'http://fake',
-		_transport: transport,
+		_client: client,
 		...overrides
 	});
 	// Wait for async #init() to complete
@@ -180,22 +172,22 @@ describe('createWorkspace — cache miss vs hit', () => {
 	it('calls getBranchMessages once on first switch to a branch', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		await buildWorkspace(transport);
+		await buildWorkspace(client);
 
 		// Init already triggered one call for 'main' (the default branch)
-		const callsAfterInit = (transport.getBranchMessages as ReturnType<typeof vi.fn>).mock.calls.length;
+		const callsAfterInit = (client.getBranchMessages as ReturnType<typeof vi.fn>).mock.calls.length;
 		expect(callsAfterInit).toBe(1);
 	});
 
 	it('does NOT call getBranchMessages again on cache hit (same branch)', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('feature', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport);
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const ws = await buildWorkspace(client);
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
 		// Switch to feature (cache miss — 1 call)
 		await ws.switchBranch('feature');
@@ -209,10 +201,10 @@ describe('createWorkspace — cache miss vs hit', () => {
 	it('calls getBranchMessages again after invalidateBranch()', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('feature', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport);
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const ws = await buildWorkspace(client);
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
 		// Load feature into cache
 		await ws.switchBranch('feature');
@@ -230,11 +222,11 @@ describe('createWorkspace — cache miss vs hit', () => {
 	it('calls getBranchMessages with correct sessionId and branchId', async () => {
 		const sessions = [makeSession('session-abc')];
 		const branches = new Map([['session-abc', [makeBranch('branch-xyz', 'session-abc')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		await buildWorkspace(transport);
+		await buildWorkspace(client);
 
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 		const [sid, bid] = spy.mock.calls[0];
 		expect(sid).toBe('session-abc');
 		expect(bid).toBe('branch-xyz');
@@ -258,10 +250,10 @@ describe('createWorkspace — LRU cache eviction', () => {
 			makeBranch('b4', 's1')
 		];
 		const branches = new Map([['s1', branchList]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { maxCachedBranches });
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const ws = await buildWorkspace(client, { maxCachedBranches });
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
 		// Access: main (init), b1, b2, b3 — cache is now full (3 entries)
 		await ws.switchBranch('b1');
@@ -290,10 +282,10 @@ describe('createWorkspace — LRU cache eviction', () => {
 			makeBranch('b3', 's1')
 		];
 		const branches = new Map([['s1', branchList]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { maxCachedBranches });
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const ws = await buildWorkspace(client, { maxCachedBranches });
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
 		// Access: main (init), b1 — cache full (main, b1), active = b1
 		await ws.switchBranch('b1');
@@ -319,9 +311,9 @@ describe('createWorkspace — LRU cache eviction', () => {
 		const branches = new Map([['s1', branchList]]);
 
 		// Default is 10 — with 6 branches we should never evict
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport, { maxCachedBranches: 10 });
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client, { maxCachedBranches: 10 });
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
 		// Visit all 6 branches
 		for (const b of branchList.slice(1)) {
@@ -345,12 +337,12 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have streaming: false', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
 		// Return 3 messages when getBranchMessages is called
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		for (const msg of ws.state!.messages) {
 			expect(msg.streaming).toBe(false);
 		}
@@ -359,10 +351,10 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have thinking: false', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
+		const client = makeFakeAgentClient(sessions, branches);
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		for (const msg of ws.state!.messages) {
 			expect(msg.thinking).toBe(false);
 		}
@@ -371,10 +363,10 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have toolCalls: []', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
+		const client = makeFakeAgentClient(sessions, branches);
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(3));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		for (const msg of ws.state!.messages) {
 			expect(msg.toolCalls).toEqual([]);
 		}
@@ -383,11 +375,11 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have id, role, content preserved', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 		const raw = makeMessages(2);
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(raw);
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(raw);
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		expect(ws.state!.messages[0].id).toBe(raw[0].id);
 		expect(ws.state!.messages[0].role).toBe(raw[0].role);
 		expect(ws.state!.messages[0].content).toBe('Message 0');
@@ -396,10 +388,10 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have timestamp as a Date (not string)', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(2));
+		const client = makeFakeAgentClient(sessions, branches);
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(2));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		for (const msg of ws.state!.messages) {
 			expect(msg.timestamp).toBeInstanceOf(Date);
 		}
@@ -408,10 +400,10 @@ describe('createWorkspace — mapToUIMessages field correctness', () => {
 	it('loaded messages have reasoning: undefined', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(2));
+		const client = makeFakeAgentClient(sessions, branches);
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockResolvedValue(makeMessages(2));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		for (const msg of ws.state!.messages) {
 			expect(msg.reasoning).toBeUndefined();
 		}
@@ -431,13 +423,13 @@ describe('createWorkspace — compound cache key (sessionId:branchId)', () => {
 			['s-a', [makeBranch('main', 's-a')]],
 			['s-b', [makeBranch('main', 's-b')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
 		// Return different messages per session
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>)
+		(client.getBranchMessages as ReturnType<typeof vi.fn>)
 			.mockImplementation(async (sid: string) => (sid === 's-a' ? msgA : msgB));
 
-		const ws = await buildWorkspace(transport, { sessionId: 's-a' });
+		const ws = await buildWorkspace(client, { sessionId: 's-a' });
 		expect(ws.state!.messages).toHaveLength(2);
 
 		const stateA = ws.state;
@@ -457,10 +449,10 @@ describe('createWorkspace — compound cache key (sessionId:branchId)', () => {
 			['s-a', [makeBranch('main', 's-a')]],
 			['s-b', [makeBranch('main', 's-b')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const client = makeFakeAgentClient(sessions, branches);
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 
-		const ws = await buildWorkspace(transport, { sessionId: 's-a' });
+		const ws = await buildWorkspace(client, { sessionId: 's-a' });
 		// Warm up s-b cache
 		await ws.selectSession('s-b');
 		const callsAfterBoth = spy.mock.calls.length;
@@ -484,9 +476,9 @@ describe('createWorkspace — init', () => {
 			['s1', [makeBranch('main', 's1')]],
 			['s2', [makeBranch('main', 's2')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { sessionId: 's2' });
+		const ws = await buildWorkspace(client, { sessionId: 's2' });
 		expect(ws.activeSessionId).toBe('s2');
 	});
 
@@ -495,15 +487,15 @@ describe('createWorkspace — init', () => {
 		const branches = new Map([
 			['s1', [makeBranch('main', 's1'), makeBranch('dev', 's1')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { initialBranchId: 'dev' });
+		const ws = await buildWorkspace(client, { initialBranchId: 'dev' });
 		expect(ws.activeBranchId).toBe('dev');
 	});
 
 	it('is idle (nulls) when no sessions exist', async () => {
-		const transport = makeFakeTransport([], new Map());
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient([], new Map());
+		const ws = await buildWorkspace(client);
 		expect(ws.activeSessionId).toBeNull();
 		expect(ws.activeBranchId).toBeNull();
 		expect(ws.state).toBeNull();
@@ -512,10 +504,10 @@ describe('createWorkspace — init', () => {
 
 	it('sets error when listSessions throws during init', async () => {
 		const sessions = [makeSession('s1')];
-		const transport = makeFakeTransport(sessions, new Map([['s1', [makeBranch('main', 's1')]]]));
-		(transport.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network error'));
+		const client = makeFakeAgentClient(sessions, new Map([['s1', [makeBranch('main', 's1')]]]));
+		(client.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('network error'));
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		expect(ws.error).not.toBeNull();
 		expect(ws.loading).toBe(false);
 	});
@@ -528,13 +520,13 @@ describe('createWorkspace — selectSession error path', () => {
 			['s1', [makeBranch('main', 's1')]],
 			['s2', [makeBranch('main', 's2')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { sessionId: 's1' });
+		const ws = await buildWorkspace(client, { sessionId: 's1' });
 		expect(ws.error).toBeNull();
 
 		// Make listBranches throw on the next call
-		(transport.listBranches as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
+		(client.listBranches as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 
 		await ws.selectSession('s2').catch(() => {});
 		expect(ws.error).not.toBeNull();
@@ -547,12 +539,12 @@ describe('createWorkspace — selectSession error path', () => {
 			['s1', [makeBranch('main', 's1')]],
 			['s2', [makeBranch('main', 's2')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport, { sessionId: 's1' });
+		const ws = await buildWorkspace(client, { sessionId: 's1' });
 
 		// Force an error on the FIRST attempt to switch to s2
-		(transport.listBranches as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
+		(client.listBranches as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 		await ws.selectSession('s2').catch(() => {});
 		expect(ws.error).not.toBeNull();
 
@@ -567,11 +559,11 @@ describe('createWorkspace — switchBranch error path', () => {
 	it('sets error when getBranchMessages throws during switchBranch', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('b2', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 		await ws.switchBranch('b2').catch(() => {});
 
 		expect(ws.error).not.toBeNull();
@@ -581,12 +573,12 @@ describe('createWorkspace — switchBranch error path', () => {
 	it('activeBranchId does not change when switchBranch fails', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('b2', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
+		const client = makeFakeAgentClient(sessions, branches);
 
-		const ws = await buildWorkspace(transport);
+		const ws = await buildWorkspace(client);
 		expect(ws.activeBranchId).toBe('main');
 
-		(transport.getBranchMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
+		(client.getBranchMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 		await ws.switchBranch('b2').catch(() => {});
 
 		// activeBranchId was set during #loadBranch before the error — it depends

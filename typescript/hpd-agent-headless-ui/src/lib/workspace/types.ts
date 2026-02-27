@@ -1,21 +1,24 @@
 import type {
-	AgentTransport,
 	clientToolKitDefinition,
 	ClientToolInvokeResponse,
 	ClientToolInvokeRequestEvent,
 	PermissionChoice,
 	CreateSessionRequest,
+	UpdateSessionRequest,
+	ListSessionsOptions,
 	CreateBranchRequest,
+	ForkBranchRequest,
 } from '@hpd/hpd-agent-client';
-import type { Session, Branch } from '@hpd/hpd-agent-client';
+import type { Session, Branch, SiblingBranch, BranchMessage } from '@hpd/hpd-agent-client';
 import type { EventHandlers } from '@hpd/hpd-agent-client';
 import type { AgentState } from '../agent/agent.svelte.ts';
 
 /**
- * Minimal interface of AgentClient used by WorkspaceImpl.
+ * All methods of AgentClient used by WorkspaceImpl.
  * Allows test injection of a fake client without importing the real class.
  */
 export interface AgentClientLike {
+	// Streaming
 	stream(
 		sessionId: string,
 		branchId: string | undefined,
@@ -23,6 +26,26 @@ export interface AgentClientLike {
 		handlers: EventHandlers
 	): Promise<void>;
 	abort(): void;
+
+	// Session CRUD
+	listSessions(options?: ListSessionsOptions): Promise<Session[]>;
+	getSession(sessionId: string): Promise<Session | null>;
+	createSession(options?: CreateSessionRequest): Promise<Session>;
+	updateSession(sessionId: string, request: UpdateSessionRequest): Promise<Session>;
+	deleteSession(sessionId: string): Promise<void>;
+
+	// Branch CRUD
+	listBranches(sessionId: string): Promise<Branch[]>;
+	getBranch(sessionId: string, branchId: string): Promise<Branch | null>;
+	createBranch(sessionId: string, options?: CreateBranchRequest): Promise<Branch>;
+	forkBranch(sessionId: string, branchId: string, options: ForkBranchRequest): Promise<Branch>;
+	deleteBranch(sessionId: string, branchId: string, options?: { recursive?: boolean }): Promise<void>;
+	getBranchMessages(sessionId: string, branchId: string): Promise<BranchMessage[]>;
+
+	// Sibling navigation
+	getBranchSiblings(sessionId: string, branchId: string): Promise<SiblingBranch[]>;
+	getNextSibling(sessionId: string, branchId: string): Promise<Branch | null>;
+	getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null>;
 }
 
 export interface CreateWorkspaceOptions {
@@ -57,15 +80,9 @@ export interface CreateWorkspaceOptions {
 	onError?: (message: string) => void;
 
 	/**
-	 * @internal — test-only. Inject a pre-built transport instead of constructing
-	 * one from baseUrl. Allows unit tests to spy on CRUD calls without a real server.
-	 */
-	_transport?: AgentTransport;
-
-	/**
 	 * @internal — test-only. Inject a fake AgentClient instead of constructing
-	 * one from baseUrl. Allows unit tests to drive synthetic streaming events
-	 * (permissions, clarifications) without a real server.
+	 * one from baseUrl. Allows unit tests to control both streaming events and
+	 * CRUD operations without a real server.
 	 */
 	_client?: AgentClientLike;
 }

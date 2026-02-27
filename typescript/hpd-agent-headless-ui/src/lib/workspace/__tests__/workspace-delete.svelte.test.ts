@@ -11,9 +11,8 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { createWorkspace } from '../workspace.svelte.ts';
-import type { CreateWorkspaceOptions } from '../types.ts';
+import type { AgentClientLike, CreateWorkspaceOptions } from '../types.ts';
 import type {
-	AgentTransport,
 	Branch,
 	BranchMessage,
 	Session,
@@ -66,18 +65,13 @@ function makeBranch(id: string, sessionId: string, overrides: Partial<Branch> = 
 	};
 }
 
-function makeFakeTransport(
+function makeFakeAgentClient(
 	sessions: Session[],
 	branchesPerSession: Map<string, Branch[]>
-): AgentTransport {
-	const transport: AgentTransport = {
-		connect: vi.fn(),
-		send: vi.fn(),
-		onEvent: vi.fn(),
-		onError: vi.fn(),
-		onClose: vi.fn(),
-		disconnect: vi.fn(),
-		connected: false,
+): AgentClientLike {
+	const client: AgentClientLike = {
+		stream: vi.fn(async () => new Promise<void>(() => {})),
+		abort: vi.fn(),
 
 		listSessions: vi.fn(async () => sessions),
 		getSession: vi.fn(async (id: string) => sessions.find((s) => s.id === id) ?? null),
@@ -124,16 +118,16 @@ function makeFakeTransport(
 		getPreviousSibling: vi.fn(async (): Promise<Branch | null> => null),
 	};
 
-	return transport;
+	return client;
 }
 
 async function buildWorkspace(
-	transport: AgentTransport,
+	client: AgentClientLike,
 	overrides: Partial<CreateWorkspaceOptions> = {}
 ) {
 	const ws = createWorkspace({
 		baseUrl: 'http://fake',
-		_transport: transport,
+		_client: client,
 		...overrides
 	});
 	await tick(200);
@@ -145,24 +139,24 @@ async function buildWorkspace(
 // ============================================
 
 describe('deleteBranch — transport call with recursive option', () => {
-	it('calls transport.deleteBranch without recursive when not passed', async () => {
+	it('calls client.deleteBranch without recursive when not passed', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([
 			['s1', [makeBranch('main', 's1'), makeBranch('fork-1', 's1')]]
 		]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		await ws.deleteBranch('fork-1');
 
-		const spy = transport.deleteBranch as ReturnType<typeof vi.fn>;
+		const spy = client.deleteBranch as ReturnType<typeof vi.fn>;
 		expect(spy).toHaveBeenCalledOnce();
 		const [, , opts] = spy.mock.calls[0];
 		// No recursive option passed — should be undefined or falsy
 		expect(opts?.recursive).toBeFalsy();
 	});
 
-	it('calls transport.deleteBranch with recursive: true when passed', async () => {
+	it('calls client.deleteBranch with recursive: true when passed', async () => {
 		const sessions = [makeSession('s1')];
 		// Set up fork-1 with a child so the frontend won't short-circuit
 		const fork1 = makeBranch('fork-1', 's1', {
@@ -174,8 +168,8 @@ describe('deleteBranch — transport call with recursive option', () => {
 			ancestors: { '0': 'main', '1': 'fork-1' }
 		});
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1, fork1a]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		// Switch to fork-1a first so fork-1 is not active (no navigation needed)
 		await ws.switchBranch('fork-1a');
@@ -184,20 +178,20 @@ describe('deleteBranch — transport call with recursive option', () => {
 		await ws.switchBranch('main');
 		await ws.deleteBranch('fork-1', { recursive: true });
 
-		const spy = transport.deleteBranch as ReturnType<typeof vi.fn>;
+		const spy = client.deleteBranch as ReturnType<typeof vi.fn>;
 		const lastCall = spy.mock.calls[spy.mock.calls.length - 1];
 		expect(lastCall[2]).toEqual({ recursive: true });
 	});
 
-	it('calls transport.deleteBranch with recursive: false when explicitly passed false', async () => {
+	it('calls client.deleteBranch with recursive: false when explicitly passed false', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('fork-1', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		await ws.deleteBranch('fork-1', { recursive: false });
 
-		const spy = transport.deleteBranch as ReturnType<typeof vi.fn>;
+		const spy = client.deleteBranch as ReturnType<typeof vi.fn>;
 		const [, , opts] = spy.mock.calls[0];
 		expect(opts?.recursive).toBeFalsy();
 	});
@@ -211,8 +205,8 @@ describe('deleteBranch — local branch map and cache cleanup', () => {
 	it('removes the deleted branch from #branches', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('fork-1', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		expect(ws.branches.has('fork-1')).toBe(true);
 		await ws.deleteBranch('fork-1');
@@ -234,8 +228,8 @@ describe('deleteBranch — local branch map and cache cleanup', () => {
 			ancestors: { '0': 'main', '1': 'fork-1' }
 		});
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1, fork1a, fork1b]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		// Switch to main so none of the subtree branches are active
 		// (main is already active after init)
@@ -251,8 +245,8 @@ describe('deleteBranch — local branch map and cache cleanup', () => {
 	it('evicts deleted branch from AgentState cache', async () => {
 		const sessions = [makeSession('s1')];
 		const branches = new Map([['s1', [makeBranch('main', 's1'), makeBranch('fork-1', 's1')]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		// Warm up fork-1 in the cache
 		await ws.switchBranch('fork-1');
@@ -268,7 +262,7 @@ describe('deleteBranch — local branch map and cache cleanup', () => {
 		await ws.switchBranch('fork-1');
 
 		// Cache was evicted — should have called getBranchMessages again
-		const spy = transport.getBranchMessages as ReturnType<typeof vi.fn>;
+		const spy = client.getBranchMessages as ReturnType<typeof vi.fn>;
 		const fork1Calls = spy.mock.calls.filter((args: unknown[]) => args[1] === 'fork-1');
 		expect(fork1Calls.length).toBe(2); // once on first load, once after eviction
 	});
@@ -295,8 +289,8 @@ describe('deleteBranch — navigation before delete', () => {
 			previousSiblingId: 'fork-1'
 		});
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1, fork2]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		await ws.switchBranch('fork-1'); // make fork-1 active
 		await ws.deleteBranch('fork-1');
@@ -320,8 +314,8 @@ describe('deleteBranch — navigation before delete', () => {
 			previousSiblingId: 'fork-1'
 		});
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1, fork2]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		await ws.switchBranch('fork-2'); // make fork-2 active (last sibling)
 		await ws.deleteBranch('fork-2');
@@ -352,8 +346,8 @@ describe('deleteBranch — navigation before delete', () => {
 			previousSiblingId: 'fork-1'
 		});
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1, fork1a, fork2]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		// Make fork-1a active (it's a descendant of fork-1)
 		await ws.switchBranch('fork-1a');
@@ -372,8 +366,8 @@ describe('deleteBranch — navigation before delete', () => {
 		const sessions = [makeSession('s1')];
 		const fork1 = makeBranch('fork-1', 's1', { forkedFrom: 'main' });
 		const branches = new Map([['s1', [makeBranch('main', 's1'), fork1]]]);
-		const transport = makeFakeTransport(sessions, branches);
-		const ws = await buildWorkspace(transport);
+		const client = makeFakeAgentClient(sessions, branches);
+		const ws = await buildWorkspace(client);
 
 		// Stay on main, delete fork-1
 		expect(ws.activeBranchId).toBe('main');

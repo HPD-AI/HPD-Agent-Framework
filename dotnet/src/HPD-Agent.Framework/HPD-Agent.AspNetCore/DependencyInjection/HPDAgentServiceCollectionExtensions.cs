@@ -40,6 +40,10 @@ public static class HPDAgentServiceCollectionExtensions
         // Register the session manager registry (one per app, manages all named agents)
         services.TryAddSingleton<DependencyInjection.AgentSessionManagerRegistry>();
 
+        // Register AgentSessionManager so adapters can inject it directly.
+        services.TryAddSingleton<HPD.Agent.Hosting.Lifecycle.AgentSessionManager>(sp =>
+            sp.GetRequiredService<DependencyInjection.AgentSessionManagerRegistry>().Get(name));
+
         // Register JSON serialization context for AOT (once)
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IConfigureOptions<JsonOptions>,

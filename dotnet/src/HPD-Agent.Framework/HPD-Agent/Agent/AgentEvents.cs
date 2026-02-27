@@ -319,6 +319,7 @@ public record TextDeltaEvent(string Text, string MessageId) : AgentEvent;
 /// </summary>
 public record TextMessageEndEvent(string MessageId) : AgentEvent;
 
+
 #endregion
 
 #region Reasoning Events (For reasoning-capable models like o1, DeepSeek-R1)

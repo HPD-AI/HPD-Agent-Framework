@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sort -k2)",
+      "Read(//Users/einsteinessibu/Documents/HPD-Agent-Framework/**)",
+      "Bash(dotnet csharp -e 'using Microsoft.AspNetCore.Builder; Console.WriteLine\\(typeof\\(WebApplication\\).Assembly.Location\\);')",
+      "Read(//usr/local/share/dotnet/shared/Microsoft.AspNetCore.App/**)",
+      "Read(//usr/local/**)",
+      "Read(//opt/**)",
+      "Bash(dotnet --list-runtimes)",
+      "Bash(dotnet tool install -g dotnet-ildasm)",
+      "Bash(dotnet ildasm /Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/src/HPD-Agent.Framework/HPD-Agent.Adapters/HPD-Agent.Adapters.Slack/bin/Debug/net10.0/HPD-Agent.Adapters.Slack.dll --type HPD.Agent.Adapters.Slack.SlackAdapterEndpointRouteBuilderExtensions)",
+      "Bash(pkill -f \"dotnet.*HPD-Agent.Adapters.Tests\")",
+      "Bash(pkill -f \"testhost\")",
+      "WebFetch(domain:docs.slack.dev)",
+      "Bash(dotnet user-secrets list)",
+      "Bash(lsof -ti :5000)",
+      "Bash(lsof -iTCP:5000 -sTCP:LISTEN)"
+    ],
+    "additionalDirectories": [
+      "/",
+      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/test",
+      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/test/HPD-Agent.DevApp/bin"
+    ]
+  }
+}

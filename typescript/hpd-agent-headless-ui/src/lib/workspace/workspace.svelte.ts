@@ -31,16 +31,12 @@
 
 import {
 	AgentClient,
-	SseTransport,
-	WebSocketTransport,
-	MauiTransport,
 	createErrorResponse,
 	type EventHandlers,
 	type PermissionChoice,
 	type PermissionResponse,
 } from '@hpd/hpd-agent-client';
 import type {
-	AgentTransport,
 	Branch,
 	BranchMessage,
 	CreateBranchRequest,
@@ -119,7 +115,6 @@ class WorkspaceImpl implements Workspace {
 	// ==========================================
 
 	readonly #client: AgentClientLike;
-	readonly #transport: AgentTransport;
 	readonly #options: CreateWorkspaceOptions;
 	readonly #maxCachedBranches: number;
 
@@ -228,16 +223,7 @@ class WorkspaceImpl implements Workspace {
 		this.#options = options;
 		this.#maxCachedBranches = options.maxCachedBranches ?? 10;
 
-		// Create transport for CRUD operations (or use injected one for tests)
-		this.#transport =
-			options._transport ??
-			(options.transport === 'websocket'
-				? new WebSocketTransport(options.baseUrl)
-				: options.transport === 'maui'
-					? new MauiTransport()
-					: new SseTransport(options.baseUrl));
-
-		// Create AgentClient for streaming (or use injected one for tests)
+		// Create AgentClient (or use injected one for tests)
 		this.#client = options._client ?? new AgentClient({
 			baseUrl: options.baseUrl,
 			transport: options.transport ?? 'sse',
@@ -259,7 +245,7 @@ class WorkspaceImpl implements Workspace {
 
 		try {
 			// Load session list
-			const sessions = await this.#transport.listSessions();
+			const sessions = await this.#client.listSessions();
 			this.#sessions = sessions;
 
 			// Activate initial session
@@ -285,7 +271,7 @@ class WorkspaceImpl implements Workspace {
 		this.#branches = new Map();
 
 		// Load all branches for this session
-		const branchList = await this.#transport.listBranches(sessionId);
+		const branchList = await this.#client.listBranches(sessionId);
 		const branchMap = new Map<string, Branch>();
 		for (const branch of branchList) {
 			branchMap.set(branch.id, branch);
@@ -312,7 +298,7 @@ class WorkspaceImpl implements Workspace {
 
 		if (!this.#branchStates.has(cacheKey)) {
 			const state = new AgentState();
-			const rawMessages = await this.#transport.getBranchMessages(sessionId, branchId);
+			const rawMessages = await this.#client.getBranchMessages(sessionId, branchId);
 			state.loadHistory(mapToUIMessages(rawMessages));
 			this.#branchStates.set(cacheKey, state);
 		}
@@ -570,7 +556,7 @@ class WorkspaceImpl implements Workspace {
 		this.#loading = true;
 		this.#error = null;
 		try {
-			const session = await this.#transport.createSession(options);
+			const session = await this.#client.createSession(options);
 			this.#sessions = [...this.#sessions, session];
 			await this.#loadSession(session.id);
 		} catch (err) {
@@ -595,7 +581,7 @@ class WorkspaceImpl implements Workspace {
 			}
 		}
 
-		await this.#transport.deleteSession(sessionId);
+		await this.#client.deleteSession(sessionId);
 		this.#sessions = this.#sessions.filter((s) => s.id !== sessionId);
 
 		// Evict all cached branch states for this session
@@ -667,7 +653,7 @@ class WorkspaceImpl implements Workspace {
 		}
 
 		// Fork at the message index — server requires a newBranchId
-		const fork = await this.#transport.forkBranch(sessionId, branchId, {
+		const fork = await this.#client.forkBranch(sessionId, branchId, {
 			newBranchId: crypto.randomUUID(),
 			fromMessageIndex: messageIndex,
 			name: `Edit: ${newContent.slice(0, 30)}${newContent.length > 30 ? '...' : ''}`
@@ -679,7 +665,7 @@ class WorkspaceImpl implements Workspace {
 		this.#branches = newBranches;
 
 		// Refresh parent metadata (it gained a new child)
-		const updatedParent = await this.#transport.getBranch(sessionId, branchId);
+		const updatedParent = await this.#client.getBranch(sessionId, branchId);
 		if (updatedParent) {
 			const refreshed = new Map(this.#branches);
 			refreshed.set(branchId, updatedParent);
@@ -734,7 +720,7 @@ class WorkspaceImpl implements Workspace {
 			await this.switchBranch(targetId);
 		}
 
-		await this.#transport.deleteBranch(sessionId, branchId, options);
+		await this.#client.deleteBranch(sessionId, branchId, options);
 
 		// Remove the deleted branch and all its descendants from the local branch map and state cache
 		const deletedIds = this.#collectSubtreeIds(branchId);
@@ -768,7 +754,7 @@ class WorkspaceImpl implements Workspace {
 		const sessionId = this.#activeSessionId;
 		if (!sessionId) throw new Error('No active session');
 
-		const branch = await this.#transport.createBranch(sessionId, options);
+		const branch = await this.#client.createBranch(sessionId, options);
 		const newBranches = new Map(this.#branches);
 		newBranches.set(branch.id, branch);
 		this.#branches = newBranches;
@@ -779,7 +765,7 @@ class WorkspaceImpl implements Workspace {
 		const sessionId = this.#activeSessionId;
 		if (!sessionId) return;
 
-		const branch = await this.#transport.getBranch(sessionId, branchId);
+		const branch = await this.#client.getBranch(sessionId, branchId);
 		if (branch) {
 			const newBranches = new Map(this.#branches);
 			newBranches.set(branchId, branch);

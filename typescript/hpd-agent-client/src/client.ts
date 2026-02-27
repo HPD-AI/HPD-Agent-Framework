@@ -14,6 +14,17 @@ import type {
   ContextItem,
   ClientToolInvokeResponse,
 } from './types/client-tools.js';
+import type {
+  Session,
+  Branch,
+  SiblingBranch,
+  BranchMessage,
+  CreateSessionRequest,
+  UpdateSessionRequest,
+  ListSessionsOptions,
+  CreateBranchRequest,
+  ForkBranchRequest,
+} from './types/session.js';
 import { SseTransport } from './transports/sse.js';
 import { WebSocketTransport } from './transports/websocket.js';
 import { MauiTransport } from './transports/maui.js';
@@ -631,5 +642,73 @@ export class AgentClient {
    */
   setToolHandler(handler: (request: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>): void {
     this.config.onClientToolInvoke = handler;
+  }
+
+  // ============================================
+  // Session CRUD
+  // ============================================
+
+  listSessions(options?: ListSessionsOptions): Promise<Session[]> {
+    return this.transport.listSessions(options);
+  }
+
+  getSession(sessionId: string): Promise<Session | null> {
+    return this.transport.getSession(sessionId);
+  }
+
+  createSession(options?: CreateSessionRequest): Promise<Session> {
+    return this.transport.createSession(options);
+  }
+
+  updateSession(sessionId: string, request: UpdateSessionRequest): Promise<Session> {
+    return this.transport.updateSession(sessionId, request);
+  }
+
+  deleteSession(sessionId: string): Promise<void> {
+    return this.transport.deleteSession(sessionId);
+  }
+
+  // ============================================
+  // Branch CRUD
+  // ============================================
+
+  listBranches(sessionId: string): Promise<Branch[]> {
+    return this.transport.listBranches(sessionId);
+  }
+
+  getBranch(sessionId: string, branchId: string): Promise<Branch | null> {
+    return this.transport.getBranch(sessionId, branchId);
+  }
+
+  createBranch(sessionId: string, options?: CreateBranchRequest): Promise<Branch> {
+    return this.transport.createBranch(sessionId, options);
+  }
+
+  forkBranch(sessionId: string, branchId: string, options: ForkBranchRequest): Promise<Branch> {
+    return this.transport.forkBranch(sessionId, branchId, options);
+  }
+
+  deleteBranch(sessionId: string, branchId: string, options?: { recursive?: boolean }): Promise<void> {
+    return this.transport.deleteBranch(sessionId, branchId, options);
+  }
+
+  getBranchMessages(sessionId: string, branchId: string): Promise<BranchMessage[]> {
+    return this.transport.getBranchMessages(sessionId, branchId);
+  }
+
+  // ============================================
+  // Sibling Navigation
+  // ============================================
+
+  getBranchSiblings(sessionId: string, branchId: string): Promise<SiblingBranch[]> {
+    return this.transport.getBranchSiblings(sessionId, branchId);
+  }
+
+  getNextSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    return this.transport.getNextSibling(sessionId, branchId);
+  }
+
+  getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null> {
+    return this.transport.getPreviousSibling(sessionId, branchId);
   }
 }

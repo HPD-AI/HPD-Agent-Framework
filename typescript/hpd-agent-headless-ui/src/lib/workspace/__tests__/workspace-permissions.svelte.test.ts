@@ -16,13 +16,9 @@ import { createWorkspace } from '../workspace.svelte.ts';
 import type { AgentClientLike, CreateWorkspaceOptions } from '../types.ts';
 import type { EventHandlers, PermissionResponse } from '@hpd/hpd-agent-client';
 import type {
-	AgentTransport,
 	Branch,
 	BranchMessage,
 	Session,
-	ConnectOptions,
-	ClientMessage,
-	AgentEvent,
 	CreateSessionRequest,
 	UpdateSessionRequest,
 	ListSessionsOptions,
@@ -54,9 +50,29 @@ class FakeAgentClient implements AgentClientLike {
 	#lastSessionId: string | null = null;
 	#lastBranchId: string | undefined = undefined;
 
+	// CRUD state — minimal stubs sufficient for init (one session, one branch)
+	readonly #sessions: Session[] = [
+		{ id: 's1', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), metadata: {} }
+	];
+	readonly #branches: Map<string, Branch[]> = new Map([['s1', [this.#makeBranch('main', 's1')]]]);
+
+	#makeBranch(id: string, sessionId: string): Branch {
+		return {
+			id, sessionId, name: id, description: '',
+			createdAt: new Date().toISOString(),
+			lastActivity: new Date().toISOString(),
+			messageCount: 0, tags: [],
+			siblingIndex: 0, totalSiblings: 1,
+			isOriginal: true,
+			childBranches: [], totalForks: 0
+		};
+	}
+
 	get streamCallCount() { return this.#streamCallCount; }
 	get lastSessionId() { return this.#lastSessionId; }
 	get lastBranchId() { return this.#lastBranchId; }
+
+	// ---- Streaming ----
 
 	async stream(
 		sessionId: string,
@@ -77,6 +93,48 @@ class FakeAgentClient implements AgentClientLike {
 	abort(): void {
 		// no-op
 	}
+
+	// ---- Session CRUD ----
+
+	async listSessions(_opts?: ListSessionsOptions): Promise<Session[]> {
+		return this.#sessions;
+	}
+	async getSession(id: string): Promise<Session | null> {
+		return this.#sessions.find((s) => s.id === id) ?? null;
+	}
+	async createSession(opts?: CreateSessionRequest): Promise<Session> {
+		const s: Session = { id: opts?.sessionId ?? `s-${Date.now()}`, createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), metadata: {} };
+		this.#sessions.push(s);
+		return s;
+	}
+	async updateSession(id: string, req: UpdateSessionRequest): Promise<Session> {
+		const s = this.#sessions.find((s) => s.id === id)!;
+		return { ...s, metadata: { ...s.metadata, ...req.metadata } };
+	}
+	async deleteSession(_id: string): Promise<void> {}
+
+	// ---- Branch CRUD ----
+
+	async listBranches(sid: string): Promise<Branch[]> {
+		return this.#branches.get(sid) ?? [];
+	}
+	async getBranch(sid: string, bid: string): Promise<Branch | null> {
+		return (this.#branches.get(sid) ?? []).find((b) => b.id === bid) ?? null;
+	}
+	async createBranch(_sid: string, _opts?: CreateBranchRequest): Promise<Branch> {
+		throw new Error('not needed in permission tests');
+	}
+	async forkBranch(_sid: string, _bid: string, _opts: ForkBranchRequest): Promise<Branch> {
+		throw new Error('not needed in permission tests');
+	}
+	async deleteBranch(_sid: string, _bid: string): Promise<void> {}
+	async getBranchMessages(_sid: string, _bid: string): Promise<BranchMessage[]> { return []; }
+
+	// ---- Sibling navigation ----
+
+	async getBranchSiblings(_sid: string, _bid: string): Promise<SiblingBranch[]> { return []; }
+	async getNextSibling(_sid: string, _bid: string): Promise<Branch | null> { return null; }
+	async getPreviousSibling(_sid: string, _bid: string): Promise<Branch | null> { return null; }
 
 	// ---- Test helpers ----
 
@@ -135,80 +193,12 @@ class FakeAgentClient implements AgentClientLike {
 	}
 }
 
-// ============================================
-// Minimal fake transport (CRUD only — streaming goes through FakeAgentClient)
-// ============================================
-
-function makeFakeTransport(sessions: Session[], branches: Map<string, Branch[]>): AgentTransport {
-	return {
-		connect: vi.fn(async (_opts: ConnectOptions) => {}),
-		send: vi.fn(async (_msg: ClientMessage) => {}),
-		onEvent: vi.fn((_h: (e: AgentEvent) => void) => {}),
-		onError: vi.fn((_h: (e: Error) => void) => {}),
-		onClose: vi.fn((_h: () => void) => {}),
-		disconnect: vi.fn(),
-		connected: false,
-
-		listSessions: vi.fn(async (_opts?: ListSessionsOptions) => sessions),
-		getSession: vi.fn(async (id: string) => sessions.find((s) => s.id === id) ?? null),
-		createSession: vi.fn(async (opts?: CreateSessionRequest) => {
-			const s: Session = {
-				id: opts?.sessionId ?? `s-${Date.now()}`,
-				createdAt: new Date().toISOString(),
-				lastActivity: new Date().toISOString(),
-				metadata: {}
-			};
-			sessions.push(s);
-			return s;
-		}),
-		updateSession: vi.fn(async (id: string, req: UpdateSessionRequest) => {
-			const s = sessions.find((s) => s.id === id)!;
-			return { ...s, metadata: { ...s.metadata, ...req.metadata } };
-		}),
-		deleteSession: vi.fn(async (_id: string) => {}),
-
-		listBranches: vi.fn(async (sid: string) => branches.get(sid) ?? []),
-		getBranch: vi.fn(async (sid: string, bid: string) =>
-			(branches.get(sid) ?? []).find((b) => b.id === bid) ?? null
-		),
-		createBranch: vi.fn(async (_sid: string, _opts?: CreateBranchRequest): Promise<Branch> => {
-			throw new Error('not needed in permission tests');
-		}),
-		forkBranch: vi.fn(async (_sid: string, _bid: string, _opts: ForkBranchRequest): Promise<Branch> => {
-			throw new Error('not needed in permission tests');
-		}),
-		deleteBranch: vi.fn(async (_sid: string, _bid: string) => {}),
-		getBranchMessages: vi.fn(async (_sid: string, _bid: string): Promise<BranchMessage[]> => []),
-
-		getBranchSiblings: vi.fn(async (_sid: string, _bid: string): Promise<SiblingBranch[]> => []),
-		getNextSibling: vi.fn(async (_sid: string, _bid: string): Promise<Branch | null> => null),
-		getPreviousSibling: vi.fn(async (_sid: string, _bid: string): Promise<Branch | null> => null),
-	};
-}
-
-function makeBranch(id: string, sessionId: string): Branch {
-	return {
-		id, sessionId, name: id, description: '',
-		createdAt: new Date().toISOString(),
-		lastActivity: new Date().toISOString(),
-		messageCount: 0, tags: [],
-		siblingIndex: 0, totalSiblings: 1,
-		isOriginal: true,
-		childBranches: [], totalForks: 0
-	};
-}
-
 async function buildWorkspace(
 	client: FakeAgentClient,
 	overrides: Partial<CreateWorkspaceOptions> = {}
 ) {
-	const sessions: Session[] = [{ id: 's1', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), metadata: {} }];
-	const branches = new Map([['s1', [makeBranch('main', 's1')]]]);
-	const transport = makeFakeTransport(sessions, branches);
-
 	const ws = createWorkspace({
 		baseUrl: 'http://fake',
-		_transport: transport,
 		_client: client,
 		...overrides
 	});
