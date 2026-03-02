@@ -24,7 +24,7 @@ public class DtoMappingExtensionsTests
         var dto = session.ToDto();
 
         // Assert
-        dto.SessionId.Should().Be("session-123");
+        dto.Id.Should().Be("session-123");
         dto.CreatedAt.Should().BeCloseTo(session.CreatedAt, TimeSpan.FromMilliseconds(100));
         dto.LastActivity.Should().BeCloseTo(session.LastActivity, TimeSpan.FromMilliseconds(100));
         dto.Metadata.Should().NotBeNull();
@@ -43,7 +43,7 @@ public class DtoMappingExtensionsTests
         var dto = session.ToDto();
 
         // Assert
-        dto.SessionId.Should().Be("session-123");
+        dto.Id.Should().Be("session-123");
         dto.Metadata.Should().BeNull(); // Empty metadata should map to null
     }
 
@@ -134,7 +134,8 @@ public class DtoMappingExtensionsTests
             forkedAtMessageIndex: 1,
             createdAt: DateTime.UtcNow,
             lastActivity: DateTime.UtcNow,
-            description: "Forked Branch",
+            name: "Forked Branch",
+            description: null,
             tags: null,
             ancestors: new Dictionary<string, string> { ["0"] = "root", ["1"] = "main" },
             middlewareState: new Dictionary<string, string>());
@@ -168,11 +169,13 @@ public class DtoMappingExtensionsTests
         // Assert
         userDto.Id.Should().Be("msg-0");
         userDto.Role.Should().Be("user");
-        userDto.Content.Should().Be("User message");
+        userDto.Contents.Should().ContainSingle();
+        userDto.Contents.OfType<Microsoft.Extensions.AI.TextContent>().Single().Text.Should().Be("User message");
 
         assistantDto.Id.Should().Be("msg-1");
         assistantDto.Role.Should().Be("assistant");
-        assistantDto.Content.Should().Be("Assistant message");
+        assistantDto.Contents.Should().ContainSingle();
+        assistantDto.Contents.OfType<Microsoft.Extensions.AI.TextContent>().Single().Text.Should().Be("Assistant message");
     }
 
     [Fact]

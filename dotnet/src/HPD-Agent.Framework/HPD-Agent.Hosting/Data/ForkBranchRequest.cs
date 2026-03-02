@@ -13,4 +13,5 @@ public record ForkBranchRequest(
     int FromMessageIndex,
     string? Name,
     string? Description,
-    List<string>? Tags);
+    List<string>? Tags,
+    string? AgentId = null);

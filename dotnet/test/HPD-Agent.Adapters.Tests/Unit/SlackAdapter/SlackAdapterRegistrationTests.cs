@@ -7,6 +7,7 @@ using HPD.Agent.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using HPD.Agent;
 
 namespace HPD.Agent.Adapters.Tests.Unit.SlackAdapterRegistration;
 
@@ -24,7 +25,7 @@ public class SlackAdapterRegistrationTests
     /// Satisfies all mandatory prerequisites:
     ///   • <see cref="IConfiguration"/>   — required by <see cref="ChainedSecretResolver"/>
     ///   • <see cref="IHttpClientFactory"/> — required by <see cref="SlackApiClient"/>
-    ///   • <see cref="AgentSessionManager"/> — required by <see cref="SlackAdapter"/> and <see cref="PlatformSessionMapper"/>
+    ///   • <see cref="SessionManager"/> + <see cref="AgentManager"/> — required by <see cref="SlackAdapter"/> and <see cref="PlatformSessionMapper"/>
     /// </summary>
     private static ServiceProvider BuildProvider(
         Action<IServiceCollection>? extra = null,
@@ -45,9 +46,11 @@ public class SlackAdapterRegistrationTests
         // IHttpClientFactory: SlackApiClient and SlackUserCache depend on named/typed HTTP clients.
         services.AddHttpClient();
 
-        // AgentSessionManager is abstract — register the test double to satisfy DI.
-        services.AddSingleton<AgentSessionManager>(
+        // SessionManager and AgentManager are abstract — register test doubles to satisfy DI.
+        services.AddSingleton<SessionManager>(
             new TestSessionManager(new InMemorySessionStore()));
+        services.AddSingleton<AgentManager>(
+            new TestAgentManager(new InMemoryAgentStore()));
 
         // Allow individual tests to pre-register services before AddSlackAdapter runs.
         extra?.Invoke(services);

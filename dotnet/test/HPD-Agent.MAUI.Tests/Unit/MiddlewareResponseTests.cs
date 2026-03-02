@@ -44,8 +44,9 @@ public class MiddlewareResponseTests : IDisposable
             field?.SetValue(builder, providerRegistry);
         };
 
-        _sessionManager = new MauiSessionManager(_store, optionsMonitor, Options.DefaultName, null);
-        _proxy = new TestProxy(_sessionManager, _mockWebView.Object);
+        _sessionManager = new MauiSessionManager(_store, optionsMonitor, Options.DefaultName);
+        var agentManager = new MauiAgentManager(new InMemoryAgentStore(), _sessionManager, optionsMonitor, Options.DefaultName);
+        _proxy = new TestProxy(_sessionManager, agentManager, _mockWebView.Object);
     }
 
     public void Dispose()
@@ -77,8 +78,8 @@ public class MiddlewareResponseTests : IDisposable
         };
         var json = System.Text.Json.JsonSerializer.Serialize(request);
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() =>
+        // Act & Assert — AgentId defaults to "default"; no agent is running, so InvalidOperationException
+        Assert.Throws<InvalidOperationException>(() =>
             _proxy.RespondToPermission(json));
     }
 
@@ -91,7 +92,7 @@ public class MiddlewareResponseTests : IDisposable
 
         var request = new
         {
-            SessionId = session!.SessionId,
+            SessionId = session!.Id,
             PermissionId = "perm-123",
             Approved = true,
             Reason = (string?)null,
@@ -358,8 +359,8 @@ public class MiddlewareResponseTests : IDisposable
         };
         var json = System.Text.Json.JsonSerializer.Serialize(request);
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() =>
+        // Act & Assert — AgentId defaults to "default"; no agent is running, so InvalidOperationException
+        Assert.Throws<InvalidOperationException>(() =>
             _proxy.RespondToClientTool(json));
     }
 
@@ -372,7 +373,7 @@ public class MiddlewareResponseTests : IDisposable
 
         var request = new
         {
-            SessionId = session!.SessionId,
+            SessionId = session!.Id,
             RequestId = "req-123",
             Success = true,
             Content = new List<object>(),
@@ -661,8 +662,8 @@ public class MiddlewareResponseTests : IDisposable
 
     private class TestProxy : HybridWebViewAgentProxy
     {
-        public TestProxy(MauiSessionManager manager, IHybridWebView webView)
-            : base(manager, webView)
+        public TestProxy(MauiSessionManager manager, MauiAgentManager agentManager, IHybridWebView webView)
+            : base(manager, agentManager, webView)
         {
         }
     }

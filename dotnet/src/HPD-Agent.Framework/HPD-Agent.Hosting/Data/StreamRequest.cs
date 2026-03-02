@@ -14,6 +14,7 @@ namespace HPD.Agent.Hosting.Data;
 /// <param name="HiddenTools">Tools to hide from the agent</param>
 /// <param name="ResetClientState">Whether to reset client state</param>
 /// <param name="RunConfig">Optional agent run configuration</param>
+/// <param name="AgentId">Agent definition ID to run. Defaults to "default" if not specified.</param>
 public record StreamRequest(
     List<StreamMessage> Messages,
     List<JsonElement>? clientToolKits,
@@ -22,4 +23,5 @@ public record StreamRequest(
     List<string>? ExpandedContainers,
     List<string>? HiddenTools,
     bool ResetClientState,
-    StreamRunConfigDto? RunConfig);
+    StreamRunConfigDto? RunConfig,
+    string? AgentId = null);

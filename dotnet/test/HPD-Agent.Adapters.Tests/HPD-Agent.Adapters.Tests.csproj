@@ -39,7 +39,7 @@
                       ReferenceOutputAssembly="true" />
     <!-- InMemorySessionStore, Session, Branch, ISessionStore -->
     <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent\HPD-Agent.csproj" />
-    <!-- AgentSessionManager -->
+    <!-- SessionManager, AgentManager -->
     <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Hosting\HPD-Agent.Hosting.csproj" />
     <!-- Slack adapter: SlackBlockKit, SlackModalConverter, SlackThreadId, SlackAdapterConfig, etc. -->
     <ProjectReference Include="..\..\src\HPD-Agent.Framework\HPD-Agent.Adapters\HPD-Agent.Adapters.Slack\HPD-Agent.Adapters.Slack.csproj" />

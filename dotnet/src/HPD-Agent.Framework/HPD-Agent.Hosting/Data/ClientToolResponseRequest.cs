@@ -8,9 +8,11 @@ namespace HPD.Agent.Hosting.Data;
 /// <param name="Success">Whether the tool execution succeeded</param>
 /// <param name="Content">Tool result content items</param>
 /// <param name="ErrorMessage">Error message if execution failed</param>
+/// <param name="AgentId">Agent definition ID. Defaults to "default" if not specified.</param>
 public record ClientToolResponseRequest(
     string? SessionId,
     string RequestId,
     bool Success,
     List<ClientToolContentDto>? Content,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? AgentId = null);

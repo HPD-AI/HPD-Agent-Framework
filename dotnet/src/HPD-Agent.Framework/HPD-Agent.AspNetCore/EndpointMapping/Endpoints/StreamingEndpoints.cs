@@ -23,26 +23,29 @@ internal static class StreamingEndpoints
     /// <summary>
     /// Maps all streaming-related endpoints.
     /// </summary>
-    internal static void Map(IEndpointRouteBuilder endpoints, AspNetCoreSessionManager manager)
+    internal static void Map(
+        IEndpointRouteBuilder endpoints,
+        AspNetCoreSessionManager sessionManager,
+        AspNetCoreAgentManager agentManager)
     {
         // POST /sessions/{sid}/branches/{bid}/stream - SSE streaming
         endpoints.MapPost("/sessions/{sid}/branches/{bid}/stream", async (string sid, string bid, StreamRequest request, HttpContext context, CancellationToken ct) =>
         {
             // Validate session and branch exist BEFORE starting stream
-            var session = await manager.Store.LoadSessionAsync(sid, ct);
+            var session = await sessionManager.Store.LoadSessionAsync(sid, ct);
             if (session == null)
             {
                 return ErrorResponses.NotFound();
             }
 
-            var branch = await manager.Store.LoadBranchAsync(sid, bid, ct);
+            var branch = await sessionManager.Store.LoadBranchAsync(sid, bid, ct);
             if (branch == null)
             {
                 return ErrorResponses.NotFound();
             }
 
             // Try to acquire stream lock (prevents concurrent streams on same branch)
-            if (!manager.TryAcquireStreamLock(sid, bid))
+            if (!sessionManager.TryAcquireStreamLock(sid, bid))
             {
                 return ErrorResponses.Conflict();
             }
@@ -51,15 +54,14 @@ internal static class StreamingEndpoints
             // This ensures lock is released even if request is aborted (critical for TestServer scenarios)
             using var _ = context.RequestAborted.Register(() =>
             {
-                manager.SetStreaming(sid, false);
-                manager.ReleaseStreamLock(sid, bid);
+                sessionManager.ReleaseStreamLock(sid, bid);
             });
 
             try
             {
-                // Get or create agent for this session
-                var agent = await manager.GetOrCreateAgentAsync(sid, ct);
-                manager.SetStreaming(sid, true);
+                // Get or build the agent (keyed by agentId, defaults to "default")
+                var agentId = request.AgentId ?? "default";
+                var agent = await agentManager.GetOrBuildAgentAsync(agentId, ct);
 
                 // Extract user message from request
                 string userMessage = "";
@@ -90,8 +92,7 @@ internal static class StreamingEndpoints
             }
             finally
             {
-                manager.SetStreaming(sid, false);
-                manager.ReleaseStreamLock(sid, bid);
+                sessionManager.ReleaseStreamLock(sid, bid);
             }
         })
             .WithName("StreamWithSse")
@@ -99,7 +100,7 @@ internal static class StreamingEndpoints
 
         // GET /sessions/{sid}/branches/{bid}/ws - WebSocket streaming
         endpoints.MapGet("/sessions/{sid}/branches/{bid}/ws", (string sid, string bid, HttpContext context, CancellationToken ct) =>
-                StreamWithWebSocket(sid, bid, context, manager, ct))
+                StreamWithWebSocket(sid, bid, context, sessionManager, agentManager, ct))
             .WithName("StreamWithWebSocket")
             .WithSummary("Stream agent responses using WebSocket");
     }
@@ -108,7 +109,8 @@ internal static class StreamingEndpoints
         string sid,
         string bid,
         HttpContext context,
-        AspNetCoreSessionManager manager,
+        AspNetCoreSessionManager sessionManager,
+        AspNetCoreAgentManager agentManager,
         CancellationToken ct = default)
     {
         // Validate WebSocket request
@@ -121,20 +123,20 @@ internal static class StreamingEndpoints
         }
 
         // Validate session and branch exist BEFORE accepting WebSocket
-        var session = await manager.Store.LoadSessionAsync(sid, ct);
+        var session = await sessionManager.Store.LoadSessionAsync(sid, ct);
         if (session == null)
         {
             return ErrorResponses.NotFound();
         }
 
-        var branch = await manager.Store.LoadBranchAsync(sid, bid, ct);
+        var branch = await sessionManager.Store.LoadBranchAsync(sid, bid, ct);
         if (branch == null)
         {
             return ErrorResponses.NotFound();
         }
 
         // Try to acquire stream lock
-        if (!manager.TryAcquireStreamLock(sid, bid))
+        if (!sessionManager.TryAcquireStreamLock(sid, bid))
         {
             return ErrorResponses.Conflict();
         }
@@ -158,10 +160,6 @@ internal static class StreamingEndpoints
             }
 
             using var webSocket = await acceptTask;
-
-            // Get or create agent
-            var agent = await manager.GetOrCreateAgentAsync(sid, ct);
-            manager.SetStreaming(sid, true);
 
             // Receive initial message from client
             var buffer = new byte[1024 * 4];
@@ -201,6 +199,10 @@ internal static class StreamingEndpoints
             var runConfig = BuildRunConfig(request.RunConfig);
             runConfig.ClientToolInput = request.ToAgentClientInput();
 
+            // Get or build the agent (keyed by agentId, defaults to "default")
+            var agentId = request.AgentId ?? "default";
+            var agent = await agentManager.GetOrBuildAgentAsync(agentId, ct);
+
             // Stream events via WebSocket with ID-based API
             var events = agent.RunAsync(userMessage, sid, bid, options: runConfig, cancellationToken: ct);
             await foreach (var evt in events.WithCancellation(ct))
@@ -225,8 +227,7 @@ internal static class StreamingEndpoints
         }
         finally
         {
-            manager.SetStreaming(sid, false);
-            manager.ReleaseStreamLock(sid, bid);
+            sessionManager.ReleaseStreamLock(sid, bid);
         }
     }
 

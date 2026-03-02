@@ -8,9 +8,11 @@ namespace HPD.Agent.Hosting.Data;
 /// <param name="Approved">Whether the permission was approved</param>
 /// <param name="Reason">Optional reason for denial</param>
 /// <param name="Choice">Optional choice identifier (for multi-choice permissions)</param>
+/// <param name="AgentId">Agent definition ID. Defaults to "default" if not specified.</param>
 public record PermissionResponseRequest(
     string? SessionId,
     string PermissionId,
     bool Approved,
     string? Reason,
-    string? Choice);
+    string? Choice,
+    string? AgentId = null);

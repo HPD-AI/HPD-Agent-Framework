@@ -20,17 +20,20 @@ internal static class MiddlewareResponseEndpoints
     /// <summary>
     /// Maps all middleware response endpoints.
     /// </summary>
-    internal static void Map(IEndpointRouteBuilder endpoints, AspNetCoreSessionManager manager)
+    internal static void Map(
+        IEndpointRouteBuilder endpoints,
+        AspNetCoreSessionManager sessionManager,
+        AspNetCoreAgentManager agentManager)
     {
         // POST /sessions/{sid}/branches/{bid}/permissions/respond - Permission decision
         endpoints.MapPost("/sessions/{sid}/branches/{bid}/permissions/respond", (string sid, string bid, PermissionResponseRequest request, CancellationToken ct) =>
-                RespondToPermission(sid, bid, request, manager, ct))
+                RespondToPermission(sid, bid, request, agentManager, ct))
             .WithName("RespondToPermission")
             .WithSummary("Respond to a permission request from the agent");
 
         // POST /sessions/{sid}/branches/{bid}/client-tools/respond - Client tool result
         endpoints.MapPost("/sessions/{sid}/branches/{bid}/client-tools/respond", (string sid, string bid, ClientToolResponseRequest request, CancellationToken ct) =>
-                RespondToClientTool(sid, bid, request, manager, ct))
+                RespondToClientTool(sid, bid, request, agentManager, ct))
             .WithName("RespondToClientTool")
             .WithSummary("Respond to a client tool execution request from the agent");
     }
@@ -39,13 +42,14 @@ internal static class MiddlewareResponseEndpoints
         string sid,
         string bid,
         PermissionResponseRequest request,
-        AspNetCoreSessionManager manager,
+        AspNetCoreAgentManager agentManager,
         CancellationToken ct = default)
     {
         try
         {
-            // Get the running agent for this session
-            var agent = manager.GetRunningAgent(sid);
+            // Get the cached agent (defaults to "default" for single-agent deployments)
+            var agentId = request.AgentId ?? "default";
+            var agent = agentManager.GetAgent(agentId);
             if (agent == null)
             {
                 return ErrorResponses.NotFound();
@@ -84,13 +88,14 @@ internal static class MiddlewareResponseEndpoints
         string sid,
         string bid,
         ClientToolResponseRequest request,
-        AspNetCoreSessionManager manager,
+        AspNetCoreAgentManager agentManager,
         CancellationToken ct = default)
     {
         try
         {
-            // Get the running agent for this session
-            var agent = manager.GetRunningAgent(sid);
+            // Get the cached agent (defaults to "default" for single-agent deployments)
+            var agentId = request.AgentId ?? "default";
+            var agent = agentManager.GetAgent(agentId);
             if (agent == null)
             {
                 return ErrorResponses.NotFound();

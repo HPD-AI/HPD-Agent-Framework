@@ -45,7 +45,7 @@ public class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory>
         // Act - Try to fork at invalid index
         var forkRequest = new ForkBranchRequest("fork", 9999, null, null, null);
         var response = await _client.PostAsJsonAsync(
-            $"/sessions/{session!.SessionId}/branches/main/fork",
+            $"/sessions/{session!.Id}/branches/main/fork",
             forkRequest);
 
         // Assert
@@ -62,7 +62,7 @@ public class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory>
         // Act - Try to create duplicate branch
         var request = new CreateBranchRequest("main", "Duplicate", null, null);
         var response = await _client.PostAsJsonAsync(
-            $"/sessions/{session!.SessionId}/branches",
+            $"/sessions/{session!.Id}/branches",
             request);
 
         // Assert
@@ -115,7 +115,7 @@ public class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory>
         // Try to create branch with missing data
         var emptyContent = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
         var response = await _client.PostAsync(
-            $"/sessions/{session!.SessionId}/branches",
+            $"/sessions/{session!.Id}/branches",
             emptyContent);
 
         // Assert - Should handle gracefully
@@ -138,8 +138,8 @@ public class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory>
 
         var streamRequest = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -148,7 +148,7 @@ public class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory>
 
         // Act
         var response = await _client.PostAsJsonAsync(
-            $"/sessions/{session!.SessionId}/branches/main/stream",
+            $"/sessions/{session!.Id}/branches/main/stream",
             streamRequest);
 
         // Assert - Should establish connection even if agent errors

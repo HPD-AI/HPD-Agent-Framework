@@ -44,8 +44,9 @@ public class AssetManagementTests : IDisposable
             field?.SetValue(builder, providerRegistry);
         };
 
-        _sessionManager = new MauiSessionManager(_store, optionsMonitor, Options.DefaultName, null);
-        _proxy = new TestProxy(_sessionManager, _mockWebView.Object);
+        _sessionManager = new MauiSessionManager(_store, optionsMonitor, Options.DefaultName);
+        var agentManager = new MauiAgentManager(new InMemoryAgentStore(), _sessionManager, optionsMonitor, Options.DefaultName);
+        _proxy = new TestProxy(_sessionManager, agentManager, _mockWebView.Object);
     }
 
     public void Dispose()
@@ -65,7 +66,7 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String(testData);
 
         // Act
-        var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "test.txt");
+        var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "test.txt");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
         // Assert
@@ -98,7 +99,7 @@ public class AssetManagementTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<FormatException>(async () =>
-            await _proxy.UploadAsset(session!.SessionId, "not-valid-base64!!!", "text/plain", "test.txt"));
+            await _proxy.UploadAsset(session!.Id, "not-valid-base64!!!", "text/plain", "test.txt"));
     }
 
     [Fact]
@@ -110,7 +111,7 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
         // Act
-        var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "application/json", "data.json");
+        var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, "application/json", "data.json");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
         // Assert
@@ -126,7 +127,7 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
         // Act
-        var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "myfile.txt");
+        var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "myfile.txt");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
         // Assert - Filename stored in metadata, verify by re-retrieving
@@ -144,7 +145,7 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String(testData);
 
         // Act
-        var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "application/octet-stream", "binary.dat");
+        var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, "application/octet-stream", "binary.dat");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
         // Assert
@@ -165,7 +166,7 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String(largeData);
 
         // Act
-        var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "application/octet-stream", "large.bin");
+        var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, "application/octet-stream", "large.bin");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
         // Assert
@@ -190,7 +191,7 @@ public class AssetManagementTests : IDisposable
         foreach (var (contentType, filename) in contentTypes)
         {
             var base64Data = Convert.ToBase64String("test"u8.ToArray());
-            var resultJson = await _proxy.UploadAsset(session!.SessionId, base64Data, contentType, filename);
+            var resultJson = await _proxy.UploadAsset(session!.Id, base64Data, contentType, filename);
             var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(resultJson);
 
             asset!.ContentType.Should().Be(contentType);
@@ -206,9 +207,9 @@ public class AssetManagementTests : IDisposable
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
         // Act
-        var asset1Json = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "file1.txt");
-        var asset2Json = await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file2.txt");
-        var asset3Json = await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file3.txt");
+        var asset1Json = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "file1.txt");
+        var asset2Json = await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file2.txt");
+        var asset3Json = await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file3.txt");
 
         var asset1 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset1Json);
         var asset2 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset2Json);
@@ -231,7 +232,7 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
 
         // Act
-        var resultJson = await _proxy.ListAssets(session!.SessionId);
+        var resultJson = await _proxy.ListAssets(session!.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(resultJson);
 
         // Assert
@@ -247,12 +248,12 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
-        await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "file1.txt");
-        await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file2.txt");
-        await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file3.txt");
+        await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "file1.txt");
+        await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file2.txt");
+        await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file3.txt");
 
         // Act
-        var resultJson = await _proxy.ListAssets(session.SessionId);
+        var resultJson = await _proxy.ListAssets(session.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(resultJson);
 
         // Assert
@@ -279,10 +280,10 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test data"u8.ToArray());
 
-        await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "test.txt");
+        await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "test.txt");
 
         // Act
-        var resultJson = await _proxy.ListAssets(session.SessionId);
+        var resultJson = await _proxy.ListAssets(session.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(resultJson);
 
         // Assert
@@ -305,11 +306,11 @@ public class AssetManagementTests : IDisposable
 
         for (int i = 0; i < 50; i++)
         {
-            await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", $"file{i}.txt");
+            await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", $"file{i}.txt");
         }
 
         // Act
-        var resultJson = await _proxy.ListAssets(session!.SessionId);
+        var resultJson = await _proxy.ListAssets(session!.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(resultJson);
 
         // Assert
@@ -329,14 +330,14 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
-        var assetJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "test.txt");
+        var assetJson = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "test.txt");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(assetJson);
 
         // Act
-        await _proxy.DeleteAsset(session.SessionId, asset!.AssetId);
+        await _proxy.DeleteAsset(session.Id, asset!.AssetId);
 
         // Assert - Verify asset is gone
-        var listJson = await _proxy.ListAssets(session.SessionId);
+        var listJson = await _proxy.ListAssets(session.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(listJson);
         assets!.Should().BeEmpty();
     }
@@ -358,7 +359,7 @@ public class AssetManagementTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _proxy.DeleteAsset(session!.SessionId, "nonexistent-asset"));
+            await _proxy.DeleteAsset(session!.Id, "nonexistent-asset"));
     }
 
     // Note: DeleteAsset_ThrowsWhenAssetStoreNotAvailable test skipped
@@ -372,18 +373,18 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
-        var asset1Json = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "file1.txt");
-        var asset2Json = await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file2.txt");
-        var asset3Json = await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file3.txt");
+        var asset1Json = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "file1.txt");
+        var asset2Json = await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file2.txt");
+        var asset3Json = await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file3.txt");
 
         var asset1 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset1Json);
         var asset2 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset2Json);
 
         // Act - Delete asset2
-        await _proxy.DeleteAsset(session.SessionId, asset2!.AssetId);
+        await _proxy.DeleteAsset(session.Id, asset2!.AssetId);
 
         // Assert - asset1 and asset3 should still exist
-        var listJson = await _proxy.ListAssets(session.SessionId);
+        var listJson = await _proxy.ListAssets(session.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(listJson);
         assets!.Count.Should().Be(2);
         assets.Should().Contain(a => a.AssetId == asset1!.AssetId);
@@ -398,18 +399,18 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
-        var asset1Json = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "file1.txt");
-        var asset2Json = await _proxy.UploadAsset(session.SessionId, base64Data, "text/plain", "file2.txt");
+        var asset1Json = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "file1.txt");
+        var asset2Json = await _proxy.UploadAsset(session.Id, base64Data, "text/plain", "file2.txt");
 
         var asset1 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset1Json);
         var asset2 = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(asset2Json);
 
         // Act
-        await _proxy.DeleteAsset(session.SessionId, asset1!.AssetId);
-        await _proxy.DeleteAsset(session.SessionId, asset2!.AssetId);
+        await _proxy.DeleteAsset(session.Id, asset1!.AssetId);
+        await _proxy.DeleteAsset(session.Id, asset2!.AssetId);
 
         // Assert
-        var listJson = await _proxy.ListAssets(session.SessionId);
+        var listJson = await _proxy.ListAssets(session.Id);
         var assets = System.Text.Json.JsonSerializer.Deserialize<List<AssetDto>>(listJson);
         assets!.Should().BeEmpty();
     }
@@ -422,14 +423,14 @@ public class AssetManagementTests : IDisposable
         var session = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(sessionJson);
         var base64Data = Convert.ToBase64String("test"u8.ToArray());
 
-        var assetJson = await _proxy.UploadAsset(session!.SessionId, base64Data, "text/plain", "test.txt");
+        var assetJson = await _proxy.UploadAsset(session!.Id, base64Data, "text/plain", "test.txt");
         var asset = System.Text.Json.JsonSerializer.Deserialize<AssetDto>(assetJson);
 
-        await _proxy.DeleteAsset(session.SessionId, asset!.AssetId);
+        await _proxy.DeleteAsset(session.Id, asset!.AssetId);
 
         // Act & Assert - Second delete should fail
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _proxy.DeleteAsset(session.SessionId, asset.AssetId));
+            await _proxy.DeleteAsset(session.Id, asset.AssetId));
     }
 
     #endregion
@@ -438,8 +439,8 @@ public class AssetManagementTests : IDisposable
 
     private class TestProxy : HybridWebViewAgentProxy
     {
-        public TestProxy(MauiSessionManager manager, IHybridWebView webView)
-            : base(manager, webView)
+        public TestProxy(MauiSessionManager manager, MauiAgentManager agentManager, IHybridWebView webView)
+            : base(manager, agentManager, webView)
         {
         }
     }

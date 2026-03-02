@@ -108,8 +108,9 @@ internal sealed class DebounceTimer(int debounceMs) : IDisposable
 
 /// <summary>
 /// Connects an HPD agent to Slack via the Events API and Block Kit.
-/// Receives inbound webhooks, routes them to the agent via <see cref="AgentSessionManager"/>,
-/// consumes the <see cref="AgentEvent"/> stream, and posts responses back via <see cref="SlackApiClient"/>.
+/// Receives inbound webhooks, routes them to the agent via <see cref="SessionManager"/> and
+/// <see cref="AgentManager"/>, consumes the <see cref="AgentEvent"/> stream, and posts
+/// responses back via <see cref="SlackApiClient"/>.
 /// </summary>
 [HpdAdapter("slack")]
 [HpdWebhookSignature(HmacFormat.V0TimestampBody,
@@ -119,7 +120,8 @@ internal sealed class DebounceTimer(int debounceMs) : IDisposable
 [HpdStreaming(StreamingStrategy.PostAndEdit, DebounceMs = 500)]
 public partial class SlackAdapter(
     IOptions<SlackAdapterConfig> options,
-    AgentSessionManager sessionManager,
+    SessionManager sessionManager,
+    AgentManager agentManager,
     PlatformSessionMapper sessionMapper,
     SlackApiClient api,
     SlackFormatConverter formatter,
@@ -255,7 +257,7 @@ public partial class SlackAdapter(
             // block_id carries the sessionId set when BuildPermissionBlocks posted the message.
             if (IsPermissionAction(action.ActionId))
             {
-                var agent = sessionManager.GetRunningAgent(action.BlockId);
+                var agent = agentManager.GetAgent(_config.AgentName ?? "default");
                 if (agent is not null)
                 {
                     var approved = action.Value == "approve";
@@ -360,8 +362,7 @@ public partial class SlackAdapter(
                 await api.TrySetAssistantStatusAsync(channel, threadTs, "Typing...", ct);
             }
 
-            var agent = await sessionManager.GetOrCreateAgentAsync(sessionId, ct);
-            sessionManager.SetStreaming(sessionId, true);
+            var agent = await agentManager.GetOrBuildAgentAsync(_config.AgentName ?? "default", ct);
 
             var buffer  = new StringBuilder();
             var debounce = new DebounceTimer(_config.StreamingDebounceMs);
@@ -429,7 +430,6 @@ public partial class SlackAdapter(
         }
         finally
         {
-            sessionManager.SetStreaming(sessionId, false);
             sessionManager.ReleaseStreamLock(sessionId, branchId);
         }
     }

@@ -23,7 +23,7 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
     {
         var response = await _client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     #region POST /sessions/{sid}/branches/{bid}/stream
@@ -35,8 +35,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test message", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -59,8 +59,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Hello", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -86,8 +86,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Use a tool", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -110,8 +110,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -134,8 +134,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Complete interaction", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -159,8 +159,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -194,8 +194,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Long running task", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -225,8 +225,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -249,8 +249,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Quick message", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -279,8 +279,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -303,8 +303,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -349,8 +349,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
 
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test with config", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -373,8 +373,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Save this message", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -402,8 +402,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Persistent message", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -428,8 +428,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         // Arrange
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -452,8 +452,8 @@ public class SseStreamingTests : IClassFixture<TestWebApplicationFactory>
         var sessionId = await CreateTestSession();
         var request = new StreamRequest(
             new List<StreamMessage> { new("Test", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),

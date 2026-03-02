@@ -16,7 +16,7 @@ public class ServiceRegistrationTests
     #region AddHPDAgent
 
     [Fact]
-    public void AddHPDAgent_RegistersSessionManagerRegistry_AsSingleton()
+    public void AddHPDAgent_RegistersAgentRegistry_AsSingleton()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -26,8 +26,8 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        var registry1 = provider.GetService<AgentSessionManagerRegistry>();
-        var registry2 = provider.GetService<AgentSessionManagerRegistry>();
+        var registry1 = provider.GetService<HPDAgentRegistry>();
+        var registry2 = provider.GetService<HPDAgentRegistry>();
         registry1.Should().NotBeNull();
         registry1.Should().BeSameAs(registry2);
     }
@@ -125,7 +125,7 @@ public class ServiceRegistrationTests
         var provider = services.BuildServiceProvider();
 
         // Assert
-        var registry = provider.GetRequiredService<AgentSessionManagerRegistry>();
+        var registry = provider.GetRequiredService<HPDAgentRegistry>();
         registry.Should().NotBeNull();
     }
 

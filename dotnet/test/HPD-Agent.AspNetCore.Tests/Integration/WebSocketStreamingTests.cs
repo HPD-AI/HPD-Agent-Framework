@@ -25,7 +25,7 @@ public class WebSocketStreamingTests : IClassFixture<TestWebApplicationFactory>
         var client = _factory.CreateClient();
         var response = await client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     #region GET /sessions/{sid}/branches/{bid}/ws
@@ -61,8 +61,8 @@ public class WebSocketStreamingTests : IClassFixture<TestWebApplicationFactory>
         // Send a message
         var message = new StreamRequest(
             new List<StreamMessage> { new("Hello via WebSocket", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),

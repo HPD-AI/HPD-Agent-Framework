@@ -8,8 +8,14 @@ import type {
 	ListSessionsOptions,
 	CreateBranchRequest,
 	ForkBranchRequest,
+	AgentSummaryDto,
+	StoredAgentDto,
+	CreateAgentRequest,
+	UpdateAgentRequest,
+	StreamOptions,
+	RunConfig,
 } from '@hpd/hpd-agent-client';
-import type { Session, Branch, SiblingBranch, BranchMessage } from '@hpd/hpd-agent-client';
+import type { Session, Branch, SiblingBranch, BranchMessage, AssetReference } from '@hpd/hpd-agent-client';
 import type { EventHandlers } from '@hpd/hpd-agent-client';
 import type { AgentState } from '../agent/agent.svelte.ts';
 
@@ -23,7 +29,8 @@ export interface AgentClientLike {
 		sessionId: string,
 		branchId: string | undefined,
 		messages: Array<{ content: string; role?: string }>,
-		handlers: EventHandlers
+		handlers: EventHandlers,
+		options?: StreamOptions
 	): Promise<void>;
 	abort(): void;
 
@@ -46,6 +53,16 @@ export interface AgentClientLike {
 	getBranchSiblings(sessionId: string, branchId: string): Promise<SiblingBranch[]>;
 	getNextSibling(sessionId: string, branchId: string): Promise<Branch | null>;
 	getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null>;
+
+	// Agent definition CRUD
+	listAgents(): Promise<AgentSummaryDto[]>;
+	getAgent(agentId: string): Promise<StoredAgentDto | null>;
+	createAgent(request: CreateAgentRequest): Promise<StoredAgentDto>;
+	updateAgent(agentId: string, request: UpdateAgentRequest): Promise<StoredAgentDto>;
+	deleteAgent(agentId: string): Promise<void>;
+
+	// Asset upload
+	uploadAsset(sessionId: string, file: File | Blob, name?: string): Promise<AssetReference>;
 }
 
 export interface CreateWorkspaceOptions {
@@ -73,6 +90,9 @@ export interface CreateWorkspaceOptions {
 	/** Handler for client tool invocations */
 	onClientToolInvoke?: (req: ClientToolInvokeRequestEvent) => Promise<ClientToolInvokeResponse>;
 
+	/** Default agent definition ID to use for all streams (defaults to "default" on the server) */
+	agentId?: string;
+
 	/** Called when a stream completes */
 	onComplete?: () => void;
 
@@ -85,6 +105,17 @@ export interface CreateWorkspaceOptions {
 	 * CRUD operations without a real server.
 	 */
 	_client?: AgentClientLike;
+}
+
+/**
+ * Options passed to Workspace.send().
+ * All fields are optional — omit to use the server defaults.
+ */
+export interface SendOptions {
+	/** Per-send run configuration (model, temperature, etc.) */
+	runConfig?: RunConfig;
+	/** Resolved asset references to attach to the message as UriContent */
+	attachments?: AssetReference[];
 }
 
 export interface Workspace {
@@ -166,8 +197,27 @@ export interface Workspace {
 	/** Reactive state of the active branch (messages, streaming, tools, etc.) */
 	readonly state: AgentState | null;
 
-	/** Send a message. Runs Agent.Run(content, activeSessionId, activeBranchId). */
-	send(content: string): Promise<void>;
+	// ==========================================
+	// Agent selection
+	// ==========================================
+
+	/** All available agent definitions loaded at init */
+	readonly agents: AgentSummaryDto[];
+
+	/** ID of the currently selected agent definition (null = server default) */
+	readonly activeAgentId: string | null;
+
+	/** Switch the active agent definition. Pass null to revert to server default. */
+	selectAgent(agentId: string | null): void;
+
+	/** Refresh the agent list from the server */
+	listAgents(): Promise<AgentSummaryDto[]>;
+
+	/** The underlying AgentClient — use to call uploadAsset() or other low-level ops */
+	readonly client: AgentClientLike;
+
+	/** Send a message. Accepts optional SendOptions for per-send runConfig and file attachments. */
+	send(content: string, options?: SendOptions): Promise<void>;
 
 	/** Abort the current stream */
 	abort(): void;

@@ -57,15 +57,16 @@ public class RecursiveBranchDeleteTests : IDisposable
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             field?.SetValue(builder, registry);
         };
-        var manager = new MauiSessionManager(store, optionsMonitor, Options.DefaultName, null);
-        return new TestProxy(manager, mockWebView.Object);
+        var manager = new MauiSessionManager(store, optionsMonitor, Options.DefaultName);
+        var agentManager = new MauiAgentManager(new InMemoryAgentStore(), manager, optionsMonitor, Options.DefaultName);
+        return new TestProxy(manager, agentManager, mockWebView.Object);
     }
 
     private async Task<string> CreateSession(HybridWebViewAgentProxy proxy)
     {
         var json = await proxy.CreateSession();
         var dto = System.Text.Json.JsonSerializer.Deserialize<SessionDto>(json);
-        return dto!.SessionId;
+        return dto!.Id;
     }
 
     private async Task ForkBranch(HybridWebViewAgentProxy proxy, string sid, string sourceBid, string newBid)
@@ -240,8 +241,8 @@ public class RecursiveBranchDeleteTests : IDisposable
     // Test infrastructure
     // ──────────────────────────────────────────────────────────────────
 
-    private class TestProxy(MauiSessionManager manager, IHybridWebView webView)
-        : HybridWebViewAgentProxy(manager, webView);
+    private class TestProxy(MauiSessionManager manager, MauiAgentManager agentManager, IHybridWebView webView)
+        : HybridWebViewAgentProxy(manager, agentManager, webView);
 
     private class OptionsMonitorWrapper(bool allowRecursive = false) : IOptionsMonitor<HPDAgentConfig>
     {

@@ -39,13 +39,15 @@ import {
 import type {
 	Branch,
 	BranchMessage,
+	AssetReference,
 	CreateBranchRequest,
 	CreateSessionRequest,
 	Session,
+	AgentSummaryDto,
 } from '@hpd/hpd-agent-client';
 import { AgentState } from '../agent/agent.svelte.ts';
 import type { Message, MessageRole, ToolCall } from '../agent/types.ts';
-import type { AgentClientLike, CreateWorkspaceOptions, Workspace } from './types.ts';
+import type { AgentClientLike, CreateWorkspaceOptions, SendOptions, Workspace } from './types.ts';
 
 // ============================================
 // History Loading
@@ -118,6 +120,8 @@ class WorkspaceImpl implements Workspace {
 	readonly #options: CreateWorkspaceOptions;
 	readonly #maxCachedBranches: number;
 
+	get client(): AgentClientLike { return this.#client; }
+
 	// ==========================================
 	// Level 1: Session list ($state)
 	// ==========================================
@@ -126,6 +130,13 @@ class WorkspaceImpl implements Workspace {
 	#activeSessionId = $state<string | null>(null);
 	#loading = $state(false);
 	#error = $state<string | null>(null);
+
+	// ==========================================
+	// Agent selection ($state)
+	// ==========================================
+
+	#agents = $state<AgentSummaryDto[]>([]);
+	#activeAgentId = $state<string | null>(null);
 
 	// ==========================================
 	// Level 2: Branch registry ($state)
@@ -214,6 +225,12 @@ class WorkspaceImpl implements Workspace {
 	get activeBranchId() {
 		return this.#activeBranchId;
 	}
+	get agents() {
+		return this.#agents;
+	}
+	get activeAgentId() {
+		return this.#activeAgentId;
+	}
 
 	// ==========================================
 	// Constructor
@@ -222,6 +239,7 @@ class WorkspaceImpl implements Workspace {
 	constructor(options: CreateWorkspaceOptions) {
 		this.#options = options;
 		this.#maxCachedBranches = options.maxCachedBranches ?? 10;
+		this.#activeAgentId = options.agentId ?? null;
 
 		// Create AgentClient (or use injected one for tests)
 		this.#client = options._client ?? new AgentClient({
@@ -244,8 +262,14 @@ class WorkspaceImpl implements Workspace {
 		this.#error = null;
 
 		try {
-			// Load session list
-			const sessions = await this.#client.listSessions();
+			// Load session list and agent definitions concurrently
+			const [sessions] = await Promise.all([
+				this.#client.listSessions(),
+				this.#client.listAgents().then(
+					(agents) => { this.#agents = agents; },
+					() => { /* agents are optional — swallow if store not registered */ }
+				),
+			]);
 			this.#sessions = sessions;
 
 			// Activate initial session
@@ -656,7 +680,8 @@ class WorkspaceImpl implements Workspace {
 		const fork = await this.#client.forkBranch(sessionId, branchId, {
 			newBranchId: crypto.randomUUID(),
 			fromMessageIndex: messageIndex,
-			name: `Edit: ${newContent.slice(0, 30)}${newContent.length > 30 ? '...' : ''}`
+			name: `Edit: ${newContent.slice(0, 30)}${newContent.length > 30 ? '...' : ''}`,
+			agentId: this.#activeAgentId ?? undefined
 		});
 
 		// Register fork in branch map
@@ -781,10 +806,24 @@ class WorkspaceImpl implements Workspace {
 	}
 
 	// ==========================================
+	// Agent selection
+	// ==========================================
+
+	selectAgent(agentId: string | null): void {
+		this.#activeAgentId = agentId;
+	}
+
+	async listAgents(): Promise<AgentSummaryDto[]> {
+		const agents = await this.#client.listAgents();
+		this.#agents = agents;
+		return agents;
+	}
+
+	// ==========================================
 	// Level 3: Streaming
 	// ==========================================
 
-	async send(content: string): Promise<void> {
+	async send(content: string, options?: SendOptions): Promise<void> {
 		const sessionId = this.#activeSessionId;
 		const branchId = this.#activeBranchId;
 		const activeState = this.#activeState();
@@ -793,7 +832,31 @@ class WorkspaceImpl implements Workspace {
 
 		activeState.addUserMessage(content);
 
-		await this.#client.stream(sessionId, branchId, [{ content }], this.#buildEventHandlers());
+		const effectiveAgentId = this.#activeAgentId ?? undefined;
+		await this.#client.stream(
+			sessionId,
+			branchId,
+			this.#buildMessages(content, options?.attachments),
+			this.#buildEventHandlers(),
+			{
+				agentId: effectiveAgentId,
+				runConfig: options?.runConfig,
+				resetClientState: true,
+				clientToolKits: this.#options.clientToolKits,
+			}
+		);
+	}
+
+	#buildMessages(content: string, attachments?: AssetReference[]): Array<{ content: string; role?: string }> {
+		// The transport wire format uses { content: string } messages.
+		// Attachments are injected as asset:// URIs appended to the text content.
+		if (!attachments || attachments.length === 0) {
+			return [{ content }];
+		}
+		const assetRefs = attachments
+			.map((a) => `asset://${a.assetId}`)
+			.join(' ');
+		return [{ content: `${content}\n${assetRefs}`.trimStart() }];
 	}
 
 	abort(): void {

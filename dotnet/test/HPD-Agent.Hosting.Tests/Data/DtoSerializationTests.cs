@@ -46,7 +46,7 @@ public class DtoSerializationTests
 
         // Assert
         deserialized.Should().NotBeNull();
-        deserialized!.SessionId.Should().Be(original.SessionId);
+        deserialized!.Id.Should().Be(original.Id);
         deserialized.CreatedAt.Should().BeCloseTo(original.CreatedAt, TimeSpan.FromMilliseconds(1));
         deserialized.LastActivity.Should().BeCloseTo(original.LastActivity, TimeSpan.FromMilliseconds(1));
         deserialized.Metadata.Should().NotBeNull();
@@ -87,7 +87,8 @@ public class DtoSerializationTests
             DateTime.UtcNow.AddMinutes(10),
             25,
             new List<string> { "tag1", "tag2" },
-            new Dictionary<string, string> { ["0"] = "root", ["1"] = "parent-branch" });
+            new Dictionary<string, string> { ["0"] = "root", ["1"] = "parent-branch" },
+            0, 1, true, null, null, null, 0);
 
         // Act
         var json = JsonSerializer.Serialize(original, _options);
@@ -96,7 +97,7 @@ public class DtoSerializationTests
         // Assert
         deserialized.Should().NotBeNull();
         deserialized!.Id.Should().Be(original.Id);
-        deserialized.SessionId.Should().Be(original.SessionId);
+        deserialized.Id.Should().Be(original.Id);
         deserialized.Name.Should().Be(original.Name);
         deserialized.Description.Should().Be(original.Description);
         deserialized.ForkedFrom.Should().Be(original.ForkedFrom);
@@ -121,7 +122,8 @@ public class DtoSerializationTests
             DateTime.UtcNow,
             0,
             new List<string>(),
-            new Dictionary<string, string>());
+            new Dictionary<string, string>(),
+            0, 1, true, null, null, null, 0);
 
         // Act
         var json = JsonSerializer.Serialize(original, _options);
@@ -141,7 +143,8 @@ public class DtoSerializationTests
         var original = new MessageDto(
             "msg-1",
             "user",
-            "Hello, how can I help?",
+            new List<Microsoft.Extensions.AI.AIContent> { new Microsoft.Extensions.AI.TextContent("Hello, how can I help?") },
+            null,
             DateTime.UtcNow.ToString("O"));
 
         // Act
@@ -152,7 +155,7 @@ public class DtoSerializationTests
         deserialized.Should().NotBeNull();
         deserialized!.Id.Should().Be(original.Id);
         deserialized.Role.Should().Be(original.Role);
-        deserialized.Content.Should().Be(original.Content);
+        deserialized.Contents.Should().HaveCount(1);
         deserialized.Timestamp.Should().Be(original.Timestamp);
     }
 
@@ -281,8 +284,8 @@ public class DtoSerializationTests
         // Arrange
         var original = new StreamRequest(
             new List<StreamMessage> { new StreamMessage("Hello", "user") },
-            new List<object>(),
-            new List<object>(),
+            new List<System.Text.Json.JsonElement>(),
+            new List<System.Text.Json.JsonElement>(),
             null,
             new List<string>(),
             new List<string>(),
@@ -374,6 +377,7 @@ public class DtoSerializationTests
     {
         // Arrange
         var original = new PermissionResponseRequest(
+            null,
             "perm-123",
             true,
             "Approved for testing",
@@ -396,6 +400,7 @@ public class DtoSerializationTests
     {
         // Arrange
         var original = new ClientToolResponseRequest(
+            null,
             "tool-req-123",
             true,
             new List<ClientToolContentDto> { new ClientToolContentDto("text", "Result data", null, null) },
@@ -443,7 +448,7 @@ public class DtoSerializationTests
         var json = JsonSerializer.Serialize(sessionDto, _options);
 
         // Assert
-        json.Should().Contain("\"sessionId\""); // camelCase, not SessionId
+        json.Should().Contain("\"id\""); // camelCase, not Id
         json.Should().Contain("\"createdAt\"");
         json.Should().Contain("\"lastActivity\"");
     }

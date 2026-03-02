@@ -19,12 +19,32 @@ import type {
   Branch,
   SiblingBranch,
   BranchMessage,
+  AssetReference,
   CreateSessionRequest,
   UpdateSessionRequest,
   ListSessionsOptions,
   CreateBranchRequest,
   ForkBranchRequest,
 } from './types/session.js';
+import type {
+  AgentSummaryDto,
+  StoredAgentDto,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from './types/agent.js';
+import type { RunConfig } from './types/run-config.js';
+import type {
+  ScoreRecord,
+  EvaluatorSummary,
+  RiskAutonomyDataPoint,
+  ScoreTrend,
+  PassRateResult,
+  FailureRateResult,
+  AgentComparisonResult,
+  BranchComparisonResult,
+  ToolUsageSummary,
+  CostBreakdown,
+} from './types/evals.js';
 import { SseTransport } from './transports/sse.js';
 import { WebSocketTransport } from './transports/websocket.js';
 import { MauiTransport } from './transports/maui.js';
@@ -59,6 +79,10 @@ export interface StreamOptions {
   hiddenTools?: string[];
   /** Reset client state (clear all registered tool groups) */
   resetClientState?: boolean;
+  /** Run configuration (temperature, model overrides, etc.) */
+  runConfig?: RunConfig;
+  /** Agent definition ID to run (defaults to "default") */
+  agentId?: string;
 }
 
 /**
@@ -380,6 +404,8 @@ export class AgentClient {
           expandedContainers: options?.expandedContainers,
           hiddenTools: options?.hiddenTools,
           resetClientState: options?.resetClientState,
+          runConfig: options?.runConfig,
+          agentId: options?.agentId,
         })
         .catch(fail);
     });
@@ -710,5 +736,89 @@ export class AgentClient {
 
   getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null> {
     return this.transport.getPreviousSibling(sessionId, branchId);
+  }
+
+  // ============================================
+  // Agent Definition CRUD
+  // ============================================
+
+  listAgents(): Promise<AgentSummaryDto[]> {
+    return this.transport.listAgents();
+  }
+
+  getAgent(agentId: string): Promise<StoredAgentDto | null> {
+    return this.transport.getAgent(agentId);
+  }
+
+  createAgent(request: CreateAgentRequest): Promise<StoredAgentDto> {
+    return this.transport.createAgent(request);
+  }
+
+  updateAgent(agentId: string, request: UpdateAgentRequest): Promise<StoredAgentDto> {
+    return this.transport.updateAgent(agentId, request);
+  }
+
+  deleteAgent(agentId: string): Promise<void> {
+    return this.transport.deleteAgent(agentId);
+  }
+
+  // ============================================
+  // Eval Queries
+  // ============================================
+
+  getScores(evaluatorName: string, from?: string, to?: string): Promise<ScoreRecord[]> {
+    return this.transport.getScores(evaluatorName, from, to);
+  }
+
+  getScoresByBranch(sessionId: string, branchId?: string): Promise<ScoreRecord[]> {
+    return this.transport.getScoresByBranch(sessionId, branchId);
+  }
+
+  writeScore(record: Omit<ScoreRecord, 'id'>): Promise<ScoreRecord> {
+    return this.transport.writeScore(record);
+  }
+
+  getEvaluatorSummary(from?: string, to?: string): Promise<EvaluatorSummary[]> {
+    return this.transport.getEvaluatorSummary(from, to);
+  }
+
+  getRiskAutonomyDistribution(from?: string, to?: string): Promise<RiskAutonomyDataPoint[]> {
+    return this.transport.getRiskAutonomyDistribution(from, to);
+  }
+
+  getTrend(evaluatorName: string, from: string, to: string, bucketSize?: string): Promise<ScoreTrend> {
+    return this.transport.getTrend(evaluatorName, from, to, bucketSize);
+  }
+
+  getPassRate(evaluatorName: string, from?: string, to?: string): Promise<PassRateResult> {
+    return this.transport.getPassRate(evaluatorName, from, to);
+  }
+
+  getFailureRate(evaluatorName: string, from?: string, to?: string): Promise<FailureRateResult> {
+    return this.transport.getFailureRate(evaluatorName, from, to);
+  }
+
+  getAgentComparison(evaluatorName: string, agentNames: string[], from?: string, to?: string): Promise<AgentComparisonResult> {
+    return this.transport.getAgentComparison(evaluatorName, agentNames, from, to);
+  }
+
+  getBranchComparison(sessionId: string, branchId1: string, branchId2: string, evaluatorNames: string[]): Promise<BranchComparisonResult> {
+    return this.transport.getBranchComparison(sessionId, branchId1, branchId2, evaluatorNames);
+  }
+
+  getToolUsage(from?: string, to?: string): Promise<Record<string, ToolUsageSummary>> {
+    return this.transport.getToolUsage(from, to);
+  }
+
+  getCost(from?: string, to?: string): Promise<CostBreakdown> {
+    return this.transport.getCost(from, to);
+  }
+
+  getScoresByVersion(evaluatorName: string, version: string): Promise<ScoreRecord[]> {
+    return this.transport.getScoresByVersion(evaluatorName, version);
+  }
+
+  uploadAsset(sessionId: string, file: File | Blob, name?: string): Promise<AssetReference> {
+    return this.transport.uploadAsset(sessionId, file, name);
   }
 }

@@ -8,7 +8,7 @@ namespace HPD.Agent.AspNetCore.Tests.Unit;
 
 /// <summary>
 /// Unit tests for AgentSessionManager stream-lock and session-lock behaviour.
-/// Covers Fix 3 (RemoveBranchStreamLock + RemoveAgent cleanup)
+/// Covers Fix 3 (RemoveBranchStreamLock + RemoveSession cleanup)
 /// and MAUI Fix B (non-generic WithSessionLockAsync overload).
 /// </summary>
 public class AgentSessionManagerStreamLockTests : IDisposable
@@ -20,7 +20,7 @@ public class AgentSessionManagerStreamLockTests : IDisposable
     {
         _store = new InMemorySessionStore();
         var optionsMonitor = new OptionsMonitorWrapper();
-        _manager = new AspNetCoreSessionManagerTestable(_store, optionsMonitor, Options.DefaultName, null);
+        _manager = new AspNetCoreSessionManagerTestable(_store, optionsMonitor, Options.DefaultName);
     }
 
     public void Dispose() => _manager.Dispose();
@@ -75,7 +75,7 @@ public class AgentSessionManagerStreamLockTests : IDisposable
         _manager.ReleaseStreamLock("session-a", "branch-3");
         _manager.ReleaseStreamLock("session-b", "branch-1");
 
-        _manager.RemoveAgent("session-a");
+        _manager.RemoveSession("session-a");
 
         // Session-A locks are gone — acquiring returns a fresh semaphore (true)
         _manager.TryAcquireStreamLock("session-a", "branch-1").Should().BeTrue();
@@ -94,7 +94,7 @@ public class AgentSessionManagerStreamLockTests : IDisposable
         _manager.TryAcquireStreamLock("session-b", "branch-z");
 
         // Remove a different session
-        _manager.RemoveAgent("session-a");
+        _manager.RemoveSession("session-a");
 
         // Session-B lock should still be held — reacquisition fails
         _manager.TryAcquireStreamLock("session-b", "branch-z").Should().BeFalse();
@@ -195,9 +195,8 @@ public class AgentSessionManagerStreamLockTests : IDisposable
     private class AspNetCoreSessionManagerTestable(
         ISessionStore store,
         IOptionsMonitor<HPDAgentConfig> optionsMonitor,
-        string name,
-        IAgentFactory? agentFactory)
-        : AspNetCoreSessionManager(store, optionsMonitor, name, agentFactory);
+        string name)
+        : AspNetCoreSessionManager(store, optionsMonitor, name);
 
     private class OptionsMonitorWrapper : IOptionsMonitor<HPDAgentConfig>
     {

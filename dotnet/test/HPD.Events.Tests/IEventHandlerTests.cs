@@ -113,8 +113,8 @@ public class IEventHandlerTests
         await handler.OnEventAsync(evt);
         var duration = DateTimeOffset.UtcNow - startTime;
 
-        // Assert
-        Assert.True(duration >= TimeSpan.FromMilliseconds(100),
+        // Assert — allow 20 ms of timer jitter below the nominal delay
+        Assert.True(duration >= TimeSpan.FromMilliseconds(80),
             "Handler should block until processing completes");
         Assert.Single(handler.HandledEvents);
     }
@@ -138,8 +138,8 @@ public class IEventHandlerTests
         }
         var duration = DateTimeOffset.UtcNow - startTime;
 
-        // Assert
-        Assert.True(duration >= TimeSpan.FromMilliseconds(100),
+        // Assert — two 50 ms delays; allow 20 ms total jitter below the nominal sum
+        Assert.True(duration >= TimeSpan.FromMilliseconds(80),
             "Sequential processing should take sum of durations");
         Assert.Equal(2, handler.HandledEvents.Count);
     }

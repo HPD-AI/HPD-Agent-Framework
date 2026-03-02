@@ -82,7 +82,7 @@ public class RecursiveBranchDeleteTests : IClassFixture<RecursiveDeleteEnabledFa
     {
         var response = await _client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     private async Task<BranchDto> ForkBranch(string sessionId, string sourceBranchId, string newBranchId)
@@ -288,7 +288,7 @@ public class RecursiveBranchDeleteGuardTests : IClassFixture<TestWebApplicationF
     {
         var response = await _client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     private async Task<BranchDto> ForkBranch(string sessionId, string sourceBranchId, string newBranchId)

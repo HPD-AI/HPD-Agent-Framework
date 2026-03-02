@@ -1,21 +1,22 @@
 using FluentAssertions;
 using HPD.Agent.AspNetCore.DependencyInjection;
 using HPD.Agent.Hosting.Configuration;
+using HPD.Agent.Hosting.Lifecycle;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace HPD.Agent.AspNetCore.Tests.Unit;
 
 /// <summary>
-/// Unit tests for AgentSessionManagerRegistry.
-/// Tests named manager resolution and lifecycle.
+/// Unit tests for <see cref="HPDAgentRegistry"/>.
+/// Tests named manager-pair resolution and lifecycle.
 /// </summary>
 public class AgentSessionManagerRegistryTests
 {
     #region Named Manager Resolution
 
     [Fact]
-    public void Get_CreatesManager_OnFirstCall()
+    public void Get_CreatesManagerPair_OnFirstCall()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -25,17 +26,19 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStore = new InMemorySessionStore();
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get(Options.DefaultName);
+        var pair = registry.Get(Options.DefaultName);
 
         // Assert
-        manager.Should().NotBeNull();
+        pair.Should().NotBeNull();
+        pair.SessionManager.Should().NotBeNull();
+        pair.AgentManager.Should().NotBeNull();
     }
 
     [Fact]
-    public void Get_ReturnsSameManager_OnSubsequentCalls()
+    public void Get_ReturnsSamePair_OnSubsequentCalls()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -45,18 +48,19 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStore = new InMemorySessionStore();
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager1 = registry.Get(Options.DefaultName);
-        var manager2 = registry.Get(Options.DefaultName);
+        var pair1 = registry.Get(Options.DefaultName);
+        var pair2 = registry.Get(Options.DefaultName);
 
         // Assert
-        manager1.Should().BeSameAs(manager2);
+        pair1.SessionManager.Should().BeSameAs(pair2.SessionManager);
+        pair1.AgentManager.Should().BeSameAs(pair2.AgentManager);
     }
 
     [Fact]
-    public void Get_CreatesDifferentManagers_ForDifferentNames()
+    public void Get_CreatesDifferentPairs_ForDifferentNames()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -70,18 +74,18 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStore = new InMemorySessionStore();
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager1 = registry.Get("agent1");
-        var manager2 = registry.Get("agent2");
+        var pair1 = registry.Get("agent1");
+        var pair2 = registry.Get("agent2");
 
         // Assert
-        manager1.Should().NotBeSameAs(manager2);
+        pair1.SessionManager.Should().NotBeSameAs(pair2.SessionManager);
     }
 
     [Fact]
-    public void CreateManager_UsesOptionsMonitor_ForNamedOptions()
+    public void CreatePair_UsesOptionsMonitor_ForNamedOptions()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -92,17 +96,17 @@ public class AgentSessionManagerRegistryTests
             opts.AgentIdleTimeout = TimeSpan.FromMinutes(60);
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get("test-agent");
+        var pair = registry.Get("test-agent");
 
         // Assert
-        manager.Should().NotBeNull();
+        pair.Should().NotBeNull();
     }
 
     [Fact]
-    public void CreateManager_ResolvesIAgentFactory_FromDI()
+    public void CreatePair_ResolvesIAgentFactory_FromDI()
     {
         // Arrange
         var services = new ServiceCollection();
@@ -113,17 +117,17 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStore = new InMemorySessionStore();
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get(Options.DefaultName);
+        var pair = registry.Get(Options.DefaultName);
 
         // Assert
-        manager.Should().NotBeNull();
+        pair.Should().NotBeNull();
     }
 
     [Fact]
-    public void CreateManager_CreatesJsonSessionStore_WhenPathProvided()
+    public void CreatePair_CreatesJsonSessionStore_WhenPathProvided()
     {
         // Arrange
         var tempPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -134,14 +138,14 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStorePath = tempPath;
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get(Options.DefaultName);
+        var pair = registry.Get(Options.DefaultName);
 
         // Assert
-        manager.Should().NotBeNull();
-        manager.Store.Should().NotBeNull();
+        pair.Should().NotBeNull();
+        pair.SessionManager.Store.Should().NotBeNull();
 
         // Cleanup
         if (Directory.Exists(tempPath))
@@ -149,25 +153,25 @@ public class AgentSessionManagerRegistryTests
     }
 
     [Fact]
-    public void CreateManager_CreatesInMemoryStore_WhenNoPathProvided()
+    public void CreatePair_CreatesInMemoryStore_WhenNoPathProvided()
     {
         // Arrange
         var services = new ServiceCollection();
         services.AddOptions();
         services.Configure<HPDAgentConfig>(Options.DefaultName, opts => { });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get(Options.DefaultName);
+        var pair = registry.Get(Options.DefaultName);
 
         // Assert
-        manager.Should().NotBeNull();
-        manager.Store.Should().BeOfType<InMemorySessionStore>();
+        pair.Should().NotBeNull();
+        pair.SessionManager.Store.Should().BeOfType<InMemorySessionStore>();
     }
 
     [Fact]
-    public void CreateManager_UsesProvidedStore_WhenAvailable()
+    public void CreatePair_UsesProvidedStore_WhenAvailable()
     {
         // Arrange
         var customStore = new InMemorySessionStore();
@@ -178,13 +182,13 @@ public class AgentSessionManagerRegistryTests
             opts.SessionStore = customStore;
         });
         var provider = services.BuildServiceProvider();
-        var registry = new AgentSessionManagerRegistry(provider);
+        var registry = new HPDAgentRegistry(provider);
 
         // Act
-        var manager = registry.Get(Options.DefaultName);
+        var pair = registry.Get(Options.DefaultName);
 
         // Assert
-        manager.Store.Should().BeSameAs(customStore);
+        pair.SessionManager.Store.Should().BeSameAs(customStore);
     }
 
     #endregion
@@ -194,7 +198,7 @@ public class AgentSessionManagerRegistryTests
     private class TestAgentFactory : IAgentFactory
     {
         public Task<HPD.Agent.Agent> CreateAgentAsync(
-            string sessionId,
+            string agentId,
             ISessionStore store,
             CancellationToken ct = default)
         {

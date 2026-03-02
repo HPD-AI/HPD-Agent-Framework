@@ -58,6 +58,10 @@
     <Project Path="test/HPD.Agent.SerializationTests/HPD.Agent.SerializationTests.csproj" />
     <Project Path="test/HPD.VCS.Tests/HPD.VCS.Tests.csproj" />
     <Project Path="test/HPD-Agent.Evaluations.Tests/HPD-Agent.Evaluations.Tests.csproj" />
+    <Project Path="test/HPD-Agent.OpenApi.Tests/HPD-Agent.OpenApi.Tests.csproj" />
+    <Project Path="test/HPD-Agent.MAUI.Tests/HPD-Agent.MAUI.Tests.csproj" />
+    <Project Path="test/HPD-Agent.AspNetCore.Tests/HPD-Agent.AspNetCore.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Hosting.Tests/HPD-Agent.Hosting.Tests.csproj" />
   </Folder>
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />

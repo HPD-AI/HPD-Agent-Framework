@@ -68,7 +68,7 @@ describe('MauiTransport', () => {
 
       expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith(
         'StartStream',
-        ['Hello', 'session-1', 'main', undefined]
+        ['Hello', 'session-1', 'main', undefined, undefined]
       );
     });
 
@@ -736,6 +736,86 @@ describe('MauiTransport', () => {
         'MAUI HybridWebView not available'
       );
       await expect(transport.getBranchSiblings('s1', 'main')).rejects.toThrow(
+        'MAUI HybridWebView not available'
+      );
+    });
+  });
+
+  // ============================================
+  // uploadAsset() Tests (plan items 5.1–5.6)
+  // ============================================
+
+  describe('uploadAsset()', () => {
+    const ASSET_JSON = JSON.stringify({
+      assetId: 'asset-maui-1',
+      contentType: 'image/png',
+      name: 'shot.png',
+      sizeBytes: 1024,
+    });
+
+    function makeFile(name = 'shot.png', type = 'image/png'): File {
+      return new File(['px'], name, { type });
+    }
+
+    function makeBlob(type = 'image/jpeg'): Blob {
+      return new Blob(['px'], { type });
+    }
+
+    it('calls InvokeDotNet("UploadAsset") with [sessionId, fileName, contentType, base64]', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(ASSET_JSON);
+
+      await transport.uploadAsset('sess-1', makeFile('shot.png', 'image/png'));
+
+      expect(mockHybridWebView.InvokeDotNet).toHaveBeenCalledWith(
+        'UploadAsset',
+        ['sess-1', 'shot.png', 'image/png', expect.any(String)]
+      );
+    });
+
+    it('uses "upload" as filename for a plain Blob', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(ASSET_JSON);
+
+      await transport.uploadAsset('sess-1', makeBlob());
+
+      const [, params] = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(params[1]).toBe('upload'); // fileName
+    });
+
+    it('uses file.name as default filename for a File', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(ASSET_JSON);
+
+      await transport.uploadAsset('sess-1', makeFile('document.pdf', 'application/pdf'));
+
+      const [, params] = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(params[1]).toBe('document.pdf');
+    });
+
+    it('name param overrides the file.name', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(ASSET_JSON);
+
+      await transport.uploadAsset('sess-1', makeFile('original.png'), 'renamed.png');
+
+      const [, params] = mockHybridWebView.InvokeDotNet.mock.calls[0];
+      expect(params[1]).toBe('renamed.png');
+    });
+
+    it('returns the parsed AssetReference from the JSON response', async () => {
+      mockHybridWebView.InvokeDotNet.mockResolvedValue(ASSET_JSON);
+
+      const result = await transport.uploadAsset('sess-1', makeFile());
+
+      expect(result).toEqual({
+        assetId: 'asset-maui-1',
+        contentType: 'image/png',
+        name: 'shot.png',
+        sizeBytes: 1024,
+      });
+    });
+
+    it('throws when HybridWebView is not available', async () => {
+      delete (global as any).window.HybridWebView;
+
+      await expect(transport.uploadAsset('sess-1', makeFile())).rejects.toThrow(
         'MAUI HybridWebView not available'
       );
     });

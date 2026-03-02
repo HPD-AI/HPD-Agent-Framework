@@ -33,7 +33,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         var session2 = await session2Response.Content.ReadFromJsonAsync<SessionDto>();
 
         // Assert - Sessions are independent
-        session1!.SessionId.Should().NotBe(session2!.SessionId);
+        session1!.Id.Should().NotBe(session2!.Id);
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         var session1 = await session1Response.Content.ReadFromJsonAsync<SessionDto>();
 
         // Modify session 1
-        await _client.PatchAsJsonAsync($"/sessions/{session1!.SessionId}",
+        await _client.PatchAsJsonAsync($"/sessions/{session1!.Id}",
             new UpdateSessionRequest(new Dictionary<string, object?> { ["key"] = "value1" }));
 
         // Create session 2
@@ -52,7 +52,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         var session2 = await session2Response.Content.ReadFromJsonAsync<SessionDto>();
 
         // Assert - Session 2 not affected by session 1 changes
-        var session2Data = await _client.GetFromJsonAsync<SessionDto>($"/sessions/{session2!.SessionId}");
+        var session2Data = await _client.GetFromJsonAsync<SessionDto>($"/sessions/{session2!.Id}");
         session2Data!.Metadata.Should().BeNullOrEmpty();
     }
 
@@ -86,7 +86,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
 
         // Make concurrent requests to same session
         var tasks = Enumerable.Range(0, 10).Select(_ =>
-            _client.GetAsync($"/sessions/{session!.SessionId}")
+            _client.GetAsync($"/sessions/{session!.Id}")
         ).ToArray();
 
         await Task.WhenAll(tasks);
@@ -103,24 +103,24 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Create second branch
-        await _client.PostAsJsonAsync($"/sessions/{session!.SessionId}/branches",
+        await _client.PostAsJsonAsync($"/sessions/{session!.Id}/branches",
             new CreateBranchRequest("branch2", "Branch 2", null, null));
 
         var request1 = new StreamRequest(
             new List<StreamMessage> { new("Test 1", "user") },
-            new List<object>(), new List<object>(), null,
+            new List<System.Text.Json.JsonElement>(), new List<System.Text.Json.JsonElement>(), null,
             new List<string>(), new List<string>(), false, null);
 
         var request2 = new StreamRequest(
             new List<StreamMessage> { new("Test 2", "user") },
-            new List<object>(), new List<object>(), null,
+            new List<System.Text.Json.JsonElement>(), new List<System.Text.Json.JsonElement>(), null,
             new List<string>(), new List<string>(), false, null);
 
         // Act - Stream on both branches simultaneously
         var stream1Task = _client.PostAsJsonAsync(
-            $"/sessions/{session.SessionId}/branches/main/stream", request1);
+            $"/sessions/{session.Id}/branches/main/stream", request1);
         var stream2Task = _client.PostAsJsonAsync(
-            $"/sessions/{session.SessionId}/branches/branch2/stream", request2);
+            $"/sessions/{session.Id}/branches/branch2/stream", request2);
 
         await Task.WhenAll(stream1Task, stream2Task);
 
@@ -138,19 +138,19 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
 
         var request = new StreamRequest(
             new List<StreamMessage> { new("Long task", "user") },
-            new List<object>(), new List<object>(), null,
+            new List<System.Text.Json.JsonElement>(), new List<System.Text.Json.JsonElement>(), null,
             new List<string>(), new List<string>(), false, null);
 
         // Act - Start first stream (don't await)
         var stream1Task = _client.PostAsJsonAsync(
-            $"/sessions/{session!.SessionId}/branches/main/stream", request);
+            $"/sessions/{session!.Id}/branches/main/stream", request);
 
         // Give first stream time to acquire lock
         await Task.Delay(100);
 
         // Try second stream
         var stream2Response = await _client.PostAsJsonAsync(
-            $"/sessions/{session.SessionId}/branches/main/stream", request);
+            $"/sessions/{session.Id}/branches/main/stream", request);
 
         // Assert
         stream2Response.StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -176,7 +176,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         var sessionIds = await Task.WhenAll(tasks.Select(async t =>
         {
             var session = await t.Result.Content.ReadFromJsonAsync<SessionDto>();
-            return session!.SessionId;
+            return session!.Id;
         }));
 
         sessionIds.Distinct().Count().Should().Be(20);
@@ -191,7 +191,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
 
         // Act - Create 10 branches concurrently
         var tasks = Enumerable.Range(0, 10).Select(i =>
-            _client.PostAsJsonAsync($"/sessions/{session!.SessionId}/branches",
+            _client.PostAsJsonAsync($"/sessions/{session!.Id}/branches",
                 new CreateBranchRequest($"branch-{i}", $"Branch {i}", null, null))
         ).ToArray();
 
@@ -210,7 +210,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
 
         // Act - Update metadata concurrently with different keys
         var tasks = Enumerable.Range(0, 10).Select(i =>
-            _client.PatchAsJsonAsync($"/sessions/{session!.SessionId}",
+            _client.PatchAsJsonAsync($"/sessions/{session!.Id}",
                 new UpdateSessionRequest(
                     new Dictionary<string, object?> { [$"key{i}"] = $"value{i}" }))
         ).ToArray();
@@ -221,7 +221,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         tasks.Should().AllSatisfy(t => t.Result.StatusCode.Should().Be(HttpStatusCode.OK));
 
         // Verify all keys present
-        var updatedSession = await _client.GetFromJsonAsync<SessionDto>($"/sessions/{session!.SessionId}");
+        var updatedSession = await _client.GetFromJsonAsync<SessionDto>($"/sessions/{session!.Id}");
         updatedSession!.Metadata.Should().NotBeNull();
         updatedSession.Metadata!.Count.Should().BeGreaterOrEqualTo(10);
     }

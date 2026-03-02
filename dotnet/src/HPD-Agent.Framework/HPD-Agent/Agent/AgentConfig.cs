@@ -272,6 +272,13 @@ public class AgentConfig
     public ISessionStore? SessionStore { get; set; }
 
     /// <summary>
+    /// Agent store used to resolve <see cref="StoredAgent"/> definitions at runtime.
+    /// Required when using sub-agents via <c>StoredAgentId</c>.
+    /// </summary>
+    [JsonIgnore]
+    public IAgentStore? AgentStore { get; set; }
+
+    /// <summary>
     /// Options for session persistence behavior.
     /// Controls auto-save, checkpoint frequency, and retention policy.
     /// </summary>

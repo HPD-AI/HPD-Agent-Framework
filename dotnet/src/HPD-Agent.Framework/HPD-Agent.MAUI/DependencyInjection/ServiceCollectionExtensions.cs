@@ -1,5 +1,6 @@
 using HPD.Agent;
 using HPD.Agent.Hosting.Configuration;
+using HPD.Agent.Hosting.Lifecycle;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -62,20 +63,32 @@ public static class ServiceCollectionExtensions
             services.Configure(name, configure);
 
         // Register the session manager as singleton
-        // Use a factory to resolve the correct ISessionStore based on options
         services.TryAddSingleton<MauiSessionManager>(sp =>
         {
             var optionsMonitor = sp.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
             var opts = optionsMonitor.Get(name);
-
-            // Determine session store
             ISessionStore store = opts.SessionStore ?? new InMemorySessionStore();
-
-            // Try to resolve IAgentFactory from DI (optional)
-            var agentFactory = sp.GetService<IAgentFactory>();
-
-            return new MauiSessionManager(store, optionsMonitor, name, agentFactory);
+            return new MauiSessionManager(store, optionsMonitor, name);
         });
+
+        // Register SessionManager (base type) pointing to MauiSessionManager
+        services.TryAddSingleton<SessionManager>(sp =>
+            sp.GetRequiredService<MauiSessionManager>());
+
+        // Register the agent manager as singleton
+        services.TryAddSingleton<MauiAgentManager>(sp =>
+        {
+            var optionsMonitor = sp.GetRequiredService<IOptionsMonitor<HPDAgentConfig>>();
+            var opts = optionsMonitor.Get(name);
+            IAgentStore agentStore = opts.AgentStore ?? new InMemoryAgentStore();
+            var sessionManager = sp.GetRequiredService<MauiSessionManager>();
+            var agentFactory = sp.GetService<IAgentFactory>();
+            return new MauiAgentManager(agentStore, sessionManager, optionsMonitor, name, agentFactory);
+        });
+
+        // Register AgentManager (base type) pointing to MauiAgentManager
+        services.TryAddSingleton<AgentManager>(sp =>
+            sp.GetRequiredService<MauiAgentManager>());
 
         return services;
     }

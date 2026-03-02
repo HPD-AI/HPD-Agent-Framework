@@ -11,4 +11,5 @@ public record CreateBranchRequest(
     string BranchId,
     string? Name,
     string? Description,
-    List<string>? Tags);
+    List<string>? Tags,
+    string? AgentId = null);

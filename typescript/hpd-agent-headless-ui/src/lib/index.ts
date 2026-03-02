@@ -9,15 +9,27 @@ export * from './agent/index.ts';
 
 // Workspace (V3 - Unified session/branch/streaming factory)
 export { createWorkspace } from './workspace/index.ts';
-export type { Workspace, CreateWorkspaceOptions } from './workspace/index.ts';
+export type { Workspace, CreateWorkspaceOptions, SendOptions } from './workspace/index.ts';
+
+// RunConfig headless components
+export * as RunConfig from './run-config/index.ts';
+export { RunConfigState } from './run-config/index.ts';
+
+// FileAttachment headless component
+export * as FileAttachment from './file-attachment/index.ts';
+export { FileAttachmentState } from './file-attachment/index.ts';
 
 // Re-exports from hpd-agent-client — users only need to import from this package
 export type {
 	Session,
 	Branch,
 	BranchMessage,
+	AssetReference,
+	RunConfig,
+	ChatRunConfig,
 	CreateSessionRequest,
 	CreateBranchRequest,
+	ForkBranchRequest,
 	clientToolKitDefinition,
 	ClientToolDefinition,
 	ClientSkillDefinition,
@@ -25,6 +37,25 @@ export type {
 	ClientToolInvokeRequestEvent,
 	PermissionChoice,
 	PermissionResponse,
+	// Agent definition types
+	AgentSummaryDto,
+	StoredAgentDto,
+	CreateAgentRequest,
+	UpdateAgentRequest,
+	AgentConfig,
+	// Eval types
+	ScoreRecord,
+	EvaluatorSummary,
+	RiskAutonomyDataPoint,
+	ScoreTrend,
+	ScoreBucket,
+	ScoreAggregate,
+	PassRateResult,
+	FailureRateResult,
+	AgentComparisonResult,
+	BranchComparisonResult,
+	ToolUsageSummary,
+	CostBreakdown,
 } from '@hpd/hpd-agent-client';
 export {
 	createSuccessResponse,

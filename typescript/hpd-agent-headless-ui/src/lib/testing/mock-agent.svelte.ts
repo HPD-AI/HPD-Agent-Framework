@@ -34,6 +34,9 @@ export interface MockWorkspaceOptions {
 
 	/** Simulate thinking/reasoning before responses. Default: false */
 	enableReasoning?: boolean;
+
+	/** Number of mock sessions to bootstrap. Default: 2 */
+	initialSessionCount?: number;
 }
 
 // ============================================
@@ -191,16 +194,19 @@ class MockWorkspaceImpl implements Workspace {
 				'Great question! Here is what I think about that.',
 				'I am a mock workspace, so my responses are simulated.'
 			],
-			enableReasoning: options.enableReasoning ?? false
+			enableReasoning: options.enableReasoning ?? false,
+			initialSessionCount: options.initialSessionCount ?? 2
 		};
 
-		// Bootstrap: create two mock sessions
-		const s1 = makeMockSession('mock-session-1');
-		const s2 = makeMockSession('mock-session-2');
-		this.#sessions = [s1, s2];
+		// Bootstrap N mock sessions
+		const count = Math.max(1, this.#options.initialSessionCount);
+		const sessions = Array.from({ length: count }, (_, i) =>
+			makeMockSession(`mock-session-${i + 1}`)
+		);
+		this.#sessions = sessions;
 
 		// Each session starts with a 'main' branch and an empty AgentState
-		for (const session of [s1, s2]) {
+		for (const session of sessions) {
 			const mainBranch = makeMockBranch({ id: 'main', sessionId: session.id });
 			const branchMap = new Map<string, Branch>();
 			branchMap.set('main', mainBranch);
@@ -209,7 +215,7 @@ class MockWorkspaceImpl implements Workspace {
 		}
 
 		// Activate first session (synchronous — no async needed for mock init)
-		this.#syncActivateSession(s1.id, 'main');
+		this.#syncActivateSession(sessions[0].id, 'main');
 	}
 
 	// ==========================================

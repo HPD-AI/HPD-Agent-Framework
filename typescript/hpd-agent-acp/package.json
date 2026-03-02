@@ -1,0 +1,33 @@
+{
+  "name": "@hpd/hpd-agent-acp",
+  "version": "0.1.0",
+  "description": "ACP (Agent Client Protocol) bridge for HPD agents",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "hpd-agent-acp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@hpd/hpd-agent-client": "file:../hpd-agent-client"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "HPD-AI",
+  "license": "MIT"
+}

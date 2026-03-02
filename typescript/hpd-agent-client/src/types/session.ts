@@ -232,6 +232,9 @@ export interface CreateBranchRequest {
 
   /** Optional tags */
   tags?: string[];
+
+  /** Agent definition ID to associate with this branch (defaults to "default") */
+  agentId?: string;
 }
 
 /**
@@ -252,6 +255,9 @@ export interface ForkBranchRequest {
 
   /** Optional tags */
   tags?: string[];
+
+  /** Agent definition ID to associate with the forked branch (defaults to "default") */
+  agentId?: string;
 }
 
 // ============================================
@@ -394,4 +400,16 @@ export interface BranchMessage {
 
   /** Timestamp (ISO 8601) */
   timestamp: string;
+}
+
+/**
+ * Reference to an uploaded asset (returned by POST /sessions/{sid}/assets).
+ * Passed as attachments in SendOptions; the workspace converts these to
+ * UriContent references in the outgoing message.
+ */
+export interface AssetReference {
+  assetId: string;
+  contentType: string;
+  name?: string;
+  sizeBytes?: number;
 }

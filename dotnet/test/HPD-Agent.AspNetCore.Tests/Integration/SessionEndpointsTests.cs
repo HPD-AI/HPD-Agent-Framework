@@ -38,7 +38,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
         session.Should().NotBeNull();
-        session!.SessionId.Should().NotBeNullOrEmpty();
+        session!.Id.Should().NotBeNullOrEmpty();
         session.CreatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
         session.LastActivity.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
     }
@@ -51,13 +51,13 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Act - List branches
-        var branchesResponse = await _client.GetAsync($"/sessions/{session!.SessionId}/branches");
+        var branchesResponse = await _client.GetAsync($"/sessions/{session!.Id}/branches");
 
         // Debug: Check response status and content
         if (!branchesResponse.IsSuccessStatusCode)
         {
             var errorBody = await branchesResponse.Content.ReadAsStringAsync();
-            throw new Exception($"GET /sessions/{session.SessionId}/branches failed with {branchesResponse.StatusCode}. Body: {errorBody}");
+            throw new Exception($"GET /sessions/{session.Id}/branches failed with {branchesResponse.StatusCode}. Body: {errorBody}");
         }
 
         var branches = await branchesResponse.Content.ReadFromJsonAsync<List<BranchDto>>();
@@ -80,7 +80,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        session!.SessionId.Should().Be("custom-session-123");
+        session!.Id.Should().Be("custom-session-123");
     }
 
     [Fact]
@@ -114,8 +114,8 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
 
         // Assert
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        session!.SessionId.Should().NotBeNullOrEmpty();
-        session.SessionId.Should().MatchRegex("^[a-zA-Z0-9_-]+$");
+        session!.Id.Should().NotBeNullOrEmpty();
+        session.Id.Should().MatchRegex("^[a-zA-Z0-9_-]+$");
     }
 
     #endregion
@@ -238,12 +238,12 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var createdSession = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Act
-        var response = await _client.GetAsync($"/sessions/{createdSession!.SessionId}");
+        var response = await _client.GetAsync($"/sessions/{createdSession!.Id}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        session!.SessionId.Should().Be(createdSession.SessionId);
+        session!.Id.Should().Be(createdSession.Id);
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         };
         var updateRequest = new UpdateSessionRequest(updateMetadata);
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/sessions/{session!.SessionId}",
+            $"/sessions/{session!.Id}",
             updateRequest);
 
         // Assert
@@ -305,7 +305,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var updateRequest = new UpdateSessionRequest(
             new Dictionary<string, object?> { ["removeMe"] = null });
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/sessions/{session!.SessionId}",
+            $"/sessions/{session!.Id}",
             updateRequest);
 
         // Assert
@@ -330,7 +330,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var updateRequest = new UpdateSessionRequest(
             new Dictionary<string, object?> { ["new"] = "newValue" });
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/sessions/{session!.SessionId}",
+            $"/sessions/{session!.Id}",
             updateRequest);
 
         // Assert
@@ -354,7 +354,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var updateRequest = new UpdateSessionRequest(
             new Dictionary<string, object?> { ["updated"] = "yes" });
         var updateResponse = await _client.PatchAsJsonAsync(
-            $"/sessions/{session.SessionId}",
+            $"/sessions/{session.Id}",
             updateRequest);
 
         // Assert
@@ -390,7 +390,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Act
-        var deleteResponse = await _client.DeleteAsync($"/sessions/{session!.SessionId}");
+        var deleteResponse = await _client.DeleteAsync($"/sessions/{session!.Id}");
 
         // Assert
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -404,10 +404,10 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Act
-        await _client.DeleteAsync($"/sessions/{session!.SessionId}");
+        await _client.DeleteAsync($"/sessions/{session!.Id}");
 
         // Assert - Try to get branches (should fail because session is gone)
-        var branchesResponse = await _client.GetAsync($"/sessions/{session.SessionId}/branches");
+        var branchesResponse = await _client.GetAsync($"/sessions/{session.Id}/branches");
         branchesResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -429,10 +429,10 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var session = await createResponse.Content.ReadFromJsonAsync<SessionDto>();
 
         // Act
-        await _client.DeleteAsync($"/sessions/{session!.SessionId}");
+        await _client.DeleteAsync($"/sessions/{session!.Id}");
 
         // Assert - Subsequent operations should fail
-        var getResponse = await _client.GetAsync($"/sessions/{session.SessionId}");
+        var getResponse = await _client.GetAsync($"/sessions/{session.Id}");
         getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

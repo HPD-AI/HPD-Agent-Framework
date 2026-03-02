@@ -281,8 +281,8 @@ internal static class SessionEndpoints
             // Delete the session (this will delete all branches and assets via ISessionStore)
             await manager.Store.DeleteSessionAsync(sessionId, ct);
 
-            // Remove agent from cache
-            manager.RemoveAgent(sessionId);
+            // Clean up in-memory stream/session locks for this session
+            manager.RemoveSession(sessionId);
 
             return ErrorResponses.NoContent();
         }

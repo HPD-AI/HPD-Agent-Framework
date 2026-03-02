@@ -10,12 +10,32 @@ import type {
   Branch,
   SiblingBranch,
   BranchMessage,
+  AssetReference,
   CreateSessionRequest,
   UpdateSessionRequest,
   ListSessionsOptions,
   CreateBranchRequest,
   ForkBranchRequest,
 } from './session.js';
+import type {
+  ScoreRecord,
+  EvaluatorSummary,
+  RiskAutonomyDataPoint,
+  ScoreTrend,
+  PassRateResult,
+  FailureRateResult,
+  AgentComparisonResult,
+  BranchComparisonResult,
+  ToolUsageSummary,
+  CostBreakdown,
+} from './evals.js';
+import type {
+  AgentSummaryDto,
+  StoredAgentDto,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from './agent.js';
+import type { RunConfig } from './run-config.js';
 
 /**
  * Options for connecting to an agent stream.
@@ -43,7 +63,9 @@ export interface ConnectOptions {
   /** Reset client state (clear all registered tool groups) */
   resetClientState?: boolean;
   /** Run configuration (temperature, model overrides, etc.) */
-  runConfig?: unknown;
+  runConfig?: RunConfig;
+  /** Agent definition ID to run (defaults to "default") */
+  agentId?: string;
 }
 
 /**
@@ -61,6 +83,7 @@ export interface PermissionResponseMessage {
   approved: boolean;
   choice?: PermissionChoice;
   reason?: string;
+  agentId?: string;
 }
 
 export interface ClarificationResponseMessage {
@@ -82,6 +105,7 @@ export interface ClientToolResponseMessage {
   success: boolean;
   errorMessage?: string;
   augmentation?: ClientToolAugmentation;
+  agentId?: string;
 }
 
 /**
@@ -167,4 +191,76 @@ export interface AgentTransport {
 
   /** Get the previous sibling branch (null if first) */
   getPreviousSibling(sessionId: string, branchId: string): Promise<Branch | null>;
+
+  // ============================================
+  // AGENT DEFINITION CRUD
+  // ============================================
+
+  /** List all agent definitions */
+  listAgents(): Promise<AgentSummaryDto[]>;
+
+  /** Get an agent definition by ID (null if not found) */
+  getAgent(agentId: string): Promise<StoredAgentDto | null>;
+
+  /** Create a new agent definition */
+  createAgent(request: CreateAgentRequest): Promise<StoredAgentDto>;
+
+  /** Update an agent definition */
+  updateAgent(agentId: string, request: UpdateAgentRequest): Promise<StoredAgentDto>;
+
+  /** Delete an agent definition */
+  deleteAgent(agentId: string): Promise<void>;
+
+  // ============================================
+  // EVAL QUERIES
+  // ============================================
+
+  /** Query scores by evaluator name and optional time range */
+  getScores(evaluatorName: string, from?: string, to?: string): Promise<ScoreRecord[]>;
+
+  /** Query scores for a session, optionally filtered to a branch */
+  getScoresByBranch(sessionId: string, branchId?: string): Promise<ScoreRecord[]>;
+
+  /** Write a score record; server assigns the id */
+  writeScore(record: Omit<ScoreRecord, 'id'>): Promise<ScoreRecord>;
+
+  /** Summary statistics for all evaluators in an optional time range */
+  getEvaluatorSummary(from?: string, to?: string): Promise<EvaluatorSummary[]>;
+
+  /** Paired risk/autonomy data points for every turn where both scores exist */
+  getRiskAutonomyDistribution(from?: string, to?: string): Promise<RiskAutonomyDataPoint[]>;
+
+  /** Time-bucketed trend for an evaluator (bucketSize is ISO 8601 duration, e.g. "PT1H") */
+  getTrend(evaluatorName: string, from: string, to: string, bucketSize?: string): Promise<ScoreTrend>;
+
+  /** Pass rate for an evaluator in an optional time range */
+  getPassRate(evaluatorName: string, from?: string, to?: string): Promise<PassRateResult>;
+
+  /** Failure rate for an evaluator in an optional time range */
+  getFailureRate(evaluatorName: string, from?: string, to?: string): Promise<FailureRateResult>;
+
+  /** Compare score aggregates across multiple agents for a given evaluator */
+  getAgentComparison(evaluatorName: string, agentNames: string[], from?: string, to?: string): Promise<AgentComparisonResult>;
+
+  /** Compare scores between two branches on given evaluators */
+  getBranchComparison(sessionId: string, branchId1: string, branchId2: string, evaluatorNames: string[]): Promise<BranchComparisonResult>;
+
+  /** Tool usage summary keyed by tool name */
+  getToolUsage(from?: string, to?: string): Promise<Record<string, ToolUsageSummary>>;
+
+  /** Cost breakdown keyed by cost category */
+  getCost(from?: string, to?: string): Promise<CostBreakdown>;
+
+  /** Query scores for a specific evaluator version */
+  getScoresByVersion(evaluatorName: string, version: string): Promise<ScoreRecord[]>;
+
+  // ============================================
+  // ASSET UPLOAD
+  // ============================================
+
+  /**
+   * Upload a file asset to a session.
+   * Calls POST /sessions/{sid}/assets as multipart/form-data.
+   */
+  uploadAsset(sessionId: string, file: File | Blob, name?: string): Promise<AssetReference>;
 }

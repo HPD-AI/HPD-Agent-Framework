@@ -5,12 +5,31 @@ import type {
   Branch,
   SiblingBranch,
   BranchMessage,
+  AssetReference,
   CreateSessionRequest,
   UpdateSessionRequest,
   ListSessionsOptions,
   CreateBranchRequest,
   ForkBranchRequest,
 } from '../types/session.js';
+import type {
+  AgentSummaryDto,
+  StoredAgentDto,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from '../types/agent.js';
+import type {
+  ScoreRecord,
+  EvaluatorSummary,
+  RiskAutonomyDataPoint,
+  ScoreTrend,
+  PassRateResult,
+  FailureRateResult,
+  AgentComparisonResult,
+  BranchComparisonResult,
+  ToolUsageSummary,
+  CostBreakdown,
+} from '../types/evals.js';
 
 declare global {
   interface Window {
@@ -79,6 +98,7 @@ export class MauiTransport implements AgentTransport {
           options.sessionId,
           options.branchId || 'main',
           options.runConfig ? JSON.stringify(options.runConfig) : undefined,
+          options.agentId,
         ]
       );
 
@@ -109,6 +129,7 @@ export class MauiTransport implements AgentTransport {
             Approved: message.approved,
             Reason: message.reason,
             Choice: message.choice,
+            AgentId: message.agentId,
           };
           await window.HybridWebView.InvokeDotNet('RespondToPermission', [
             JSON.stringify(request),
@@ -124,6 +145,7 @@ export class MauiTransport implements AgentTransport {
             Success: message.success,
             Content: message.content,
             ErrorMessage: message.errorMessage,
+            AgentId: message.agentId,
           };
           await window.HybridWebView.InvokeDotNet('RespondToClientTool', [
             JSON.stringify(request),
@@ -288,23 +310,102 @@ export class MauiTransport implements AgentTransport {
     return this.getBranch(sessionId, branch.previousSiblingId);
   }
 
-  // Asset CRUD (not part of AgentTransport interface)
-  async uploadAsset(sessionId: string, file: File): Promise<unknown> {
+  // ============================================
+  // AGENT DEFINITION CRUD (not supported in MAUI)
+  // ============================================
+
+  listAgents(): Promise<AgentSummaryDto[]> {
+    return Promise.reject(new Error('Agent CRUD is not supported in MauiTransport'));
+  }
+
+  getAgent(_agentId: string): Promise<StoredAgentDto | null> {
+    return Promise.reject(new Error('Agent CRUD is not supported in MauiTransport'));
+  }
+
+  createAgent(_request: CreateAgentRequest): Promise<StoredAgentDto> {
+    return Promise.reject(new Error('Agent CRUD is not supported in MauiTransport'));
+  }
+
+  updateAgent(_agentId: string, _request: UpdateAgentRequest): Promise<StoredAgentDto> {
+    return Promise.reject(new Error('Agent CRUD is not supported in MauiTransport'));
+  }
+
+  deleteAgent(_agentId: string): Promise<void> {
+    return Promise.reject(new Error('Agent CRUD is not supported in MauiTransport'));
+  }
+
+  // ============================================
+  // EVAL QUERIES (not supported in MAUI)
+  // ============================================
+
+  getScores(_evaluatorName: string, _from?: string, _to?: string): Promise<ScoreRecord[]> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getScoresByBranch(_sessionId: string, _branchId?: string): Promise<ScoreRecord[]> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  writeScore(_record: Omit<ScoreRecord, 'id'>): Promise<ScoreRecord> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getEvaluatorSummary(_from?: string, _to?: string): Promise<EvaluatorSummary[]> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getRiskAutonomyDistribution(_from?: string, _to?: string): Promise<RiskAutonomyDataPoint[]> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getTrend(_evaluatorName: string, _from: string, _to: string, _bucketSize?: string): Promise<ScoreTrend> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getPassRate(_evaluatorName: string, _from?: string, _to?: string): Promise<PassRateResult> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getFailureRate(_evaluatorName: string, _from?: string, _to?: string): Promise<FailureRateResult> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getAgentComparison(_evaluatorName: string, _agentNames: string[], _from?: string, _to?: string): Promise<AgentComparisonResult> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getBranchComparison(_sessionId: string, _branchId1: string, _branchId2: string, _evaluatorNames: string[]): Promise<BranchComparisonResult> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getToolUsage(_from?: string, _to?: string): Promise<Record<string, ToolUsageSummary>> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getCost(_from?: string, _to?: string): Promise<CostBreakdown> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  getScoresByVersion(_evaluatorName: string, _version: string): Promise<ScoreRecord[]> {
+    return Promise.reject(new Error('Eval queries are not supported in MauiTransport'));
+  }
+
+  async uploadAsset(sessionId: string, file: File | Blob, name?: string): Promise<AssetReference> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
-
-    // Convert file to base64
-    const arrayBuffer = await file.arrayBuffer();
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-
+    const fileName = name ?? (file instanceof File ? file.name : 'upload');
+    const contentType = file.type || 'application/octet-stream';
+    const buffer = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
     const json = await window.HybridWebView.InvokeDotNet<string>('UploadAsset', [
       sessionId,
+      fileName,
+      contentType,
       base64,
-      file.type,
-      file.name,
     ]);
     return JSON.parse(json);
   }
 
+  // Asset CRUD (not part of AgentTransport interface)
   async listAssets(sessionId: string): Promise<unknown[]> {
     if (!window.HybridWebView) throw new Error('MAUI HybridWebView not available');
     const json = await window.HybridWebView.InvokeDotNet<string>('ListAssets', [sessionId]);

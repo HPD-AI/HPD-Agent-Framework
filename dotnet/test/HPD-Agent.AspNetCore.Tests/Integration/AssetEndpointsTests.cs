@@ -24,7 +24,7 @@ public class AssetEndpointsTests : IClassFixture<TestWebApplicationFactory>
     {
         var response = await _client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     #region POST /sessions/{sid}/assets

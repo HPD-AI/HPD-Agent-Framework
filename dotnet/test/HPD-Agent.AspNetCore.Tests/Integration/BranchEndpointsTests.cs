@@ -24,7 +24,7 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
     {
         var response = await _client.PostAsync("/sessions", null);
         var session = await response.Content.ReadFromJsonAsync<SessionDto>();
-        return session!.SessionId;
+        return session!.Id;
     }
 
     #region GET /sessions/{sid}/branches
@@ -464,7 +464,7 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var siblings = await response.Content.ReadFromJsonAsync<List<SiblingBranchDto>>();
         siblings.Should().NotBeNull();
-        siblings!.Should().Contain(s => s.BranchId == "sibling2");
+        siblings!.Should().Contain(s => s.Id == "sibling2");
     }
 
     [Fact]
@@ -480,7 +480,7 @@ public class BranchEndpointsTests : IClassFixture<TestWebApplicationFactory>
         var siblings = await response.Content.ReadFromJsonAsync<List<SiblingBranchDto>>();
         siblings.Should().NotBeNull();
         siblings!.Should().HaveCount(1);
-        siblings![0].BranchId.Should().Be("main");
+        siblings![0].Id.Should().Be("main");
         siblings![0].IsOriginal.Should().BeTrue();
     }
 

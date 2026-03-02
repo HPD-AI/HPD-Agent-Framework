@@ -4,18 +4,17 @@ namespace HPD.Agent.Adapters.Session;
 
 /// <summary>
 /// Resolves an inbound platform message to an HPD <c>sessionId</c> + <c>branchId</c>.
-/// Operates in-process against <see cref="AgentSessionManager"/> — no external store, no HTTP.
+/// Operates in-process against <see cref="SessionManager"/> — no external store, no HTTP.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <see cref="ResolveAsync"/> searches the session store by <c>metadata["platformKey"]</c>.
-/// On a miss it delegates to <see cref="AgentSessionManager.CreateSessionAsync"/> — the same
+/// On a miss it delegates to <see cref="SessionManager.CreateSessionAsync"/> — the same
 /// method that creates the session, the default "main" branch, and persists both atomically.
 /// </para>
 /// <para>
-/// The mapper never bypasses <see cref="AgentSessionManager"/>. All session creation goes
-/// through the manager so that concurrency locks, idle eviction, and agent caching remain
-/// consistent.
+/// The mapper never bypasses <see cref="SessionManager"/>. All session creation goes
+/// through the manager so that concurrency locks remain consistent.
 /// </para>
 /// <para>
 /// <b>Performance note (open question §5):</b> <see cref="ResolveAsync"/> currently does
@@ -28,12 +27,12 @@ public sealed class PlatformSessionMapper
 {
     private const string PlatformKeyMetadataField = "platformKey";
 
-    private readonly AgentSessionManager _manager;
+    private readonly SessionManager _manager;
 
     /// <summary>
     /// Initialises the mapper with the session manager for the target agent.
     /// </summary>
-    public PlatformSessionMapper(AgentSessionManager manager)
+    public PlatformSessionMapper(SessionManager manager)
     {
         _manager = manager ?? throw new ArgumentNullException(nameof(manager));
     }
@@ -103,7 +102,7 @@ public sealed class PlatformSessionMapper
                 storedKey is string sk && sk == platformKey)
             {
                 await _manager.Store.DeleteSessionAsync(sessionId, ct);
-                _manager.RemoveAgent(sessionId);
+                _manager.RemoveSession(sessionId);
                 break;
             }
         }

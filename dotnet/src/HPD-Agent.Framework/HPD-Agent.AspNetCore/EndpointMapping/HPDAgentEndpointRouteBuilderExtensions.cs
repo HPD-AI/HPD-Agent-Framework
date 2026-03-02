@@ -32,6 +32,7 @@ public static class HPDAgentEndpointRouteBuilderExtensions
     /// - Asset management (Upload, Download, List, Delete)
     /// - Streaming (SSE + WebSocket)
     /// - Middleware responses (Permissions, Client Tools)
+    /// - Agent definition CRUD (Create, List, Get, Update, Delete)
     /// </remarks>
     public static RouteGroupBuilder MapHPDAgentApi(
         this IEndpointRouteBuilder endpoints,
@@ -43,23 +44,21 @@ public static class HPDAgentEndpointRouteBuilderExtensions
 
         var routeGroup = endpoints.MapGroup("");
 
-        // Resolve the named AgentSessionManager for this agent
-        var registry = endpoints.ServiceProvider.GetRequiredService<AgentSessionManagerRegistry>();
-        var baseManager = registry.Get(name);
+        // Resolve the named pair from the registry
+        var registry = endpoints.ServiceProvider.GetRequiredService<HPDAgentRegistry>();
+        var pair = registry.Get(name);
 
-        // Cast to AspNetCoreSessionManager (registry returns this type internally)
-        if (baseManager is not AspNetCoreSessionManager manager)
-        {
-            throw new InvalidOperationException(
-                $"Manager for agent '{name}' is not an AspNetCoreSessionManager");
-        }
+        var sessionManager = pair.SessionManager;
+        var agentManager = pair.AgentManager;
 
         // Map all endpoint groups
-        SessionEndpoints.Map(routeGroup, manager);
-        BranchEndpoints.Map(routeGroup, manager);
-        AssetEndpoints.Map(routeGroup, manager);
-        StreamingEndpoints.Map(routeGroup, manager);
-        MiddlewareResponseEndpoints.Map(routeGroup, manager);
+        SessionEndpoints.Map(routeGroup, sessionManager);
+        BranchEndpoints.Map(routeGroup, sessionManager, agentManager);
+        AssetEndpoints.Map(routeGroup, sessionManager);
+        StreamingEndpoints.Map(routeGroup, sessionManager, agentManager);
+        MiddlewareResponseEndpoints.Map(routeGroup, sessionManager, agentManager);
+        AgentEndpoints.Map(routeGroup, agentManager);
+        EvalEndpoints.Map(routeGroup);
 
         return routeGroup;
     }

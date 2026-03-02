@@ -15,12 +15,22 @@
       "WebFetch(domain:docs.slack.dev)",
       "Bash(dotnet user-secrets list)",
       "Bash(lsof -ti :5000)",
-      "Bash(lsof -iTCP:5000 -sTCP:LISTEN)"
+      "Bash(lsof -iTCP:5000 -sTCP:LISTEN)",
+      "Bash(__NEW_LINE_4506488d5bd81736__ echo \"=== CHROMA ===\")",
+      "Bash(__NEW_LINE_4506488d5bd81736__ echo -e \"\\\\n=== SQLITEVEC ===\")",
+      "Bash(__NEW_LINE_4506488d5bd81736__ echo -e \"\\\\n=== WEAVIATE ===\")",
+      "Bash(__NEW_LINE_4506488d5bd81736__ echo -e \"\\\\n=== REDIS ===\")",
+      "Bash(for provider in AzureAISearch CosmosMongoDB CosmosNoSql MongoDB PgVector Pinecone Qdrant SqlServer)",
+      "Bash(do basedir=\"/Users/einsteinessibu/Documents/HPD-Agent-InternalDocs/HPD.Agent/Reference/semantic-kernel/dotnet/src/VectorData/$provider\" echo \"=== $provider ===\" ls -1 \"$basedir\"/*.cs)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework stash)",
+      "Bash(git -C /Users/einsteinessibu/Documents/HPD-Agent-Framework stash pop)"
     ],
     "additionalDirectories": [
       "/",
       "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/test",
-      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/test/HPD-Agent.DevApp/bin"
+      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/test/HPD-Agent.DevApp/bin",
+      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/dotnet/src/HPD-Agent.Framework/HPD-Agent.AspNetCore/DependencyInjection",
+      "/Users/einsteinessibu/Documents/HPD-Agent-Framework/typescript/hpd-agent-headless-ui/src/lib/run-config/components"
     ]
   }
 }

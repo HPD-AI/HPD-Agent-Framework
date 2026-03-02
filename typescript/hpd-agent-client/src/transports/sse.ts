@@ -9,12 +9,31 @@ import type {
   Branch,
   SiblingBranch,
   BranchMessage,
+  AssetReference,
   CreateSessionRequest,
   UpdateSessionRequest,
   ListSessionsOptions,
   CreateBranchRequest,
   ForkBranchRequest,
 } from '../types/session.js';
+import type {
+  AgentSummaryDto,
+  StoredAgentDto,
+  CreateAgentRequest,
+  UpdateAgentRequest,
+} from '../types/agent.js';
+import type {
+  ScoreRecord,
+  EvaluatorSummary,
+  RiskAutonomyDataPoint,
+  ScoreTrend,
+  PassRateResult,
+  FailureRateResult,
+  AgentComparisonResult,
+  BranchComparisonResult,
+  ToolUsageSummary,
+  CostBreakdown,
+} from '../types/evals.js';
 import { SseParser } from '../parser.js';
 
 /**
@@ -83,6 +102,9 @@ export class SseTransport implements AgentTransport {
     }
     if (options.runConfig !== undefined) {
       requestBody.runConfig = options.runConfig;
+    }
+    if (options.agentId !== undefined) {
+      requestBody.agentId = options.agentId;
     }
 
     const response = await fetch(url, {
@@ -428,5 +450,345 @@ export class SseTransport implements AgentTransport {
     }
 
     return this.getBranch(sessionId, branch.previousSiblingId);
+  }
+
+  // ============================================
+  // AGENT DEFINITION CRUD
+  // ============================================
+
+  async listAgents(): Promise<AgentSummaryDto[]> {
+    const response = await fetch(`${this.baseUrl}/agents`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to list agents: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getAgent(agentId: string): Promise<StoredAgentDto | null> {
+    const response = await fetch(`${this.baseUrl}/agents/${agentId}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (response.status === 404) return null;
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get agent: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async createAgent(request: CreateAgentRequest): Promise<StoredAgentDto> {
+    const response = await fetch(`${this.baseUrl}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to create agent: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async updateAgent(agentId: string, request: UpdateAgentRequest): Promise<StoredAgentDto> {
+    const response = await fetch(`${this.baseUrl}/agents/${agentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+
+    if (response.status === 404) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to update agent: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async deleteAgent(agentId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/agents/${agentId}`, {
+      method: 'DELETE',
+    });
+
+    if (response.status === 404) {
+      throw new Error(`Agent not found: ${agentId}`);
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to delete agent: HTTP ${response.status}: ${text}`);
+    }
+  }
+
+  // ============================================
+  // EVAL QUERIES
+  // ============================================
+
+  async getScores(evaluatorName: string, from?: string, to?: string): Promise<ScoreRecord[]> {
+    const url = new URL(`${this.baseUrl}/evals/scores`);
+    url.searchParams.set('evaluatorName', evaluatorName);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get scores: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getScoresByBranch(sessionId: string, branchId?: string): Promise<ScoreRecord[]> {
+    const url = new URL(`${this.baseUrl}/evals/scores/by-branch`);
+    url.searchParams.set('sessionId', sessionId);
+    if (branchId) url.searchParams.set('branchId', branchId);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get scores by branch: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async writeScore(record: Omit<ScoreRecord, 'id'>): Promise<ScoreRecord> {
+    const response = await fetch(`${this.baseUrl}/evals/scores`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to write score: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getEvaluatorSummary(from?: string, to?: string): Promise<EvaluatorSummary[]> {
+    const url = new URL(`${this.baseUrl}/evals/evaluators`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get evaluator summary: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getRiskAutonomyDistribution(from?: string, to?: string): Promise<RiskAutonomyDataPoint[]> {
+    const url = new URL(`${this.baseUrl}/evals/risk-autonomy`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get risk/autonomy distribution: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getTrend(evaluatorName: string, from: string, to: string, bucketSize?: string): Promise<ScoreTrend> {
+    const url = new URL(`${this.baseUrl}/evals/trend/${encodeURIComponent(evaluatorName)}`);
+    url.searchParams.set('from', from);
+    url.searchParams.set('to', to);
+    if (bucketSize) url.searchParams.set('bucketSize', bucketSize);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get trend: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getPassRate(evaluatorName: string, from?: string, to?: string): Promise<PassRateResult> {
+    const url = new URL(`${this.baseUrl}/evals/pass-rate/${encodeURIComponent(evaluatorName)}`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get pass rate: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getFailureRate(evaluatorName: string, from?: string, to?: string): Promise<FailureRateResult> {
+    const url = new URL(`${this.baseUrl}/evals/failure-rate/${encodeURIComponent(evaluatorName)}`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get failure rate: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getAgentComparison(evaluatorName: string, agentNames: string[], from?: string, to?: string): Promise<AgentComparisonResult> {
+    const url = new URL(`${this.baseUrl}/evals/agent-comparison/${encodeURIComponent(evaluatorName)}`);
+    url.searchParams.set('agentNames', agentNames.join(','));
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get agent comparison: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getBranchComparison(sessionId: string, branchId1: string, branchId2: string, evaluatorNames: string[]): Promise<BranchComparisonResult> {
+    const url = new URL(`${this.baseUrl}/evals/branch-comparison`);
+    url.searchParams.set('sessionId', sessionId);
+    url.searchParams.set('branchId1', branchId1);
+    url.searchParams.set('branchId2', branchId2);
+    url.searchParams.set('evaluatorNames', evaluatorNames.join(','));
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get branch comparison: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getToolUsage(from?: string, to?: string): Promise<Record<string, ToolUsageSummary>> {
+    const url = new URL(`${this.baseUrl}/evals/tool-usage`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get tool usage: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getCost(from?: string, to?: string): Promise<CostBreakdown> {
+    const url = new URL(`${this.baseUrl}/evals/cost`);
+    if (from) url.searchParams.set('from', from);
+    if (to) url.searchParams.set('to', to);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get cost breakdown: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async getScoresByVersion(evaluatorName: string, version: string): Promise<ScoreRecord[]> {
+    const url = new URL(`${this.baseUrl}/evals/scores/by-version`);
+    url.searchParams.set('evaluatorName', evaluatorName);
+    url.searchParams.set('version', version);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to get scores by version: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
+  }
+
+  async uploadAsset(sessionId: string, file: File | Blob, name?: string): Promise<AssetReference> {
+    const form = new FormData();
+    form.append('file', file, name ?? (file instanceof File ? file.name : 'upload'));
+
+    const response = await fetch(`${this.baseUrl}/sessions/${sessionId}/assets`, {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Failed to upload asset: HTTP ${response.status}: ${text}`);
+    }
+
+    return response.json();
   }
 }

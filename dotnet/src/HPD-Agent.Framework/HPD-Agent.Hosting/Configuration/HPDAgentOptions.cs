@@ -20,6 +20,13 @@ public class HPDAgentConfig
     /// arrives, the same store is passed into the AgentBuilder automatically — do not also
     /// call WithSessionStore() inside <see cref="ConfigureAgent"/>.
     /// </remarks>
+    /// <summary>
+    /// Path to a directory where sessions are persisted as JSON files.
+    /// When set, a <see cref="JsonSessionStore"/> is created automatically.
+    /// Ignored when <see cref="SessionStore"/> is set explicitly.
+    /// </summary>
+    public string? SessionStorePath { get; set; }
+
     public ISessionStore? SessionStore { get; set; }
 
     /// <summary>
@@ -38,11 +45,31 @@ public class HPDAgentConfig
     /// </summary>
     public AgentConfig? AgentConfig { get; set; }
 
+    /// <summary>Alias for <see cref="AgentConfig"/>. Used by the agent manager pipeline.</summary>
+    public AgentConfig? DefaultAgentConfig
+    {
+        get => AgentConfig;
+        set => AgentConfig = value;
+    }
+
     /// <summary>
     /// Path to a JSON file containing an AgentConfig.
     /// Loaded once per agent build. Ignored if AgentConfig is set.
     /// </summary>
     public string? AgentConfigPath { get; set; }
+
+    /// <summary>Alias for <see cref="AgentConfigPath"/>. Used by the agent manager pipeline.</summary>
+    public string? DefaultAgentConfigPath
+    {
+        get => AgentConfigPath;
+        set => AgentConfigPath = value;
+    }
+
+    /// <summary>
+    /// Agent store for resolving stored agent definitions.
+    /// Defaults to <see cref="InMemoryAgentStore"/> if not set.
+    /// </summary>
+    public IAgentStore? AgentStore { get; set; }
 
     /// <summary>
     /// Callback to configure the AgentBuilder for each new session.

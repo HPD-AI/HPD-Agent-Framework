@@ -17,15 +17,18 @@ namespace HPD.Agent.Maui;
 public abstract class HybridWebViewAgentProxy
 {
     protected readonly MauiSessionManager Manager;
+    protected readonly MauiAgentManager AgentManager;
     protected readonly IHybridWebView HybridWebView;
     protected readonly EventStreamManager EventStreamManager;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource> _activeStreams = new();
 
     protected HybridWebViewAgentProxy(
         MauiSessionManager manager,
+        MauiAgentManager agentManager,
         IHybridWebView hybridWebView)
     {
         Manager = manager;
+        AgentManager = agentManager;
         HybridWebView = hybridWebView;
         EventStreamManager = new EventStreamManager(hybridWebView);
     }
@@ -59,7 +62,7 @@ public abstract class HybridWebViewAgentProxy
             string? lockedBranchId = null;
             try
             {
-                var agent = await Manager.GetOrCreateAgentAsync(sessionId);
+                var agent = await AgentManager.GetOrBuildAgentAsync("default");
                 var session = await Manager.Store.LoadSessionAsync(sessionId);
                 if (session == null)
                 {
@@ -87,8 +90,6 @@ public abstract class HybridWebViewAgentProxy
 
                 try
                 {
-                    Manager.SetStreaming(sessionId, true);
-
                     var runConfig = runConfigJson != null
                         ? JsonSerializer.Deserialize<StreamRunConfigDto>(runConfigJson)?.ToAgentRunConfig()
                         : null;
@@ -112,7 +113,6 @@ public abstract class HybridWebViewAgentProxy
                 }
                 finally
                 {
-                    Manager.SetStreaming(sessionId, false);
                     Manager.ReleaseStreamLock(sessionId, lockedBranchId);
                 }
             }
@@ -236,8 +236,8 @@ public abstract class HybridWebViewAgentProxy
         // Delete the session (this will delete all branches and assets via ISessionStore)
         await Manager.Store.DeleteSessionAsync(sessionId);
 
-        // Remove agent from cache
-        Manager.RemoveAgent(sessionId);
+        // Clean up in-memory stream/session locks
+        Manager.RemoveSession(sessionId);
     }
 
     public async Task<string> SearchSessions(string? searchRequestJson = null)
@@ -357,7 +357,7 @@ public abstract class HybridWebViewAgentProxy
         if (existingBranch != null)
             throw new InvalidOperationException($"Branch '{branchId}' already exists in session '{sessionId}'");
 
-        var agent = await Manager.GetOrCreateAgentAsync(sessionId);
+        var agent = await AgentManager.GetOrBuildAgentAsync("default");
         await agent.ForkBranchAsync(sessionId, "main", branchId, 0);
 
         var branch = await Manager.Store.LoadBranchAsync(sessionId, branchId)
@@ -403,7 +403,7 @@ public abstract class HybridWebViewAgentProxy
             if (existingBranch != null)
                 throw new InvalidOperationException($"Branch '{newBranchId}' already exists in session '{sessionId}'");
 
-            var agent = await Manager.GetOrCreateAgentAsync(sessionId);
+            var agent = await AgentManager.GetOrBuildAgentAsync("default");
             await agent.ForkBranchAsync(sessionId, sourceBranchId, newBranchId, request.FromMessageIndex);
 
             var forkedBranch = await Manager.Store.LoadBranchAsync(sessionId, newBranchId)
@@ -752,7 +752,7 @@ public abstract class HybridWebViewAgentProxy
             throw new ArgumentException("Invalid permission response JSON", nameof(permissionResponseJson));
 
         // Get the running agent - must be actively streaming to respond
-        var agent = Manager.GetRunningAgent(request.SessionId ?? throw new ArgumentException("SessionId is required"));
+        var agent = AgentManager.GetAgent(request.AgentId ?? "default");
         if (agent == null)
             throw new InvalidOperationException("No running agent found for this session");
 
@@ -782,7 +782,7 @@ public abstract class HybridWebViewAgentProxy
             throw new ArgumentException("Invalid client tool response JSON", nameof(clientToolResponseJson));
 
         // Get the running agent - must be actively streaming to respond
-        var agent = Manager.GetRunningAgent(request.SessionId ?? throw new ArgumentException("SessionId is required"));
+        var agent = AgentManager.GetAgent(request.AgentId ?? "default");
         if (agent == null)
             throw new InvalidOperationException("No running agent found for this session");
 
