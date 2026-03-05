@@ -48,6 +48,7 @@ public abstract class SessionManager : IDisposable
         var id = string.IsNullOrWhiteSpace(sessionId) ? Guid.NewGuid().ToString() : sessionId;
         var session = new Session(id);
         var branch = session.CreateBranch("main");
+        branch.Name = "main";
         session.Store = _store;
 
         if (metadata != null)

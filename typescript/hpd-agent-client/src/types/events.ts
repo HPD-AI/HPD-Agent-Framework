@@ -232,11 +232,18 @@ export interface ReasoningMessageEndEvent extends BaseEvent {
 // Tool Events
 // ============================================
 
+/** Indicates the kind of capability behind a tool call. Serialised as a string on the wire. */
+export type ToolCallType = 'Function' | 'Skill' | 'SubAgent' | 'MultiAgent' | 'MCPServer' | 'OpenApi';
+
 export interface ToolCallStartEvent extends BaseEvent {
   type: typeof EventTypes.TOOL_CALL_START;
   callId: string;
   name: string;
   messageId: string;
+  /** The toolkit that owns this tool, if any. */
+  toolkitName?: string;
+  /** The kind of capability (AIFunction, Skill, SubAgent, etc.). */
+  callType?: ToolCallType;
 }
 
 export interface ToolCallArgsEvent extends BaseEvent {
@@ -254,6 +261,10 @@ export interface ToolCallResultEvent extends BaseEvent {
   type: typeof EventTypes.TOOL_CALL_RESULT;
   callId: string;
   result: string;
+  /** The toolkit that owns this tool, if any. */
+  toolkitName?: string;
+  /** The kind of capability (AIFunction, Skill, SubAgent, etc.). */
+  callType?: ToolCallType;
 }
 
 // ============================================

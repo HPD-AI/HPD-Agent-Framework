@@ -986,6 +986,14 @@ public sealed class Agent
                         return result;
                     }
 
+                    ToolCallType? LookupCallType(string? functionName)
+                    {
+                        var result = _functionCallProcessor.LookupToolCallType(functionName, CollapsedOptions?.Tools);
+                        if (result == null)
+                            result = _functionCallProcessor.LookupToolCallType(functionName, effectiveOptions?.Tools);
+                        return result;
+                    }
+
                     // Streaming state
                     var assistantContents = new List<AIContent>();
                     var toolRequests = new List<FunctionCallContent>();
@@ -1026,7 +1034,8 @@ public sealed class Agent
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
                                         assistantMessageId,
-                                        LookupToolkit(functionCall.Name))
+                                        LookupToolkit(functionCall.Name),
+                                        LookupCallType(functionCall.Name))
                                     {
                                         TraceId      = traceId,
                                         SpanId       = GenerateSpanId(),
@@ -1220,7 +1229,8 @@ public sealed class Agent
                                         functionCall.CallId,
                                         functionCall.Name ?? string.Empty,
                                         assistantMessageId,
-                                        LookupToolkit(functionCall.Name))
+                                        LookupToolkit(functionCall.Name),
+                                        LookupCallType(functionCall.Name))
                                     {
                                         TraceId      = traceId,
                                         SpanId       = GenerateSpanId(),
@@ -1339,7 +1349,8 @@ public sealed class Agent
                                                 functionCall.CallId,
                                                 functionCall.Name ?? string.Empty,
                                                 assistantMessageId,
-                                                LookupToolkit(functionCall.Name))
+                                                LookupToolkit(functionCall.Name),
+                                                LookupCallType(functionCall.Name))
                                             {
                                                 TraceId      = traceId,
                                                 SpanId       = GenerateSpanId(),
@@ -1641,10 +1652,13 @@ public sealed class Agent
                         // Add all results to turnHistory (middleware will filter ephemeral results in AfterMessageTurnAsync)
                         turnHistory.Add(toolResultMessage);
 
-                        // Build callId → toolkitName mapping for result events
+                        // Build callId → toolkitName / callType mappings for result events
                         var callIdToToolkit = toolRequests.ToDictionary(
                             tr => tr.CallId,
                             tr => LookupToolkit(tr.Name));
+                        var callIdToCallType = toolRequests.ToDictionary(
+                            tr => tr.CallId,
+                            tr => LookupCallType(tr.Name));
 
                         // EMIT TOOL RESULT EVENTS
                         foreach (var content in toolResultMessage.Contents)
@@ -1653,7 +1667,8 @@ public sealed class Agent
                             {
                                 yield return new ToolCallEndEvent(result.CallId) { TraceId = traceId };
                                 callIdToToolkit.TryGetValue(result.CallId, out var toolkitName);
-                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName) { TraceId = traceId };
+                                callIdToCallType.TryGetValue(result.CallId, out var callType);
+                                yield return new ToolCallResultEvent(result.CallId, result.Result?.ToString() ?? "null", toolkitName, callType) { TraceId = traceId };
                             }
                         }
                         // Shared reference: state.CurrentMessages already sees the changes via MessagesRef
@@ -5291,6 +5306,33 @@ internal class FunctionCallProcessor
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Gets the ToolCallType for a function from its AdditionalProperties["CapabilityType"].
+    /// Used by Agent class for event emission.
+    /// </summary>
+    public ToolCallType? LookupToolCallType(string? functionName, IList<AITool>? tools)
+    {
+        if (string.IsNullOrEmpty(functionName))
+            return null;
+
+        var functionMap = BuildMergedMap(_serverConfiguredTools, tools);
+        var function = FindFunction(functionName, functionMap);
+        if (function?.AdditionalProperties?.TryGetValue("CapabilityType", out var capType) != true
+            || capType is not string capTypeStr)
+            return null;
+
+        return capTypeStr switch
+        {
+            "Function"   => ToolCallType.Function,
+            "Skill"      => ToolCallType.Skill,
+            "SubAgent"   => ToolCallType.SubAgent,
+            "MultiAgent" => ToolCallType.MultiAgent,
+            "MCPServer"  => ToolCallType.MCPServer,
+            "OpenApi"    => ToolCallType.OpenApi,
+            _            => null,
+        };
     }
 
     /// <summary>

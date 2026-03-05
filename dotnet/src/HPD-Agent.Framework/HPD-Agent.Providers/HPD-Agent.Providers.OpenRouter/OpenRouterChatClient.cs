@@ -54,8 +54,7 @@ internal sealed class OpenRouterChatClient : IChatClient
         CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(messages, options, stream: false);
-        // Use AIJsonUtilities.DefaultOptions for request serialization to support anonymous types
-        var requestJson = JsonSerializer.Serialize(requestBody, AIJsonUtilities.DefaultOptions);
+        var requestJson = JsonSerializer.Serialize(requestBody, _jsonContext.OpenRouterChatRequest);
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
@@ -91,8 +90,7 @@ internal sealed class OpenRouterChatClient : IChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var requestBody = BuildRequestBody(messages, options, stream: true);
-        // Use AIJsonUtilities.DefaultOptions for request serialization to support anonymous types
-        var requestJson = JsonSerializer.Serialize(requestBody, AIJsonUtilities.DefaultOptions);
+        var requestJson = JsonSerializer.Serialize(requestBody, _jsonContext.OpenRouterChatRequest);
 
         var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {

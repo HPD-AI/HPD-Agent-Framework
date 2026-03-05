@@ -725,7 +725,7 @@ public class ErrorHandlingConfig
     /// </para>
     /// <para>
     /// </remarks>
-    public bool IncludeDetailedErrorsInChat { get; set; } = false;
+    public bool IncludeDetailedErrorsInChat { get; set; } = true;
 
     /// <summary>
     /// Maximum number of retries for transient errors

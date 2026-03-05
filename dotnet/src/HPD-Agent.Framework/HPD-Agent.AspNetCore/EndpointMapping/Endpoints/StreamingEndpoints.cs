@@ -86,6 +86,11 @@ internal static class StreamingEndpoints
                     // Gracefully handle cancellation - lock will be released via registered callback
                     // Don't rethrow since we can't return a proper response after SSE headers sent
                 }
+                catch
+                {
+                    // SseEventHandler already sent a MessageTurnErrorEvent — swallow here so
+                    // Kestrel doesn't log an unhandled exception and close the connection abruptly.
+                }
 
                 // Response is complete - return Empty to indicate no further action needed
                 return Results.Empty;

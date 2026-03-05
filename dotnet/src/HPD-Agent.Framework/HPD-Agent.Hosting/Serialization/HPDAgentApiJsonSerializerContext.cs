@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using HPD.Agent.Hosting.Data;
-using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Hosting.Serialization;
 
@@ -24,17 +23,6 @@ namespace HPD.Agent.Hosting.Serialization;
 [JsonSerializable(typeof(MessageDto))]
 [JsonSerializable(typeof(MessageDto[]))]
 [JsonSerializable(typeof(List<MessageDto>))]
-// M.E.AI content types carried by MessageDto.Contents
-[JsonSerializable(typeof(AIContent))]
-[JsonSerializable(typeof(List<AIContent>))]
-[JsonSerializable(typeof(TextContent))]
-[JsonSerializable(typeof(TextReasoningContent))]
-[JsonSerializable(typeof(FunctionCallContent))]
-[JsonSerializable(typeof(FunctionResultContent))]
-[JsonSerializable(typeof(DataContent))]
-[JsonSerializable(typeof(ErrorContent))]
-[JsonSerializable(typeof(UriContent))]
-[JsonSerializable(typeof(UsageContent))]
 // Asset DTOs
 [JsonSerializable(typeof(AssetDto))]
 [JsonSerializable(typeof(AssetDto[]))]
@@ -57,6 +45,13 @@ namespace HPD.Agent.Hosting.Serialization;
 [JsonSerializable(typeof(ClientToolContentDto))]
 [JsonSerializable(typeof(ClientToolContentDto[]))]
 [JsonSerializable(typeof(List<ClientToolContentDto>))]
+// Agent DTOs — AgentConfig is covered by HPDJsonContext in the chain
+[JsonSerializable(typeof(AgentSummaryDto))]
+[JsonSerializable(typeof(AgentSummaryDto[]))]
+[JsonSerializable(typeof(List<AgentSummaryDto>))]
+[JsonSerializable(typeof(StoredAgentDto))]
+[JsonSerializable(typeof(CreateAgentRequest))]
+[JsonSerializable(typeof(UpdateAgentRequest))]
 // Primitive collections used in responses
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(List<string>))]

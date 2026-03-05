@@ -55,6 +55,7 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(ToolCallArgsEvent))]
 [JsonSerializable(typeof(ToolCallEndEvent))]
 [JsonSerializable(typeof(ToolCallResultEvent))]
+[JsonSerializable(typeof(ToolCallType))]
 
 // Permission Events
 [JsonSerializable(typeof(PermissionRequestEvent))]

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.AI;
 using HPD.Agent;
 
 /// <summary>
@@ -65,34 +64,6 @@ using HPD.Agent;
 [JsonSerializable(typeof(AgentRunConfig))]
 [JsonSerializable(typeof(ChatRunConfig))]
 [JsonSerializable(typeof(Dictionary<string, bool>))]  // For PermissionOverrides
-
-// --- Conversation and messaging types ---
-[JsonSerializable(typeof(ChatMessage))]
-[JsonSerializable(typeof(ChatRole))]
-[JsonSerializable(typeof(List<ChatMessage>))]
-[JsonSerializable(typeof(ChatResponse))]
-[JsonSerializable(typeof(ChatOptions))]
-[JsonSerializable(typeof(Dictionary<string, object>))]
-
-// --- Extensions.AI types for conversation support ---
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatMessage))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatRole))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatOptions))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningOptions))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningEffort))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ReasoningOutput))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.UsageDetails))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.AdditionalPropertiesDictionary))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatFinishReason))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.TextContent))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.ChatResponseUpdate))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.FunctionCallContent))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.FunctionResultContent))]
-[JsonSerializable(typeof(Microsoft.Extensions.AI.AIContent))]
-[JsonSerializable(typeof(List<Microsoft.Extensions.AI.ChatMessage>))]
-[JsonSerializable(typeof(List<Microsoft.Extensions.AI.AIContent>))]
-[JsonSerializable(typeof(IList<Microsoft.Extensions.AI.ChatMessage>))]
-[JsonSerializable(typeof(IEnumerable<Microsoft.Extensions.AI.ChatMessage>))]
 
 // --- HPD-Agent Typed Content Classes (Phase 1 - Typed Content) ---
 [JsonSerializable(typeof(HPD.Agent.ImageContent))]

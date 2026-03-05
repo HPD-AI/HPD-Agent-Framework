@@ -214,7 +214,7 @@ public record MessageTurnFinishedEvent(
 /// </summary>
 public record MessageTurnErrorEvent(
     string Message,
-    Exception? Exception = null) : AgentEvent, IErrorEvent
+    [property: System.Text.Json.Serialization.JsonIgnore] Exception? Exception = null) : AgentEvent, IErrorEvent
 {
     /// <inheritdoc />
     string IErrorEvent.ErrorMessage => Message;
@@ -345,13 +345,34 @@ public record ReasoningMessageEndEvent(string MessageId) : AgentEvent;
 #region Tool Events
 
 /// <summary>
+/// Indicates the kind of capability behind a tool call.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ToolCallType>))]
+public enum ToolCallType
+{
+    /// <summary>A standard [AIFunction] method.</summary>
+    Function,
+    /// <summary>A [Skill] container that expands to constituent functions.</summary>
+    Skill,
+    /// <summary>A [SubAgent] that delegates to another agent.</summary>
+    SubAgent,
+    /// <summary>A [MultiAgent] workflow that orchestrates multiple agents.</summary>
+    MultiAgent,
+    /// <summary>A tool exposed by an [MCPServer].</summary>
+    MCPServer,
+    /// <summary>A function generated from an [OpenApi] spec.</summary>
+    OpenApi,
+}
+
+/// <summary>
 /// Emitted when the agent requests a tool call
 /// </summary>
 public record ToolCallStartEvent(
     string CallId,
     string Name,
     string MessageId,
-    string? ToolkitName = null) : AgentEvent;
+    string? ToolkitName = null,
+    ToolCallType? CallType = null) : AgentEvent;
 
 /// <summary>
 /// Emitted when a tool call's arguments are fully available
@@ -369,7 +390,8 @@ public record ToolCallEndEvent(string CallId) : AgentEvent;
 public record ToolCallResultEvent(
     string CallId,
     string Result,
-    string? ToolkitName = null) : AgentEvent;
+    string? ToolkitName = null,
+    ToolCallType? CallType = null) : AgentEvent;
 
 #endregion
 

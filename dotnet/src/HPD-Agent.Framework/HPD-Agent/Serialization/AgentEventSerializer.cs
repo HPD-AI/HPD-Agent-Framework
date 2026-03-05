@@ -208,6 +208,45 @@ public static partial class AgentEventSerializer
     internal static void RegisterEventType(Type eventType, string discriminator)
     {
         TypeNames[eventType] = discriminator;
+        // Keep reverse lookup in sync
+        DiscriminatorToType[discriminator] = eventType;
+    }
+
+    // Reverse lookup: SCREAMING_SNAKE_CASE discriminator → concrete event type
+    private static readonly Dictionary<string, Type> DiscriminatorToType =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Initialise reverse lookup from TypeNames at startup
+    static AgentEventSerializer()
+    {
+        foreach (var (type, discriminator) in TypeNames)
+            DiscriminatorToType[discriminator] = type;
+    }
+
+    /// <summary>
+    /// Deserializes an agent event from a JSON string produced by <see cref="ToJson"/>.
+    /// Reads the "type" discriminator field to determine the concrete event type.
+    /// Returns null if the discriminator is unknown or the JSON is invalid.
+    /// </summary>
+    public static AgentEvent? FromJson(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("type", out var typeProp))
+                return null;
+
+            var discriminator = typeProp.GetString();
+            if (discriminator == null || !DiscriminatorToType.TryGetValue(discriminator, out var concreteType))
+                return null;
+
+            // Deserialize directly from the already-parsed JsonElement to avoid a second parse.
+            return (AgentEvent?)doc.RootElement.Deserialize(concreteType, StandardJsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

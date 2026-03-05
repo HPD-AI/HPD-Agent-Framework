@@ -232,12 +232,26 @@ public class AgentEventSerializerTests
     [Fact]
     public void ToJson_ToolEvents_SerializeCorrectly()
     {
-        // ToolCallStartEvent
+        // ToolCallStartEvent — minimal (no optional fields)
         var startEvt = new ToolCallStartEvent("call-1", "Calculator", "msg-1");
         var startJson = AgentEventSerializer.ToJson(startEvt);
         Assert.Contains("\"type\":\"TOOL_CALL_START\"", startJson);
         Assert.Contains("\"callId\":\"call-1\"", startJson);
         Assert.Contains("\"name\":\"Calculator\"", startJson);
+        // Null optional fields omitted
+        Assert.DoesNotContain("\"toolkitName\"", startJson);
+        Assert.DoesNotContain("\"callType\"", startJson);
+
+        // ToolCallStartEvent — with toolkit and callType
+        var startEvtFull = new ToolCallStartEvent("call-2", "Add", "msg-1", "MathToolkit", ToolCallType.Function);
+        var startJsonFull = AgentEventSerializer.ToJson(startEvtFull);
+        Assert.Contains("\"toolkitName\":\"MathToolkit\"", startJsonFull);
+        Assert.Contains("\"callType\":\"Function\"", startJsonFull);
+
+        // ToolCallStartEvent — SubAgent type
+        var subAgentEvt = new ToolCallStartEvent("call-3", "ResearchAgent", "msg-1", "AgentToolkit", ToolCallType.SubAgent);
+        var subAgentJson = AgentEventSerializer.ToJson(subAgentEvt);
+        Assert.Contains("\"callType\":\"SubAgent\"", subAgentJson);
 
         // ToolCallArgsEvent
         var argsEvt = new ToolCallArgsEvent("call-1", "{\"x\":1,\"y\":2}");
@@ -249,11 +263,61 @@ public class AgentEventSerializerTests
         var endJson = AgentEventSerializer.ToJson(endEvt);
         Assert.Contains("\"type\":\"TOOL_CALL_END\"", endJson);
 
-        // ToolCallResultEvent
+        // ToolCallResultEvent — minimal
         var resultEvt = new ToolCallResultEvent("call-1", "3");
         var resultJson = AgentEventSerializer.ToJson(resultEvt);
         Assert.Contains("\"type\":\"TOOL_CALL_RESULT\"", resultJson);
         Assert.Contains("\"result\":\"3\"", resultJson);
+        Assert.DoesNotContain("\"toolkitName\"", resultJson);
+        Assert.DoesNotContain("\"callType\"", resultJson);
+
+        // ToolCallResultEvent — with toolkit and callType
+        var resultEvtFull = new ToolCallResultEvent("call-2", "42", "MathToolkit", ToolCallType.Function);
+        var resultJsonFull = AgentEventSerializer.ToJson(resultEvtFull);
+        Assert.Contains("\"toolkitName\":\"MathToolkit\"", resultJsonFull);
+        Assert.Contains("\"callType\":\"Function\"", resultJsonFull);
+    }
+
+    [Fact]
+    public void ToolCallStartEvent_RoundTrip_PreservesAllFields()
+    {
+        var evt = new ToolCallStartEvent("call-rt", "Add", "msg-rt", "MathToolkit", ToolCallType.Function);
+        var json = AgentEventSerializer.ToJson(evt);
+        var result = Assert.IsType<ToolCallStartEvent>(AgentEventSerializer.FromJson(json));
+
+        Assert.Equal("call-rt", result.CallId);
+        Assert.Equal("Add", result.Name);
+        Assert.Equal("msg-rt", result.MessageId);
+        Assert.Equal("MathToolkit", result.ToolkitName);
+        Assert.Equal(ToolCallType.Function, result.CallType);
+    }
+
+    [Fact]
+    public void ToolCallResultEvent_RoundTrip_PreservesAllFields()
+    {
+        var evt = new ToolCallResultEvent("call-rt", "42", "MathToolkit", ToolCallType.SubAgent);
+        var json = AgentEventSerializer.ToJson(evt);
+        var result = Assert.IsType<ToolCallResultEvent>(AgentEventSerializer.FromJson(json));
+
+        Assert.Equal("call-rt", result.CallId);
+        Assert.Equal("42", result.Result);
+        Assert.Equal("MathToolkit", result.ToolkitName);
+        Assert.Equal(ToolCallType.SubAgent, result.CallType);
+    }
+
+    [Theory]
+    [InlineData(ToolCallType.Function)]
+    [InlineData(ToolCallType.Skill)]
+    [InlineData(ToolCallType.SubAgent)]
+    [InlineData(ToolCallType.MultiAgent)]
+    [InlineData(ToolCallType.MCPServer)]
+    [InlineData(ToolCallType.OpenApi)]
+    public void ToolCallStartEvent_RoundTrip_AllCallTypes(ToolCallType callType)
+    {
+        var evt = new ToolCallStartEvent("call-1", "Tool", "msg-1", null, callType);
+        var json = AgentEventSerializer.ToJson(evt);
+        var result = Assert.IsType<ToolCallStartEvent>(AgentEventSerializer.FromJson(json));
+        Assert.Equal(callType, result.CallType);
     }
 
     [Fact]

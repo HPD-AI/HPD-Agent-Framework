@@ -1,3 +1,4 @@
+using HPD.Agent.AspNetCore.Serialization;
 using HPD.Agent.Hosting.Configuration;
 using HPD.Agent.Hosting.Serialization;
 using Microsoft.AspNetCore.Http.Json;
@@ -62,8 +63,14 @@ internal class HPDAgentApiJsonOptionsSetup : IConfigureOptions<JsonOptions>
 {
     public void Configure(JsonOptions options)
     {
-        // Web API-specific DTOs (from HPD-Agent.Hosting)
+        // Internal endpoint types (WriteScoreRequest, etc.)
         options.SerializerOptions.TypeInfoResolverChain.Insert(0,
+            HPDAgentAspNetCoreJsonSerializerContext.Default);
+        // Web API-specific DTOs (from HPD-Agent.Hosting)
+        options.SerializerOptions.TypeInfoResolverChain.Insert(1,
             HPDAgentApiJsonSerializerContext.Default);
+        // Core types including AgentConfig (from HPD-Agent core)
+        options.SerializerOptions.TypeInfoResolverChain.Insert(2,
+            HPDJsonContext.Default);
     }
 }

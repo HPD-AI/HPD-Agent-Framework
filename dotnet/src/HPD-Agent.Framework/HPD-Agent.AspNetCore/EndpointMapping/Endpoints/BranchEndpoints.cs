@@ -1,4 +1,3 @@
-using System.Text.Json;
 using HPD.Agent;
 using HPD.Agent.AspNetCore.Lifecycle;
 using HPD.Agent.Hosting.Data;
@@ -497,10 +496,9 @@ internal static class BranchEndpoints
                     message.CreatedAt?.ToString("O") ?? DateTime.UtcNow.ToString("O")));
             }
 
-            // Must use SessionJsonContext.CombinedOptions — plain JsonSerializerOptions lacks
-            // the M.E.AI type resolver chain needed for AIContent $type polymorphism.
-            var json = JsonSerializer.Serialize(messages, SessionJsonContext.CombinedOptions);
-            return Results.Content(json, "application/json");
+            // ErrorResponses.Json uses options that chain HPDAgentApiJsonSerializerContext
+            // (has List<MessageDto>) + HPDJsonContext (has AIContent polymorphism).
+            return ErrorResponses.Json(messages);
         }
         catch (Exception ex)
         {

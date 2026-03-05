@@ -44,6 +44,7 @@ public static class ModelNotFoundDetector
             if (errorCode.Contains("DeploymentNotFound", StringComparison.OrdinalIgnoreCase) ||
                 errorCode.Contains("ValidationException", StringComparison.OrdinalIgnoreCase) ||
                 errorCode.Contains("model_not_found", StringComparison.OrdinalIgnoreCase) ||
+                errorCode.Contains("invalid_model", StringComparison.OrdinalIgnoreCase) ||
                 errorCode.Equals("NOT_FOUND", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -84,6 +85,10 @@ public static class ModelNotFoundDetector
 
         // "try pulling it first" (Ollama: model needs to be downloaded)
         if (msgLower.Contains("try pulling it first"))
+            return true;
+
+        // "is not a valid model ID" (OpenRouter)
+        if (msgLower.Contains("is not a valid model"))
             return true;
 
         // "model is not supported" (HuggingFace)

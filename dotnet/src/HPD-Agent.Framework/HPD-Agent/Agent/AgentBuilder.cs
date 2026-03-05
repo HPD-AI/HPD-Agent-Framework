@@ -1971,7 +1971,7 @@ public class AgentBuilder
         // Register ErrorFormattingMiddleware ALWAYS (security boundary)
         // This sanitizes error messages to prevent exposing sensitive information to LLM
         // Even if ErrorHandling config is null, use default (secure) settings
-        _middlewares.Add(new Middleware.Function.ErrorFormattingMiddleware(_config.ErrorHandling ?? new ErrorHandlingConfig()));
+        _middlewares.Add(new Middleware.Function.ErrorFormattingMiddleware(_config.ErrorHandling ?? new ErrorHandlingConfig(), buildData.ErrorHandler));
 
         // Register ContainerMiddleware if enabled
         // This unified middleware handles all container operations:

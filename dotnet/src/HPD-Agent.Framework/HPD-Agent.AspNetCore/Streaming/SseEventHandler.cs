@@ -27,14 +27,39 @@ internal static class SseEventHandler
 
         await context.Response.Body.FlushAsync(cancellationToken);
 
-        await foreach (var evt in events.WithCancellation(cancellationToken))
+        try
         {
-            var json = AgentEventSerializer.ToJson(evt);
-            var data = $"data: {json}\n\n";
-            var bytes = Encoding.UTF8.GetBytes(data);
+            await foreach (var evt in events.WithCancellation(cancellationToken))
+            {
+                var json = AgentEventSerializer.ToJson(evt);
+                var data = $"data: {json}\n\n";
+                var bytes = Encoding.UTF8.GetBytes(data);
 
-            await context.Response.Body.WriteAsync(bytes, cancellationToken);
-            await context.Response.Body.FlushAsync(cancellationToken);
+                await context.Response.Body.WriteAsync(bytes, cancellationToken);
+                await context.Response.Body.FlushAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Client disconnected or request cancelled — exit cleanly, no error event needed.
+        }
+        catch (Exception ex)
+        {
+            // SSE headers already sent — cannot return a 5xx response.
+            // Serialize the error as a MessageTurnErrorEvent so the client renders it gracefully.
+            try
+            {
+                var errorEvt = new MessageTurnErrorEvent(ex.Message, ex);
+                var json = AgentEventSerializer.ToJson(errorEvt);
+                var data = $"data: {json}\n\n";
+                var bytes = Encoding.UTF8.GetBytes(data);
+                await context.Response.Body.WriteAsync(bytes, CancellationToken.None);
+                await context.Response.Body.FlushAsync(CancellationToken.None);
+            }
+            catch
+            {
+                // Response stream already closed — nothing we can do.
+            }
         }
     }
 }

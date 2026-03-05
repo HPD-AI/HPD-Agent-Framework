@@ -1,5 +1,9 @@
+using HPD.Agent.AspNetCore.Serialization;
+using HPD.Agent.Hosting.Serialization;
+using Microsoft.Extensions.AI;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Http;
 
 namespace HPD.Agent.AspNetCore.EndpointMapping;
@@ -10,11 +14,32 @@ namespace HPD.Agent.AspNetCore.EndpointMapping;
 /// </summary>
 internal static class ErrorResponses
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
+
+    private static JsonSerializerOptions CreateJsonOptions()
     {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
+        var options = new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        };
+
+        // HPD source-generated contexts first (API DTOs, ASP.NET types, core types)
+        options.TypeInfoResolverChain.Add(HPDAgentAspNetCoreJsonSerializerContext.Default);
+        options.TypeInfoResolverChain.Add(HPDAgentApiJsonSerializerContext.Default);
+        options.TypeInfoResolverChain.Add(HPDJsonContext.Default);
+
+        // M.E.AI resolver chain: covers all AIContent types + $type polymorphism
+        // + HPD custom content type registrations (hpd:image, hpd:audio, etc.)
+        foreach (var resolver in AIJsonUtilities.DefaultOptions.TypeInfoResolverChain)
+        {
+            if (resolver != null)
+                options.TypeInfoResolverChain.Add(resolver);
+        }
+
+        options.MakeReadOnly();
+        return options;
+    }
 
     /// <summary>
     /// Returns a JSON result with the specified status code and data.
@@ -33,7 +58,7 @@ internal static class ErrorResponses
     /// </summary>
     public static IResult Created<T>(string location, T data)
     {
-        return new CreatedResult(location, data);
+        return new CreatedResult(location, JsonSerializer.Serialize(data, JsonOptions));
     }
 
     /// <summary>
@@ -53,7 +78,7 @@ internal static class ErrorResponses
         {
             [errorKey] = [errorMessage]
         };
-        return Json(new { errors }, 404);
+        return Json(new ErrorsWrapper(errors), 404);
     }
 
     /// <summary>
@@ -73,7 +98,7 @@ internal static class ErrorResponses
         {
             [errorKey] = [errorMessage]
         };
-        return Json(new { errors }, 409);
+        return Json(new ErrorsWrapper(errors), 409);
     }
 
     /// <summary>
@@ -93,7 +118,7 @@ internal static class ErrorResponses
         {
             [errorKey] = [errorMessage]
         };
-        return Json(new { errors }, 400);
+        return Json(new ErrorsWrapper(errors), 400);
     }
 
     /// <summary>
@@ -121,18 +146,20 @@ internal static class ErrorResponses
         {
             [errorKey] = [errorMessage]
         };
-        return Json(new { errors }, 500);
+        return Json(new ErrorsWrapper(errors), 500);
     }
+
+    internal sealed record ErrorsWrapper(Dictionary<string, string[]> Errors);
 
     private class CreatedResult : IResult
     {
         private readonly string _location;
-        private readonly object _value;
+        private readonly string _json;
 
-        public CreatedResult(string location, object value)
+        public CreatedResult(string location, string json)
         {
             _location = location;
-            _value = value;
+            _json = json;
         }
 
         public Task ExecuteAsync(HttpContext httpContext)
@@ -140,8 +167,7 @@ internal static class ErrorResponses
             httpContext.Response.StatusCode = 201;
             httpContext.Response.Headers.Location = _location;
             httpContext.Response.ContentType = "application/json";
-            var json = JsonSerializer.Serialize(_value, JsonOptions);
-            return httpContext.Response.WriteAsync(json);
+            return httpContext.Response.WriteAsync(_json);
         }
     }
 }

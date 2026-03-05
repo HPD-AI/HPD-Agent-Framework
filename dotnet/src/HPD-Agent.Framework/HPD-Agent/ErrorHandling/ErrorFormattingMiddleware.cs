@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using HPD.Agent.ErrorHandling;
 using Microsoft.Extensions.AI;
 
 namespace HPD.Agent.Middleware.Function;
@@ -63,6 +64,7 @@ namespace HPD.Agent.Middleware.Function;
 public class ErrorFormattingMiddleware : IAgentMiddleware
 {
     private readonly bool _includeDetailedErrors;
+    private readonly IProviderErrorHandler _providerHandler;
 
     /// <summary>
     /// Creates a new error formatting middleware with default settings (sanitized errors).
@@ -70,15 +72,18 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
     public ErrorFormattingMiddleware()
     {
         _includeDetailedErrors = false;
+        _providerHandler = new GenericErrorHandler();
     }
 
     /// <summary>
     /// Creates a new error formatting middleware with the specified configuration.
     /// </summary>
     /// <param name="config">Error handling configuration</param>
-    public ErrorFormattingMiddleware(ErrorHandlingConfig config)
+    /// <param name="providerErrorHandler">Provider-specific error handler for category-aware messages</param>
+    public ErrorFormattingMiddleware(ErrorHandlingConfig config, IProviderErrorHandler? providerErrorHandler = null)
     {
         _includeDetailedErrors = config?.IncludeDetailedErrorsInChat ?? false;
+        _providerHandler = providerErrorHandler ?? new GenericErrorHandler();
     }
 
     /// <summary>
@@ -214,18 +219,35 @@ public class ErrorFormattingMiddleware : IAgentMiddleware
         {
             if (_includeDetailedErrors)
             {
-                // Include full exception details (potential security risk)
                 throw new InvalidOperationException(
                     $"Model API call failed: {capturedException.Message}",
                     capturedException);
             }
             else
             {
-                // DEBUG: Temporarily show full error details
-                throw new InvalidOperationException(
-                    $"Model API call failed: {capturedException.Message}",
-                    capturedException);
+                var message = FormatSanitizedModelError(capturedException);
+                throw new InvalidOperationException(message, capturedException);
             }
         }
+    }
+
+    private string FormatSanitizedModelError(Exception ex)
+    {
+        // Try the exception and walk the inner chain to find one the provider handler can parse
+        var details = _providerHandler.ParseError(ex);
+        if (details == null && ex.InnerException != null)
+            details = _providerHandler.ParseError(ex.InnerException);
+
+        return details?.Category switch
+        {
+            ErrorCategory.ModelNotFound => "The model was not found. Use /model to select a valid model.",
+            ErrorCategory.AuthError => "Authentication failed. Check your provider credentials via /providers.",
+            ErrorCategory.RateLimitTerminal => "Rate limit quota exceeded. Check your provider account.",
+            ErrorCategory.RateLimitRetryable => "Rate limited by the provider. Please try again shortly.",
+            ErrorCategory.ContextWindow => "The conversation is too long for this model.",
+            ErrorCategory.ClientError => "The request was rejected by the provider. Check your configuration.",
+            ErrorCategory.ServerError => "The provider is experiencing issues. Please try again.",
+            _ => "The model call failed. Please try again."
+        };
     }
 }
