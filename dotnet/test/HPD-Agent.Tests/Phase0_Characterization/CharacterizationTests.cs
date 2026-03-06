@@ -136,7 +136,7 @@ public class CharacterizationTests : AgentTestBase
         // Assert - CURRENT behavior
         // Should terminate after hitting circuit breaker (3 consecutive identical calls)
         var agentTurnStarts = capturedEvents.OfType<AgentTurnStartedEvent>().ToList();
-        agentTurnStarts.Should().HaveCountLessOrEqualTo(4, "circuit breaker should stop after max consecutive calls");
+        agentTurnStarts.Should().HaveCountLessThanOrEqualTo(4, "circuit breaker should stop after max consecutive calls");
 
         // Should have circuit breaker message or error message
         var textDeltas = capturedEvents.OfType<TextDeltaEvent>().ToList();
@@ -196,7 +196,7 @@ public class CharacterizationTests : AgentTestBase
         // Assert - Behavior after fix
         // Loop condition uses <=, so MaxAgenticIterations=5 means iterations 0-5 (6 total)
         var agentTurnStarts = capturedEvents.OfType<AgentTurnStartedEvent>().ToList();
-        agentTurnStarts.Should().HaveCountLessOrEqualTo(6, "should respect MaxAgenticIterations limit (loop uses <=)");
+        agentTurnStarts.Should().HaveCountLessThanOrEqualTo(6, "should respect MaxAgenticIterations limit (loop uses <=)");
 
         // NOTE: Iteration limits are now enforced by ContinuationPermissionMiddleware
         var agentTurns = agentTurnStarts;
@@ -321,7 +321,7 @@ public class CharacterizationTests : AgentTestBase
 
         // Assert - Should terminate after MaxConsecutiveErrors
         var agentTurnStarts = capturedEvents.OfType<AgentTurnStartedEvent>().ToList();
-        agentTurnStarts.Should().HaveCountLessOrEqualTo(4, "should stop after max consecutive errors (3) + initial turn");
+        agentTurnStarts.Should().HaveCountLessThanOrEqualTo(4, "should stop after max consecutive errors (3) + initial turn");
 
         // Should have error message indicating consecutive errors
         var textDeltas = capturedEvents.OfType<TextDeltaEvent>().ToList();

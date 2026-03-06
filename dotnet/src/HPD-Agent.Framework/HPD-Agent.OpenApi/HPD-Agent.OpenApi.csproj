@@ -27,11 +27,11 @@
     <!-- Core AI Framework -->
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../HPD.OpenApi.Core/HPD.OpenApi.Core.csproj" />
+    <ProjectReference Include="../../shared/HPD.OpenApi.Core/HPD.OpenApi.Core.csproj" />
     <ProjectReference Include="../HPD-Agent/HPD-Agent.csproj" />
   </ItemGroup>
 

@@ -87,7 +87,7 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var records = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
         records.Should().NotBeNull();
-        records!.Should().HaveCountGreaterOrEqualTo(2);
+        records!.Should().HaveCountGreaterThanOrEqualTo(2);
         records.Should().OnlyContain(r => r.GetProperty("evaluatorName").GetString() == "EvalFilter_A");
     }
 
@@ -133,7 +133,7 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var records = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
         records.Should().NotBeNull();
-        records!.Should().HaveCountGreaterOrEqualTo(2);
+        records!.Should().HaveCountGreaterThanOrEqualTo(2);
         records.Should().OnlyContain(r => r.GetProperty("sessionId").GetString() == sid);
     }
 
@@ -148,7 +148,7 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var records = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
-        records.Should().HaveCountGreaterOrEqualTo(1);
+        records.Should().HaveCountGreaterThanOrEqualTo(1);
         records!.Should().OnlyContain(r => r.GetProperty("branchId").GetString() == "main");
     }
 
@@ -184,7 +184,7 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var records = await response.Content.ReadFromJsonAsync<List<JsonElement>>();
-        records.Should().HaveCountGreaterOrEqualTo(1);
+        records.Should().HaveCountGreaterThanOrEqualTo(1);
         records!.Should().OnlyContain(r => r.GetProperty("evaluatorVersion").GetString() == "1.0");
     }
 
@@ -289,7 +289,7 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
         getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var records = await getResponse.Content.ReadFromJsonAsync<List<JsonElement>>();
         records.Should().NotBeNull();
-        records!.Should().HaveCountGreaterOrEqualTo(1);
+        records!.Should().HaveCountGreaterThanOrEqualTo(1);
         records.Should().Contain(r =>
             r.GetProperty("evaluatorName").GetString() == "PostRoundtrip" &&
             r.GetProperty("sessionId").GetString() == sid &&
@@ -476,8 +476,8 @@ public class EvalEndpointsTests : IClassFixture<EvalTestWebApplicationFactory>
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         doc.TryGetProperty("agent-alpha", out var alpha).Should().BeTrue();
         doc.TryGetProperty("agent-beta", out var beta).Should().BeTrue();
-        alpha.GetProperty("count").GetInt32().Should().BeGreaterOrEqualTo(2);
-        beta.GetProperty("count").GetInt32().Should().BeGreaterOrEqualTo(1);
+        alpha.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(2);
+        beta.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Fact]

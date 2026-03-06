@@ -59,7 +59,25 @@ internal static class RegistrationGenerator
         sb.AppendLine($"        this IServiceCollection services,");
         sb.AppendLine($"        Action<{configName}> configure)");
         sb.AppendLine("    {");
-        sb.AppendLine($"        services.Configure(configure);");
+
+        if (adapter.SocketTransportTypeFqn is not null && !string.IsNullOrEmpty(adapter.SocketConfigProperty))
+        {
+            // configure is called once upfront to read the config property for the socket check.
+            // services.Configure(configure) stores the delegate and calls it again at options
+            // resolution time — this is identical to the no-socket path and is expected behaviour.
+            // Using services.Configure(configure) (not Options.Create) means IOptions<T>,
+            // IOptionsMonitor<T>, and IOptionsSnapshot<T> all resolve correctly.
+            sb.AppendLine($"        var _cfg = new {configName}();");
+            sb.AppendLine($"        configure(_cfg);");
+            sb.AppendLine($"        services.Configure<{configName}>(configure);");
+            sb.AppendLine($"        if (_cfg.{adapter.SocketConfigProperty} is not null)");
+            sb.AppendLine($"            services.AddHostedService<{adapter.SocketTransportTypeFqn}>();");
+        }
+        else
+        {
+            sb.AppendLine($"        services.Configure(configure);");
+        }
+
         sb.AppendLine($"        services.TryAddSingleton<{className}>();");
         sb.AppendLine($"        services.TryAddSingleton<HPD.Agent.Adapters.Session.PlatformSessionMapper>();");
         sb.AppendLine("        return services;");

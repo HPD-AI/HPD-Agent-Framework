@@ -501,7 +501,7 @@ public class OpenAIProviderTests
 
         // Assert
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(3);
+        result.Errors.Should().HaveCountGreaterThanOrEqualTo(3);
         result.Errors.Should().Contain(e => e.Contains("Temperature"));
         result.Errors.Should().Contain(e => e.Contains("TopP"));
         result.Errors.Should().Contain(e => e.Contains("FrequencyPenalty"));

@@ -68,4 +68,13 @@ internal static class AdapterDiagnostics
         category:           Category,
         defaultSeverity:    DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>HPDA008: [HpdSocketTransport] service type must extend AdapterWebSocketService.</summary>
+    public static readonly DiagnosticDescriptor SocketTransportInvalidType = new(
+        id:                 "HPDA008",
+        title:              "[HpdSocketTransport] service type must extend AdapterWebSocketService",
+        messageFormat:      "Type '{0}' used in [HpdSocketTransport] must extend AdapterWebSocketService",
+        category:           Category,
+        defaultSeverity:    DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

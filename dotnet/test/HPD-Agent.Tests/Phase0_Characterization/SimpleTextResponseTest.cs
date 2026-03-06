@@ -50,7 +50,7 @@ public class SimpleTextResponseTest : AgentTestBase
             nameof(TextMessageStartEvent));
 
         // Should have multiple text deltas
-        capturedEvents.OfType<TextDeltaEvent>().Should().HaveCountGreaterOrEqualTo(1);
+        capturedEvents.OfType<TextDeltaEvent>().Should().HaveCountGreaterThanOrEqualTo(1);
 
         // Current implementation: TextMessageEnd comes BEFORE AgentTurnFinished
         // This documents the current behavior for comparison after refactoring

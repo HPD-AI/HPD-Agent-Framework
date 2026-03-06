@@ -29,10 +29,10 @@
     <!-- Core AI Framework -->
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.3.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
 
     <!-- MCP Support -->
-    <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
+    <PackageReference Include="ModelContextProtocol" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

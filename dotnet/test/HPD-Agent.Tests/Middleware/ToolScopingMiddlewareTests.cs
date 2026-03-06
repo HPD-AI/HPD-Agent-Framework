@@ -29,7 +29,7 @@ public class ContainerMiddlewareTests
         var middleware = new ContainerMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new CollapsingConfig { Enabled = false });
+            null, null, null, new CollapsingConfig { Enabled = false });
 
         var context = CreateContext(options: new ChatOptions { Tools = allTools });
 
@@ -51,7 +51,7 @@ public class ContainerMiddlewareTests
         var middleware = new ContainerMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new CollapsingConfig { Enabled = true });
+            null, null, null, new CollapsingConfig { Enabled = true });
 
         var context = CreateContext(options: new ChatOptions { Tools = allTools });
 
@@ -76,7 +76,7 @@ public class ContainerMiddlewareTests
         var middleware = new ContainerMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new CollapsingConfig { Enabled = true });
+            null, null, null, new CollapsingConfig { Enabled = true });
 
         // State with expanded Toolkit
         var state = CreateEmptyState();
@@ -155,7 +155,7 @@ public class ContainerMiddlewareTests
         var middleware = new ContainerMiddleware(
             allTools,
             ImmutableHashSet<string>.Empty,
-            new CollapsingConfig { Enabled = false });
+            null, null, null, new CollapsingConfig { Enabled = false });
 
         var toolCalls = new List<FunctionCallContent> { CreateToolCall("TestToolkit") };
         var context = CreateBeforeToolExecutionContext(toolCalls: toolCalls);

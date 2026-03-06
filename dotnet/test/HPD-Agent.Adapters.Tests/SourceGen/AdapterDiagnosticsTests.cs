@@ -346,4 +346,87 @@ public class AdapterDiagnosticsTests
         // Message should reference both class names
         (message.Contains("First") || message.Contains("Second")).Should().BeTrue();
     }
+
+    // ── HPDA008: [HpdSocketTransport] service type must extend AdapterWebSocketService ──
+
+    [Fact]
+    public void HPDA008_ServiceTypeNotExtendingAdapterWebSocketService_EmitsError()
+    {
+        var source = """
+            using HPD.Agent.Adapters;
+            using Microsoft.Extensions.Hosting;
+            namespace Test;
+
+            // A plain class — does NOT extend AdapterWebSocketService
+            public class NotAWebSocketService : IHostedService
+            {
+                public Task StartAsync(System.Threading.CancellationToken ct) => System.Threading.Tasks.Task.CompletedTask;
+                public Task StopAsync(System.Threading.CancellationToken ct)  => System.Threading.Tasks.Task.CompletedTask;
+            }
+
+            [HpdAdapter("test")]
+            [HpdSocketTransport(typeof(NotAWebSocketService), ConfigProperty = "Token")]
+            public partial class TestAdapter { }
+            """;
+
+        var diagnostics = SourceGenHelper.GetDiagnostics(source);
+
+        diagnostics.Should().Contain(d =>
+            d.Id == "HPDA008" && d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void HPDA008_ServiceTypeExtendingAdapterWebSocketService_NoDiagnostic()
+    {
+        var source = """
+            using HPD.Agent.Adapters;
+            using System.Net.WebSockets;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Microsoft.Extensions.Logging.Abstractions;
+            namespace Test;
+
+            public sealed class ValidSocketService : AdapterWebSocketService
+            {
+                public ValidSocketService() : base(NullLogger.Instance) { }
+                protected override Task<System.Uri> GetConnectionUriAsync(CancellationToken ct)
+                    => Task.FromResult(new System.Uri("ws://localhost"));
+                protected override Task RunSessionAsync(ClientWebSocket ws, CancellationToken ct)
+                    => Task.CompletedTask;
+            }
+
+            [HpdAdapter("test")]
+            [HpdSocketTransport(typeof(ValidSocketService), ConfigProperty = "Token")]
+            public partial class TestAdapter { }
+            """;
+
+        var diagnostics = SourceGenHelper.GetDiagnostics(source);
+
+        diagnostics.Should().NotContain(d => d.Id == "HPDA008");
+    }
+
+    [Fact]
+    public void HPDA008_DiagnosticMessageContainsServiceTypeName()
+    {
+        var source = """
+            using HPD.Agent.Adapters;
+            using Microsoft.Extensions.Hosting;
+            namespace Test;
+
+            public class BadService : IHostedService
+            {
+                public Task StartAsync(System.Threading.CancellationToken ct) => System.Threading.Tasks.Task.CompletedTask;
+                public Task StopAsync(System.Threading.CancellationToken ct)  => System.Threading.Tasks.Task.CompletedTask;
+            }
+
+            [HpdAdapter("test")]
+            [HpdSocketTransport(typeof(BadService), ConfigProperty = "Token")]
+            public partial class TestAdapter { }
+            """;
+
+        var diagnostics = SourceGenHelper.GetDiagnostics(source);
+        var d = diagnostics.First(x => x.Id == "HPDA008");
+
+        d.GetMessage().Should().Contain("BadService");
+    }
 }

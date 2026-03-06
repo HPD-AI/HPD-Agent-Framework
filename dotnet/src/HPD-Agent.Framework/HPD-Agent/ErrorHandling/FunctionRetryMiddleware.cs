@@ -101,9 +101,8 @@ public class RetryMiddleware : IAgentMiddleware
                     Attempt: attempt + 1,
                     MaxRetries: maxRetries,
                     Delay: delay.Value,
-                    Exception: ex,
                     ExceptionType: ex.GetType().Name,
-                    ErrorMessage: ex.Message));
+                    ErrorMessage: ex.Message) { Exception = ex });
 
                 // Wait before retry
                 await Task.Delay(delay.Value, cancellationToken);
@@ -157,9 +156,8 @@ public class RetryMiddleware : IAgentMiddleware
                                 Attempt: attempt,
                                 MaxRetries: maxRetries,
                                 Delay: delay!.Value,
-                                Exception: lastException!,
                                 ExceptionType: lastException!.GetType().Name,
-                                ErrorMessage: lastException!.Message));
+                                ErrorMessage: lastException!.Message) { Exception = lastException });
                         }
 
                         // Stream updates to channel - progressive streaming 

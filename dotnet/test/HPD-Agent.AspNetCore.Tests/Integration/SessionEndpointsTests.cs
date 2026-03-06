@@ -139,7 +139,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var sessions = await response.Content.ReadFromJsonAsync<List<SessionDto>>();
         sessions.Should().NotBeNull();
-        sessions!.Count.Should().BeGreaterOrEqualTo(3);
+        sessions!.Count.Should().BeGreaterThanOrEqualTo(3);
     }
 
     [Fact]
@@ -205,7 +205,7 @@ public class SessionEndpointsTests : IClassFixture<TestWebApplicationFactory>
         // Assert
         var sessions = await response.Content.ReadFromJsonAsync<List<SessionDto>>();
         sessions.Should().NotBeNull();
-        sessions!.Count.Should().BeLessOrEqualTo(3);
+        sessions!.Count.Should().BeLessThanOrEqualTo(3);
     }
 
     [Fact]

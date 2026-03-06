@@ -355,4 +355,120 @@ public class AgentMiddlewarePipeline
         }
     }
 
+    //
+    // INTERNAL DISPATCH METHODS (toolkit-scoped middleware — )
+    //
+    // These are raw loops that do NOT touch SetMiddlewareExecuting.
+    // They are called from ContainerMiddleware hooks, which already run inside an outer
+    // Execute*() call that has set the flag. Calling the public Execute*() variants from
+    // inside another Execute*() would write false in the inner finally while the outer
+    // hook is still running, breaking the SyncState() guard in AgentContext.
+    // WrapFunctionCallAsync is chain-based (ExecuteFunctionCallAsync has no flag calls)
+    // and does NOT need an internal Dispatch* variant.
+    //
+
+    internal async Task DispatchBeforeMessageTurnAsync(
+        BeforeMessageTurnContext context, CancellationToken ct)
+    {
+        foreach (var m in _middlewares)
+        {
+            ct.ThrowIfCancellationRequested();
+            await m.BeforeMessageTurnAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DispatchAfterMessageTurnAsync(
+        AfterMessageTurnContext context, CancellationToken ct)
+    {
+        List<Exception>? exceptions = null;
+        foreach (var m in _reversedMiddlewares)
+        {
+            try { await m.AfterMessageTurnAsync(context, ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { (exceptions ??= new List<Exception>()).Add(ex); }
+        }
+        if (exceptions != null)
+            throw new AggregateException("One or more AfterMessageTurn hooks failed", exceptions);
+    }
+
+    internal async Task DispatchBeforeIterationAsync(
+        BeforeIterationContext context, CancellationToken ct)
+    {
+        foreach (var m in _middlewares)
+        {
+            ct.ThrowIfCancellationRequested();
+            await m.BeforeIterationAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DispatchAfterIterationAsync(
+        AfterIterationContext context, CancellationToken ct)
+    {
+        List<Exception>? exceptions = null;
+        foreach (var m in _reversedMiddlewares)
+        {
+            try { await m.AfterIterationAsync(context, ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { (exceptions ??= new List<Exception>()).Add(ex); }
+        }
+        if (exceptions != null)
+            throw new AggregateException("One or more AfterIteration hooks failed", exceptions);
+    }
+
+    internal async Task DispatchBeforeToolExecutionAsync(
+        BeforeToolExecutionContext context, CancellationToken ct)
+    {
+        foreach (var m in _middlewares)
+        {
+            ct.ThrowIfCancellationRequested();
+            await m.BeforeToolExecutionAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DispatchBeforeParallelBatchAsync(
+        BeforeParallelBatchContext context, CancellationToken ct)
+    {
+        foreach (var m in _middlewares)
+        {
+            ct.ThrowIfCancellationRequested();
+            await m.BeforeParallelBatchAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DispatchBeforeFunctionAsync(
+        BeforeFunctionContext context, CancellationToken ct)
+    {
+        foreach (var m in _middlewares)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!m.ShouldExecute(context)) continue;
+            await m.BeforeFunctionAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    internal async Task DispatchAfterFunctionAsync(
+        AfterFunctionContext context, CancellationToken ct)
+    {
+        List<Exception>? exceptions = null;
+        foreach (var m in _reversedMiddlewares)
+        {
+            if (!m.ShouldExecute(context)) continue;
+            try { await m.AfterFunctionAsync(context, ct).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            { (exceptions ??= new List<Exception>()).Add(ex); }
+        }
+        if (exceptions != null)
+            throw new AggregateException("One or more AfterFunction hooks failed", exceptions);
+    }
+
+    internal async Task DispatchOnErrorAsync(
+        ErrorContext context, CancellationToken ct)
+    {
+        foreach (var m in _reversedMiddlewares)
+        {
+            try { await m.OnErrorAsync(context, ct).ConfigureAwait(false); }
+            catch { /* swallow — preserve original error */ }
+        }
+    }
+
 }

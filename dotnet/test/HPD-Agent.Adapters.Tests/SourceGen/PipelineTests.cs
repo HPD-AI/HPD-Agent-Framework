@@ -149,7 +149,7 @@ public class PipelineTests
         dispatch.Should().Contain("\"app_mention\"");
         // Each event type becomes its own switch case
         var caseCount = CountOccurrences(dispatch, "case \"");
-        caseCount.Should().BeGreaterOrEqualTo(2); // one case per event type
+        caseCount.Should().BeGreaterThanOrEqualTo(2); // one case per event type
     }
 
     // ── Permission handler detection ──────────────────────────────────

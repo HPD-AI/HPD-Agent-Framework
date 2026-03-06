@@ -687,7 +687,9 @@ public sealed class AgentWorkflowInstance
         {
             Type = c.Type,
             Field = c.Field,
-            Value = c.Value,
+            Value = c.Value is null ? null
+                  : c.Value is JsonElement je ? je
+                  : JsonSerializer.SerializeToElement(c.Value),
             RegexOptions = c.RegexOptions,
             Conditions = c.Conditions?.Select(MapEdgeConditionToConfig).ToList()
         };

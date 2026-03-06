@@ -23,13 +23,13 @@
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
 
     <!-- File operations -->
-    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" Version="10.0.3" />
     <PackageReference Include="DiffPlex" Version="1.9.0" />
     <PackageReference Include="MAB.DotIgnore" Version="3.0.2" />
     <PackageReference Include="Ude.NetStandard" Version="1.2.0" />
 
     <!-- JSON Schema (match HPD-Agent) -->
-    <PackageReference Include="JsonSchema.Net.Generation" Version="6.0.0" />
+    <PackageReference Include="JsonSchema.Net.Generation" Version="7.1.1" />
   </ItemGroup>
 
   <ItemGroup>

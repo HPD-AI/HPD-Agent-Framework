@@ -301,7 +301,7 @@ public class Socks5ConnectionTests
             var response = new byte[10];
             var bytesRead = await stream.ReadAsync(response);
 
-            bytesRead.Should().BeGreaterOrEqualTo(2);
+            bytesRead.Should().BeGreaterThanOrEqualTo(2);
             response[0].Should().Be(0x05, "should be SOCKS5 version");
             response[1].Should().Be(0x02, "should be connection not allowed (0x02)");
         }

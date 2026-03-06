@@ -688,7 +688,7 @@ public class SileroVadTests
             "_preSpeechBuffer", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var buffer = (System.Collections.Generic.List<AudioFrame>)bufferField.GetValue(detector)!;
 
-        buffer.Count.Should().BeLessOrEqualTo(2,
+        buffer.Count.Should().BeLessThanOrEqualTo(2,
             "buffer must not exceed PrefixPaddingDuration of 64ms (2 frames at 32ms/frame)");
     }
 
@@ -743,7 +743,7 @@ public class SileroVadTests
 
         // Either OperationCanceledException is thrown or iteration just stopped
         ex?.Should().BeOfType<OperationCanceledException>();
-        events.Count.Should().BeGreaterOrEqualTo(3);
+        events.Count.Should().BeGreaterThanOrEqualTo(3);
     }
 
     // =========================================================================

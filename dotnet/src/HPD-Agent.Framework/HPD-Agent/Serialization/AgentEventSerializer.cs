@@ -72,6 +72,10 @@ public static partial class AgentEventSerializer
 
         // Middleware Events
         [typeof(MiddlewareErrorEvent)] = EventTypes.Middleware.MIDDLEWARE_ERROR,
+        [typeof(HistoryReductionEvent)] = EventTypes.Middleware.HISTORY_REDUCTION,
+        [typeof(MaxConsecutiveErrorsExceededEvent)] = EventTypes.Middleware.MAX_CONSECUTIVE_ERRORS_EXCEEDED,
+        [typeof(TotalErrorThresholdExceededEvent)] = EventTypes.Middleware.TOTAL_ERROR_THRESHOLD_EXCEEDED,
+        [typeof(PIIDetectedEvent)] = EventTypes.Middleware.PII_DETECTED,
 
         // Branch events removed - branching is now an application-level concern
 
@@ -86,8 +90,10 @@ public static partial class AgentEventSerializer
         [typeof(InternalParallelToolExecutionEvent)] = EventTypes.Observability.INTERNAL_PARALLEL_TOOL_EXECUTION,
         [typeof(InternalRetryEvent)] = EventTypes.Observability.INTERNAL_RETRY,
         [typeof(FunctionRetryEvent)] = EventTypes.Observability.FUNCTION_RETRY,
+        [typeof(ModelCallRetryEvent)] = EventTypes.Observability.MODEL_CALL_RETRY,
         [typeof(DeltaSendingActivatedEvent)] = EventTypes.Observability.DELTA_SENDING_ACTIVATED,
         [typeof(PlanModeActivatedEvent)] = EventTypes.Observability.PLAN_MODE_ACTIVATED,
+        [typeof(PlanUpdatedEvent)] = EventTypes.Observability.PLAN_UPDATED,
         [typeof(NestedAgentInvokedEvent)] = EventTypes.Observability.NESTED_AGENT_INVOKED,
         [typeof(DocumentProcessedEvent)] = EventTypes.Observability.DOCUMENT_PROCESSED,
         [typeof(InternalMessagePreparedEvent)] = EventTypes.Observability.INTERNAL_MESSAGE_PREPARED,
@@ -98,6 +104,14 @@ public static partial class AgentEventSerializer
         [typeof(SchemaChangedEvent)] = EventTypes.Observability.SCHEMA_CHANGED,
         [typeof(CollapsingStateEvent)] = EventTypes.Observability.COLLAPSING_STATE,
         [typeof(EventDroppedEvent)] = EventTypes.Observability.EVENT_DROPPED,
+        [typeof(BackgroundOperationStartedEvent)] = EventTypes.Observability.BACKGROUND_OPERATION_STARTED,
+        [typeof(BackgroundOperationStatusEvent)] = EventTypes.Observability.BACKGROUND_OPERATION_STATUS,
+        [typeof(StructuredOutputErrorEvent)] = EventTypes.Observability.STRUCTURED_OUTPUT_ERROR,
+        [typeof(StructuredOutputStartEvent)] = EventTypes.Observability.STRUCTURED_OUTPUT_START,
+        [typeof(StructuredOutputPartialEvent)] = EventTypes.Observability.STRUCTURED_OUTPUT_PARTIAL,
+        [typeof(StructuredOutputCompleteEvent)] = EventTypes.Observability.STRUCTURED_OUTPUT_COMPLETE,
+        [typeof(AssetUploadedEvent)] = EventTypes.Observability.ASSET_UPLOADED,
+        [typeof(AssetUploadFailedEvent)] = EventTypes.Observability.ASSET_UPLOAD_FAILED,
 
         // Priority Streaming Events
         [typeof(InterruptionRequestEvent)] = EventTypes.Streaming.INTERRUPTION_REQUEST,
@@ -156,6 +170,7 @@ public static partial class AgentEventSerializer
         var eventType = TypeNames.TryGetValue(evt.GetType(), out var typeName)
             ? typeName
             : ToScreamingSnakeCase(evt.GetType().Name);
+
 
         // Serialize event to JSON
         var eventJson = JsonSerializer.Serialize(evt, evt.GetType(), StandardJsonOptions);
@@ -220,7 +235,12 @@ public static partial class AgentEventSerializer
     static AgentEventSerializer()
     {
         foreach (var (type, discriminator) in TypeNames)
+        {
             DiscriminatorToType[discriminator] = type;
+            // Warm up the STJ source-gen context so every registered type has metadata
+            // available before the first Serialize call.
+            StandardJsonOptions.TypeInfoResolver?.GetTypeInfo(type, StandardJsonOptions);
+        }
     }
 
     /// <summary>

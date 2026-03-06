@@ -498,7 +498,7 @@ Use `decimal` type for precision.";
         var emptyToolkits = ImmutableHashSet<string>.Empty;
         var config = new CollapsingConfig { Enabled = true };
 
-        return new ContainerMiddleware(tools, emptyToolkits, config);
+        return new ContainerMiddleware(tools, emptyToolkits, null, null, null, config);
     }
 
     #endregion

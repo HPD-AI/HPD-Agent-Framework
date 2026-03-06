@@ -1,12 +1,16 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using HPD.Agent;
 using HPD.Agent.Adapters.Cards;
 using HPD.Agent.Adapters.Session;
 using HPD.Agent.Adapters.Slack.Payloads;
+using HPD.Agent.Adapters.Slack.SocketMode;
 using HPD.Agent.Hosting.Lifecycle;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+
+[assembly: InternalsVisibleTo("HPD-Agent.Adapters.Tests")]
 
 namespace HPD.Agent.Adapters.Slack;
 
@@ -112,6 +116,7 @@ internal sealed class DebounceTimer(int debounceMs) : IDisposable
 /// <see cref="AgentManager"/>, consumes the <see cref="AgentEvent"/> stream, and posts
 /// responses back via <see cref="SlackApiClient"/>.
 /// </summary>
+[HpdSocketTransport(typeof(SlackSocketModeService), ConfigProperty = nameof(SlackAdapterConfig.AppToken))]
 [HpdAdapter("slack")]
 [HpdWebhookSignature(HmacFormat.V0TimestampBody,
     SignatureHeader = "X-Slack-Signature",
@@ -522,6 +527,112 @@ public partial class SlackAdapter(
         return flat;
     }
 
+
+    // ── Socket Mode dispatch ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called by <see cref="SlackSocketModeService"/> for each envelope received over
+    /// the Socket Mode WebSocket. Deserializes and dispatches to the same private handlers
+    /// used by the HTTP path — session resolution, streaming, and permission handling are
+    /// identical regardless of transport.
+    /// </summary>
+    /// <returns>true = ACK sent (always); false = NACK (never in current implementation).</returns>
+    internal async Task<bool> HandleSocketEnvelopeAsync(
+        SlackSocketEnvelope envelope, CancellationToken ct)
+    {
+        // Deserialize using the same hand-written JsonSerializerContext as the HTTP path.
+        // JsonContextGenerator is a confirmed no-op — the context must be referenced explicitly.
+        // Using JsonSerializer.Deserialize<T>(bytes) without options would break NativeAOT.
+        switch (envelope.Type)
+        {
+            case "events_api":
+            {
+                var inner = envelope.Payload?.Deserialize<SlackEventEnvelope>(SlackAdapterJsonContext.Default.Options);
+                if (inner is null) return true;
+                switch (inner.Event?.GetProperty("type").GetString())
+                {
+                    case "message":
+                    case "app_mention":
+                    {
+                        var ev = DeserializeEvent<SlackMessageEvent>(inner.Event);
+                        if (!ShouldSkip(ev))
+                        {
+                            var threadTs    = GetThreadTs(ev!);
+                            var platformKey = SlackThreadId.Format(ev!.Channel!, threadTs);
+                            var (sessionId, branchId) = await sessionMapper.ResolveAsync(platformKey, ct);
+                            var input = await BuildInputAsync(ev, ct);
+                            _ = StreamToSlackAsync(sessionId, branchId, input, ev.Channel!, threadTs, ct);
+                        }
+                        break;
+                    }
+                    case "reaction_added":
+                    case "reaction_removed":
+                    {
+                        var ev = DeserializeEvent<SlackReactionEvent>(inner.Event);
+                        if (ev is not null) OnReaction?.Invoke(new SlackReactionReceivedEvent(ev, inner.TeamId));
+                        break;
+                    }
+                    case "assistant_thread_started":
+                    {
+                        var ev = DeserializeEvent<SlackAssistantThreadStartedEvent>(inner.Event);
+                        if (ev is not null)
+                        {
+                            var thread = ev.AssistantThread;
+                            var platformKey = SlackThreadId.Format(thread.ChannelId, thread.ThreadTs);
+                            await sessionMapper.ResolveAsync(platformKey, ct);
+                            await api.TrySetAssistantStatusAsync(thread.ChannelId, thread.ThreadTs, "Ready", ct);
+                        }
+                        break;
+                    }
+                    case "assistant_thread_context_changed":
+                    {
+                        var ev = DeserializeEvent<SlackAssistantContextChangedEvent>(inner.Event);
+                        if (ev is not null) OnAssistantContextChanged?.Invoke(new SlackAssistantContextChangedReceivedEvent(ev));
+                        break;
+                    }
+                    case "app_home_opened":
+                    {
+                        var ev = DeserializeEvent<SlackAppHomeOpenedPayload>(inner.Event);
+                        if (ev?.Tab == "home") OnAppHomeOpened?.Invoke(new SlackAppHomeOpenedReceivedEvent(ev));
+                        break;
+                    }
+                }
+                break;
+            }
+            case "interactive":
+            {
+                var payload = envelope.Payload?.Deserialize<SlackBlockActionsPayload>(SlackAdapterJsonContext.Default.Options);
+                if (payload is not null)
+                {
+                    // Reuse the same block actions logic as the HTTP path (synthetic HttpContext not needed).
+                    foreach (var action in payload.Actions)
+                    {
+                        if (IsPermissionAction(action.ActionId))
+                        {
+                            var agent = agentManager.GetAgent(_config.AgentName ?? "default");
+                            if (agent is not null)
+                            {
+                                var approved = action.Value == "approve";
+                                agent.SendMiddlewareResponse(action.ActionId, new PermissionResponseEvent(
+                                    PermissionId: action.ActionId,
+                                    SourceName:   "slack",
+                                    Approved:     approved));
+                            }
+                        }
+                        else
+                        {
+                            OnBlockAction?.Invoke(new SlackBlockActionReceivedEvent(action, payload));
+                        }
+                    }
+                }
+                break;
+            }
+            // disconnect_warning and unknown types: ACK and ignore — safe by design.
+            // The forced close arrives 10s later and the normal reconnect path handles it.
+        }
+        return true;
+    }
+
     // ── Adapter-internal input bag ─────────────────────────────────────────────
     // Does NOT cross the agent boundary — agent.RunAsync() takes a plain string.
     // RecipientUserId/RecipientTeamId drive native streaming eligibility.
@@ -546,6 +657,8 @@ public partial class SlackAdapter(
 /// The source generator populates this with <c>[JsonSerializable]</c> entries
 /// for every <c>[WebhookPayload]</c> record in the assembly.
 /// </summary>
+// Socket Mode envelope
+[System.Text.Json.Serialization.JsonSerializable(typeof(SlackSocketEnvelope))]
 // Inbound webhook payloads
 [System.Text.Json.Serialization.JsonSerializable(typeof(SlackEventEnvelope))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(SlackMessageEvent))]

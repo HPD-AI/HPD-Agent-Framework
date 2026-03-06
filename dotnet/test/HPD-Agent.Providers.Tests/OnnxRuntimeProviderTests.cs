@@ -790,7 +790,7 @@ public class OnnxRuntimeProviderTests
 
         // Assert
         retryDelay.Should().NotBeNull();
-        retryDelay.Should().BeLessOrEqualTo(TimeSpan.FromSeconds(5));
+        retryDelay.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

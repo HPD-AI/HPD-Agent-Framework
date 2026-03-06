@@ -265,7 +265,7 @@ public class AzureOpenAIProviderTests
 
         // Assert
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCountGreaterOrEqualTo(3);
+        result.Errors.Should().HaveCountGreaterThanOrEqualTo(3);
         result.Errors.Should().Contain(e => e.Contains("Endpoint"));
         result.Errors.Should().Contain(e => e.Contains("API key"));
         result.Errors.Should().Contain(e => e.Contains("Model name"));

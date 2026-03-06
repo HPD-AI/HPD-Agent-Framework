@@ -119,6 +119,10 @@ public static partial class EventTypes
     public static class Middleware
     {
         public const string MIDDLEWARE_ERROR = "MIDDLEWARE_ERROR";
+        public const string HISTORY_REDUCTION = "HISTORY_REDUCTION";
+        public const string MAX_CONSECUTIVE_ERRORS_EXCEEDED = "MAX_CONSECUTIVE_ERRORS_EXCEEDED";
+        public const string TOTAL_ERROR_THRESHOLD_EXCEEDED = "TOTAL_ERROR_THRESHOLD_EXCEEDED";
+        public const string PII_DETECTED = "PII_DETECTED";
     }
 
     #endregion
@@ -154,8 +158,10 @@ public static partial class EventTypes
         public const string INTERNAL_PARALLEL_TOOL_EXECUTION = "INTERNAL_PARALLEL_TOOL_EXECUTION";
         public const string INTERNAL_RETRY = "INTERNAL_RETRY";
         public const string FUNCTION_RETRY = "FUNCTION_RETRY";
+        public const string MODEL_CALL_RETRY = "MODEL_CALL_RETRY";
         public const string DELTA_SENDING_ACTIVATED = "DELTA_SENDING_ACTIVATED";
         public const string PLAN_MODE_ACTIVATED = "PLAN_MODE_ACTIVATED";
+        public const string PLAN_UPDATED = "PLAN_UPDATED";
         public const string NESTED_AGENT_INVOKED = "NESTED_AGENT_INVOKED";
         public const string DOCUMENT_PROCESSED = "DOCUMENT_PROCESSED";
         public const string INTERNAL_MESSAGE_PREPARED = "INTERNAL_MESSAGE_PREPARED";
@@ -166,6 +172,14 @@ public static partial class EventTypes
         public const string SCHEMA_CHANGED = "SCHEMA_CHANGED";
         public const string COLLAPSING_STATE = "COLLAPSING_STATE";
         public const string EVENT_DROPPED = "EVENT_DROPPED";
+        public const string BACKGROUND_OPERATION_STARTED = "BACKGROUND_OPERATION_STARTED";
+        public const string BACKGROUND_OPERATION_STATUS = "BACKGROUND_OPERATION_STATUS";
+        public const string STRUCTURED_OUTPUT_ERROR = "STRUCTURED_OUTPUT_ERROR";
+        public const string STRUCTURED_OUTPUT_START = "STRUCTURED_OUTPUT_START";
+        public const string STRUCTURED_OUTPUT_PARTIAL = "STRUCTURED_OUTPUT_PARTIAL";
+        public const string STRUCTURED_OUTPUT_COMPLETE = "STRUCTURED_OUTPUT_COMPLETE";
+        public const string ASSET_UPLOADED = "ASSET_UPLOADED";
+        public const string ASSET_UPLOAD_FAILED = "ASSET_UPLOAD_FAILED";
     }
 
     #endregion

@@ -6,7 +6,7 @@ namespace HPD.Agent.Adapters.Slack;
 /// Configuration for <see cref="SlackAdapter"/>.
 /// Bind via <c>builder.Services.Configure&lt;SlackAdapterConfig&gt;(config.GetSection("Slack"))</c>.
 /// </summary>
-public record SlackAdapterConfig
+public class SlackAdapterConfig
 {
     /// <summary>
     /// Slack signing secret used to verify inbound webhook signatures.
@@ -37,27 +37,27 @@ public record SlackAdapterConfig
     /// Bot user ID (U_xxx). If omitted, fetched via <c>auth.test</c> on first request
     /// and cached for the process lifetime. Used to suppress echo loops on self-messages.
     /// </summary>
-    public string? BotUserId { get; init; }
+    public string? BotUserId { get; set; }
 
     /// <summary>
     /// Which HPD agent to route inbound messages to.
     /// Defaults to the agent registered as <c>DefaultName</c> in <c>AddHPDAgent()</c>.
     /// </summary>
-    public string? AgentName { get; init; }
+    public string? AgentName { get; set; }
 
     /// <summary>
     /// Minimum milliseconds between consecutive <c>chat.update</c> calls during streaming.
     /// Prevents hitting Slack's ~1 update/second rate limit.
     /// Default: 500ms.
     /// </summary>
-    public int StreamingDebounceMs { get; init; } = 500;
+    public int StreamingDebounceMs { get; set; } = 500;
 
     /// <summary>
     /// Maximum time to wait for a user to click Approve/Deny on a permission request.
     /// After this, the agent loop receives a denial and continues.
     /// Default: 5 minutes.
     /// </summary>
-    public TimeSpan PermissionTimeout { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan PermissionTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// Use Slack's native <c>chat.startStream</c> / <c>chat.appendStream</c> / <c>chat.stopStream</c>
@@ -66,5 +66,13 @@ public record SlackAdapterConfig
     /// Requires the Assistants feature flag and <c>assistants:write</c> OAuth scope.
     /// Default: false — PostAndEdit works everywhere with no feature flag.
     /// </summary>
-    public bool UseNativeStreaming { get; init; } = false;
+    public bool UseNativeStreaming { get; set; } = false;
+
+    /// <summary>
+    /// App-level token (xapp-...) with <c>connections:write</c> scope.
+    /// When set, <c>SlackSocketModeService</c> is registered as a BackgroundService and
+    /// events are delivered over a persistent outbound WebSocket — no public URL required.
+    /// When null (default), HTTP Events API mode is used (<c>MapSlackWebhook()</c> required).
+    /// </summary>
+    public string? AppToken { get; set; }
 }

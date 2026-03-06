@@ -121,9 +121,12 @@ internal class FunctionCapability : BaseCapability
             schemaProviderCode += $@"
     var method = typeof({Toolkit.Name}).GetMethod(nameof({Toolkit.Name}.{Name}));
     var options = new global::Microsoft.Extensions.AI.AIJsonSchemaCreateOptions {{ IncludeSchemaKeyword = false }};
+    var serializerOptions = new global::System.Text.Json.JsonSerializerOptions(global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions);
+    serializerOptions.TypeInfoResolverChain.Add(global::HPDJsonContext.Default);
+    serializerOptions.MakeReadOnly();
     return global::Microsoft.Extensions.AI.AIJsonUtilities.CreateFunctionJsonSchema(
         method!,
-        serializerOptions: global::Microsoft.Extensions.AI.AIJsonUtilities.DefaultOptions,
+        serializerOptions: serializerOptions,
         inferenceOptions: options
     );";
         }

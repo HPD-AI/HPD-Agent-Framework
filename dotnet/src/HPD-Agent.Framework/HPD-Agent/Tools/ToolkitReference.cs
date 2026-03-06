@@ -105,6 +105,25 @@ public class ToolkitReference
     public JsonElement? Metadata { get; set; }
 
     /// <summary>
+    /// Per-middleware config overrides for toolkit-scoped middleware with config-constructor factories
+    /// . Keys are middleware simple type names (e.g. <c>"DbRateLimitMiddleware"</c>);
+    /// values are raw JSON objects passed to the generated config-constructor factory delegate.
+    /// Ignored when the toolkit has no matching <c>CollapseMiddlewareConfigFactories</c> entry.
+    /// </summary>
+    /// <remarks>
+    /// <b>Example:</b>
+    /// <code>
+    /// {
+    ///   "name": "DatabaseToolkit",
+    ///   "middlewareConfigs": {
+    ///     "DbRateLimitMiddleware": { "requestsPerMinute": 20 }
+    ///   }
+    /// }
+    /// </code>
+    /// </remarks>
+    public Dictionary<string, JsonElement>? MiddlewareConfigs { get; set; }
+
+    /// <summary>
     /// Implicit conversion from string for simple syntax support.
     /// </summary>
     /// <param name="name">The toolkit name.</param>
@@ -170,6 +189,9 @@ public class ToolkitReferenceConverter : JsonConverter<ToolkitReference>
                     case "metadata":
                         reference.Metadata = JsonElement.ParseValue(ref reader);
                         break;
+                    case "middlewareconfigs":
+                        reference.MiddlewareConfigs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(ref reader, options);
+                        break;
                     default:
                         // Skip unknown properties
                         reader.Skip();
@@ -190,7 +212,7 @@ public class ToolkitReferenceConverter : JsonConverter<ToolkitReference>
     public override void Write(Utf8JsonWriter writer, ToolkitReference value, JsonSerializerOptions options)
     {
         // Use simple syntax if only name is set
-        if (value.Functions == null && !value.Config.HasValue && !value.Metadata.HasValue)
+        if (value.Functions == null && !value.Config.HasValue && !value.Metadata.HasValue && value.MiddlewareConfigs == null)
         {
             writer.WriteStringValue(value.Name);
             return;
@@ -216,6 +238,12 @@ public class ToolkitReferenceConverter : JsonConverter<ToolkitReference>
         {
             writer.WritePropertyName("metadata");
             value.Metadata.Value.WriteTo(writer);
+        }
+
+        if (value.MiddlewareConfigs != null)
+        {
+            writer.WritePropertyName("middlewareConfigs");
+            JsonSerializer.Serialize(writer, value.MiddlewareConfigs, options);
         }
 
         writer.WriteEndObject();

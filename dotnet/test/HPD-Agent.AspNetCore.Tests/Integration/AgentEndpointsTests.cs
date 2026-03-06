@@ -91,7 +91,7 @@ public class AgentEndpointsTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var agents = await response.Content.ReadFromJsonAsync<List<AgentSummaryDto>>();
         agents.Should().NotBeNull();
-        agents!.Count.Should().BeGreaterOrEqualTo(2);
+        agents!.Count.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]

@@ -82,11 +82,11 @@ public class ContainerExpansionTests : AgentTestBase
         // Assert - CURRENT behavior
         // Should have multiple iterations (container call + member function call + final response)
         var agentTurnStarts = capturedEvents.OfType<AgentTurnStartedEvent>().ToList();
-        agentTurnStarts.Should().HaveCountGreaterOrEqualTo(2, "should have at least 2 iterations for two-turn expansion");
+        agentTurnStarts.Should().HaveCountGreaterThanOrEqualTo(2, "should have at least 2 iterations for two-turn expansion");
 
         // Should have tool call events for both container and member
         var toolCalls = capturedEvents.OfType<ToolCallStartEvent>().ToList();
-        toolCalls.Should().HaveCountGreaterOrEqualTo(2, "should call container and at least one member function");
+        toolCalls.Should().HaveCountGreaterThanOrEqualTo(2, "should call container and at least one member function");
 
         // Container should be called
         toolCalls.Should().Contain(e => e.Name == "MathTools", "container should be invoked");
@@ -96,7 +96,7 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Tool results should exist
         var toolResults = capturedEvents.OfType<ToolCallResultEvent>().ToList();
-        toolResults.Should().HaveCountGreaterOrEqualTo(2, "should have results for both tool calls");
+        toolResults.Should().HaveCountGreaterThanOrEqualTo(2, "should have results for both tool calls");
 
         // Final text response
         var textDeltas = capturedEvents.OfType<TextDeltaEvent>().ToList();
@@ -167,7 +167,7 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Assert - Multiple member calls after single expansion
         var toolCalls = capturedEvents.OfType<ToolCallStartEvent>().ToList();
-        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "container + 2 member functions");
+        toolCalls.Should().HaveCountGreaterThanOrEqualTo(3, "container + 2 member functions");
 
         // Container called once
         toolCalls.Where(e => e.Name == "StringToolkit").Should().ContainSingle("container should be called once");
@@ -246,7 +246,7 @@ public class ContainerExpansionTests : AgentTestBase
 
         // Assert - All three tools should be called
         var toolCalls = capturedEvents.OfType<ToolCallStartEvent>().ToList();
-        toolCalls.Should().HaveCountGreaterOrEqualTo(3, "non-Collapsed + container + member");
+        toolCalls.Should().HaveCountGreaterThanOrEqualTo(3, "non-Collapsed + container + member");
 
         toolCalls.Should().Contain(e => e.Name == "GetTime", "non-Collapsed function should be callable");
         toolCalls.Should().Contain(e => e.Name == "UtilsToolkit", "container should be callable");

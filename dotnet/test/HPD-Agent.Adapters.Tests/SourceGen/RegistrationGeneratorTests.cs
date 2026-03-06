@@ -167,4 +167,114 @@ public class RegistrationGeneratorTests
         names.Should().Contain("SlackAdapterRegistration.g.cs");
         names.Should().Contain("TeamsAdapterRegistration.g.cs");
     }
+
+    // ── Socket transport branch ───────────────────────────────────────
+
+    /// <summary>
+    /// Source for an adapter that has [HpdSocketTransport] with a valid service type.
+    /// The ValidSocketService class extends AdapterWebSocketService to pass HPDA008.
+    /// </summary>
+    private static readonly string SlackAdapterWithSocket = """
+        using HPD.Agent.Adapters;
+        using System.Net.WebSockets;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Microsoft.Extensions.Logging.Abstractions;
+        namespace My.Adapters;
+
+        public sealed class SlackSocketModeService : AdapterWebSocketService
+        {
+            public SlackSocketModeService() : base(NullLogger.Instance) { }
+            protected override Task<System.Uri> GetConnectionUriAsync(CancellationToken ct)
+                => Task.FromResult(new System.Uri("ws://localhost"));
+            protected override Task RunSessionAsync(ClientWebSocket ws, CancellationToken ct)
+                => Task.CompletedTask;
+        }
+
+        [HpdAdapter("slack")]
+        [HpdSocketTransport(typeof(SlackSocketModeService), ConfigProperty = "AppToken")]
+        public partial class SlackAdapter { }
+        """;
+
+    [Fact]
+    public void Registration_WithSocketTransport_EmitsCaptureLocalAndConfigure()
+    {
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        // configure is called once upfront into a local
+        source!.Should().Contain("var _cfg = new SlackAdapterConfig()");
+        source.Should().Contain("configure(_cfg)");
+        // Then registered via services.Configure<T> for full options infrastructure support
+        source.Should().Contain("services.Configure<SlackAdapterConfig>(configure)");
+    }
+
+    [Fact]
+    public void Registration_WithSocketTransport_EmitsConditionalAddHostedService()
+    {
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().Contain("_cfg.AppToken is not null");
+        source.Should().Contain("AddHostedService");
+        source.Should().Contain("SlackSocketModeService");
+    }
+
+    [Fact]
+    public void Registration_WithSocketTransport_DoesNotUseOptionsCreate()
+    {
+        // Options.Create() was the previous (broken) approach — must not appear
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().NotContain("Options.Create(",
+            "IOptionsMonitor and IOptionsSnapshot would not be satisfied by Options.Create");
+    }
+
+    [Fact]
+    public void Registration_WithoutSocketTransport_UsesServicesConfigure_NotLocalCapture()
+    {
+        // Adapters without [HpdSocketTransport] must still use the original simple path
+        var result = SourceGenHelper.RunGenerator(MinimalSlackAdapter, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().Contain("services.Configure(configure)");
+        source.Should().NotContain("var _cfg = ");
+        source.Should().NotContain("AddHostedService");
+    }
+
+    [Fact]
+    public void Registration_WithSocketTransport_StillRegistersAdapterSingleton()
+    {
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().Contain("TryAddSingleton<SlackAdapter>");
+    }
+
+    [Fact]
+    public void Registration_WithSocketTransport_StillRegistersPlatformSessionMapper()
+    {
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().Contain("PlatformSessionMapper");
+    }
+
+    [Fact]
+    public void Registration_WithSocketTransport_StillGeneratesMapWebhookExtension()
+    {
+        // Socket mode does not remove the HTTP webhook endpoint option
+        var result = SourceGenHelper.RunGenerator(SlackAdapterWithSocket, out _);
+        var source = SourceGenHelper.GetGeneratedFile(result, "SlackAdapterRegistration.g.cs");
+
+        source.Should().NotBeNull();
+        source!.Should().Contain("MapSlackWebhook(");
+    }
 }

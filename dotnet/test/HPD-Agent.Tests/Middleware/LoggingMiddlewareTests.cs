@@ -509,6 +509,208 @@ public class LoggingMiddlewareTests
     }
 
     //
+    // TOOLKIT EXPANSION TESTS
+    //
+
+    [Fact]
+    public async Task BeforeFunction_ContainerCollapse_LogsToolkitExpand()
+    {
+        // Arrange
+        var logOutput = new List<string>();
+        var loggerFactory = CreateTestLoggerFactory(logOutput);
+        var middleware = new LoggingMiddleware(loggerFactory, new LoggingMiddlewareOptions
+        {
+            LogFunction = false,
+            LogToolkitExpansion = true
+        });
+
+        var containerFunc = HPDAIFunctionFactory.Create(
+            (AIFunctionArguments _, CancellationToken __) => Task.FromResult<object?>("expanded"),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = "CodingToolkit",
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["IsCollapse"] = true,
+                    ["ToolkitName"] = "CodingToolkit",
+                    ["FunctionNames"] = new List<string> { "ReadFile", "WriteFile" }
+                }
+            });
+
+        var context = CreateBeforeFunctionContext(function: containerFunc);
+
+        // Act
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.NotEmpty(logOutput);
+        Assert.Contains(logOutput, s => s.Contains("[TOOLKIT EXPAND]"));
+        Assert.Contains(logOutput, s => s.Contains("CodingToolkit"));
+    }
+
+    [Fact]
+    public async Task BeforeFunction_ContainerCollapse_WhenExpansionDisabled_DoesNotLog()
+    {
+        // Arrange
+        var logOutput = new List<string>();
+        var loggerFactory = CreateTestLoggerFactory(logOutput);
+        var middleware = new LoggingMiddleware(loggerFactory, new LoggingMiddlewareOptions
+        {
+            LogFunction = false,
+            LogToolkitExpansion = false
+        });
+
+        var containerFunc = HPDAIFunctionFactory.Create(
+            (AIFunctionArguments _, CancellationToken __) => Task.FromResult<object?>("expanded"),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = "CodingToolkit",
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["IsCollapse"] = true,
+                    ["ToolkitName"] = "CodingToolkit"
+                }
+            });
+
+        var context = CreateBeforeFunctionContext(function: containerFunc);
+
+        // Act
+        await middleware.BeforeFunctionAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.Empty(logOutput);
+    }
+
+    [Fact]
+    public async Task AfterFunction_ContainerCollapse_LogsToolkitCollapse()
+    {
+        // Arrange
+        var logOutput = new List<string>();
+        var loggerFactory = CreateTestLoggerFactory(logOutput);
+        var middleware = new LoggingMiddleware(loggerFactory, new LoggingMiddlewareOptions
+        {
+            LogFunction = false,
+            LogToolkitExpansion = true
+        });
+
+        var containerFunc = HPDAIFunctionFactory.Create(
+            (AIFunctionArguments _, CancellationToken __) => Task.FromResult<object?>("expanded"),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = "CodingToolkit",
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["IsCollapse"] = true,
+                    ["ToolkitName"] = "CodingToolkit"
+                }
+            });
+
+        var context = CreateAfterFunctionContext(function: containerFunc, result: "ok");
+
+        // Act
+        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.NotEmpty(logOutput);
+        Assert.Contains(logOutput, s => s.Contains("[TOOLKIT COLLAPSE]"));
+        Assert.Contains(logOutput, s => s.Contains("CodingToolkit"));
+    }
+
+    [Fact]
+    public async Task AfterFunction_ContainerCollapse_WithScopedMiddleware_ListsMiddlewareNames()
+    {
+        // Arrange
+        var logOutput = new List<string>();
+        var loggerFactory = CreateTestLoggerFactory(logOutput);
+        var middleware = new LoggingMiddleware(loggerFactory, new LoggingMiddlewareOptions
+        {
+            LogFunction = false,
+            LogToolkitExpansion = true
+        });
+
+        var containerFunc = HPDAIFunctionFactory.Create(
+            (AIFunctionArguments _, CancellationToken __) => Task.FromResult<object?>("expanded"),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = "CodingToolkit",
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["IsCollapse"] = true,
+                    ["ToolkitName"] = "CodingToolkit"
+                }
+            });
+
+        // Seed ContainerMiddlewareState with a toolkit pipeline containing a scoped middleware
+        var scopedMiddleware = new TestScopedMiddleware();
+        var pipeline = new AgentMiddlewarePipeline([scopedMiddleware]);
+        var containerState = new ContainerMiddlewareState()
+            .WithToolkitPipeline("CodingToolkit", pipeline);
+
+        var agentContext = CreateAgentContextWithState(containerState);
+        var context = agentContext.AsAfterFunction(
+            function: containerFunc,
+            callId: "call-123",
+            result: "ok",
+            exception: null,
+            runConfig: new AgentRunConfig());
+
+        // Act
+        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.NotEmpty(logOutput);
+        Assert.Contains(logOutput, s => s.Contains("[TOOLKIT COLLAPSE]"));
+        Assert.Contains(logOutput, s => s.Contains("TestScopedMiddleware"));
+    }
+
+    [Fact]
+    public async Task AfterFunction_ContainerCollapse_Error_LogsExpandFailed()
+    {
+        // Arrange
+        var logOutput = new List<string>();
+        var loggerFactory = CreateTestLoggerFactory(logOutput);
+        var middleware = new LoggingMiddleware(loggerFactory, new LoggingMiddlewareOptions
+        {
+            LogToolkitExpansion = true
+        });
+
+        var containerFunc = HPDAIFunctionFactory.Create(
+            (AIFunctionArguments _, CancellationToken __) => Task.FromResult<object?>("expanded"),
+            new HPDAIFunctionFactoryOptions
+            {
+                Name = "CodingToolkit",
+                AdditionalProperties = new Dictionary<string, object?>
+                {
+                    ["IsContainer"] = true,
+                    ["IsCollapse"] = true,
+                    ["ToolkitName"] = "CodingToolkit"
+                }
+            });
+
+        var context = CreateAfterFunctionContext(
+            function: containerFunc,
+            exception: new InvalidOperationException("expansion blew up"));
+
+        // Act
+        await middleware.AfterFunctionAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.Contains(logOutput, s => s.Contains("[TOOLKIT EXPAND FAILED]"));
+        Assert.Contains(logOutput, s => s.Contains("expansion blew up"));
+    }
+
+    [Fact]
+    public async Task DefaultOptions_LogToolkitExpansion_IsTrue()
+    {
+        var options = LoggingMiddlewareOptions.Default;
+        Assert.True(options.LogToolkitExpansion);
+    }
+
+    //
     // NO LOGGER TESTS
     //
 
@@ -548,6 +750,32 @@ public class LoggingMiddlewareTests
             new global::HPD.Agent.Branch("test-session"),
             CancellationToken.None);
     }
+
+    private static AgentContext CreateAgentContextWithState(ContainerMiddlewareState containerState)
+    {
+        var stateKey = typeof(ContainerMiddlewareState).FullName!;
+        var baseState = AgentLoopState.InitialSafe(
+            messages: Array.Empty<ChatMessage>(),
+            runId: "test-run",
+            conversationId: "test-conversation",
+            agentName: "TestAgent");
+
+        var seededState = baseState with
+        {
+            MiddlewareState = baseState.MiddlewareState.SetState(stateKey, containerState)
+        };
+
+        return new AgentContext(
+            "TestAgent",
+            "test-conversation",
+            seededState,
+            new HPD.Events.Core.EventCoordinator(),
+            new global::HPD.Agent.Session("test-session"),
+            new global::HPD.Agent.Branch("test-session"),
+            CancellationToken.None);
+    }
+
+    private class TestScopedMiddleware : IAgentMiddleware { }
 
     private static BeforeMessageTurnContext CreateBeforeMessageTurnContext()
     {

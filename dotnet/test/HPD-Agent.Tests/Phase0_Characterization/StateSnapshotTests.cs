@@ -86,7 +86,7 @@ public class StateSnapshotTests : AgentTestBase
 
         // Assert - State after first iteration
         var snapshots = capturedEvents.OfType<StateSnapshotEvent>().ToList();
-        snapshots.Should().HaveCountGreaterOrEqualTo(2, "should have snapshots for both iterations");
+        snapshots.Should().HaveCountGreaterThanOrEqualTo(2, "should have snapshots for both iterations");
 
         // First iteration (index 0): iteration 0, no completed functions yet
         var firstSnapshot = snapshots[0];
@@ -156,7 +156,7 @@ public class StateSnapshotTests : AgentTestBase
         snapshots.Should().NotBeEmpty("state snapshots should be emitted");
 
         // Verify error tracking terminates correctly
-        snapshots.Should().HaveCountLessOrEqualTo(4, "error tracking should limit iterations to ~3-4");
+        snapshots.Should().HaveCountLessThanOrEqualTo(4, "error tracking should limit iterations to ~3-4");
 
         // Check if ANY error-related events were emitted
         var textDeltas = capturedEvents.OfType<TextDeltaEvent>().ToList();
@@ -228,7 +228,7 @@ public class StateSnapshotTests : AgentTestBase
         // Assert - State snapshots show progression to max
         // Loop condition uses <=, so MaxAgenticIterations=5 means iterations 0-5 (6 snapshots)
         var snapshots = capturedEvents.OfType<StateSnapshotEvent>().ToList();
-        snapshots.Should().HaveCountLessOrEqualTo(6, "should not exceed max iterations (loop uses <=)");
+        snapshots.Should().HaveCountLessThanOrEqualTo(6, "should not exceed max iterations (loop uses <=)");
 
         // Verify iteration counter increases
         for (int i = 0; i < snapshots.Count; i++)
@@ -282,7 +282,7 @@ public class StateSnapshotTests : AgentTestBase
 
         // Assert - All snapshots should show 0 consecutive errors
         var snapshots = capturedEvents.OfType<StateSnapshotEvent>().ToList();
-        snapshots.Should().HaveCountGreaterOrEqualTo(3, "should have snapshots for multiple iterations");
+        snapshots.Should().HaveCountGreaterThanOrEqualTo(3, "should have snapshots for multiple iterations");
 
         foreach (var snapshot in snapshots)
         {

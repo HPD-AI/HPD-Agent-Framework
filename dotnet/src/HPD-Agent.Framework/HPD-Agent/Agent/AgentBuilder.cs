@@ -110,7 +110,7 @@ public class AgentBuilder
     /// </summary>
     internal readonly HashSet<Assembly> _loadedAssemblies = new();
 
-    // Secret resolution (Proposal 007)
+    // Secret resolution
     private ISecretResolver? _secretResolver;
     private readonly List<ISecretResolver> _additionalResolvers = new();
 
@@ -132,6 +132,15 @@ public class AgentBuilder
     /// Used to determine what's an override vs extension.
     /// </summary>
     internal readonly HashSet<string> _builderAddedToolkits = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Builder-time DI middleware instances for toolkit-scoped middleware .
+    /// Maps toolkit name -> list of middleware instances supplied via
+    /// <c>WithToolkit&lt;T&gt;(opts => opts.AddScopedMiddleware(...))</c>.
+    /// Merged with attribute-declared factory middlewares at container expansion time.
+    /// </summary>
+    internal readonly Dictionary<string, List<Middleware.IAgentMiddleware>> _toolkitScopedMiddlewares
+        = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Middleware overrides from builder calls (takes precedence over config).
@@ -189,6 +198,14 @@ public class AgentBuilder
     /// Maps toolkit name -> JsonElement config for CreateFromConfig delegate.
     /// </summary>
     internal readonly Dictionary<string, System.Text.Json.JsonElement> _toolkitConfigs = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Per-toolkit middleware config overrides from <c>ToolkitReference.MiddlewareConfigs</c> .
+    /// Maps toolkit name -> (middleware simple type name -> JsonElement config).
+    /// Passed to <see cref="ContainerMiddleware"/> at build time for config-constructor middleware instantiation.
+    /// </summary>
+    internal readonly Dictionary<string, Dictionary<string, System.Text.Json.JsonElement>> _toolkitMiddlewareConfigs
+        = new(StringComparer.OrdinalIgnoreCase);
 
     // ==========  OpenAPI Support  ==========
 
@@ -773,6 +790,13 @@ public class AgentBuilder
                         "Failed to deserialize metadata for toolkit '{Name}' to type {MetadataType}",
                         effectiveRef.Name, factory.MetadataType.Name);
                 }
+            }
+
+            // Handle middleware configs from config (§5A)
+            if (effectiveRef.MiddlewareConfigs != null && effectiveRef.MiddlewareConfigs.Count > 0
+                && factory.CollapseMiddlewareConfigFactories != null)
+            {
+                _toolkitMiddlewareConfigs[factory.Name] = effectiveRef.MiddlewareConfigs;
             }
 
             logger?.LogDebug("Resolved toolkit '{Name}' from config", effectiveRef.Name);
@@ -1985,6 +2009,9 @@ public class AgentBuilder
             var containerMiddleware = new ContainerMiddleware(
                 buildData.MergedOptions.Tools,
                 _explicitlyRegisteredToolkits.ToImmutableHashSet(StringComparer.OrdinalIgnoreCase),
+                _availableToolkits,           // toolkit factory registry for scoped middleware 
+                _toolkitScopedMiddlewares,    // builder-time DI instances 
+                _toolkitMiddlewareConfigs,    // config-ctor middleware configs from ToolkitReference 
                 _config.Collapsing,
                 containerLogger);
             _middlewares.Add(containerMiddleware);
@@ -3953,6 +3980,43 @@ public static class AgentBuilderToolkitExtensions
 
         // Auto-discover skill dependencies using catalog (zero reflection)
         AutoRegisterDependenciesFromFactory(builder, factory);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers a toolkit and configures per-toolkit options such as DI-provided scoped middleware
+    /// . Use this overload when your toolkit-scoped middleware requires constructor
+    /// parameters that cannot be expressed via a parameterless constructor in
+    /// <c>[Collapse(Middlewares = [typeof(T)])]</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// builder.WithToolkit&lt;DatabaseToolkit&gt;(opts =>
+    ///     opts.AddScopedMiddleware(new DbAuditMiddleware(sp.GetRequiredService&lt;IAuditLog&gt;())));
+    /// </code>
+    /// </example>
+    [RequiresUnreferencedCode("Toolkit loading via WithToolkit requires ToolkitRegistry from assembly where T is defined to be preserved.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "RequiresUnreferencedCode declared on method")]
+    public static AgentBuilder WithToolkit<T>(this AgentBuilder builder, Action<ToolkitOptions> configure, IToolMetadata? context = null) where T : class, new()
+    {
+        // Register the toolkit normally first
+        builder.WithToolkit<T>(context);
+
+        // Apply per-toolkit options
+        var options = new ToolkitOptions();
+        configure(options);
+
+        if (options.ScopedMiddlewares.Count > 0)
+        {
+            var toolkitName = typeof(T).Name;
+            if (!builder._toolkitScopedMiddlewares.TryGetValue(toolkitName, out var list))
+            {
+                list = new List<Middleware.IAgentMiddleware>();
+                builder._toolkitScopedMiddlewares[toolkitName] = list;
+            }
+            list.AddRange(options.ScopedMiddlewares);
+        }
 
         return builder;
     }

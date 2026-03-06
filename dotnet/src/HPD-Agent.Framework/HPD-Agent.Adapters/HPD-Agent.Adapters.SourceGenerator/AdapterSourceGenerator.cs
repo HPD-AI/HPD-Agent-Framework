@@ -18,7 +18,9 @@ internal sealed record AdapterInfo(
     SignatureInfo? Signature,
     StreamingInfo? Streaming,
     IReadOnlyList<HandlerInfo> Handlers,
-    bool HasPermissionHandler);
+    bool HasPermissionHandler,
+    string? SocketTransportTypeFqn,   // null if no [HpdSocketTransport]
+    string? SocketConfigProperty);    // e.g. "AppToken"
 
 internal sealed record SignatureInfo(
     string Format,
@@ -44,12 +46,14 @@ internal sealed record WebhookPayloadInfo(
 [Generator]
 public sealed class AdapterSourceGenerator : IIncrementalGenerator
 {
-    private const string HpdAdapterAttribute         = "HPD.Agent.Adapters.HpdAdapterAttribute";
-    private const string HpdWebhookHandlerAttribute  = "HPD.Agent.Adapters.HpdWebhookHandlerAttribute";
-    private const string HpdWebhookSignatureAttribute= "HPD.Agent.Adapters.HpdWebhookSignatureAttribute";
-    private const string HpdStreamingAttribute       = "HPD.Agent.Adapters.HpdStreamingAttribute";
+    private const string HpdAdapterAttribute           = "HPD.Agent.Adapters.HpdAdapterAttribute";
+    private const string HpdWebhookHandlerAttribute    = "HPD.Agent.Adapters.HpdWebhookHandlerAttribute";
+    private const string HpdWebhookSignatureAttribute  = "HPD.Agent.Adapters.HpdWebhookSignatureAttribute";
+    private const string HpdStreamingAttribute         = "HPD.Agent.Adapters.HpdStreamingAttribute";
     private const string HpdPermissionHandlerAttribute = "HPD.Agent.Adapters.HpdPermissionHandlerAttribute";
-    private const string WebhookPayloadAttribute     = "HPD.Agent.Adapters.WebhookPayloadAttribute";
+    private const string WebhookPayloadAttribute       = "HPD.Agent.Adapters.WebhookPayloadAttribute";
+    private const string HpdSocketTransportAttribute   = "HPD.Agent.Adapters.HpdSocketTransportAttribute";
+    private const string AdapterWebSocketServiceFqn    = "HPD.Agent.Adapters.AdapterWebSocketService";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -241,13 +245,49 @@ public sealed class AdapterSourceGenerator : IIncrementalGenerator
                 symbol.Name));
         }
 
+        // Read [HpdSocketTransport] — HPDA008: service type must extend AdapterWebSocketService
+        string? socketTransportTypeFqn = null;
+        string? socketConfigProperty   = null;
+        var socketAttr = symbol.GetAttributes()
+            .FirstOrDefault(a => a.AttributeClass?.ToDisplayString() == HpdSocketTransportAttribute);
+        if (socketAttr is not null)
+        {
+            var serviceTypeArg = socketAttr.ConstructorArguments.FirstOrDefault().Value as INamedTypeSymbol;
+            if (serviceTypeArg is not null)
+            {
+                // Validate the type extends AdapterWebSocketService
+                var isValid = false;
+                var current = serviceTypeArg.BaseType;
+                while (current is not null)
+                {
+                    if (current.ToDisplayString() == AdapterWebSocketServiceFqn) { isValid = true; break; }
+                    current = current.BaseType;
+                }
+                if (!isValid)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        AdapterDiagnostics.SocketTransportInvalidType,
+                        node.GetLocation(),
+                        serviceTypeArg.Name));
+                }
+                else
+                {
+                    socketTransportTypeFqn = serviceTypeArg.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    socketConfigProperty   = socketAttr.NamedArguments
+                        .FirstOrDefault(n => n.Key == "ConfigProperty").Value.Value as string ?? "";
+                }
+            }
+        }
+
         return new AdapterInfo(
-            Name:                adapterName,
-            ClassName:           symbol.Name,
-            Namespace:           symbol.ContainingNamespace.ToDisplayString(),
-            Signature:           signature,
-            Streaming:           streaming,
-            Handlers:            handlers,
-            HasPermissionHandler: permissionHandlers >= 1);
+            Name:                   adapterName,
+            ClassName:              symbol.Name,
+            Namespace:              symbol.ContainingNamespace.ToDisplayString(),
+            Signature:              signature,
+            Streaming:              streaming,
+            Handlers:               handlers,
+            HasPermissionHandler:   permissionHandlers >= 1,
+            SocketTransportTypeFqn: socketTransportTypeFqn,
+            SocketConfigProperty:   socketConfigProperty);
     }
 }

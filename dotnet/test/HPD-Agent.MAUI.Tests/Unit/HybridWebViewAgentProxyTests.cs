@@ -365,7 +365,7 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Assert
         sessions.Should().NotBeNull();
-        sessions!.Count.Should().BeGreaterOrEqualTo(2);
+        sessions!.Count.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
@@ -411,7 +411,7 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Assert
         sessions.Should().NotBeNull();
-        sessions!.Count.Should().BeLessOrEqualTo(2);
+        sessions!.Count.Should().BeLessThanOrEqualTo(2);
     }
 
     [Fact]
@@ -551,7 +551,7 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Assert
         branch.Should().NotBeNull();
-        branch!.MessageCount.Should().BeGreaterOrEqualTo(0);
+        branch!.MessageCount.Should().BeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
@@ -1437,7 +1437,7 @@ public class HybridWebViewAgentProxyTests : IDisposable
 
         // Assert
         sessions.Should().NotBeNull();
-        sessions!.Count.Should().BeLessOrEqualTo(1000);
+        sessions!.Count.Should().BeLessThanOrEqualTo(1000);
     }
 
     [Fact]
@@ -1825,8 +1825,8 @@ public class HybridWebViewAgentProxyTests : IDisposable
         var page2 = System.Text.Json.JsonSerializer.Deserialize<List<SessionDto>>(page2Json);
 
         // Verify pagination works
-        page1!.Count.Should().BeLessOrEqualTo(3);
-        page2!.Count.Should().BeLessOrEqualTo(3);
+        page1!.Count.Should().BeLessThanOrEqualTo(3);
+        page2!.Count.Should().BeLessThanOrEqualTo(3);
         page1.Select(s => s.Id).Should().NotIntersectWith(page2.Select(s => s.Id));
     }
 

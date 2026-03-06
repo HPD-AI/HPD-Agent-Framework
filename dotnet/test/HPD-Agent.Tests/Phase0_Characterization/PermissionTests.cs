@@ -232,7 +232,7 @@ public class PermissionTests : AgentTestBase
 
         // Tool results should reflect approval/denial
         var toolResults = capturedEvents.OfType<ToolCallResultEvent>().ToList();
-        toolResults.Should().HaveCountGreaterOrEqualTo(1, "at least approved tool should have result");
+        toolResults.Should().HaveCountGreaterThanOrEqualTo(1, "at least approved tool should have result");
     }
 
     /// <summary>

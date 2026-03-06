@@ -29,7 +29,8 @@ public class SlackAdapterRegistrationTests
     /// </summary>
     private static ServiceProvider BuildProvider(
         Action<IServiceCollection>? extra = null,
-        bool registerDefaultSecretResolver = true)
+        bool registerDefaultSecretResolver = true,
+        Action<SlackAdapterConfig>? overrideConfig = null)
     {
         var services = new ServiceCollection();
 
@@ -56,11 +57,11 @@ public class SlackAdapterRegistrationTests
         extra?.Invoke(services);
 
         services.AddSlackAdapter(
-            c =>
+            overrideConfig ?? (c =>
             {
                 c.SigningSecret = "test-signing-secret";
                 c.BotToken      = "xoxb-test-token";
-            },
+            }),
             registerDefaultSecretResolver);
 
         return services.BuildServiceProvider();
@@ -152,5 +153,89 @@ public class SlackAdapterRegistrationTests
             .AddSlackAdapter(null!, registerDefaultSecretResolver: false);
 
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    // ── AppToken: defaults to null ────────────────────────────────────────────
+
+    [Fact]
+    public void AddSlackAdapter_AppTokenDefaultsToNull()
+    {
+        using var sp = BuildProvider();
+        var opts = sp.GetRequiredService<IOptions<SlackAdapterConfig>>().Value;
+
+        opts.AppToken.Should().BeNull();
+    }
+
+    // ── Socket mode: AppToken present → SlackSocketModeService registered ─────
+
+    [Fact]
+    public void AddSlackAdapter_WithAppToken_RegistersSocketModeServiceAsHostedService()
+    {
+        using var sp = BuildProvider(extra: services =>
+        {
+            // Pre-register SessionManager and AgentManager before AddSlackAdapter
+            // (BuildProvider already does this, but AddSlackAdapter is called inside it)
+        }, overrideConfig: c =>
+        {
+            c.SigningSecret = "test-signing-secret";
+            c.BotToken      = "xoxb-test-token";
+            c.AppToken      = "xapp-test-app-token";
+        });
+
+        var hostedServices = sp.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
+        hostedServices.Should().ContainItemsAssignableTo<HPD.Agent.Adapters.Slack.SocketMode.SlackSocketModeService>(
+            "SlackSocketModeService must be registered as IHostedService when AppToken is set");
+    }
+
+    [Fact]
+    public void AddSlackAdapter_WithoutAppToken_DoesNotRegisterSocketModeService()
+    {
+        using var sp = BuildProvider(); // no AppToken
+
+        var hostedServices = sp.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
+        hostedServices.Should().NotContainItemsAssignableTo<HPD.Agent.Adapters.Slack.SocketMode.SlackSocketModeService>(
+            "SlackSocketModeService must NOT be registered when AppToken is null");
+    }
+
+    [Fact]
+    public void AddSlackAdapter_WithAppToken_RegistersSlackSocketModeClient()
+    {
+        using var sp = BuildProvider(overrideConfig: c =>
+        {
+            c.SigningSecret = "test-signing-secret";
+            c.BotToken      = "xoxb-test-token";
+            c.AppToken      = "xapp-test-app-token";
+        });
+
+        sp.GetService<HPD.Agent.Adapters.Slack.SocketMode.SlackSocketModeClient>()
+            .Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddSlackAdapter_WithAppToken_ConfigureInvokedOnce()
+    {
+        // configure is called once upfront (for the AppToken check) and once more
+        // at options resolution time (by services.Configure<T>). The key constraint is
+        // that it is NOT called twice at registration time.
+        // We count calls at registration time only (before BuildServiceProvider).
+        var registrationTimeCalls = 0;
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
+        services.AddHttpClient();
+        services.AddSingleton<SessionManager>(new TestSessionManager(new InMemorySessionStore()));
+        services.AddSingleton<AgentManager>(new TestAgentManager(new InMemoryAgentStore()));
+
+        services.AddSlackAdapter(c =>
+        {
+            registrationTimeCalls++;
+            c.SigningSecret = "s";
+            c.BotToken      = "t";
+            c.AppToken      = "xapp-x";
+        });
+
+        // configure is called exactly once during AddSlackAdapter (upfront capture)
+        registrationTimeCalls.Should().Be(1,
+            "configure must be called exactly once at registration time for the AppToken check");
     }
 }

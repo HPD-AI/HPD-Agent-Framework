@@ -61,6 +61,12 @@ public class LoggingMiddlewareOptions
     public int MaxStringLength { get; set; } = 1000;
 
     /// <summary>
+    /// Log toolkit expansion and collapse events (when a [Collapse] toolkit is called by the LLM).
+    /// Includes: toolkit name, functions being expanded into scope, timing.
+    /// </summary>
+    public bool LogToolkitExpansion { get; set; } = true;
+
+    /// <summary>
     /// Prefix for all log messages.
     /// </summary>
     public string LogPrefix { get; set; } = "[HPD-Agent]";
@@ -315,7 +321,7 @@ public class LoggingMiddleware : IAgentMiddleware
     /// <inheritdoc/>
     public Task BeforeFunctionAsync(BeforeFunctionContext context, CancellationToken cancellationToken)
     {
-        if (!_options.LogFunction) return Task.CompletedTask;
+        if (!_options.LogFunction && !_options.LogToolkitExpansion) return Task.CompletedTask;
 
         var functionName = context.Function?.Name ?? "<unknown>";
         var callId = context.FunctionCallId ?? Guid.NewGuid().ToString();
@@ -329,14 +335,40 @@ public class LoggingMiddleware : IAgentMiddleware
 
         var sb = new StringBuilder();
         sb.AppendLine("─────────────────────────────────────────────────────────────────────────────────────────────────");
-        sb.Append($"{_options.LogPrefix}[PRE] {functionName}");
 
-        if (_options.IncludeArguments)
+        // Detect toolkit expansion (collapsed toolkit being called by the LLM)
+        var props = context.Function?.AdditionalProperties;
+        var isContainer = props?.TryGetValue("IsContainer", out var icVal) == true && icVal is true;
+        var isCollapse = props?.TryGetValue("IsCollapse", out var colVal) == true && colVal is true;
+
+        if (isContainer && isCollapse && _options.LogToolkitExpansion)
         {
-            var args = FormatArgs(context.Arguments);
-            sb.Append($" | Args: {TruncateString(args)}");
+            var toolkitName = props?.TryGetValue("ToolkitName", out var tnVal) == true && tnVal is string tn ? tn : functionName;
+            sb.AppendLine($"{_options.LogPrefix}[TOOLKIT EXPAND] {toolkitName}");
+
+            // List child functions being expanded into scope
+            if (props?.TryGetValue("FunctionNames", out var fnVal) == true && fnVal is System.Collections.Generic.IEnumerable<string> fnNames)
+            {
+                sb.AppendLine($"  Expanding functions:");
+                foreach (var fn in fnNames)
+                    sb.AppendLine($"    + {fn}");
+            }
         }
-        sb.AppendLine();
+        else if (_options.LogFunction)
+        {
+            sb.Append($"{_options.LogPrefix}[PRE] {functionName}");
+
+            if (_options.IncludeArguments)
+            {
+                var args = FormatArgs(context.Arguments);
+                sb.Append($" | Args: {TruncateString(args)}");
+            }
+            sb.AppendLine();
+        }
+        else
+        {
+            return Task.CompletedTask;
+        }
 
         LogMessage(sb.ToString());
         return Task.CompletedTask;
@@ -345,7 +377,7 @@ public class LoggingMiddleware : IAgentMiddleware
     /// <inheritdoc/>
     public Task AfterFunctionAsync(AfterFunctionContext context, CancellationToken cancellationToken)
     {
-        if (!_options.LogFunction) return Task.CompletedTask;
+        if (!_options.LogFunction && !_options.LogToolkitExpansion) return Task.CompletedTask;
 
         var functionName = context.Function?.Name ?? "<unknown>";
         var callId = context.FunctionCallId ?? "";
@@ -361,27 +393,56 @@ public class LoggingMiddleware : IAgentMiddleware
 
         var sb = new StringBuilder();
 
-        if (exception != null)
+        var props = context.Function?.AdditionalProperties;
+        var isContainer = props?.TryGetValue("IsContainer", out var icVal) == true && icVal is true;
+        var isCollapse = props?.TryGetValue("IsCollapse", out var colVal) == true && colVal is true;
+
+        if (isContainer && isCollapse && _options.LogToolkitExpansion)
+        {
+            var toolkitName = props?.TryGetValue("ToolkitName", out var tnVal) == true && tnVal is string tn ? tn : functionName;
+            if (exception != null)
+            {
+                sb.Append($"{_options.LogPrefix}[TOOLKIT EXPAND FAILED] {toolkitName}");
+                if (_options.IncludeTiming) sb.Append($" ({elapsedMs}ms)");
+                sb.Append($" | Error: {exception.Message}");
+            }
+            else
+            {
+                sb.Append($"{_options.LogPrefix}[TOOLKIT COLLAPSE] {toolkitName}");
+                if (_options.IncludeTiming) sb.Append($" ({elapsedMs}ms)");
+
+                // Show which toolkit-scoped middlewares are active for this toolkit
+                var containerState = context.GetMiddlewareState<ContainerMiddlewareState>();
+                if (containerState != null
+                    && containerState.ToolkitPipelines.TryGetValue(toolkitName, out var pipeline)
+                    && !pipeline.IsEmpty)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine($"  Active scoped middleware ({pipeline.Count}):");
+                    foreach (var mw in pipeline.Middlewares)
+                        sb.Append($"    • {mw.GetType().Name}");
+                }
+            }
+        }
+        else if (_options.LogFunction && exception != null)
         {
             sb.Append($"{_options.LogPrefix}[POST] {functionName} FAILED");
-            if (_options.IncludeTiming)
-            {
-                sb.Append($" ({elapsedMs}ms)");
-            }
+            if (_options.IncludeTiming) sb.Append($" ({elapsedMs}ms)");
             sb.Append($" | Error: {exception.Message}");
         }
-        else
+        else if (_options.LogFunction)
         {
             sb.Append($"{_options.LogPrefix}[POST] {functionName} OK");
-            if (_options.IncludeTiming)
-            {
-                sb.Append($" ({elapsedMs}ms)");
-            }
+            if (_options.IncludeTiming) sb.Append($" ({elapsedMs}ms)");
             if (_options.IncludeResults)
             {
                 var result = FormatResult(context.Result);
                 sb.Append($" | Result: {TruncateString(result)}");
             }
+        }
+        else
+        {
+            return Task.CompletedTask;
         }
         sb.AppendLine();
         sb.AppendLine("─────────────────────────────────────────────────────────────────────────────────────────────────");

@@ -248,7 +248,7 @@ public class SkillInstructionMiddlewareTests
         var emptyToolkits = ImmutableHashSet<string>.Empty;
         var config = new CollapsingConfig { Enabled = true };
 
-        return new ContainerMiddleware(tools, emptyToolkits, config);
+        return new ContainerMiddleware(tools, emptyToolkits, null, null, null, config);
     }
 
     private static BeforeIterationContext CreateContext(ImmutableDictionary<string, ContainerInstructionSet> activeContainers)

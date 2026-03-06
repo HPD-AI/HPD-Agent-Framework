@@ -973,6 +973,7 @@ public sealed class Agent
                     // Only need to capture Options which may have been replaced
                     var CollapsedOptions = beforeIterationContext.Options;
 
+
                     // Helper for toolkit name lookup in events
                     // Try collapsed tools first, then fall back to original (pre-collapse) tools
                     string? LookupToolkit(string? functionName)
@@ -1449,10 +1450,13 @@ public sealed class Agent
                         // Add to shared message list - visible to all contexts immediately
                         sharedMessages.Add(assistantMessage);
 
-                        // Use messageCountToSend (actual messages sent to server)
-                        if (_agentTurn.LastResponseConversationId != null)
+                        // Only enable history tracking for real server-managed conversations (conv_... prefix).
+                        // Responses API returns the response ID (resp_...) as ConversationId for one-shot calls —
+                        // those do NOT support the stateful delta pattern; always send full history for them.
+                        var lastConvId = _agentTurn.LastResponseConversationId;
+                        if (lastConvId != null && lastConvId.StartsWith("conv_", StringComparison.OrdinalIgnoreCase))
                         {
-                            state = state.EnableHistoryTracking(messageCountToSend);
+                            state = state.EnableHistoryTracking(messageCountToSend, lastConvId);
                         }
 
                         // Create assistant message for history
@@ -1723,12 +1727,15 @@ public sealed class Agent
                         // Clear responseUpdates after constructing final response
                         responseUpdates.Clear();
 
-                        // Update history tracking if we have ConversationId
-                        if (_agentTurn.LastResponseConversationId != null)
+                        // Update history tracking if we have a real server-managed conversation ID (conv_...).
+                        // Responses API returns resp_... as ConversationId — that is a one-shot response ID,
+                        // not a server-side conversation; do not enable delta mode for those.
+                        var lastRespConvId = _agentTurn.LastResponseConversationId;
+                        if (lastRespConvId != null && lastRespConvId.StartsWith("conv_", StringComparison.OrdinalIgnoreCase))
                         {
                             // For non-tool responses, use messageCountToSend (actual messages sent)
                             // NOT state.CurrentMessages.Count (which may be unreduced full history)
-                            state = state.EnableHistoryTracking(messageCountToSend);
+                            state = state.EnableHistoryTracking(messageCountToSend, lastRespConvId);
                         }
 
                         state = state.Terminate("Completed successfully");
@@ -4623,6 +4630,13 @@ public sealed record AgentLoopState
     /// </summary>
     public required int MessagesSentToInnerClient { get; init; }
 
+    /// <summary>
+    /// The last response ID returned by the provider (e.g. Responses API "resp_..." ID).
+    /// Passed back as previous_response_id on delta iterations so the provider can link
+    /// the new input to its server-side history.
+    /// </summary>
+    public string? LastProviderResponseId { get; init; }
+
     //      
     // STREAMING STATE
     //      
@@ -4813,12 +4827,20 @@ public sealed record AgentLoopState
     /// Significant token savings for multi-turn conversations.
     /// </summary>
     /// <param name="messageCount">Number of messages sent to server</param>
-    public AgentLoopState EnableHistoryTracking(int messageCount) =>
+    /// <param name="responseId">The provider response ID to pass as previous_response_id on the next call</param>
+    public AgentLoopState EnableHistoryTracking(int messageCount, string? responseId = null) =>
         this with
         {
             InnerClientTracksHistory = true,
-            MessagesSentToInnerClient = messageCount
+            MessagesSentToInnerClient = messageCount,
+            LastProviderResponseId = responseId
         };
+
+    /// <summary>
+    /// Updates the last provider response ID (for delta continuation after tool calls).
+    /// </summary>
+    public AgentLoopState WithLastProviderResponseId(string responseId) =>
+        this with { LastProviderResponseId = responseId };
 
     /// <summary>
     /// Disables server-side history tracking (fall back to sending full history).
@@ -5790,8 +5812,7 @@ internal class FunctionCallProcessor
                 // Emit error event
                 functionAgentContext.Emit(new MiddlewareErrorEvent(
                     "FunctionExecution",
-                    $"Error executing function '{functionCall.Name}': {ex.Message}",
-                    ex));
+                    $"Error executing function '{functionCall.Name}': {ex.Message}") { Exception = ex });
 
                 // Notify error tracking middleware (V2 error hooks)
                 var errorContext = functionAgentContext.AsError(
@@ -5835,8 +5856,7 @@ internal class FunctionCallProcessor
                 // Log AfterFunction errors but don't fail the function execution
                 functionAgentContext.Emit(new MiddlewareErrorEvent(
                     "AfterFunctionMiddleware",
-                    $"Error in AfterFunction middleware: {afterEx.Message}",
-                    afterEx));
+                    $"Error in AfterFunction middleware: {afterEx.Message}") { Exception = afterEx });
             }
 
             // Note: Function completion tracking is handled by caller using state updates

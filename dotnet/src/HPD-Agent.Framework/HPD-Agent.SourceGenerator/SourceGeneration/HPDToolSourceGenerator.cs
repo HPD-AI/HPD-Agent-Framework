@@ -164,6 +164,16 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
             .Select(c => c.ContextTypeName)
             .FirstOrDefault();
 
+        // Toolkit-scoped middleware (015): extract [Collapse(Middlewares = [...])] type names
+        List<string>? collapseMiddlewareTypeNames = null;
+        List<CollapseMiddlewareConfigEntry>? collapseMiddlewareConfigTypeNames = null;
+        if (isCollapsed)
+        {
+            var middlewareResult = GetCollapseMiddlewareTypeNames(classDecl, semanticModel, diagnostics);
+            collapseMiddlewareTypeNames = middlewareResult.Parameterless;
+            collapseMiddlewareConfigTypeNames = middlewareResult.ConfigConstructor;
+        }
+
         return new ToolkitInfo
         {
             // ClassName is always the class identifier
@@ -192,7 +202,11 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
             // NEW: Config serialization fields
             FunctionNames = functionNames,
             ConfigConstructorTypeName = configConstructorTypeName,
-            MetadataTypeName = metadataTypeName
+            MetadataTypeName = metadataTypeName,
+
+            // Toolkit-scoped middleware (015)
+            CollapseMiddlewareTypeNames = collapseMiddlewareTypeNames,
+            CollapseMiddlewareConfigTypeNames = collapseMiddlewareConfigTypeNames
         };
     }
 
@@ -400,7 +414,10 @@ public class HPDToolSourceGenerator : IIncrementalGenerator
                     // NEW: Config serialization fields
                     FunctionNames = allFunctionNames,
                     ConfigConstructorTypeName = configConstructorTypeName,
-                    MetadataTypeName = metadataTypeName
+                    MetadataTypeName = metadataTypeName,
+                    // Toolkit-scoped middleware (015): merge from any partial part that has them
+                    CollapseMiddlewareTypeNames = group.FirstOrDefault(p => p?.CollapseMiddlewareTypeNames != null)?.CollapseMiddlewareTypeNames,
+                    CollapseMiddlewareConfigTypeNames = group.FirstOrDefault(p => p?.CollapseMiddlewareConfigTypeNames != null)?.CollapseMiddlewareConfigTypeNames
                 };
             })
             .ToList();
@@ -666,11 +683,47 @@ namespace HPD.Agent.Diagnostics {{
                 s.Options.DocumentUploads.Any() || s.Options.DocumentReferences.Any());
             if (hasSkillDocs)
             {
-                sb.AppendLine($"                InitializeDocumentsAsync: {Toolkit.Name}Registration.InitializeDocumentsAsync");
+                sb.AppendLine($"                InitializeDocumentsAsync: {Toolkit.Name}Registration.InitializeDocumentsAsync,");
             }
             else
             {
-                sb.AppendLine($"                InitializeDocumentsAsync: null");
+                sb.AppendLine($"                InitializeDocumentsAsync: null,");
+            }
+
+            // Toolkit-scoped middleware (015): emit CollapseMiddlewareFactories (parameterless ctors)
+            sb.AppendLine($"                // ========== TOOLKIT-SCOPED MIDDLEWARE (015) ==========");
+            if (Toolkit.CollapseMiddlewareTypeNames != null && Toolkit.CollapseMiddlewareTypeNames.Count > 0)
+            {
+                sb.AppendLine($"                CollapseMiddlewareFactories: new global::System.Func<global::HPD.Agent.Middleware.IAgentMiddleware>[]");
+                sb.AppendLine($"                {{");
+                foreach (var typeName in Toolkit.CollapseMiddlewareTypeNames)
+                {
+                    sb.AppendLine($"                    static () => new {typeName}(),");
+                }
+                sb.AppendLine($"                }},");
+            }
+            else
+            {
+                sb.AppendLine($"                CollapseMiddlewareFactories: null,");
+            }
+
+            // Toolkit-scoped middleware (015 §5A): emit CollapseMiddlewareConfigFactories (config-ctor middlewares)
+            if (Toolkit.CollapseMiddlewareConfigTypeNames != null && Toolkit.CollapseMiddlewareConfigTypeNames.Count > 0)
+            {
+                sb.AppendLine($"                CollapseMiddlewareConfigFactories: new global::HPD.Agent.CollapseMiddlewareConfigFactory[]");
+                sb.AppendLine($"                {{");
+                foreach (var entry in Toolkit.CollapseMiddlewareConfigTypeNames)
+                {
+                    sb.AppendLine($"                    new global::HPD.Agent.CollapseMiddlewareConfigFactory(");
+                    sb.AppendLine($"                        MiddlewareTypeName: \"{entry.SimpleName}\",");
+                    sb.AppendLine($"                        Factory: static json => new {entry.FullyQualifiedTypeName}(");
+                    sb.AppendLine($"                            global::System.Text.Json.JsonSerializer.Deserialize<{entry.ConfigTypeFqn}>(json.GetRawText())!)),");
+                }
+                sb.AppendLine($"                }}");
+            }
+            else
+            {
+                sb.AppendLine($"                CollapseMiddlewareConfigFactories: null");
             }
 
             sb.AppendLine($"            ),");
@@ -1894,6 +1947,190 @@ $@"    /// <summary>
         }
 
         return (false, null, null, null, true, null, null, true, new List<Diagnostic>(), null);
+    }
+
+    /// <summary>
+    /// Extracts middleware type info from <c>[Collapse(Middlewares = [typeof(T1), typeof(T2)])]</c>.
+    /// Splits results into two buckets:
+    /// <list type="bullet">
+    /// <item><c>Parameterless</c> — types with a public parameterless constructor → <c>CollapseMiddlewareFactories</c></item>
+    /// <item><c>ConfigConstructor</c> — types with a single config-parameter constructor → <c>CollapseMiddlewareConfigFactories</c> (§5A)</item>
+    /// </list>
+    /// Emits diagnostics for types that do not implement IAgentMiddleware or have neither constructor form.
+    /// Returns null fields (not empty lists) when no types of a given kind are found.
+    /// </summary>
+    private static (List<string>? Parameterless, List<CollapseMiddlewareConfigEntry>? ConfigConstructor)
+        GetCollapseMiddlewareTypeNames(
+            ClassDeclarationSyntax classDecl,
+            SemanticModel semanticModel,
+            List<Diagnostic> diagnostics)
+    {
+        var allAttributes = classDecl.AttributeLists
+            .SelectMany(attrList => attrList.Attributes);
+
+        var attr = allAttributes.FirstOrDefault(a =>
+            a.Name.ToString() == "Collapse" || a.Name.ToString() == "CollapseAttribute");
+
+        if (attr?.ArgumentList == null)
+            return (null, null);
+
+        AttributeArgumentSyntax? middlewaresArg = null;
+        foreach (var arg in attr.ArgumentList.Arguments)
+        {
+            var name = arg.NameEquals?.Name.Identifier.ValueText;
+            if (name == "Middlewares")
+            {
+                middlewaresArg = arg;
+                break;
+            }
+        }
+
+        if (middlewaresArg == null)
+            return (null, null);
+
+        // Expression should be an array initializer: [typeof(T1), typeof(T2)]
+        // Represented as CollectionExpressionSyntax (C# 12) or ArrayCreationExpression / ImplicitArrayCreation
+        var parameterlessNames = new List<string>();
+        var configEntries = new List<CollapseMiddlewareConfigEntry>();
+        var location = classDecl.GetLocation();
+
+        System.Collections.Generic.IEnumerable<ExpressionSyntax>? elements = null;
+
+        if (middlewaresArg.Expression is CollectionExpressionSyntax collExpr)
+        {
+            elements = collExpr.Elements.OfType<ExpressionElementSyntax>().Select(e => e.Expression);
+        }
+        else if (middlewaresArg.Expression is ImplicitArrayCreationExpressionSyntax implicitArray)
+        {
+            elements = implicitArray.Initializer.Expressions;
+        }
+        else if (middlewaresArg.Expression is ArrayCreationExpressionSyntax arrayExpr
+                 && arrayExpr.Initializer != null)
+        {
+            elements = arrayExpr.Initializer.Expressions;
+        }
+
+        if (elements == null)
+            return (null, null);
+
+        foreach (var elem in elements)
+        {
+            // Each element should be typeof(SomeMiddlewareType)
+            if (elem is not TypeOfExpressionSyntax typeofExpr)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "HPDAG0201",
+                        "Invalid Middlewares element",
+                        "Toolkit '{0}': Middlewares array must contain only typeof() expressions.",
+                        "HPDAgent.SourceGenerator",
+                        DiagnosticSeverity.Error,
+                        isEnabledByDefault: true),
+                    location,
+                    classDecl.Identifier.ValueText));
+                continue;
+            }
+
+            var typeInfo = semanticModel.GetTypeInfo(typeofExpr.Type);
+            if (typeInfo.Type == null)
+            {
+                // Type could not be resolved — skip silently (will be a compile error anyway)
+                continue;
+            }
+
+            var fqn = typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            // Check for IAgentMiddleware implementation
+            bool implementsMiddleware = typeInfo.Type.AllInterfaces.Any(i =>
+                i.Name == "IAgentMiddleware" || i.ToDisplayString().EndsWith(".IAgentMiddleware"));
+
+            if (!implementsMiddleware)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "HPDAG0202",
+                        "Middleware type does not implement IAgentMiddleware",
+                        "Toolkit '{0}': Type '{1}' in Middlewares does not implement IAgentMiddleware.",
+                        "HPDAgent.SourceGenerator",
+                        DiagnosticSeverity.Error,
+                        isEnabledByDefault: true),
+                    location,
+                    classDecl.Identifier.ValueText,
+                    typeInfo.Type.Name));
+                continue;
+            }
+
+            // Warn if not marked with IToolkitMiddleware
+            bool implementsToolkitMarker = typeInfo.Type.AllInterfaces.Any(i =>
+                i.Name == "IToolkitMiddleware" || i.ToDisplayString().EndsWith(".IToolkitMiddleware"));
+
+            if (!implementsToolkitMarker)
+            {
+                diagnostics.Add(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "HPDAG0203",
+                        "Middleware type does not implement IToolkitMiddleware",
+                        "Toolkit '{0}': Type '{1}' is registered as scoped middleware but does not implement IToolkitMiddleware. " +
+                        "Implement IToolkitMiddleware to signal toolkit-scoped intent. This is a warning only.",
+                        "HPDAgent.SourceGenerator",
+                        DiagnosticSeverity.Warning,
+                        isEnabledByDefault: true),
+                    location,
+                    classDecl.Identifier.ValueText,
+                    typeInfo.Type.Name));
+                // Still include — marker is optional
+            }
+
+            if (typeInfo.Type is not INamedTypeSymbol namedType)
+                continue;
+
+            // §parameterless path: public parameterless constructor or value type
+            bool hasParameterlessCtor =
+                namedType.InstanceConstructors.Any(c => c.Parameters.IsEmpty && c.DeclaredAccessibility == Accessibility.Public)
+                || namedType.IsValueType;
+
+            if (hasParameterlessCtor)
+            {
+                parameterlessNames.Add(fqn);
+                continue;
+            }
+
+            // §5A path: single public constructor whose sole parameter type name ends with "Config"
+            var singleConfigCtor = namedType.InstanceConstructors.FirstOrDefault(c =>
+                c.DeclaredAccessibility == Accessibility.Public
+                && c.Parameters.Length == 1
+                && (c.Parameters[0].Type.Name.EndsWith("Config") || c.Parameters[0].Type.Name.EndsWith("Options")));
+
+            if (singleConfigCtor != null)
+            {
+                var configTypeFqn = singleConfigCtor.Parameters[0].Type
+                    .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                configEntries.Add(new CollapseMiddlewareConfigEntry(
+                    SimpleName: namedType.Name,
+                    FullyQualifiedTypeName: fqn,
+                    ConfigTypeFqn: configTypeFqn));
+                continue;
+            }
+
+            // Neither form found — error, recommend DI path
+            diagnostics.Add(Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "HPDAG0204",
+                    "Scoped middleware requires a parameterless or single-config-parameter constructor",
+                    "Toolkit '{0}': Type '{1}' has no public parameterless constructor and no single-Config/Options-parameter constructor. " +
+                    "Use WithToolkit<T>(opts => opts.AddScopedMiddleware(...)) to supply instances requiring DI.",
+                    "HPDAgent.SourceGenerator",
+                    DiagnosticSeverity.Error,
+                    isEnabledByDefault: true),
+                location,
+                classDecl.Identifier.ValueText,
+                typeInfo.Type.Name));
+        }
+
+        return (
+            parameterlessNames.Count > 0 ? parameterlessNames : null,
+            configEntries.Count > 0 ? configEntries : null
+        );
     }
 
     /// <summary>

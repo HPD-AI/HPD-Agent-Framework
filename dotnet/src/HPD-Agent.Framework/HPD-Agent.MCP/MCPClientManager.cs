@@ -11,7 +11,7 @@ namespace HPD.Agent.MCP;
 /// </summary>
 public class MCPClientManager : IDisposable
 {
-    private readonly Dictionary<string, IMcpClient> _clients = new();
+    private readonly Dictionary<string, McpClient> _clients = new();
     private readonly ILogger _logger;
     private readonly MCPOptions _options;
     private bool _disposed = false;
@@ -289,7 +289,7 @@ public class MCPClientManager : IDisposable
     /// <summary>
     /// Gets or creates an MCP client for the specified server
     /// </summary>
-    private async Task<IMcpClient> GetOrCreateClientAsync(MCPServerConfig serverConfig, CancellationToken cancellationToken)
+    private async Task<McpClient> GetOrCreateClientAsync(MCPServerConfig serverConfig, CancellationToken cancellationToken)
     {
         if (_clients.TryGetValue(serverConfig.Name, out var existingClient))
         {
@@ -311,7 +311,7 @@ public class MCPClientManager : IDisposable
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(serverConfig.TimeoutMs));
         using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
         
-        var client = await McpClientFactory.CreateAsync(transport);
+        var client = await McpClient.CreateAsync(transport);
         _clients[serverConfig.Name] = client;
 
         _logger.LogDebug("Successfully created MCP client for server '{ServerName}'", serverConfig.Name);

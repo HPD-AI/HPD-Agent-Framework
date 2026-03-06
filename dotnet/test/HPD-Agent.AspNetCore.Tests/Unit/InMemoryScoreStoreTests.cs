@@ -104,7 +104,7 @@ public class InMemoryScoreStoreTests
 
         var results = await ByEvaluator("RoundtripEval");
 
-        results.Should().HaveCountGreaterOrEqualTo(1);
+        results.Should().HaveCountGreaterThanOrEqualTo(1);
         var found = results.First(r => r.Id == record.Id);
         found.EvaluatorName.Should().Be("RoundtripEval");
         found.SessionId.Should().Be("rt-s1");
@@ -120,7 +120,7 @@ public class InMemoryScoreStoreTests
 
         var results = await ByEvaluator("FilterEval_Alpha");
 
-        results.Should().HaveCountGreaterOrEqualTo(2);
+        results.Should().HaveCountGreaterThanOrEqualTo(2);
         results.Should().OnlyContain(r => r.EvaluatorName == "FilterEval_Alpha");
     }
 
@@ -176,7 +176,7 @@ public class InMemoryScoreStoreTests
 
         var results = await BySession(sid);
 
-        results.Should().HaveCountGreaterOrEqualTo(2);
+        results.Should().HaveCountGreaterThanOrEqualTo(2);
         results.Should().OnlyContain(r => r.SessionId == sid);
     }
 
@@ -189,7 +189,7 @@ public class InMemoryScoreStoreTests
 
         var results = await BySession(sid, branchId: "main");
 
-        results.Should().HaveCountGreaterOrEqualTo(1);
+        results.Should().HaveCountGreaterThanOrEqualTo(1);
         results.Should().OnlyContain(r => r.BranchId == "main");
     }
 
@@ -213,7 +213,7 @@ public class InMemoryScoreStoreTests
 
         var results = await ToListAsync(_store.GetScoresByVersionAsync("VerEval", "1.0"));
 
-        results.Should().HaveCountGreaterOrEqualTo(1);
+        results.Should().HaveCountGreaterThanOrEqualTo(1);
         results.Should().OnlyContain(r => r.EvaluatorVersion == "1.0");
     }
 
@@ -338,7 +338,7 @@ public class InMemoryScoreStoreTests
         var trend = await _store.GetTrendAsync(name, now.AddHours(-2), now, TimeSpan.FromHours(1));
 
         trend.EvaluatorName.Should().Be(name);
-        trend.Buckets.Should().HaveCountGreaterOrEqualTo(1);
+        trend.Buckets.Should().HaveCountGreaterThanOrEqualTo(1);
         trend.Buckets.Sum(b => b.Count).Should().Be(5);
     }
 

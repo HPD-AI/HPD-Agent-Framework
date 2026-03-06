@@ -135,7 +135,7 @@ public class ConfigTests
             {
                 Type = ConditionType.FieldEquals,
                 Field = "category",
-                Value = "math"
+                Value = JsonSerializer.SerializeToElement("math")
             }
         };
 
@@ -231,8 +231,8 @@ public class ConfigTests
             Type = ConditionType.And,
             Conditions = new List<ConditionConfig>
             {
-                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = "billing" },
-                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = "VIP" }
+                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = JsonSerializer.SerializeToElement("billing") },
+                new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = JsonSerializer.SerializeToElement("VIP") }
             }
         };
 
@@ -273,7 +273,7 @@ public class ConfigTests
         {
             Type = ConditionType.FieldMatchesRegex,
             Field = "intent",
-            Value = "^billing",
+            Value = JsonSerializer.SerializeToElement("^billing"),
             RegexOptions = "IgnoreCase"
         };
 
@@ -304,8 +304,8 @@ public class ConfigTests
                         Type = ConditionType.And,
                         Conditions = new List<ConditionConfig>
                         {
-                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = "billing" },
-                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = "VIP" }
+                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "intent", Value = JsonSerializer.SerializeToElement("billing") },
+                            new ConditionConfig { Type = ConditionType.FieldEquals, Field = "tier", Value = JsonSerializer.SerializeToElement("VIP") }
                         }
                     }
                 }

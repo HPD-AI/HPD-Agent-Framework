@@ -173,6 +173,9 @@ internal static class StreamingEndpoints
 
             if (receiveResult.MessageType == WebSocketMessageType.Close)
             {
+                // Release the lock before echoing the close frame so a subsequent
+                // connection attempt on the same branch is not rejected with 409.
+                sessionManager.ReleaseStreamLock(sid, bid);
                 await webSocket.CloseAsync(
                     WebSocketCloseStatus.NormalClosure,
                     "Client closed connection",

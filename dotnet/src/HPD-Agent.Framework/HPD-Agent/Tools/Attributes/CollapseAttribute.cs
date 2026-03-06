@@ -67,6 +67,23 @@ public sealed class CollapseAttribute : Attribute
     public string? SystemPrompt { get; set; }
 
     /// <summary>
+    /// Middleware types to activate when this container is expanded by the LLM.
+    /// Each type must implement <see cref="HPD.Agent.Middleware.IAgentMiddleware"/> and have a
+    /// parameterless constructor (or a single-parameter config constructor — see proposal §5A).
+    /// Instances are created at expansion time and disposed at turn end (or session end if
+    /// <c>CollapsingConfig.PersistSystemPromptInjections = true</c>).
+    /// For middleware requiring DI, use <c>WithToolkit&lt;T&gt;(opts =&gt; opts.AddScopedMiddleware(...))</c> instead.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// [Collapse("Database operations",
+    ///     Middlewares = [typeof(DbAuditMiddleware), typeof(DbRateLimitMiddleware)])]
+    /// public class DatabaseToolkit { ... }
+    /// </code>
+    /// </example>
+    public Type[]? Middlewares { get; set; }
+
+    /// <summary>
     /// Constructor for collapsible toolkits.
     /// Providing a description enables collapsing (based on CollapsingConfig.Enabled).
     /// </summary>

@@ -8,15 +8,15 @@
 
     <!-- Package metadata -->
     <PackageId>HPD-Agent.MultiAgent</PackageId>
-    <Description>Fluent multi-agent orchestration library built on HPD.Graph. Zero-ceremony agent workflows with unified event streaming.</Description>
+    <Description>Fluent multi-agent orchestration library built on HPD-Graph. Zero-ceremony agent workflows with unified event streaming.</Description>
     <PackageTags>multi-agent;orchestration;workflow;agents;llm;ai;graph</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Core dependencies -->
     <ProjectReference Include="..\HPD-Agent\HPD-Agent.csproj" />
-    <ProjectReference Include="..\..\..\src\HPD.Graph\HPD.Graph.Core\HPD.Graph.Core.csproj" />
-    <ProjectReference Include="..\..\..\src\HPD.Events\HPD.Events.csproj" />
+    <ProjectReference Include="..\..\..\src\shared\HPD-Graph\HPD-Graph.Core\HPD-Graph.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\shared\HPD-Events\HPD-Events.csproj" />
   </ItemGroup>
 
   <ItemGroup>

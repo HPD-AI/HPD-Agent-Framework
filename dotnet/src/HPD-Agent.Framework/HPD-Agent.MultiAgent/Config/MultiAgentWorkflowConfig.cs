@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using HPD.Agent;
 using HPDAgent.Graph.Abstractions;
@@ -230,9 +231,9 @@ public sealed record ConditionConfig
 
     /// <summary>
     /// Value to compare against.
-    /// For FieldContainsAny/FieldContainsAll, this is an array of values.
+    /// For FieldContainsAny/FieldContainsAll, this is a JSON array of values.
     /// </summary>
-    public object? Value { get; init; }
+    public JsonElement? Value { get; init; }
 
     /// <summary>
     /// Sub-conditions for compound types (And, Or, Not).

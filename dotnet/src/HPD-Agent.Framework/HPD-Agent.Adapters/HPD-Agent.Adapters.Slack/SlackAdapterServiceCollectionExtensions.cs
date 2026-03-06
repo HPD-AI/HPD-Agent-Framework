@@ -1,3 +1,4 @@
+using HPD.Agent.Adapters.Slack.SocketMode;
 using HPD.Agent.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +40,7 @@ public static partial class SlackAdapterServiceCollectionExtensions
         services.TryAddSingleton<SlackApiClient>();
         services.TryAddSingleton<SlackFormatConverter>();
         services.TryAddSingleton<SlackUserCache>();
+        services.TryAddSingleton<SlackSocketModeClient>();
 
         return services;
     }

@@ -102,14 +102,4 @@ public class SlackAdapterConfigTests
         config.UseNativeStreaming.Should().BeTrue();
     }
 
-    [Fact]
-    public void Config_RecordWithExpression_CreatesIsolatedCopy()
-    {
-        var original = new SlackAdapterConfig { SigningSecret = "s", BotToken = "t" };
-        var modified = original with { AgentName = "special-agent" };
-
-        original.AgentName.Should().BeNull();
-        modified.AgentName.Should().Be("special-agent");
-        modified.SigningSecret.Should().Be("s");
-    }
 }

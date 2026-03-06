@@ -20,17 +20,17 @@
   <ItemGroup>
     <ProjectReference Include="../../HPD-Agent.Hosting/HPD-Agent.Hosting.csproj" />
     <!-- Source generator is a build-time analyzer, not a runtime reference -->
-    <ProjectReference
-      Include="../HPD-Agent.Adapters.SourceGenerator/HPD-Agent.Adapters.SourceGenerator.csproj"
-      OutputItemType="Analyzer"
-      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../HPD-Agent.Adapters.SourceGenerator/HPD-Agent.Adapters.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
   </ItemGroup>
 
   <!-- Pack source generator as analyzer in NuGet package -->
   <Target Name="IncludeAdapterAnalyzers" BeforeTargets="_GetPackageFiles">
     <ItemGroup>
-      <None Include="..\HPD-Agent.Adapters.SourceGenerator\bin\$(Configuration)\netstandard2.0\HPD-Agent.Adapters.SourceGenerator.dll"
-            Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+      <None Include="..\HPD-Agent.Adapters.SourceGenerator\bin\$(Configuration)\netstandard2.0\HPD-Agent.Adapters.SourceGenerator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     </ItemGroup>
   </Target>
 

@@ -223,7 +223,7 @@ public class ConcurrencyTests : IClassFixture<TestWebApplicationFactory>
         // Verify all keys present
         var updatedSession = await _client.GetFromJsonAsync<SessionDto>($"/sessions/{session!.Id}");
         updatedSession!.Metadata.Should().NotBeNull();
-        updatedSession.Metadata!.Count.Should().BeGreaterOrEqualTo(10);
+        updatedSession.Metadata!.Count.Should().BeGreaterThanOrEqualTo(10);
     }
 
     #endregion

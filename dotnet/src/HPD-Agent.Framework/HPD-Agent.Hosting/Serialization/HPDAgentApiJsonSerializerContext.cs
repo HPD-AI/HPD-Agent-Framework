@@ -52,6 +52,10 @@ namespace HPD.Agent.Hosting.Serialization;
 [JsonSerializable(typeof(StoredAgentDto))]
 [JsonSerializable(typeof(CreateAgentRequest))]
 [JsonSerializable(typeof(UpdateAgentRequest))]
+// ReasoningOptions — used by ChatRunConfigDto
+[JsonSerializable(typeof(HPD.Agent.ReasoningOptions))]
+[JsonSerializable(typeof(HPD.Agent.ReasoningEffort))]
+[JsonSerializable(typeof(HPD.Agent.ReasoningOutput))]
 // Primitive collections used in responses
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(List<string>))]

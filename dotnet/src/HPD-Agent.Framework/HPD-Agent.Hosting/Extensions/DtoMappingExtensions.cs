@@ -159,6 +159,20 @@ public static class DtoMappingExtensions
             if (dto.Chat.PresencePenalty.HasValue)
                 chatOptions.PresencePenalty = dto.Chat.PresencePenalty.Value;
 
+            if (dto.Chat.AdditionalProperties is { Count: > 0 })
+            {
+                chatOptions.AdditionalProperties = new Dictionary<string, object>(dto.Chat.AdditionalProperties.Count);
+                foreach (var (k, v) in dto.Chat.AdditionalProperties)
+                {
+                    chatOptions.AdditionalProperties[k] = v is System.Text.Json.JsonElement je
+                        ? CoerceJsonElement(je)
+                        : v;
+                }
+            }
+
+            if (dto.Chat.Reasoning != null)
+                chatOptions.Reasoning = dto.Chat.Reasoning;
+
             config.Chat = chatOptions;
         }
 
@@ -221,4 +235,14 @@ public static class DtoMappingExtensions
             ResetClientState = request.ResetClientState,
         };
     }
+
+    private static object CoerceJsonElement(System.Text.Json.JsonElement el) => el.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.True    => (object)true,
+        System.Text.Json.JsonValueKind.False   => false,
+        System.Text.Json.JsonValueKind.Number  => el.TryGetInt64(out var i) ? i : (object)el.GetDouble(),
+        System.Text.Json.JsonValueKind.String  => el.GetString() ?? string.Empty,
+        System.Text.Json.JsonValueKind.Null    => null!,
+        _                                      => el.GetRawText(),
+    };
 }

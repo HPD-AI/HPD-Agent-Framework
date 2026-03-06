@@ -291,4 +291,60 @@ public class AttributeTests
         Enum.IsDefined(typeof(StreamingStrategy), StreamingStrategy.BufferAndPost).Should().BeTrue();
         Enum.IsDefined(typeof(StreamingStrategy), StreamingStrategy.Native).Should().BeTrue();
     }
+
+    // ── HpdSocketTransportAttribute ───────────────────────────────────
+
+    private sealed class FakeSocketService : AdapterWebSocketService
+    {
+        public FakeSocketService() : base(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance) { }
+        protected override Task<Uri> GetConnectionUriAsync(CancellationToken ct) => throw new NotImplementedException();
+        protected override Task RunSessionAsync(System.Net.WebSockets.WebSocket ws, CancellationToken ct) => throw new NotImplementedException();
+    }
+
+    [Fact]
+    public void HpdSocketTransportAttribute_StoresServiceType()
+    {
+        var attr = new HpdSocketTransportAttribute(typeof(FakeSocketService));
+
+        attr.ServiceType.Should().Be(typeof(FakeSocketService));
+    }
+
+    [Fact]
+    public void HpdSocketTransportAttribute_DefaultConfigPropertyIsEmpty()
+    {
+        var attr = new HpdSocketTransportAttribute(typeof(FakeSocketService));
+
+        attr.ConfigProperty.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void HpdSocketTransportAttribute_ConfigPropertyCanBeSet()
+    {
+        var attr = new HpdSocketTransportAttribute(typeof(FakeSocketService))
+        {
+            ConfigProperty = "AppToken",
+        };
+
+        attr.ConfigProperty.Should().Be("AppToken");
+    }
+
+    [Fact]
+    public void HpdSocketTransportAttribute_AllowMultiple_IsFalse()
+    {
+        var usage = (AttributeUsageAttribute)typeof(HpdSocketTransportAttribute)
+            .GetCustomAttributes(typeof(AttributeUsageAttribute), false)
+            .Single();
+
+        usage.AllowMultiple.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HpdSocketTransportAttribute_TargetsClass()
+    {
+        var usage = (AttributeUsageAttribute)typeof(HpdSocketTransportAttribute)
+            .GetCustomAttributes(typeof(AttributeUsageAttribute), false)
+            .Single();
+
+        usage.ValidOn.Should().HaveFlag(AttributeTargets.Class);
+    }
 }

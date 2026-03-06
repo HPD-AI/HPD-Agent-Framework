@@ -175,7 +175,7 @@ public class SpanIdWiringTests : AgentTestBase
         var events = await RunTurnAsync(agent);
 
         var iterStartEvents = events.OfType<AgentTurnStartedEvent>().ToList();
-        iterStartEvents.Should().HaveCountGreaterOrEqualTo(2);
+        iterStartEvents.Should().HaveCountGreaterThanOrEqualTo(2);
 
         var spanIds = iterStartEvents.Select(e => e.SpanId).ToList();
         spanIds.Should().OnlyHaveUniqueItems("each iteration must have a distinct span ID");

@@ -135,19 +135,22 @@ public class SessionManagerStreamLockTests : IDisposable
     public async Task WithSessionLockAsync_VoidOverload_IsExclusive_WithGenericOverload()
     {
         var order = new List<string>();
-        var barrier = new SemaphoreSlim(0, 1);
+        var holdLock = new SemaphoreSlim(0, 1);   // void task waits on this to release the lock
+        var lockAcquired = new SemaphoreSlim(0, 1); // signals that void task has the lock
 
         var voidTask = Task.Run(async () =>
         {
             await _manager.WithSessionLockAsync("session-exclusive", async () =>
             {
                 order.Add("void-start");
-                await barrier.WaitAsync();
+                lockAcquired.Release();   // notify that we hold the lock
+                await holdLock.WaitAsync(); // hold until told to release
                 order.Add("void-end");
             });
         });
 
-        await Task.Delay(50);
+        // Wait until void task actually holds the lock before launching the generic task
+        await lockAcquired.WaitAsync(TimeSpan.FromSeconds(5));
 
         var genericTask = Task.Run(async () =>
         {
@@ -158,10 +161,11 @@ public class SessionManagerStreamLockTests : IDisposable
             });
         });
 
+        // Give the generic task time to reach the lock contention point
         await Task.Delay(50);
         order.Should().NotContain("generic", "generic task should be blocked while void task holds lock");
 
-        barrier.Release();
+        holdLock.Release();
         await Task.WhenAll(voidTask, genericTask);
 
         order.Should().ContainInOrder("void-start", "void-end", "generic");

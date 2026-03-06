@@ -1,0 +1,120 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/HPD-Agent.Audio/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.Audio/HPD-Agent.Audio.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.ElevenLabs/HPD-Agent.AudioProviders.ElevenLabs.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.OpenAI/HPD-Agent.AudioProviders.OpenAI.csproj" />
+  </Folder>
+  <Folder Name="/HPD-Agent.Providers/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Anthropic/HPD-Agent.Providers.Anthropic.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAI/HPD-Agent.Providers.AzureAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.AzureAIInference/HPD-Agent.Providers.AzureAIInference.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Bedrock/HPD-Agent.Providers.Bedrock.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.GoogleAI/HPD-Agent.Providers.GoogleAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.HuggingFace/HPD-Agent.Providers.HuggingFace.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Mistral/HPD-Agent.Providers.Mistral.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.Ollama/HPD-Agent.Providers.Ollama.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OnnxRuntime/HPD-Agent.Providers.OnnxRuntime.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenAI/HPD-Agent.Providers.OpenAI.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Providers/HPD-Agent.Providers.OpenRouter/HPD-Agent.Providers.OpenRouter.csproj" />
+  </Folder>
+  <Folder Name="/HPD-Agent.Toolkit/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.FileSystem/HPD-Agent.Toolkit.FileSystem.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Toolkit/HPD-Agent.Toolkit.WebSearch/HPD-Agent.Toolkit.WebSearch.csproj" />
+  </Folder>
+  <Folder Name="/shared/">
+    <Project Path="src/shared/HPD-Events/HPD-Events.csproj" />
+    <Project Path="src/shared/HPD-Graph/HPD-Graph.Abstractions/HPD-Graph.Abstractions.csproj" />
+    <Project Path="src/shared/HPD-Graph/HPD-Graph.Core/HPD-Graph.Core.csproj" />
+    <Project Path="src/shared/HPD-Graph/HPD-Graph.SourceGenerator/HPD-Graph.SourceGenerator.csproj" />
+    <Project Path="src/shared/HPD.OpenApi.Core/HPD.OpenApi.Core.csproj" />
+  </Folder>
+  <Folder Name="/HPD-Agent.Adapters/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Adapters/HPD-Agent.Adapters.SourceGenerator/HPD-Agent.Adapters.SourceGenerator.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Adapters/HPD-Agent.Adapters.Abstractions/HPD-Agent.Adapters.Abstractions.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Adapters/HPD-Agent.Adapters.AspNetCore/HPD-Agent.Adapters.AspNetCore.csproj" />
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Adapters/HPD-Agent.Adapters.Slack/HPD-Agent.Adapters.Slack.csproj" />
+  </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/HPD-Agent.Framework/" />
+  <Folder Name="/src/HPD-Agent.Framework/HPD-Agent.Audio/">
+    <Project Path="src/HPD-Agent.Framework/HPD-Agent.Audio/HPD-Agent.AudioProviders.Silero/HPD-Agent.AudioProviders.Silero.csproj" />
+  </Folder>
+  <Folder Name="/src/HPD-RAG.Framework/">
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Core/HPD-RAG.Core.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Evaluation/HPD-RAG.Evaluation.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Extensions/HPD-RAG.Extensions.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.GraphStoreProviders/HPD-RAG.GraphStoreProviders.Memgraph/HPD-RAG.GraphStoreProviders.Memgraph.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.GraphStoreProviders/HPD-RAG.GraphStoreProviders.Neo4j/HPD-RAG.GraphStoreProviders.Neo4j.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Ingestion/HPD-RAG.Ingestion.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Pipeline/HPD-RAG.Pipeline.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/HPD-RAG.RerankerProviders.Cohere/HPD-RAG.RerankerProviders.Cohere.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/HPD-RAG.RerankerProviders.HuggingFace/HPD-RAG.RerankerProviders.HuggingFace.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/HPD-RAG.RerankerProviders.Jina/HPD-RAG.RerankerProviders.Jina.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/HPD-RAG.RerankerProviders.OnnxRuntime/HPD-RAG.RerankerProviders.OnnxRuntime.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.Retrieval/HPD-RAG.Retrieval.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.AzureAISearch/HPD-RAG.VectorStores.AzureAISearch.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.CosmosMongo/HPD-RAG.VectorStores.CosmosMongo.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.CosmosNoSql/HPD-RAG.VectorStores.CosmosNoSql.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.InMemory/HPD-RAG.VectorStores.InMemory.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Milvus/HPD-RAG.VectorStores.Milvus.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Mongo/HPD-RAG.VectorStores.Mongo.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Pinecone/HPD-RAG.VectorStores.Pinecone.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Postgres/HPD-RAG.VectorStores.Postgres.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Qdrant/HPD-RAG.VectorStores.Qdrant.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Redis/HPD-RAG.VectorStores.Redis.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.SqlServer/HPD-RAG.VectorStores.SqlServer.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Sqlite/HPD-RAG.VectorStores.Sqlite.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.VectorStores/HPD-RAG.VectorStores.Weaviate/HPD-RAG.VectorStores.Weaviate.csproj" />
+  </Folder>
+  <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/">
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.AzureAI/HPD-RAG.EmbeddingProviders.AzureAI.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.Bedrock/HPD-RAG.EmbeddingProviders.Bedrock.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.HuggingFace/HPD-RAG.EmbeddingProviders.HuggingFace.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.Ollama/HPD-RAG.EmbeddingProviders.Ollama.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.OnnxRuntime/HPD-RAG.EmbeddingProviders.OnnxRuntime.csproj" />
+    <Project Path="src/HPD-RAG.Framework/HPD-RAG.EmbeddingProviders/HPD-RAG.EmbeddingProviders.OpenAI/HPD-RAG.EmbeddingProviders.OpenAI.csproj" />
+  </Folder>
+  <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.GraphStoreProviders/" />
+  <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/" />
+  <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.VectorStores/" />
+  <Folder Name="/test/">
+    <Project Path="test/HPD-Agent.DevApp/HPD-Agent.DevApp.csproj" />
+    <Project Path="test/HPD-Agent.Adapters.Tests/HPD-Agent.Adapters.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Audio.Tests/HPD-Agent.Audio.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Tests/HPD-Agent.Tests.csproj" />
+    <Project Path="test/HPD-Events.Tests/HPD-Events.Tests.csproj" />
+    <Project Path="test/HPD-Graph.Tests/HPD-Graph.Tests.csproj" />
+    <Project Path="test/HPD-RAG.Core.Tests/HPD-RAG.Core.Tests.csproj" />
+    <Project Path="test/HPD-RAG.Handlers.Tests/HPD-RAG.Handlers.Tests.csproj" />
+    <Project Path="test/HPD-RAG.IntegrationTests/HPD-RAG.IntegrationTests.csproj" />
+    <Project Path="test/HPD-RAG.Pipeline.Tests/HPD-RAG.Pipeline.Tests.csproj" />
+    <Project Path="test/HPD-RAG.Providers.Tests/HPD-RAG.Providers.Tests.csproj" />
+    <Project Path="test/HPD-RAG.VectorStores.Tests/HPD-RAG.VectorStores.Tests.csproj" />
+    <Project Path="test/HPD.MultiAgent.Tests/HPD.MultiAgent.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Providers.Tests/HPD-Agent.Providers.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Sandbox.Local.Tests/HPD-Agent.Sandbox.Local.Tests.csproj" />
+    <Project Path="test/HPD.Agent.SerializationTests/HPD.Agent.SerializationTests.csproj" />
+    <Project Path="test/HPD-Agent.Evaluations.Tests/HPD-Agent.Evaluations.Tests.csproj" />
+    <Project Path="test/HPD-Agent.OpenApi.Tests/HPD-Agent.OpenApi.Tests.csproj" />
+    <Project Path="test/HPD-Agent.MAUI.Tests/HPD-Agent.MAUI.Tests.csproj" />
+    <Project Path="test/HPD-Agent.AspNetCore.Tests/HPD-Agent.AspNetCore.Tests.csproj" />
+    <Project Path="test/HPD-Agent.Hosting.Tests/HPD-Agent.Hosting.Tests.csproj" />
+  </Folder>
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MultiAgent/HPD-Agent.MultiAgent.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Sandbox.Local/HPD-Agent.Sandbox.Local.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.TextExtraction/HPD-Agent.TextExtraction.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent/HPD-Agent.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Evaluations/HPD-Agent.Evaluations.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.Hosting/HPD-Agent.Hosting.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.AspNetCore/HPD-Agent.AspNetCore.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.MAUI/HPD-Agent.MAUI.csproj" />
+  <Project Path="src/HPD-Agent.Framework/HPD-Agent.OpenApi/HPD-Agent.OpenApi.csproj" />
+</Solution>

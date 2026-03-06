@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.AI;
+using HPD.Agent.Middleware;
 using HPD.Agent.Secrets;
 
 namespace HPD.Agent;
@@ -170,5 +171,46 @@ public record ToolkitFactory(
     /// Called by AgentBuilder.Build() to upload skill documents to the V3 content store at startup.
     /// Idempotent: same document ID + same content hash = no-op.
     /// </summary>
-    Func<IContentStore, System.Threading.CancellationToken, System.Threading.Tasks.Task>? InitializeDocumentsAsync = null
+    Func<IContentStore, System.Threading.CancellationToken, System.Threading.Tasks.Task>? InitializeDocumentsAsync = null,
+
+    // ========== TOOLKIT-SCOPED MIDDLEWARE (015) ==========
+
+    /// <summary>
+    /// AOT-safe factory delegates for middleware declared in <c>[Collapse(Middlewares = [...])]</c>
+    /// that have a public parameterless constructor.
+    /// Each delegate is a direct constructor call — <c>static () =&gt; new ConcreteType()</c> — emitted by
+    /// <c>HPDToolSourceGenerator</c> into <c>ToolkitRegistry.g.cs</c>.
+    /// Null when the toolkit declares no parameterless-constructor scoped middlewares.
+    /// Instances are created at container expansion time and live for the duration of that expansion.
+    /// </summary>
+    IReadOnlyList<Func<IAgentMiddleware>>? CollapseMiddlewareFactories = null,
+
+    /// <summary>
+    /// AOT-safe config-constructor factory delegates for middleware declared in
+    /// <c>[Collapse(Middlewares = [...])]</c> that have a single-parameter config constructor.
+    /// Each entry carries the middleware's simple type name (for matching against
+    /// <c>ToolkitReference.MiddlewareConfigs</c> keys) and a delegate that accepts a
+    /// <c>JsonElement</c> and returns an instantiated middleware.
+    /// Emitted by <c>HPDToolSourceGenerator</c> into <c>ToolkitRegistry.g.cs</c>.
+    /// Null when the toolkit declares no config-constructor scoped middlewares.
+    /// </summary>
+    IReadOnlyList<CollapseMiddlewareConfigFactory>? CollapseMiddlewareConfigFactories = null
+);
+
+/// <summary>
+/// Entry for a config-constructor toolkit-scoped middleware factory .
+/// Carries the middleware's simple type name for matching against
+/// <c>ToolkitReference.MiddlewareConfigs</c> map keys, and the factory delegate.
+/// </summary>
+/// <param name="MiddlewareTypeName">
+/// Simple (unqualified) class name of the middleware type, e.g. <c>"DbRateLimitMiddleware"</c>.
+/// Used to match entries in <c>ToolkitReference.MiddlewareConfigs</c>.
+/// </param>
+/// <param name="Factory">
+/// AOT-safe direct constructor delegate — e.g.
+/// <c>static json => new DbRateLimitMiddleware(json.Deserialize&lt;DbRateLimitConfig&gt;()!)</c>.
+/// </param>
+public record CollapseMiddlewareConfigFactory(
+    string MiddlewareTypeName,
+    Func<System.Text.Json.JsonElement, IAgentMiddleware> Factory
 );

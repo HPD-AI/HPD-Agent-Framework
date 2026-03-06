@@ -71,6 +71,13 @@ namespace HPD.Agent.Serialization;
 
 // Middleware Events
 [JsonSerializable(typeof(MiddlewareErrorEvent))]
+[JsonSerializable(typeof(HistoryReductionEvent))]
+[JsonSerializable(typeof(HistoryReductionStatus))]
+[JsonSerializable(typeof(HistoryReductionStrategy))]
+[JsonSerializable(typeof(MaxConsecutiveErrorsExceededEvent))]
+[JsonSerializable(typeof(TotalErrorThresholdExceededEvent))]
+[JsonSerializable(typeof(PIIDetectedEvent))]
+[JsonSerializable(typeof(PIIStrategy))]
 
 // Client Tool Events
 [JsonSerializable(typeof(ClientTools.ClientToolInvokeRequestEvent))]
@@ -84,6 +91,10 @@ namespace HPD.Agent.Serialization;
 
 // Branch events removed - branching is now an application-level concern
 // Applications should define their own branch event types if needed
+
+// Asset Events
+[JsonSerializable(typeof(AssetUploadedEvent))]
+[JsonSerializable(typeof(AssetUploadFailedEvent))]
 
 // Observability Events
 [JsonSerializable(typeof(CollapsedToolsVisibleEvent))]
@@ -99,6 +110,7 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(InternalRetryEvent))]
 [JsonSerializable(typeof(RetryStatus))]
 [JsonSerializable(typeof(FunctionRetryEvent))]
+[JsonSerializable(typeof(ModelCallRetryEvent))]
 [JsonSerializable(typeof(DeltaSendingActivatedEvent))]
 [JsonSerializable(typeof(PlanModeActivatedEvent))]
 [JsonSerializable(typeof(PlanUpdatedEvent))]
@@ -113,6 +125,12 @@ namespace HPD.Agent.Serialization;
 [JsonSerializable(typeof(SchemaChangedEvent))]
 [JsonSerializable(typeof(CollapsingStateEvent))]
 [JsonSerializable(typeof(EventDroppedEvent))]
+[JsonSerializable(typeof(BackgroundOperationStartedEvent))]
+[JsonSerializable(typeof(BackgroundOperationStatusEvent))]
+[JsonSerializable(typeof(StructuredOutputErrorEvent))]
+[JsonSerializable(typeof(StructuredOutputStartEvent))]
+[JsonSerializable(typeof(StructuredOutputPartialEvent))]
+[JsonSerializable(typeof(StructuredOutputCompleteEvent))]
 
 // Priority Streaming Enums
 [JsonSerializable(typeof(EventPriority))]

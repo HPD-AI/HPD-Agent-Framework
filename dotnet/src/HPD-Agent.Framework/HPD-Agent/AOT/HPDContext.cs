@@ -103,6 +103,7 @@ using HPD.Agent;
 
 // --- Additional utility types for generic serialization ---
 [JsonSerializable(typeof(object[]))]  // For dynamic object arrays in logging
+[JsonSerializable(typeof(string[]))]  // For toolkit parameters that accept string arrays (e.g. glob patterns)
 
 public partial class HPDJsonContext : JsonSerializerContext
 {

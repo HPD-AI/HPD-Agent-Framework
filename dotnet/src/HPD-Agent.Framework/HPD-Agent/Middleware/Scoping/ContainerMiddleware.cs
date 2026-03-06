@@ -73,6 +73,16 @@ public class ContainerMiddleware : IAgentMiddleware
     private readonly Dictionary<string, string> _itemToContainerMap;
     private readonly HashSet<string> _knownContainerNames;
 
+    // Toolkit-scoped middleware (015): factory registry for building scoped pipelines at expansion time
+    private readonly IReadOnlyDictionary<string, ToolkitFactory>? _toolkitFactories;
+
+    // Toolkit-scoped middleware (015 §5B): builder-time DI instances, merged at expansion
+    private readonly IReadOnlyDictionary<string, List<IAgentMiddleware>>? _toolkitScopedMiddlewares;
+
+    // Toolkit-scoped middleware (015 §5A): per-toolkit middleware config overrides from ToolkitReference.MiddlewareConfigs
+    // Key: toolkit name → (middleware type name → JsonElement config)
+    private readonly IReadOnlyDictionary<string, Dictionary<string, System.Text.Json.JsonElement>>? _middlewareConfigs;
+
     //═════════════════════════════════════════════════════════════════════════════════════════════════
     // CONSTRUCTOR
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -82,11 +92,17 @@ public class ContainerMiddleware : IAgentMiddleware
     /// </summary>
     /// <param name="initialTools">All available tools for the agent</param>
     /// <param name="explicitlyRegisteredToolKits">Toolkits explicitly registered via WithTools (always visible)</param>
+    /// <param name="toolkitFactories">Toolkit factory registry for building scoped middleware pipelines at expansion time . Pass null to disable scoped middleware.</param>
+    /// <param name="toolkitScopedMiddlewares">Builder-time DI middleware instances per toolkit . Merged with factory-declared instances at expansion time.</param>
+    /// <param name="middlewareConfigs">Per-toolkit middleware config overrides from ToolkitReference.MiddlewareConfigs . Used with config-constructor middleware factories.</param>
     /// <param name="config">Container configuration (optional, defaults to enabled)</param>
     /// <param name="logger">Optional logger for diagnostics</param>
     public ContainerMiddleware(
         IList<AITool> initialTools,
         ImmutableHashSet<string> explicitlyRegisteredToolKits,
+        IReadOnlyDictionary<string, ToolkitFactory>? toolkitFactories = null,
+        IReadOnlyDictionary<string, List<IAgentMiddleware>>? toolkitScopedMiddlewares = null,
+        IReadOnlyDictionary<string, Dictionary<string, System.Text.Json.JsonElement>>? middlewareConfigs = null,
         CollapsingConfig? config = null,
         Microsoft.Extensions.Logging.ILogger<ContainerMiddleware>? logger = null)
     {
@@ -107,6 +123,9 @@ public class ContainerMiddleware : IAgentMiddleware
             _config.NeverCollapse);
         _logger = logger;
         _initialTools = initialTools; // V2: Store for container detection
+        _toolkitFactories = toolkitFactories;
+        _toolkitScopedMiddlewares = toolkitScopedMiddlewares;
+        _middlewareConfigs = middlewareConfigs;
 
         // Initialize Smart Recovery maps for hidden items and qualified names
         _itemToContainerMap = BuildItemToContainerMap(initialTools);
@@ -124,14 +143,14 @@ public class ContainerMiddleware : IAgentMiddleware
     /// 1. Filters tools based on expansion state (collapsing)
     /// 2. InjectsSystemPrompt for active containers into system prompt
     /// </summary>
-    public Task BeforeIterationAsync(
+    public async Task BeforeIterationAsync(
         BeforeIterationContext context,
         CancellationToken cancellationToken)
     {
         // Skip if disabled
         if (!_config.Enabled || context.Options == null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var collapsingState = context.GetMiddlewareState<ContainerMiddlewareState>() ?? new ContainerMiddlewareState();
@@ -206,6 +225,12 @@ public class ContainerMiddleware : IAgentMiddleware
             // V2: Mutate Options.Tools directly (ChatOptions object is mutable)
             // The Options property itself is init-only, but the object it references is mutable
             context.Options.Tools = visibleTools;
+
+            _logger?.LogInformation("[CONTAINER] Tools sent to LLM this iteration ({Count}): {Tools}",
+                visibleTools.Count,
+                string.Join(", ", visibleTools.Select(t => t is AIFunction f
+                    ? (f.AdditionalProperties?.TryGetValue("IsContainer", out var ic) == true && ic is true ? $"{f.Name} [CONTAINER]" : f.Name)
+                    : t.ToString())));
         }
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
@@ -230,7 +255,17 @@ public class ContainerMiddleware : IAgentMiddleware
             }
         }
 
-        return Task.CompletedTask;
+        // Toolkit-scoped middleware (015): dispatch BeforeIterationAsync to all active toolkit pipelines
+        var activePipelines = collapsingState.ToolkitPipelines;
+        if (!activePipelines.IsEmpty)
+        {
+            foreach (var pipeline in activePipelines.Values)
+            {
+                if (!pipeline.IsEmpty)
+                    await pipeline.DispatchBeforeIterationAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -242,13 +277,13 @@ public class ContainerMiddleware : IAgentMiddleware
     /// Detects container expansions from tool calls and updates state with instruction contexts.
     /// V2: Moved from AfterIteration to BeforeToolExecution to have access to tool calls.
     /// </summary>
-    public Task BeforeToolExecutionAsync(
+    public async Task BeforeToolExecutionAsync(
         BeforeToolExecutionContext context,
         CancellationToken cancellationToken)
     {
         // Skip if disabled or no tool calls
         if (!_config.Enabled || context.ToolCalls.Count == 0)
-            return Task.CompletedTask;
+            return;
 
         // Get current state to check which containers are already expanded
         var currentState = context.GetMiddlewareState<ContainerMiddlewareState>() ?? new ContainerMiddlewareState();
@@ -322,7 +357,7 @@ public class ContainerMiddleware : IAgentMiddleware
         }
 
         if (containersToExpand.Count == 0 && recoveredCalls.Count == 0)
-            return Task.CompletedTask;
+            return;
 
         // Update state
         context.UpdateMiddlewareState<ContainerMiddlewareState>(state =>
@@ -339,13 +374,110 @@ public class ContainerMiddleware : IAgentMiddleware
             {
                 state = state.WithRecoveredFunction(callId, recovery);
             }
+
+            // Toolkit-scoped middleware (015): instantiate a scoped pipeline for each newly expanded
+            // container that declares middleware via [Collapse(Middlewares = ...)] (§ factory path)
+            // or builder-time DI instances via WithToolkit<T>(opts => opts.AddScopedMiddleware(...)) (§5B).
+            // Only build if not already in state (skip re-expansions of already-pipelined toolkits).
+            foreach (var containerName in containersToExpand)
+            {
+                if (state.ToolkitPipelines.ContainsKey(containerName))
+                    continue; // already wired (persistent container across turns)
+
+                var instances = new List<IAgentMiddleware>();
+
+                // §factory path: attribute-declared parameterless factories
+                if (_toolkitFactories != null
+                    && _toolkitFactories.TryGetValue(containerName, out var factory)
+                    && factory.CollapseMiddlewareFactories is { Count: > 0 } attrFactories)
+                {
+                    foreach (var f in attrFactories)
+                        instances.Add(f());
+                }
+
+                // §5A: config-constructor factories (resolved from MiddlewareConfigs at build time — see §5A fields)
+                if (_toolkitFactories != null
+                    && _toolkitFactories.TryGetValue(containerName, out var factory5a)
+                    && factory5a.CollapseMiddlewareConfigFactories is { Count: > 0 } configFactories
+                    && _middlewareConfigs != null
+                    && _middlewareConfigs.TryGetValue(containerName, out var configMap))
+                {
+                    foreach (var (middlewareTypeName, configElement) in configMap)
+                    {
+                        // Match by simple type name (last segment of fully-qualified name)
+                        var matchingFactory = configFactories.FirstOrDefault(
+                            cf => cf.MiddlewareTypeName.EndsWith(middlewareTypeName, StringComparison.OrdinalIgnoreCase)
+                               || middlewareTypeName.EndsWith(cf.MiddlewareTypeName, StringComparison.OrdinalIgnoreCase));
+                        if (matchingFactory != null)
+                            instances.Add(matchingFactory.Factory(configElement));
+                    }
+                }
+
+                // §5B: builder-time DI instances (appended after attribute-declared ones)
+                if (_toolkitScopedMiddlewares != null
+                    && _toolkitScopedMiddlewares.TryGetValue(containerName, out var diInstances))
+                {
+                    instances.AddRange(diInstances);
+                }
+
+                if (instances.Count > 0)
+                    state = state.WithToolkitPipeline(containerName, new AgentMiddlewarePipeline(instances));
+            }
+
             return state;
         });
 
         // Note: History rewriting happens in AfterMessageTurnAsync, not here
         // We want to teach the LLM the correct pattern for NEXT turn, not this iteration
 
-        return Task.CompletedTask;
+        // Toolkit-scoped middleware (015): dispatch BeforeToolExecutionAsync to newly-activated pipelines
+        if (_toolkitFactories != null && containersToExpand.Count > 0)
+        {
+            var updatedState = context.GetMiddlewareState<ContainerMiddlewareState>();
+            if (updatedState != null)
+            {
+                foreach (var containerName in containersToExpand)
+                {
+                    if (updatedState.ToolkitPipelines.TryGetValue(containerName, out var pipeline) && !pipeline.IsEmpty)
+                        await pipeline.DispatchBeforeToolExecutionAsync(context, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+    // BEFORE PARALLEL BATCH: Dispatch to toolkit-scoped pipelines for functions in the batch
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Called before a batch of parallel function calls executes.
+    /// Routes <c>BeforeParallelBatchAsync</c> to the toolkit-scoped pipeline of every toolkit
+    /// represented in the batch .
+    /// </summary>
+    public async Task BeforeParallelBatchAsync(
+        BeforeParallelBatchContext context,
+        CancellationToken cancellationToken)
+    {
+        if (_toolkitFactories == null)
+            return;
+
+        var state = context.GetMiddlewareState<ContainerMiddlewareState>();
+        if (state == null || state.ToolkitPipelines.IsEmpty)
+            return;
+
+        // Collect the distinct toolkit pipelines that own at least one function in this batch
+        HashSet<AgentMiddlewarePipeline>? seen = null;
+        foreach (var fn in context.ParallelFunctions)
+        {
+            if (!_itemToContainerMap.TryGetValue(fn.FunctionName, out var toolkitName))
+                continue;
+            if (!state.ToolkitPipelines.TryGetValue(toolkitName, out var pipeline) || pipeline.IsEmpty)
+                continue;
+
+            seen ??= new HashSet<AgentMiddlewarePipeline>(ReferenceEqualityComparer.Instance);
+            if (seen.Add(pipeline))
+                await pipeline.DispatchBeforeParallelBatchAsync(context, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -359,28 +491,39 @@ public class ContainerMiddleware : IAgentMiddleware
     /// function (e.g., "Add") and provide guidance.
     /// Transparently informs user that error recovery occurred.
     /// </summary>
-    public Task BeforeFunctionAsync(
+    public async Task BeforeFunctionAsync(
         BeforeFunctionContext context,
         CancellationToken cancellationToken)
     {
         if (!_config.Enabled)
-            return Task.CompletedTask;
+            return;
 
         // Only handle cases where function is null (lookup failed)
         if (context.Function != null)
-            return Task.CompletedTask;
+        {
+            // Toolkit-scoped middleware (015): dispatch to the owning toolkit's pipeline
+            var dispatchState = context.GetMiddlewareState<ContainerMiddlewareState>();
+            var fnName = context.Function.Name;
+            if (dispatchState != null
+                && fnName != null
+                && _itemToContainerMap.TryGetValue(fnName, out var owningToolkit)
+                && dispatchState.ToolkitPipelines.TryGetValue(owningToolkit, out var pipeline)
+                && !pipeline.IsEmpty)
+            {
+                await pipeline.DispatchBeforeFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
 
         // Check if this is a recovered call
         var state = context.GetMiddlewareState<ContainerMiddlewareState>();
         if (state?.RecoveredFunctionCalls.TryGetValue(context.FunctionCallId, out var recovery) != true)
-            return Task.CompletedTask; // Not a recovered call
+            return; // Not a recovered call
 
         // Silent recovery - return empty result so the recovery is completely invisible
         // The LLM will see an empty response and naturally retry
         // History rewriting teaches the correct pattern for future turns (pure gaslighting)
         context.OverrideResult = string.Empty;
-
-        return Task.CompletedTask;
     }
 
 
@@ -393,15 +536,30 @@ public class ContainerMiddleware : IAgentMiddleware
     /// For recovered function calls (hidden items or qualified names), add explanatory message.
     /// DISABLED: Testing if informational notes affect LLM learning.
     /// </summary>
-    public Task AfterFunctionAsync(
+    public async Task AfterFunctionAsync(
         AfterFunctionContext context,
         CancellationToken cancellationToken)
     {
+        // Toolkit-scoped middleware (015): dispatch to the owning toolkit's pipeline (reverse order)
+        if (context.Function != null)
+        {
+            var dispatchState = context.GetMiddlewareState<ContainerMiddlewareState>();
+            var fnName = context.Function.Name;
+            if (dispatchState != null
+                && fnName != null
+                && _itemToContainerMap.TryGetValue(fnName, out var owningToolkit)
+                && dispatchState.ToolkitPipelines.TryGetValue(owningToolkit, out var pipeline)
+                && !pipeline.IsEmpty)
+            {
+                await pipeline.DispatchAfterFunctionAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         // DISABLED: Testing without informational notes
         // Theory: History rewriting alone should be sufficient for teaching correct patterns
         // The "Note: X is part of Y" messages might be noise that doesn't help learning
 
-        return Task.CompletedTask;
+        return;
 
         // ORIGINAL CODE (commented out for testing):
         /*
@@ -453,12 +611,23 @@ public class ContainerMiddleware : IAgentMiddleware
     /// NOTE: Container filtering happens in BeforeIterationAsync (before messages are sent to LLM).
     /// This hook is kept for potential future use.
     /// </summary>
-    public Task AfterIterationAsync(
+    public async Task AfterIterationAsync(
         AfterIterationContext context,
         CancellationToken cancellationToken)
     {
         // Container filtering moved to BeforeIterationAsync for immediate transparency
-        return Task.CompletedTask;
+
+        // Toolkit-scoped middleware (015): dispatch AfterIterationAsync to all active toolkit pipelines (reverse order)
+        var state = context.GetMiddlewareState<ContainerMiddlewareState>();
+        if (state != null && !state.ToolkitPipelines.IsEmpty)
+        {
+            // Dispatch in reverse registration order (values() order is insertion order in ImmutableDictionary)
+            foreach (var pipeline in state.ToolkitPipelines.Values.Reverse())
+            {
+                if (!pipeline.IsEmpty)
+                    await pipeline.DispatchAfterIterationAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -477,12 +646,12 @@ public class ContainerMiddleware : IAgentMiddleware
     ///
     /// Filtering happens in BeforeIterationAsync for within-turn transparency only.
     /// </remarks>
-    public Task AfterMessageTurnAsync(
+    public async Task AfterMessageTurnAsync(
         AfterMessageTurnContext context,
         CancellationToken cancellationToken)
     {
         if (!_config.Enabled)
-            return Task.CompletedTask;
+            return;
 
         //─────────────────────────────────────────────────────────────────────────────────────────────
         // STEP 1: DISABLED - Container calls MUST remain in TurnHistory for cross-turn context
@@ -547,12 +716,86 @@ public class ContainerMiddleware : IAgentMiddleware
         // to ensure it's captured in checkpoints/session stores
         if (collapsingState.ContainersExpandedThisTurn.Count > 0 ||
             !collapsingState.ActiveContainerInstructions.IsEmpty ||
-            !collapsingState.RecoveredFunctionCalls.IsEmpty)
+            !collapsingState.RecoveredFunctionCalls.IsEmpty ||
+            !collapsingState.ToolkitPipelines.IsEmpty)
         {
             context.UpdateMiddlewareState<ContainerMiddlewareState>(_ => updatedCollapsing);
         }
 
-        return Task.CompletedTask;
+        // Toolkit-scoped middleware (015): dispatch AfterMessageTurnAsync to active pipelines (reverse order)
+        // Done AFTER state update so pipelines see the final state for the turn.
+        if (!collapsingState.ToolkitPipelines.IsEmpty)
+        {
+            foreach (var pipeline in collapsingState.ToolkitPipelines.Values.Reverse())
+            {
+                if (!pipeline.IsEmpty)
+                    await pipeline.DispatchAfterMessageTurnAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+    // ON ERROR: Route to toolkit-scoped pipelines
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Routes OnErrorAsync to active toolkit-scoped pipelines .
+    /// <para>
+    /// <b>Dispatch strategy:</b> <c>ErrorContext</c> does not carry a function name, so we cannot
+    /// identify which specific toolkit owns the erroring call. For <c>ErrorSource.ToolCall</c>
+    /// errors we dispatch to all active toolkit pipelines in reverse order — consistent with the
+    /// After*-style unwinding model. For non-tool errors (model call, iteration, message turn)
+    /// we still dispatch to all active pipelines so scoped middleware can do cross-cutting error
+    /// handling (e.g. circuit breakers, per-toolkit telemetry).
+    /// </para>
+    /// </summary>
+    public async Task OnErrorAsync(
+        ErrorContext context,
+        CancellationToken cancellationToken)
+    {
+        var state = context.GetMiddlewareState<ContainerMiddlewareState>();
+        if (state == null || state.ToolkitPipelines.IsEmpty)
+            return;
+
+        // Dispatch to all active toolkit pipelines in reverse order (error unwinding)
+        foreach (var pipeline in state.ToolkitPipelines.Values.Reverse())
+        {
+            if (!pipeline.IsEmpty)
+                await pipeline.DispatchOnErrorAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+    // WRAP FUNCTION CALL: Route to toolkit-scoped pipeline (innermost wrapper)
+    //═════════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Routes WrapFunctionCallAsync to the owning toolkit's scoped pipeline .
+    /// The toolkit pipeline wraps innermost — closest to the actual function call.
+    /// ExecuteFunctionCallAsync is chain-based and does NOT call SetMiddlewareExecuting,
+    /// so delegating to it here is safe even though we are inside the global pipeline's Execute*() call.
+    /// </summary>
+    public Task<object?> WrapFunctionCallAsync(
+        FunctionRequest request,
+        Func<FunctionRequest, Task<object?>> handler,
+        CancellationToken cancellationToken)
+    {
+        if (_toolkitFactories == null)
+            return handler(request);
+
+        var stateKey = typeof(ContainerMiddlewareState).FullName!;
+        var state = request.State.MiddlewareState.GetState<ContainerMiddlewareState>(stateKey);
+        if (state == null)
+            return handler(request);
+
+        if (!_itemToContainerMap.TryGetValue(request.FunctionName, out var toolkitName))
+            return handler(request);
+
+        if (!state.ToolkitPipelines.TryGetValue(toolkitName, out var toolkitPipeline) || toolkitPipeline.IsEmpty)
+            return handler(request);
+
+        // Toolkit pipeline wraps the original handler — toolkit is innermost
+        return toolkitPipeline.ExecuteFunctionCallAsync(request, handler, cancellationToken);
     }
 
     //═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1276,6 +1519,18 @@ public sealed record ContainerMiddlewareState
         = ImmutableDictionary<string, RecoveryInfo>.Empty;
 
     /// <summary>
+    /// Active scoped middleware pipelines for expanded toolkits .
+    /// Key: toolkit name (same keys as <see cref="ExpandedContainers"/>).
+    /// Value: pipeline containing middleware instances declared via <c>[Collapse(Middlewares = ...)]</c>
+    ///        plus any builder-time additions from <c>WithToolkit&lt;T&gt;(opts =&gt; opts.AddScopedMiddleware(...))</c>.
+    /// Populated at container expansion time in <c>BeforeToolExecutionAsync</c>.
+    /// Cleared at turn end (when <c>PersistSystemPromptInjections = false</c>) or retained across
+    /// turns (when <c>PersistSystemPromptInjections = true</c>).
+    /// </summary>
+    public ImmutableDictionary<string, AgentMiddlewarePipeline> ToolkitPipelines { get; init; }
+        = ImmutableDictionary<string, AgentMiddlewarePipeline>.Empty;
+
+    /// <summary>
     /// Records a container expansion (Toolkit or skill).
     /// Adds to both session-level ExpandedContainers and turn-level ContainersExpandedThisTurn.
     /// </summary>
@@ -1319,6 +1574,18 @@ public sealed record ContainerMiddlewareState
     }
 
     /// <summary>
+    /// Stores an active scoped middleware pipeline for an expanded toolkit.
+    /// </summary>
+    public ContainerMiddlewareState WithToolkitPipeline(string toolkitName, AgentMiddlewarePipeline pipeline)
+        => this with { ToolkitPipelines = ToolkitPipelines.SetItem(toolkitName, pipeline) };
+
+    /// <summary>
+    /// Removes the scoped middleware pipeline for a toolkit (called at turn cleanup).
+    /// </summary>
+    public ContainerMiddlewareState WithoutToolkitPipeline(string toolkitName)
+        => this with { ToolkitPipelines = ToolkitPipelines.Remove(toolkitName) };
+
+    /// <summary>
     /// Clears all active container instructions (typically at end of message turn).
     /// </summary>
     /// <returns>New state with cleared instructions</returns>
@@ -1342,7 +1609,8 @@ public sealed record ContainerMiddlewareState
         {
             ExpandedContainers = ImmutableHashSet<string>.Empty,
             ContainersExpandedThisTurn = ImmutableHashSet<string>.Empty,
-            RecoveredFunctionCalls = ImmutableDictionary<string, RecoveryInfo>.Empty
+            RecoveredFunctionCalls = ImmutableDictionary<string, RecoveryInfo>.Empty,
+            ToolkitPipelines = ImmutableDictionary<string, AgentMiddlewarePipeline>.Empty
         };
     }
 }

@@ -578,8 +578,14 @@ public record ClarificationResponseEvent(
 /// </summary>
 public record MiddlewareErrorEvent(
     string SourceName,
-    string ErrorMessage,
-    Exception? Exception = null) : AgentEvent, IErrorEvent;
+    string ErrorMessage) : AgentEvent, IErrorEvent
+{
+    /// <summary>
+    /// The underlying exception. Not serialized.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Exception? Exception { get; init; }
+}
 
 #endregion
 
@@ -613,8 +619,9 @@ public interface IErrorEvent
     string ErrorMessage { get; }
 
     /// <summary>
-    /// The underlying exception, if available.
+    /// The underlying exception, if available. Not serialized — Exception is not STJ source-gen compatible.
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     Exception? Exception { get; }
 }
 
@@ -723,6 +730,7 @@ public record AssetUploadFailedEvent(
     /// <summary>
     /// The underlying exception, if available.
     /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
     Exception? IErrorEvent.Exception => null;
 }
 
@@ -838,11 +846,16 @@ public record FunctionRetryEvent(
     int Attempt,
     int MaxRetries,
     TimeSpan Delay,
-    Exception Exception,
     string ExceptionType,
     string ErrorMessage
 ) : AgentEvent, IObservabilityEvent, IErrorEvent
 {
+    /// <summary>
+    /// The exception that caused the retry. Not serialized.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Exception? Exception { get; init; }
+
     /// <inheritdoc />
     Exception? IErrorEvent.Exception => Exception;
 
@@ -923,11 +936,16 @@ public record ModelCallRetryEvent(
     int Attempt,
     int MaxRetries,
     TimeSpan Delay,
-    Exception Exception,
     string ExceptionType,
     string ErrorMessage
 ) : AgentEvent, IObservabilityEvent, IErrorEvent
 {
+    /// <summary>
+    /// The exception that caused the retry. Not serialized.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Exception? Exception { get; init; }
+
     /// <inheritdoc />
     Exception? IErrorEvent.Exception => Exception;
 
