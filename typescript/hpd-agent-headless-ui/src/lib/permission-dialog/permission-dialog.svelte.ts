@@ -16,14 +16,13 @@
  * - Simpler dialog pattern (no manual open/close)
  */
 
-import { boxWith, onDestroyEffect, type ReadableBoxedValues, type WritableBoxedValues, attachRef } from 'svelte-toolbelt';
+import { boxWith, onDestroyEffect, type ReadableBoxedValues, type WritableBoxedValues } from 'svelte-toolbelt';
 import { Context, watch } from 'runed';
 import { kbd } from '$lib/internal/kbd.js';
 import type {
 	HPDKeyboardEvent,
 	HPDMouseEvent,
 	OnChangeFn,
-	RefAttachment,
 	WithRefOpts
 } from '$lib/internal/types.js';
 import { createHPDAttrs, getDataOpenClosed } from '$lib/internal/attrs.js';
@@ -164,14 +163,15 @@ export class PermissionDialogContentState {
 
 	readonly opts: PermissionDialogContentStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+		this.root.contentNode = v;
+	};
 
 	constructor(opts: PermissionDialogContentStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(this.opts.ref, (v) => {
-			this.root.contentNode = v;
-		});
 	}
 
 	get shouldRender() {
@@ -187,8 +187,7 @@ export class PermissionDialogContentState {
 				'aria-labelledby': this.root.headerId,
 				'aria-describedby': this.root.descriptionId,
 				[this.root.getHPDAttr('content')]: '',
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -206,14 +205,15 @@ export class PermissionDialogOverlayState {
 
 	readonly opts: PermissionDialogOverlayStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+		this.root.overlayNode = v;
+	};
 
 	constructor(opts: PermissionDialogOverlayStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(this.opts.ref, (v) => {
-			this.root.overlayNode = v;
-		});
 	}
 
 	get shouldRender() {
@@ -225,8 +225,7 @@ export class PermissionDialogOverlayState {
 			({
 				id: this.opts.id.current,
 				[this.root.getHPDAttr('overlay')]: '',
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -246,13 +245,15 @@ export class PermissionDialogHeaderState {
 
 	readonly opts: PermissionDialogHeaderStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	constructor(opts: PermissionDialogHeaderStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
 		this.root.headerId = this.opts.id.current;
-		this.attachment = attachRef(this.opts.ref);
 
 		// Update root headerId when id changes
 		watch.pre(
@@ -268,8 +269,7 @@ export class PermissionDialogHeaderState {
 			({
 				id: this.opts.id.current,
 				[this.root.getHPDAttr('header')]: '',
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -287,13 +287,15 @@ export class PermissionDialogDescriptionState {
 
 	readonly opts: PermissionDialogDescriptionStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	constructor(opts: PermissionDialogDescriptionStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
 		this.root.descriptionId = this.opts.id.current;
-		this.attachment = attachRef(this.opts.ref);
 
 		// Update root descriptionId when id changes
 		watch.pre(
@@ -309,8 +311,7 @@ export class PermissionDialogDescriptionState {
 			({
 				id: this.opts.id.current,
 				[this.root.getHPDAttr('description')]: '',
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -328,12 +329,14 @@ export class PermissionDialogActionsState {
 
 	readonly opts: PermissionDialogActionsStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	constructor(opts: PermissionDialogActionsStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(this.opts.ref);
 	}
 
 	readonly props = $derived.by(
@@ -341,8 +344,7 @@ export class PermissionDialogActionsState {
 			({
 				id: this.opts.id.current,
 				[this.root.getHPDAttr('actions')]: '',
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -362,12 +364,14 @@ export class PermissionDialogApproveState {
 
 	readonly opts: PermissionDialogApproveStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	constructor(opts: PermissionDialogApproveStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(this.opts.ref);
 		this.onclick = this.onclick.bind(this);
 		this.onkeydown = this.onkeydown.bind(this);
 	}
@@ -395,8 +399,7 @@ export class PermissionDialogApproveState {
 				onkeydown: this.onkeydown,
 				disabled: this.opts.disabled.current ? true : undefined,
 				tabindex: 0,
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }
@@ -416,12 +419,14 @@ export class PermissionDialogDenyState {
 
 	readonly opts: PermissionDialogDenyStateOpts;
 	readonly root: PermissionDialogRootState;
-	readonly attachment: RefAttachment;
+
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	constructor(opts: PermissionDialogDenyStateOpts, root: PermissionDialogRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(this.opts.ref);
 		this.onclick = this.onclick.bind(this);
 		this.onkeydown = this.onkeydown.bind(this);
 	}
@@ -449,8 +454,7 @@ export class PermissionDialogDenyState {
 				onkeydown: this.onkeydown,
 				disabled: this.opts.disabled.current ? true : undefined,
 				tabindex: 0,
-				...this.root.sharedProps,
-				...this.attachment
+				...this.root.sharedProps
 			}) as const
 	);
 }

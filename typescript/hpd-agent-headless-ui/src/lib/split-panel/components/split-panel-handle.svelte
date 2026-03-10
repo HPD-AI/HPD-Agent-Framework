@@ -96,6 +96,7 @@
 		onDragStart,
 		onDragEnd,
 		onDoubleClick,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -108,21 +109,18 @@
 	// Create handle state with boxed values
 	const handleState = SplitPanelHandleState.create(
 		{
-			disabled: disabled !== undefined ? boxWith(() => disabled) : undefined,
-			hitAreaSize: hitAreaSize !== undefined ? boxWith(() => hitAreaSize) : undefined,
-			keyboardStep: keyboardStep !== undefined ? boxWith(() => keyboardStep) : undefined,
-			keyboardStepLarge:
-				keyboardStepLarge !== undefined ? boxWith(() => keyboardStepLarge) : undefined,
-			parentPath: parentPath !== undefined ? boxWith(() => parentPath) : undefined,
-			dividerIndex: dividerIndex !== undefined ? boxWith(() => dividerIndex) : undefined,
-			axis: axis !== undefined ? boxWith(() => axis) : undefined,
-			resetOnDoubleClick:
-				resetOnDoubleClick !== undefined ? boxWith(() => resetOnDoubleClick) : undefined,
-			toggleCollapseOnClick:
-				toggleCollapseOnClick !== undefined ? boxWith(() => toggleCollapseOnClick) : undefined,
-			onDragStart,
-			onDragEnd,
-			onDoubleClick,
+			disabled: boxWith(() => disabled),
+			hitAreaSize: boxWith(() => hitAreaSize),
+			keyboardStep: boxWith(() => keyboardStep),
+			keyboardStepLarge: boxWith(() => keyboardStepLarge),
+			parentPath: boxWith(() => parentPath),
+			dividerIndex: boxWith(() => dividerIndex),
+			axis: boxWith(() => axis),
+			resetOnDoubleClick: boxWith(() => resetOnDoubleClick),
+			toggleCollapseOnClick: boxWith(() => toggleCollapseOnClick),
+			onDragStart: () => onDragStart?.(),
+			onDragEnd: () => onDragEnd?.(),
+			onDoubleClick: () => onDoubleClick?.(),
 			ref: boxWith(
 				() => ref,
 				(v) => (ref = v)
@@ -132,7 +130,10 @@
 	);
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, handleState.props));
+	const mergedProps = $derived(mergeProps(restProps, handleState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	let defaultEl = $state<HTMLDivElement | null>(null);
+	$effect(() => { handleState.setRef(defaultEl); });
 </script>
 
 {#if child}
@@ -143,7 +144,7 @@
 		axis: handleState.snippetProps.axis
 	})}
 {:else}
-	<div {...mergedProps}>
+	<div bind:this={defaultEl} {...mergedProps}>
 		{@render children?.(handleState.snippetProps)}
 	</div>
 {/if}

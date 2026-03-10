@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { mergeProps } from 'svelte-toolbelt';
-	import type { MessageActionsPositionProps } from '../types.js';
+	import type { MessageActionsPositionProps, MessageActionsPositionHTMLProps } from '../types.js';
 	import { MessageActionsPositionState } from '../message-actions.svelte.js';
 
-	let { child, children, ...restProps }: MessageActionsPositionProps = $props();
+	let { class: className, child, children, ...restProps }: MessageActionsPositionProps = $props();
 
 	const positionState = MessageActionsPositionState.create();
 
-	const mergedProps = $derived(mergeProps(restProps, positionState.props));
+	const mergedProps = $derived(mergeProps(restProps, positionState.props, className ? { class: className } : {}) as MessageActionsPositionHTMLProps);
 </script>
 
 {#if child}

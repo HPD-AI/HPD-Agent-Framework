@@ -194,22 +194,22 @@ public class RecursiveBranchDeleteTests : IClassFixture<RecursiveDeleteEnabledFa
         await ForkBranch(sid, "main", "fork-2");
         await ForkBranch(sid, "fork-1", "fork-1a");
 
-        // Verify initial state: fork-1 and fork-2 are siblings (both forked from main at index 0)
+        // Verify initial state: fork-1 and fork-2 are siblings of main (V3: group = [main, fork-1, fork-2] = 3 total)
         var beforeFork1 = await GetBranch(sid, "fork-1");
         var beforeFork2 = await GetBranch(sid, "fork-2");
-        beforeFork1!.TotalSiblings.Should().Be(2);
-        beforeFork2!.TotalSiblings.Should().Be(2);
+        beforeFork1!.TotalSiblings.Should().Be(3);
+        beforeFork2!.TotalSiblings.Should().Be(3);
 
         // Act: delete fork-1 recursively (also deletes fork-1a)
         var response = await _client.DeleteAsync($"/sessions/{sid}/branches/fork-1?recursive=true");
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // Assert: fork-2 is now alone (TotalSiblings=1), fork-1a gone
+        // Assert: group is now [main, fork-2] = 2 total; fork-1a gone
         var afterFork2 = await GetBranch(sid, "fork-2");
         afterFork2.Should().NotBeNull();
-        afterFork2!.TotalSiblings.Should().Be(1);
-        afterFork2.SiblingIndex.Should().Be(0);
-        afterFork2.PreviousSiblingId.Should().BeNull();
+        afterFork2!.TotalSiblings.Should().Be(2);
+        afterFork2.SiblingIndex.Should().Be(1);        // main=0, fork-2=1
+        afterFork2.PreviousSiblingId.Should().Be("main");
         afterFork2.NextSiblingId.Should().BeNull();
 
         (await GetBranch(sid, "fork-1a")).Should().BeNull();

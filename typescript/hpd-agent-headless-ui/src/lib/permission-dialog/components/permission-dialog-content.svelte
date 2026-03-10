@@ -9,6 +9,7 @@
 
 	let {
 		id = createId(uid),
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -28,7 +29,12 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, contentState.props));
+	const mergedProps = $derived(mergeProps(restProps, contentState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	function mountRef(el: HTMLDivElement) {
+		contentState.setRef(el);
+		return { destroy() { contentState.setRef(null); } };
+	}
 
 	// Snippet props for customization
 	const snippetProps = $derived.by(() => ({
@@ -47,7 +53,7 @@
 			...snippetProps
 		})}
 	{:else}
-		<div {...mergedProps}>
+		<div use:mountRef {...mergedProps}>
 			{@render children?.(snippetProps)}
 		</div>
 	{/if}

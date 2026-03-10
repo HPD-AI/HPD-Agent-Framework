@@ -16,6 +16,11 @@ export interface TranscriptionRootProps extends TranscriptionStateProps {
 	children?: Snippet<[TranscriptionRootSnippetProps]>;
 
 	/**
+	 * CSS class name
+	 */
+	class?: string;
+
+	/**
 	 * Reference to the root element
 	 */
 	ref?: HTMLElement | null;

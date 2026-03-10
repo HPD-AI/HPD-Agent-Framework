@@ -9,6 +9,7 @@
 	let {
 		id = createId(uid),
 		level = 2,
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -24,7 +25,10 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, headerState.props));
+	const mergedProps = $derived(mergeProps(restProps, headerState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	let defaultEl = $state<HTMLElement | null>(null);
+	$effect(() => { headerState.setRef(defaultEl); });
 
 	// Snippet props for customization
 	const snippetProps = $derived.by(() => ({
@@ -36,15 +40,15 @@
 {#if child}
 	{@render child({ props: mergedProps, ...snippetProps })}
 {:else if level === 1}
-	<h1 {...mergedProps}>{@render children?.(snippetProps)}</h1>
+	<h1 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h1>
 {:else if level === 2}
-	<h2 {...mergedProps}>{@render children?.(snippetProps)}</h2>
+	<h2 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h2>
 {:else if level === 3}
-	<h3 {...mergedProps}>{@render children?.(snippetProps)}</h3>
+	<h3 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h3>
 {:else if level === 4}
-	<h4 {...mergedProps}>{@render children?.(snippetProps)}</h4>
+	<h4 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h4>
 {:else if level === 5}
-	<h5 {...mergedProps}>{@render children?.(snippetProps)}</h5>
+	<h5 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h5>
 {:else}
-	<h6 {...mergedProps}>{@render children?.(snippetProps)}</h6>
+	<h6 bind:this={defaultEl} {...mergedProps}>{@render children?.(snippetProps)}</h6>
 {/if}

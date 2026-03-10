@@ -5,6 +5,7 @@
 
 	let {
 		'aria-label': ariaLabel = 'Cancel edit',
+		class: className,
 		child,
 		children,
 		...restProps
@@ -14,7 +15,7 @@
 		ariaLabel: boxWith(() => ariaLabel),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, cancelState.props));
+	const mergedProps = $derived(mergeProps(restProps, cancelState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 {#if child}

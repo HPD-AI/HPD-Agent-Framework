@@ -12,6 +12,7 @@
 		ref = $bindable(null),
 		child,
 		children,
+		class: className,
 		...restProps
 	}: ChatInputInputComponentProps = $props();
 
@@ -62,7 +63,7 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('input')]: '',
 			...rootState.sharedProps
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 </script>
 

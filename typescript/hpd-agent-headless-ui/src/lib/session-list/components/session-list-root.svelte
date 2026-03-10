@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { SessionListRootProps } from '../types.js';
+	import type { SessionListRootProps, SessionListRootHTMLProps } from '../types.js';
 	import { SessionListRootState } from '../session-list.svelte.js';
 
 	let {
@@ -10,13 +10,20 @@
 		orientation = 'vertical',
 		loop = true,
 		'aria-label': ariaLabel = 'Sessions',
+		class: className,
 		onSelect,
 		onDelete,
 		onCreate,
 		child,
 		children,
 		...restProps
-	}: SessionListRootProps = $props();
+	}: SessionListRootProps & { class?: string } = $props();
+
+	$effect(() => {
+		if (import.meta.env.DEV && !child && !children) {
+			console.warn('[SessionList.Root] No children or child snippet provided — nothing will render.');
+		}
+	});
 
 	let rootNode: HTMLElement | null = $state(null);
 
@@ -34,7 +41,12 @@
 		onCreate: () => onCreate?.(),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, rootState.props, { 'aria-label': ariaLabel }));
+	const mergedProps = $derived(mergeProps(
+		restProps,
+		rootState.props,
+		{ 'aria-label': ariaLabel },
+		className ? { class: className } : {}
+	) as SessionListRootHTMLProps);
 </script>
 
 {#if child}

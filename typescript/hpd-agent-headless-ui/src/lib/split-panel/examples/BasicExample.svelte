@@ -124,7 +124,7 @@
 		border-radius: 2px;
 	}
 
-	[data-state='dragging'] .handle-visual {
+	:global([data-state='dragging']) .handle-visual {
 		background: #b0b0b0;
 	}
 

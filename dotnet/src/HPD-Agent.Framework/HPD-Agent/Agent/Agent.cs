@@ -3943,21 +3943,26 @@ public sealed class Agent
             ?? throw new InvalidOperationException(
                 "No session store configured. Use WithSessionStore() on AgentBuilder to configure persistence.");
 
-        // V3: Get all existing siblings at this fork point
-        // IMPORTANT: We want siblings of the NEW branch, not the source branch!
-        // New branch will have: ForkedFrom=sourceBranch.Id, ForkedAtMessageIndex=fromMessageIndex
-        var siblings = await GetSiblingsAsync(
+        // V3: Get all existing siblings at this fork point.
+        // Siblings share the same ForkedFrom + ForkedAtMessageIndex (same preceding context).
+        var existingForkSiblings = await GetSiblingsAsync(
             sourceBranch.SessionId,
-            sourceBranch.Id,  // This is just for potential filtering, not used in sibling matching
-            sourceBranch.Id,  // NEW branch's ForkedFrom = source branch ID
-            fromMessageIndex, // NEW branch's ForkedAtMessageIndex = fork point
+            sourceBranch.Id,  // ForkedFrom = source branch ID
+            fromMessageIndex, // ForkedAtMessageIndex = last shared message index
             cancellationToken);
 
-        // V3: Sort siblings (original first, then chronological)
-        var sortedSiblings = siblings
-            .OrderBy(b => b.ForkedFrom != null)  // Original first
-            .ThenBy(b => b.CreatedAt)
+        // Sort existing fork siblings chronologically
+        var sortedForkSiblings = existingForkSiblings
+            .OrderBy(b => b.CreatedAt)
             .ToList();
+
+        // V3: The source branch is ALWAYS sibling #0 ("original branch = 0" per design intent).
+        // Insert it at the front if this is the first fork at this point (i.e. it hasn't been
+        // assigned sibling navigation fields yet for this fork group).
+        bool isFirstFork = sortedForkSiblings.Count == 0;
+        var sortedSiblings = new List<Branch>();
+        sortedSiblings.Add(sourceBranch); // slot 0: always the source
+        sortedSiblings.AddRange(sortedForkSiblings);
 
         // Create new branch with copied messages and branch-scoped state
         var now = DateTime.UtcNow;
@@ -3970,10 +3975,11 @@ public sealed class Agent
             LastActivity = now,
 
             // V3: Sibling metadata
-            SiblingIndex = sortedSiblings.Count,      // Next available index
-            TotalSiblings = sortedSiblings.Count + 1, // Include new branch
+            // sortedSiblings already includes sourceBranch at slot 0, so Count = correct next index
+            SiblingIndex = sortedSiblings.Count,      // Next available index (after source + existing forks)
+            TotalSiblings = sortedSiblings.Count + 1, // source + existing forks + this new branch
             IsOriginal = false,
-            OriginalBranchId = sourceBranch.ForkedFrom ?? sourceBranch.Id,
+            OriginalBranchId = sourceBranch.Id,       // Source branch is always the original
             ChildBranches = new List<string>()
         };
 
@@ -4000,26 +4006,40 @@ public sealed class Agent
             newBranch.MiddlewareState[kvp.Key] = kvp.Value;
         }
 
-        // V3: Update ALL existing siblings' TotalSiblings count (ATOMIC)
-        foreach (var sibling in sortedSiblings)
+        // V3: Update ALL existing siblings atomically.
+        // sourceBranch at slot 0 is the "original" for this new group.
+        //
+        // Special case: if sourceBranch itself has a parent (ForkedFrom != null), it is ALSO
+        // a member of its parent's sibling group, and that group owns its SiblingIndex/TotalSiblings/
+        // nav-pointer fields. Overwriting those fields here would corrupt its position in the parent
+        // group. In that case we only update LastActivity on sourceBranch; all other metadata is
+        // preserved. The frontend reconstructs sibling groups by scanning ForkedFrom+ForkedAtMessageIndex
+        // so it does not rely on these pointer fields for the source branch.
+        //
+        // If sourceBranch has no parent (ForkedFrom == null, e.g. "main"), it has no other group to
+        // belong to, so it is safe (and correct) to fully update its sibling fields here.
+        bool sourceBranchHasParent = sourceBranch.ForkedFrom != null;
+        int totalAfterAdd = sortedSiblings.Count + 1; // +1 for newBranch
+        for (int i = 0; i < sortedSiblings.Count; i++)
         {
-            sibling.TotalSiblings = sortedSiblings.Count + 1;
+            var sibling = sortedSiblings[i];
+            if (i == 0 && sourceBranchHasParent)
+            {
+                // sourceBranch already belongs to its parent's sibling group — preserve its fields.
+                sibling.LastActivity = now;
+                await store.SaveBranchAsync(sourceBranch.SessionId, sibling, cancellationToken);
+                continue;
+            }
+            sibling.SiblingIndex = i;
+            sibling.TotalSiblings = totalAfterAdd;
+            sibling.PreviousSiblingId = i > 0 ? sortedSiblings[i - 1].Id : null;
+            sibling.NextSiblingId = i < sortedSiblings.Count - 1 ? sortedSiblings[i + 1].Id : newBranch.Id;
             sibling.LastActivity = now;
             await store.SaveBranchAsync(sourceBranch.SessionId, sibling, cancellationToken);
         }
 
-        // V3: Set navigation pointers
-        if (sortedSiblings.Count > 0)
-        {
-            // Link to previous sibling (last in sorted list)
-            var previousSibling = sortedSiblings.Last();
-            newBranch.PreviousSiblingId = previousSibling.Id;
-
-            // Update previous sibling's NextSiblingId
-            previousSibling.NextSiblingId = newBranch.Id;
-            previousSibling.LastActivity = now;
-            await store.SaveBranchAsync(sourceBranch.SessionId, previousSibling, cancellationToken);
-        }
+        // Wire newBranch's PreviousSiblingId to the last existing sibling.
+        newBranch.PreviousSiblingId = sortedSiblings.Last().Id;
 
         // V3: Update source branch's ChildBranches list
         if (!sourceBranch.ChildBranches.Contains(newBranch.Id))
@@ -4043,14 +4063,14 @@ public sealed class Agent
     }
 
     /// <summary>
-    /// Helper: Get all siblings at a fork point.
-    /// Siblings share the same ForkedFrom and ForkedAtMessageIndex.
+    /// Helper: Get all existing fork branches at a given fork point.
+    /// Returns branches with ForkedFrom == forkedFromBranchId AND ForkedAtMessageIndex == fromMessageIndex.
+    /// Does NOT include the source branch itself — caller inserts it at slot 0.
     /// </summary>
     private async Task<List<Branch>> GetSiblingsAsync(
         string sessionId,
-        string targetBranchId,
-        string? forkedFrom,
-        int? forkedAtMessageIndex,
+        string forkedFromBranchId,
+        int fromMessageIndex,
         CancellationToken ct)
     {
         var store = Config.SessionStore
@@ -4065,11 +4085,8 @@ public sealed class Agent
             var branch = await store.LoadBranchAsync(sessionId, branchId, ct);
             if (branch == null) continue;
 
-            // Include target branch and all siblings (same ForkedFrom + ForkedAtMessageIndex)
-            bool isSibling = branch.ForkedFrom == forkedFrom &&
-                             branch.ForkedAtMessageIndex == forkedAtMessageIndex;
-
-            if (isSibling)
+            if (branch.ForkedFrom == forkedFromBranchId &&
+                branch.ForkedAtMessageIndex == fromMessageIndex)
             {
                 siblings.Add(branch);
             }
@@ -4173,7 +4190,9 @@ public sealed class Agent
             }
         }
 
-        // Get all remaining siblings
+        // Get all remaining siblings (same fork group, excluding branch being deleted).
+        // The fork group is: source branch (ForkedFrom) + all branches with ForkedFrom==branch.ForkedFrom
+        // and ForkedAtMessageIndex==branch.ForkedAtMessageIndex.
         var branchIds = await store.ListBranchIdsAsync(sessionId, cancellationToken);
         var remainingSiblings = new List<Branch>();
 
@@ -4182,15 +4201,22 @@ public sealed class Agent
             if (bid == branchId) continue; // Skip branch being deleted
 
             var sibling = await store.LoadBranchAsync(sessionId, bid, cancellationToken);
-            if (sibling != null &&
-                sibling.ForkedFrom == branch.ForkedFrom &&
-                sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex)
+            if (sibling == null) continue;
+
+            // Sibling = same ForkedFrom + ForkedAtMessageIndex (peer forks)
+            bool isSameGroup = sibling.ForkedFrom == branch.ForkedFrom &&
+                               sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex;
+
+            // Source branch = the branch we forked FROM (slot 0 in this fork group)
+            bool isSource = branch.ForkedFrom != null && bid == branch.ForkedFrom;
+
+            if (isSameGroup || isSource)
             {
                 remainingSiblings.Add(sibling);
             }
         }
 
-        // Sort siblings by current index (to maintain order)
+        // Sort by current SiblingIndex to maintain stable order
         remainingSiblings = remainingSiblings
             .OrderBy(b => b.SiblingIndex)
             .ToList();

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { RunConfigMaxTokensInputProps } from '../types.js';
+	import type { RunConfigMaxTokensInputProps, RunConfigMaxTokensInputHTMLProps } from '../types.js';
 	import { RunConfigMaxTokensInputState } from '../run-config.svelte.js';
 
 	let {
@@ -8,6 +8,7 @@
 		min = 1,
 		max = undefined,
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -20,7 +21,7 @@
 		disabled: boxWith(() => disabled),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as RunConfigMaxTokensInputHTMLProps);
 </script>
 
 {#if child}

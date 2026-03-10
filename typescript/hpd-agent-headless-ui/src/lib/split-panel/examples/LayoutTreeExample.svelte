@@ -205,7 +205,7 @@
 			data-panel-id={node.id}
 			data-collapsed={node.size === 0 ? '' : undefined}
 			data-maximized={node.maximized ? '' : undefined}
-			role="region"
+			role="group"
 			aria-label="Panel {node.id}"
 			tabindex={0}
 			class="panel"
@@ -248,6 +248,9 @@
 						role="separator"
 						aria-orientation={node.axis === 'row' ? 'vertical' : 'horizontal'}
 						aria-label="Resize between panels"
+						aria-valuenow={50}
+						aria-valuemin={0}
+						aria-valuemax={100}
 						tabindex={0}
 						onpointerdown={handleResizePointerDown}
 						onkeydown={handleResizeKeyDown}

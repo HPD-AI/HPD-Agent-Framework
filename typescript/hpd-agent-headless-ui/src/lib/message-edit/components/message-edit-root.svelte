@@ -12,6 +12,7 @@
 		onSave,
 		onCancel,
 		onError,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -28,7 +29,7 @@
 		onError: boxWith(() => onError),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as Record<string, unknown>);
 	const snippetProps = $derived(rootState.snippetProps);
 </script>
 

@@ -3,7 +3,7 @@
 	import { ArtifactPanelState } from '../artifact.svelte.js';
 	import type { ArtifactPanelComponentProps } from '../types.js';
 
-	let { child, children, ref = $bindable(null), ...restProps }: ArtifactPanelComponentProps = $props();
+	let { class: className, child, children, ref = $bindable(null), ...restProps }: ArtifactPanelComponentProps = $props();
 
 	// Create panel state with boxed ref
 	const panelState = ArtifactPanelState.create({
@@ -25,7 +25,7 @@
 			[panelState.getHPDAttr('panel')]: '',
 			...panelState.sharedProps,
 			style: mergedStyle
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 
 	// Snippet props exposed to children

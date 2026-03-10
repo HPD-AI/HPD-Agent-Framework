@@ -25,6 +25,10 @@ import type {
 	CreateBranchRequest,
 	ForkBranchRequest,
 	SiblingBranch,
+	CreateAgentRequest,
+	UpdateAgentRequest,
+	StoredAgentDto,
+	AssetReference,
 } from '@hpd/hpd-agent-client';
 
 // ============================================
@@ -135,6 +139,24 @@ class FakeAgentClient implements AgentClientLike {
 	async getBranchSiblings(_sid: string, _bid: string): Promise<SiblingBranch[]> { return []; }
 	async getNextSibling(_sid: string, _bid: string): Promise<Branch | null> { return null; }
 	async getPreviousSibling(_sid: string, _bid: string): Promise<Branch | null> { return null; }
+
+	// ---- Agent CRUD ----
+
+	async listAgents() { return []; }
+	async getAgent(_agentId: string) { return null; }
+	async createAgent(_request: CreateAgentRequest): Promise<StoredAgentDto> {
+		throw new Error('not needed in permission tests');
+	}
+	async updateAgent(_agentId: string, _request: UpdateAgentRequest): Promise<StoredAgentDto> {
+		throw new Error('not needed in permission tests');
+	}
+	async deleteAgent(_agentId: string) {}
+
+	// ---- Asset upload ----
+
+	async uploadAsset(_sessionId: string, _file: File | Blob, _name?: string): Promise<AssetReference> {
+		throw new Error('not needed in permission tests');
+	}
 
 	// ---- Test helpers ----
 

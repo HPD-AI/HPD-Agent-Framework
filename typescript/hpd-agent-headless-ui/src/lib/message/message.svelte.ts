@@ -60,42 +60,36 @@ export class MessageState {
 
 	/**
 	 * HTML props for the root element (data attributes + ARIA)
-	 * Defined as a method to avoid initialization order issues
 	 */
-	get props(): MessageHTMLProps {
-		return {
-			'data-message-id': this.id,
-			'data-role': this.role,
-			'data-streaming': this.streaming ? '' : undefined,
-			'data-thinking': this.thinking ? '' : undefined,
-			'data-has-tools': this.hasTools ? '' : undefined,
-			'data-has-reasoning': this.hasReasoning ? '' : undefined,
-			'data-status': this.status,
-			'aria-live': this.streaming ? 'polite' : 'off',
-			'aria-busy': this.streaming || this.thinking,
-			'aria-label': `${this.role} message`,
-			class: undefined
-		};
-	}
+	readonly props = $derived.by((): MessageHTMLProps => ({
+		'data-message-id': this.id,
+		'data-role': this.role,
+		'data-streaming': this.streaming ? '' : undefined,
+		'data-thinking': this.thinking ? '' : undefined,
+		'data-has-tools': this.hasTools ? '' : undefined,
+		'data-has-reasoning': this.hasReasoning ? '' : undefined,
+		'data-status': this.status,
+		'aria-live': this.streaming ? 'polite' : 'off',
+		'aria-busy': this.streaming || this.thinking,
+		'aria-label': `${this.role} message`,
+		class: undefined
+	}));
 
 	/**
 	 * Snippet props for content customization
-	 * Defined as a method to avoid initialization order issues
 	 */
-	get snippetProps(): MessageSnippetProps {
-		return {
-			content: this.content,
-			role: this.role,
-			streaming: this.streaming,
-			thinking: this.thinking,
-			hasReasoning: this.hasReasoning,
-			reasoning: this.reasoning,
-			toolCalls: this.toolCalls,
-			hasActiveTools: this.hasActiveTools,
-			timestamp: this.timestamp,
-			status: this.status
-		};
-	}
+	readonly snippetProps = $derived.by((): MessageSnippetProps => ({
+		content: this.content,
+		role: this.role,
+		streaming: this.streaming,
+		thinking: this.thinking,
+		hasReasoning: this.hasReasoning,
+		reasoning: this.reasoning,
+		toolCalls: this.toolCalls,
+		hasActiveTools: this.hasActiveTools,
+		timestamp: this.timestamp,
+		status: this.status
+	}));
 
 	// ============================================
 	// Constructor

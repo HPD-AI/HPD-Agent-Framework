@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { BranchSwitcherNextProps } from '../types.js';
+	import type { BranchSwitcherNextProps, BranchSwitcherNextHTMLProps } from '../types.js';
 	import { BranchSwitcherNextState } from '../branch-switcher.svelte.js';
 
 	let {
 		'aria-label': ariaLabel = 'Next branch',
+		class: className,
 		child,
 		children,
 		...restProps
@@ -12,7 +13,7 @@
 
 	const nextState = BranchSwitcherNextState.create(boxWith(() => ariaLabel));
 
-	const mergedProps = $derived(mergeProps(restProps, nextState.props));
+	const mergedProps = $derived(mergeProps(restProps, nextState.props, className ? { class: className } : {}) as BranchSwitcherNextHTMLProps);
 </script>
 
 {#if child}

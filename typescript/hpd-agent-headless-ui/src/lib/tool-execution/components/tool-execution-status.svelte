@@ -7,19 +7,19 @@
 	 */
 
 	import { mergeProps } from 'svelte-toolbelt';
-	import type { ToolExecutionStatusProps } from '../types.js';
+	import type { ToolExecutionStatusProps, ToolExecutionStatusHTMLProps } from '../types.js';
 	import { ToolExecutionStatusState } from '../tool-execution.svelte.js';
 
-	let { child, children, ...restProps }: ToolExecutionStatusProps = $props();
+	let { class: className, child, children, ...restProps }: ToolExecutionStatusProps = $props();
 
-	const state = ToolExecutionStatusState.create();
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const rootState = ToolExecutionStatusState.create();
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as ToolExecutionStatusHTMLProps);
 </script>
 
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
 	<span {...mergedProps}>
-		{@render children?.(state.snippetProps)}
+		{@render children?.(rootState.snippetProps)}
 	</span>
 {/if}

@@ -20,6 +20,11 @@ export interface VoiceActivityIndicatorRootProps extends VoiceActivityIndicatorS
 	children?: Snippet<[VoiceActivityIndicatorState]>;
 
 	/**
+	 * CSS class name
+	 */
+	class?: string;
+
+	/**
 	 * Reference to the root element
 	 */
 	ref?: HTMLElement | null;

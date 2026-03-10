@@ -6,6 +6,7 @@
 	let {
 		child,
 		children,
+		class: className,
 		useWebAudio = false,
 		bufferThreshold = 2,
 		onStatusChange,
@@ -34,7 +35,7 @@
 	});
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 <!--

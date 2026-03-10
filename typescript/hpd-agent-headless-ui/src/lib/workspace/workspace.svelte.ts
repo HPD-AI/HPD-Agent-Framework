@@ -35,15 +35,15 @@ import {
 	type EventHandlers,
 	type PermissionChoice,
 	type PermissionResponse,
-} from '@hpd/hpd-agent-client';
-import type {
-	Branch,
-	BranchMessage,
-	AssetReference,
-	CreateBranchRequest,
-	CreateSessionRequest,
-	Session,
-	AgentSummaryDto,
+	type StreamOptions,
+	type RunConfig,
+	type Branch,
+	type BranchMessage,
+	type AssetReference,
+	type CreateBranchRequest,
+	type CreateSessionRequest,
+	type Session,
+	type AgentSummaryDto,
 } from '@hpd/hpd-agent-client';
 import { AgentState } from '../agent/agent.svelte.ts';
 import type { Message, MessageRole, ToolCall } from '../agent/types.ts';
@@ -319,11 +319,15 @@ class WorkspaceImpl implements Workspace {
 
 	async #loadBranch(sessionId: string, branchId: string): Promise<void> {
 		const cacheKey = `${sessionId}:${branchId}`;
+		const rawMessages = await this.#client.getBranchMessages(sessionId, branchId);
+		const mapped = mapToUIMessages(rawMessages);
 
-		if (!this.#branchStates.has(cacheKey)) {
+		const existing = this.#branchStates.get(cacheKey);
+		if (existing) {
+			existing.loadHistory(mapped);
+		} else {
 			const state = new AgentState();
-			const rawMessages = await this.#client.getBranchMessages(sessionId, branchId);
-			state.loadHistory(mapToUIMessages(rawMessages));
+			state.loadHistory(mapped);
 			this.#branchStates.set(cacheKey, state);
 		}
 
@@ -635,6 +639,13 @@ class WorkspaceImpl implements Workspace {
 		this.#error = null;
 		try {
 			await this.#loadBranch(sessionId, branchId);
+			// Refresh branch metadata so sibling navigation fields are current
+			const fresh = await this.#client.getBranch(sessionId, branchId);
+			if (fresh) {
+				const updated = new Map(this.#branches);
+				updated.set(branchId, fresh);
+				this.#branches = updated;
+			}
 		} catch (err) {
 			this.#error = err instanceof Error ? err.message : 'Failed to switch branch';
 			throw err;
@@ -676,29 +687,59 @@ class WorkspaceImpl implements Workspace {
 			throw new Error('Can only edit user messages');
 		}
 
-		// Fork at the message index — server requires a newBranchId
-		const fork = await this.#client.forkBranch(sessionId, branchId, {
+		// Fork at the last assistant turn before the edited message so the fork contains
+		// everything up to (but not including) the user message being replaced.
+		// For messageIndex=0 (no preceding turn), fork at 0 — the fork will contain
+		// the original first message as context, which is acceptable for sibling wiring.
+		const forkAtIndex = Math.max(0, messageIndex - 1);
+
+		// Always fork from the branch that OWNS the shared context at forkAtIndex.
+		// If the current branch is itself a fork at this same index (forkedAtMessageIndex === forkAtIndex),
+		// then its parent already owns the shared context — fork from the parent instead.
+		// This ensures all edits of the same message become flat siblings of the original branch
+		// rather than a linear chain of forks-of-forks.
+		const activeBranch = this.#branches.get(branchId)!;
+		const sourceBranchId =
+			!activeBranch.isOriginal && activeBranch.forkedAtMessageIndex === forkAtIndex
+				? activeBranch.forkedFrom!
+				: branchId;
+
+		const fork = await this.#client.forkBranch(sessionId, sourceBranchId, {
 			newBranchId: crypto.randomUUID(),
-			fromMessageIndex: messageIndex,
+			fromMessageIndex: forkAtIndex,
 			name: `Edit: ${newContent.slice(0, 30)}${newContent.length > 30 ? '...' : ''}`,
 			agentId: this.#activeAgentId ?? undefined
 		});
-
 		// Register fork in branch map
 		const newBranches = new Map(this.#branches);
 		newBranches.set(fork.id, fork);
 		this.#branches = newBranches;
 
-		// Refresh parent metadata (it gained a new child)
-		const updatedParent = await this.#client.getBranch(sessionId, branchId);
-		if (updatedParent) {
+		// Refresh source branch metadata (it gained a new sibling group member)
+		const updatedSource = await this.#client.getBranch(sessionId, sourceBranchId);
+		if (updatedSource) {
 			const refreshed = new Map(this.#branches);
-			refreshed.set(branchId, updatedParent);
+			refreshed.set(sourceBranchId, updatedSource);
 			this.#branches = refreshed;
 		}
 
-		// The fork already has messages up to messageIndex (backend copied them)
-		// Switch to fork and send the edited content
+		// Also refresh all existing siblings at this fork point so their totalSiblings is current
+		const allBranches = Array.from(this.#branches.values());
+		const siblingsToRefresh = allBranches.filter(
+			b => b.id !== fork.id && b.id !== sourceBranchId &&
+				b.forkedFrom === sourceBranchId && b.forkedAtMessageIndex === forkAtIndex
+		);
+		if (siblingsToRefresh.length > 0) {
+			const refreshed = new Map(this.#branches);
+			await Promise.all(siblingsToRefresh.map(async sib => {
+				const fresh = await this.#client.getBranch(sessionId, sib.id);
+				if (fresh) refreshed.set(sib.id, fresh);
+			}));
+			this.#branches = refreshed;
+		}
+
+		// The fork has messages up to forkAtIndex (messageIndex - 1), not including the edited message.
+		// Switch to fork and send the edited content as a fresh message.
 		await this.switchBranch(fork.id);
 		await this.send(newContent);
 	}
@@ -842,7 +883,10 @@ class WorkspaceImpl implements Workspace {
 				agentId: effectiveAgentId,
 				runConfig: options?.runConfig,
 				resetClientState: true,
-				clientToolKits: this.#options.clientToolKits,
+				clientToolKits: [
+					...(this.#options.clientToolKits ?? []),
+					...(options?.clientToolKits ?? []),
+				],
 			}
 		);
 	}
@@ -908,5 +952,13 @@ class WorkspaceImpl implements Workspace {
  * bidirectional permission/clarification handling). The transport is never exposed.
  */
 export function createWorkspace(options: CreateWorkspaceOptions): Workspace {
-	return new WorkspaceImpl(options);
+	// $effect.root gives the instance a reactive owner when called outside a
+	// component (e.g. module-level singletons). On the server (SSR) $effect.root
+	// is a no-op, so we fall back to a plain new — SSR only needs a single
+	// synchronous render and does not require reactive signal tracking.
+	let instance: WorkspaceImpl | undefined;
+	$effect.root(() => {
+		instance = new WorkspaceImpl(options);
+	});
+	return (instance ?? new WorkspaceImpl(options));
 }

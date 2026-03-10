@@ -33,7 +33,7 @@ describe('workspace — activeSiblings', () => {
 		expect(siblings.some((s) => s.id === main.id)).toBe(true);
 	});
 
-	it('all siblings share the same forkedFrom and forkedAtMessageIndex', async () => {
+	it('all fork siblings share the same forkedFrom and forkedAtMessageIndex (source is slot 0)', async () => {
 		const ws = createMockWorkspace({ typingDelay: 0 });
 		await ws.send('msg');
 		await tick(300);
@@ -49,10 +49,17 @@ describe('workspace — activeSiblings', () => {
 		await tick(300);
 
 		const siblings = ws.activeSiblings;
-		const forkedFrom = siblings[0]?.forkedFrom;
-		const forkedAt = siblings[0]?.forkedAtMessageIndex;
-		expect(siblings.every((s) => s.forkedFrom === forkedFrom)).toBe(true);
-		expect(siblings.every((s) => s.forkedAtMessageIndex === forkedAt)).toBe(true);
+		// activeSiblings now includes source (slot 0) plus all forks.
+		// Source (main) has forkedFrom=null; forks share forkedFrom='main'.
+		const forks = siblings.filter((s) => !s.isOriginal);
+		const forkedFrom = forks[0]?.forkedFrom;
+		const forkedAt = forks[0]?.forkedAtMessageIndex;
+		expect(forks.every((s) => s.forkedFrom === forkedFrom)).toBe(true);
+		expect(forks.every((s) => s.forkedAtMessageIndex === forkedAt)).toBe(true);
+		// Source branch is present as slot 0
+		const source = siblings.find((s) => s.isOriginal);
+		expect(source).toBeDefined();
+		expect(source!.siblingIndex).toBe(0);
 		expect(forkAId).toBeTruthy(); // just confirms the fork was created
 	});
 
@@ -347,5 +354,130 @@ describe('workspace — state $derived updates on switch', () => {
 		await ws.switchBranch('main');
 		// Should be the exact same AgentState instance (cache hit)
 		expect(ws.state).toBe(mainState);
+	});
+});
+
+// ============================================
+// activeSiblings includes source as slot 0 (W1-W7)
+// ============================================
+
+describe('workspace — sibling redesign: source is slot 0 (W1-W7)', () => {
+	async function tick(ms = 300): Promise<void> {
+		await new Promise((r) => setTimeout(r, ms));
+	}
+
+	// W1: activeSiblings includes source (main) at slot 0 after a fork
+	it('W1: activeSiblings includes source branch as slot 0 after editMessage', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		// editMessage creates a fork — switch to it
+		await ws.editMessage(0, 'fork content');
+		await tick();
+
+		const siblings = ws.activeSiblings;
+		expect(siblings.length).toBeGreaterThanOrEqual(2);
+
+		// source branch (main) should be slot 0
+		const source = siblings.find((s) => s.id === 'main');
+		expect(source).toBeDefined();
+		expect(source!.siblingIndex).toBe(0);
+	});
+
+	// W2: currentSiblingPosition is { current: 2, total: 2 } when on fork (slot 1)
+	it('W2: currentSiblingPosition is { 2, 2 } when on fork branch', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+
+		// Active branch is the fork (slot 1 out of 2)
+		expect(ws.activeBranch?.siblingIndex).toBe(1);
+		expect(ws.currentSiblingPosition.current).toBe(2); // 1-based
+		expect(ws.currentSiblingPosition.total).toBe(2);
+	});
+
+	// W3: currentSiblingPosition is { 1, 2 } when back on main (slot 0)
+	it('W3: currentSiblingPosition is { 1, 2 } when back on main after fork', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+		await ws.switchBranch('main');
+
+		expect(ws.activeBranch?.id).toBe('main');
+		expect(ws.activeBranch?.siblingIndex).toBe(0);
+		expect(ws.currentSiblingPosition.current).toBe(1);
+		expect(ws.currentSiblingPosition.total).toBe(2);
+	});
+
+	// W4: canGoPrevious is true when on fork (source is prev)
+	it('W4: canGoPrevious is true when on fork branch (source is previousSiblingId)', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+
+		// Active is the fork — it has previousSiblingId=main
+		expect(ws.activeBranch?.previousSiblingId).toBe('main');
+		expect(ws.canGoPrevious).toBe(true);
+	});
+
+	// W5: canGoNext is true when on main (fork is next)
+	it('W5: canGoNext is true when on main after fork (fork is nextSiblingId)', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+		await ws.switchBranch('main');
+
+		// main now has nextSiblingId pointing to the fork
+		expect(ws.activeBranch?.nextSiblingId).toBeTruthy();
+		expect(ws.canGoNext).toBe(true);
+	});
+
+	// W6: goToPreviousSibling from fork lands on main
+	it('W6: goToPreviousSibling from fork navigates back to main', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+
+		// Confirm we are on the fork
+		const forkId = ws.activeBranchId;
+		expect(forkId).not.toBe('main');
+
+		// Navigate back to source
+		await ws.goToPreviousSibling();
+
+		expect(ws.activeBranch?.id).toBe('main');
+	});
+
+	// W7: goToNextSibling from main lands on fork
+	it('W7: goToNextSibling from main navigates to the fork', async () => {
+		const ws = createMockWorkspace({ typingDelay: 0 });
+		await ws.send('hello');
+		await tick();
+
+		await ws.editMessage(0, 'fork');
+		await tick();
+		const forkId = ws.activeBranchId!;
+		expect(forkId).not.toBe('main');
+
+		await ws.switchBranch('main');
+		await ws.goToNextSibling();
+
+		expect(ws.activeBranch?.id).toBe(forkId);
 	});
 });

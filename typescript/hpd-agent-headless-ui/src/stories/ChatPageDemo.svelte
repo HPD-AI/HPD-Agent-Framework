@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boxWith } from 'svelte-toolbelt';
 	import {
 		createMockWorkspace,
 		RunConfig,
@@ -28,6 +29,7 @@
 	} = $props();
 
 	// ── Workspace ────────────────────────────────────────────────────────────
+	// svelte-ignore state_referenced_locally
 	const workspace = createMockWorkspace({
 		typingDelay,
 		enableReasoning,
@@ -66,12 +68,12 @@
 
 	// ── FileAttachment ───────────────────────────────────────────────────────
 	const activeSessionId = $derived(workspace.activeSessionId);
-	const isStreaming     = $derived(workspace.state?.isStreaming ?? false);
+	const isStreaming     = $derived(workspace.state?.streaming ?? false);
 
 	const attachments = new FileAttachmentState({
-		uploadFn:  { get current() { return mockUpload; } },
-		sessionId: { get current() { return activeSessionId; } },
-		disabled:  { get current() { return isStreaming; } },
+		uploadFn:  boxWith(() => mockUpload),
+		sessionId: boxWith(() => activeSessionId),
+		disabled:  boxWith(() => isStreaming),
 	});
 
 	async function mockUpload(_sid: string, file: File): Promise<AssetReference> {
@@ -82,6 +84,7 @@
 	let fileInput: HTMLInputElement | undefined = $state();
 
 	// ── UI state ─────────────────────────────────────────────────────────────
+	// svelte-ignore state_referenced_locally
 	let configOpen   = $state(showRunConfig);
 	let editingIndex = $state<number | null>(null);
 
@@ -185,7 +188,7 @@
 
 				<!-- Message list -->
 				<div class="messages-wrap">
-					<MessageList.Root {messages} autoScroll>
+					<MessageList.Root {messages}>
 						{#snippet children()}
 							{#each messages as message, i (message.id)}
 
@@ -385,20 +388,17 @@
 												onSave={() => (editingIndex = null)}
 												onCancel={() => (editingIndex = null)}
 											>
-												{#snippet children(ed)}
+												{#snippet children(ed: any)}
 													<div class="edit-form">
-														<MessageEdit.Textarea>
-															{#snippet children(ta)}
-																<textarea
-																	class="edit-textarea"
-																	value={ta.value}
-																	placeholder={ta.placeholder}
-																	disabled={ta.pending}
-																	oninput={(e) => ta.handleChange(e.currentTarget.value)}
-																	onkeydown={ta.handleKeyDown}
-																></textarea>
-															{/snippet}
-														</MessageEdit.Textarea>
+														{@html `<div data-message-edit-textarea>`}
+														<textarea
+															class="edit-textarea"
+															value={ed.value ?? ''}
+															placeholder="Edit message..."
+															disabled={false}
+															oninput={(e) => (ed.value = e.currentTarget.value)}
+														></textarea>
+														{@html `</div>`}
 														<div class="edit-actions">
 															<MessageEdit.CancelButton>
 																{#snippet children(cb)}
@@ -467,7 +467,7 @@
 						disabled={!canSend}
 						onSubmit={(d) => handleSend(d.value)}
 					>
-						{#snippet children(ci)}
+						{#snippet children()}
 							<!-- Top zone: empty -->
 
 							<!-- Main textarea -->
@@ -536,6 +536,7 @@
 
 					<div class="drawer-body">
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">Model</label>
 							<RunConfig.ModelSelector {runConfig} {providers}>
 								{#snippet children(ms)}
@@ -563,6 +564,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">
 								Temperature
 								{#if runConfig.temperature !== undefined}
@@ -589,6 +591,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">
 								Top-P
 								{#if runConfig.topP !== undefined}
@@ -615,6 +618,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">Max Tokens</label>
 							<RunConfig.MaxTokensInput {runConfig}>
 								{#snippet children(mt)}
@@ -638,6 +642,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">System Instructions</label>
 							<RunConfig.SystemInstructionsInput {runConfig}>
 								{#snippet children(si)}
@@ -652,6 +657,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">Skip Tools</label>
 							<RunConfig.SkipToolsToggle {runConfig}>
 								{#snippet children(st)}
@@ -667,6 +673,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">Permissions</label>
 							<RunConfig.PermissionOverridesPanel {runConfig} {permissions}>
 								{#snippet children(po)}
@@ -690,6 +697,7 @@
 						</div>
 
 						<div class="drawer-field">
+							<!-- svelte-ignore a11y_label_has_associated_control -->
 							<label class="drawer-label">Run Timeout</label>
 							<RunConfig.RunTimeoutInput {runConfig}>
 								{#snippet children(rt)}

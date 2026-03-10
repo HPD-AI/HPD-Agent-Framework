@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { mergeProps, attachRef } from 'svelte-toolbelt';
+	import { mergeProps } from 'svelte-toolbelt';
 	import { ChatInputRootState } from '../chat-input.svelte.js';
 	import type { ChatInputAccessoryComponentProps } from '../types.js';
 
@@ -7,14 +7,12 @@
 		ref = $bindable(null),
 		child,
 		children,
+		class: className,
 		...restProps
 	}: ChatInputAccessoryComponentProps = $props();
 
 	// Get shared state from context
 	const rootState = ChatInputRootState.get();
-
-	// Ref attachment
-	const refAttachment = attachRef(() => ref);
 
 	// Props for snippet
 	const snippetProps = $derived({
@@ -33,17 +31,20 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('leading')]: '',
 			...rootState.sharedProps,
-			...refAttachment
-		})
+		
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
+
+	let defaultEl = $state<HTMLDivElement | null>(null);
+	$effect(() => { ref = defaultEl; });
 </script>
 
 {#if child}
 	{@render child({ ...snippetProps, props: mergedProps })}
 {:else if children}
-	<div {...mergedProps}>
+	<div bind:this={defaultEl} {...mergedProps}>
 		{@render children(snippetProps)}
 	</div>
 {:else}
-	<div {...mergedProps}></div>
+	<div bind:this={defaultEl} {...mergedProps}></div>
 {/if}

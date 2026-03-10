@@ -9,6 +9,7 @@
 		disabled = false,
 		onSubmit,
 		onChange,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -39,7 +40,7 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('root')]: '',
 			...rootState.sharedProps
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 </script>
 

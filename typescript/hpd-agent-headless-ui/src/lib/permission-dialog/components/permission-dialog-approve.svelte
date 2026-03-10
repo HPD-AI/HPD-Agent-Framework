@@ -10,6 +10,7 @@
 		id = createId(uid),
 		choice = 'ask',
 		disabled = false,
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -26,13 +27,16 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, approveState.props));
+	const mergedProps = $derived(mergeProps(restProps, approveState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	let defaultEl = $state<HTMLButtonElement | null>(null);
+	$effect(() => { approveState.setRef(defaultEl); });
 </script>
 
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
-	<button {...mergedProps}>
+	<button bind:this={defaultEl} {...mergedProps}>
 		{@render children?.()}
 	</button>
 {/if}

@@ -32,7 +32,7 @@ interface StateOpts {
 
 function makeState(opts: StateOpts = {}) {
 	const uploadFn = opts.uploadFn ?? vi.fn(async () => ASSET);
-	const sessionId = 'sessionId' in opts ? opts.sessionId : 'sess-1';
+	const sessionId: string = 'sessionId' in opts ? (opts.sessionId as string) : 'sess-1';
 	const state = new FileAttachmentState({
 		uploadFn: boxWith(() => uploadFn),
 		sessionId: boxWith(() => sessionId),

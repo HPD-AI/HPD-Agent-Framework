@@ -20,5 +20,6 @@ export interface TurnIndicatorRootSnippetProps {
 export interface TurnIndicatorRootProps extends TurnIndicatorStateProps {
 	child?: Snippet<[{ props: Record<string, unknown> } & TurnIndicatorRootSnippetProps]>;
 	children?: Snippet<[TurnIndicatorState]>;
+	class?: string;
 	'data-testid'?: string;
 }

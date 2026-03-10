@@ -67,7 +67,7 @@
 
 					<!-- Probability Meter -->
 					<div class="meter-container">
-						<label>Speech Probability</label>
+						<span>Speech Probability</span>
 						<div class="meter">
 							<div
 								class="meter-fill"
@@ -197,7 +197,7 @@ Duration: {(internalState?.duration ?? 0).toFixed(1)}s</pre>
 		gap: 0.5rem;
 	}
 
-	.meter-container label {
+	.meter-container span {
 		font-size: 0.875rem;
 		font-weight: 500;
 		color: #374151;

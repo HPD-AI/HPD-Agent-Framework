@@ -77,6 +77,7 @@
 	let {
 		axis,
 		initialFlexes,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -118,7 +119,7 @@
 	});
 
 	// Merge props with state-generated attributes
-	const mergedProps = $derived(mergeProps(restProps, splitState.props));
+	const mergedProps = $derived(mergeProps(restProps, splitState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 {#if child}

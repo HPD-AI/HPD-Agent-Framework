@@ -6,6 +6,7 @@
 	let {
 		child,
 		children,
+		class: className,
 		...restProps
 	}: AudioPlaybackGateTriggerProps = $props();
 
@@ -34,7 +35,7 @@
 {#if child}
 	{@render child({ props: restProps, ...snippetProps })}
 {:else}
-	<button {...restProps} type="button">
+	<button {...restProps} class={className} type="button">
 		{@render children?.(snippetProps)}
 	</button>
 {/if}

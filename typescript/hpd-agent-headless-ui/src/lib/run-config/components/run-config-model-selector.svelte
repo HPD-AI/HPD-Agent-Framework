@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { RunConfigModelSelectorProps } from '../types.js';
+	import type { RunConfigModelSelectorProps, RunConfigModelSelectorHTMLProps } from '../types.js';
 	import { RunConfigModelSelectorState } from '../run-config.svelte.js';
 
 	let {
 		runConfig,
 		providers = [],
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -18,7 +19,7 @@
 		disabled: boxWith(() => disabled),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as RunConfigModelSelectorHTMLProps);
 </script>
 
 {#if child}

@@ -294,7 +294,7 @@ export class SseTransport implements AgentTransport {
 
   async updateSession(sessionId: string, request: UpdateSessionRequest): Promise<Session> {
     const response = await fetch(`${this.baseUrl}/sessions/${sessionId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     });

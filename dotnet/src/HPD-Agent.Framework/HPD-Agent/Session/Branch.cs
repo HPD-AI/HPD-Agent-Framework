@@ -54,7 +54,11 @@ public class Branch
     /// <summary>Source branch ID if this was forked (null for original branches)</summary>
     public string? ForkedFrom { get; init; }
 
-    /// <summary>Message index where fork occurred (null for original branches)</summary>
+    /// <summary>
+    /// Index of the last shared message before this branch diverges from its siblings (null for original branches).
+    /// The first diverging message is at ForkedAtMessageIndex + 1.
+    /// Siblings are grouped by ForkedFrom + ForkedAtMessageIndex — all branches that share the same preceding context.
+    /// </summary>
     public int? ForkedAtMessageIndex { get; init; }
 
     /// <summary>When this branch was created</summary>

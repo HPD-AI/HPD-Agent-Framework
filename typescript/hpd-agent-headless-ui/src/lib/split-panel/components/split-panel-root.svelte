@@ -64,6 +64,7 @@
 		onLayoutChange,
 		onPaneClose,
 		onPaneFocus,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -132,13 +133,16 @@
 		// Note: ResizeObserver fires for any layout changes in descendants too,
 		// not just when the root element size changes. We rely on updateSize()
 		// to check if the actual container size changed before triggering updates.
+		let rafId = 0;
 		const resizeObserver = new ResizeObserver(() => {
-			updateSize();
+			cancelAnimationFrame(rafId);
+			rafId = requestAnimationFrame(updateSize);
 		});
 
 		resizeObserver.observe(ref);
 
 		return () => {
+			cancelAnimationFrame(rafId);
 			resizeObserver.disconnect();
 		};
 	});
@@ -147,7 +151,7 @@
 	SplitPanelRootContext.set(rootState);
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as Record<string, unknown>);
 
 	// Snippet props
 	const snippetProps = $derived({

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { RunConfigSkipToolsToggleProps } from '../types.js';
+	import type { RunConfigSkipToolsToggleProps, RunConfigSkipToolsToggleHTMLProps } from '../types.js';
 	import { RunConfigSkipToolsToggleState } from '../run-config.svelte.js';
 
 	let {
 		runConfig,
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -16,7 +17,7 @@
 		disabled: boxWith(() => disabled),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as RunConfigSkipToolsToggleHTMLProps);
 </script>
 
 {#if child}

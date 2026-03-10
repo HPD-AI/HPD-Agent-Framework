@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { BranchSwitcherRootProps } from '../types.js';
+	import type { BranchSwitcherRootProps, BranchSwitcherRootHTMLProps } from '../types.js';
 	import { BranchSwitcherRootState } from '../branch-switcher.svelte.js';
 
 	let {
 		branch,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -14,7 +15,7 @@
 		branch: boxWith(() => branch),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as BranchSwitcherRootHTMLProps);
 </script>
 
 {#if child}

@@ -175,14 +175,20 @@ export interface MessageActionsPrevHTMLProps {
 	type: 'button';
 	disabled: boolean;
 	'aria-label': string;
+	onclick: () => Promise<void>;
 	class?: string | undefined;
 	[key: string]: unknown;
 }
 
+export interface MessageActionsPrevSnippetProps {
+	/** Call this to navigate to the previous sibling branch */
+	goPrevious: () => Promise<void>;
+}
+
 export interface MessageActionsPrevProps {
 	'aria-label'?: string;
-	child?: Snippet<[{ props: MessageActionsPrevHTMLProps }]>;
-	children?: Snippet;
+	child?: Snippet<[MessageActionsPrevSnippetProps & { props: MessageActionsPrevHTMLProps }]>;
+	children?: Snippet<[MessageActionsPrevSnippetProps]>;
 	[key: string]: unknown;
 }
 
@@ -192,14 +198,20 @@ export interface MessageActionsNextHTMLProps {
 	type: 'button';
 	disabled: boolean;
 	'aria-label': string;
+	onclick: () => Promise<void>;
 	class?: string | undefined;
 	[key: string]: unknown;
 }
 
+export interface MessageActionsNextSnippetProps {
+	/** Call this to navigate to the next sibling branch */
+	goNext: () => Promise<void>;
+}
+
 export interface MessageActionsNextProps {
 	'aria-label'?: string;
-	child?: Snippet<[{ props: MessageActionsNextHTMLProps }]>;
-	children?: Snippet;
+	child?: Snippet<[MessageActionsNextSnippetProps & { props: MessageActionsNextHTMLProps }]>;
+	children?: Snippet<[MessageActionsNextSnippetProps]>;
 	[key: string]: unknown;
 }
 

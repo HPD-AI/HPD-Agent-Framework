@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { RunConfigTopPSliderProps } from '../types.js';
+	import type { RunConfigTopPSliderProps, RunConfigTopPSliderHTMLProps } from '../types.js';
 	import { RunConfigTopPSliderState } from '../run-config.svelte.js';
 
 	let {
@@ -9,6 +9,7 @@
 		max = 1,
 		step = 0.01,
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -22,7 +23,7 @@
 		disabled: boxWith(() => disabled),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as RunConfigTopPSliderHTMLProps);
 </script>
 
 {#if child}

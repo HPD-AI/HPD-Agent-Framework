@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { mergeProps } from 'svelte-toolbelt';
-	import type { BranchSwitcherPositionProps } from '../types.js';
+	import type { BranchSwitcherPositionProps, BranchSwitcherPositionHTMLProps } from '../types.js';
 	import { BranchSwitcherPositionState } from '../branch-switcher.svelte.js';
 
-	let { child, children, ...restProps }: BranchSwitcherPositionProps = $props();
+	let { class: className, child, children, ...restProps }: BranchSwitcherPositionProps = $props();
 
 	const positionState = BranchSwitcherPositionState.create();
 
-	const mergedProps = $derived(mergeProps(restProps, positionState.props));
+	const mergedProps = $derived(mergeProps(restProps, positionState.props, className ? { class: className } : {}) as BranchSwitcherPositionHTMLProps);
 </script>
 
 {#if child}

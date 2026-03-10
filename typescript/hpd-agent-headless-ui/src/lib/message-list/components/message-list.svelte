@@ -8,11 +8,13 @@
 
 	let {
 		messages,
-		autoScroll = true,
+		scrollBehavior = 'bottom',
+		atBottomThreshold = 50,
 		keyboardNav = true,
 		'aria-label': ariaLabel = 'Message history',
 		ref = $bindable(null),
 		id = createId(uid),
+		class: className,
 		child,
 		children,
 		...restProps
@@ -20,7 +22,8 @@
 
 	const listState = MessageListState.create({
 		messages: boxWith(() => messages),
-		autoScroll: boxWith(() => autoScroll),
+		scrollBehavior: boxWith(() => scrollBehavior),
+		atBottomThreshold: boxWith(() => atBottomThreshold),
 		keyboardNav: boxWith(() => keyboardNav),
 		ariaLabel: boxWith(() => ariaLabel),
 		id: boxWith(() => id),
@@ -30,19 +33,28 @@
 		),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, listState.props));
+	// mergedProps contains only plain string-keyed props — no Symbol attachments.
+	const mergedProps = $derived(mergeProps(restProps, listState.props, className ? { class: className } : {}) as Record<string, unknown>);
 
-	// Snippet props
+	// Wire the default-path div's ref into listState (scroll listener setup).
+	let defaultEl = $state<HTMLDivElement | null>(null);
+	$effect(() => { listState.setRef(defaultEl); });
+
 	const snippetProps = $derived({
 		messages,
 		messageCount: listState.messageCount,
+		isAtBottom: listState.isAtBottom,
+		scrollToBottom: listState.scrollToBottom,
+		registerMessageElement: listState.registerMessageElement,
+		unregisterMessageElement: listState.unregisterMessageElement,
+		setRef: listState.setRef,
 	});
 </script>
 
 {#if child}
 	{@render child({ ...snippetProps, props: mergedProps })}
 {:else}
-	<div {...mergedProps}>
+	<div bind:this={defaultEl} {...mergedProps}>
 		{@render children?.(snippetProps)}
 	</div>
 {/if}

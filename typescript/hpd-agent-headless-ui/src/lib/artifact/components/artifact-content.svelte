@@ -3,7 +3,7 @@
 	import { ArtifactProviderState, artifactAttrs } from '../artifact.svelte.js';
 	import type { ArtifactContentComponentProps } from '../types.js';
 
-	let { child, children, ref = $bindable(null), ...restProps }: ArtifactContentComponentProps = $props();
+	let { class: className, child, children, ref = $bindable(null), ...restProps }: ArtifactContentComponentProps = $props();
 
 	// Get provider state to access content snippet
 	const providerState = ArtifactProviderState.get();
@@ -19,7 +19,7 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[artifactAttrs.getAttr('content')]: '',
 			style: mergedStyle
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 </script>
 

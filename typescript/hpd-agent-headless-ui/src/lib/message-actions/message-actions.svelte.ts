@@ -4,10 +4,10 @@
  * Compound headless component for message-level actions: Edit, Retry, and
  * branch navigation (Prev / Next / Position).
  *
- * The branch navigator only becomes active when the active branch was forked
- * at this message index — i.e. this is the message bubble where the divergence
- * happened. That means the ◀ ▶ counter is naturally scoped to the right bubble
- * without any manual condition in the consumer template.
+ * The branch navigator becomes active at the user message row where siblings diverge.
+ * Siblings are branches that share the same preceding context (forked at messageIndex - 1).
+ * The ◀ ▶ counter is naturally scoped to the right bubble without any manual condition
+ * in the consumer template.
  *
  * Parts: Root, EditButton, RetryButton, Prev, Next, Position
  *
@@ -106,39 +106,139 @@ export class MessageActionsRootState {
 	readonly role = $derived.by(() => this.#opts.role.current);
 	readonly pending = $derived.by(() => this.#pendingCount > 0);
 
-	// The branch navigator is only active when the active branch was forked
-	// at exactly this message index.
+	// (branch prop kept for API compatibility but no longer drives sibling detection)
 	readonly #branch = $derived.by(() => this.#opts.branch?.current ?? null);
 
-	readonly #isForkedHere = $derived.by(() => {
-		const branch = this.#branch;
-		if (!branch || branch.isOriginal) return false;
-		return branch.forkedAtMessageIndex === this.messageIndex;
+	// Sibling group at this message row — computed purely from workspace.branches.
+	//
+	// A sibling group exists at messageIndex when there are forks that share the
+	// same preceding context: forkedAtMessageIndex === messageIndex - 1.
+	// We find any such fork, look up its source (the original branch in the group),
+	// then collect all forks at that same (source, forkAtIndex) point.
+	//
+	// This is entirely independent of which branch is currently active — so the
+	// switcher stays visible even when you navigate to a branch whose fork point
+	// is at a different message index.
+	readonly #siblingsAtThisRow = $derived.by(() => {
+		const forkAtIndex = this.messageIndex - 1;
+		const all = this.workspace.branches;
+
+		// Find any fork at this row to identify the source branch.
+		const anyFork = Array.from(all.values()).find(
+			b => !b.isOriginal && b.forkedAtMessageIndex === forkAtIndex
+		);
+		if (!anyFork) return [];
+
+		const sourceId = anyFork.forkedFrom!;
+		const source = all.get(sourceId);
+		const forks = Array.from(all.values()).filter(
+			b => b.forkedFrom === sourceId && b.forkedAtMessageIndex === forkAtIndex
+		);
+		const group = source ? [source, ...forks] : forks;
+		return group.sort((a, b) => a.siblingIndex - b.siblingIndex);
 	});
 
-	readonly hasSiblings = $derived.by(
-		() => this.#isForkedHere && (this.#branch?.totalSiblings ?? 0) > 1
-	);
+	// The currently active sibling in this row's group.
+	//
+	// Resolution order:
+	// 1. If the branch prop is a direct member of this row's sibling group, use it.
+	//    This handles the common case where MessageActions.Root is rendered with
+	//    branch={workspace.activeBranch} and the active branch is in this group.
+	// 2. Otherwise find which sibling is an ancestor-or-equal of workspace.activeBranch.
+	//    This handles the "stateless switcher" case: even when the active branch is
+	//    at a deeper fork (different message), the switcher at this row shows which
+	//    path the user took through this group.
+	// 3. Fall back to the first sibling (original branch) if no match.
+	readonly #activeSiblingInRow = $derived.by(() => {
+		const siblings = this.#siblingsAtThisRow;
+		if (siblings.length === 0) return null;
 
-	readonly canGoPrevious = $derived.by(
-		() => this.#isForkedHere && this.#branch?.previousSiblingId != null
-	);
+		// 1. Branch prop direct match
+		const branchProp = this.#branch;
+		if (branchProp) {
+			const direct = siblings.find(b => b.id === branchProp.id);
+			if (direct) return direct;
+		}
 
-	readonly canGoNext = $derived.by(
-		() => this.#isForkedHere && this.#branch?.nextSiblingId != null
-	);
+		// 2. workspace.activeBranch ancestry match
+		const activeBranchId = this.workspace.activeBranchId;
+		const activeBranch = this.workspace.activeBranch;
+		if (activeBranchId && activeBranch) {
+			const direct = siblings.find(b => b.id === activeBranchId);
+			if (direct) return direct;
+			const ancestorIds = new Set(Object.values(activeBranch.ancestors ?? {}));
+			const ancestor = siblings.find(b => ancestorIds.has(b.id));
+			if (ancestor) return ancestor;
+		}
+
+		// 3. Default to original (first in group)
+		return siblings[0];
+	});
+
+	readonly #isForkedHere = $derived.by(() => this.#siblingsAtThisRow.length > 1);
+
+	readonly hasSiblings = $derived.by(() => this.#siblingsAtThisRow.length > 1);
+
+	readonly canGoPrevious = $derived.by(() => {
+		if (!this.#isForkedHere) return false;
+		const active = this.#activeSiblingInRow;
+		if (!active) return false;
+		const idx = this.#siblingsAtThisRow.findIndex(b => b.id === active.id);
+		return idx > 0;
+	});
+
+	readonly canGoNext = $derived.by(() => {
+		if (!this.#isForkedHere) return false;
+		const siblings = this.#siblingsAtThisRow;
+		const active = this.#activeSiblingInRow;
+		if (!active) return false;
+		const idx = siblings.findIndex(b => b.id === active.id);
+		return idx >= 0 && idx < siblings.length - 1;
+	});
 
 	readonly position = $derived.by(() => {
-		if (!this.#isForkedHere || !this.#branch) return '';
-		return `${this.#branch.siblingIndex + 1} / ${this.#branch.totalSiblings}`;
+		if (!this.#isForkedHere) return '';
+		const siblings = this.#siblingsAtThisRow;
+		const active = this.#activeSiblingInRow;
+		if (!active) return '';
+		const idx = siblings.findIndex(b => b.id === active.id);
+		if (idx < 0) return '';
+		return `${idx + 1} / ${siblings.length}`;
 	});
 
 	readonly positionLabel = $derived.by(() => {
-		const branch = this.#branch;
-		if (!this.#isForkedHere || !branch || branch.totalSiblings <= 1) return '';
-		if (branch.isOriginal) return `Original (1 / ${branch.totalSiblings})`;
-		return `Fork ${branch.siblingIndex + 1} / ${branch.totalSiblings}`;
+		if (!this.#isForkedHere) return '';
+		const siblings = this.#siblingsAtThisRow;
+		if (siblings.length <= 1) return '';
+		const active = this.#activeSiblingInRow;
+		if (!active) return '';
+		const idx = siblings.findIndex(b => b.id === active.id);
+		if (idx < 0) return '';
+		if (active.isOriginal) return `Original (1 / ${siblings.length})`;
+		return `Fork ${idx + 1} / ${siblings.length}`;
 	});
+
+	// ============================================
+	// Navigation actions
+	// ============================================
+
+	readonly goPrevious = async (): Promise<void> => {
+		const siblings = this.#siblingsAtThisRow;
+		const active = this.#activeSiblingInRow;
+		if (!active) return;
+		const idx = siblings.findIndex(b => b.id === active.id);
+		if (idx <= 0) return;
+		await this.workspace.switchBranch(siblings[idx - 1].id);
+	};
+
+	readonly goNext = async (): Promise<void> => {
+		const siblings = this.#siblingsAtThisRow;
+		const active = this.#activeSiblingInRow;
+		if (!active) return;
+		const idx = siblings.findIndex(b => b.id === active.id);
+		if (idx < 0 || idx >= siblings.length - 1) return;
+		await this.workspace.switchBranch(siblings[idx + 1].id);
+	};
 
 	// ============================================
 	// Internal helpers for child states
@@ -420,7 +520,12 @@ export class MessageActionsPrevState {
 			type: 'button',
 			disabled: !this.#root.canGoPrevious,
 			'aria-label': this.#ariaLabel.current,
+			onclick: this.#root.goPrevious,
 		};
+	}
+
+	get snippetProps() {
+		return { goPrevious: this.#root.goPrevious };
 	}
 }
 
@@ -447,9 +552,14 @@ export class MessageActionsNextState {
 			'data-message-actions-next': '',
 			'data-disabled': boolToEmptyStrOrUndef(!this.#root.canGoNext),
 			type: 'button',
+			onclick: this.#root.goNext,
 			disabled: !this.#root.canGoNext,
 			'aria-label': this.#ariaLabel.current,
 		};
+	}
+
+	get snippetProps() {
+		return { goNext: this.#root.goNext };
 	}
 }
 

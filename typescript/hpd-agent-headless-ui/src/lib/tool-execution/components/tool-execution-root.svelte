@@ -8,13 +8,14 @@
 	 */
 
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { ToolExecutionRootProps } from '../types.js';
+	import type { ToolExecutionRootProps, ToolExecutionRootHTMLProps } from '../types.js';
 	import { ToolExecutionRootState } from '../tool-execution.svelte.js';
 
 	let {
 		toolCall,
 		expanded = $bindable(false),
 		onExpandChange,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -35,7 +36,7 @@
 	});
 
 	// Merge props for pass-through
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as ToolExecutionRootHTMLProps);
 
 	// Update state when toolCall changes
 	$effect(() => {

@@ -23,5 +23,6 @@ export interface InterruptionIndicatorRootSnippetProps {
 export interface InterruptionIndicatorRootProps extends InterruptionIndicatorStateProps {
 	child?: Snippet<[{ props: Record<string, unknown> } & InterruptionIndicatorRootSnippetProps]>;
 	children?: Snippet<[InterruptionIndicatorState]>;
+	class?: string;
 	'data-testid'?: string;
 }

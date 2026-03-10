@@ -6,7 +6,7 @@
 	let { agentForTest } = $props<{ agentForTest?: ReturnType<typeof createMockAgent> }>();
 
 	// Create default agent if not provided
-	const agent = agentForTest ?? createMockAgent();
+	const agent = $derived(agentForTest ?? createMockAgent());
 </script>
 
 <PermissionDialog.Root {agent}>

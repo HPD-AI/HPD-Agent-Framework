@@ -1,5 +1,6 @@
 import type { Snippet } from 'svelte';
 import type { AssetReference } from '@hpd/hpd-agent-client';
+export type { AssetReference };
 import type { FileAttachmentState } from './file-attachment.svelte.js';
 
 // ============================================

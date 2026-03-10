@@ -7,6 +7,7 @@
 	let {
 		placeholder = 'Edit message…',
 		'aria-label': ariaLabel = 'Edit message',
+		class: className,
 		child,
 		...restProps
 	}: MessageEditTextareaProps = $props();
@@ -16,7 +17,7 @@
 		ariaLabel: boxWith(() => ariaLabel),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, textareaState.props));
+	const mergedProps = $derived(mergeProps(restProps, textareaState.props, className ? { class: className } : {}));
 
 	let ref: HTMLTextAreaElement | null = $state(null);
 

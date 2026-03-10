@@ -20,8 +20,7 @@
  */
 
 import { Context } from 'runed';
-import { attachRef } from 'svelte-toolbelt';
-import type { ReadableBoxedValues, RefAttachment } from '../../internal/index.js';
+import type { ReadableBoxedValues } from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { splitPanelAttrs } from './split-panel-attrs.js';
 import type { SplitPanelRootState } from './split-panel-root-state.svelte.js';
@@ -97,8 +96,10 @@ export class SplitPanelSplitState {
 	/** Parent split state (null if this is the root split) */
 	readonly parent: SplitPanelSplitState | null;
 
-	/** Ref attachment for DOM element binding */
-	readonly attachment: RefAttachment;
+	/** Set the ref to the DOM element */
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	/** Unique ID for this split (used for DOM ordering) */
 	readonly splitId: string;
@@ -133,7 +134,6 @@ export class SplitPanelSplitState {
 		this.opts = opts;
 		this.root = root;
 		this.parent = parent;
-		this.attachment = attachRef(opts.ref);
 
 		// Generate unique split ID
 		this.splitId = `__split_${SplitPanelSplitState.#splitIdCounter++}`;
@@ -338,8 +338,7 @@ export class SplitPanelSplitState {
 					overflow: 'hidden',
 					'min-width': 0,
 					'min-height': 0
-				},
-				...this.attachment
+				}
 			}) as const
 	);
 

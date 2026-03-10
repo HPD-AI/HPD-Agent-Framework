@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { MessageList, Message } from '$lib/index.js';
 	import type { Message as MessageType } from '$lib/agent/types.js';
+	import type { ScrollBehavior } from '$lib/message-list/types.js';
 
 	let {
 		messageCount = 3,
-		autoScroll = true,
+		scrollBehavior = 'bottom' as ScrollBehavior,
 		streaming = false,
 		...restProps
 	} = $props();
@@ -29,26 +30,38 @@
 
 <div class="demo-container">
 	<div class="chat-window">
-		<MessageList.Root {messages} {autoScroll}>
-			{#each messages as message (message.id)}
-				<Message {message}>
-					{#snippet children({ content, role, streaming, status })}
-						<div class="message" data-role={role}>
-							<div class="message-header">
-								<strong class="role">{role === 'user' ? 'You' : 'Assistant'}</strong>
-								<span class="timestamp">{message.timestamp.toLocaleTimeString()}</span>
+		<MessageList.Root {messages} {scrollBehavior}>
+			{#snippet children({ isAtBottom, scrollToBottom })}
+				{#each messages as message (message.id)}
+					<Message {message}>
+						{#snippet children({ content, role, streaming: isStreaming })}
+							<div class="message" data-role={role}>
+								<div class="message-header">
+									<strong class="role">{role === 'user' ? 'You' : 'Assistant'}</strong>
+									<span class="timestamp">{message.timestamp.toLocaleTimeString()}</span>
+								</div>
+								<div class="message-content">
+									{content}
+									{#if isStreaming}
+										<span class="cursor">▊</span>
+									{/if}
+								</div>
 							</div>
-							<div class="message-content">
-								{content}
-								{#if streaming}
-									<span class="cursor">▊</span>
-								{/if}
-							</div>
-						</div>
-					{/snippet}
-				</Message>
-			{/each}
+						{/snippet}
+					</Message>
+				{/each}
+
+				{#if !isAtBottom}
+					<button class="jump-btn" onclick={scrollToBottom}>↓ Jump to bottom</button>
+				{/if}
+			{/snippet}
 		</MessageList.Root>
+	</div>
+
+	<div class="status-bar">
+		<span class="mode-badge">{scrollBehavior}</span>
+		{messageCount} message{messageCount !== 1 ? 's' : ''}
+		{#if streaming}· streaming{/if}
 	</div>
 </div>
 
@@ -67,6 +80,7 @@
 		display: flex;
 		flex-direction: column;
 		background: white;
+		position: relative;
 	}
 
 	:global([data-message-list]) {
@@ -144,5 +158,42 @@
 		100% {
 			opacity: 0;
 		}
+	}
+
+	.jump-btn {
+		position: sticky;
+		bottom: 0.5rem;
+		align-self: center;
+		padding: 0.4rem 1rem;
+		border-radius: 999px;
+		border: 1px solid #ccc;
+		background: white;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+		cursor: pointer;
+		font-size: 0.85rem;
+		transition: box-shadow 0.15s;
+	}
+
+	.jump-btn:hover {
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+	}
+
+	.status-bar {
+		margin-top: 0.75rem;
+		font-size: 0.8rem;
+		color: #666;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.mode-badge {
+		background: #e8eaf6;
+		color: #3949ab;
+		border-radius: 4px;
+		padding: 0.1rem 0.5rem;
+		font-weight: 600;
+		font-size: 0.75rem;
+		font-family: monospace;
 	}
 </style>

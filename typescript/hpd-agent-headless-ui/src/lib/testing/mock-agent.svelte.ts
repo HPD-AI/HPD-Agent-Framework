@@ -17,9 +17,14 @@ import type {
 	Session,
 	CreateSessionRequest,
 	CreateBranchRequest,
-	PermissionChoice
+	PermissionChoice,
+	AgentSummaryDto,
+	StoredAgentDto,
+	CreateAgentRequest,
+	UpdateAgentRequest,
+	UpdateSessionRequest
 } from '@hpd/hpd-agent-client';
-import type { Workspace } from '../workspace/types.ts';
+import type { Workspace, AgentClientLike } from '../workspace/types.ts';
 
 // ============================================
 // Options
@@ -137,13 +142,20 @@ class MockWorkspaceImpl implements Workspace {
 	readonly activeSiblings = $derived.by((): Branch[] => {
 		const branch = this.activeBranch;
 		if (!branch) return [];
-		return Array.from(this.#branches.values())
-			.filter(
-				(b) =>
-					b.forkedFrom === branch.forkedFrom &&
-					b.forkedAtMessageIndex === branch.forkedAtMessageIndex
-			)
-			.sort((a, b) => a.siblingIndex - b.siblingIndex);
+		// Include peer forks (same ForkedFrom + ForkedAtMessageIndex) AND the source branch (slot 0).
+		const peers = Array.from(this.#branches.values()).filter(
+			(b) =>
+				b.forkedFrom === branch.forkedFrom &&
+				b.forkedAtMessageIndex === branch.forkedAtMessageIndex
+		);
+		// For a fork branch: also include its source (ForkedFrom)
+		if (!branch.isOriginal && branch.forkedFrom) {
+			const source = this.#branches.get(branch.forkedFrom);
+			if (source && !peers.some((p) => p.id === source.id)) {
+				peers.push(source);
+			}
+		}
+		return peers.sort((a, b) => a.siblingIndex - b.siblingIndex);
 	});
 
 	readonly canGoNext = $derived.by(() => this.activeBranch?.nextSiblingId != null);
@@ -388,14 +400,20 @@ class MockWorkspaceImpl implements Workspace {
 		}
 
 		const forkId = `fork-${generateId()}`;
-		const parentBranch = this.#branches.get(branchId);
+		const sourceBranch = this.#branches.get(branchId);
 
-		// Count existing forks at this message index to set sibling index
-		const existingForks = Array.from(this.#branches.values()).filter(
-			(b) => b.forkedFrom === branchId && b.forkedAtMessageIndex === messageIndex
-		);
-		const siblingIndex = existingForks.length;
-		const totalSiblings = siblingIndex + 1;
+		// Existing forks at this message index (not including source)
+		const existingForks = Array.from(this.#branches.values())
+			.filter((b) => b.forkedFrom === branchId && b.forkedAtMessageIndex === messageIndex)
+			.sort((a, b) => a.siblingIndex - b.siblingIndex);
+
+		// Source is always slot 0; new fork is appended after all existing forks
+		// sortedSiblings: [source, ...existingForks, newFork]
+		const newForkSiblingIndex = existingForks.length + 1; // +1 because source is slot 0
+		const totalSiblings = newForkSiblingIndex + 1; // source + existingForks + new fork
+
+		// Last existing sibling before the new fork
+		const lastBeforeNew = existingForks.length > 0 ? existingForks[existingForks.length - 1] : sourceBranch;
 
 		const fork = makeMockBranch({
 			id: forkId,
@@ -404,18 +422,24 @@ class MockWorkspaceImpl implements Workspace {
 			forkedAtMessageIndex: messageIndex,
 			isOriginal: false,
 			originalBranchId: branchId,
-			siblingIndex,
-			totalSiblings
+			siblingIndex: newForkSiblingIndex,
+			totalSiblings,
+			previousSiblingId: lastBeforeNew?.id,
+			nextSiblingId: undefined,
 		});
 
-		// Update parent branch to record the new child
-		if (parentBranch) {
-			const updated: Branch = {
-				...parentBranch,
-				childBranches: [...parentBranch.childBranches, forkId],
-				totalForks: parentBranch.totalForks + 1
-			};
-			this.#updateBranch(sessionId, updated);
+		// Update all existing siblings' totalSiblings and the last sibling's nextSiblingId
+		const allSiblingsToUpdate = sourceBranch ? [sourceBranch, ...existingForks] : existingForks;
+		for (const sibling of allSiblingsToUpdate) {
+			const isLast = sibling.id === lastBeforeNew?.id;
+			this.#updateBranch(sessionId, {
+				...sibling,
+				totalSiblings,
+				nextSiblingId: isLast ? forkId : sibling.nextSiblingId,
+				...(sibling.id === branchId
+					? { childBranches: [...sibling.childBranches, forkId], totalForks: sibling.totalForks + 1 }
+					: {}),
+			});
 		}
 
 		this.#updateBranch(sessionId, fork);
@@ -515,6 +539,46 @@ class MockWorkspaceImpl implements Workspace {
 	clear(): void {
 		this.state?.clearMessages();
 	}
+
+	// ==========================================
+	// Agent management
+	// ==========================================
+
+	readonly agents: AgentSummaryDto[] = [];
+	activeAgentId: string | null = null;
+
+	selectAgent(_agentId: string | null): void {
+		// No-op — mock doesn't actually select agents
+	}
+
+	async listAgents(): Promise<AgentSummaryDto[]> {
+		return [];
+	}
+
+	readonly client: AgentClientLike = {
+		stream: async () => {},
+		abort: () => {},
+		listSessions: async () => [],
+		getSession: async () => null,
+		createSession: async () => ({ id: 'mock', createdAt: new Date().toISOString(), metadata: {}, lastActivity: new Date().toISOString() }),
+		updateSession: async (id: string, _req: UpdateSessionRequest) => ({ id, createdAt: new Date().toISOString(), metadata: {}, lastActivity: new Date().toISOString() }),
+		deleteSession: async () => {},
+		listBranches: async () => [],
+		getBranch: async () => null,
+		createBranch: async () => ({ id: 'mock', sessionId: '', name: '', description: '', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), messageCount: 0, tags: [], siblingIndex: 0, totalSiblings: 1, isOriginal: true, childBranches: [], totalForks: 0 }),
+		forkBranch: async () => ({ id: 'mock', sessionId: '', name: '', description: '', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), messageCount: 0, tags: [], siblingIndex: 0, totalSiblings: 1, isOriginal: false, childBranches: [], totalForks: 0 }),
+		deleteBranch: async () => {},
+		getBranchMessages: async () => [],
+		getBranchSiblings: async () => [],
+		getNextSibling: async () => null,
+		getPreviousSibling: async () => null,
+		listAgents: async () => [],
+		getAgent: async () => null,
+		createAgent: async () => ({ id: 'mock', name: 'mock', config: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+		updateAgent: async () => ({ id: 'mock', name: 'mock', config: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+		deleteAgent: async () => {},
+		uploadAsset: async () => ({ assetId: 'mock', contentType: 'text/plain' }),
+	} as any;
 }
 
 // ============================================
@@ -526,7 +590,11 @@ class MockWorkspaceImpl implements Workspace {
  * Implements the full Workspace interface without a real HPD backend.
  */
 export function createMockWorkspace(options?: MockWorkspaceOptions): Workspace {
-	return new MockWorkspaceImpl(options);
+	let instance: MockWorkspaceImpl | undefined;
+	$effect.root(() => {
+		instance = new MockWorkspaceImpl(options);
+	});
+	return (instance ?? new MockWorkspaceImpl(options));
 }
 
 // ============================================
@@ -579,6 +647,36 @@ class MockAgentImpl implements Workspace {
 	clear(): void {
 		this.state.clearMessages();
 	}
+
+	// Agent management
+	readonly agents: AgentSummaryDto[] = [];
+	readonly activeAgentId: string | null = null;
+	selectAgent(_agentId: string | null): void {}
+	async listAgents(): Promise<AgentSummaryDto[]> { return []; }
+	readonly client: AgentClientLike = {
+		stream: async () => {},
+		abort: () => {},
+		listSessions: async () => [],
+		getSession: async () => null,
+		createSession: async () => ({ id: 'mock', createdAt: new Date().toISOString(), metadata: {}, lastActivity: new Date().toISOString() }),
+		updateSession: async (id: string, _req: UpdateSessionRequest) => ({ id, createdAt: new Date().toISOString(), metadata: {}, lastActivity: new Date().toISOString() }),
+		deleteSession: async () => {},
+		listBranches: async () => [],
+		getBranch: async () => null,
+		createBranch: async () => ({ id: 'mock', sessionId: '', name: '', description: '', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), messageCount: 0, tags: [], siblingIndex: 0, totalSiblings: 1, isOriginal: true, childBranches: [], totalForks: 0 }),
+		forkBranch: async () => ({ id: 'mock', sessionId: '', name: '', description: '', createdAt: new Date().toISOString(), lastActivity: new Date().toISOString(), messageCount: 0, tags: [], siblingIndex: 0, totalSiblings: 1, isOriginal: false, childBranches: [], totalForks: 0 }),
+		deleteBranch: async () => {},
+		getBranchMessages: async () => [],
+		getBranchSiblings: async () => [],
+		getNextSibling: async () => null,
+		getPreviousSibling: async () => null,
+		listAgents: async () => [],
+		getAgent: async () => null,
+		createAgent: async () => ({ id: 'mock', name: 'mock', config: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+		updateAgent: async () => ({ id: 'mock', name: 'mock', config: {}, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+		deleteAgent: async () => {},
+		uploadAsset: async () => ({ assetId: 'mock', contentType: 'text/plain' }),
+	} as any;
 }
 
 /**
@@ -587,5 +685,9 @@ class MockAgentImpl implements Workspace {
  * drive onPermissionRequest() / onPermissionApproved() directly.
  */
 export function createMockAgent(): MockAgentImpl {
-	return new MockAgentImpl();
+	let instance: MockAgentImpl | undefined;
+	$effect.root(() => {
+		instance = new MockAgentImpl();
+	});
+	return (instance ?? new MockAgentImpl());
 }

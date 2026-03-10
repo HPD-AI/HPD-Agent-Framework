@@ -5,6 +5,7 @@
 
 	let {
 		disabled = false,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -31,7 +32,7 @@
 			disabled: disabled || undefined,
 			onclick: handleClick,
 			...triggerState.sharedProps
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 
 	// Snippet props exposed to children

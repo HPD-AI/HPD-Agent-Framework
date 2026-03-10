@@ -11,9 +11,14 @@
 				control: { type: 'number', min: 0, max: 20 },
 				description: 'Number of messages to display'
 			},
-			autoScroll: {
-				control: 'boolean',
-				description: 'Auto-scroll to bottom when new messages arrive'
+			scrollBehavior: {
+				control: { type: 'select' },
+				options: ['bottom', 'sent-message', 'none'],
+				description:
+					'Controls automatic scroll behavior.\n\n' +
+					'**bottom** — always scroll to the end (classic chat).\n\n' +
+					'**sent-message** — scroll so your latest message is at the top of the viewport; the response streams below it.\n\n' +
+					'**none** — no automatic scrolling.'
 			},
 			streaming: {
 				control: 'boolean',
@@ -23,12 +28,32 @@
 	});
 </script>
 
-<!-- Default Story -->
+<!-- Default — classic bottom scroll -->
 <Story
-	name="Default"
+	name="Default (bottom)"
 	args={{
 		messageCount: 5,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
+		streaming: false
+	}}
+/>
+
+<!-- Sent-message mode -->
+<Story
+	name="Sent-message scroll"
+	args={{
+		messageCount: 6,
+		scrollBehavior: 'sent-message',
+		streaming: false
+	}}
+/>
+
+<!-- No auto-scroll -->
+<Story
+	name="No auto-scroll"
+	args={{
+		messageCount: 10,
+		scrollBehavior: 'none',
 		streaming: false
 	}}
 />
@@ -38,7 +63,7 @@
 	name="Empty List"
 	args={{
 		messageCount: 0,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
 		streaming: false
 	}}
 />
@@ -48,47 +73,47 @@
 	name="Single Message"
 	args={{
 		messageCount: 1,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
 		streaming: false
 	}}
 />
 
-<!-- Long Conversation -->
+<!-- Long conversation — bottom mode so jump button appears -->
 <Story
 	name="Long Conversation"
 	args={{
 		messageCount: 15,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
 		streaming: false
 	}}
 />
 
-<!-- With Streaming -->
+<!-- Active Streaming — bottom mode -->
 <Story
 	name="Active Streaming"
 	args={{
 		messageCount: 6,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
 		streaming: true
 	}}
 />
 
-<!-- Auto-scroll Disabled -->
+<!-- Active Streaming — sent-message mode -->
 <Story
-	name="No Auto-scroll"
+	name="Active Streaming (sent-message)"
 	args={{
-		messageCount: 10,
-		autoScroll: false,
-		streaming: false
+		messageCount: 6,
+		scrollBehavior: 'sent-message',
+		streaming: true
 	}}
 />
 
-<!-- Few Messages -->
+<!-- Short Chat -->
 <Story
 	name="Short Chat"
 	args={{
 		messageCount: 3,
-		autoScroll: true,
+		scrollBehavior: 'bottom',
 		streaming: false
 	}}
 />

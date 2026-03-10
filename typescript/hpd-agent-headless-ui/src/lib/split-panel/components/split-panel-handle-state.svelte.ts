@@ -14,8 +14,7 @@
  */
 
 import { watch } from 'runed';
-import { attachRef } from 'svelte-toolbelt';
-import type { ReadableBoxedValues, RefAttachment } from '../../internal/index.js';
+import type { ReadableBoxedValues } from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { splitPanelAttrs } from './split-panel-attrs.js';
 import type { SplitPanelRootState } from './split-panel-root-state.svelte.js';
@@ -100,8 +99,10 @@ export class SplitPanelHandleState {
 	/** Parent split state for axis derivation */
 	readonly parentSplit: SplitPanelSplitState | null;
 
-	/** Ref attachment for DOM element binding */
-	readonly attachment: RefAttachment;
+	/** Set the ref to the DOM element */
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	/** Auto-computed divider index from parent split registration */
 	readonly #autoComputedDividerIndex: number;
@@ -125,7 +126,6 @@ export class SplitPanelHandleState {
 		this.opts = opts;
 		this.root = root;
 		this.parentSplit = parentSplit;
-		this.attachment = attachRef(opts.ref);
 
 		// Debug: log which split this handle is associated with
 		console.log('[Handle] Created with parentSplit:', parentSplit?.splitId, 'axis:', parentSplit?.internalAxis);
@@ -228,8 +228,7 @@ export class SplitPanelHandleState {
 				'data-debug-axis': this.axis,
 				style: `cursor: ${this.cursor};`,
 				onpointerdown: this.onpointerdown,
-				onkeydown: this.onkeydown,
-				...this.attachment
+				onkeydown: this.onkeydown
 			}) as const
 	);
 

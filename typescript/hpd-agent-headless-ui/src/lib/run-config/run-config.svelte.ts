@@ -2,6 +2,7 @@ import { Context } from 'runed';
 import { type ReadableBox } from 'svelte-toolbelt';
 import { boolToEmptyStrOrUndef } from '$lib/internal/attrs.js';
 import type { RunConfig, ChatRunConfig } from '@hpd/hpd-agent-client';
+export type { RunConfig, ChatRunConfig };
 import type {
 	RunConfigModelSelectorHTMLProps,
 	RunConfigModelSelectorSnippetProps,

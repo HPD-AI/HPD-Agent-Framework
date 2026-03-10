@@ -195,15 +195,13 @@ public static class DtoMappingExtensions
             return null;
         }
 
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
         List<clientToolKitDefinition>? groups = null;
         if (request.clientToolKits is { Count: > 0 })
         {
             groups = new List<clientToolKitDefinition>(request.clientToolKits.Count);
             foreach (var element in request.clientToolKits)
             {
-                var group = JsonSerializer.Deserialize<clientToolKitDefinition>(element, options);
+                var group = JsonSerializer.Deserialize(element, HPDJsonContext.Default.clientToolKitDefinition);
                 if (group != null)
                     groups.Add(group);
             }
@@ -215,7 +213,7 @@ public static class DtoMappingExtensions
             context = new List<ContextItem>(request.Context.Count);
             foreach (var element in request.Context)
             {
-                var item = JsonSerializer.Deserialize<ContextItem>(element, options);
+                var item = JsonSerializer.Deserialize(element, HPDJsonContext.Default.ContextItem);
                 if (item != null)
                     context.Add(item);
             }

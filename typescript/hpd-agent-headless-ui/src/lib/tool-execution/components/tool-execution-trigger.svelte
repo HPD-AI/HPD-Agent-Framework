@@ -8,22 +8,22 @@
 	 */
 
 	import { mergeProps } from 'svelte-toolbelt';
-	import type { ToolExecutionTriggerProps } from '../types.js';
+	import type { ToolExecutionTriggerProps, ToolExecutionTriggerHTMLProps } from '../types.js';
 	import { ToolExecutionTriggerState } from '../tool-execution.svelte.js';
 
-	let { child, children, ...restProps }: ToolExecutionTriggerProps = $props();
+	let { class: className, child, children, ...restProps }: ToolExecutionTriggerProps = $props();
 
 	// Get state from context
-	const state = ToolExecutionTriggerState.create();
+	const rootState = ToolExecutionTriggerState.create();
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as ToolExecutionTriggerHTMLProps);
 </script>
 
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
 	<button {...mergedProps}>
-		{@render children?.(state.snippetProps)}
+		{@render children?.(rootState.snippetProps)}
 	</button>
 {/if}

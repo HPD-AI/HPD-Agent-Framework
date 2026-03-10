@@ -10,6 +10,7 @@
 		id = createId(uid),
 		reason,
 		disabled = false,
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -26,13 +27,16 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, denyState.props));
+	const mergedProps = $derived(mergeProps(restProps, denyState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	let defaultEl = $state<HTMLButtonElement | null>(null);
+	$effect(() => { denyState.setRef(defaultEl); });
 </script>
 
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
-	<button {...mergedProps}>
+	<button bind:this={defaultEl} {...mergedProps}>
 		{@render children?.()}
 	</button>
 {/if}

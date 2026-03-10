@@ -68,61 +68,24 @@ export class AgentState {
 	readonly hasMessages = $derived(this.#messages.length > 0);
 
 	// ============================================
-	// Public Getters (expose reactive state)
+	// Public State (reactive — $derived so Svelte tracks through class boundaries)
 	// ============================================
 
-	get messages() {
-		return this.#messages;
-	}
-
-	get streaming() {
-		return this.#streaming;
-	}
-
-	get reasoning() {
-		return this.#reasoning;
-	}
-
-	get error() {
-		return this.#error;
-	}
-
-	get activeTools() {
-		return this.#activeTools;
-	}
-
-	get pendingPermissions() {
-		return this.#pendingPermissions;
-	}
-
-	get pendingClarifications() {
-		return this.#pendingClarifications;
-	}
+	readonly messages = $derived(this.#messages);
+	readonly streaming = $derived(this.#streaming);
+	readonly reasoning = $derived(this.#reasoning);
+	readonly error = $derived(this.#error);
+	readonly activeTools = $derived(this.#activeTools);
+	readonly pendingPermissions = $derived(this.#pendingPermissions);
+	readonly pendingClarifications = $derived(this.#pendingClarifications);
 
 	// Audio component accessors
-	get audioPlayer() {
-		return this.#audioPlayer;
-	}
-
-	get transcription() {
-		return this.#transcription;
-	}
-
-	get voiceActivity() {
-		return this.#voiceActivity;
-	}
-
-	get interruption() {
-		return this.#interruption;
-	}
-
-	get turnIndicator() {
-		return this.#turnIndicator;
-	}
-
-	get audioVisualizer() {
-		return this.#audioVisualizer;
-	}
+	readonly audioPlayer = $derived(this.#audioPlayer);
+	readonly transcription = $derived(this.#transcription);
+	readonly voiceActivity = $derived(this.#voiceActivity);
+	readonly interruption = $derived(this.#interruption);
+	readonly turnIndicator = $derived(this.#turnIndicator);
+	readonly audioVisualizer = $derived(this.#audioVisualizer);
 
 	// ============================================
 	// Event Handlers (called by EventMapper)
@@ -229,46 +192,52 @@ export class AgentState {
 			startTime: new Date()
 		};
 
-		this.#activeTools.push(toolCall);
+		this.#activeTools = [...this.#activeTools, toolCall];
 
-		// Add to message's tool calls
-		const message = this.#messages.find((m) => m.id === messageId);
-		if (message) {
-			message.toolCalls.push(toolCall);
+		// Replace message object to trigger reactivity
+		const msgIdx = this.#messages.findIndex((m) => m.id === messageId);
+		if (msgIdx !== -1) {
+			const msg = this.#messages[msgIdx];
+			this.#messages[msgIdx] = { ...msg, toolCalls: [...msg.toolCalls, toolCall] };
+		}
+	}
+
+	#replaceToolCall(callId: string, updater: (tc: ToolCall) => ToolCall) {
+		this.#activeTools = this.#activeTools.map((t) => t.callId === callId ? updater(t) : t);
+
+		const msgIdx = this.#messages.findIndex((m) => m.toolCalls.some((t) => t.callId === callId));
+		if (msgIdx !== -1) {
+			const msg = this.#messages[msgIdx];
+			this.#messages[msgIdx] = {
+				...msg,
+				toolCalls: msg.toolCalls.map((t) => t.callId === callId ? updater(t) : t)
+			};
 		}
 	}
 
 	onToolCallArgs(callId: string, argsJson: string) {
-		const toolCall = this.#activeTools.find((t) => t.callId === callId);
-		if (toolCall) {
-			try {
-				toolCall.args = JSON.parse(argsJson);
-				toolCall.status = 'executing';
-			} catch (e) {
-				console.error('Failed to parse tool args:', e);
-				toolCall.error = 'Invalid arguments';
-				toolCall.status = 'error';
-			}
+		try {
+			const args = JSON.parse(argsJson);
+			this.#replaceToolCall(callId, (t) => ({ ...t, args, status: 'executing' }));
+		} catch (e) {
+			console.error('Failed to parse tool args:', e);
+			this.#replaceToolCall(callId, (t) => ({ ...t, error: 'Invalid arguments', status: 'error' }));
 		}
 	}
 
 	onToolCallEnd(callId: string) {
 		const toolCall = this.#activeTools.find((t) => t.callId === callId);
-		if (toolCall) {
-			toolCall.endTime = new Date();
-			// Status will be set by onToolCallResult
+		if (!toolCall) return;
+
+		// Mark complete if TOOL_CALL_RESULT hasn't already done it
+		if (toolCall.status === 'executing' || toolCall.status === 'pending') {
+			this.#replaceToolCall(callId, (t) => ({ ...t, status: 'complete', endTime: new Date() }));
+			this.#activeTools = this.#activeTools.filter((t) => t.callId !== callId);
 		}
 	}
 
 	onToolCallResult(callId: string, result: string) {
-		const toolCall = this.#activeTools.find((t) => t.callId === callId);
-		if (toolCall) {
-			toolCall.result = result;
-			toolCall.status = 'complete';
-			toolCall.endTime = new Date();
-		}
-
-		// Remove from active tools
+		this.#replaceToolCall(callId, (t) => ({ ...t, result, status: 'complete', endTime: new Date() }));
 		this.#activeTools = this.#activeTools.filter((t) => t.callId !== callId);
 	}
 

@@ -7,6 +7,7 @@
 		id,
 		defaultOpen = false,
 		onOpenChange,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -25,7 +26,7 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[rootState.getHPDAttr('root')]: '',
 			...rootState.sharedProps
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 
 	// Snippet props exposed to children

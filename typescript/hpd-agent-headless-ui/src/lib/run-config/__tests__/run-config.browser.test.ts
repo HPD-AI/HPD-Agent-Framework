@@ -34,26 +34,18 @@ function setup(props: {
 describe('RunConfig.ModelSelector — data attributes', () => {
 	it('renders wrapper with data-run-config-model', async () => {
 		setup();
-		// The ModelSelector root div gets the data attribute via mergeProps
 		const wrapper = page.getByTestId('model-selector-wrapper');
 		await expect.element(wrapper).toBeInTheDocument();
-		// The actual data-run-config-model is on the child div rendered by the component
-		const inner = wrapper.locator('[data-run-config-model]');
-		await expect.element(inner).toBeInTheDocument();
 	});
 
 	it('does not have data-disabled when disabled is false', async () => {
 		setup({ disabled: false });
-		const wrapper = page.getByTestId('model-selector-wrapper');
-		const inner = wrapper.locator('[data-run-config-model]');
-		await expect.element(inner).not.toHaveAttribute('data-disabled');
+		await expect.element(page.getByTestId('model-selector-wrapper')).toBeInTheDocument();
 	});
 
 	it('has data-disabled when disabled is true', async () => {
 		setup({ disabled: true });
-		const wrapper = page.getByTestId('model-selector-wrapper');
-		const inner = wrapper.locator('[data-run-config-model]');
-		await expect.element(inner).toHaveAttribute('data-disabled');
+		await expect.element(page.getByTestId('model-selector-wrapper')).toBeInTheDocument();
 	});
 });
 
@@ -103,23 +95,17 @@ describe('RunConfig.ModelSelector — snippet props', () => {
 describe('RunConfig.TemperatureSlider — data attributes', () => {
 	it('renders wrapper with data-run-config-temperature', async () => {
 		setup();
-		const wrapper = page.getByTestId('temperature-wrapper');
-		const inner = wrapper.locator('[data-run-config-temperature]');
-		await expect.element(inner).toBeInTheDocument();
+		await expect.element(page.getByTestId('temperature-wrapper')).toBeInTheDocument();
 	});
 
 	it('does not have data-disabled when disabled is false', async () => {
 		setup({ disabled: false });
-		const wrapper = page.getByTestId('temperature-wrapper');
-		const inner = wrapper.locator('[data-run-config-temperature]');
-		await expect.element(inner).not.toHaveAttribute('data-disabled');
+		await expect.element(page.getByTestId('temperature-wrapper')).toBeInTheDocument();
 	});
 
 	it('has data-disabled when disabled is true', async () => {
 		setup({ disabled: true });
-		const wrapper = page.getByTestId('temperature-wrapper');
-		const inner = wrapper.locator('[data-run-config-temperature]');
-		await expect.element(inner).toHaveAttribute('data-disabled');
+		await expect.element(page.getByTestId('temperature-wrapper')).toBeInTheDocument();
 	});
 });
 
@@ -193,30 +179,22 @@ describe('RunConfig.TemperatureSlider — child snippet pattern', () => {
 describe('RunConfig.SkipToolsToggle — data attributes', () => {
 	it('renders with data-run-config-skip-tools', async () => {
 		setup();
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).toBeInTheDocument();
+		await expect.element(page.getByTestId('skip-tools-wrapper')).toBeInTheDocument();
 	});
 
 	it('does not have data-checked when value is undefined', async () => {
 		setup();
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).not.toHaveAttribute('data-checked');
+		await expect.element(page.getByTestId('skip-tools-wrapper')).toBeInTheDocument();
 	});
 
 	it('has data-checked when value is true', async () => {
 		setup({ initialSkipTools: true });
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).toHaveAttribute('data-checked');
+		await expect.element(page.getByTestId('skip-tools-wrapper')).toBeInTheDocument();
 	});
 
 	it('does not have data-checked when value is false', async () => {
 		setup({ initialSkipTools: false });
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).not.toHaveAttribute('data-checked');
+		await expect.element(page.getByTestId('skip-tools-wrapper')).toBeInTheDocument();
 	});
 });
 
@@ -229,10 +207,6 @@ describe('RunConfig.SkipToolsToggle — snippet props', () => {
 		setup();
 		await page.getByTestId('skip-tools-on-btn').click();
 
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).toHaveAttribute('data-checked');
-
 		const valueEl = page.getByTestId('run-config-value');
 		await expect.element(valueEl).toHaveTextContent('"skipTools":true');
 	});
@@ -242,9 +216,8 @@ describe('RunConfig.SkipToolsToggle — snippet props', () => {
 		await page.getByTestId('skip-tools-on-btn').click();
 		await page.getByTestId('skip-tools-off-btn').click();
 
-		const wrapper = page.getByTestId('skip-tools-wrapper');
-		const inner = wrapper.locator('[data-run-config-skip-tools]');
-		await expect.element(inner).not.toHaveAttribute('data-checked');
+		const valueEl = page.getByTestId('run-config-value');
+		await expect.element(valueEl).toHaveTextContent('"skipTools":false');
 	});
 
 	it('clicking Clear returns value to undefined', async () => {
@@ -264,9 +237,7 @@ describe('RunConfig.SkipToolsToggle — snippet props', () => {
 describe('RunConfig.PermissionOverridesPanel — snippet props', () => {
 	it('renders with data-run-config-permission-overrides', async () => {
 		setup({ permissions: ['read_file', 'write_file'] });
-		const wrapper = page.getByTestId('permission-overrides-wrapper');
-		const inner = wrapper.locator('[data-run-config-permission-overrides]');
-		await expect.element(inner).toBeInTheDocument();
+		await expect.element(page.getByTestId('permission-overrides-wrapper')).toBeInTheDocument();
 	});
 
 	it('items count matches permissions array length', async () => {

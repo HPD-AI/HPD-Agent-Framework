@@ -67,27 +67,32 @@ public class BranchTreeV3DeleteTests : AgentTestBase
         main.Session = session;
         var fork3 = await agent.ForkBranchAsync(main, "fork-3", fromMessageIndex: 0);
 
-        // Initial state: fork-1(0), fork-2(1), fork-3(2)
+        // Initial state: main(0), fork-1(1), fork-2(2), fork-3(3) — TotalSiblings=4
+        var beforeMain = await store.LoadBranchAsync("test-session", "main");
         var beforeFork1 = await store.LoadBranchAsync("test-session", "fork-1");
         var beforeFork2 = await store.LoadBranchAsync("test-session", "fork-2");
         var beforeFork3 = await store.LoadBranchAsync("test-session", "fork-3");
-        Assert.Equal(0, beforeFork1!.SiblingIndex);
-        Assert.Equal(1, beforeFork2!.SiblingIndex);
-        Assert.Equal(2, beforeFork3!.SiblingIndex);
+        Assert.Equal(0, beforeMain!.SiblingIndex);
+        Assert.Equal(1, beforeFork1!.SiblingIndex);
+        Assert.Equal(2, beforeFork2!.SiblingIndex);
+        Assert.Equal(3, beforeFork3!.SiblingIndex);
 
         // Act - Delete middle sibling (fork-2)
         await agent.DeleteBranchAsync("test-session", "fork-2");
 
-        // Assert - Remaining siblings reindexed: fork-1(0), fork-3(1)
+        // Assert - Remaining: main(0), fork-1(1), fork-3(2) — TotalSiblings=3
+        var afterMain = await store.LoadBranchAsync("test-session", "main");
         var afterFork1 = await store.LoadBranchAsync("test-session", "fork-1");
         var afterFork2 = await store.LoadBranchAsync("test-session", "fork-2");
         var afterFork3 = await store.LoadBranchAsync("test-session", "fork-3");
 
         Assert.Null(afterFork2); // Deleted
-        Assert.Equal(0, afterFork1!.SiblingIndex);
-        Assert.Equal(1, afterFork3!.SiblingIndex); // Shifted down from 2 to 1
-        Assert.Equal(2, afterFork1.TotalSiblings);
-        Assert.Equal(2, afterFork3.TotalSiblings);
+        Assert.Equal(0, afterMain!.SiblingIndex);
+        Assert.Equal(1, afterFork1!.SiblingIndex);
+        Assert.Equal(2, afterFork3!.SiblingIndex); // Shifted down from 3 to 2
+        Assert.Equal(3, afterMain.TotalSiblings);
+        Assert.Equal(3, afterFork1.TotalSiblings);
+        Assert.Equal(3, afterFork3.TotalSiblings);
     }
 
     [Fact]
@@ -113,14 +118,18 @@ public class BranchTreeV3DeleteTests : AgentTestBase
         main.Session = session;
         var fork3 = await agent.ForkBranchAsync(main, "fork-3", fromMessageIndex: 0);
 
-        // Act - Delete middle sibling (fork-2)
+        // Act - Delete middle sibling (fork-2, which is at index 2 in: main(0), fork-1(1), fork-2(2), fork-3(3))
         await agent.DeleteBranchAsync("test-session", "fork-2");
 
-        // Assert - Navigation pointers updated: fork-1 <-> fork-3
+        // Assert - Navigation pointers updated: main(0) <-> fork-1(1) <-> fork-3(2)
+        var afterMain = await store.LoadBranchAsync("test-session", "main");
         var afterFork1 = await store.LoadBranchAsync("test-session", "fork-1");
         var afterFork3 = await store.LoadBranchAsync("test-session", "fork-3");
 
-        Assert.Null(afterFork1!.PreviousSiblingId); // First
+        Assert.Null(afterMain!.PreviousSiblingId); // First in group
+        Assert.Equal("fork-1", afterMain.NextSiblingId);
+
+        Assert.Equal("main", afterFork1!.PreviousSiblingId);
         Assert.Equal("fork-3", afterFork1.NextSiblingId);
 
         Assert.Equal("fork-1", afterFork3!.PreviousSiblingId);
@@ -262,16 +271,22 @@ public class BranchTreeV3DeleteTests : AgentTestBase
             await Task.Delay(10); // Ensure chronological order
         }
 
-        // Assert - Verify indices 0-4 and navigation pointers
+        // Assert - main is slot 0, fork-0 is slot 1, ..., fork-4 is slot 5. TotalSiblings=6.
+        var reloadedMain = await store.LoadBranchAsync("test-session", "main");
+        Assert.Equal(0, reloadedMain!.SiblingIndex);
+        Assert.Equal(6, reloadedMain.TotalSiblings);
+        Assert.Null(reloadedMain.PreviousSiblingId);
+        Assert.Equal("fork-0", reloadedMain.NextSiblingId);
+
         for (int i = 0; i < 5; i++)
         {
             var reloaded = await store.LoadBranchAsync("test-session", $"fork-{i}");
-            Assert.Equal(i, reloaded!.SiblingIndex);
-            Assert.Equal(5, reloaded.TotalSiblings);
+            Assert.Equal(i + 1, reloaded!.SiblingIndex); // +1 because main is slot 0
+            Assert.Equal(6, reloaded.TotalSiblings);
 
             // Verify navigation pointers
             if (i == 0)
-                Assert.Null(reloaded.PreviousSiblingId);
+                Assert.Equal("main", reloaded.PreviousSiblingId);
             else
                 Assert.Equal($"fork-{i - 1}", reloaded.PreviousSiblingId);
 
@@ -304,28 +319,30 @@ public class BranchTreeV3DeleteTests : AgentTestBase
             main.Session = session;
         }
 
-        // Act - Delete fork-2 (middle)
+        // Act - Delete fork-2 (which is at index 3 in group: main(0), fork-0(1), fork-1(2), fork-2(3), fork-3(4), fork-4(5))
         await agent.DeleteBranchAsync("test-session", "fork-2");
 
-        // Assert - Remaining siblings reindexed
-        // fork-0(0), fork-1(1), fork-3(2), fork-4(3)
+        // Assert - Remaining: main(0), fork-0(1), fork-1(2), fork-3(3), fork-4(4) — TotalSiblings=5
         Assert.Null(await store.LoadBranchAsync("test-session", "fork-2"));
 
+        var reloadedMain = await store.LoadBranchAsync("test-session", "main");
         var fork0 = await store.LoadBranchAsync("test-session", "fork-0");
         var fork1 = await store.LoadBranchAsync("test-session", "fork-1");
         var fork3 = await store.LoadBranchAsync("test-session", "fork-3");
         var fork4 = await store.LoadBranchAsync("test-session", "fork-4");
 
-        Assert.Equal(0, fork0!.SiblingIndex);
-        Assert.Equal(1, fork1!.SiblingIndex);
-        Assert.Equal(2, fork3!.SiblingIndex); // Shifted from 3
-        Assert.Equal(3, fork4!.SiblingIndex); // Shifted from 4
+        Assert.Equal(0, reloadedMain!.SiblingIndex);
+        Assert.Equal(1, fork0!.SiblingIndex);
+        Assert.Equal(2, fork1!.SiblingIndex);
+        Assert.Equal(3, fork3!.SiblingIndex); // Shifted from 4
+        Assert.Equal(4, fork4!.SiblingIndex); // Shifted from 5
 
-        // All have TotalSiblings=4
-        Assert.Equal(4, fork0.TotalSiblings);
-        Assert.Equal(4, fork1.TotalSiblings);
-        Assert.Equal(4, fork3.TotalSiblings);
-        Assert.Equal(4, fork4.TotalSiblings);
+        // All have TotalSiblings=5
+        Assert.Equal(5, reloadedMain.TotalSiblings);
+        Assert.Equal(5, fork0.TotalSiblings);
+        Assert.Equal(5, fork1.TotalSiblings);
+        Assert.Equal(5, fork3.TotalSiblings);
+        Assert.Equal(5, fork4.TotalSiblings);
     }
 
     [Fact]
@@ -437,6 +454,145 @@ public class BranchTreeV3DeleteTests : AgentTestBase
         var reloadedMain = await store.LoadBranchAsync("test-session", "main");
         Assert.Empty(reloadedMain!.ChildBranches);
         Assert.Equal(0, reloadedMain.TotalForks);
+    }
+
+    //──────────────────────────────────────────────────────────────────
+    // DELETE TESTS - SIBLING REDESIGN (source = slot 0)
+    //──────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task D1_DeleteOnlyFork_SourceReturnsToBareState()
+    {
+        // Arrange
+        var store = new InMemorySessionStore();
+        var agent = await CreateAgentWithStore(store);
+        var session = new HPD.Agent.Session("test-session");
+        await store.SaveSessionAsync(session);
+
+        var main = session.CreateBranch("main");
+        main.AddMessage(UserMessage("Message 1"));
+        await store.SaveBranchAsync("test-session", main);
+        main.Session = session;
+
+        // Create the one and only fork
+        await agent.ForkBranchAsync(main, "fork-1", fromMessageIndex: 0);
+
+        // Verify fork exists and main is in a group of 2
+        var beforeMain = await store.LoadBranchAsync("test-session", "main");
+        Assert.Equal(2, beforeMain!.TotalSiblings);
+        Assert.Equal("fork-1", beforeMain.NextSiblingId);
+
+        // Act - delete the only fork
+        await agent.DeleteBranchAsync("test-session", "fork-1");
+
+        // Assert - main returns to bare standalone state
+        var afterMain = await store.LoadBranchAsync("test-session", "main");
+        Assert.Equal(1, afterMain!.TotalSiblings);
+        Assert.Equal(0, afterMain.SiblingIndex);
+        Assert.Null(afterMain.NextSiblingId);
+        Assert.Null(afterMain.PreviousSiblingId);
+    }
+
+    [Fact]
+    public async Task D2_DeleteFirstFork_SourcePointsToNewFirst()
+    {
+        // Arrange
+        var store = new InMemorySessionStore();
+        var agent = await CreateAgentWithStore(store);
+        var session = new HPD.Agent.Session("test-session");
+        await store.SaveSessionAsync(session);
+
+        var main = session.CreateBranch("main");
+        main.AddMessage(UserMessage("Message 1"));
+        await store.SaveBranchAsync("test-session", main);
+        main.Session = session;
+
+        // Create two forks: main(0), fork-1(1), fork-2(2)
+        await agent.ForkBranchAsync(main, "fork-1", fromMessageIndex: 0);
+        await Task.Delay(10);
+        main = (await store.LoadBranchAsync("test-session", "main"))!;
+        main.Session = session;
+        await agent.ForkBranchAsync(main, "fork-2", fromMessageIndex: 0);
+
+        // Act - delete fork-1 (which is at slot 1)
+        await agent.DeleteBranchAsync("test-session", "fork-1");
+
+        // Assert - remaining: main(0), fork-2(1). TotalSiblings=2
+        var afterMain = await store.LoadBranchAsync("test-session", "main");
+        var afterFork2 = await store.LoadBranchAsync("test-session", "fork-2");
+
+        Assert.Equal(0, afterMain!.SiblingIndex);
+        Assert.Equal(1, afterFork2!.SiblingIndex);
+        Assert.Equal(2, afterMain.TotalSiblings);
+        Assert.Equal(2, afterFork2.TotalSiblings);
+
+        // main now points directly to fork-2
+        Assert.Equal("fork-2", afterMain.NextSiblingId);
+        Assert.Null(afterMain.PreviousSiblingId);
+        Assert.Equal("main", afterFork2.PreviousSiblingId);
+        Assert.Null(afterFork2.NextSiblingId);
+    }
+
+    [Fact]
+    public async Task D3_DeleteSourceBranch_IsRejected()
+    {
+        // Arrange
+        var store = new InMemorySessionStore();
+        var agent = await CreateAgentWithStore(store);
+        var session = new HPD.Agent.Session("test-session");
+        await store.SaveSessionAsync(session);
+
+        var main = session.CreateBranch("main");
+        main.AddMessage(UserMessage("Message 1"));
+        await store.SaveBranchAsync("test-session", main);
+        main.Session = session;
+
+        // Give main a fork so it's a real source branch with children
+        await agent.ForkBranchAsync(main, "fork-1", fromMessageIndex: 0);
+
+        // Act & Assert - cannot delete main while it has forks
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await agent.DeleteBranchAsync("test-session", "main"));
+
+        // Should mention either "main" or "child"
+        Assert.True(
+            ex.Message.Contains("main", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("child", StringComparison.OrdinalIgnoreCase),
+            $"Expected error about 'main' or 'child', got: {ex.Message}");
+    }
+
+    [Fact]
+    public async Task D4_DeleteAllForks_SourceIsAlone()
+    {
+        // Arrange
+        var store = new InMemorySessionStore();
+        var agent = await CreateAgentWithStore(store);
+        var session = new HPD.Agent.Session("test-session");
+        await store.SaveSessionAsync(session);
+
+        var main = session.CreateBranch("main");
+        main.AddMessage(UserMessage("Message 1"));
+        await store.SaveBranchAsync("test-session", main);
+        main.Session = session;
+
+        // Create two forks
+        await agent.ForkBranchAsync(main, "fork-1", fromMessageIndex: 0);
+        await Task.Delay(10);
+        main = (await store.LoadBranchAsync("test-session", "main"))!;
+        main.Session = session;
+        await agent.ForkBranchAsync(main, "fork-2", fromMessageIndex: 0);
+
+        // Act - delete both forks sequentially
+        await agent.DeleteBranchAsync("test-session", "fork-1");
+        await agent.DeleteBranchAsync("test-session", "fork-2");
+
+        // Assert - main is alone, all pointers cleared
+        var finalMain = await store.LoadBranchAsync("test-session", "main");
+        Assert.Equal(1, finalMain!.TotalSiblings);
+        Assert.Equal(0, finalMain.SiblingIndex);
+        Assert.Null(finalMain.NextSiblingId);
+        Assert.Null(finalMain.PreviousSiblingId);
+        Assert.Empty(finalMain.ChildBranches);
     }
 
     //──────────────────────────────────────────────────────────────────

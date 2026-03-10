@@ -6,6 +6,7 @@
 	let {
 		child,
 		children,
+		class: className,
 		bands,
 		mode,
 		onVolumesChange,
@@ -22,7 +23,7 @@
 		return () => rootState.destroy();
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 {#if child}

@@ -5,6 +5,7 @@
 
 	let {
 		onOpenChange,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -21,7 +22,7 @@
 		mergeProps(restProps as Record<string, unknown>, {
 			[providerState.getHPDAttr('provider')]: '',
 			...providerState.sharedProps
-		})
+		}, className ? { class: className } : {}) as Record<string, unknown>
 	);
 </script>
 

@@ -8,6 +8,7 @@
 
 	let {
 		id = createId(uid),
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -23,14 +24,19 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, overlayState.props));
+	const mergedProps = $derived(mergeProps(restProps, overlayState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	function mountRef(el: HTMLDivElement) {
+		overlayState.setRef(el);
+		return { destroy() { overlayState.setRef(null); } };
+	}
 </script>
 
 {#if overlayState.shouldRender || forceMount}
 	{#if child}
 		{@render child({ props: mergedProps })}
 	{:else}
-		<div {...mergedProps}>
+		<div use:mountRef {...mergedProps}>
 			{@render children?.()}
 		</div>
 	{/if}

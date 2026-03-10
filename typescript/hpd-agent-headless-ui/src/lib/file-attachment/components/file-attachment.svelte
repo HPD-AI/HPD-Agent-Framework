@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { FileAttachmentProps } from '../types.js';
+	import type { FileAttachmentProps, FileAttachmentHTMLProps } from '../types.js';
 	import { FileAttachmentState } from '../file-attachment.svelte.js';
 
 	let {
@@ -8,6 +8,7 @@
 		client,
 		sessionId = null,
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -25,7 +26,7 @@
 	});
 	const state = $derived(externalState ?? internalState);
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as FileAttachmentHTMLProps);
 </script>
 
 {#if child}

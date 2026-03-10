@@ -6,6 +6,7 @@
 	let {
 		child,
 		children,
+		class: className,
 		onStatusChange,
 		audioContext,
 		...restProps
@@ -23,7 +24,7 @@
 	});
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 <!--

@@ -74,8 +74,34 @@ function makeWorkspace(messages: Message[] = []): Workspace {
 			permissions: [],
 			clarifications: [],
 			clientToolRequests: [],
-		} as any,
-		selectSession: vi.fn(),
+		} as any,		agents: [],
+		activeAgentId: null,
+		selectAgent: vi.fn(),
+		listAgents: vi.fn().mockResolvedValue([]),
+		client: {
+			stream: vi.fn(),
+			abort: vi.fn(),
+			listSessions: vi.fn(),
+			getSession: vi.fn(),
+			createSession: vi.fn(),
+			updateSession: vi.fn(),
+			deleteSession: vi.fn(),
+			listBranches: vi.fn(),
+			getBranch: vi.fn(),
+			createBranch: vi.fn(),
+			forkBranch: vi.fn(),
+			deleteBranch: vi.fn(),
+			getBranchMessages: vi.fn(),
+			getBranchSiblings: vi.fn(),
+			getNextSibling: vi.fn(),
+			getPreviousSibling: vi.fn(),
+			listAgents: vi.fn(),
+			getAgent: vi.fn(),
+			createAgent: vi.fn(),
+			updateAgent: vi.fn(),
+			deleteAgent: vi.fn(),
+			uploadAsset: vi.fn(),
+		} as any,		selectSession: vi.fn(),
 		createSession: vi.fn(),
 		deleteSession: vi.fn(),
 		switchBranch: vi.fn(),
@@ -952,5 +978,207 @@ describe('MessageActionsPositionState — props and snippetProps', () => {
 		const root = makeRoot({ messageIndex: 0, branch: createBranch({ forkedAtMessageIndex: 5 }) });
 		const pos = new MessageActionsPositionState(root);
 		expect(pos.snippetProps.position).toBe('');
+	});
+});
+
+// ============================================
+// RootState — hasSiblings for ORIGINAL branch (U1-U5)
+// The #isForkedHere path for isOriginal=true branches uses
+// workspace.branches.get(branch.nextSiblingId) to find the fork point.
+// ============================================
+
+describe('MessageActionsRootState — hasSiblings (original branch path)', () => {
+	function makeWorkspaceWithFork(forkId: string, forkIndex: number): Workspace {
+		const forkBranch = createBranch({
+			id: forkId,
+			isOriginal: false,
+			forkedFrom: 'main',
+			forkedAtMessageIndex: forkIndex,
+			previousSiblingId: 'main',
+			nextSiblingId: undefined,
+		});
+		const ws = makeWorkspace();
+		(ws.branches as Map<string, Branch>).set(forkId, forkBranch);
+		return ws;
+	}
+
+	// U1: hasSiblings true for original branch at the fork-point row
+	it('U1: is true for original branch when nextSiblingId fork is at this messageIndex', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.hasSiblings).toBe(true);
+	});
+
+	// U2: hasSiblings false for original branch at a DIFFERENT row
+	it('U2: is false for original branch when messageIndex does not match fork point', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 5, branch, workspace: ws });
+		expect(root.hasSiblings).toBe(false);
+	});
+
+	// U3: hasSiblings false when nextSiblingId is not in workspace.branches
+	it('U3: is false for original branch when nextSiblingId not in workspace.branches', () => {
+		const ws = makeWorkspace(); // empty branches map
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1', // points to a branch not loaded
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.hasSiblings).toBe(false);
+	});
+
+	// U4: canGoPrevious false for original branch (it is slot 0, no previousSiblingId)
+	it('U4: canGoPrevious is false for original branch (slot 0)', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.canGoPrevious).toBe(false);
+	});
+
+	// U5: canGoNext true for original branch when nextSiblingId is set and forked here
+	it('U5: canGoNext is true for original branch when nextSiblingId is set at fork point', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.canGoNext).toBe(true);
+	});
+
+	// U6: position shows "1 / 2" for original branch at fork point (siblingIndex=0)
+	it('U6: position is "1 / 2" for original branch at fork point', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.position).toBe('1 / 2');
+	});
+
+	// U7: positionLabel shows "Original (1 / 2)" for original branch at fork point
+	it('U7: positionLabel is "Original (1 / 2)" for original branch at fork point', () => {
+		const ws = makeWorkspaceWithFork('fork-1', 2);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		expect(root.positionLabel).toBe('Original (1 / 2)');
+	});
+});
+
+// ============================================
+// RootState — navigation actions (U8-U10)
+// ============================================
+
+describe('MessageActionsRootState — navigation actions', () => {
+	// U8: goPrevious calls switchBranch with previousSiblingId
+	it('U8: goPrevious calls workspace.switchBranch with previousSiblingId', async () => {
+		const ws = makeWorkspace();
+		const branch = createBranch({
+			forkedAtMessageIndex: 2,
+			previousSiblingId: 'main',
+			nextSiblingId: undefined,
+			siblingIndex: 1,
+			totalSiblings: 2,
+			isOriginal: false,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		await root.goPrevious();
+		expect(ws.switchBranch).toHaveBeenCalledWith('main');
+	});
+
+	// U9: goNext calls switchBranch with nextSiblingId (original branch path)
+	it('U9: goNext calls workspace.switchBranch with nextSiblingId for original branch', async () => {
+		const forkBranch = createBranch({
+			id: 'fork-1',
+			isOriginal: false,
+			forkedFrom: 'main',
+			forkedAtMessageIndex: 2,
+			previousSiblingId: 'main',
+			nextSiblingId: undefined,
+		});
+		const ws = makeWorkspace();
+		(ws.branches as Map<string, Branch>).set('fork-1', forkBranch);
+		const branch = createBranch({
+			id: 'main',
+			isOriginal: true,
+			forkedFrom: undefined,
+			forkedAtMessageIndex: undefined,
+			previousSiblingId: undefined,
+			nextSiblingId: 'fork-1',
+			siblingIndex: 0,
+			totalSiblings: 2,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		await root.goNext();
+		expect(ws.switchBranch).toHaveBeenCalledWith('fork-1');
+	});
+
+	// U10: goPrevious does nothing when previousSiblingId is null
+	it('U10: goPrevious does nothing when previousSiblingId is null', async () => {
+		const ws = makeWorkspace();
+		const branch = createBranch({
+			forkedAtMessageIndex: 2,
+			previousSiblingId: undefined,
+		});
+		const root = makeRoot({ messageIndex: 2, branch, workspace: ws });
+		await root.goPrevious();
+		expect(ws.switchBranch).not.toHaveBeenCalled();
 	});
 });

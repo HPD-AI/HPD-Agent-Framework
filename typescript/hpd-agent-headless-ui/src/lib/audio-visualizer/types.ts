@@ -19,5 +19,6 @@ export interface AudioVisualizerRootSnippetProps {
 export interface AudioVisualizerRootProps extends AudioVisualizerStateProps {
 	child?: Snippet<[{ props: Record<string, unknown> } & AudioVisualizerRootSnippetProps]>;
 	children?: Snippet<[AudioVisualizerState]>;
+	class?: string;
 	'data-testid'?: string;
 }

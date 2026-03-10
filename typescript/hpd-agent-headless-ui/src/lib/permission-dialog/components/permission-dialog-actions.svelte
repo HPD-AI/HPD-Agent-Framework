@@ -8,6 +8,7 @@
 
 	let {
 		id = createId(uid),
+		class: className,
 		children,
 		child,
 		ref = $bindable(null),
@@ -22,7 +23,10 @@
 		)
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, actionsState.props));
+	const mergedProps = $derived(mergeProps(restProps, actionsState.props, className ? { class: className } : {}) as Record<string, unknown>);
+
+	let defaultEl = $state<HTMLDivElement | null>(null);
+	$effect(() => { actionsState.setRef(defaultEl); });
 
 	// Snippet props for customization
 	const snippetProps = $derived.by(() => ({
@@ -34,7 +38,7 @@
 {#if child}
 	{@render child({ props: mergedProps, ...snippetProps })}
 {:else}
-	<div {...mergedProps}>
+	<div bind:this={defaultEl} {...mergedProps}>
 		{@render children?.(snippetProps)}
 	</div>
 {/if}

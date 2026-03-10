@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { MessageActionsPrevProps } from '../types.js';
+	import type { MessageActionsPrevProps, MessageActionsPrevHTMLProps } from '../types.js';
 	import { MessageActionsPrevState } from '../message-actions.svelte.js';
 
 	let {
 		'aria-label': ariaLabel = 'Previous version',
+		class: className,
 		child,
 		children,
 		...restProps
@@ -12,7 +13,7 @@
 
 	const prevState = MessageActionsPrevState.create(boxWith(() => ariaLabel));
 
-	const mergedProps = $derived(mergeProps(restProps, prevState.props));
+	const mergedProps = $derived(mergeProps(restProps, prevState.props, className ? { class: className } : {}) as MessageActionsPrevHTMLProps);
 </script>
 
 {#if child}

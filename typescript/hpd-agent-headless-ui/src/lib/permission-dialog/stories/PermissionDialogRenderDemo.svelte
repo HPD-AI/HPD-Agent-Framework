@@ -57,7 +57,7 @@
 						</div>
 
 						<div class="recipient-info">
-							<label>To:</label>
+							<span>To:</span>
 							<span>{request.arguments?.recipient || 'Unknown'}</span>
 						</div>
 
@@ -242,7 +242,7 @@
 		border-radius: 8px;
 	}
 
-	.recipient-info label {
+	.recipient-info span:first-child {
 		font-weight: 600;
 		color: #6b7280;
 		font-size: 0.875rem;

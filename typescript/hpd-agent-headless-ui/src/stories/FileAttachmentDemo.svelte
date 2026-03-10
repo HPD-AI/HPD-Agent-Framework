@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { boxWith } from 'svelte-toolbelt';
 	import { FileAttachment, FileAttachmentState } from '$lib/index.js';
 	import type { AssetReference } from '$lib/index.js';
 
@@ -39,9 +40,9 @@
 
 	// Pre-constructed state — makes resolvedAssets readable outside the snippet
 	const attachments = new FileAttachmentState({
-		uploadFn: { get current() { return makeUploadFn(uploadMode); } },
-		sessionId: { get current() { return sessionId; } },
-		disabled: { get current() { return disabled; } },
+		uploadFn: boxWith(() => makeUploadFn(uploadMode)),
+		sessionId: boxWith(() => sessionId),
+		disabled: boxWith(() => disabled),
 	});
 
 	let fileInput: HTMLInputElement | undefined = $state();
@@ -62,7 +63,7 @@
 	/>
 
 	<FileAttachment.Root state={attachments}>
-		{#snippet children(s)}
+		{#snippet children(s: any)}
 			<div class="attachment-zone" class:uploading={s.isUploading}>
 				<!-- Drop zone / trigger -->
 				<button

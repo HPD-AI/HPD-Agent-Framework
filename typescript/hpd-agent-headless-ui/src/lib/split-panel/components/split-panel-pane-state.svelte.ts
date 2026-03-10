@@ -14,12 +14,10 @@
  */
 
 import { watch } from 'runed';
-import { attachRef } from 'svelte-toolbelt';
 import type {
 	WithRefOpts,
 	ReadableBoxedValues,
-	WritableBoxedValues,
-	RefAttachment
+	WritableBoxedValues
 } from '../../internal/index.js';
 import { SplitPanelRootContext } from './split-panel-context.js';
 import { SplitPanelSplitContext, type SplitPanelSplitState } from './split-panel-split-state.svelte.js';
@@ -119,8 +117,10 @@ export class SplitPanelPaneState {
 	/** Parent split state */
 	readonly split: SplitPanelSplitState;
 
-	/** Ref attachment for DOM element binding */
-	readonly attachment: RefAttachment;
+	/** Set the ref to the DOM element */
+	readonly setRef = (v: HTMLElement | null) => {
+		this.opts.ref.current = v;
+	};
 
 	/** Internal collapsed state - initialized from opts if provided */
 	#collapsed = $state(false);
@@ -137,7 +137,6 @@ export class SplitPanelPaneState {
 	constructor(opts: SplitPanelPaneStateOpts, root: SplitPanelRootState) {
 		this.opts = opts;
 		this.root = root;
-		this.attachment = attachRef(opts.ref);
 
 		// Initialize collapsed state from opts if provided
 		if (opts.collapsed?.current !== undefined) {
@@ -294,8 +293,7 @@ export class SplitPanelPaneState {
 			'data-pane-id': this.opts.id.current,
 			'data-state': this.isCollapsed ? 'collapsed' : 'expanded',
 			'data-focused': this.isFocused ? '' : undefined,
-			'data-collapse-strategy': this.effectiveCollapseStrategy,
-			...this.attachment
+			'data-collapse-strategy': this.effectiveCollapseStrategy
 		};
 
 		// Get parent split to determine axis

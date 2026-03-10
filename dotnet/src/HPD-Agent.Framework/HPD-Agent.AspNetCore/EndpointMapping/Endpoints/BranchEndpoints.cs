@@ -435,7 +435,8 @@ internal static class BranchEndpoints
             }
         }
 
-        // Load remaining siblings (same forkedFrom + same forkedAtMessageIndex)
+        // Load remaining siblings (same fork group, excluding deleted branch).
+        // Fork group = source branch (slot 0) + all branches with same ForkedFrom + ForkedAtMessageIndex.
         var allBranchIds = await sessionManager.Store.ListBranchIdsAsync(sid, ct);
         var remainingSiblings = new List<Branch>();
 
@@ -444,9 +445,13 @@ internal static class BranchEndpoints
             if (branchId == bid) continue;
 
             var sibling = await sessionManager.Store.LoadBranchAsync(sid, branchId, ct);
-            if (sibling != null &&
-                sibling.ForkedFrom == branch.ForkedFrom &&
-                sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex)
+            if (sibling == null) continue;
+
+            bool isSameGroup = sibling.ForkedFrom == branch.ForkedFrom &&
+                               sibling.ForkedAtMessageIndex == branch.ForkedAtMessageIndex;
+            bool isSource = branch.ForkedFrom != null && branchId == branch.ForkedFrom;
+
+            if (isSameGroup || isSource)
             {
                 remainingSiblings.Add(sibling);
             }
@@ -532,17 +537,18 @@ internal static class BranchEndpoints
             var branchIds = await sessionManager.Store.ListBranchIdsAsync(sid, ct);
             var siblingDtos = new List<SiblingBranchDto>();
 
-            // Filter siblings (same ForkedFrom + ForkedAtMessageIndex)
+            // Filter siblings: same ForkedFrom + ForkedAtMessageIndex (peer forks),
+            // plus the source branch (slot 0) when targetBranch is itself a fork.
             foreach (var branchId in branchIds)
             {
                 var branch = await sessionManager.Store.LoadBranchAsync(sid, branchId, ct);
                 if (branch == null) continue;
 
-                // V3: CRITICAL - Check BOTH ForkedFrom AND ForkedAtMessageIndex
-                bool isSibling = branch.ForkedFrom == targetBranch.ForkedFrom &&
-                                 branch.ForkedAtMessageIndex == targetBranch.ForkedAtMessageIndex;
+                bool isSameGroup = branch.ForkedFrom == targetBranch.ForkedFrom &&
+                                   branch.ForkedAtMessageIndex == targetBranch.ForkedAtMessageIndex;
+                bool isSource = targetBranch.ForkedFrom != null && branchId == targetBranch.ForkedFrom;
 
-                if (isSibling)
+                if (isSameGroup || isSource)
                 {
                     siblingDtos.Add(new SiblingBranchDto(
                         Id: branch.Id,

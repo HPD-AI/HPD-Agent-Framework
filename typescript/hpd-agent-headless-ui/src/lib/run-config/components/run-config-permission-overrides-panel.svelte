@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { RunConfigPermissionOverridesPanelProps } from '../types.js';
+	import type { RunConfigPermissionOverridesPanelProps, RunConfigPermissionOverridesPanelHTMLProps } from '../types.js';
 	import { RunConfigPermissionOverridesPanelState } from '../run-config.svelte.js';
 
 	let {
 		runConfig,
 		permissions = [],
 		disabled = false,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -18,7 +19,7 @@
 		disabled: boxWith(() => disabled),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, state.props));
+	const mergedProps = $derived(mergeProps(restProps, state.props, className ? { class: className } : {}) as RunConfigPermissionOverridesPanelHTMLProps);
 </script>
 
 {#if child}

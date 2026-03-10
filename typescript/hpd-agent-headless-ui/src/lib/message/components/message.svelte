@@ -10,9 +10,11 @@
 		...restProps
 	}: MessageProps = $props();
 
-	// Recreate state instance when message identity changes
-	// This ensures we track the CURRENT message object, not the initial one
-	let state = $derived(new MessageState(message));
+	// Create state instance once per component mount; update it when message changes
+	let state = new MessageState(message);
+	$effect(() => {
+		state.update(message);
+	});
 
 	// Merge class names
 	const mergedProps = $derived({

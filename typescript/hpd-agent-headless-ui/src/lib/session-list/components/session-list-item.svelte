@@ -1,14 +1,15 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { SessionListItemProps } from '../types.js';
+	import type { SessionListItemProps, SessionListItemHTMLProps } from '../types.js';
 	import { SessionListItemState } from '../session-list.svelte.js';
 
 	let {
 		session,
+		class: className,
 		child,
 		children,
 		...restProps
-	}: SessionListItemProps = $props();
+	}: SessionListItemProps & { class?: string } = $props();
 
 	let itemNode: HTMLElement | null = $state(null);
 
@@ -18,7 +19,7 @@
 		itemNode: boxWith(() => itemNode),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, itemState.props));
+	const mergedProps = $derived(mergeProps(restProps, itemState.props, className ? { class: className } : {}) as SessionListItemHTMLProps);
 </script>
 
 {#if child}

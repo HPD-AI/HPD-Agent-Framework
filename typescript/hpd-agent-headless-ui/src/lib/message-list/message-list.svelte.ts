@@ -2,70 +2,220 @@
  * MessageList State Management
  *
  * Container for chat messages with auto-scrolling and keyboard navigation.
+ *
+ * Auto-scroll modes:
+ *   'bottom'       — scroll to end on every change (classic chat).
+ *   'sent-message' — scroll so the latest user message is at the top of the
+ *                    viewport; the assistant response streams below it.
+ *   'none'         — no automatic scrolling.
+ *
+ * In both active modes, auto-scroll is suppressed while the user has scrolled
+ * up (more than `atBottomThreshold` px from the bottom).  It resumes once they
+ * return to the bottom.
  */
 
 import { Context } from 'runed';
-import { attachRef, type ReadableBoxedValues, onDestroyEffect } from 'svelte-toolbelt';
+import { type ReadableBoxedValues, type WritableBoxedValues, onDestroyEffect } from 'svelte-toolbelt';
 import type { Message } from '../agent/types.ts';
-import type { RefAttachment, WithRefOpts } from '$lib/internal/types.js';
+import type { ScrollBehavior } from './types.js';
+import { SvelteMap } from 'svelte/reactivity';
 import { debounce } from '$lib/internal/debounce.js';
 
 const MessageListRootContext = new Context<MessageListState>('MessageList.Root');
 
 interface MessageListStateOpts
-	extends WithRefOpts<{}, HTMLDivElement>,
-		ReadableBoxedValues<{
+	extends ReadableBoxedValues<{
 			messages: Message[];
-			autoScroll: boolean;
+			scrollBehavior: ScrollBehavior;
+			atBottomThreshold: number;
 			keyboardNav: boolean;
 			ariaLabel: string;
-		}> {}
+			id: string | undefined | null;
+		}>,
+		WritableBoxedValues<{ ref: HTMLDivElement | null }> {}
 
 export class MessageListState {
 	readonly opts: MessageListStateOpts;
-	readonly attachment: RefAttachment<HTMLDivElement>;
+
 	#listNode = $state<HTMLDivElement | null>(null);
 
 	/**
-	 * Debounced scroll-to-bottom function
-	 * Prevents excessive scroll calculations during rapid message updates (streaming)
-	 * 16ms = ~1 frame at 60fps, batches multiple updates into single scroll
+	 * Reactive message count — backed by $state so that $derived computations
+	 * that read `messageCount` (e.g. snippetProps in message-list.svelte) re-run
+	 * whenever messages are mutated in-place, not only when the array reference changes.
+	 * Updated unconditionally at the top of the scroll $effect, before any early returns.
 	 */
-	#scrollToBottom = debounce(() => {
-		if (this.#listNode) {
-			this.#listNode.scrollTop = this.#listNode.scrollHeight;
+	#messageCount = $state(0);
+
+	/** True when the scroll container is within `atBottomThreshold` of the bottom. */
+	#isAtBottom = $state(true);
+
+	/**
+	 * Registry of message-id → DOM element.
+	 * Populated by consumers via registerMessageElement / unregisterMessageElement.
+	 */
+	#messageElements = new SvelteMap<string, HTMLElement>();
+
+	/** The id of the most recent user-role message — used for 'sent-message' mode. */
+	#lastUserMessageId = $state<string | null>(null);
+
+	// -------------------------------------------------------------------------
+	// Scroll helpers
+	// -------------------------------------------------------------------------
+
+	#scrollToBottomImmediate = debounce(() => {
+		const node = this.#listNode;
+		if (!node) return;
+		node.scrollTop = node.scrollHeight;
+	}, 16);
+
+	#scrollToSentMessageImmediate = debounce(() => {
+		const node = this.#listNode;
+		const id = this.#lastUserMessageId;
+		if (!node || !id) return;
+
+		const el = this.#messageElements.get(id);
+		if (el) {
+			// Align the message to the top of the scroll container.
+			const containerTop = node.getBoundingClientRect().top;
+			const elTop = el.getBoundingClientRect().top;
+			node.scrollTop += elTop - containerTop;
+		} else {
+			// Element not registered yet — fall back to bottom.
+			node.scrollTop = node.scrollHeight;
 		}
 	}, 16);
 
+	// -------------------------------------------------------------------------
+	// Scroll position tracking
+	// -------------------------------------------------------------------------
+
+	#handleScroll = () => {
+		const node = this.#listNode;
+		if (!node) return;
+		const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+		this.#isAtBottom = distanceFromBottom <= this.opts.atBottomThreshold.current;
+	};
+
+	// -------------------------------------------------------------------------
+	// Constructor
+	// -------------------------------------------------------------------------
+
+	/** Bind this to the scroll container via `bind:this={listState.setRef}`. */
+	readonly setRef = (v: HTMLDivElement | null) => {
+		if (this.#listNode) {
+			this.#listNode.removeEventListener('scroll', this.#handleScroll);
+		}
+		this.#listNode = v;
+		this.opts.ref.current = v;
+		if (v) {
+			v.addEventListener('scroll', this.#handleScroll, { passive: true });
+			this.#handleScroll();
+		}
+	};
+
 	constructor(opts: MessageListStateOpts) {
 		this.opts = opts;
-		this.attachment = attachRef(opts.ref, (v) => (this.#listNode = v));
 
-		// Auto-scroll effect when messages change
+		// -----------------------------------------------------------------------
+		// Detect new user messages and drive auto-scroll.
+		// -----------------------------------------------------------------------
 		$effect(() => {
 			const messages = this.opts.messages.current;
-			const autoScroll = this.opts.autoScroll.current;
+			const behavior = this.opts.scrollBehavior.current;
 
-			if (autoScroll && this.#listNode && messages.length > 0) {
-				// Debounced scroll batches multiple rapid updates
-				this.#scrollToBottom();
+			// Update BEFORE early returns so snippetProps $derived always has a reactive
+			// dependency on the message count, even when the list node isn't mounted yet.
+			this.#messageCount = messages.length;
+
+			if (behavior === 'none' || !this.#listNode || messages.length === 0) return;
+
+			// Find the last user message.
+			let newLastUserId: string | null = null;
+			for (let i = messages.length - 1; i >= 0; i--) {
+				if (messages[i].role === 'user') {
+					newLastUserId = messages[i].id;
+					break;
+				}
+			}
+
+			const userMessageChanged = newLastUserId !== null && newLastUserId !== this.#lastUserMessageId;
+
+			if (userMessageChanged) {
+				// A new user message was just appended.
+				this.#lastUserMessageId = newLastUserId;
+
+				// Always scroll for a new send, regardless of current position.
+				if (behavior === 'sent-message') {
+					this.#scrollToSentMessageImmediate();
+				} else {
+					this.#scrollToBottomImmediate();
+				}
+				return;
+			}
+
+			// Streaming / assistant updates — only scroll if already at bottom.
+			if (this.#isAtBottom) {
+				if (behavior === 'sent-message') {
+					// In sent-message mode keep scrolling to bottom during streaming
+					// so the response naturally comes into view below the anchor.
+					this.#scrollToBottomImmediate();
+				} else {
+					this.#scrollToBottomImmediate();
+				}
 			}
 		});
 
-		// Cleanup debounced function on component destroy (prevent memory leaks)
 		onDestroyEffect(() => {
-			this.#scrollToBottom.destroy();
+			this.#scrollToBottomImmediate.destroy();
+			this.#scrollToSentMessageImmediate.destroy();
+			if (this.#listNode) {
+				this.#listNode.removeEventListener('scroll', this.#handleScroll);
+			}
 		});
 	}
 
-	// Derived state as getter
+	// -------------------------------------------------------------------------
+	// Public API
+	// -------------------------------------------------------------------------
+
 	get messageCount() {
-		return this.opts.messages.current.length;
+		return this.#messageCount;
 	}
+
+	get isAtBottom() {
+		return this.#isAtBottom;
+	}
+
+	/** Imperatively scroll to the bottom. Use this for a "jump to bottom" button. */
+	readonly scrollToBottom = () => {
+		const node = this.#listNode;
+		if (!node) return;
+		node.scrollTop = node.scrollHeight;
+		this.#isAtBottom = true;
+	};
+
+	/** Register a message element for 'sent-message' scroll targeting. */
+	readonly registerMessageElement = (id: string, el: HTMLElement) => {
+		this.#messageElements.set(id, el);
+	};
+
+	/** Unregister a message element when it leaves the DOM. */
+	readonly unregisterMessageElement = (id: string) => {
+		this.#messageElements.delete(id);
+	};
+
+	// -------------------------------------------------------------------------
+	// Static factory
+	// -------------------------------------------------------------------------
 
 	static create(opts: MessageListStateOpts): MessageListState {
 		return MessageListRootContext.set(new MessageListState(opts));
 	}
+
+	// -------------------------------------------------------------------------
+	// Rendered props
+	// -------------------------------------------------------------------------
 
 	readonly props = $derived.by(
 		() =>
@@ -73,12 +223,12 @@ export class MessageListState {
 				id: this.opts.id.current,
 				'data-message-list': '',
 				'data-message-count': this.messageCount,
+				'data-at-bottom': this.#isAtBottom ? '' : undefined,
 				role: 'log',
 				'aria-label': this.opts.ariaLabel.current,
 				'aria-live': 'polite',
 				'aria-atomic': 'false',
 				tabindex: this.opts.keyboardNav.current ? 0 : -1,
-				...this.attachment,
 			}) as const
 	);
 }

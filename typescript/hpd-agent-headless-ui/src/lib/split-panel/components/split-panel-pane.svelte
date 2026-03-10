@@ -106,6 +106,7 @@
 		collapseStrategy,
 		viewTransitionName,
 		forceMount,
+		class: className,
 		child,
 		children,
 		ref = $bindable(null),
@@ -115,22 +116,18 @@
 	// Create pane state with boxed values
 	const paneState = SplitPanelPaneState.create({
 		id: boxWith(() => id),
-		minSize: minSize !== undefined ? boxWith(() => minSize) : undefined,
-		maxSize: maxSize !== undefined ? boxWith(() => maxSize) : undefined,
-		priority: priority !== undefined ? boxWith(() => priority) : undefined,
-		autoCollapseThreshold:
-			autoCollapseThreshold !== undefined ? boxWith(() => autoCollapseThreshold) : undefined,
-		snapPoints: snapPoints !== undefined ? boxWith(() => snapPoints) : undefined,
-		snapThreshold: snapThreshold !== undefined ? boxWith(() => snapThreshold) : undefined,
-		panelType: panelType !== undefined ? boxWith(() => panelType) : undefined,
-		initialSize: initialSize !== undefined ? boxWith(() => initialSize) : undefined,
-		initialSizeUnit:
-			initialSizeUnit !== undefined ? boxWith(() => initialSizeUnit) : undefined,
-		collapseStrategy:
-			collapseStrategy !== undefined ? boxWith(() => collapseStrategy) : undefined,
-		viewTransitionName:
-			viewTransitionName !== undefined ? boxWith(() => viewTransitionName) : undefined,
-		forceMount: forceMount !== undefined ? boxWith(() => forceMount) : undefined,
+		minSize: boxWith(() => minSize),
+		maxSize: boxWith(() => maxSize),
+		priority: boxWith(() => priority),
+		autoCollapseThreshold: boxWith(() => autoCollapseThreshold),
+		snapPoints: boxWith(() => snapPoints),
+		snapThreshold: boxWith(() => snapThreshold),
+		panelType: boxWith(() => panelType),
+		initialSize: boxWith(() => initialSize),
+		initialSizeUnit: boxWith(() => initialSizeUnit),
+		collapseStrategy: boxWith(() => collapseStrategy),
+		viewTransitionName: boxWith(() => viewTransitionName),
+		forceMount: boxWith(() => forceMount),
 		collapsed: boxWith(
 			() => collapsed,
 			(v) => (collapsed = v)
@@ -141,13 +138,16 @@
 		)
 	});
 
+	let defaultEl = $state<HTMLDivElement | null>(null);
+
 	// Update pane state with element ref when mounted (for DOM ordering)
 	$effect(() => {
-		paneState._setElement(ref);
+		paneState._setElement(defaultEl);
+		paneState.setRef(defaultEl);
 	});
 
 	// Merge props
-	const mergedProps = $derived(mergeProps(restProps, paneState.props));
+	const mergedProps = $derived(mergeProps(restProps, paneState.props, className ? { class: className } : {}) as Record<string, unknown>);
 </script>
 
 {#if child}
@@ -158,7 +158,7 @@
 		size: paneState.size
 	})}
 {:else}
-	<div {...mergedProps}>
+	<div bind:this={defaultEl} {...mergedProps}>
 		{@render children?.(paneState.snippetProps)}
 	</div>
 {/if}

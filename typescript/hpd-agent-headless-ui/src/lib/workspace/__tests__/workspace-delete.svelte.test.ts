@@ -116,6 +116,13 @@ function makeFakeAgentClient(
 		getBranchSiblings: vi.fn(async (): Promise<SiblingBranch[]> => []),
 		getNextSibling: vi.fn(async (): Promise<Branch | null> => null),
 		getPreviousSibling: vi.fn(async (): Promise<Branch | null> => null),
+
+		listAgents: vi.fn(async () => []),
+		getAgent: vi.fn(async () => null),
+		createAgent: vi.fn(),
+		updateAgent: vi.fn(),
+		deleteAgent: vi.fn(),
+		uploadAsset: vi.fn(),
 	};
 
 	return client;

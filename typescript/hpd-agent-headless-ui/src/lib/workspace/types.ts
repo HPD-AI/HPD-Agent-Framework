@@ -13,9 +13,15 @@ import type {
 	CreateAgentRequest,
 	UpdateAgentRequest,
 	StreamOptions,
+	Session,
+	Branch,
+	SiblingBranch,
+	BranchMessage,
+	AssetReference,
 	RunConfig,
+	ChatRunConfig,
 } from '@hpd/hpd-agent-client';
-import type { Session, Branch, SiblingBranch, BranchMessage, AssetReference } from '@hpd/hpd-agent-client';
+export type { RunConfig, ChatRunConfig };
 import type { EventHandlers } from '@hpd/hpd-agent-client';
 import type { AgentState } from '../agent/agent.svelte.ts';
 
@@ -116,6 +122,8 @@ export interface SendOptions {
 	runConfig?: RunConfig;
 	/** Resolved asset references to attach to the message as UriContent */
 	attachments?: AssetReference[];
+	/** Additional client tool groups to register for this send only (merged with workspace-level toolkits) */
+	clientToolKits?: clientToolKitDefinition[];
 }
 
 export interface Workspace {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { MessageActionsCopyButtonProps } from '../types.js';
+	import type { MessageActionsCopyButtonProps, MessageActionsCopyButtonHTMLProps } from '../types.js';
 	import { MessageActionsCopyButtonState } from '../message-actions.svelte.js';
 
 	let {
@@ -9,6 +9,7 @@
 		'aria-label': ariaLabel = 'Copy message',
 		onSuccess,
 		onError,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -22,7 +23,7 @@
 		onError: boxWith(() => onError),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, copyState.props));
+	const mergedProps = $derived(mergeProps(restProps, copyState.props, className ? { class: className } : {}) as MessageActionsCopyButtonHTMLProps);
 </script>
 
 {#if child}

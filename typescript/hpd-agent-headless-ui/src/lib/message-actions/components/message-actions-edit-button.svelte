@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { MessageActionsEditButtonProps } from '../types.js';
+	import type { MessageActionsEditButtonProps, MessageActionsEditButtonHTMLProps } from '../types.js';
 	import { MessageActionsEditButtonState } from '../message-actions.svelte.js';
 
 	let {
 		'aria-label': ariaLabel = 'Edit message',
 		onSuccess,
 		onError,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -18,7 +19,7 @@
 		onError: boxWith(() => onError),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, editState.props));
+	const mergedProps = $derived(mergeProps(restProps, editState.props, className ? { class: className } : {}) as MessageActionsEditButtonHTMLProps);
 </script>
 
 {#if child}

@@ -37,7 +37,8 @@
 	// Track submissions for testing
 	let submitCount = $state(0);
 	let lastSubmitted = $state('');
-	let currentValue = $state(defaultValue || '');
+	let currentValue = $state('');
+	$effect(() => { currentValue = defaultValue || ''; });
 
 	function handleSubmit(details: { value: string }) {
 		submitCount++;

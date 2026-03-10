@@ -141,6 +141,14 @@ function makeFakeAgentClient(sessions: Session[], branchesPerSession: Map<string
 		getBranchSiblings: vi.fn(async (_sid: string, _bid: string): Promise<SiblingBranch[]> => []),
 		getNextSibling: vi.fn(async (_sid: string, _bid: string): Promise<Branch | null> => null),
 		getPreviousSibling: vi.fn(async (_sid: string, _bid: string): Promise<Branch | null> => null),
+
+		// ---- Agent CRUD ----
+		listAgents: vi.fn(async () => []),
+		getAgent: vi.fn(async () => null),
+		createAgent: vi.fn(),
+		updateAgent: vi.fn(),
+		deleteAgent: vi.fn(),
+		uploadAsset: vi.fn(),
 	};
 
 	return client;

@@ -21,12 +21,8 @@
 	}: Props = $props();
 
 	// Use local state for expanded if not provided
-	let localExpanded = $state(expanded ?? false);
-	$effect(() => {
-		if (expanded !== undefined) {
-			localExpanded = expanded;
-		}
-	});
+	let localExpanded = $state(false);
+	$effect(() => { localExpanded = expanded ?? false; });
 
 	function createDefaultToolCall(): ToolCall {
 		return {

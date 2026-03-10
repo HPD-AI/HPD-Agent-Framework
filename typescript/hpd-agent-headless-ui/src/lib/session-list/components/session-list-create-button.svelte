@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { mergeProps } from 'svelte-toolbelt';
-	import type { SessionListCreateButtonProps } from '../types.js';
+	import type { SessionListCreateButtonProps, SessionListCreateButtonHTMLProps } from '../types.js';
 	import { SessionListCreateButtonState } from '../session-list.svelte.js';
 
-	let { child, children, ...restProps }: SessionListCreateButtonProps = $props();
+	let { class: className, child, children, ...restProps }: SessionListCreateButtonProps & { class?: string } = $props();
 
 	const createBtnState = SessionListCreateButtonState.create();
 
-	const mergedProps = $derived(mergeProps(restProps, createBtnState.props));
+	const mergedProps = $derived(mergeProps(restProps, createBtnState.props, className ? { class: className } : {}) as SessionListCreateButtonHTMLProps);
 </script>
 
 {#if child}

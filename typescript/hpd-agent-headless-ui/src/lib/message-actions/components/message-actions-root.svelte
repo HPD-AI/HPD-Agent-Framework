@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mergeProps, boxWith } from 'svelte-toolbelt';
-	import type { MessageActionsRootProps } from '../types.js';
+	import type { MessageActionsRootProps, MessageActionsRootHTMLProps } from '../types.js';
 	import { MessageActionsRootState } from '../message-actions.svelte.js';
 
 	let {
@@ -8,6 +8,7 @@
 		messageIndex,
 		role,
 		branch = null,
+		class: className,
 		child,
 		children,
 		...restProps
@@ -20,7 +21,7 @@
 		branch: boxWith(() => branch),
 	});
 
-	const mergedProps = $derived(mergeProps(restProps, rootState.props));
+	const mergedProps = $derived(mergeProps(restProps, rootState.props, className ? { class: className } : {}) as MessageActionsRootHTMLProps);
 </script>
 
 {#if child}

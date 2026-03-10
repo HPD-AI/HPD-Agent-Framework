@@ -43,6 +43,7 @@
 
 		{#if showModel}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">Model</label>
 				<RunConfig.ModelSelector {runConfig} {providers} {disabled}>
 					{#snippet children(s)}
@@ -79,6 +80,7 @@
 
 		{#if showTemperature}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">
 					Temperature
 					{#if runConfig.temperature !== undefined}
@@ -113,6 +115,7 @@
 
 		{#if showTopP}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">
 					Top-P
 					{#if runConfig.topP !== undefined}
@@ -147,6 +150,7 @@
 
 		{#if showMaxTokens}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">Max Output Tokens</label>
 				<RunConfig.MaxTokensInput {runConfig} {disabled}>
 					{#snippet children(s)}
@@ -175,6 +179,7 @@
 
 		{#if showSystemInstructions}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">Additional System Instructions</label>
 				<RunConfig.SystemInstructionsInput {runConfig} {disabled}>
 					{#snippet children(s)}
@@ -195,6 +200,7 @@
 
 		{#if showPermissions}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">Permission Overrides</label>
 				<RunConfig.PermissionOverridesPanel {runConfig} {permissions} {disabled}>
 					{#snippet children(s)}
@@ -229,6 +235,7 @@
 
 		{#if showSkipTools}
 			<div class="field">
+				<!-- svelte-ignore a11y_label_has_associated_control -->
 				<label class="field-label">Skip Tools</label>
 				<RunConfig.SkipToolsToggle {runConfig} {disabled}>
 					{#snippet children(s)}
@@ -251,11 +258,12 @@
 
 		{#if showRunTimeout}
 			<div class="field">
-				<label class="field-label">Run Timeout (ISO 8601 duration)</label>
+				<label class="field-label" for="run-timeout-input">Run Timeout (ISO 8601 duration)</label>
 				<RunConfig.RunTimeoutInput {runConfig} {disabled}>
 					{#snippet children(s)}
 						<div class="input-row">
 							<input
+								id="run-timeout-input"
 								type="text"
 								class="text-input"
 								value={s.value ?? ''}
