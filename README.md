@@ -4,7 +4,7 @@
 [![Docs](https://img.shields.io/badge/Docs-hpd--ai.github.io-blue)](https://hpd-ai.github.io/HPD-Agent-Framework/)
 [![NuGet](https://img.shields.io/nuget/v/HPD-Agent.Framework?label=NuGet&color=004880&logo=nuget)](https://www.nuget.org/packages/HPD-Agent.Framework)
 
-A C# framework for building production AI systems — agents, RAG pipelines, ML pipelines, and everything in between.
+A C# framework for building production AI systems — AI agents, RAG pipelines, ML pipelines, and everything in between.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="overview-dark.svg">
