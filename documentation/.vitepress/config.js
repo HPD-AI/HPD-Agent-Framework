@@ -5,7 +5,7 @@ export default defineConfig({
   description: 'Production-ready multi-agent framework for .NET',
 
   // Base path for GitHub Pages deployment
-  base: '/HPD-Agent-Framework/',
+  base: '/hpd-ai-framewowrk/',
 
   // Use documentation as the root
   srcDir: '.',
