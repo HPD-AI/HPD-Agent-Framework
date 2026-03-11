@@ -40,6 +40,21 @@ public class AffectedNodeDetector : IAffectedNodeDetector
             return affectedNodes;
         }
 
+        // Fast path: if the graph structure hasn't changed, inputs are empty, and no nodes
+        // have partitions (which can change independently), all fingerprints are deterministic
+        // from graph identity alone — skip per-node recomputation entirely.
+        var currentGraphHash = currentGraph.Id + currentGraph.Version;
+        if (previousSnapshot.GraphHash == currentGraphHash
+            && currentInputs.GetAll().Count == 0
+            && !currentGraph.Nodes.Any(n => n.Partitions != null)
+            && currentGraph.Nodes
+                .Where(n => n.Type != Graph.Abstractions.Graph.NodeType.Start
+                         && n.Type != Graph.Abstractions.Graph.NodeType.End)
+                .All(n => previousSnapshot.NodeFingerprints.ContainsKey(n.Id)))
+        {
+            return new HashSet<string>();
+        }
+
         // Compute current fingerprints and compare with previous
         var currentFingerprints = new Dictionary<string, string>();
         var upstreamHashes = new Dictionary<string, string>();

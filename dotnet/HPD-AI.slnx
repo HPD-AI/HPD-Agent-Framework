@@ -86,6 +86,17 @@
   <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.GraphStoreProviders/" />
   <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.RerankerProviders/" />
   <Folder Name="/src/HPD-RAG.Framework/HPD-RAG.VectorStores/" />
+  <Folder Name="/src/HPD-Auth.Framework/">
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Core/HPD.Auth.Core.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Infrastructure/HPD.Auth.Infrastructure.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth/HPD.Auth.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Authentication/HPD.Auth.Authentication.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Audit/HPD.Auth.Audit.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Admin/HPD.Auth.Admin.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.Authorization/HPD.Auth.Authorization.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.TwoFactor/HPD.Auth.TwoFactor.csproj" />
+    <Project Path="src/HPD-Auth.Framework/src/HPD.Auth.OAuth/HPD.Auth.OAuth.csproj" />
+  </Folder>
   <Folder Name="/src/HPD-ML.Framework/">
     <Project Path="src/HPD-ML.Framework/HPD.ML.Abstractions/HPD.ML.Abstractions.csproj" />
     <Project Path="src/HPD-ML.Framework/HPD.ML.Core/HPD.ML.Core.csproj" />
@@ -135,6 +146,15 @@
     <Project Path="src/shared/Helium/test/Helium.Algebra.Tests/Helium.Algebra.Tests.csproj" />
     <Project Path="src/shared/Helium/test/Helium.Algorithms.Tests/Helium.Algorithms.Tests.csproj" />
     <Project Path="test/HPD-ML.Framework/HPD.ML.Core.Tests/HPD.ML.Core.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Core.Tests/HPD.Auth.Core.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Infrastructure.Tests/HPD.Auth.Infrastructure.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Tests/HPD.Auth.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Admin.Tests/HPD.Auth.Admin.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Authentication.Tests/HPD.Auth.Authentication.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Authorization.Tests/HPD.Auth.Authorization.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.Audit.Tests/HPD.Auth.Audit.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.TwoFactor.Tests/HPD.Auth.TwoFactor.Tests.csproj" />
+    <Project Path="test/HPD-Auth.Framework/HPD.Auth.OAuth.Tests/HPD.Auth.OAuth.Tests.csproj" />
   </Folder>
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.FFI/HPD-Agent.FFI.csproj" />
   <Project Path="src/HPD-Agent.Framework/HPD-Agent.MCP/HPD-Agent.MCP.csproj" />

@@ -206,6 +206,13 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
+        // Fast exit: if incremental execution determined no nodes are dirty, skip all work.
+        if (dirtyNodes != null && dirtyNodes.Count == 0)
+        {
+            FinalizeExecution(context, executionStartTime, totalIterations: 1);
+            return context;
+        }
+
         // Get execution layers (topological sort)
         var layers = context.Graph.GetExecutionLayers();
 
@@ -269,8 +276,13 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
         }
 
-        // Save snapshot for next incremental execution
-        await SaveSnapshotAsync(context, cancellationToken);
+        // Save snapshot for next incremental execution.
+        // Skip if no nodes ran (dirtyNodes was empty) — the existing snapshot is still valid
+        // and saving an empty one would cause all nodes to be marked dirty on the next run.
+        if (dirtyNodes == null || dirtyNodes.Count > 0)
+        {
+            await SaveSnapshotAsync(context, cancellationToken);
+        }
 
         FinalizeExecution(context, executionStartTime, totalIterations: 1);
         return context;
@@ -1142,7 +1154,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             var snapshot = new GraphSnapshot
             {
                 NodeFingerprints = context.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-                GraphHash = context.Graph.ComputeStructureHash(),
+                GraphHash = context.Graph.Id + context.Graph.Version,
                 Timestamp = DateTimeOffset.UtcNow,
                 ExecutionId = context.ExecutionId,
                 PartitionSnapshots = partitionSnapshots
@@ -1484,6 +1496,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             .Where(node => !ShouldSkipDueToFailedDependency(context, node!))
             .ToList();
 
+
         if (nodesToExecute.Count == 0)
         {
             context.Log("Orchestrator", $"Layer {layer.Level}: All nodes already complete or skipped, skipping", LogLevel.Debug);
@@ -1729,7 +1742,6 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
 
                 // Store for downstream nodes and artifact versioning
                 context.InternalCurrentFingerprints[node.Id] = fingerprint;
-
                 // Try to get from cache if cache store is available
                 if (_cacheStore != null)
                 {
@@ -4650,11 +4662,16 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             }
 
             minimalGraph = BuildMinimalSubgraph(graph, affectedNodes, producingNodeId);
+            // Use a unique ID so ExecuteAcyclicAsync's own incremental detection
+            // doesn't find the existing snapshot and fast-exit (we already handled incrementality above).
+            minimalGraph = minimalGraph with { Id = $"{graph.Id}-mat-{Guid.NewGuid():N}" };
         }
         else
         {
-            // No incremental execution - use full graph
-            minimalGraph = graph;
+            // No incremental execution (ForceRecompute or no detector/store).
+            // Use a snapshot-exempt copy so ExecuteAcyclicAsync's incremental detection
+            // doesn't fire and skip nodes that must be re-executed.
+            minimalGraph = graph with { Id = $"{graph.Id}-force-{Guid.NewGuid():N}" };
         }
 
         // 5. Create context and execute
@@ -4757,7 +4774,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
     /// </summary>
     private string ComputeGraphHash(Abstractions.Graph.Graph graph)
     {
-        return graph.ComputeStructureHash();
+        return graph.Id + graph.Version;
     }
 
     /// <summary>
@@ -5025,8 +5042,18 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
                 affectedNodes = await _affectedNodeDetector.GetAffectedNodesAsync(
                     previousSnapshot, graph, currentInputs, _serviceProvider, cancellationToken);
 
-                // Intersect with necessary nodes (only execute what's both necessary AND affected)
-                allNecessaryNodes.IntersectWith(affectedNodes);
+                // Only prune if there are actually dirty nodes to filter by.
+                // When affectedNodes is non-empty, intersect to limit execution scope.
+                // When empty (nothing changed), keep the full dependency graph — producing nodes
+                // and their upstream dependencies must still execute to emit output channels.
+                if (affectedNodes.Count > 0)
+                {
+                    // Always keep producing nodes and start/end
+                    foreach (var pid in allProducingNodeIds) affectedNodes.Add(pid);
+                    affectedNodes.Add(graph.EntryNodeId);
+                    affectedNodes.Add(graph.ExitNodeId);
+                    allNecessaryNodes.IntersectWith(affectedNodes);
+                }
             }
 
             // Filter nodes and edges to only include necessary ones
@@ -5041,7 +5068,7 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             // Create minimal subgraph
             var minimalGraph = new Abstractions.Graph.Graph
             {
-                Id = $"{graph.Id}-minimal-many",
+                Id = $"{graph.Id}-mat-many-{Guid.NewGuid():N}",
                 Name = $"{graph.Name} (Minimal for {artifactList.Count} artifacts)",
                 Version = graph.Version,
                 Nodes = filteredNodes,
@@ -5115,12 +5142,14 @@ public class GraphOrchestrator<TContext> : IGraphOrchestrator<TContext>
             // 10. Save snapshot for future incremental execution
             if (_snapshotStore != null)
             {
+                // Use fingerprints from the execution context (same object, but accessed via TContext)
+                var fingerprints = executionContext.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
                 var snapshot = new Abstractions.Caching.GraphSnapshot
                 {
                     ExecutionId = executionId,
                     Timestamp = DateTimeOffset.UtcNow,
-                    GraphHash = graph.ComputeStructureHash(),
-                    NodeFingerprints = context.InternalCurrentFingerprints.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                    GraphHash = graph.Id + graph.Version,
+                    NodeFingerprints = fingerprints
                 };
 
                 await _snapshotStore.SaveSnapshotAsync(graph.Id, snapshot, cancellationToken);

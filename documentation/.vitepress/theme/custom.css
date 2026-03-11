@@ -453,3 +453,10 @@
   align-items: center;
   justify-content: center;
 }
+
+.hero-picker-slot {
+  display: flex;
+  justify-content: center;
+  margin-top: -32px;
+  margin-bottom: 48px;
+}

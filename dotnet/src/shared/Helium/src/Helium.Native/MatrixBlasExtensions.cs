@@ -1,4 +1,3 @@
-using Helium.Primitives;
 using Helium.Algebra;
 
 namespace Helium.Native;
@@ -15,15 +14,15 @@ namespace Helium.Native;
 /// </summary>
 public static class MatrixBlasExtensions
 {
-    extension(Matrix<Double> _)
+    extension(Matrix<Helium.Primitives.Double> _)
     {
-        public static Matrix<Double> operator *(Matrix<Double> a, Matrix<Double> b)
+        public static Matrix<Helium.Primitives.Double> operator *(Matrix<Helium.Primitives.Double> a, Matrix<Helium.Primitives.Double> b)
             => BlasInterop.Dgemm(a, b);
     }
 
-    extension(Matrix<Float> _)
+    extension(Matrix<Helium.Primitives.Float> _)
     {
-        public static Matrix<Float> operator *(Matrix<Float> a, Matrix<Float> b)
+        public static Matrix<Helium.Primitives.Float> operator *(Matrix<Helium.Primitives.Float> a, Matrix<Helium.Primitives.Float> b)
             => BlasInterop.Sgemm(a, b);
     }
 }

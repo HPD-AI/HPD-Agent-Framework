@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
-using Helium.Primitives;
 using Helium.Algebra;
+using HDouble = Helium.Primitives.Double;
+using HFloat = Helium.Primitives.Float;
 
 namespace Helium.Native;
 
@@ -123,7 +124,7 @@ internal static class BlasInterop
     /// BLAS dgemm: C = A * B for Matrix&lt;Double&gt;.
     /// A is m×k, B is k×n, result is m×n.
     /// </summary>
-    public static Matrix<Double> Dgemm(Matrix<Double> a, Matrix<Double> b)
+    public static Matrix<HDouble> Dgemm(Matrix<HDouble> a, Matrix<HDouble> b)
     {
         int m = a.Rows, k = a.Cols, n = b.Cols;
         if (k != b.Rows)
@@ -142,7 +143,7 @@ internal static class BlasInterop
     /// BLAS sgemm: C = A * B for Matrix&lt;Float&gt;.
     /// A is m×k, B is k×n, result is m×n.
     /// </summary>
-    public static Matrix<Float> Sgemm(Matrix<Float> a, Matrix<Float> b)
+    public static Matrix<HFloat> Sgemm(Matrix<HFloat> a, Matrix<HFloat> b)
     {
         int m = a.Rows, k = a.Cols, n = b.Cols;
         if (k != b.Rows)
@@ -161,7 +162,7 @@ internal static class BlasInterop
     // Helpers: extract contiguous arrays from Matrix<Double/Float>
     // -------------------------------------------------------------------------
 
-    private static double[] ExtractDoubles(Matrix<Double> m)
+    private static double[] ExtractDoubles(Matrix<HDouble> m)
     {
         var flat = new double[m.Rows * m.Cols];
         for (int i = 0; i < m.Rows; i++)
@@ -170,15 +171,15 @@ internal static class BlasInterop
         return flat;
     }
 
-    private static Matrix<Double> BuildDouble(double[] flat, int rows, int cols)
+    private static Matrix<HDouble> BuildDouble(double[] flat, int rows, int cols)
     {
-        var entries = new Double[flat.Length];
+        var entries = new HDouble[flat.Length];
         for (int k = 0; k < flat.Length; k++)
-            entries[k] = new Double(flat[k]);
-        return Matrix<Double>.FromArray(rows, cols, entries);
+            entries[k] = new HDouble(flat[k]);
+        return Matrix<HDouble>.FromArray(rows, cols, entries);
     }
 
-    private static float[] ExtractFloats(Matrix<Float> m)
+    private static float[] ExtractFloats(Matrix<HFloat> m)
     {
         var flat = new float[m.Rows * m.Cols];
         for (int i = 0; i < m.Rows; i++)
@@ -187,11 +188,11 @@ internal static class BlasInterop
         return flat;
     }
 
-    private static Matrix<Float> BuildFloat(float[] flat, int rows, int cols)
+    private static Matrix<HFloat> BuildFloat(float[] flat, int rows, int cols)
     {
-        var entries = new Float[flat.Length];
+        var entries = new HFloat[flat.Length];
         for (int k = 0; k < flat.Length; k++)
-            entries[k] = new Float(flat[k]);
-        return Matrix<Float>.FromArray(rows, cols, entries);
+            entries[k] = new HFloat(flat[k]);
+        return Matrix<HFloat>.FromArray(rows, cols, entries);
     }
 }

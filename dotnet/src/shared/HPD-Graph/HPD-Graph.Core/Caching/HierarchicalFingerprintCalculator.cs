@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using System.IO.Hashing;
 using System.Text;
 using System.Text.Json;
 using HPDAgent.Graph.Abstractions.Caching;
@@ -100,12 +100,11 @@ public class HierarchicalFingerprintCalculator : INodeFingerprintCalculator
     }
 
     /// <summary>
-    /// Compute SHA256 hash of a string.
+    /// Compute XxHash64 hash of a string. Fast, non-cryptographic — sufficient for cache keying.
     /// </summary>
     private string ComputeHash(string input)
     {
         var bytes = Encoding.UTF8.GetBytes(input);
-        var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        return XxHash64.HashToUInt64(bytes).ToString("x16");
     }
 }

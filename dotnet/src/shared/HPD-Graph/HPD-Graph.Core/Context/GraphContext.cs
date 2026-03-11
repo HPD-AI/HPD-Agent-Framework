@@ -252,6 +252,20 @@ public class GraphContext : IGraphContext
             }
         }
 
+        // Copy fingerprints so isolated context can look up upstream hashes
+        // Use ToList() to create a snapshot and avoid concurrent modification issues
+        foreach (var kvp in _internalCurrentFingerprints.ToList())
+        {
+            copy._internalCurrentFingerprints[kvp.Key] = kvp.Value;
+        }
+
+        // Copy output hashes for convergence detection
+        // Use ToList() to create a snapshot and avoid concurrent modification issues
+        foreach (var kvp in _internalOutputHashes.ToList())
+        {
+            copy._internalOutputHashes[kvp.Key] = kvp.Value;
+        }
+
         return copy;
     }
 
@@ -301,6 +315,27 @@ public class GraphContext : IGraphContext
         foreach (var kvp in isolated._nodeExecutionCounts)
         {
             _nodeExecutionCounts.AddOrUpdate(kvp.Key, kvp.Value, (_, existing) => existing + kvp.Value);
+        }
+
+        // Merge fingerprints from isolated context (for caching/incremental execution)
+        // Use ToList() to create a snapshot and avoid concurrent modification issues
+        foreach (var kvp in isolated._internalCurrentFingerprints.ToList())
+        {
+            _internalCurrentFingerprints[kvp.Key] = kvp.Value;
+        }
+
+        // Merge output hashes from isolated context (for convergence detection)
+        // Use ToList() to create a snapshot and avoid concurrent modification issues
+        foreach (var kvp in isolated._internalOutputHashes.ToList())
+        {
+            _internalOutputHashes[kvp.Key] = kvp.Value;
+        }
+
+        // Merge failed nodes from isolated context
+        // Use ToList() to create a snapshot and avoid concurrent modification issues
+        foreach (var kvp in isolated._internalFailedNodes.ToList())
+        {
+            _internalFailedNodes[kvp.Key] = kvp.Value;
         }
 
         // Merge logs (chronological, thread-safe via ConcurrentBag)
