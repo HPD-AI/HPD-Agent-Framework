@@ -4,7 +4,7 @@ export default defineConfig({
   title: 'HPD AI',
   description: 'Build production-ready AI applications in .NET',
 
-  base: '/',
+  base: '/HPD-AI-Framework/',
   srcDir: '.',
   cleanUrls: true,
 
