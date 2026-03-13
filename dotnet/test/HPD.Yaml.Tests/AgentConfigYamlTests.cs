@@ -30,7 +30,7 @@ maxAgenticIterations: 20
 continuationExtensionAmount: 5
 provider:
   providerKey: openai
-  model: gpt-4o
+  modelName: gpt-4o
   endpoint: https://api.openai.com/v1
 collapsing:
   enabled: true
@@ -48,7 +48,7 @@ coalesceDeltas: false
         Assert.Equal(5, config.ContinuationExtensionAmount);
         Assert.NotNull(config.Provider);
         Assert.Equal("openai", config.Provider!.ProviderKey);
-        Assert.Equal("gpt-4o", config.Provider.Model);
+        Assert.Equal("gpt-4o", config.Provider!.ModelName);
         Assert.True(config.PreserveReasoningInHistory);
         Assert.NotNull(config.DefaultReasoning);
         Assert.Equal(ReasoningEffort.High, config.DefaultReasoning!.Effort);
@@ -66,7 +66,7 @@ coalesceDeltas: false
             Provider = new ProviderConfig
             {
                 ProviderKey = "ollama",
-                Model = "llama3"
+                ModelName = "llama3"
             }
         };
 
@@ -77,7 +77,7 @@ coalesceDeltas: false
         Assert.Equal(original.SystemInstructions, deserialized.SystemInstructions);
         Assert.Equal(original.MaxAgenticIterations, deserialized.MaxAgenticIterations);
         Assert.Equal(original.Provider.ProviderKey, deserialized.Provider?.ProviderKey);
-        Assert.Equal(original.Provider.Model, deserialized.Provider?.Model);
+        Assert.Equal(original.Provider.ModelName, deserialized.Provider?.ModelName);
     }
 
     [Fact]

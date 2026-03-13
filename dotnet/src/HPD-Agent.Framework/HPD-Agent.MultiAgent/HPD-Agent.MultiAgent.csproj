@@ -17,7 +17,7 @@
     <ProjectReference Include="..\HPD-Agent\HPD-Agent.csproj" />
     <ProjectReference Include="..\..\..\src\shared\HPD-Graph\HPD-Graph.Core\HPD-Graph.Core.csproj" />
     <ProjectReference Include="..\..\..\src\shared\HPD-Events\HPD-Events.csproj" />
-    <!-- YAML serialization (transitively gets YamlDotNet via HPD-Agent → HPD.Yaml.Core) -->
+    <ProjectReference Include="..\..\..\src\shared\HPD.Yaml.Core\HPD.Yaml.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,5 @@
 using HPD.Agent;
+using HPD.MultiAgent;
 using HPD.Yaml.Core;
 using HPD.Yaml.Core.Converters;
 using HPDAgent.Graph.Abstractions.Graph;
