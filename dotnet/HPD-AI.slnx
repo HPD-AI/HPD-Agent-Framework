@@ -32,6 +32,7 @@
     <Project Path="src/shared/HPD-Graph/HPD-Graph.Core/HPD-Graph.Core.csproj" />
     <Project Path="src/shared/HPD-Graph/HPD-Graph.SourceGenerator/HPD-Graph.SourceGenerator.csproj" />
     <Project Path="src/shared/HPD.OpenApi.Core/HPD.OpenApi.Core.csproj" />
+    <Project Path="src/shared/HPD.Yaml.Core/HPD.Yaml.Core.csproj" />
     <Project Path="src/shared/Helium/src/Helium.Primitives/Helium.Primitives.csproj" />
     <Project Path="src/shared/Helium/src/Helium.Native/Helium.Native.csproj" />
     <Project Path="src/shared/Helium/src/Helium.Algebra/Helium.Algebra.csproj" />
@@ -142,6 +143,7 @@
     <Project Path="test/HPD-Agent.MAUI.Tests/HPD-Agent.MAUI.Tests.csproj" />
     <Project Path="test/HPD-Agent.AspNetCore.Tests/HPD-Agent.AspNetCore.Tests.csproj" />
     <Project Path="test/HPD-Agent.Hosting.Tests/HPD-Agent.Hosting.Tests.csproj" />
+    <Project Path="test/HPD.Yaml.Tests/HPD.Yaml.Tests.csproj" />
     <Project Path="src/shared/Helium/test/Helium.Primitives.Tests/Helium.Primitives.Tests.csproj" />
     <Project Path="src/shared/Helium/test/Helium.Algebra.Tests/Helium.Algebra.Tests.csproj" />
     <Project Path="src/shared/Helium/test/Helium.Algorithms.Tests/Helium.Algorithms.Tests.csproj" />

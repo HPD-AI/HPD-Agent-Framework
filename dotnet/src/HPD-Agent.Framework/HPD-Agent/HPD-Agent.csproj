@@ -42,6 +42,7 @@
     <ProjectReference Include="../HPD-Agent.SourceGenerator/HPD-Agent.SourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\HPD-Agent.TextExtraction\HPD-Agent.TextExtraction.csproj" />
     <ProjectReference Include="..\..\..\src\shared\HPD-Events\HPD-Events.csproj" />
+    <ProjectReference Include="..\..\..\src\shared\HPD.Yaml.Core\HPD.Yaml.Core.csproj" />
   </ItemGroup>
 
   <!-- Pack source generator as analyzer in NuGet package -->

@@ -319,6 +319,15 @@ public class MultiAgent
     }
 
     /// <summary>
+    /// Load workflow from a YAML configuration file.
+    /// </summary>
+    public static MultiAgent FromYaml(string yamlPath)
+    {
+        var config = Config.MultiAgentConfigYaml.FromYamlFile(yamlPath);
+        return new MultiAgent(config);
+    }
+
+    /// <summary>
     /// Load workflow from configuration object.
     /// </summary>
     public static MultiAgent FromConfig(MultiAgentWorkflowConfig config)
@@ -442,4 +451,10 @@ public static class AgentWorkflow
     /// </summary>
     public static MultiAgent FromJson(string jsonPath)
         => MultiAgent.FromConfig(jsonPath);
+
+    /// <summary>
+    /// Create a workflow builder from YAML file.
+    /// </summary>
+    public static MultiAgent FromYaml(string yamlPath)
+        => MultiAgent.FromYaml(yamlPath);
 }

@@ -94,4 +94,11 @@ public sealed class ConnectorRegistration
 
     /// <summary>AOT-safe serializer for the connector config type.</summary>
     public required Func<object, string> SerializeConfig { get; init; }
+
+    /// <summary>
+    /// Optional: Creates an <see cref="OpenApiCoreConfig"/> from a YAML config string and a secret resolver.
+    /// Same contract as <see cref="CreateCoreConfigFromJson"/> but for YAML input.
+    /// Null if the connector package does not reference YamlDotNet.
+    /// </summary>
+    public Func<string, object, OpenApiCoreConfig>? CreateCoreConfigFromYaml { get; init; }
 }

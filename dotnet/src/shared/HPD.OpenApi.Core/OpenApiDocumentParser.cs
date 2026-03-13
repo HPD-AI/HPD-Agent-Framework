@@ -11,9 +11,9 @@ namespace HPD.OpenApi.Core;
 /// Parses OpenAPI specifications into intermediate <see cref="RestApiOperation"/> models.
 /// Adapted from Semantic Kernel's OpenApiDocumentParser.
 ///
-/// Supports JSON, OpenAPI 2.0/3.0/3.1. OpenAPI 3.1 documents are downgraded to 3.0.1 for
+/// Supports JSON and YAML, OpenAPI 2.0/3.0/3.1. OpenAPI 3.1 documents are downgraded to 3.0.1 for
 /// compatibility with Microsoft.OpenApi, which is safe for operation extraction purposes.
-/// YAML is not supported — convert to JSON first (e.g., yq -o json . spec.yaml > spec.json).
+/// YAML files (.yaml/.yml) are automatically converted to JSON before parsing.
 /// </summary>
 public sealed class OpenApiDocumentParser
 {
@@ -47,15 +47,34 @@ public sealed class OpenApiDocumentParser
         };
     }
 
-    /// <summary>Parses an OpenAPI spec from a file on disk (JSON format).</summary>
+    /// <summary>Parses an OpenAPI spec from a file on disk (JSON or YAML format).</summary>
     public async Task<ParsedOpenApiSpec> ParseFromFileAsync(
         string filePath,
         OpenApiCoreConfig config,
         CancellationToken cancellationToken = default)
     {
-        using var stream = File.OpenRead(filePath);
         var baseUri = new Uri(Path.GetFullPath(filePath));
+
+        if (YamlToJsonConverter.IsYamlFile(filePath))
+        {
+            using var yamlStream = File.OpenRead(filePath);
+            using var jsonStream = YamlToJsonConverter.ConvertToJsonStream(yamlStream);
+            return await ParseAsync(jsonStream, config, baseUri, cancellationToken);
+        }
+
+        using var stream = File.OpenRead(filePath);
         return await ParseAsync(stream, config, baseUri, cancellationToken);
+    }
+
+    /// <summary>Parses an OpenAPI spec from a YAML stream.</summary>
+    public async Task<ParsedOpenApiSpec> ParseFromYamlAsync(
+        Stream yamlStream,
+        OpenApiCoreConfig config,
+        Uri? baseUri = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var jsonStream = YamlToJsonConverter.ConvertToJsonStream(yamlStream);
+        return await ParseAsync(jsonStream, config, baseUri, cancellationToken);
     }
 
     /// <summary>Parses an OpenAPI spec by fetching it from a URI.</summary>
