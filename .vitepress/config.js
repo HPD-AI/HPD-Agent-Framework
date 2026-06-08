@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitepress'
 
 const link = (text, path) => ({ text, link: path })
+const repositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1]
+const base = process.env.GITHUB_ACTIONS && repositoryName ? `/${repositoryName}/` : '/'
 
 const sidebar = [
   {
@@ -201,6 +203,7 @@ const sidebar = [
 export default defineConfig({
   title: 'HPD Agent',
   description: 'Build production-ready agent applications in .NET',
+  base,
   srcDir: '.',
   outDir: './.site-dist',
   cacheDir: './.site-cache',
