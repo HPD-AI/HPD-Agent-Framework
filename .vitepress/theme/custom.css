@@ -318,9 +318,7 @@ textarea {
 }
 
 .VPHomeHero .image {
-  order: 0;
-  margin-bottom: 1.25rem;
-  transform: none;
+  display: none;
 }
 
 .VPHomeHero .image-container {
@@ -514,6 +512,116 @@ textarea {
 
 .hpd-runtime-panel div[class*='language-'] {
   margin: 0;
+}
+
+.hpd-capability-section,
+.hpd-home-path {
+  max-width: 74rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.hpd-capability-section {
+  margin-top: 4rem;
+}
+
+.hpd-capability-section h2,
+.hpd-home-path h2 {
+  max-width: 42rem;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: var(--hpd-foreground);
+  font-family: "Bear Sans UI Heading", var(--vp-font-family-base);
+  font-size: clamp(1.75rem, 3.4vw, 3rem);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.05;
+}
+
+.hpd-capability-section > p:not(.hpd-eyebrow),
+.hpd-home-path p:not(.hpd-eyebrow) {
+  max-width: 47rem;
+  margin: 1rem 0 0;
+  color: var(--hpd-muted-foreground);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.hpd-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--hpd-panel-gap);
+  margin-top: 1.5rem;
+}
+
+.hpd-capability-card {
+  min-height: 15rem;
+  padding: 1rem;
+  border: 1px solid var(--hpd-border);
+  border-radius: var(--hpd-widget-radius);
+  background: color-mix(in oklab, var(--hpd-panel-background) 88%, transparent);
+  color: var(--hpd-foreground);
+  text-decoration: none !important;
+  transition: background-color 150ms, border-color 150ms, box-shadow 150ms, transform 150ms;
+}
+
+.hpd-capability-card:hover {
+  border-color: var(--hpd-selection-border);
+  background: var(--hpd-hover-background);
+  box-shadow: var(--hpd-shadow);
+  transform: translateY(-2px);
+}
+
+.hpd-capability-card span {
+  color: var(--hpd-muted-foreground);
+  font-family: "Bear Sans UI Heading", var(--vp-font-family-base);
+  font-size: var(--hpd-label-size);
+  font-weight: 900;
+  letter-spacing: 0.0625rem;
+  text-transform: uppercase;
+}
+
+.hpd-capability-card strong {
+  display: block;
+  margin-top: 1rem;
+  color: var(--hpd-foreground);
+  font-family: "Bear Sans UI Heading", var(--vp-font-family-base);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.hpd-capability-card p {
+  margin: 1rem 0 0;
+  color: var(--hpd-muted-foreground);
+  font-size: var(--hpd-text-size);
+  line-height: 1.55;
+}
+
+.hpd-home-path {
+  display: flex;
+  gap: 1.5rem;
+  align-items: end;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  padding-top: 2rem;
+  padding-bottom: 4rem;
+}
+
+.hpd-path-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1.1rem;
+  border: 1px solid color-mix(in oklab, var(--hpd-accent) 55%, var(--hpd-border));
+  border-radius: var(--hpd-input-radius);
+  background: var(--hpd-accent);
+  color: #ffffff !important;
+  font-size: var(--hpd-text-size);
+  font-weight: 900;
+  text-decoration: none !important;
 }
 
 .Layout {
@@ -723,8 +831,18 @@ textarea {
   }
 
   .hpd-home-lanes,
-  .hpd-runtime-panel {
+  .hpd-runtime-panel,
+  .hpd-capability-grid {
     grid-template-columns: 1fr;
+  }
+
+  .hpd-capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hpd-home-path {
+    display: grid;
+    align-items: start;
   }
 
   .VPHomeHero {
@@ -742,7 +860,17 @@ textarea {
   }
 
   .hpd-home-lanes,
-  .hpd-runtime-panel {
+  .hpd-runtime-panel,
+  .hpd-capability-section,
+  .hpd-home-path {
     padding-inline: 1rem;
+  }
+
+  .hpd-capability-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hpd-path-button {
+    width: 100%;
   }
 }

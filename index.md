@@ -5,9 +5,6 @@ hero:
   name: HPD Agent
   text: Agent runtime infrastructure for .NET.
   tagline: Tools, sessions, branches, events, middleware, providers, audio, bots, and hosted runtimes as explicit system surfaces.
-  image:
-    src: /logo.svg
-    alt: HPD Agent
   actions:
     - theme: brand
       text: Start Building
@@ -89,174 +86,66 @@ await agent.RunAsync("What should I pack for Seattle?", sessionId, branchId);
 ```
 </section>
 
-# HPD Agent Framework
+<section class="hpd-capability-section">
+  <p class="hpd-eyebrow">What you can build</p>
+  <h2>Agents that are useful outside the demo.</h2>
+  <p>
+    HPD Agent gives .NET teams the runtime pieces around the model call: tools, state, events,
+    channels, audio, hosting, evaluation, and orchestration.
+  </p>
 
-HPD Agent Framework is a .NET framework for building agents that run through a narrow core loop:
+  <div class="hpd-capability-grid">
+    <a class="hpd-capability-card" href="/guides/bots/overview">
+      <span>Channels</span>
+      <strong>Connect agents to Slack, Discord, Telegram, WhatsApp, and Teams.</strong>
+      <p>Use platform adapters when you want the same agent to show up where users already work.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/tools/author-a-tool-harness">
+      <span>Tools</span>
+      <strong>Expose real C# capabilities as model-callable functions.</strong>
+      <p>Register one method, a harness, MCP tools, OpenAPI tools, or externally executed client tools.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/sessions-and-streaming/render-an-event-stream">
+      <span>Live UX</span>
+      <strong>Render streaming text, tool calls, permissions, audio, and workflow traces.</strong>
+      <p>Project the event stream into transcripts, timelines, dashboards, logs, or custom clients.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/sessions-and-streaming/branch-history-and-forking">
+      <span>State</span>
+      <strong>Keep sessions, fork branches, compact history, and resume work.</strong>
+      <p>Build agents that remember enough to be useful without turning state into hidden magic.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/audio/overview">
+      <span>Audio</span>
+      <strong>Accept speech, produce voice, or run realtime audio experiences.</strong>
+      <p>Use provider-specific audio clients while keeping audio events attached to the agent runtime.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/multi-agent/overview">
+      <span>Orchestration</span>
+      <strong>Compose subagents, handoffs, workflows, and conversation policies.</strong>
+      <p>Move from one assistant to structured multi-agent systems when the problem calls for it.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/middleware/overview">
+      <span>Control</span>
+      <strong>Add middleware for permissions, retrieval, memory, usage, and policy.</strong>
+      <p>Wrap the agent lifecycle without burying the behavior inside provider-specific code.</p>
+    </a>
+    <a class="hpd-capability-card" href="/guides/hosting/aspnet-core">
+      <span>Hosting</span>
+      <strong>Expose agents over HTTP with streaming, stored definitions, and clients.</strong>
+      <p>Start locally, then turn the runtime into an application surface your frontend can call.</p>
+    </a>
+  </div>
+</section>
 
-1. Configure an `AgentBuilder`.
-2. Add a chat provider.
-3. Add instructions, tools, or middleware as needed.
-4. Call `BuildAsync()`.
-5. Run the agent with `RunAsync(...)`.
-
-Start with [Getting Started](getting-started/index.md), then follow the primary path:
-
-- [What Is An Agent?](getting-started/what-is-an-agent.md): understand the loop before writing code.
-- [Hello Agent](getting-started/hello-agent.md): build one agent and print one response.
-- [Streaming Events](getting-started/streaming-events.md): print assistant text as it arrives.
-- [Add A Tool](getting-started/add-a-tool.md): expose one C# method as a model-callable function.
-- [Multi-Turn Sessions](getting-started/multi-turn-sessions.md): keep conversation history across turns.
-- [Tiny Console Chat Loop](getting-started/chat-loop.md): turn the pieces into a usable local assistant.
-- [Save Sessions And State](getting-started/persistence.md): save sessions, branches, content, and agent definitions.
-- [ASP.NET Hosting](getting-started/aspnet-hosting.md): expose an agent runtime over HTTP.
-
-Optional early detours:
-
-- [Tool Harnesses](getting-started/tool-harness.md): register a small group of related tool functions.
-- [Branching](getting-started/branching.md): fork one session into alternate paths.
-- [Middleware](getting-started/middleware.md): add behavior around agent turns.
-- [Build A Multi-Agent Workflow](getting-started/agent-workflow.md): connect agents into an explicit graph after you understand one agent.
-
-## Core Concepts
-
-The first-reader model is intentionally small:
-
-- [Agent Runtime And Capabilities](concepts/agent-runtime-and-capabilities.md): the runtime loop, capability map, extension points, state scopes, and trust boundaries.
-- [Agent builder and agent](concepts/agent-builder-and-agent.md): `AgentBuilder` collects configuration; `Agent` runs turns.
-- Providers and clients: provider packages create chat clients and resolve credentials. See [Providers, Clients, And Secrets](concepts/providers-clients-and-secrets.md).
-- Tools: C# methods marked with function metadata can be registered for the model to call. See [Tools, Functions, And Harnesses](concepts/tools-functions-and-harnesses.md).
-- Sessions, branches, and events: runs can emit events and can be attached to session/branch state when you need history. See [Sessions, Branches, And Events](concepts/sessions-branches-and-events.md).
-- Event streams and hierarchies: events arrive linearly, and clients project them into transcripts, timelines, trees, prompts, and traces. See [Event Streams And Hierarchies](concepts/event-streams-and-hierarchies.md).
-- Middleware: middleware can wrap lifecycle steps, add behavior, and persist middleware state. See [Middleware Lifecycle](concepts/middleware-lifecycle.md).
-
-## What To Read First
-
-Read the getting-started pages in order. They move from one local agent to the first hosted runtime without requiring Azure-specific choices, MCP, OpenAPI, built-in harnesses, or advanced configuration. Those topics belong after the first agent path is clear.
-
-## Guides
-
-You can ignore most guides at first. Build the local agent path above, then use these sections when you need a specific capability.
-
-Common setup:
-
-- [Provider Setup Overview](guides/providers/overview.md)
-- [Tools, Functions, And Harnesses](concepts/tools-functions-and-harnesses.md)
-- [Events Overview](guides/events/overview.md)
-- [Middleware Overview](guides/middleware/overview.md)
-- [ASP.NET Core Hosting](guides/hosting/aspnet-core.md)
-- [Logging And Telemetry](guides/observability/logging-and-telemetry.md)
-
-Provider details:
-
-- [ONNX Runtime](guides/providers/onnx-runtime.md)
-- [ONNX Structured Tool Calling](guides/providers/onnx-structured-tool-calling.md)
-- [OpenAI Audio](guides/providers/openai-audio.md)
-- [ElevenLabs Audio](guides/providers/elevenlabs-audio.md)
-- [Provider Families](reference/provider-families.md)
-- [Provider Keys And Environment Variables](reference/provider-keys-and-env-vars.md)
-
-Tools and harnesses:
-
-- [Author A Tool Harness](guides/tools/author-a-tool-harness.md)
-- [Source Generation, AOT, And Trimming](guides/tools/source-generation-aot-and-trimming.md)
-- [Collapsing And Containers](guides/tools/collapsing-and-containers.md)
-- [Externally Executed Client Tools](guides/tools/externally-executed-client-tools.md)
-- [MCP Tools](guides/tools/mcp-tools.md)
-- [OpenAPI Tools](guides/tools/openapi-tools.md)
-- [Multi-Agent Capabilities](guides/tools/multi-agent-capabilities.md)
-- [Built-In Harnesses](guides/harnesses/overview.md)
-- [Coding Harness](guides/harnesses/coding.md)
-- [FileSystem Harness](guides/harnesses/filesystem.md)
-- [Web Search Harness](guides/harnesses/web-search.md)
-
-Advanced orchestration:
-
-- [Subagents](guides/agents/subagents.md)
-- [Multi-Agent Overview](guides/multi-agent/overview.md)
-- [Choose A Composition Pattern](guides/multi-agent/choose-a-pattern.md)
-- [Build A Multi-Agent Workflow](guides/multi-agent/build-a-workflow.md)
-- [Execution Model](guides/multi-agent/execution-model.md)
-- [Workflow Patterns](guides/multi-agent/workflow-patterns.md)
-- [Conversation Policies](guides/multi-agent/conversation-policies.md)
-- [Data Flow Between Nodes](guides/multi-agent/data-flow-between-nodes.md)
-- [Routing And Handoffs](guides/multi-agent/routing-and-handoffs.md)
-- [Checkpointing](guides/multi-agent/checkpointing.md)
-- [Workflow Events](guides/multi-agent/workflow-events.md)
-- [Config And Export](guides/multi-agent/config-and-export.md)
-
-Events and streaming:
-
-- [Events Overview](guides/events/overview.md)
-- [Custom Events](guides/events/custom-events.md)
-- [Tool And Function Events](guides/events/tool-and-function-events.md)
-- [Bidirectional Events](guides/events/bidirectional-events.md)
-- [TypeScript Client Events](guides/events/typescript-client.md)
-- [Serialization And Registration](guides/events/serialization-and-registration.md)
-- [Live Vs Durable Events](guides/events/live-vs-durable-events.md)
-- [Lifecycle, Retry, And Error Events](guides/events/lifecycle-retry-and-error-events.md)
-- [Testing Event-Driven Code](guides/events/testing-event-driven-code.md)
-- [Render An Event Stream](guides/sessions-and-streaming/render-an-event-stream.md)
-- [Branch History And Forking](guides/sessions-and-streaming/branch-history-and-forking.md)
-- [Compaction](guides/sessions-and-streaming/compaction.md): reduce model-visible context and optionally compact durable branch history.
-- [Events Reference](reference/events.md)
-
-Middleware:
-
-- [Middleware Overview](guides/middleware/overview.md)
-- [Custom Middleware](guides/middleware/custom-middleware.md)
-- [Middleware State Persistence](guides/middleware/state-persistence.md)
-- [Permissions Middleware](guides/middleware/permissions.md)
-- [Error Handling Middleware](guides/middleware/error-handling.md)
-
-Hosting:
-
-- [ASP.NET Core Hosting](guides/hosting/aspnet-core.md)
-- [Hosted Streaming API](guides/hosting/hosted-streaming-api.md)
-- [Stored Agent Definitions](guides/hosting/stored-agent-definitions.md)
-
-Bots:
-
-- [Bots Overview](guides/bots/overview.md)
-- [Bot Platform Setup](guides/bots/platform-setup.md)
-- [Slack Bots](guides/bots/slack.md)
-- [Discord Bots](guides/bots/discord.md)
-- [Telegram Bots](guides/bots/telegram.md)
-- [WhatsApp Bots](guides/bots/whatsapp.md)
-- [Teams Bots](guides/bots/teams.md)
-- [Custom Bot Adapters And Source Generation](guides/bots/custom-adapters-and-source-generation.md)
-
-Observability:
-
-- [Logging And Telemetry](guides/observability/logging-and-telemetry.md)
-
-Runtime systems:
-
-- [Sandboxing Overview](guides/sandboxing/overview.md)
-- [Local Process Isolation](guides/sandboxing/local-process-isolation.md)
-- [Document Handling And Text Extraction](guides/content/document-handling-and-text-extraction.md)
-- [Content Upload And Resolution](guides/content/content-upload-and-resolution.md)
-- [FFI Overview](guides/ffi/overview.md)
-- [Audio Overview](guides/audio/overview.md)
-- [Audio Runtime Attachment](guides/audio/runtime-attachment.md)
-- [Text To Speech Output](guides/audio/text-to-speech-output.md)
-- [Speech To Text Input](guides/audio/speech-to-text-input.md)
-- [Realtime Audio](guides/audio/realtime-audio.md)
-- [Audio Events And Traces](guides/audio/audio-events-and-traces.md)
-
-Evaluations:
-
-- [Evaluations Overview](guides/evaluations/overview.md)
-- [Batch Evals](guides/evaluations/batch-evals.md)
-- [Evaluator Picker](guides/evaluations/evaluator-picker.md)
-- [Datasets And Reports](guides/evaluations/datasets-and-reports.md)
-- [Live Evaluation](guides/evaluations/live-evaluation.md)
-- [LLM Judges And Safety](guides/evaluations/llm-judges-and-safety.md)
-- [Red Team](guides/evaluations/red-team.md)
-
-## Live Smoke Gates
-
-- OpenAI text-to-speech: `HPD_AUDIO_LIVE_SMOKE=1 OPENAI_API_KEY=...`
-- OpenAI realtime agent turn: `HPD_REALTIME_LIVE_SMOKE=1 OPENAI_API_KEY=...`
-- ElevenLabs text-to-speech: `HPD_AUDIO_LIVE_SMOKE=1 ELEVENLABS_API_KEY=...`
-- ONNX Runtime local inference: `ONNX_MODEL_PATH=/absolute/path/to/onnx-genai-model`
-- ONNX Runtime structured tool calling: `ONNX_MODEL_PATH=/absolute/path/to/onnx-genai-model ONNX_TOOL_CALL_SMOKE=1`
+<section class="hpd-home-path">
+  <div>
+    <p class="hpd-eyebrow">Start small</p>
+    <h2>One agent first, then the rest of the system.</h2>
+    <p>
+      The beginner path gets you from a local console agent to tools, sessions, streaming, persistence,
+      and hosting without forcing every advanced surface into the first page.
+    </p>
+  </div>
+  <a class="hpd-path-button" href="/getting-started/">Open Getting Started</a>
+</section>
