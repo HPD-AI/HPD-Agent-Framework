@@ -2,7 +2,6 @@
 layout: home
 
 hero:
-  name: HPD Agent
   text: Agent runtime infrastructure for .NET.
   tagline: Tools, sessions, branches, events, middleware, providers, audio, bots, and hosted runtimes as explicit system surfaces.
   actions:
