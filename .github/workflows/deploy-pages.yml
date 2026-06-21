@@ -2,7 +2,7 @@ name: Deploy documentation
 
 on:
   push:
-    branches:
+    threads:
       - main
   workflow_dispatch:
 

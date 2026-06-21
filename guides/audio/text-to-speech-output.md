@@ -2,7 +2,7 @@
 
 Text-to-speech output turns assistant text into audio after the model turn.
 
-The important rule is that text stays primary. The assistant text is still available for branch history, accessibility, logs, and fallback. TTS adds synthesized audio when the runtime can resolve a provider and store or play the result.
+The important rule is that text stays primary. The assistant text is still available for thread history, accessibility, logs, and fallback. TTS adds synthesized audio when the runtime can resolve a provider and store or play the result.
 
 ## Configure Text To Speech
 

@@ -106,7 +106,7 @@ Middleware can emit with `context.Emit(...)` before or after function execution.
 `FunctionExecutionContext` exposes a narrow runtime surface:
 
 - `FunctionCallId`, `FunctionName`, and invocation metadata
-- `TraceId`, `SessionId`, and `BranchId` when present
+- `TraceId`, `SessionId`, and `ThreadId` when present
 - `RunConfig` and per-call `ResultMetadata`
 - `Services`, `ContentStore`, and runtime capabilities
 - `Emit(...)`, `TryEmit(...)`, and `RequestAsync(...)`

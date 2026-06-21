@@ -36,7 +36,7 @@ var agent = await new AgentBuilder()
     .BuildAsync();
 ```
 
-Use `WithAudio()` for the default attachment. Use `WithAudioRuntimeAttachment(...)` when the app needs explicit speech-to-text, text-to-speech, artifact, branch projection, or playback behavior.
+Use `WithAudio()` for the default attachment. Use `WithAudioRuntimeAttachment(...)` when the app needs explicit speech-to-text, text-to-speech, artifact, thread projection, or playback behavior.
 
 ## Provider Families
 
@@ -62,13 +62,13 @@ A chat provider package alone does not imply audio support. Audio provider packa
 The audio runtime treats text as the durable default:
 
 - Finite input audio can be transcribed and the transcript can be injected into the model input.
-- Branch history stores derived transcript text by default, not raw input audio.
+- Thread history stores derived transcript text by default, not raw input audio.
 - Assistant TTS keeps assistant text as the primary output, then adds synthesized audio artifacts when configured.
 - Assistant audio artifacts are stored through `IContentStore` when content-store capture is enabled.
 
 This matters for privacy and replay. Store raw audio only when your app has an explicit retention policy for it.
 
-Audio uses the same generic content pipeline as other binary inputs: user bytes can be uploaded into branch-scoped content references, then resolved into provider-facing content before the model call. Audio detection happens before upload so transcripts and input metadata can still refer back to the original media. See [Content Upload And Resolution](../content/content-upload-and-resolution.md).
+Audio uses the same generic content pipeline as other binary inputs: user bytes can be uploaded into thread-scoped content references, then resolved into provider-facing content before the model call. Audio detection happens before upload so transcripts and input metadata can still refer back to the original media. See [Content Upload And Resolution](../content/content-upload-and-resolution.md).
 
 ## Boundaries
 

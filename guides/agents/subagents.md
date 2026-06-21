@@ -1,6 +1,6 @@
 # Subagents
 
-A subagent is a real HPD agent exposed to a parent agent as a tool. The parent model sees one generated function with a `query` argument. When the model calls it, HPD builds or loads the child agent, routes the child run into the selected session and branch, streams child events through the parent event path, and returns the child answer as the tool result.
+A subagent is a real HPD agent exposed to a parent agent as a tool. The parent model sees one generated function with a `query` argument. When the model calls it, HPD builds or loads the child agent, routes the child run into the selected session and thread, streams child events through the parent event path, and returns the child answer as the tool result.
 
 Use subagents when the parent should delegate to a specialist during normal tool calling. Use multi-agent workflows when the whole task should follow an explicit graph of roles and routes.
 
@@ -35,9 +35,9 @@ var agent = await new AgentBuilder()
     .BuildAsync();
 ```
 
-`SubAgent.FromConfig(...)` defaults to `ParentSessionForkedBranch()`. That means each subagent call uses the parent session, forks from the current parent branch, and writes the child conversation to a hidden child branch.
+`SubAgent.FromConfig(...)` defaults to `ParentSessionForkedThread()`. That means each subagent call uses the parent session, forks from the current parent thread, and writes the child conversation to a hidden child thread.
 
-`AgentBuilder` provides an in-memory session store by default. Use `WithSessionStore(...)` when subagent branches should survive process restarts or be visible to another host.
+`AgentBuilder` provides an in-memory session store by default. Use `WithSessionStore(...)` when subagent threads should survive process restarts or be visible to another host.
 
 ## Tool Shape
 
@@ -51,7 +51,7 @@ The generated tool takes one model-facing argument:
 
 The subagent name becomes the tool name. The description becomes the tool description, so write it as guidance for the parent model. Subagent tools require permission by default.
 
-The tool result is the child agent's text response. HPD also records subagent metadata on the tool result, including `subAgentStatus`, `subAgentSessionId`, `subAgentBranchId`, `subAgentName`, and `subAgentRunId`.
+The tool result is the child agent's text response. HPD also records subagent metadata on the tool result, including `subAgentStatus`, `subAgentSessionId`, `subAgentThreadId`, `subAgentName`, and `subAgentRunId`.
 
 ## Choose The Source
 
@@ -79,7 +79,7 @@ public SubAgent Researcher() =>
             Name = "Researcher",
             SystemInstructions = "Research the request and return cited notes.",
         },
-        SubAgentExecutionPolicies.ParentSessionForkedBranch(),
+        SubAgentExecutionPolicies.ParentSessionForkedThread(),
         typeof(SearchTools),
         typeof(CitationTools));
 ```
@@ -90,42 +90,42 @@ Those harnesses are registered on the child agent, not exposed directly to the p
 
 The execution policy decides where the child conversation lives. This is the main subagent DX choice.
 
-| Policy | Session | Branch | Use When |
+| Policy | Session | Thread | Use When |
 | --- | --- | --- | --- |
-| `ParentSessionForkedBranch()` | Parent session | New branch forked from current parent branch | Default. The child needs the parent's current context but should write its own durable history separately. |
-| `ParentSessionFreshBranch()` | Parent session | New empty branch | The child should be related to the same user/session but should not inherit parent branch messages. |
-| `ParentBranch()` | Parent session | Current parent branch | The child should write into the same branch as the parent. Use deliberately because histories interleave. |
-| `NewSession()` | New session | New empty branch | The child should be isolated from the parent session. |
-| `SharedSessionFreshBranch("session-id")` | Named shared session | New empty branch | A specialist should accumulate or organize work under a stable shared session. |
-| `SharedSessionExistingBranch("session-id", "branch-id")` | Named shared session | Existing branch | A specialist should keep using a known branch. |
-| `ExistingBranch("branch-id")` | Parent session | Existing branch | The parent session already has a branch that the child should use. |
+| `ParentSessionForkedThread()` | Parent session | New thread forked from current parent thread | Default. The child needs the parent's current context but should write its own durable history separately. |
+| `ParentSessionFreshThread()` | Parent session | New empty thread | The child should be related to the same user/session but should not inherit parent thread messages. |
+| `ParentThread()` | Parent session | Current parent thread | The child should write into the same thread as the parent. Use deliberately because histories interleave. |
+| `NewSession()` | New session | New empty thread | The child should be isolated from the parent session. |
+| `SharedSessionFreshThread("session-id")` | Named shared session | New empty thread | A specialist should accumulate or organize work under a stable shared session. |
+| `SharedSessionExistingThread("session-id", "thread-id")` | Named shared session | Existing thread | A specialist should keep using a known thread. |
+| `ExistingThread("thread-id")` | Parent session | Existing thread | The parent session already has a thread that the child should use. |
 
 Most apps should start with the default. It gives the child enough context to be useful, keeps parent and child histories separate, and still lets the UI render them as one hierarchy.
 
-## Branch Metadata
+## Thread Metadata
 
-Subagent-created branches are hidden by default and include metadata that links them back to the parent:
+Subagent-created threads are hidden by default and include metadata that links them back to the parent:
 
 - `kind = subagent`
 - `subAgentName`
 - `subAgentSourceKind`
 - `parentSessionId`
-- `parentBranchId`
+- `parentThreadId`
 - `parentToolCallId`
 - `subAgentRunId`
 - `sessionPolicy`
-- `branchPolicy`
+- `threadPolicy`
 - `visibility = hidden`
 - `createdBy = subagent`
 
-You can add custom branch metadata when creating the subagent:
+You can add custom thread metadata when creating the subagent:
 
 ```csharp
 SubAgent.FromConfig(
     "reviewer",
     "Reviews the draft.",
     reviewerConfig,
-    SubAgentExecutionPolicies.ParentSessionForkedBranch(),
+    SubAgentExecutionPolicies.ParentSessionForkedThread(),
     metadata: new Dictionary<string, object>
     {
         ["team"] = "writing",
@@ -133,7 +133,7 @@ SubAgent.FromConfig(
     });
 ```
 
-Use metadata for UI grouping, retention policy, audit labels, or application-specific routing. Do not depend on branch names for identity; use the route metadata and result metadata.
+Use metadata for UI grouping, retention policy, audit labels, or application-specific routing. Do not depend on thread names for identity; use the route metadata and result metadata.
 
 ## Events And Hierarchy
 
@@ -146,29 +146,29 @@ That lets a host render:
 - child text, tool calls, permissions, custom events, and turn events
 - the parent model continuing after the child result
 
-When a hosted event route is scoped to a parent session and branch, HPD can include child subagent branch events when the child branch metadata points back to the routed parent branch.
+When a hosted event route is scoped to a parent session and thread, HPD can include child subagent thread events when the child thread metadata points back to the routed parent thread.
 
 For rendering patterns, see [Event Streams And Hierarchies](../../concepts/event-streams-and-hierarchies.md), [Workflow Events](../multi-agent/workflow-events.md), and [Render An Event Stream](../sessions-and-streaming/render-an-event-stream.md).
 
-## Branch Compaction
+## Thread Compaction
 
-Only forked-branch subagents can set branch compaction at fork time. This lets the subagent control how much parent branch history is copied into the child branch when the child branch is created:
+Only forked-thread subagents can set thread compaction at fork time. This lets the subagent control how much parent thread history is copied into the child thread when the child thread is created:
 
 ```csharp
-SubAgentExecutionPolicies.ParentSessionForkedBranch(
-    SubAgentBranchCompaction.PreferCache)
+SubAgentExecutionPolicies.ParentSessionForkedThread(
+    SubAgentThreadCompaction.PreferCache)
 ```
 
 Use:
 
 - `Inherit` to use the agent's normal `CompactOnFork` behavior
-- `Enabled` to compact the child branch before it is committed, even if normal fork compaction is off
-- `Disabled` to keep the child branch un-compacted, even if normal fork compaction is on
-- `PreferCache` to reuse a matching copied branch compaction cache when possible, and otherwise run normal fork compaction
+- `Enabled` to compact the child thread before it is committed, even if normal fork compaction is off
+- `Disabled` to keep the child thread un-compacted, even if normal fork compaction is on
+- `PreferCache` to reuse a matching copied thread compaction cache when possible, and otherwise run normal fork compaction
 
-The compaction runs against the fork target before the subagent starts. In practice, that means a `ParentSessionForkedBranch()` subagent can inherit the parent's recent context without copying every parent message into the child branch.
+The compaction runs against the fork target before the subagent starts. In practice, that means a `ParentSessionForkedThread()` subagent can inherit the parent's recent context without copying every parent message into the child thread.
 
-`PreferCache` is useful when many subagents fork from the same parent context. HPD only uses the cache when the cached original message ids match the fork target and the cached model-visible messages are present on that branch. If the cache is missing or stale, HPD falls back to the configured compaction strategy.
+`PreferCache` is useful when many subagents fork from the same parent context. HPD only uses the cache when the cached original message ids match the fork target and the cached model-visible messages are present on that thread. If the cache is missing or stale, HPD falls back to the configured compaction strategy.
 
 This controls the fork operation. It does not define the compaction strategy. The configured compaction middleware still decides how history is reduced. See [Compaction](../sessions-and-streaming/compaction.md).
 
@@ -187,7 +187,7 @@ Use subagents when:
 - the parent model should decide when to delegate
 - each specialist is naturally a tool
 - the parent should receive a single tool result and continue
-- branch policy is more important than graph topology
+- thread policy is more important than graph topology
 
 Use multi-agent workflows when:
 

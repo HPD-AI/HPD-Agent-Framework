@@ -109,7 +109,7 @@ public readonly record struct ContosoThreadId(
     string ConversationId);
 ```
 
-The platform key produced by this type is what `PlatformSessionMapper` uses to find or create the HPD session and branch.
+The platform key produced by this type is what `PlatformSessionMapper` uses to find or create the HPD session and thread.
 
 ## Generated Registry And Mapping
 

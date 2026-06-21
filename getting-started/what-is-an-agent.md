@@ -18,7 +18,7 @@ HPD Agent gives that loop a .NET shape:
 AgentBuilder configures the agent
 Agent runs turns
 tools expose C# methods
-sessions and branches hold history
+sessions and threads hold history
 events show what is happening while the turn runs
 middleware adds behavior around turns and tool calls
 ```

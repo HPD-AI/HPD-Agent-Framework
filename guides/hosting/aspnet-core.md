@@ -1,13 +1,13 @@
 # ASP.NET Core Hosting
 
-HPD Agent hosting exposes sessions, branches, stored agent definitions, input submission, live events, WebSocket streaming, content, and middleware response endpoints through ASP.NET Core minimal APIs.
+HPD Agent hosting exposes sessions, threads, stored agent definitions, input submission, live events, WebSocket streaming, content, and middleware response endpoints through ASP.NET Core minimal APIs.
 
 The core hosting model is:
 
 ```text
 AddHPDAgent(...) registers a hosting bundle
 MapHPDAgentApi(...) maps that bundle to routes
-agentId + sessionId + branchId selects a runtime scope inside the bundle
+agentId + sessionId + threadId selects a runtime scope inside the bundle
 ```
 
 The hosting registration name is not the route `agentId`.
@@ -87,7 +87,7 @@ Each named bundle owns its own:
 
 If `SessionStorePath` is configured, hosting uses a JSON session store. Otherwise, the default session store is in-memory. The default agent store is also in-memory.
 
-Created-resource `Location` headers are currently prefixless even when the API is mapped under a route prefix. Content uploads use a hosting content store scoped to the branch. The default hosting service creates an in-memory content store, so do not treat uploaded content as durable unless a durable content store is configured.
+Created-resource `Location` headers are currently prefixless even when the API is mapped under a route prefix. Content uploads use a hosting content store scoped to the thread. The default hosting service creates an in-memory content store, so do not treat uploaded content as durable unless a durable content store is configured.
 
 ## Agent Build Resolution
 
@@ -108,7 +108,7 @@ Configure stores through hosting options. Avoid configuring a separate session s
 Runtime routes include:
 
 ```text
-/agents/{agentId}/sessions/{sessionId}/branches/{branchId}/...
+/agents/{agentId}/sessions/{sessionId}/threads/{threadId}/...
 ```
 
-That scope is used by HTTP input, interrupt, SSE, WebSocket, branch runs, and the bidirectional response route. TUI hosted runtimes and bot adapters should map their UI or platform identity into the same runtime scope before sending input or responses.
+That scope is used by HTTP input, interrupt, SSE, WebSocket, thread runs, and the bidirectional response route. TUI hosted runtimes and bot adapters should map their UI or platform identity into the same runtime scope before sending input or responses.

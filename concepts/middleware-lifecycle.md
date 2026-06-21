@@ -25,11 +25,11 @@ This is important for error handling. A retry middleware registered before a tim
 
 ## Main Hook Families
 
-Message-turn hooks run around a user message turn. Iteration hooks run around an agent loop iteration. Function hooks run around tool/function execution. Branch hooks run around branch fork commit. Runtime hooks run around agent start/stop.
+Message-turn hooks run around a user message turn. Iteration hooks run around an agent loop iteration. Function hooks run around tool/function execution. Thread hooks run around thread fork commit. Runtime hooks run around agent start/stop.
 
 Wrapper hooks are different from `Before*` and `After*` hooks. They receive a handler and can decide whether to call it, call it more than once, transform inputs, transform outputs, or catch errors. Function wrappers always participate. Streaming model wrappers opt in by returning a non-null stream.
 
-Runtime start/stop hooks run when an agent is used as a started runtime, such as hosted SSE/WebSocket, bot, TUI, client-tool, or other long-lived input-loop scenarios. Direct one-shot `RunAsync(...)` calls still use the message-turn, iteration, function, branch, and error hooks. See [Agent Runtime And Capabilities](agent-runtime-and-capabilities.md) for the distinction.
+Runtime start/stop hooks run when an agent is used as a started runtime, such as hosted SSE/WebSocket, bot, TUI, client-tool, or other long-lived input-loop scenarios. Direct one-shot `RunAsync(...)` calls still use the message-turn, iteration, function, thread, and error hooks. See [Agent Runtime And Capabilities](agent-runtime-and-capabilities.md) for the distinction.
 
 ## Hook Reference
 
@@ -51,12 +51,12 @@ Runtime start/stop hooks run when an agent is used as a started runtime, such as
 | Function wrapper | `WrapFunctionCallAsync` | Around the actual function body | Retry, caching, timeout, result transformation |
 | Function | `AfterFunctionAsync` | After a function completes or throws | Result formatting, function telemetry, exception observation |
 | Iteration | `AfterIterationAsync` | After tool results are collected for an iteration | Result aggregation, error recovery, state updates |
-| Branch lifecycle | `BeforeBranchForkCommitAsync` | After a target branch has been materialized for a fork, before it is persisted | Compact copied history, stamp branch metadata, rewrite branch-local middleware state |
+| Thread lifecycle | `BeforeThreadForkCommitAsync` | After a target thread has been materialized for a fork, before it is persisted | Compact copied history, stamp thread metadata, rewrite thread-local middleware state |
 | Error | `OnErrorAsync` | During the tool/function error path | Function error logging, circuit breakers, graceful degradation |
 
-`BeforeBranchForkCommitAsync` is the fork hook. It sees both the source branch and the not-yet-persisted target branch, plus the fork point and `BranchForkOptions`. Use it when the target branch should start differently from a raw copy, such as compacting copied history, adding branch-local metadata, or adjusting copied middleware state before the new branch becomes durable.
+`BeforeThreadForkCommitAsync` is the fork hook. It sees both the source thread and the not-yet-persisted target thread, plus the fork point and `ThreadForkOptions`. Use it when the target thread should start differently from a raw copy, such as compacting copied history, adding thread-local metadata, or adjusting copied middleware state before the new thread becomes durable.
 
-Fork events are a different surface. After a fork is committed, branch event projection can include durable events such as `BRANCH_FORKED` and `BRANCH_MIDDLEWARE_STATE_COMMITTED`. Those events describe what was committed; they are not pre-commit mutation hooks.
+Fork events are a different surface. After a fork is committed, thread event projection can include durable events such as `THREAD_FORKED` and `THREAD_MIDDLEWARE_STATE_COMMITTED`. Those events describe what was committed; they are not pre-commit mutation hooks.
 
 ## Streaming Wrapper Probe
 
@@ -112,7 +112,7 @@ public sealed class TurnCountingMiddleware : IAgentMiddleware
     }
 }
 
-[MiddlewareState(Persistent = true, Scope = StateScope.Branch)]
+[MiddlewareState(Persistent = true, Scope = StateScope.Thread)]
 public sealed record TurnCounterState
 {
     public int Count { get; init; }

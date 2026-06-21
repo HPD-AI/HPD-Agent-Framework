@@ -59,22 +59,22 @@ Config-backed and inline-built agents are created lazily when the workflow execu
 
 ## Conversation Policy
 
-Workflow outputs are separate from durable conversation history. Add a conversation policy when each node agent's transcript should be saved into HPD sessions and branches:
+Workflow outputs are separate from durable conversation history. Add a conversation policy when each node agent's transcript should be saved into HPD sessions and threads:
 
 ```csharp
 var workflow = await AgentWorkflow.Create()
     .WithName("ResearchAndWrite")
     .WithSessionStore(new JsonSessionStore("App_Data/sessions"))
-    .WithConversation(MultiAgentConversationPolicies.ForkBranchPerAgent())
+    .WithConversation(MultiAgentConversationPolicies.ForkThreadPerAgent())
     .AddAgent("research", researchConfig, node => node.WithOutputKey("research"))
     .AddAgent("write", writeConfig, node => node.WithInputKey("research"))
     .From("research").To("write")
     .BuildAsync();
 ```
 
-`WithSessionStore(...)` stores conversations and branches. It is different from `WithJsonWorkflowStore(...)`, which stores workflow definitions and checkpoints.
+`WithSessionStore(...)` stores conversations and threads. It is different from `WithJsonWorkflowStore(...)`, which stores workflow definitions and checkpoints.
 
-Use `SharedWorkflowBranch()` for one transcript, `BranchPerAgent()` for durable agent-local branches, or `ForkBranchPerAgent()` when agents should start from the same request and write into separate branches.
+Use `SharedWorkflowThread()` for one transcript, `ThreadPerAgent()` for durable agent-local threads, or `ForkThreadPerAgent()` when agents should start from the same request and write into separate threads.
 
 ## Edges
 

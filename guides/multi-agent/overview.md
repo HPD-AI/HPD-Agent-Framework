@@ -1,6 +1,6 @@
 # Multi-Agent Overview
 
-Multi-agent workflows coordinate multiple HPD agents through explicit stages and routes. Use them when a task naturally moves through roles, decisions, routing, review, validation, or parallel branches.
+Multi-agent workflows coordinate multiple HPD agents through explicit stages and routes. Use them when a task naturally moves through roles, decisions, routing, review, validation, or parallel threads.
 
 [Subagents](../agents/subagents.md) are tools exposed directly on one parent agent. Multi-agent workflows are different: the application defines the workflow shape, each node is an agent, and edges decide which node runs next.
 
@@ -12,7 +12,7 @@ A workflow has four moving parts:
 - edges: routes between nodes
 - outputs: dictionaries produced by completed nodes
 - events: workflow events plus normal child-agent events
-- conversation policy: optional session and branch routing for durable node transcripts
+- conversation policy: optional session and thread routing for durable node transcripts
 
 Workflows have implicit `START` and `END` boundary nodes. At run time, each agent node receives workflow input, runs an HPD `Agent`, writes outputs, and lets downstream edges or nodes consume those outputs.
 
@@ -53,20 +53,20 @@ var workflow = await AgentWorkflow.Create()
 
 `BuildAsync()` creates a runnable workflow instance. Agents backed by `AgentConfig` are built lazily when the workflow executes, which allows them to inherit a parent chat client when the workflow is run from another agent.
 
-By default, workflow data flows through node outputs and live events. Add a conversation policy when node agent transcripts should be written into HPD sessions and branches:
+By default, workflow data flows through node outputs and live events. Add a conversation policy when node agent transcripts should be written into HPD sessions and threads:
 
 ```csharp
 var workflow = await AgentWorkflow.Create()
     .WithName("DraftAndReview")
     .WithSessionStore(new JsonSessionStore("App_Data/sessions"))
-    .WithConversation(MultiAgentConversationPolicies.ForkBranchPerAgent())
+    .WithConversation(MultiAgentConversationPolicies.ForkThreadPerAgent())
     .AddAgent("draft", draftConfig)
     .AddAgent("review", reviewConfig)
     .From("draft").To("review")
     .BuildAsync();
 ```
 
-`WithSessionStore(...)` is separate from workflow checkpoint storage. The session store saves conversations and branches; the workflow store saves workflow definitions and checkpoints.
+`WithSessionStore(...)` is separate from workflow checkpoint storage. The session store saves conversations and threads; the workflow store saves workflow definitions and checkpoints.
 
 ## Run And Observe
 

@@ -39,7 +39,7 @@ await using var app = HpdAgentTuiApp.Create(
 await app.RunAsync();
 ```
 
-`HpdAgentTuiApp.RunAsync()` ensures the scope, loads existing branch events if the runtime can provide them, starts observing new events, and then runs the terminal prompt loop.
+`HpdAgentTuiApp.RunAsync()` ensures the scope, loads existing thread events if the runtime can provide them, starts observing new events, and then runs the terminal prompt loop.
 
 ## Scope Defaults
 
@@ -48,22 +48,22 @@ If you do not pass a default scope to `InMemoryAgentTuiRuntime`, it uses:
 ```text
 agentId: the wrapped agent's AgentId
 sessionId: local-session
-branchId: main
+threadId: main
 ```
 
-Passing the scope explicitly is clearer in docs and production code because it makes the session and branch visible at the call site.
+Passing the scope explicitly is clearer in docs and production code because it makes the session and thread visible at the call site.
 
 ## Session Store Behavior
 
 If the wrapped agent has a session store and the requested session does not exist, `InMemoryAgentTuiRuntime.EnsureScopeAsync(...)` creates the session through the agent before the TUI starts.
 
-The runtime also exposes session, branch, and agent-store operations when the wrapped agent has the corresponding stores configured. Without those stores, list/search/create operations may be unavailable or return empty results.
+The runtime also exposes session, thread, and agent-store operations when the wrapped agent has the corresponding stores configured. Without those stores, list/search/create operations may be unavailable or return empty results.
 
-## Branch Projection And Compaction
+## Thread Projection And Compaction
 
-The local runtime uses the same branch event and projection model as other HPD runtime surfaces. After hard durable branch-history compaction, render the projected branch history as canonical.
+The local runtime uses the same thread event and projection model as other HPD runtime surfaces. After hard durable thread-history compaction, render the projected thread history as canonical.
 
-Current local TUI branch-fork APIs mirror metadata-only fork requests. Do not document a TUI-level fork-compaction toggle unless the runtime API adds one; configure compaction through the wrapped agent and middleware pipeline.
+Current local TUI thread-fork APIs mirror metadata-only fork requests. Do not document a TUI-level fork-compaction toggle unless the runtime API adds one; configure compaction through the wrapped agent and middleware pipeline.
 
 ## Agent Switching
 

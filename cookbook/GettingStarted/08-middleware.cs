@@ -1,5 +1,5 @@
-#:package HPD-Agent.Framework@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
+#:package HPD-Agent.Framework@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample uses middleware to add retrieved context before the agent answers.
@@ -28,9 +28,9 @@ public class ProductDocsContext : IAgentMiddleware
     // document store. This sample keeps the retrieval source in memory.
     private static readonly Dictionary<string, string> Docs = new()
     {
-        ["hpd agent"] = "HPD Agent is a .NET agent framework for building agents with providers, tools, events, sessions, branches, and middleware.",
+        ["hpd agent"] = "HPD Agent is a .NET agent framework for building agents with providers, tools, events, sessions, threads, and middleware.",
         ["tools"] = "Tool harnesses let HPD Agent expose local C# methods as model-callable tools.",
-        ["sessions"] = "Sessions keep multi-turn conversation history. Branches let one session fork into alternative conversation paths."
+        ["sessions"] = "Sessions keep multi-turn conversation history. Threads let one session fork into alternative conversation paths."
     };
 
     public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
@@ -46,7 +46,7 @@ public class ProductDocsContext : IAgentMiddleware
         {
             // Add retrieved context as a system message for this turn. The
             // persisted user/assistant history remains separate from retrieval.
-            context.BranchHistory.Add(new ChatMessage(
+            context.ThreadHistory.Add(new ChatMessage(
                 ChatRole.System,
                 "Retrieved context:\n" + string.Join("\n", matches)));
         }

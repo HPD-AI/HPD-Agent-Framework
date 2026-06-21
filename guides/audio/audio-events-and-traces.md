@@ -1,6 +1,6 @@
 # Audio Events And Traces
 
-Audio workflows are event-heavy because they cross model output, provider calls, artifacts, playback, transcript projection, and branch history.
+Audio workflows are event-heavy because they cross model output, provider calls, artifacts, playback, transcript projection, and thread history.
 
 Use typed events for application behavior. Use traces and struct samples for local diagnostics.
 
@@ -17,12 +17,12 @@ Assistant audio event type names are listed in the [Events Reference](../../refe
 
 ## Live Events Vs Durable History
 
-Not every audio event should become branch history.
+Not every audio event should become thread history.
 
 | Data | Usual destination |
 | --- | --- |
-| Transcript text | Branch history when committed. |
-| Assistant text | Branch history as the primary assistant result. |
+| Transcript text | Thread history when committed. |
+| Assistant text | Thread history as the primary assistant result. |
 | Assistant audio artifact | `IContentStore` when artifact capture is enabled. |
 | Playback progress | Live event stream or trace. |
 | Queue depth and underrun samples | Local struct-event observers or diagnostics. |
@@ -61,7 +61,7 @@ For event-driven audio tests:
 
 - subscribe before `RunAsync`,
 - capture typed events into a list,
-- assert event type, session id, branch id, response id, output flow id, and ordering,
+- assert event type, session id, thread id, response id, output flow id, and ordering,
 - test text-only fallback paths as well as successful synthesis,
 - test playback truth separately from synthesis truth.
 

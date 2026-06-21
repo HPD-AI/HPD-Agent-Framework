@@ -2,7 +2,7 @@
 
 Use the TypeScript client when a browser, Node app, editor extension, or custom UI needs to render HPD Agent runs.
 
-The client is not another event system. It is the JavaScript/TypeScript consumption surface for hosted agent events: open a session and branch, load durable branch history, subscribe to the live stream, send inputs, and answer interactive requests.
+The client is not another event system. It is the JavaScript/TypeScript consumption surface for hosted agent events: open a session and thread, load durable thread history, subscribe to the live stream, send inputs, and answer interactive requests.
 
 ## Install The Client Surface
 
@@ -21,12 +21,12 @@ Use `transport: 'sse'` for the default hosted streaming path. Use `transport: 'w
 
 ## Open A Chat Scope
 
-Most apps should scope UI work to one agent, session, and branch:
+Most apps should scope UI work to one agent, session, and thread:
 
 ```typescript
 const chat = await client.chat.open({
   agentId: 'assistant',
-  branchId: 'main',
+  threadId: 'main',
   session: {
     create: {
       metadata: { title: 'New chat' },
@@ -38,8 +38,8 @@ const chat = await client.chat.open({
 Then load history, install event handlers, subscribe to the live stream, and submit input:
 
 ```typescript
-for (const event of await chat.getBranchEvents()) {
-  projectBranchEvent(event);
+for (const event of await chat.getThreadEvents()) {
+  projectThreadEvent(event);
 }
 
 client.on(EventTypes.TEXT_DELTA, (event) => {
@@ -51,7 +51,7 @@ client.onAny((event) => {
 });
 
 await chat.subscribeLive();
-await chat.submitText('Summarize this branch.');
+await chat.submitText('Summarize this thread.');
 ```
 
 Subscribe before submitting input when the UI needs to render the turn as it happens.
@@ -147,18 +147,18 @@ client.onAny((event) => {
 
 Register custom event serialization on the .NET side so hosted streams can produce the event envelope. Add TypeScript types locally when the event belongs to your app; add them to the SDK only when the event becomes a shared protocol event.
 
-## Live Stream Vs Branch History
+## Live Stream Vs Thread History
 
-`chat.subscribeLive()` reads hosted live envelopes from the runtime stream. `chat.getBranchEvents()` reads durable branch history records.
+`chat.subscribeLive()` reads hosted live envelopes from the runtime stream. `chat.getThreadEvents()` reads durable thread history records.
 
-Project them into the same UI state, but do not assume they are the same JSON shape. Live events can include routing, correlation, and transient runtime fields. Branch history contains the stored branch view.
+Project them into the same UI state, but do not assume they are the same JSON shape. Live events can include routing, correlation, and transient runtime fields. Thread history contains the stored thread view.
 
 For a typical chat UI:
 
-1. Read branch history into transcript state.
+1. Read thread history into transcript state.
 2. Subscribe to live events.
 3. Apply live deltas and tool events as they arrive.
-4. Refresh or reconcile branch history after a completed run if the app needs durable confirmation.
+4. Refresh or reconcile thread history after a completed run if the app needs durable confirmation.
 
 ## What Does Not Reach TypeScript
 
@@ -173,15 +173,15 @@ If a process-local sample needs to appear in a hosted UI, summarize or convert i
 With SSE, the live observer connects to:
 
 ```text
-/agents/{agentId}/sessions/{sessionId}/branches/{branchId}/events/live
+/agents/{agentId}/sessions/{sessionId}/threads/{threadId}/events/live
 ```
 
-Inputs are posted separately. Response events are posted to the hosted `/responses` route for the current agent, session, and branch.
+Inputs are posted separately. Response events are posted to the hosted `/responses` route for the current agent, session, and thread.
 
 With WebSocket, the client connects to:
 
 ```text
-/agents/{agentId}/sessions/{sessionId}/branches/{branchId}/ws
+/agents/{agentId}/sessions/{sessionId}/threads/{threadId}/ws
 ```
 
 Input events are sent over the open socket.

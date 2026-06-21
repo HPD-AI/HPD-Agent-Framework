@@ -95,7 +95,7 @@ The Azure OpenAI provider package also contributes image generation, embeddings,
 
 HPD provider docs are organized by client family, not by provider-specific agent subclasses.
 
-`Clients.Chat` is the normal text model path. Tools, permissions, middleware, sessions, branches, events, and hosting stay in HPD's runtime.
+`Clients.Chat` is the normal text model path. Tools, permissions, middleware, sessions, threads, events, and hosting stay in HPD's runtime.
 
 `Clients.HostedFiles` is used for provider-native file upload when the content upload strategy chooses hosted files. The framework content store remains the app-owned fallback or local path.
 

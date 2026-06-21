@@ -29,7 +29,7 @@ const sidebar = [
       link('Agent Builder And Agent', '/concepts/agent-builder-and-agent'),
       link('Providers, Clients, And Secrets', '/concepts/providers-clients-and-secrets'),
       link('Tools, Functions, And Harnesses', '/concepts/tools-functions-and-harnesses'),
-      link('Sessions, Branches, And Events', '/concepts/sessions-branches-and-events'),
+      link('Sessions, Threads, And Events', '/concepts/sessions-threads-and-events'),
       link('Event Streams And Hierarchies', '/concepts/event-streams-and-hierarchies'),
       link('Middleware Lifecycle', '/concepts/middleware-lifecycle')
     ]
@@ -100,7 +100,7 @@ const sidebar = [
     collapsed: true,
     items: [
       link('Render An Event Stream', '/guides/sessions-and-streaming/render-an-event-stream'),
-      link('Branch History And Forking', '/guides/sessions-and-streaming/branch-history-and-forking'),
+      link('Thread History And Forking', '/guides/sessions-and-streaming/thread-history-and-forking'),
       link('Compaction', '/guides/sessions-and-streaming/compaction')
     ]
   },

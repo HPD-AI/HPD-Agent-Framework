@@ -54,10 +54,10 @@ public sealed class SpecialistTools
 
 The parent sees one generated tool with a `query` argument. HPD runs the child agent, streams child events through the parent event path, and returns the child answer as the tool result.
 
-Subagents are strongest when branch policy matters:
+Subagents are strongest when thread policy matters:
 
-- the child should fork from the parent branch
-- the child should use a fresh branch in the same session
+- the child should fork from the parent thread
+- the child should use a fresh thread in the same session
 - the child should write into a shared specialist session
 - the UI should show parent and child histories as related but separate work
 
@@ -111,7 +111,7 @@ See [Multi-Agent Capabilities](../tools/multi-agent-capabilities.md).
 
 ## Rule Of Thumb
 
-Start with a normal tool. Move to a subagent when the operation is really another agent conversation. Move to a multi-agent workflow when the application needs explicit stages, routing, or parallel branches.
+Start with a normal tool. Move to a subagent when the operation is really another agent conversation. Move to a multi-agent workflow when the application needs explicit stages, routing, or parallel threads.
 
 Use `[MultiAgent]` only after the workflow shape is useful on its own.
 

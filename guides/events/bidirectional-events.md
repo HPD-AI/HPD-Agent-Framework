@@ -6,7 +6,13 @@ Use them when the agent runtime needs a decision during execution, not just afte
 
 ## Request And Response
 
-A bidirectional flow has three parts:
+A bidirectional flow uses the standardized request/response event contracts:
+
+- request events inherit from `AgentEvent` and implement `IAgentRequestEvent` / `IRequestEvent`
+- response events inherit from `AgentEvent` and implement `IAgentResponseEvent` / `IResponseEvent`
+- both sides share the same `RequestId` through `IRequestCorrelatedEvent`
+
+The runtime flow has three parts:
 
 ```text
 middleware or tool
@@ -18,9 +24,11 @@ middleware or tool
   -> continues with the response
 ```
 
-The request and response are matched by `RequestId`. Built-in permission events use `PermissionId`; continuation events use `ContinuationId`; clarification events use `RequestId`.
+The request and response are matched by `RequestId`. Built-in permission events map `PermissionId` to `RequestId`; continuation events map `ContinuationId` to `RequestId`; clarification and client-tool events use `RequestId` directly.
 
 The waiter is registered before the request event is emitted. Duplicate request ids, timeouts, and mismatched response types are treated as errors by the coordinator.
+
+Response routing can also use the standard `IResponseEvent` metadata: `ResponderId`, `ResponderGroup`, and `Capabilities`. Request events may expose response policy, target, and visibility hints for transports and UIs that need to route requests to a specific responder.
 
 ## Direct Subscribe And Respond
 
@@ -99,9 +107,9 @@ public async Task<string> BookMeeting(
 }
 ```
 
-In direct in-process code, the app handles the request in the same way: subscribe to `ClarificationRequestEvent`, ask the user, and send a `ClarificationResponseEvent` with the same request id. In ASP.NET Core hosted clients, observe the request from the hosted event stream and return the response through the hosted response path for the same `agentId + sessionId + branchId`.
+In direct in-process code, the app handles the request in the same way: subscribe to `ClarificationRequestEvent`, ask the user, and send a `ClarificationResponseEvent` with the same request id. In ASP.NET Core hosted clients, observe the request from the hosted event stream and return the response through the hosted response path for the same `agentId + sessionId + threadId`.
 
-Responses sent through `agent.RespondAsync(...)` or `agent.TryRespondAsync(...)` must be events too. In practice, use response records that inherit from `AgentEvent` and implement `IBidirectionalEvent`, as the built-in response events do.
+Responses sent through `agent.RespondAsync(...)`, `agent.TryRespondAsync(...)`, WebSocket, or the hosted `/responses` route must be events too. In practice, use response records that inherit from `AgentEvent` and implement `IAgentResponseEvent` / `IResponseEvent`, as the built-in response events do.
 
 ## Built-In Families
 
@@ -110,7 +118,7 @@ Responses sent through `agent.RespondAsync(...)` or `agent.TryRespondAsync(...)`
 | Permission | `PermissionRequestEvent` | `PermissionResponseEvent` |
 | Continuation | `ContinuationRequestEvent` | `ContinuationResponseEvent` |
 | Clarification | `ClarificationRequestEvent` | `ClarificationResponseEvent` |
-| Client tools | client-tool request events | matching client-tool response events |
+| Client tools | `ClientToolInvokeRequestEvent` | `ClientToolInvokeResponseEvent` |
 
 Permission approved/denied events are observability events emitted after a decision. They are not the response the waiter consumes.
 
@@ -120,7 +128,26 @@ Built-in permission events are one permission protocol, not the whole permission
 
 Set an explicit timeout when waiting on user or host input. If a timeout expires, handle it like any other runtime failure: deny by policy, return a fallback, or surface a clear error.
 
-Do not block inside a direct event handler while holding UI state that the response path also needs. The handler should gather the decision and call `RespondAsync(...)`. Hosted clients should post or send the response promptly while the branch runtime is still active.
+Do not block inside a direct event handler while holding UI state that the response path also needs. The handler should gather the decision and call `RespondAsync(...)`. Hosted clients should post or send the response promptly while the thread runtime is still active.
+
+## Hosted Response Route
+
+Hosted runtimes expose one response route for all standardized response events:
+
+```http
+POST /agents/{agentId}/sessions/{sessionId}/threads/{threadId}/responses
+Content-Type: application/json
+
+{
+  "version": "1.0",
+  "type": "PERMISSION_RESPONSE",
+  "permissionId": "permission-id-from-request",
+  "sourceName": "PermissionMiddleware",
+  "approved": true
+}
+```
+
+The body must be a serialized `AgentEvent` envelope whose event implements `IResponseEvent`. The route returns `404` when the session/thread scope does not exist, `409` when no active runtime or pending waiter accepts the response, and `200` with a `RespondResult` when the response is accepted.
 
 ## Related Pages
 

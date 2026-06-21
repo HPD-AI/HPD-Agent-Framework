@@ -198,9 +198,9 @@ internal static class AppEventRegistration
 
 ## Persistence
 
-Custom events are live runtime events by default. They are useful for UI progress, traces, and hosted clients even when they are not written to branch history.
+Custom events are live runtime events by default. They are useful for UI progress, traces, and hosted clients even when they are not written to thread history.
 
-If a custom event must become durable branch history, treat that as a separate persistence design. Overriding `ShouldPersistToBranch()` is event type policy, but your branch projection and replay path still need to know how to store, load, and render that event correctly.
+If a custom event must become durable thread history, treat that as a separate persistence design. Overriding `ShouldPersistToThread()` is event type policy, but your thread projection and replay path still need to know how to store, load, and render that event correctly.
 
 ## Related Pages
 

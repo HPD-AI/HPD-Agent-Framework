@@ -63,11 +63,11 @@ Realtime model turns use the same agent tool execution surface as chat turns. To
 
 That means existing tool middleware, permissions, function execution context, background work, and custom events still matter in realtime turns.
 
-## Transcripts And Branch History
+## Transcripts And Thread History
 
-Realtime can emit user audio transcript deltas, completed transcripts, and failed transcript events. Completed transcript text can be projected back into the user message and branch history. The durable default is still text, not raw audio.
+Realtime can emit user audio transcript deltas, completed transcripts, and failed transcript events. Completed transcript text can be projected back into the user message and thread history. The durable default is still text, not raw audio.
 
-Assistant text from realtime responses is also part of the branch projection path. Provider-owned assistant audio is not the same path as post-turn final-text TTS.
+Assistant text from realtime responses is also part of the thread projection path. Provider-owned assistant audio is not the same path as post-turn final-text TTS.
 
 ## Client Boundaries
 

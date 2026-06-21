@@ -1,6 +1,6 @@
 # Middleware Overview
 
-Middleware is how you add cross-cutting behavior to an agent run without putting that behavior inside every tool, prompt, or model call. Use it for logging, policy checks, request shaping, retries, timeouts, event requests, safety gates, branch/session state updates, and result formatting.
+Middleware is how you add cross-cutting behavior to an agent run without putting that behavior inside every tool, prompt, or model call. Use it for logging, policy checks, request shaping, retries, timeouts, event requests, safety gates, thread/session state updates, and result formatting.
 
 For built-in logging, telemetry, and usage-aware middleware decisions, see [Logging And Telemetry](../observability/logging-and-telemetry.md).
 
@@ -18,7 +18,7 @@ The main DX question is not only "how do I write middleware?" It is "where shoul
 
 Start with the smallest attachment point that matches the behavior. If the middleware is just temporary telemetry for one request, do not make it part of the agent definition. If it protects the whole agent, register it on the builder or in config. If it protects one tool harness, scope it to that harness.
 
-Memory and context enrichment usually starts as ordinary middleware. Retrieve context before the model turn, add it to the branch history for that turn, then store any small memory pointers or policy state through middleware state after the turn. Keep raw documents, embeddings, and large memory payloads in an application store or content store.
+Memory and context enrichment usually starts as ordinary middleware. Retrieve context before the model turn, add it to the thread history for that turn, then store any small memory pointers or policy state through middleware state after the turn. Keep raw documents, embeddings, and large memory payloads in an application store or content store.
 
 ## Agent Builder
 
@@ -198,7 +198,7 @@ var response = await context.RequestAsync<PermissionRequestEvent, PermissionResp
     timeout: TimeSpan.FromSeconds(30));
 ```
 
-In direct in-process code, respond with `agent.RespondAsync(...)` or `agent.TryRespondAsync(...)` for the matching bidirectional event. In ASP.NET Core hosted clients, read the request from the hosted event stream and send the matching response through WebSocket or the hosted `/responses` route for the active `agentId + sessionId + branchId`.
+In direct in-process code, respond with `agent.RespondAsync(...)` or `agent.TryRespondAsync(...)` for the matching response event. In ASP.NET Core hosted clients, read the request from the hosted event stream and send the matching `IResponseEvent` envelope through WebSocket or the hosted `/responses` route for the active `agentId + sessionId + threadId`.
 
 Use this pattern when the user, UI, policy engine, bot adapter, or hosted runtime needs to make a decision during the run.
 
@@ -209,12 +209,12 @@ HPD exposes several context surfaces. Choose the narrowest one that matches the 
 | Surface | Use It For |
 | --- | --- |
 | `AgentRunConfig` | Per-run model/provider options, runtime middleware, tool context instances, attachments, compaction controls, and temporary behavior. |
-| Middleware hook context | Turn, iteration, tool, function, branch, event, service, session, and branch data that belongs to the agent scheduler. |
-| `[MiddlewareState]` | Private middleware-owned state that should persist by session or branch. |
+| Middleware hook context | Turn, iteration, tool, function, thread, event, service, session, and thread data that belongs to the agent scheduler. |
+| `[MiddlewareState]` | Private middleware-owned state that should persist by session or thread. |
 | `FunctionExecutionContext` | Narrow tool/function access to event emission, bidirectional requests, services, content store, background tasks, struct events, and run metadata. |
 | Application storage | Business records, secrets, large documents, embeddings, durable memory bodies, audit archives, and tenant policy. |
 
-Do not mutate scheduler-owned session or branch state from tool bodies. Tool functions receive `FunctionExecutionContext` so they can interact with the runtime without taking over middleware state management.
+Do not mutate scheduler-owned session or thread state from tool bodies. Tool functions receive `FunctionExecutionContext` so they can interact with the runtime without taking over middleware state management.
 
 ## Order And Lifecycle
 

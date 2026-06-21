@@ -2,7 +2,7 @@
 
 HPD Agent is a .NET framework for building production agent applications.
 
-It gives you a small first-run API, then keeps the runtime surfaces explicit as your app grows: tools, sessions, branches, events, middleware, providers, hosted APIs, audio, bots, workflows, and evaluations.
+It gives you a small first-run API, then keeps the runtime surfaces explicit as your app grows: tools, sessions, threads, events, middleware, providers, hosted APIs, audio, bots, workflows, and evaluations.
 
 ```csharp
 var agent = await new AgentBuilder()
@@ -20,7 +20,7 @@ Console.WriteLine(result.Text);
 Most agent demos start clean and become hard to operate once you need real application behavior. HPD Agent is built around the runtime pieces that show up in production:
 
 - tools and tool harnesses for model-callable C# capabilities
-- sessions and branches for durable conversation state
+- sessions and threads for durable conversation state
 - event streams for live UI, tracing, tool activity, permissions, audio, and workflows
 - middleware for retrieval, policy, state, usage tracking, and custom turn behavior
 - provider packages for OpenAI, Azure OpenAI, Anthropic, Google AI, Bedrock, Mistral, Hugging Face, Ollama, ONNX Runtime, and audio providers

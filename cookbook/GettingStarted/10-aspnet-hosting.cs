@@ -1,6 +1,6 @@
 #:sdk Microsoft.NET.Sdk.Web
-#:package HPD-Agent.AspNetCore@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
+#:package HPD-Agent.AspNetCore@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample hosts an HPD Agent as an ASP.NET Core API.
@@ -48,7 +48,7 @@ var app = builder.Build();
 
 app.MapGet("/", () => "HPD Agent is hosted. Try POST /hpd/sessions or the streaming endpoints.");
 
-// Map the built-in HPD Agent API under /hpd: sessions, branches, content,
+// Map the built-in HPD Agent API under /hpd: sessions, threads, content,
 // streaming, middleware responses, and agent definition CRUD.
 app.MapGroup("/hpd").MapHPDAgentApi("cookbook-agent", options =>
 {

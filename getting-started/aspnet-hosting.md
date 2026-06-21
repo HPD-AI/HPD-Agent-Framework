@@ -1,6 +1,6 @@
 # ASP.NET Hosting
 
-ASP.NET Core hosting turns an agent runtime into HTTP endpoints for sessions, branches, content, streaming, middleware responses, and stored agent definitions.
+ASP.NET Core hosting turns an agent runtime into HTTP endpoints for sessions, threads, content, streaming, middleware responses, and stored agent definitions.
 
 Use hosting when a web app, TypeScript client, TUI, or another process needs to talk to HPD Agent over a boundary.
 
@@ -9,8 +9,8 @@ Use hosting when a web app, TypeScript client, TUI, or another process needs to 
 ```bash
 dotnet new web -n HpdAgentHost
 cd HpdAgentHost
-dotnet add package HPD-Agent.AspNetCore --version 0.5.0
-dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.0
+dotnet add package HPD-Agent.AspNetCore --version 0.5.5
+dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.5
 ```
 
 Set an OpenAI API key:
@@ -89,7 +89,7 @@ Before exposing hosted routes outside local development, decide how your app wil
 
 `AddHPDAgent(...)` registers a named hosted runtime.
 
-`SessionStorePath` creates a `JsonSessionStore` for hosted sessions and branches.
+`SessionStorePath` creates a `JsonSessionStore` for hosted sessions and threads.
 
 `AgentStore` stores reusable hosted agent definitions. This sample uses `JsonAgentStore`.
 
@@ -99,7 +99,7 @@ Before exposing hosted routes outside local development, decide how your app wil
 
 The hosting layer owns persistence and passes the configured stores to runtimes as requests arrive. Configure stores through hosting options rather than creating separate stores inside `ConfigureAgent`.
 
-When a hosted input request arrives, hosting resolves the route `agentId`, starts the branch runtime if needed, and queues the input into that runtime. That active runtime is what live events, middleware responses, client tools, permissions, interruptions, SSE, and WebSocket streams attach to. For the direct-run versus started-runtime model, see [Agent Runtime And Capabilities](../concepts/agent-runtime-and-capabilities.md).
+When a hosted input request arrives, hosting resolves the route `agentId`, starts the thread runtime if needed, and queues the input into that runtime. That active runtime is what live events, middleware responses, client tools, permissions, interruptions, SSE, and WebSocket streams attach to. For the direct-run versus started-runtime model, see [Agent Runtime And Capabilities](../concepts/agent-runtime-and-capabilities.md).
 
 ## Next
 

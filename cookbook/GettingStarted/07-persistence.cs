@@ -1,5 +1,5 @@
-#:package HPD-Agent.Framework@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
+#:package HPD-Agent.Framework@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample uses one file-backed workspace for sessions, agent definitions, and content.
@@ -54,16 +54,16 @@ if (await sessionRepository.LoadSessionAsync("cookbook-persistence") is null)
 // Because persistAfterTurn is enabled, this turn is saved after the run
 // completes and can be loaded by the next process.
 var result = await agent.RunAsync(
-    "Remember that my release target is HPD Agent 0.5.0.",
+    "Remember that my release target is HPD Agent 0.5.5.",
     sessionId: "cookbook-persistence",
-    branchId: "main");
+    threadId: "main");
 
 Console.WriteLine(result.Text);
 Console.WriteLine();
 
 // Read the persisted indexes back directly to show what the workspace captured.
 var sessionIds = await sessionRepository.ListSessionIdsAsync();
-var branchIds = await sessionRepository.ListBranchIdsAsync("cookbook-persistence");
+var threadIds = await sessionRepository.ListThreadIdsAsync("cookbook-persistence");
 var agentIds = await agentRepository.ListIdsAsync();
 var knowledge = await contentStore.QueryAsync(
     scope: "cookbook-persistence-agent",
@@ -74,7 +74,7 @@ var knowledge = await contentStore.QueryAsync(
     });
 
 Console.WriteLine($"Sessions: {string.Join(", ", sessionIds)}");
-Console.WriteLine($"Branches: {string.Join(", ", branchIds)}");
+Console.WriteLine($"Threads: {string.Join(", ", threadIds)}");
 Console.WriteLine($"Stored agents: {string.Join(", ", agentIds)}");
 Console.WriteLine($"Knowledge items: {knowledge.Count}");
 Console.WriteLine($"Latest content item: {note.Name}");

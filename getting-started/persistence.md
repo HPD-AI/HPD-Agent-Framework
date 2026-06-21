@@ -1,6 +1,6 @@
 # Save Sessions And State
 
-Persistence lets sessions, branches, agent definitions, and content survive process restarts.
+Persistence lets sessions, threads, agent definitions, and content survive process restarts.
 
 Use persistence when you are building anything beyond a throwaway console sample.
 
@@ -20,12 +20,12 @@ var agent = await new AgentBuilder()
     .WithContentStore(new LocalFileContentStore(Path.Combine(dataRoot, "content")))
     .BuildAsync();
 
-var (sessionId, branchId) = await agent.CreateSessionAsync("getting-started-persistence");
+var (sessionId, threadId) = await agent.CreateSessionAsync("getting-started-persistence");
 
 var result = await agent.RunAsync(
     "Remember that my workspace name is Northstar.",
     sessionId,
-    branchId);
+    threadId);
 
 Console.WriteLine(result.Text);
 Console.WriteLine($"Saved session: {sessionId}");
@@ -51,7 +51,7 @@ You should see files under `.hpd-data/sessions`, and possibly `.hpd-data/agents`
 
 `WithSessionStore(path)` creates a `JsonSessionStore`.
 
-The session store saves sessions, branches, messages, branch metadata, and session-scoped middleware state. By default, explicitly configuring a session store enables persistence after each turn.
+The session store saves sessions, threads, messages, thread metadata, and session-scoped middleware state. By default, explicitly configuring a session store enables persistence after each turn.
 
 `WithAgentStore(path)` creates a `JsonAgentStore`.
 
@@ -59,7 +59,7 @@ The agent store saves reusable agent definitions. This matters for hosted agents
 
 `WithContentStore(...)` configures framework-managed content storage for uploads, artifacts, and internal content references.
 
-`LocalFileContentStore` stores content bytes on disk. The default content store is in-memory, so configure a durable content store when branch history or artifacts should survive a restart.
+`LocalFileContentStore` stores content bytes on disk. The default content store is in-memory, so configure a durable content store when thread history or artifacts should survive a restart.
 
 ## Local Store Or Hosted Store
 
@@ -67,9 +67,9 @@ Use the JSON session and agent stores for local development, samples, tests, and
 
 For production hosting, place the same store responsibilities behind the storage layer you want to operate:
 
-- session and branch metadata
-- branch message projection and branch event data
-- session-scoped and branch-scoped middleware state
+- session and thread metadata
+- thread message projection and thread event data
+- session-scoped and thread-scoped middleware state
 - agent definitions, if users can create or select agents at runtime
 - content bytes, hosted-file references, and metadata needed to resolve attachments
 
@@ -81,4 +81,4 @@ Next: expose the runtime over HTTP in [ASP.NET Hosting](aspnet-hosting.md).
 
 Optional: add behavior around the turn in [Middleware](middleware.md).
 
-Go deeper: see [Sessions, Branches, And Events](../concepts/sessions-branches-and-events.md) and [Content Upload And Resolution](../guides/content/content-upload-and-resolution.md).
+Go deeper: see [Sessions, Threads, And Events](../concepts/sessions-threads-and-events.md) and [Content Upload And Resolution](../guides/content/content-upload-and-resolution.md).

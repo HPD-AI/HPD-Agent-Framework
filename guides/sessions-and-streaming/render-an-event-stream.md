@@ -44,7 +44,7 @@ Start with a small routing table. Add product-specific rendering after the basic
 | `PermissionRequestEvent`, `PermissionResponseEvent` | Blocking prompt attached to a tool/function |
 | `Workflow*` | Workflow timeline, layer, node, or route |
 | Retry, middleware, schema, and diagnostic events | Debug or observability lane |
-| Branch events | History and replay projection |
+| Thread events | History and replay projection |
 
 ## Build A Minimal Projection
 
@@ -86,7 +86,7 @@ This is intentionally a starting point. A production UI may use separate indexes
 When you render a hierarchy, prefer this order:
 
 ```text
-session + branch
+session + thread
   event flow or trace
     agent/workflow
       message
@@ -113,17 +113,17 @@ Do not mix the transport APIs: direct in-process code subscribes with `agent.Sub
 
 ## Persistence Boundaries
 
-Do not use live rendering rules as persistence rules. Branch history contains only events that are mapped or opt in to branch persistence. Interactive request/response events and diagnostics are often live-only. Subagent child history depends on the subagent session and branch policy.
+Do not use live rendering rules as persistence rules. Thread history contains only events that are mapped or opt in to thread persistence. Interactive request/response events and diagnostics are often live-only. Subagent child history depends on the subagent session and thread policy.
 
-For durable branch replay, read the branch event log and rebuild a branch projection from the persisted events. For live UI, consume the live stream and keep enough local state to update messages, tools, prompts, and workflow nodes as events arrive.
+For durable thread replay, read the thread event log and rebuild a thread projection from the persisted events. For live UI, consume the live stream and keep enough local state to update messages, tools, prompts, and workflow nodes as events arrive.
 
-## Compacted Branch Views
+## Compacted Thread Views
 
-Render durable branch projection, not raw event count.
+Render durable thread projection, not raw event count.
 
-When branch history contains `BRANCH_HISTORY_COMPACTED`, apply the projected result: remove durable compacted messages and insert replacement messages if the event has them. A transcript should show the projected messages as canonical. An event-log or audit view can also show the compaction event, compacted ids, summary text, and timestamp.
+When thread history contains `THREAD_HISTORY_COMPACTED`, apply the projected result: remove durable compacted messages and insert replacement messages if the event has them. A transcript should show the projected messages as canonical. An event-log or audit view can also show the compaction event, compacted ids, summary text, and timestamp.
 
-Live `CompactionEvent` belongs in a diagnostic lane. It is not the durable branch-history projection instruction.
+Live `CompactionEvent` belongs in a diagnostic lane. It is not the durable thread-history projection instruction.
 
 ## Related Pages
 
@@ -131,7 +131,7 @@ Live `CompactionEvent` belongs in a diagnostic lane. It is not the durable branc
 - [Tool And Function Events](../events/tool-and-function-events.md)
 - [Bidirectional Events](../events/bidirectional-events.md)
 - [Lifecycle, Retry, And Error Events](../events/lifecycle-retry-and-error-events.md)
-- [Branch History And Forking](branch-history-and-forking.md)
+- [Thread History And Forking](thread-history-and-forking.md)
 - [Compaction](compaction.md)
 - [Workflow Events](../multi-agent/workflow-events.md)
 - [Events Reference](../../reference/events.md)

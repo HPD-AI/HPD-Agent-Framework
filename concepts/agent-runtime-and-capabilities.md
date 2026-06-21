@@ -10,7 +10,7 @@ Agent runs message turns.
 Providers supply clients.
 Tools and middleware shape what can happen during the turn.
 Events describe what happened.
-Sessions and branches decide where state lives.
+Sessions and threads decide where state lives.
 Hosting exposes the same runtime over a process boundary.
 ```
 
@@ -21,7 +21,7 @@ A normal message turn follows this shape:
 ```text
 user input
   -> message-turn middleware
-  -> branch history and run context
+  -> thread history and run context
   -> model iteration
       -> provider chat client
       -> optional tool/function calls
@@ -29,7 +29,7 @@ user input
       -> tool results
       -> more iterations if needed
   -> assistant result
-  -> events, branch projection, persistence, eval/telemetry hooks
+  -> events, thread projection, persistence, eval/telemetry hooks
 ```
 
 `RunAsync(...)` performs the turn and returns an `AgentTurnResult`. During the same turn, the agent can emit live events for text, tool calls, permissions, retries, errors, middleware, nested agents, workflows, audio, evaluation, and diagnostics.
@@ -40,7 +40,7 @@ Most in-process code can call `RunAsync(...)` directly. In that shape, the call 
 
 `StartAsync(...)` is for the long-lived runtime shape. It does not run a prompt by itself. It creates the runtime input loop, runtime event coordinator, runtime struct-event hub, input queue, cancellation lifetime, runtime capabilities, and background-task registry. It then runs the start middleware hooks and begins a single-reader loop that accepts `AgentInputEvent` values.
 
-After an agent is started, `RunAsync(input)` queues the input into that runtime loop and returns `AgentTurnResult.Empty`. The runtime loop processes queued inputs, publishes completion events for branch runs, keeps the runtime alive after interrupted turns, and gives hosted clients a live target for events, responses, client tools, permissions, and interruptions.
+After an agent is started, `RunAsync(input)` queues the input into that runtime loop and returns `AgentTurnResult.Empty`. The runtime loop processes queued inputs, publishes completion events for thread runs, keeps the runtime alive after interrupted turns, and gives hosted clients a live target for events, responses, client tools, permissions, and interruptions.
 
 Use direct `RunAsync(...)` when your app owns the call and only needs the result. Use a started runtime when the agent must be addressable while it is running: ASP.NET Core hosting, SSE/WebSocket clients, bot adapters, TUI runtimes, externally executed client tools, middleware response routing, or runtime-owned background work.
 
@@ -48,7 +48,7 @@ The start/stop middleware hooks belong to this started-runtime shape:
 
 - `BeforeStartAsync` and `AfterStartedAsync` wrap runtime startup.
 - `BeforeStopAsync` and `AfterStoppedAsync` wrap runtime shutdown.
-- Message-turn, iteration, function, and branch hooks still run inside the turns processed by the runtime loop.
+- Message-turn, iteration, function, and thread hooks still run inside the turns processed by the runtime loop.
 
 ## Capability Map
 
@@ -60,10 +60,10 @@ The start/stop middleware hooks belong to this started-runtime shape:
 | Collapsed tools | Reducing model-facing tool overload with expandable containers | [Collapsing And Containers](../guides/tools/collapsing-and-containers.md) |
 | Client tools | Letting a UI, editor, app, or remote client execute a tool | [Externally Executed Client Tools](../guides/tools/externally-executed-client-tools.md) |
 | Events | Rendering live output, timelines, traces, approvals, and diagnostics | [Event Streams And Hierarchies](event-streams-and-hierarchies.md) |
-| Sessions and branches | Durable conversation state, forks, replay, and branch-specific state | [Sessions, Branches, And Events](sessions-branches-and-events.md) |
-| Middleware | Cross-cutting runtime behavior around turns, iterations, tools, and branches | [Middleware Lifecycle](middleware-lifecycle.md) |
+| Sessions and threads | Durable conversation state, forks, replay, and thread-specific state | [Sessions, Threads, And Events](sessions-threads-and-events.md) |
+| Middleware | Cross-cutting runtime behavior around turns, iterations, tools, and threads | [Middleware Lifecycle](middleware-lifecycle.md) |
 | Permissions | Interactive gates for tool/function execution and app-specific policy | [Permissions Middleware](../guides/middleware/permissions.md) |
-| Content | Uploading bytes, preserving branch references, and resolving provider-facing content | [Content Upload And Resolution](../guides/content/content-upload-and-resolution.md) |
+| Content | Uploading bytes, preserving thread references, and resolving provider-facing content | [Content Upload And Resolution](../guides/content/content-upload-and-resolution.md) |
 | Subagents | Exposing specialist agents as tools with their own runtime policy | [Subagents](../guides/agents/subagents.md) |
 | Workflows | Explicit graph orchestration across agents and functions | [Multi-Agent Overview](../guides/multi-agent/overview.md) |
 | Hosting | HTTP/SSE/WebSocket/runtime endpoints for external clients | [ASP.NET Core Hosting](../guides/hosting/aspnet-core.md) |
@@ -80,7 +80,7 @@ var result = await agent.RunAsync("Summarize this in one sentence.");
 Console.WriteLine(result.Text);
 ```
 
-Use richer input events when the run needs multiple messages, binary content, explicit session/branch routing, or per-run configuration.
+Use richer input events when the run needs multiple messages, binary content, explicit session/thread routing, or per-run configuration.
 
 `AgentTurnResult.Text` is the final concatenated assistant text. Do not treat it as the whole runtime record. Tool calls, permission prompts, retries, errors, reasoning, custom progress, audio artifacts, workflow node activity, and evaluation scores are event-stream concerns.
 
@@ -123,12 +123,12 @@ HPD separates state into scopes:
 | Scope | What Belongs There |
 | --- | --- |
 | Run | Per-call options, runtime middleware, temporary behavior |
-| Branch | Conversation path, branch metadata, branch middleware state, branch event projection |
-| Session | Session metadata, shared middleware state, branch tree, user/workspace grouping |
+| Thread | Conversation path, thread metadata, thread middleware state, thread event projection |
+| Session | Session metadata, shared middleware state, thread tree, user/workspace grouping |
 | Agent | Agent configuration, tools, clients, stores, middleware, hosted agent definition |
-| Content | Uploaded or generated bytes and references, often scoped to a branch |
+| Content | Uploaded or generated bytes and references, often scoped to a thread |
 
-This is why branch-aware features such as compaction, audio projection, content upload, subagents, and permissions all need clear `sessionId + branchId` routing.
+This is why thread-aware features such as compaction, audio projection, content upload, subagents, and permissions all need clear `sessionId + threadId` routing.
 
 ## Trust Boundaries
 
@@ -141,7 +141,7 @@ Treat these as untrusted unless your application has verified them:
 - retrieved documents and web content
 - uploaded files
 - custom events from clients
-- stored session or branch data loaded from a backend
+- stored session or thread data loaded from a backend
 
 System instructions, permission policy, storage authorization, tenant checks, network controls, and sandbox configuration belong to the host application. HPD gives you hooks, stores, events, permissions, and sandboxing surfaces; your app still owns the product policy.
 
@@ -161,7 +161,7 @@ Do not assume:
 - `AgentTurnResult.Text` includes everything important that happened
 - permissions sandbox a tool body or authorize external services
 - local file stores are production storage
-- live events and durable branch events are the same JSON shape
+- live events and durable thread events are the same JSON shape
 - middleware `OnErrorAsync` catches every provider or turn failure
 - a hosted client can respond to an old permission request after the run has moved on
 

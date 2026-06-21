@@ -3,7 +3,7 @@ layout: home
 
 hero:
   text: Agent runtime infrastructure for .NET.
-  tagline: Tools, sessions, branches, events, middleware, providers, audio, bots, and hosted runtimes as explicit system surfaces.
+  tagline: Tools, sessions, threads, events, middleware, providers, audio, bots, and hosted runtimes as explicit system surfaces.
   actions:
     - theme: brand
       text: Start Building
@@ -21,10 +21,10 @@ features:
     linkText: Follow the path
 
   - icon:
-      src: /icons/git-branch.svg
+      src: /icons/git-thread.svg
     title: Durable State
-    details: Keep session history, fork alternate branches, compact context, and preserve the runtime state a real agent app depends on.
-    link: /concepts/sessions-branches-and-events
+    details: Keep session history, fork alternate threads, compact context, and preserve the runtime state a real agent app depends on.
+    link: /concepts/sessions-threads-and-events
     linkText: Understand state
 
   - icon:
@@ -66,7 +66,7 @@ features:
     <h2>One builder surface. Real production escape hatches.</h2>
     <p>
       HPD Agent keeps the beginner path small, then opens the runtime surfaces that usually get bolted on later:
-      sessions, branches, event streams, middleware, tool harnesses, hosted APIs, and provider-specific clients.
+      sessions, threads, event streams, middleware, tool harnesses, hosted APIs, and provider-specific clients.
     </p>
   </div>
 
@@ -80,8 +80,8 @@ var agent = await new AgentBuilder()
 using var stream = agent.Subscribe<TextDeltaEvent>(e =>
     Console.Write(e.Delta));
 
-var (sessionId, branchId) = await agent.CreateSessionAsync("demo");
-await agent.RunAsync("What should I pack for Seattle?", sessionId, branchId);
+var (sessionId, threadId) = await agent.CreateSessionAsync("demo");
+await agent.RunAsync("What should I pack for Seattle?", sessionId, threadId);
 ```
 </section>
 
@@ -109,9 +109,9 @@ await agent.RunAsync("What should I pack for Seattle?", sessionId, branchId);
       <strong>Render streaming text, tool calls, permissions, audio, and workflow traces.</strong>
       <p>Project the event stream into transcripts, timelines, dashboards, logs, or custom clients.</p>
     </a>
-    <a class="hpd-capability-card" href="/guides/sessions-and-streaming/branch-history-and-forking">
+    <a class="hpd-capability-card" href="/guides/sessions-and-streaming/thread-history-and-forking">
       <span>State</span>
-      <strong>Keep sessions, fork branches, compact history, and resume work.</strong>
+      <strong>Keep sessions, fork threads, compact history, and resume work.</strong>
       <p>Build agents that remember enough to be useful without turning state into hidden magic.</p>
     </a>
     <a class="hpd-capability-card" href="/guides/audio/overview">

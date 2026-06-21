@@ -47,7 +47,7 @@ using var childEvents = workflow.SubscribeAny(evt =>
 });
 
 await foreach (var _ in workflow.ExecuteStreamingAsync(
-    "Explain what changed in this branch.",
+    "Explain what changed in this thread.",
     parentCoordinator: null,
     parentAgentMetadata: null,
     parentChatClient: chatClient,
@@ -122,7 +122,7 @@ Other lower-level runtime events are not projected into the public workflow stre
 
 ## Persistence Caveat
 
-Workflow events are live runtime events unless a persistence path maps them into branch history. Do not assume every workflow diagnostic, route, or child event is durable on the parent branch. If your product needs durable workflow replay, validate the session/branch policy and event persistence behavior for that workflow.
+Workflow events are live runtime events unless a persistence path maps them into thread history. Do not assume every workflow diagnostic, route, or child event is durable on the parent thread. If your product needs durable workflow replay, validate the session/thread policy and event persistence behavior for that workflow.
 
 ## Related Pages
 

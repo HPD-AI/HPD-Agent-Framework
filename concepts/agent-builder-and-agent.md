@@ -4,7 +4,7 @@
 
 `Agent` is the runtime object returned by `BuildAsync()`. It accepts user input through `RunAsync(...)`, calls the configured chat client, coordinates tools and middleware, emits events, and returns an `AgentTurnResult`.
 
-For the larger runtime map, including events, sessions, branches, tools, middleware, hosting, observability, evaluations, and trust boundaries, see [Agent Runtime And Capabilities](agent-runtime-and-capabilities.md).
+For the larger runtime map, including events, sessions, threads, tools, middleware, hosting, observability, evaluations, and trust boundaries, see [Agent Runtime And Capabilities](agent-runtime-and-capabilities.md).
 
 ## The First-Reader Flow
 
@@ -33,7 +33,7 @@ Instructions are the agent-level guidance sent with the run. For example, a firs
 
 `RunAsync(...)` returns an `AgentTurnResult`. For first-reader examples, the important property is `Text`, which contains the final concatenated assistant text.
 
-When streaming events are subscribed, event handlers can print text while the run is still happening. The final `AgentTurnResult.Text` is still available after the run completes. See [Streaming Events](../getting-started/streaming-events.md) and [Sessions, Branches, And Events](sessions-branches-and-events.md).
+When streaming events are subscribed, event handlers can print text while the run is still happening. The final `AgentTurnResult.Text` is still available after the run completes. See [Streaming Events](../getting-started/streaming-events.md) and [Sessions, Threads, And Events](sessions-threads-and-events.md).
 
 ## Tools And Middleware
 

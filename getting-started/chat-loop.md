@@ -1,6 +1,6 @@
 # Tiny Console Chat Loop
 
-This page turns the earlier pieces into a small interactive assistant. It uses one agent, one session, one branch, and a loop that keeps reading console input until you press Enter on an empty line.
+This page turns the earlier pieces into a small interactive assistant. It uses one agent, one session, one thread, and a loop that keeps reading console input until you press Enter on an empty line.
 
 Continue in the same `HpdAgentQuickstart` folder from [Hello Agent](hello-agent.md), or create a fresh console app with the same packages.
 
@@ -15,7 +15,7 @@ var agent = await new AgentBuilder()
     .WithInstructions("You are a concise helpful assistant.")
     .BuildAsync();
 
-var (sessionId, branchId) = await agent.CreateSessionAsync("getting-started-chat-loop");
+var (sessionId, threadId) = await agent.CreateSessionAsync("getting-started-chat-loop");
 
 using var output = agent.Subscribe<TextDeltaEvent>(evt => Console.Write(evt.Text));
 using var finished = agent.Subscribe<MessageTurnFinishedEvent>(_ => Console.WriteLine());
@@ -29,7 +29,7 @@ while (true)
         break;
 
     Console.Write("Agent: ");
-    _ = await agent.RunAsync(input, sessionId, branchId);
+    _ = await agent.RunAsync(input, sessionId, threadId);
 }
 ```
 
@@ -48,21 +48,21 @@ You: What is my project called?
 
 ## You Succeeded If
 
-The second answer should refer to `Atlas`. That means the loop is reusing the same session and branch, so the agent receives prior conversation history.
+The second answer should refer to `Atlas`. That means the loop is reusing the same session and thread, so the agent receives prior conversation history.
 
 ## What Happens
 
-`CreateSessionAsync(...)` creates the conversation container and default branch.
+`CreateSessionAsync(...)` creates the conversation container and default thread.
 
 `Subscribe<TextDeltaEvent>(...)` prints text as it arrives.
 
-The `while` loop reads user input and calls `RunAsync(...)` for each turn. Passing the same `sessionId` and `branchId` keeps the conversation coherent.
+The `while` loop reads user input and calls `RunAsync(...)` for each turn. Passing the same `sessionId` and `threadId` keeps the conversation coherent.
 
 The subscriptions observe the run. They do not start the run by themselves; `RunAsync(...)` still performs each turn.
 
 ## Common Mistakes
 
-If the agent forgets earlier messages, make sure every `RunAsync(...)` call uses the same `sessionId` and `branchId`.
+If the agent forgets earlier messages, make sure every `RunAsync(...)` call uses the same `sessionId` and `threadId`.
 
 If nothing prints, make sure the text subscription is registered before the loop calls `RunAsync(...)`.
 

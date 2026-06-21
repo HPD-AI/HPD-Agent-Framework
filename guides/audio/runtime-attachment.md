@@ -1,6 +1,6 @@
 # Audio Runtime Attachment
 
-The audio runtime attachment is the bridge between agent turns and audio behavior. It decides how finite audio input is handled, how assistant text is synthesized, where artifacts go, and whether committed transcripts are projected into branch history.
+The audio runtime attachment is the bridge between agent turns and audio behavior. It decides how finite audio input is handled, how assistant text is synthesized, where artifacts go, and whether committed transcripts are projected into thread history.
 
 ## Attach The Runtime
 
@@ -31,7 +31,7 @@ var agent = await new AgentBuilder()
     .BuildAsync();
 ```
 
-There are also overloads for passing attachment options, a branch projection sink, or a session store. Use the session-store overload when committed transcript and assistant-output projections should be written into durable session history.
+There are also overloads for passing attachment options, a thread projection sink, or a session store. Use the session-store overload when committed transcript and assistant-output projections should be written into durable session history.
 
 ## Configuration Precedence
 
@@ -78,15 +78,15 @@ Input detection is content-based:
 
 The most common non-realtime output mode is final-text TTS: the model produces text, then the runtime synthesizes that text.
 
-## Branch Projection
+## Thread Projection
 
-The runtime can project committed transcripts and assistant output into branch history. By default, the useful durable representation is text:
+The runtime can project committed transcripts and assistant output into thread history. By default, the useful durable representation is text:
 
 - user audio input becomes transcript text,
 - assistant text remains the source of truth,
 - assistant audio artifacts are stored separately through `IContentStore`.
 
-Content uploads and audio artifacts are branch-scoped. Normal `RunAsync(..., sessionId: ...)` execution supplies the active branch context for you. When you construct event input directly, include both `SessionId` and `BranchId` so upload, artifact, and branch-projection middleware can use the same durable scope. See [Content Upload And Resolution](../content/content-upload-and-resolution.md) for the generic upload and resolver flow.
+Content uploads and audio artifacts are thread-scoped. Normal `RunAsync(..., sessionId: ...)` execution supplies the active thread context for you. When you construct event input directly, include both `SessionId` and `ThreadId` so upload, artifact, and thread-projection middleware can use the same durable scope. See [Content Upload And Resolution](../content/content-upload-and-resolution.md) for the generic upload and resolver flow.
 
 Be deliberate before storing raw audio in durable history. Audio retention usually has stricter product and privacy requirements than text transcript retention.
 

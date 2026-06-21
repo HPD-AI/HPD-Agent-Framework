@@ -64,7 +64,7 @@ tool-weather-003
 invoice-json-002
 ```
 
-That makes reports easier to compare across branches and releases.
+That makes reports easier to compare across threads and releases.
 
 ## Reports
 

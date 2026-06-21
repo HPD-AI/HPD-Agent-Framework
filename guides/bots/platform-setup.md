@@ -1,6 +1,6 @@
 # Bot Platform Setup
 
-Bot adapters bridge a platform conversation to an HPD agent run. The platform package receives the webhook, socket event, polling update, or Teams activity; maps it to a platform thread key; resolves an HPD session and branch; runs the configured agent; and sends output back to the platform.
+Bot adapters bridge a platform conversation to an HPD agent run. The platform package receives the webhook, socket event, polling update, or Teams activity; maps it to a platform thread key; resolves an HPD session and thread; runs the configured agent; and sends output back to the platform.
 
 The built-in host examples use ASP.NET for public webhook endpoints, but the generated adapter contract is not ASP.NET-only. An adapter can receive a `BotInboundEnvelope` from HTTP, polling, socket forwarding, or another host, then return a `BotAdapterResponse`. The `Map...Webhook(...)` helpers are the ASP.NET bridge around that neutral adapter surface.
 
@@ -230,7 +230,7 @@ Each adapter turns platform identity into a thread key:
 - WhatsApp: phone number id plus user WhatsApp id.
 - Teams: conversation id plus service URL.
 
-`PlatformSessionMapper` maps that key to an HPD session and branch. The first message creates the HPD session and branch; later messages in the same platform thread reuse them.
+`PlatformSessionMapper` maps that key to an HPD session and thread. The first message creates the HPD session and thread; later messages in the same platform thread reuse them.
 
 ## Permissions And Streaming
 

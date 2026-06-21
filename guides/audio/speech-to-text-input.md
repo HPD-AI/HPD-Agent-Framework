@@ -25,7 +25,7 @@ await agent.RunAsync(new UserMessagesInputEvent([
 ])
 {
     SessionId = "session-1",
-    BranchId = "main"
+    ThreadId = "main"
 });
 ```
 
@@ -48,7 +48,7 @@ await agent.RunAsync(new UserMessagesInputEvent([
 ])
 {
     SessionId = "session-1",
-    BranchId = "main"
+    ThreadId = "main"
 });
 ```
 
@@ -109,9 +109,9 @@ For finite audio input, the runtime can:
 - call the configured STT provider,
 - mark the input as transcribed,
 - inject the transcript text into the user message sent to the model,
-- project committed transcript text into branch history when branch projection is enabled.
+- project committed transcript text into thread history when thread projection is enabled.
 
-The original audio content is not the durable default. Treat transcript text as the normal branch-history representation unless your product explicitly stores raw media.
+The original audio content is not the durable default. Treat transcript text as the normal thread-history representation unless your product explicitly stores raw media.
 
 ## Input Modes
 

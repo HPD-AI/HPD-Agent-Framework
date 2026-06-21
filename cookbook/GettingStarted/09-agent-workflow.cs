@@ -1,6 +1,6 @@
-#:package HPD-Agent.Framework@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
-#:package HPD-Agent.MultiAgent@0.5.0
+#:package HPD-Agent.Framework@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
+#:package HPD-Agent.MultiAgent@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample connects two agents into one workflow.
@@ -55,7 +55,7 @@ using var workflowCompleted = workflow.Subscribe<WorkflowCompletedEvent>(evt =>
 
 // RunAsync starts at the graph entry node and follows edges until the workflow
 // completes. The final answer comes from the terminal agent.
-var result = await workflow.RunAsync("Explain why HPD Agent sessions and branches matter.");
+var result = await workflow.RunAsync("Explain why HPD Agent sessions and threads matter.");
 
 if (!result.Success)
 {

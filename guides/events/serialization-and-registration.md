@@ -29,10 +29,12 @@ using var all = agent.SubscribeAny(evt =>
 });
 ```
 
-For input events such as `UserTextInputEvent`, use the same serializer:
+For input events such as `UserMessagesInputEvent`, use the same serializer:
 
 ```csharp
-var json = AgentEventSerializer.ToJson(new UserTextInputEvent("hello"));
+var json = AgentEventSerializer.ToJson(new UserMessagesInputEvent([
+    new ChatMessage(ChatRole.User, "hello")
+]));
 ```
 
 ## Deserialize Events

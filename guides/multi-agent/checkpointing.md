@@ -2,7 +2,7 @@
 
 Checkpointing lets a multi-agent workflow save execution state through a workflow store. It is opt-in.
 
-The workflow store is separate from the session store. Checkpointing saves workflow progress; conversation policies save node agent transcripts into HPD sessions and branches.
+The workflow store is separate from the session store. Checkpointing saves workflow progress; conversation policies save node agent transcripts into HPD sessions and threads.
 
 ## Enable Checkpointing
 

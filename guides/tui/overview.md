@@ -2,15 +2,15 @@
 
 `HPD-Agent.TUI` is a reusable terminal shell for an HPD agent runtime. It does not define what every agent event means in your product. It gives you the shell, prompt loop, runtime boundary, transcript surface, command registry, and interaction hooks; your application decides how domain events are rendered and how user-facing policies should behave.
 
-The same shell can run against an in-process agent or against an ASP.NET Core hosted HPD Agent API. In both cases the TUI works from an `agentId`, `sessionId`, and `branchId`.
+The same shell can run against an in-process agent or against an ASP.NET Core hosted HPD Agent API. In both cases the TUI works from an `agentId`, `sessionId`, and `threadId`.
 
 ## Core Pieces
 
-`HpdAgentTuiApp` owns the terminal application lifecycle. It ensures a scope, hydrates existing branch events, starts runtime observation, accepts prompt input, and dispatches events to registered handlers.
+`HpdAgentTuiApp` owns the terminal application lifecycle. It ensures a scope, hydrates existing thread events, starts runtime observation, accepts prompt input, and dispatches events to registered handlers.
 
-`IHpdAgentTuiRuntime` is the boundary between the shell and an agent runtime. It supports scope creation, branch event hydration, live observation, input submission, middleware responses, and active-run lookup.
+`IHpdAgentTuiRuntime` is the boundary between the shell and an agent runtime. It supports scope creation, thread event hydration, live observation, input submission, middleware responses, and active-run lookup.
 
-`AgentTuiRuntimeScope` identifies the current `AgentId`, `SessionId`, and `BranchId`.
+`AgentTuiRuntimeScope` identifies the current `AgentId`, `SessionId`, and `ThreadId`.
 
 `InMemoryAgentTuiRuntime` wraps a local `Agent` in-process.
 
@@ -39,7 +39,7 @@ await app.RunAsync();
 
 Use the local runtime when your terminal app owns the `Agent` instance directly. This is the smallest development loop and is useful for internal tools, prototypes, and agent diagnostics.
 
-Use the hosted runtime when the terminal is a client of an ASP.NET Core HPD Agent API. This keeps session, branch, agent definition, active run, and middleware response behavior on the server.
+Use the hosted runtime when the terminal is a client of an ASP.NET Core HPD Agent API. This keeps session, thread, agent definition, active run, and middleware response behavior on the server.
 
 ## Event And Interaction Ownership
 

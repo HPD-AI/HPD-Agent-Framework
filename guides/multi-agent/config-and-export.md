@@ -121,7 +121,7 @@ var workflow = await AgentWorkflow.Create()
 
 Use `WithInMemoryWorkflowStore()` for tests and short-lived development runs. Use `WithJsonWorkflowStore(...)` when local checkpoints should survive process restarts.
 
-Workflow stores are for workflow definitions and checkpoints. Use `WithSessionStore(...)` with a [Conversation Policy](conversation-policies.md) when node agent transcripts should be saved into HPD sessions and branches.
+Workflow stores are for workflow definitions and checkpoints. Use `WithSessionStore(...)` with a [Conversation Policy](conversation-policies.md) when node agent transcripts should be saved into HPD sessions and threads.
 
 ## Related Pages
 

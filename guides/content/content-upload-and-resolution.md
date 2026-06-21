@@ -5,7 +5,7 @@ Binary content has two separate middleware steps:
 1. upload user-provided bytes into a durable or provider-native reference,
 2. resolve HPD's internal reference into content the current provider can read.
 
-This split lets branch history keep stable references while each model turn still receives provider-facing content.
+This split lets thread history keep stable references while each model turn still receives provider-facing content.
 
 ## Upload User Content
 
@@ -34,7 +34,7 @@ await agent.RunAsync(new UserMessagesInputEvent([
 ])
 {
     SessionId = "session-1",
-    BranchId = "main"
+    ThreadId = "main"
 });
 ```
 
@@ -83,19 +83,19 @@ Upload and resolution answer different questions:
 | Upload | Where should these user bytes live after the initial message? |
 | Resolution | What content shape can this provider consume right now? |
 
-This is especially useful for sessions and branches. A branch can persist `hpd-content://...` references, then later resolve them as direct URLs, hosted files, or buffered bytes depending on the provider and runtime environment.
+This is especially useful for sessions and threads. A thread can persist `hpd-content://...` references, then later resolve them as direct URLs, hosted files, or buffered bytes depending on the provider and runtime environment.
 
-## Branch Scope
+## Thread Scope
 
-Local content-store upload and reference resolution are scoped to the active branch:
+Local content-store upload and reference resolution are scoped to the active thread:
 
 ```text
-sessionId + branchId
+sessionId + threadId
 ```
 
-Normal `RunAsync(..., sessionId: ...)` execution supplies that context through the active branch. When you construct `UserMessagesInputEvent` directly, include both `SessionId` and `BranchId` so upload and resolution use the same durable scope.
+Normal `RunAsync(..., sessionId: ...)` execution supplies that context through the active thread. When you construct `UserMessagesInputEvent` directly, include both `SessionId` and `ThreadId` so upload and resolution use the same durable scope.
 
-Sibling branches do not automatically resolve each other's local content references. Forking and replay should preserve the branch path that owns the content reference.
+Sibling threads do not automatically resolve each other's local content references. Forking and replay should preserve the thread path that owns the content reference.
 
 ## Events
 

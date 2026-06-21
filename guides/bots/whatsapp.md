@@ -1,6 +1,6 @@
 # WhatsApp Bots
 
-WhatsApp uses Meta's Cloud API webhook. HPD handles the verification challenge, verifies signed POST requests, maps each WhatsApp user conversation to an HPD session and branch, and sends replies through the Graph API.
+WhatsApp uses Meta's Cloud API webhook. HPD handles the verification challenge, verifies signed POST requests, maps each WhatsApp user conversation to an HPD session and thread, and sends replies through the Graph API.
 
 ## Quick Start
 

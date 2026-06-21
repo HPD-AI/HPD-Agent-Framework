@@ -59,7 +59,7 @@ Pages render alternate terminal surfaces. Slash commands let users invoke shell 
 
 ## Widgets And Status Items
 
-Widgets attach UI to shell slots. Status items expose compact runtime state such as model selection, connection state, or the active branch.
+Widgets attach UI to shell slots. Status items expose compact runtime state such as model selection, connection state, or the active thread.
 
 ```csharp
 tui.AddWidget(TuiSlot.BelowEditor, "myapp.context", new ContextWidget());

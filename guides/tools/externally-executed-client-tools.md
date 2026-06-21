@@ -86,7 +86,7 @@ Open the chat scope, subscribe to live events, then include the registered harne
 ```typescript
 const chat = await client.chat.open({
   agentId: 'assistant',
-  branchId: 'main',
+  threadId: 'main',
   session: {
     create: {
       metadata: { title: 'UI assistant' },
@@ -145,7 +145,7 @@ Augmentation can inject or remove harnesses, expand or collapse harnesses, hide 
 
 ## Events And Transports
 
-With SSE, the TypeScript client observes `CLIENT_TOOL_INVOKE_REQUEST` on the live event stream and posts the matching `CLIENT_TOOL_INVOKE_RESPONSE` to the hosted `/responses` route for the active agent, session, and branch.
+With SSE, the TypeScript client observes `CLIENT_TOOL_INVOKE_REQUEST` on the live event stream and posts the matching `CLIENT_TOOL_INVOKE_RESPONSE` to the hosted `/responses` route for the active agent, session, and thread.
 
 With WebSocket, the same response event is sent over the socket after the connection is attached to a runtime scope.
 

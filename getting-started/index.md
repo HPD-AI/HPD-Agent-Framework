@@ -2,7 +2,7 @@
 
 This path takes you from the basic agent loop to a local chat assistant, saved conversation state, and a hosted runtime.
 
-HPD Agent gives you a small builder surface for the first run, then lets you add the runtime pieces that real apps need: tools, sessions, branches, events, middleware, persistence, content, hosting, and workflows.
+HPD Agent gives you a small builder surface for the first run, then lets you add the runtime pieces that real apps need: tools, sessions, threads, events, middleware, persistence, content, hosting, and workflows.
 
 ## Primary Path
 
@@ -16,7 +16,7 @@ Read these in order:
 | 3 | [Add A Tool](add-a-tool.md) | Let the model call one C# function. |
 | 4 | [Multi-Turn Sessions](multi-turn-sessions.md) | Keep conversation history across turns. |
 | 5 | [Tiny Console Chat Loop](chat-loop.md) | Build a usable local assistant loop. |
-| 6 | [Save Sessions And State](persistence.md) | Save sessions, branches, content, and agent definitions. |
+| 6 | [Save Sessions And State](persistence.md) | Save sessions, threads, content, and agent definitions. |
 | 7 | [ASP.NET Hosting](aspnet-hosting.md) | Expose the runtime over HTTP. |
 
 ## Optional Early Detours
@@ -26,7 +26,7 @@ These are first-class HPD surfaces, but they do not need to interrupt the shorte
 | Page | Use It When |
 | --- | --- |
 | [Tool Harnesses](tool-harness.md) | You want to register a group of related C# functions. |
-| [Branching](branching.md) | You want one session to fork into alternate conversation paths. |
+| [Threads](threads.md) | You want one session to fork into alternate conversation paths. |
 | [Middleware](middleware.md) | You want behavior around turns or tool calls, such as retrieval, policy, or usage tracking. |
 | [Build A Multi-Agent Workflow](agent-workflow.md) | You want explicit stages, routing, or handoffs after you understand one agent. |
 

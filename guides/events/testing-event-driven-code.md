@@ -12,7 +12,7 @@ using var subscription = agent.SubscribeAny(evt =>
     events.Add(evt);
 });
 
-await agent.RunAsync("Summarize this branch.");
+await agent.RunAsync("Summarize this thread.");
 
 Assert.Contains(events, evt => evt is MessageTurnStartedEvent);
 Assert.Contains(events, evt => evt is MessageTurnFinishedEvent);

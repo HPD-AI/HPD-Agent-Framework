@@ -2,7 +2,7 @@
 
 Stored agent definitions let a hosted application manage agent configuration through API routes. A route `agentId` can refer to a stored definition, or fall back to the configured hosting build path when no definition exists.
 
-The stored definition is not the running conversation. It tells hosting what agent to build for a route `agentId`. Session and branch routes then select the durable conversation path, and streaming/input routes start or reuse the active runtime for that `agentId + sessionId + branchId` scope.
+The stored definition is not the running conversation. It tells hosting what agent to build for a route `agentId`. Session and thread routes then select the durable conversation path, and streaming/input routes start or reuse the active runtime for that `agentId + sessionId + threadId` scope.
 
 The hosting registration name and the route `agentId` are different:
 
@@ -67,9 +67,9 @@ Keep provider setup aligned with the provider docs. Chat model configuration liv
 
 ## Cache Eviction
 
-Updating or deleting a stored definition evicts cached unscoped and branch-owned runtime agents for that `agentId`. The next request rebuilds from the current definition or fallback path.
+Updating or deleting a stored definition evicts cached unscoped and thread-owned runtime agents for that `agentId`. The next request rebuilds from the current definition or fallback path.
 
-This is important for hosted UIs: a successful update does not mutate an already active branch run in place, but it does affect subsequent runtime builds.
+This is important for hosted UIs: a successful update does not mutate an already active thread run in place, but it does affect subsequent runtime builds.
 
 ## Factory Override
 

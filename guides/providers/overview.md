@@ -108,7 +108,7 @@ HPD separates provider selection from agent definition.
 
 Use `AgentBuilder` when the app owns the agent definition in code. Use stored agent definitions when a hosted app needs to create, update, list, or select agent configs at runtime. Use an `IAgentFactory` override when construction depends on application services or policy that should not be stored as JSON.
 
-This is different from frameworks where each provider produces a different agent subclass. In HPD, provider packages create family-specific clients; the `Agent` runtime still owns sessions, branches, middleware, events, tools, and hosting behavior.
+This is different from frameworks where each provider produces a different agent subclass. In HPD, provider packages create family-specific clients; the `Agent` runtime still owns sessions, threads, middleware, events, tools, and hosting behavior.
 
 ## Setup Caveats
 

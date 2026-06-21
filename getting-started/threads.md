@@ -1,8 +1,8 @@
-# Branching
+# Threading
 
-Branches let one session split into alternate conversation paths.
+Threads let one session split into alternate conversation paths.
 
-Use a branch when you want to explore a different answer, draft, tool path, or subagent task without overwriting the main conversation.
+Use a thread when you want to explore a different answer, draft, tool path, or subagent task without overwriting the main conversation.
 
 ## Add Program.cs
 
@@ -15,33 +15,33 @@ var agent = await new AgentBuilder()
     .WithInstructions("You are a concise product writing assistant.")
     .BuildAsync();
 
-var (sessionId, mainBranchId) = await agent.CreateSessionAsync("getting-started-branches");
+var (sessionId, mainThreadId) = await agent.CreateSessionAsync("getting-started-threads");
 
 await agent.RunAsync(
     "We are launching a developer SDK for agent apps.",
     sessionId,
-    mainBranchId);
+    mainThreadId);
 
-var forkBranchId = await agent.ForkBranchAsync(
+var forkThreadId = await agent.ForkThreadAsync(
     sessionId,
-    sourceBranchId: mainBranchId,
+    sourceThreadId: mainThreadId,
     name: "playful-draft");
 
 var direct = await agent.RunAsync(
     "Write the launch note in a direct professional tone.",
     sessionId,
-    mainBranchId);
+    mainThreadId);
 
 var playful = await agent.RunAsync(
     "Write the launch note in a warmer, more playful tone.",
     sessionId,
-    forkBranchId);
+    forkThreadId);
 
-Console.WriteLine("Main branch:");
+Console.WriteLine("Main thread:");
 Console.WriteLine(direct.Text);
 
 Console.WriteLine();
-Console.WriteLine("Forked branch:");
+Console.WriteLine("Forked thread:");
 Console.WriteLine(playful.Text);
 ```
 
@@ -53,17 +53,17 @@ dotnet run
 
 ## What Happens
 
-Both branches start from the same earlier session history.
+Both threads start from the same earlier session history.
 
-The main branch receives the direct professional request.
+The main thread receives the direct professional request.
 
 The fork receives the warmer draft request.
 
-Each branch can continue independently after the fork.
+Each thread can continue independently after the fork.
 
-## When Branches Help
+## When Threads Help
 
-Use branches for:
+Use threads for:
 
 - comparing alternate answers
 - retrying with different instructions
@@ -75,4 +75,4 @@ Use branches for:
 
 Next: return to the primary path with [Save Sessions And State](persistence.md).
 
-Go deeper: for fork options, history projection, and branch compaction, see [Branch History And Forking](../guides/sessions-and-streaming/branch-history-and-forking.md).
+Go deeper: for fork options, history projection, and thread compaction, see [Thread History And Forking](../guides/sessions-and-streaming/thread-history-and-forking.md).

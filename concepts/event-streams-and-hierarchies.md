@@ -53,8 +53,8 @@ Use these fields to build projections:
 
 | Field | Use it for |
 | --- | --- |
-| `SessionId` and `BranchId` | Durable runtime scope and branch history lookup |
-| `EventFlowId` | Branch/replay grouping, often a message-turn flow in persisted events |
+| `SessionId` and `ThreadId` | Durable runtime scope and thread history lookup |
+| `EventFlowId` | Thread/replay grouping, often a message-turn flow in persisted events |
 | `TraceId` | Live execution trace for a message turn |
 | `SpanId` and `ParentSpanId` | Span-style parent/child relationships when present |
 | `Metadata.AgentChain` | Agent/workflow ancestry labels |
@@ -64,7 +64,7 @@ Use these fields to build projections:
 | `PermissionId` | Permission request/response grouping |
 | `WorkflowName`, `AgentId`, `LayerIndex`, `FromNodeId`, `ToNodeId` | Workflow timeline and graph rendering |
 
-`TraceId`, `SpanId`, and `ParentSpanId` are strongest for turn, iteration, and tool-start hierarchy. Not every event has a span. Tool args, result, and end events should usually be grouped with their `CallId`. `EventFlowId` is useful for branch history and replay, but it is not the same thing as span hierarchy.
+`TraceId`, `SpanId`, and `ParentSpanId` are strongest for turn, iteration, and tool-start hierarchy. Not every event has a span. Tool args, result, and end events should usually be grouped with their `CallId`. `EventFlowId` is useful for thread history and replay, but it is not the same thing as span hierarchy.
 
 ## Common Projections
 
@@ -76,7 +76,7 @@ Use these fields to build projections:
 | Workflow timeline | `WorkflowName`, workflow node ids, layer events, edge events |
 | Agent tree | `Metadata.AgentChain`, `Metadata.Depth`, `Metadata.ParentAgentId` |
 | Trace view | `TraceId`, `SpanId`, `ParentSpanId` |
-| Branch replay | `SessionId`, `BranchId`, `EventFlowId`, branch event sequence |
+| Thread replay | `SessionId`, `ThreadId`, `EventFlowId`, thread event sequence |
 
 For most product UIs, start with transcript and tool activity. Add workflow and agent projections only when the app actually exposes workflows, subagents, or multi-agent capabilities.
 
@@ -100,18 +100,18 @@ Generated workflow and subagent wrappers forward parent context for event coordi
 
 ## Live Events And Durable History
 
-Live events and durable branch events are related, but they are not the same surface.
+Live events and durable thread events are related, but they are not the same surface.
 
-Live streams are for rendering current activity and handling interactive requests. Durable branch events are for replaying branch history and reconstructing branch projections. A live event may be important to a UI without being written to branch history.
+Live streams are for rendering current activity and handling interactive requests. Durable thread events are for replaying thread history and reconstructing thread projections. A live event may be important to a UI without being written to thread history.
 
-Subagent durable history also depends on the subagent execution policy. A child may use the parent session, a fresh branch, a forked branch, an existing branch, or a new session. Document product behavior in terms of the policy you chose rather than assuming all child events persist on the parent branch.
+Subagent durable history also depends on the subagent execution policy. A child may use the parent session, a fresh thread, a forked thread, an existing thread, or a new session. Document product behavior in terms of the policy you chose rather than assuming all child events persist on the parent thread.
 
 ## Rendering Rule
 
 Prefer this order when building a nested view:
 
 ```text
-session + branch
+session + thread
   event flow or trace
     agent/workflow metadata
       message

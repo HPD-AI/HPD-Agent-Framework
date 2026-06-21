@@ -1,5 +1,5 @@
-#:package HPD-Agent.Framework@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
+#:package HPD-Agent.Framework@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample registers one local tool and lets the agent call it.

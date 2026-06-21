@@ -34,7 +34,7 @@ Use the built-in middleware for ordinary function gating. Use custom permission 
 4. If no stored choice applies, it emits `PermissionRequestEvent` and waits for `PermissionResponseEvent`.
 5. Approval allows execution. Denial blocks execution and supplies the denial result.
 
-Persistent choices are middleware state, not external storage. `AlwaysAllow` and `AlwaysDeny` are stored in session-scoped `PermissionPersistentStateData`, so they apply across branches in the same session. `Ask` is request-scoped and does not remember the decision.
+Persistent choices are middleware state, not external storage. `AlwaysAllow` and `AlwaysDeny` are stored in session-scoped `PermissionPersistentStateData`, so they apply across threads in the same session. `Ask` is request-scoped and does not remember the decision.
 
 Permission prompts are sequential even for a parallel tool batch. The batch hook asks for each gated function, records approvals and denials in transient batch state, and the later per-function hook reuses that state instead of prompting again.
 
@@ -137,21 +137,21 @@ Denials are normal tool results, not process failures. The middleware sets `Bloc
 
 ## Hosted API
 
-Hosted runtimes expose one middleware response route for bidirectional events. A hosted UI should read `PermissionRequestEvent` from the event stream, render the request, and post the corresponding `PermissionResponseEvent` envelope through the hosted middleware response path.
+Hosted runtimes expose one response route for standardized response events. A hosted UI should read `PermissionRequestEvent` from the event stream, render the request, and post the corresponding `PermissionResponseEvent` envelope through the hosted response path.
 
 The response route is:
 
 ```http
-POST /agents/{agentId}/sessions/{sid}/branches/{bid}/responses
+POST /agents/{agentId}/sessions/{sid}/threads/{bid}/responses
 ```
 
-Hosted responses are routed to the active runtime for the exact `agentId + sessionId + branchId`. If that branch runtime is not active, the service returns a `BranchRuntimeNotActive` conflict. If no matching request is waiting, the response is rejected as a conflict. Clients should post responses while the request is live and preserve the request id from the event.
+Hosted responses are routed to the active runtime for the exact `agentId + sessionId + threadId`. If that thread runtime is not active, the service returns a `ThreadRuntimeNotActive` conflict. If no matching request is waiting, the response is rejected as a conflict. Clients should post responses while the request is live and preserve the request id from the event.
 
 Do not treat permissions as a separate hidden channel. They are part of the same event vocabulary as other agent runtime interactions.
 
 ## TUI And Bots
 
-The TUI can render permission prompts in its local or hosted runtime, but it still depends on the same request/response event routing. Local TUI code responds through the in-process runtime; hosted TUI code answers through the hosted branch runtime.
+The TUI can render permission prompts in its local or hosted runtime, but it still depends on the same request/response event routing. Local TUI code responds through the in-process runtime; hosted TUI code answers through the hosted thread runtime.
 
 Bot integrations must preserve the permission request identity, map the platform user action back to a `PermissionResponseEvent`, and respect platform webhook/auth constraints. Keep platform-specific permission UX in the bot adapter page for that platform.
 
@@ -174,14 +174,14 @@ It emits `ContinuationRequestEvent`, waits for `ContinuationResponseEvent`, and 
 Hosted continuation responses use the same bidirectional response route:
 
 ```http
-POST /agents/{agentId}/sessions/{sid}/branches/{bid}/responses
+POST /agents/{agentId}/sessions/{sid}/threads/{bid}/responses
 ```
 
 ## What Not To Overclaim
 
 Permissions are a tool/function gate. They do not sandbox the function body, authorize external services, or guarantee that a trusted function is harmless. Put OS, network, tenant, and platform authorization checks in the tool implementation or host environment.
 
-Stored `AlwaysAllow` and `AlwaysDeny` choices are session-scoped. They are not global user preferences, and they are not branch-local.
+Stored `AlwaysAllow` and `AlwaysDeny` choices are session-scoped. They are not global user preferences, and they are not thread-local.
 
 `[RequiresPermission]` is metadata, not a universal security boundary. It is consumed by permission middleware. A custom `IAgentPermissionMiddleware` can interpret it differently or ignore it entirely.
 

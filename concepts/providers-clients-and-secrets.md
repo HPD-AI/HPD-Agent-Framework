@@ -57,7 +57,7 @@ Provider setup pages focus first on `Clients.Chat`. Some provider packages expos
 
 The family slot matters as much as the provider key. `openai` can mean chat, text-to-speech, speech-to-text, realtime, image generation, embeddings, or hosted files depending on the slot and referenced provider packages. `elevenlabs` can mean speech-to-text or text-to-speech, but not chat. A provider key is not a promise that every family exists.
 
-Provider selection does not replace the HPD runtime. The same `Agent` runtime still owns `RunAsync(...)`, tools, middleware, sessions, branches, events, permissions, compaction, hosting, and stored definitions.
+Provider selection does not replace the HPD runtime. The same `Agent` runtime still owns `RunAsync(...)`, tools, middleware, sessions, threads, events, permissions, compaction, hosting, and stored definitions.
 
 ## Secret Resolution
 

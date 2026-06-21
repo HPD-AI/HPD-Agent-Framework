@@ -9,7 +9,7 @@ This page is an orchestration detour after the single-agent basics. If you are s
 ## Add The Package
 
 ```bash
-dotnet add package HPD-Agent.MultiAgent --version 0.5.0
+dotnet add package HPD-Agent.MultiAgent --version 0.5.5
 ```
 
 ## Add Program.cs
@@ -40,7 +40,7 @@ using var started = workflow.Subscribe<WorkflowAgentStartedEvent>(evt =>
 using var completed = workflow.Subscribe<WorkflowAgentCompletedEvent>(evt =>
     Console.WriteLine($"{evt.AgentId} finished"));
 
-var result = await workflow.RunAsync("Explain why HPD Agent sessions and branches matter.");
+var result = await workflow.RunAsync("Explain why HPD Agent sessions and threads matter.");
 
 if (!result.Success)
 {

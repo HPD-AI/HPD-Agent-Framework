@@ -1,6 +1,6 @@
 # Slack Bots
 
-Slack can reach HPD through the Events API, Interactivity, slash commands, OAuth install flow, or Socket Mode. The Slack adapter maps Slack threads to HPD sessions and branches, then runs the configured HPD agent for normal message and mention traffic.
+Slack can reach HPD through the Events API, Interactivity, slash commands, OAuth install flow, or Socket Mode. The Slack adapter maps Slack threads to HPD sessions and threads, then runs the configured HPD agent for normal message and mention traffic.
 
 ## Quick Start
 

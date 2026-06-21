@@ -59,7 +59,7 @@ using var all = agent.SubscribeAny(evt =>
 });
 ```
 
-This page keeps to two event types. More event families exist for sessions, branches, tools, middleware, permissions, retries, workflows, and model calls. See [Events Overview](../guides/events/overview.md), [Event Streams And Hierarchies](../concepts/event-streams-and-hierarchies.md), and [Events](../reference/events.md).
+This page keeps to two event types. More event families exist for sessions, threads, tools, middleware, permissions, retries, workflows, and model calls. See [Events Overview](../guides/events/overview.md), [Event Streams And Hierarchies](../concepts/event-streams-and-hierarchies.md), and [Events](../reference/events.md).
 
 Middleware can also emit or respond to lifecycle behavior around turns and functions. See [Middleware Lifecycle](../concepts/middleware-lifecycle.md).
 

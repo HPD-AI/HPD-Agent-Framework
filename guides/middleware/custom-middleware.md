@@ -1,11 +1,11 @@
 # Custom Middleware
 
-Middleware is for cross-cutting behavior that belongs inside the agent loop: logging, timing, permission checks, rate limits, request shaping, retry wrappers, result formatting, and branch/session state updates. Start with `IAgentMiddleware`, override only the hook you need, and register the instance before `BuildAsync()`.
+Middleware is for cross-cutting behavior that belongs inside the agent loop: logging, timing, permission checks, rate limits, request shaping, retry wrappers, result formatting, and thread/session state updates. Start with `IAgentMiddleware`, override only the hook you need, and register the instance before `BuildAsync()`.
 
 Use the core framework package and middleware namespace:
 
 ```bash
-dotnet add package HPD-Agent.Framework --version 0.5.0
+dotnet add package HPD-Agent.Framework --version 0.5.5
 ```
 
 ```csharp
@@ -16,7 +16,7 @@ using HPD.Agent.Middleware;
 If your sample builds an agent with OpenAI, also reference the provider package and namespace:
 
 ```bash
-dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.0
+dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.5
 ```
 
 ```csharp
@@ -89,7 +89,7 @@ Console.WriteLine(result.Text);
 | Time, retry, time out, or transform actual function execution | `WrapFunctionCallAsync` |
 | Format a function result or observe a function exception after execution | `AfterFunctionAsync` |
 | Inspect tool results after an iteration | `AfterIterationAsync` |
-| Adjust middleware state before a branch fork is committed | `BeforeBranchForkCommitAsync` |
+| Adjust middleware state before a thread fork is committed | `BeforeThreadForkCommitAsync` |
 | React to function/tool execution errors | `OnErrorAsync` |
 
 `BeforeToolExecutionAsync` and `BeforeParallelBatchAsync` are easy to confuse. Use `BeforeToolExecutionAsync` when the model response has been parsed and you want a whole-iteration decision across all pending tool calls. Use `BeforeParallelBatchAsync` when HPD Agent has identified a batch of functions that will execute in parallel and your policy depends on the batch shape, batch id, or model order before per-function hooks run.
@@ -172,9 +172,9 @@ Use `BeforeParallelBatchAsync` when the policy is about the whole batch, such as
 
 Middleware is the right place for app-owned memory and retrieval. The usual shape is:
 
-1. Use `BeforeMessageTurnAsync` to inspect the user message, session id, branch id, tenant, or run config.
+1. Use `BeforeMessageTurnAsync` to inspect the user message, session id, thread id, tenant, or run config.
 2. Retrieve relevant context from your application store, vector index, content store, cache, or service.
-3. Add a small system message to the turn's branch history.
+3. Add a small system message to the turn's thread history.
 4. Use `AfterMessageTurnAsync` to extract useful memory signals from the final result.
 5. Store durable memory bodies in your application storage, and store only small ids or cursors in `[MiddlewareState]`.
 
@@ -182,7 +182,7 @@ Middleware is the right place for app-owned memory and retrieval. The usual shap
 using HPD.Agent.Middleware;
 using Microsoft.Extensions.AI;
 
-[MiddlewareState(Persistent = true, Scope = StateScope.Branch)]
+[MiddlewareState(Persistent = true, Scope = StateScope.Thread)]
 public sealed record MemoryPointerState
 {
     public string? MemoryScopeId { get; init; }
@@ -196,7 +196,7 @@ public sealed class MemoryContextMiddleware(IMemoryStore memoryStore) : IAgentMi
         CancellationToken cancellationToken)
     {
         var scopeId = context.GetMiddlewareState<MemoryPointerState>()?.MemoryScopeId
-            ?? context.BranchId
+            ?? context.ThreadId
             ?? context.SessionId
             ?? "default";
 
@@ -207,7 +207,7 @@ public sealed class MemoryContextMiddleware(IMemoryStore memoryStore) : IAgentMi
 
         if (snippets.Count > 0)
         {
-            context.BranchHistory.Add(new ChatMessage(
+            context.ThreadHistory.Add(new ChatMessage(
                 ChatRole.System,
                 "Relevant memory:\n" + string.Join("\n", snippets)));
         }

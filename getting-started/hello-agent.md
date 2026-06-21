@@ -13,8 +13,8 @@ The provider reads the API key from the environment. Use environment variables o
 ```bash
 dotnet new console -n HpdAgentQuickstart
 cd HpdAgentQuickstart
-dotnet add package HPD-Agent.Framework --version 0.5.0
-dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.0
+dotnet add package HPD-Agent.Framework --version 0.5.5
+dotnet add package HPD-Agent.Providers.OpenAI --version 0.5.5
 ```
 
 Set an OpenAI API key in the environment:
@@ -89,8 +89,8 @@ Use Ollama when you want a local, no-cloud first run. This is an optional provid
 ```bash
 ollama pull llama3.2
 ollama serve
-dotnet add package HPD-Agent.Framework --version 0.5.0
-dotnet add package HPD-Agent.Providers.Ollama --version 0.5.0
+dotnet add package HPD-Agent.Framework --version 0.5.5
+dotnet add package HPD-Agent.Providers.Ollama --version 0.5.5
 ```
 
 Use this `Program.cs`:

@@ -1,6 +1,6 @@
 # Events
 
-Events are the common vocabulary for HPD Agent runtime activity. Local subscriptions, hosted SSE, hosted WebSocket, TUI runtimes, bot adapters, middleware, and branch history all use related event types.
+Events are the common vocabulary for HPD Agent runtime activity. Local subscriptions, hosted SSE, hosted WebSocket, TUI runtimes, bot adapters, middleware, and thread history all use related event types.
 
 This page is family-based. It is not an exhaustive generated schema reference.
 
@@ -35,12 +35,12 @@ Common channel meanings:
 | --- | --- |
 | Streaming | text and reasoning deltas |
 | Interactive | permission, continuation, clarification, and client-tool request/response flows |
-| Control | branch-run lifecycle and interruption handling |
+| Control | thread-run lifecycle and interruption handling |
 | Default or inherited | lifecycle, diagnostic, and framework-specific events that do not explicitly set a channel |
 
 Response events for permission, continuation, and clarification use upstream direction.
 
-Branch persistence is separate. Events are written to branch history only when branch conversion maps them or the event type opts in to branch persistence. A live event may be important to a UI without being durable branch history.
+Thread persistence is separate. Events are written to thread history only when thread conversion maps them or the event type opts in to thread persistence. A live event may be important to a UI without being durable thread history.
 
 ## Correlation And Projection Fields
 
@@ -50,42 +50,42 @@ Common fields:
 
 | Field | Meaning |
 | --- | --- |
-| `sessionId`, `branchId` | Durable runtime scope when present |
-| `eventFlowId` | Flow grouping used by branch history and replay; often a message-turn flow for persisted events |
+| `sessionId`, `threadId` | Durable runtime scope when present |
+| `eventFlowId` | Flow grouping used by thread history and replay; often a message-turn flow for persisted events |
 | `traceId` | Live execution trace id for a message turn |
 | `spanId`, `parentSpanId` | Span-style hierarchy when present |
 | `metadata` | Agent attribution, including agent name, id, parent id, chain, and depth |
 | `messageId` | Text, reasoning, and tool activity under a message |
 | `callId` | Tool-call lifecycle grouping |
-| `permissionId` and other request ids | Bidirectional request/response grouping |
+| `permissionId`, `continuationId`, `requestId` | Request/response grouping through `IRequestCorrelatedEvent.RequestId` |
 
 Do not require every event to have every field. For example, some tool events carry `traceId` and `callId` without explicit span fields. Use the most specific available id for the projection you are building. See [Event Streams And Hierarchies](../concepts/event-streams-and-hierarchies.md) and [Render An Event Stream](../guides/sessions-and-streaming/render-an-event-stream.md).
 
-## Branch Event JSON Caveat
+## Thread Event JSON Caveat
 
-Live event envelopes and durable branch event JSON are different surfaces.
+Live event envelopes and durable thread event JSON are different surfaces.
 
-Live envelopes always include `version` and `type`, and can include routing and correlation fields such as session id, branch id, channel, direction, event flow id, metadata, and trace/span fields when those values are present on the event.
+Live envelopes always include `version` and `type`, and can include routing and correlation fields such as session id, thread id, channel, direction, event flow id, metadata, and trace/span fields when those values are present on the event.
 
-Durable branch event JSON omits many of those fields. Use live envelopes for API/SSE/WebSocket examples. Use branch event documents only when documenting storage or branch projection behavior.
+Durable thread event JSON omits many of those fields. Use live envelopes for API/SSE/WebSocket examples. Use thread event documents only when documenting storage or thread projection behavior.
 
 ## Event Families
 
-| Family | Examples | Primary channel | Branch persistence |
+| Family | Examples | Primary channel | Thread persistence |
 | --- | --- | --- | --- |
-| Input | `UserTextInputEvent`, `UserMessagesInputEvent`, `InterruptionRequestEvent` | upstream/control | input handling surface; do not assume all are durable |
-| Hosted branch run | `BranchRunStartedEvent`, `BranchRunCompletedEvent` | control | durable |
-| Message turn lifecycle | `MessageTurnStartedEvent`, `MessageTurnFinishedEvent`, `MessageTurnErrorEvent` | default/control | start and finish are durable; failures may be represented through branch failure conversion |
+| Input | `UserMessagesInputEvent`; hosted routes may also accept convenience text bodies and interruption requests | upstream/control | input handling surface; do not assume all are durable |
+| Hosted thread run | `ThreadRunStartedEvent`, `ThreadRunCompletedEvent` | control | durable |
+| Message turn lifecycle | `MessageTurnStartedEvent`, `MessageTurnFinishedEvent`, `MessageTurnErrorEvent` | default/control | start and finish are durable; failures may be represented through thread failure conversion |
 | Agent turn lifecycle | `AgentTurnStartedEvent`, `AgentTurnFinishedEvent` | default | live/runtime-oriented |
 | Text streaming | `TextMessageStartEvent`, `TextDeltaEvent`, `TextMessageEndEvent` | streaming | durable |
 | Reasoning streaming | `ReasoningMessageStartEvent`, `ReasoningDeltaEvent`, `ReasoningMessageEndEvent` | streaming | durable |
 | Tool calls | `ToolCallStartEvent`, `ToolCallArgsEvent`, `ToolCallResultEvent`, `ToolCallEndEvent` | default/streaming | durable |
 | Workflow execution | `WorkflowStartedEvent`, `WorkflowAgentStartedEvent`, `WorkflowEdgeTraversedEvent`, `WorkflowCompletedEvent` | default/diagnostic | validate persistence for the workflow path |
 | Background work | `ToolCallBackgroundTask*`, `BackgroundOperationStartedEvent`, `BackgroundOperationStatusEvent` | control/default | task events and selected operation statuses are durable |
-| Interactive middleware | permission, continuation, clarification, client-tool request/response events | interactive | generally live only |
+| Interactive middleware | request events implementing `IRequestEvent` and response events implementing `IResponseEvent` | interactive | generally live only |
 | Retry and error policy | `FunctionRetryEvent`, `ModelCallRetryEvent`, middleware error events | diagnostic/default | generally live only |
 | Compaction observability | `CompactionEvent` | default/diagnostic | live middleware event; not the durable projection instruction |
-| Branch-history compaction | `BranchHistoryCompactedEvent` | branch history | durable when hard retention is applied |
+| Thread-history compaction | `ThreadHistoryCompactedEvent` | thread history | durable when hard retention is applied |
 | Content and references | upload/reference events | default/diagnostic | depends on event and content persistence policy |
 | Audio transcripts | `UserAudioTranscriptDeltaEvent`, `UserAudioTranscriptCompletedEvent`, `UserAudioTranscriptFailedEvent` | streaming/default | transcript text projection is policy-dependent; raw audio is not durable by default |
 | Assistant audio output | assistant audio output, stream, artifact, failure, and playback events | default/diagnostic | live/runtime-oriented unless explicitly projected by audio runtime policy |
@@ -96,9 +96,9 @@ Durable branch event JSON omits many of those fields. Use live envelopes for API
 
 ## Struct Events
 
-Struct events are a separate process-local surface for realtime samples. HPD Agent-owned samples implement `AgentStructEvent`, which is an agent-level marker over the lower HPD Events struct-event contract. They do not inherit from `AgentEvent`, do not use `AgentEventSerializer`, and do not appear in hosted SSE/WebSocket streams or branch history unless a component explicitly converts or summarizes them as an `AgentEvent`.
+Struct events are a separate process-local surface for realtime samples. HPD Agent-owned samples implement `AgentStructEvent`, which is an agent-level marker over the lower HPD Events struct-event contract. They do not inherit from `AgentEvent`, do not use `AgentEventSerializer`, and do not appear in hosted SSE/WebSocket streams or thread history unless a component explicitly converts or summarizes them as an `AgentEvent`.
 
-Selected struct events can be exported with `AgentStructEventSerializer`. That serializer uses a separate envelope from hosted `AgentEvent` streaming and is for diagnostics, local capture, replay tooling, or telemetry export. Serializing a struct event does not make it visible to the TypeScript client or durable branch history.
+Selected struct events can be exported with `AgentStructEventSerializer`. That serializer uses a separate envelope from hosted `AgentEvent` streaming and is for diagnostics, local capture, replay tooling, or telemetry export. Serializing a struct event does not make it visible to the TypeScript client or durable thread history.
 
 Use `agent.ObserveStruct<TEvent>(...)` or `agent.StructEvents.Route<TEvent>()` for local observation. Tools that accept `FunctionExecutionContext` can access `context.StructEvents` for the same process-local sample lanes. Use this for high-volume diagnostics such as audio playout samples or queue-depth telemetry, not for semantic workflow facts, permissions, or persisted progress.
 
@@ -138,17 +138,17 @@ For reasoning output, use the same start/delta/end pattern but render it separat
 
 For tool calls, use start/args/result/end events to show activity, arguments, and results. Tool events may arrive interleaved with streaming text depending on the model and middleware.
 
-For interactive middleware, render request events and answer with the matching response event through WebSocket, the hosted HTTP `/responses` route, or `agent.RespondAsync(...)` in a local app. Permission, continuation, clarification, and client-tool responses are coordination events, not ordinary output. See [Bidirectional Events](../guides/events/bidirectional-events.md).
+For interactive middleware, render request events and answer with the matching `IResponseEvent` through WebSocket, the hosted HTTP `/responses` route, or `agent.RespondAsync(...)` in a local app. Permission, continuation, clarification, and client-tool responses are coordination events, not ordinary output. See [Bidirectional Events](../guides/events/bidirectional-events.md).
 
-For JavaScript and TypeScript apps, use `AgentClient` to load branch history, subscribe to live events, handle unknown custom events through `onAny(...)`, and send response events back to the hosted runtime. See [TypeScript Client Events](../guides/events/typescript-client.md).
+For JavaScript and TypeScript apps, use `AgentClient` to load thread history, subscribe to live events, handle unknown custom events through `onAny(...)`, and send response events back to the hosted runtime. See [TypeScript Client Events](../guides/events/typescript-client.md).
 
 For retry events, be careful with already-rendered partial output. A `ModelCallRetryEvent` can arrive after partial model content, so UIs may need to clear or mark stale partial text before rendering retry output.
 
 For lifecycle, retry, and failure rendering, see [Lifecycle, Retry, And Error Events](../guides/events/lifecycle-retry-and-error-events.md).
 
-For branch runs, use branch-run started/completed events to track active hosted work. Do not use branch operation lock conflicts as branch-run state.
+For thread runs, use thread-run started/completed events to track active hosted work. Do not use thread operation lock conflicts as thread-run state.
 
-For compaction, distinguish live observability from durable projection. `CompactionEvent` can explain why middleware skipped or performed compaction. `BranchHistoryCompactedEvent` changes the branch projection by removing durable compacted messages and inserting replacements when present.
+For compaction, distinguish live observability from durable projection. `CompactionEvent` can explain why middleware skipped or performed compaction. `ThreadHistoryCompactedEvent` changes the thread projection by removing durable compacted messages and inserting replacements when present.
 
 For workflows, render workflow lifecycle, layer, node, edge, and diagnostic events as a timeline or graph projection. Child agent, tool, and permission events may also appear in the same live stream when the workflow or subagent execution bubbles events through a parent coordinator.
 
@@ -158,7 +158,7 @@ For tool progress emitted from inside a function body, see [Tool And Function Ev
 
 Persisting families verified for first docs:
 
-- branch-run started and completed
+- thread-run started and completed
 - message-turn started and finished
 - text streaming start, delta, and end
 - reasoning start, delta, and end
@@ -170,7 +170,7 @@ Live-only or caveated families:
 
 - audio transcript streaming is not durable by default
 - interactive request/response events are live bidirectional flows
-- workflow and subagent child-event persistence depends on the execution path and session/branch policy
+- workflow and subagent child-event persistence depends on the execution path and session/thread policy
 - observability and diagnostic events generally do not persist unless explicitly mapped
-- compaction observability is live, while branch-history compaction is durable only when hard retention is applied
-- message-turn errors have special branch failure conversion behavior rather than the same simple persistence override as successful turn events
+- compaction observability is live, while thread-history compaction is durable only when hard retention is applied
+- message-turn errors have special thread failure conversion behavior rather than the same simple persistence override as successful turn events

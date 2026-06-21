@@ -12,7 +12,7 @@ Declare a sealed record, choose the persistence scope, then update it from a mid
 using HPD.Agent;
 using HPD.Agent.Middleware;
 
-[MiddlewareState(Persistent = true, Scope = StateScope.Branch)]
+[MiddlewareState(Persistent = true, Scope = StateScope.Thread)]
 public sealed record TurnCounterState
 {
     public int Count { get; init; }
@@ -38,7 +38,7 @@ This is the normal shape for one middleware-owned state type:
 
 - `[MiddlewareState]` registers the state type with the framework.
 - `Persistent = true` makes the state eligible to be loaded at the next run.
-- `Scope = StateScope.Branch` stores it on the current branch, so forks start with a copy and then diverge.
+- `Scope = StateScope.Thread` stores it on the current thread, so forks start with a copy and then diverge.
 - `UpdateMiddlewareState<TState>(...)` reads the current value inside the update lambda and writes a new immutable value immediately.
 
 ## Attribute Settings
@@ -49,7 +49,7 @@ This is the normal shape for one middleware-owned state type:
 | --- | --- | --- |
 | `Version` | `1` | Schema versioning for breaking state-shape changes. |
 | `Persistent` | `false` | Opting in to save/load across runs. |
-| `Scope` | `StateScope.Branch` | Choosing whether persistent state belongs to a branch or the whole session. |
+| `Scope` | `StateScope.Thread` | Choosing whether persistent state belongs to a thread or the whole session. |
 
 Only set `Persistent = true` when the next run should see the value. Most safety and per-run bookkeeping should remain transient.
 
@@ -84,16 +84,16 @@ public sealed record PermissionMemoryState
 
 Built-in examples follow the same split:
 
-- `PermissionPersistentStateData` is persistent and session-scoped, so remembered permission choices apply across branches in the same session.
-- `CompactionStateData` is persistent and branch-scoped, so compaction metadata follows the conversation path.
-- `PlanModePersistentStateData` is persistent and branch-scoped because `Scope` is omitted and branch is the default.
+- `PermissionPersistentStateData` is persistent and session-scoped, so remembered permission choices apply across threads in the same session.
+- `CompactionStateData` is persistent and thread-scoped, so compaction metadata follows the conversation path.
+- `PlanModePersistentStateData` is persistent and thread-scoped because `Scope` is omitted and thread is the default.
 - `BatchPermissionStateData`, continuation permission state, error tracking state, total error threshold state, and circuit breaker state are transient unless their attribute says otherwise.
 
-`CompactionStateData` records branch-scoped compaction metadata and trigger observations. It is not the same as `BranchHistoryCompactedEvent`, which changes durable branch projection under hard retention. See [Compaction](../sessions-and-streaming/compaction.md).
+`CompactionStateData` records thread-scoped compaction metadata and trigger observations. It is not the same as `ThreadHistoryCompactedEvent`, which changes durable thread projection under hard retention. See [Compaction](../sessions-and-streaming/compaction.md).
 
-## Session Or Branch
+## Session Or Thread
 
-Use `StateScope.Session` for persistent state that belongs to the whole session and should be shared by every branch:
+Use `StateScope.Session` for persistent state that belongs to the whole session and should be shared by every thread:
 
 ```csharp
 [MiddlewareState(Persistent = true, Scope = StateScope.Session)]
@@ -103,21 +103,21 @@ public sealed record UserPreferenceState
 }
 ```
 
-Session-scoped state is loaded from `Session.MiddlewareState` and saved back to the session. When a branch is forked, the new branch reads the same session-scoped state as the source branch.
+Session-scoped state is loaded from `Session.MiddlewareState` and saved back to the session. When a thread is forked, the new thread reads the same session-scoped state as the source thread.
 
-Use `StateScope.Branch` for persistent state derived from the conversation path:
+Use `StateScope.Thread` for persistent state derived from the conversation path:
 
 ```csharp
-[MiddlewareState(Persistent = true, Scope = StateScope.Branch)]
-public sealed record BranchProgressState
+[MiddlewareState(Persistent = true, Scope = StateScope.Thread)]
+public sealed record ThreadProgressState
 {
     public int CompletedSteps { get; init; }
 }
 ```
 
-Branch-scoped state is loaded from `Branch.MiddlewareState` and saved back to the branch. When a branch is forked, the branch middleware state dictionary is copied to the new branch before `BeforeBranchForkCommitAsync` runs; after the fork, each branch saves its own copy and can diverge.
+Thread-scoped state is loaded from `Thread.MiddlewareState` and saved back to the thread. When a thread is forked, the thread middleware state dictionary is copied to the new thread before `BeforeThreadForkCommitAsync` runs; after the fork, each thread saves its own copy and can diverge.
 
-If `Scope` is omitted, the state is branch-scoped.
+If `Scope` is omitted, the state is thread-scoped.
 
 ## Update Model
 
@@ -205,17 +205,17 @@ The framework protects state updates with a lock and generation counter. That ca
 
 ## Save And Load Timing
 
-On a fresh run with a session and branch, the agent loads persistent middleware state from both places:
+On a fresh run with a session and thread, the agent loads persistent middleware state from both places:
 
 - Session-scoped persistent state comes from `Session.MiddlewareState`.
-- Branch-scoped persistent state comes from `Branch.MiddlewareState`.
+- Thread-scoped persistent state comes from `Thread.MiddlewareState`.
 - The two containers are merged into the initial loop state for the turn.
 
 At the end of the message turn, after `AfterMessageTurnAsync`, the agent saves persistent state back by scope:
 
 - `StateScope.Session` state is saved to the session.
-- `StateScope.Branch` state is saved to the branch.
-- Branch middleware state may also be appended to the branch event store when one is configured.
+- `StateScope.Thread` state is saved to the thread.
+- Thread middleware state may also be appended to the thread event store when one is configured.
 
 Persistence errors are caught and ignored by the agent loop. Do not use middleware state as the only durable record for business-critical side effects; store those in an application database or service you control.
 
@@ -225,11 +225,11 @@ Forks preserve the right kind of continuity for each scope:
 
 | Scope | On fork | After fork |
 | --- | --- | --- |
-| `StateScope.Session` | Not copied to the branch; both branches read the same session state. | Changes are shared across branches in the session. |
-| `StateScope.Branch` | Copied from the source branch to the new branch. | Each branch saves independently and diverges. |
+| `StateScope.Session` | Not copied to the thread; both threads read the same session state. | Changes are shared across threads in the session. |
+| `StateScope.Thread` | Copied from the source thread to the new thread. | Each thread saves independently and diverges. |
 | Transient state | Recreated for the fork middleware context from persistent state only. | Not saved between runs unless marked persistent. |
 
-If your state answers "what has this user/session decided?", use session scope. If it answers "what has happened along this conversation path?", use branch scope.
+If your state answers "what has this user/session decided?", use session scope. If it answers "what has happened along this conversation path?", use thread scope.
 
 ## Common Errors
 
@@ -251,14 +251,14 @@ The helper requires `where TState : class, new()`. Use a record with a parameter
 
 **Expecting session-scoped state to fork independently**
 
-Session-scoped state is shared by all branches in the session. Use branch scope for state that should split after a fork.
+Session-scoped state is shared by all threads in the session. Use thread scope for state that should split after a fork.
 
 **Persisting secrets or large payloads**
 
-Middleware state is serialized into session or branch state. Store secret values, file bodies, embeddings, large caches, and external resource payloads elsewhere; persist only small IDs, preferences, counters, or metadata needed to resume middleware behavior.
+Middleware state is serialized into session or thread state. Store secret values, file bodies, embeddings, large caches, and external resource payloads elsewhere; persist only small IDs, preferences, counters, or metadata needed to resume middleware behavior.
 
 ## Validation Notes
 
 This page is source/test-checked against the middleware state attribute, state container, update helpers, agent turn load/save path, fork path, and middleware persistence tests. The snippets are intended to be runnable candidates with the shown imports, but a clean external consumer project compile has not been run.
 
-Known source-doc mismatch to avoid repeating: some comments still describe plan-mode state as session-persistent or refer to session load/save, but the actual attribute is `[MiddlewareState(Persistent = true)]`, so it is branch-scoped by default.
+Known source-doc mismatch to avoid repeating: some comments still describe plan-mode state as session-persistent or refer to session load/save, but the actual attribute is `[MiddlewareState(Persistent = true)]`, so it is thread-scoped by default.

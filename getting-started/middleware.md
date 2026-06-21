@@ -25,9 +25,9 @@ public class ProductDocsContext : IAgentMiddleware
 {
     private static readonly Dictionary<string, string> Docs = new()
     {
-        ["hpd agent"] = "HPD Agent is a .NET agent framework for building agents with providers, tools, events, sessions, branches, and middleware.",
+        ["hpd agent"] = "HPD Agent is a .NET agent framework for building agents with providers, tools, events, sessions, threads, and middleware.",
         ["tools"] = "Tool harnesses expose local C# methods as model-callable tools.",
-        ["sessions"] = "Sessions keep multi-turn conversation history. Branches fork a session into alternate paths."
+        ["sessions"] = "Sessions keep multi-turn conversation history. Threads fork a session into alternate paths."
     };
 
     public Task BeforeMessageTurnAsync(BeforeMessageTurnContext context, CancellationToken cancellationToken)
@@ -40,7 +40,7 @@ public class ProductDocsContext : IAgentMiddleware
 
         if (matches.Length > 0)
         {
-            context.BranchHistory.Add(new ChatMessage(
+            context.ThreadHistory.Add(new ChatMessage(
                 ChatRole.System,
                 "Retrieved context:\n" + string.Join("\n", matches)));
         }
@@ -62,7 +62,7 @@ dotnet run
 
 `BeforeMessageTurnAsync(...)` runs before the model call.
 
-The middleware inspects the user message, finds matching snippets, and adds a system message to the branch history for this turn.
+The middleware inspects the user message, finds matching snippets, and adds a system message to the thread history for this turn.
 
 This is the same shape you can use for retrieval, request shaping, audit logs, permission checks, usage tracking, tool policies, or custom events.
 

@@ -1,6 +1,6 @@
-#:package HPD-Agent.Framework@0.5.0
-#:package HPD-Agent.Providers.OpenAI@0.5.0
-#:package HPD-Agent.MultiAgent@0.5.0
+#:package HPD-Agent.Framework@0.5.5
+#:package HPD-Agent.Providers.OpenAI@0.5.5
+#:package HPD-Agent.MultiAgent@0.5.5
 #:property TargetFramework=net10.0
 
 // This sample registers a ToolHarness: a class that groups related agent capabilities.

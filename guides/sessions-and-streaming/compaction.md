@@ -1,20 +1,20 @@
 # Compaction
 
-Compaction reduces conversation history before a model call and can optionally compact the durable branch projection.
+Compaction reduces conversation history before a model call and can optionally compact the durable thread projection.
 
 Use this mental model:
 
 ```text
 strategy changes what the next model sees
-retention changes what future branch projection keeps
-fork compaction rewrites the new target branch before it is committed
+retention changes what future thread projection keeps
+fork compaction rewrites the new target thread before it is committed
 ```
 
 There are three related surfaces:
 
 - model-visible compaction: middleware reduces the non-system messages used for the next model turn
-- durable branch-history compaction: hard retention removes messages from the projected branch history and may insert replacement messages
-- fork compaction: a newly forked target branch is reduced before its initial branch history is saved
+- durable thread-history compaction: hard retention removes messages from the projected thread history and may insert replacement messages
+- fork compaction: a newly forked target thread is reduced before its initial thread history is saved
 
 ## Enable Compaction
 
@@ -33,11 +33,11 @@ builder.WithCompaction(config =>
         TargetCount = 20,
         Threshold = 5
     };
-    config.Retention = new PreserveBranchHistoryOptions();
+    config.Retention = new PreserveThreadHistoryOptions();
 });
 ```
 
-This configuration performs soft compaction when the count trigger fires. The next model call sees reduced history, but durable branch history remains intact.
+This configuration performs soft compaction when the count trigger fires. The next model call sees reduced history, but durable thread history remains intact.
 
 Per-run controls can force or skip compaction. `SkipCompaction` wins over `TriggerCompaction`.
 
@@ -57,9 +57,9 @@ Choose the smallest strategy that solves the pressure you are seeing:
 | --- | --- |
 | The chat is simply getting long | `MessageCountingCompactionOptions` with preserve retention. |
 | Older turns matter, but exact wording does not | `SummarizingCompactionOptions` with preserve retention. |
-| The branch projection itself must stay small | A strategy plus `CompactBranchHistoryOptions` or `DeleteCompactedMessagesOptions`. |
+| The thread projection itself must stay small | A strategy plus `CompactThreadHistoryOptions` or `DeleteCompactedMessagesOptions`. |
 | Tool calls/results are involved | Add boundary options that keep tool-call groups intact. |
-| A new fork should start lighter than its source branch | Fork compaction through `BranchForkOptions.CompactionIntent`. |
+| A new fork should start lighter than its source thread | Fork compaction through `ThreadForkOptions.CompactionIntent`. |
 | One request needs full context for debugging or a critical decision | `AgentRunConfig.SkipCompaction = true`. |
 | One request should compact before continuing | `AgentRunConfig.TriggerCompaction = true`. |
 
@@ -78,17 +78,17 @@ Token and context-window triggers use usage observed from prior turns. They are 
 
 ## Retention
 
-Retention decides what happens to durable branch history after model-visible compaction.
+Retention decides what happens to durable thread history after model-visible compaction.
 
-| Retention | Durable branch projection |
+| Retention | Durable thread projection |
 | --- | --- |
-| `PreserveBranchHistoryOptions` | Preserves branch history. This is the default and safest mode. |
-| `CompactBranchHistoryOptions` | Removes durable compacted messages and inserts replacement messages where the removed range began. |
+| `PreserveThreadHistoryOptions` | Preserves thread history. This is the default and safest mode. |
+| `CompactThreadHistoryOptions` | Removes durable compacted messages and inserts replacement messages where the removed range began. |
 | `DeleteCompactedMessagesOptions` | Removes durable compacted messages without replacement messages. |
 
-Preserve retention is soft compaction. It changes what the model sees but does not remove projected branch messages.
+Preserve retention is soft compaction. It changes what the model sees but does not remove projected thread messages.
 
-Compact and delete retention are hard retention modes. They can change future `LoadBranchAsync(...)` projection and can make old message ids unavailable as fork points.
+Compact and delete retention are hard retention modes. They can change future `LoadThreadAsync(...)` projection and can make old message ids unavailable as fork points.
 
 ## Boundary Policies
 
@@ -111,34 +111,34 @@ Compaction uses three different records:
 | Record | Meaning |
 | --- | --- |
 | `CompactionEvent` | Live middleware observability for skipped or performed compaction. |
-| `CompactionStateData` | Branch-scoped persistent middleware state with last compaction, trigger counts, and usage observations. |
-| `BranchHistoryCompactedEvent` | Durable branch event that changes branch projection under hard retention. |
+| `CompactionStateData` | Thread-scoped persistent middleware state with last compaction, trigger counts, and usage observations. |
+| `ThreadHistoryCompactedEvent` | Durable thread event that changes thread projection under hard retention. |
 
 `CompactionEvent` is useful for diagnostics and live UI. It is not the durable projection instruction.
 
-`BranchHistoryCompactedEvent` is appended when hard retention is applied to a branch with a store. Projection applies it by removing `DurableCompactedMessageIds` and inserting any `ReplacementMessages`.
+`ThreadHistoryCompactedEvent` is appended when hard retention is applied to a thread with a store. Projection applies it by removing `DurableCompactedMessageIds` and inserting any `ReplacementMessages`.
 
 ## Fork And Compact
 
-A normal fork copies source messages through the fork point, copies branch-scoped middleware state, shares session-scoped state, and prepares target branch metadata in memory.
+A normal fork copies source messages through the fork point, copies thread-scoped middleware state, shares session-scoped state, and prepares target thread metadata in memory.
 
-Fork compaction runs in the pre-commit fork middleware hook. If enabled, `CompactionMiddleware` reduces the target branch messages before the target branch's initial event document is saved.
+Fork compaction runs in the pre-commit fork middleware hook. If enabled, `CompactionMiddleware` reduces the target thread messages before the target thread's initial event document is saved.
 
-The source branch is unchanged.
+The source thread is unchanged.
 
-Fork compaction does not append a standalone `BranchHistoryCompactedEvent`. The target branch starts with the already-compacted initial history.
+Fork compaction does not append a standalone `ThreadHistoryCompactedEvent`. The target thread starts with the already-compacted initial history.
 
-Direct in-process callers can override the fork compaction choice with `BranchForkOptions`:
+Direct in-process callers can override the fork compaction choice with `ThreadForkOptions`:
 
 ```csharp
-await agent.ForkBranchAsync(
+await agent.ForkThreadAsync(
     sessionId,
-    sourceBranchId,
-    newBranchId,
+    sourceThreadId,
+    newThreadId,
     fromMessageId,
-    new BranchForkOptions
+    new ThreadForkOptions
     {
-        CompactionIntent = BranchForkCompactionIntent.Enabled,
+        CompactionIntent = ThreadForkCompactionIntent.Enabled,
         Metadata = new Dictionary<string, object>
         {
             ["name"] = "Compacted exploration"
@@ -151,9 +151,9 @@ ASP.NET Core hosted fork requests do not currently include a per-request compact
 
 ## UI Guidance
 
-For transcript views, render the projected branch messages as canonical.
+For transcript views, render the projected thread messages as canonical.
 
-After hard branch-history compaction:
+After hard thread-history compaction:
 
 - replacement messages appear where the compacted range used to be
 - delete retention closes the gap without replacement messages
@@ -165,7 +165,7 @@ Do not render deleted compacted messages as ordinary transcript rows unless your
 Example projection:
 
 ```text
-Before hard branch-history compaction:
+Before hard thread-history compaction:
   user-1, assistant-1, user-2, assistant-2
 
 After compact retention with a replacement message:
@@ -177,8 +177,8 @@ After delete retention without replacement:
 
 ## Related Pages
 
-- [Sessions, Branches, And Events](../../concepts/sessions-branches-and-events.md)
-- [Branch History And Forking](branch-history-and-forking.md)
+- [Sessions, Threads, And Events](../../concepts/sessions-threads-and-events.md)
+- [Thread History And Forking](thread-history-and-forking.md)
 - [Render An Event Stream](render-an-event-stream.md)
 - [Live Vs Durable Events](../events/live-vs-durable-events.md)
 - [Middleware State Persistence](../middleware/state-persistence.md)
